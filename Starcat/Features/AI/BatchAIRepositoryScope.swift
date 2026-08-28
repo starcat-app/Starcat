@@ -51,10 +51,10 @@ enum BatchAIRepositoryScope {
     }
 }
 
-/// 批量标签配置 Sheet 的一次性展示载荷。
+/// 批量标签固定工作区的一次性展示载荷。
 ///
-/// 仓库范围和跳过数必须作为同一个 `sheet(item:)` 参数传入，避免首次展示时
-/// `sheet(isPresented:)` 的内容闭包读到上一轮的全部未分类状态。
+/// 仓库范围和跳过数必须先固化成同一个值，再创建 AppKit hosting tree，避免首次展示时
+/// 读取到上一轮的全部未分类状态。
 struct BatchAIOptionsPresentation: Identifiable {
     let id = UUID()
     let scope: BatchAIRepositoryScope

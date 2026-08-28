@@ -2342,47 +2342,10 @@ struct RepoListView: View {
         }
     }
 
-    /// 分组菜单项标签：颜色圆点始终走 image 列，勾选态由 Toggle / NSMenuItem.state 承担。
-    ///
-    /// 颜色圆点使用非 template NSImage，确保在 NSMenuItem 中保留原色而非被系统 tint 覆盖。
     private func gitHubStarListMenuItemLabel(_ list: GitHubStarList) -> some View {
-        let count = viewModel.githubStarListCounts[list.id] ?? 0
-        return Label(
-            title: { Text(verbatim: "\(list.name)  (\(count))") },
-            icon: {
-                if let dot = Self.colorDotImage(hex: list.colorHex) {
-                    Image(nsImage: dot)
-                }
-            }
-        )
-    }
-
-    /// 生成分组颜色圆点 NSImage（非 template，保留原色）。
-    ///
-    /// 必须设置 `isTemplate = false`，否则 AppKit 会按系统主题 tint 覆盖颜色，
-    /// 导致所有圆点变成同色，失去分组辨识意义。
-    private static func colorDotImage(hex: String) -> NSImage? {
-        let nsColor = Self.nsColorFromHex(hex) ?? .controlAccentColor
-        let size: CGFloat = 10
-        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
-            nsColor.setFill()
-            NSBezierPath(ovalIn: rect).fill()
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-
-    /// 从 `#RRGGBB` 字符串创建 NSColor。
-    private static func nsColorFromHex(_ hex: String) -> NSColor? {
-        var s = hex.trimmingCharacters(in: .whitespaces)
-        if s.hasPrefix("#") { s.removeFirst() }
-        guard s.count == 6, let rgb = UInt32(s, radix: 16) else { return nil }
-        return NSColor(
-            srgbRed: Double((rgb >> 16) & 0xFF) / 255.0,
-            green: Double((rgb >> 8) & 0xFF) / 255.0,
-            blue: Double(rgb & 0xFF) / 255.0,
-            alpha: 1.0
+        GitHubStarListMenuLabel(
+            list: list,
+            repositoryCount: viewModel.githubStarListCounts[list.id] ?? 0
         )
     }
 

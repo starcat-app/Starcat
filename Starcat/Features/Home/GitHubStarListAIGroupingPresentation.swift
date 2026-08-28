@@ -69,6 +69,16 @@ struct GitHubStarListAISuggestionDisplay: Identifiable, Equatable, Sendable {
     let reason: String
 }
 
+/// 审核列表摘要中的一个分组。
+///
+/// `confidence` 允许为空，因为人工审核可以勾选 AI 本轮没有建议的现有分组。
+struct GitHubStarListAIGroupSummaryDisplay: Identifiable, Equatable, Sendable {
+    var id: String { list.id }
+
+    let list: GitHubStarListAIListDisplay
+    let confidence: Double?
+}
+
 enum GitHubStarListAIResultFilter: String, CaseIterable, Identifiable, Sendable {
     case actionable
     case all
@@ -121,12 +131,18 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     let currentLists: [GitHubStarListAIListDisplay]
     let suggestions: [GitHubStarListAISuggestionDisplay]
     let selectedListIDs: Set<String>
+    let selectedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
+    let appliedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
     let applyState: GitHubStarListAIApplyState
     let isIgnoredByUser: Bool
     let analysisFailureMessage: String?
     let finishedAt: Date?
 
     var repoFullName: String { repo.fullName }
+    var repoDescription: String? {
+        let value = repo.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? nil : value
+    }
     var hasSuggestions: Bool { !suggestions.isEmpty }
     var actionableSuggestions: [GitHubStarListAISuggestionDisplay] {
         let currentListIDs = Set(currentLists.map(\.id))
@@ -289,6 +305,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 )
             }
             let selection = (selectedListIDsByRepo[job.id] ?? []).subtracting(currentIDs)
+            let appliedListIDs: Set<String> = if case .applied(let ids) = job.applyState { ids } else { [] }
             let item = GitHubStarListAIReviewItem(
                 id: job.id,
                 repo: job.repo,
@@ -296,6 +313,17 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 currentLists: currentLists,
                 suggestions: suggestions,
                 selectedListIDs: selection,
+                // 两处摘要和芯片墙都沿用 `orderedLists`，只改变展示顺序，不遗漏多选结果。
+                selectedGroupSummaries: Self.makeGroupSummaries(
+                    listIDs: selection,
+                    orderedLists: orderedLists,
+                    suggestions: suggestions
+                ),
+                appliedGroupSummaries: Self.makeGroupSummaries(
+                    listIDs: appliedListIDs,
+                    orderedLists: orderedLists,
+                    suggestions: suggestions
+                ),
                 applyState: job.applyState,
                 isIgnoredByUser: ignoredRepoIDs.contains(job.id),
                 analysisFailureMessage: job.analysisFailure?.localizedMessage,
@@ -342,6 +370,23 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         self.selectedRepositoryCount = selectedRepositoryCount
         self.selectedListCount = selectedListIDs.count
         self.hasContinuableJobs = hasContinuableJobs
+    }
+
+    /// 快照阶段一次性生成摘要，避免 SwiftUI 每次刷新可见行时重复构造字典和排序。
+    private static func makeGroupSummaries(
+        listIDs: Set<String>,
+        orderedLists: [GitHubStarListAIListDisplay],
+        suggestions: [GitHubStarListAISuggestionDisplay]
+    ) -> [GitHubStarListAIGroupSummaryDisplay] {
+        guard !listIDs.isEmpty else { return [] }
+        let confidenceByListID = Dictionary(uniqueKeysWithValues: suggestions.map { ($0.id, $0.confidence) })
+        return orderedLists.compactMap { list in
+            guard listIDs.contains(list.id) else { return nil }
+            return GitHubStarListAIGroupSummaryDisplay(
+                list: list,
+                confidence: confidenceByListID[list.id]
+            )
+        }
     }
 
     /// 分段控件显示的数字与对应筛选严格复用同一份判断，避免“数字可点但不是 Tab 数据”的歧义。

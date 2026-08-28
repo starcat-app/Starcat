@@ -194,6 +194,12 @@ struct GitHubStarListAIGroupingPresentationTests {
             instruction: "Database projects",
             colorHex: "#34C759"
         )
+        let skillsList = GitHubStarListAIListDisplay(
+            id: "skills",
+            name: "Skills",
+            instruction: "Agent skills",
+            colorHex: "#AF52DE"
+        )
         var job = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
         job.status = .completed
         job.suggestions = [
@@ -203,20 +209,53 @@ struct GitHubStarListAIGroupingPresentationTests {
 
         let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
             jobs: [job],
-            availableLists: [swiftList, databaseList],
+            availableLists: [swiftList, databaseList, skillsList],
             existingListIDsByRepo: [:],
-            selectedListIDsByRepo: [1: ["swift", "database"]],
+            selectedListIDsByRepo: [1: ["swift", "database", "skills"]],
             ignoredRepoIDs: []
         )
 
+        let item = try! #require(snapshot.items.first)
         #expect(snapshot.totalCount == 1)
         #expect(snapshot.analyzedCount == 1)
         #expect(snapshot.suggestionCount == 1)
         #expect(snapshot.actionableCount == 1)
         #expect(snapshot.selectedRepositoryCount == 1)
-        #expect(snapshot.selectedListCount == 2)
-        #expect(snapshot.items.first?.selectedListIDs == ["swift", "database"])
-        #expect(snapshot.items.first?.actionableSuggestions.count == 2)
+        #expect(snapshot.selectedListCount == 3)
+        #expect(item.selectedListIDs == ["swift", "database", "skills"])
+        #expect(item.actionableSuggestions.count == 2)
+        #expect(item.selectedGroupSummaries.map(\.id) == ["database", "skills", "swift"])
+        #expect(item.selectedGroupSummaries.map(\.confidence) == [0.91, nil, 0.96])
+        #expect(item.repoDescription == "local")
+    }
+
+    @Test("应用摘要保留本次实际加入的全部分组")
+    func snapshotPreservesMultipleAppliedGroups() {
+        let databaseList = GitHubStarListAIListDisplay(
+            id: "database",
+            name: "Databases",
+            instruction: "Database projects",
+            colorHex: "#34C759"
+        )
+        var job = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        job.status = .completed
+        job.suggestions = [
+            GitHubStarListAISuggestion(listId: "swift", confidence: 0.96, reason: "Swift"),
+            GitHubStarListAISuggestion(listId: "database", confidence: 0.91, reason: "Database")
+        ]
+        job.applyState = .applied(["swift", "database"])
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [job],
+            availableLists: [swiftList, databaseList],
+            existingListIDsByRepo: [1: ["swift", "database"]],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: []
+        )
+
+        let item = try! #require(snapshot.items.first)
+        #expect(item.appliedGroupSummaries.map(\.id) == ["database", "swift"])
+        #expect(item.appliedGroupSummaries.map(\.confidence) == [0.91, 0.96])
     }
 
     @Test("整理前统计按仓库去重并保留一仓多组的各组计数")
@@ -313,6 +352,8 @@ struct GitHubStarListAIGroupingPresentationTests {
             currentLists: currentLists,
             suggestions: suggestions,
             selectedListIDs: selectedListIDs,
+            selectedGroupSummaries: [],
+            appliedGroupSummaries: [],
             applyState: applyState,
             isIgnoredByUser: false,
             analysisFailureMessage: nil,

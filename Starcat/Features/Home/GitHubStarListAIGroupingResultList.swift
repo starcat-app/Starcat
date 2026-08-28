@@ -178,6 +178,14 @@ private struct GitHubStarListAIGroupingResultRow: View {
                             .frame(width: 16, height: 16)
                             .layoutPriority(1)
                     }
+                    if let description = item.repoDescription {
+                        Text(verbatim: description)
+                            .font(interfaceScale.font(.body))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(description)
+                    }
                     summaryLine
                 }
                 Spacer(minLength: 8)
@@ -201,24 +209,12 @@ private struct GitHubStarListAIGroupingResultRow: View {
 
     @ViewBuilder
     private var summaryLine: some View {
-        if let summary = suggestionSummaryDisplay {
-            HStack(spacing: 4) {
-                Text("githubStarLists.aiGrouping.suggestJoinPrefix")
-                    .foregroundStyle(.secondary)
-                Text(verbatim: summary.list.name)
-                    .foregroundStyle(Color(hex: summary.list.colorHex) ?? .accentColor)
-                    .fontWeight(.semibold)
-                if let confidence = summary.confidence {
-                    Text(verbatim: "·")
-                        .foregroundStyle(.secondary)
-                    Text(confidence, format: .percent.precision(.fractionLength(0)).locale(locale))
-                        .foregroundStyle(confidenceColor(confidence))
-                        .monospacedDigit()
-                        .fontWeight(.semibold)
-                }
-            }
-            .font(interfaceScale.font(.caption))
-            .lineLimit(1)
+        if !item.selectedGroupSummaries.isEmpty {
+            groupSummaryLine(
+                prefix: "githubStarLists.aiGrouping.suggestJoinPrefix",
+                groups: item.selectedGroupSummaries,
+                fallbackColor: .accentColor
+            )
         } else if let failure = item.automaticallyIgnoredFailure ?? item.applyFailure {
             Text(verbatim: failure.localizedMessage)
                 .font(interfaceScale.font(.caption))
@@ -233,24 +229,17 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.red)
                 .lineLimit(1)
-        } else if item.isApplied, let applied = appliedSummaryDisplay {
-            HStack(spacing: 4) {
-                Text("githubStarLists.aiGrouping.appliedJoinPrefix")
-                    .foregroundStyle(.secondary)
-                Text(verbatim: applied.list.name)
-                    .foregroundStyle(Color(hex: applied.list.colorHex) ?? .green)
-                    .fontWeight(.semibold)
-                if let confidence = applied.confidence {
-                    Text(verbatim: "·")
-                        .foregroundStyle(.secondary)
-                    Text(confidence, format: .percent.precision(.fractionLength(0)).locale(locale))
-                        .foregroundStyle(confidenceColor(confidence))
-                        .monospacedDigit()
-                        .fontWeight(.semibold)
-                }
-            }
-            .font(interfaceScale.font(.caption))
-            .lineLimit(1)
+        } else if item.isApplied, !item.appliedGroupSummaries.isEmpty {
+            groupSummaryLine(
+                prefix: "githubStarLists.aiGrouping.appliedJoinPrefix",
+                groups: item.appliedGroupSummaries,
+                fallbackColor: .green
+            )
+        } else if item.hasActionableSuggestions {
+            // 用户取消全部勾选后只保留“有建议”状态，不能继续展示任何未选中的分组。
+            Text("githubStarLists.aiGrouping.status.suggested")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
         } else if !item.currentLists.isEmpty {
             Text(String(
                 format: String.l10n("githubStarLists.aiGrouping.currentGroupsFormat"),
@@ -265,6 +254,36 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// 摘要必须完整反映芯片墙的多选集合；置信度只说明 AI 判断，不参与挑选主分组。
+    private func groupSummaryLine(
+        prefix: LocalizedStringKey,
+        groups: [GitHubStarListAIGroupSummaryDisplay],
+        fallbackColor: Color
+    ) -> some View {
+        let firstGroupID = groups.first?.id
+        return HStack(spacing: 4) {
+            Text(prefix)
+                .foregroundStyle(.secondary)
+            ForEach(groups) { group in
+                if group.id != firstGroupID {
+                    Text(verbatim: "·")
+                        .foregroundStyle(.secondary)
+                }
+                Text(verbatim: group.list.name)
+                    .foregroundStyle(Color(hex: group.list.colorHex) ?? fallbackColor)
+                    .fontWeight(.semibold)
+                if let confidence = group.confidence {
+                    Text(confidence, format: .percent.precision(.fractionLength(0)).locale(locale))
+                        .foregroundStyle(confidenceColor(confidence))
+                        .monospacedDigit()
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+        .font(interfaceScale.font(.caption))
+        .lineLimit(1)
     }
 
     @ViewBuilder
@@ -437,41 +456,10 @@ private struct GitHubStarListAIGroupingResultRow: View {
         }
     }
 
-    private var suggestionSummaryDisplay: SelectedGroupDisplay? {
-        let displays = selectedGroupDisplays
-        if let first = displays.first { return first }
-        return item.actionableSuggestions.first.map {
-            SelectedGroupDisplay(list: $0.list, confidence: $0.confidence)
-        }
-    }
-
-    private var appliedSummaryDisplay: SelectedGroupDisplay? {
-        guard let list = item.currentLists.first else { return nil }
-        let confidence = item.suggestions.first(where: { $0.id == list.id })?.confidence
-            ?? item.suggestions.first?.confidence
-        return SelectedGroupDisplay(list: list, confidence: confidence)
-    }
-
-    private var selectedGroupDisplays: [SelectedGroupDisplay] {
-        let listsByID = Dictionary(uniqueKeysWithValues: availableLists.map { ($0.id, $0) })
-        let suggestionsByID = Dictionary(uniqueKeysWithValues: item.actionableSuggestions.map { ($0.id, $0) })
-        return item.selectedListIDs.compactMap { listID in
-            guard let list = listsByID[listID] else { return nil }
-            return SelectedGroupDisplay(list: list, confidence: suggestionsByID[listID]?.confidence)
-        }
-        .sorted { $0.list.name < $1.list.name }
-    }
-
     private func confidenceColor(_ confidence: Double) -> Color {
         if confidence >= 0.9 { .green }
         else if confidence >= 0.7 { .accentColor }
         else { .orange }
-    }
-
-    private struct SelectedGroupDisplay: Identifiable {
-        var id: String { list.id }
-        let list: GitHubStarListAIListDisplay
-        let confidence: Double?
     }
 }
 

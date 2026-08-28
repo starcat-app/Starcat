@@ -21,8 +21,8 @@
 //    `manageMultiSelectionStore`（与 trending/weekly/activity 同款），ghRepoId 即 Repo.id
 //    （同一 Int64 域）直接喂 batchAddTag；UI 文案：「批量打标签」→「打标签」并加 borderedProminent
 //    主显著度。两个组件（BatchActionBar / RemoteBatchActionBar）按业务语义保留独立命名。
-//  - GitHub Stars List 视图额外显示「移动到」入口；真正的 add / move 语义由
-//    GitHubStarListSyncService 根据当前来源分组判断，UI 不拆两个按钮。
+//  - GitHub Stars List 视图额外显示分组 membership 菜单；多选仓库可以同时属于多个分组，
+//    勾选只补齐目标 membership，取消勾选只移除目标 membership。
 //
 
 import SwiftUI
@@ -54,7 +54,7 @@ struct BatchActionBar: View {
     @State private var showUnstarConfirm: Bool = false
     @State private var showStarConfirm: Bool = false
     @State private var toastMessage: String?
-    @State private var isMovingGitHubStarLists: Bool = false
+    @State private var isUpdatingGitHubStarLists: Bool = false
     @State private var isAddingToLibrary: Bool = false
     @State private var isRemovingFromLibrary: Bool = false
 
@@ -66,8 +66,8 @@ struct BatchActionBar: View {
                 addingToLibraryContent
             } else if isRemovingFromLibrary {
                 removingFromLibraryContent
-            } else if isMovingGitHubStarLists {
-                movingGitHubStarListsContent
+            } else if isUpdatingGitHubStarLists {
+                updatingGitHubStarListsContent
             } else {
                 idleContent
             }
@@ -219,8 +219,8 @@ struct BatchActionBar: View {
                 .tint(.red)
             }
 
-            if githubStarListBatchSource != nil {
-                githubStarListMoveMenu
+            if isGitHubStarListSelection {
+                githubStarListMembershipMenu
             }
 
             // Star / Unstar
@@ -268,7 +268,7 @@ struct BatchActionBar: View {
 
             // PR-4 followup：退出按钮图标-only，accessibility + help tooltip 保留。Esc 快捷键不变。
             Button {
-                store.exit()
+                exitMultiSelect()
             } label: {
                 Image(systemName: "xmark.circle")
                     .accessibilityLabel(Text("batch.exitMultiSelect"))
@@ -309,12 +309,12 @@ struct BatchActionBar: View {
         }
     }
 
-    private var movingGitHubStarListsContent: some View {
+    private var updatingGitHubStarListsContent: some View {
         HStack(spacing: 10) {
             ProgressView()
                 .controlSize(.small)
 
-            Text("batch.githubStarLists.move.processing")
+            Text("githubStarLists.aiGrouping.applying")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -523,44 +523,77 @@ struct BatchActionBar: View {
         }
     }
 
-    private var githubStarListMoveMenu: some View {
+    private var githubStarListMembershipMenu: some View {
         Menu {
-            let targets = githubStarListMoveTargets
-            if targets.isEmpty {
-                Text("batch.githubStarLists.noMoveTargets")
+            if viewModel.githubStarLists.isEmpty {
+                Text("githubStarLists.context.noGroups")
             } else {
-                ForEach(targets) { list in
-                    Button {
-                        startGitHubStarListBatchMove(to: list.id)
-                    } label: {
-                        Text(verbatim: list.name)
+                ForEach(viewModel.githubStarLists) { list in
+                    let allSelectedAreMembers = allSelectedReposBelong(to: list.id)
+                    Toggle(
+                        isOn: githubStarListBatchMembershipBinding(
+                            listID: list.id,
+                            allSelectedAreMembers: allSelectedAreMembers
+                        )
+                    ) {
+                        GitHubStarListMenuLabel(
+                            list: list,
+                            repositoryCount: viewModel.githubStarListCounts[list.id] ?? 0
+                        )
                     }
                 }
             }
         } label: {
-            Label("batch.githubStarLists.move", systemImage: "arrowshape.turn.up.right.fill")
+            Label(
+                "githubStarLists.aiGrouping.action.modifyGroups",
+                systemImage: "arrowshape.turn.up.right.fill"
+            )
         }
-        .disabled(store.count == 0 || isMovingGitHubStarLists)
-        .help(Text("batch.githubStarLists.move.help"))
+        // 底栏空间有限，只隐藏可见文字；Label 仍为 VoiceOver 保留完整动作名称。
+        .labelStyle(.iconOnly)
+        .disabled(store.count == 0 || isUpdatingGitHubStarLists)
+        .help(Text("githubStarLists.aiGrouping.action.modifyGroups"))
     }
 
-    private func startGitHubStarListBatchMove(to targetListID: String) {
-        guard let source = githubStarListBatchSource else { return }
+    private func githubStarListBatchMembershipBinding(
+        listID: String,
+        allSelectedAreMembers: Bool
+    ) -> Binding<Bool> {
+        Binding(
+            get: { allSelectedAreMembers },
+            set: { shouldBelong in
+                guard shouldBelong != allSelectedAreMembers else { return }
+                startGitHubStarListBatchMembershipUpdate(
+                    listID: listID,
+                    shouldBelong: shouldBelong
+                )
+            }
+        )
+    }
+
+    private func startGitHubStarListBatchMembershipUpdate(
+        listID: String,
+        shouldBelong: Bool
+    ) {
         let targets = selectedTargets()
         guard !targets.isEmpty else { return }
 
-        isMovingGitHubStarLists = true
+        isUpdatingGitHubStarLists = true
         Task {
-            let summary = await dependencies.githubStarListSyncService.moveRepos(
+            let summary = await dependencies.githubStarListSyncService.updateRepos(
                 targets,
-                from: source,
-                to: targetListID
+                membershipIn: listID,
+                shouldBelong: shouldBelong
             )
-            isMovingGitHubStarLists = false
-            toastMessage = formatGitHubStarListMoveSummary(summary)
-            store.exit()
+            // 只刷新 membership 投影，不立即 reload 当前列表：在「未分组」中首次勾选后，
+            // 仓库虽然已不属于当前查询，但批量快照必须保留，用户才能继续勾选其它分组。
             await viewModel.refreshSidebar()
-            await viewModel.reloadItems(forceRefresh: true)
+            isUpdatingGitHubStarLists = false
+            toastMessage = String.l10n(
+                summary.failed == 0
+                    ? "githubStarLists.toast.updated"
+                    : "githubStarLists.toast.failed"
+            )
         }
     }
 
@@ -597,34 +630,32 @@ struct BatchActionBar: View {
         )
     }
 
-    private var githubStarListBatchSource: GitHubStarListBatchSource? {
+    private var isGitHubStarListSelection: Bool {
         switch viewModel.selection {
         case .githubStarListUngrouped:
-            return .ungrouped
-        case .githubStarList(let listID):
-            return .list(listID)
+            return true
+        case .githubStarList:
+            return true
         default:
-            return nil
+            return false
         }
     }
 
-    private var githubStarListMoveTargets: [GitHubStarList] {
-        switch githubStarListBatchSource {
-        case .ungrouped:
-            return viewModel.githubStarLists
-        case .list(let currentListID):
-            return viewModel.githubStarLists.filter { $0.id != currentListID }
-        case nil:
-            return []
+    private func allSelectedReposBelong(to listID: String) -> Bool {
+        let targets = selectedTargets()
+        guard !targets.isEmpty else { return false }
+        return targets.allSatisfy {
+            viewModel.isRepo($0.ghRepoId, inGitHubStarList: listID)
         }
     }
 
-    private func formatGitHubStarListMoveSummary(_ summary: GitHubStarListBatchMoveSummary) -> String {
-        String(
-            format: String.l10n("batch.githubStarLists.move.summaryFormat"),
-            summary.succeeded,
-            summary.failed
-        )
+    private func exitMultiSelect() {
+        let shouldReloadGitHubList = isGitHubStarListSelection
+        store.exit()
+        guard shouldReloadGitHubList else { return }
+        Task {
+            await viewModel.reloadItems(forceRefresh: true)
+        }
     }
 }
 

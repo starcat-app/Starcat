@@ -54,7 +54,7 @@ final class BatchAIQueueService {
     ///
     /// 用途：
     /// - UI 侧观察该标志，决定是否要弹浮动面板 / 强提示横幅。
-    ///   静默模式下 HomeView 不自动 `showBatchAIPanel = true`、不弹任何 sheet；
+    ///   静默模式下 HomeView 不自动展示批量标签工作区；
     ///   Sidebar 改用「AI 自动整理中 N/M」轻量行展示进度。
     /// - 服务自身不主动唤起 UI（本来就不持有 UI），所以"静默"语义全部由订阅方实现。
     ///

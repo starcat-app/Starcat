@@ -206,6 +206,7 @@ struct BatchAIQueueServiceTests {
         await waitUntilStopped(service)
 
         let presentation = BatchAIQueuePresentationStore()
+        presentation.filter = .all
         presentation.synchronizeImmediately(from: service)
         #expect(presentation.totalJobCount == 205)
         #expect(presentation.visibleJobs.count == 100)
@@ -216,6 +217,37 @@ struct BatchAIQueueServiceTests {
         presentation.loadMore()
         #expect(presentation.visibleJobs.count == 205)
         #expect(!presentation.canLoadMore)
+    }
+
+    @Test("队列展示按审核状态和仓库文本筛选并重置分页")
+    func presentationStoreFiltersAndSearchesReviewJobs() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let service = try makeService(insightProvider: provider)
+        let repos = makeRepos(count: 120, startingAt: 4_000)
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: repos, options: options))
+        await waitUntilStopped(service)
+
+        let presentation = BatchAIQueuePresentationStore()
+        presentation.synchronizeImmediately(from: service)
+        #expect(presentation.filter == .actionable)
+        #expect(presentation.matchingJobCount == 120)
+        #expect(presentation.visibleJobs.count == 100)
+
+        presentation.loadMore()
+        #expect(presentation.visibleJobs.count == 120)
+        presentation.searchText = "repo-119"
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(presentation.matchingJobCount == 1)
+        #expect(presentation.visibleJobs.first?.repoFullName == "acme/repo-119")
+
+        presentation.searchText = ""
+        try? await Task.sleep(for: .milliseconds(200))
+        #expect(presentation.visibleJobs.count == 100)
+        presentation.filter = .completed
+        #expect(presentation.visibleJobs.isEmpty)
     }
 
     @Test("确认只应用用户保留的标签并创建新标签")

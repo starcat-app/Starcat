@@ -14,20 +14,13 @@
 import Foundation
 import GRDB
 
-/// 批量移动 GitHub Stars List 时的来源上下文。
+/// 批量更新 GitHub Stars List membership 的结果摘要。
 ///
-/// UI 只知道用户当前处在哪个列表；真正的 add / move 差异放在 service 内统一判断。
-enum GitHubStarListBatchSource: Equatable {
-    /// 虚拟「未分组」：目标操作是直接添加到目标 list。
-    case ungrouped
-    /// 真实 GitHub list：目标操作是从当前 list 移除，再加入目标 list。
-    case list(String)
-}
-
-/// 批量移动结束摘要。单条失败不会中断后续仓库，最终由 UI 展示一次汇总。
-struct GitHubStarListBatchMoveSummary: Equatable {
+/// 单条失败不会中断后续仓库；已经处于目标状态的仓库计入 skipped，避免重复 mutation。
+struct GitHubStarListBatchMembershipSummary: Equatable {
     let total: Int
     let succeeded: Int
+    let skipped: Int
     let failed: Int
 }
 
@@ -192,35 +185,46 @@ final class GitHubStarListSyncService {
         try await replaceRepoLists(repo, with: Array(listIDs))
     }
 
-    func moveRepos(
+    /// 为一批仓库统一设置某个分组的 membership，同时保留它们已有的其它分组。
+    ///
+    /// GitHub 的 mutation 是替换式写入，因此每个仓库都必须先读取完整 membership，再只修改
+    /// 当前目标分组。这样批量“勾选分组”不会退化成旧的单选移动语义。
+    func updateRepos(
         _ targets: [BatchStarTarget],
-        from source: GitHubStarListBatchSource,
-        to targetListID: String
-    ) async -> GitHubStarListBatchMoveSummary {
+        membershipIn listID: String,
+        shouldBelong: Bool
+    ) async -> GitHubStarListBatchMembershipSummary {
         var succeeded = 0
+        var skipped = 0
         var failed = 0
 
         for target in targets {
             do {
                 var listIDs = Set(try await repository.listIds(forRepo: target.ghRepoId))
-                switch source {
-                case .ungrouped:
-                    listIDs.insert(targetListID)
-                case .list(let sourceListID):
-                    listIDs.remove(sourceListID)
-                    listIDs.insert(targetListID)
+                let didChange: Bool
+                if shouldBelong {
+                    didChange = listIDs.insert(listID).inserted
+                } else {
+                    didChange = listIDs.remove(listID) != nil
                 }
+
+                guard didChange else {
+                    skipped += 1
+                    continue
+                }
+
                 try await replaceRepoLists(target, with: Array(listIDs))
                 succeeded += 1
             } catch {
                 failed += 1
-                AppLog.network.error("GitHub star list batch move failed for \(target.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                AppLog.network.error("GitHub star list batch membership update failed for \(target.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
 
-        return GitHubStarListBatchMoveSummary(
+        return GitHubStarListBatchMembershipSummary(
             total: targets.count,
             succeeded: succeeded,
+            skipped: skipped,
             failed: failed
         )
     }

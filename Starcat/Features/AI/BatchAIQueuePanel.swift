@@ -2,16 +2,15 @@
 //  BatchAIQueuePanel.swift
 //  Starcat
 //
-//  HOM-52 - 批量整理进度浮动面板。
+//  HOM-52 - 批量标签固定工作区中的进度与审核内容。
 //
 //  模块职责：
 //  - 展示当前批次的总进度、剩余时间、当前 repo、单 job 状态列表（可滚动）。
-//  - 提供暂停 / 继续 / 取消 / 单项重试 / 重试全部 控件。
-//  - 完成后允许用户关闭并 reset 队列。
+//  - 提供单项重试；暂停、取消、重试全部与关闭操作由固定工作区外壳统一承载。
 //
 //  关键约束：
 //  - 状态列表每次只投影 100 条并渐进加载；完整选择与任务状态仍保留在 Service。
-//  - 面板用 .sheet 承载：关闭面板不会停止队列（队列继续在后台跑，再开面板可恢复观察），
+//  - 内容由固定 AppKit sheet 承载：关闭窗口不会停止队列（队列继续在后台跑，再开窗口可恢复观察），
 //    对应"支持后台继续"验收点。
 //  - 区分三档终态视觉：completed=绿色 / ignored=灰色 / failed=红色，搭配文字补充原因。
 //  - 失败行置顶；主文案显示用户可读短句，展开区只显示轻量 HTTP 摘要，
@@ -26,99 +25,22 @@ struct BatchAIQueuePanel: View {
     @Bindable var service: BatchAIQueueService
     @State private var expandedRepoID: Int64?
     @State private var presentation = BatchAIQueuePresentationStore()
-    @State private var showDiscardConfirmation = false
-
-    /// 调用方提供的关闭回调（关闭 sheet）。
-    let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             progressSummary
             Divider()
+            resultToolbar
+            Divider()
             jobList
-                .frame(minHeight: 240, maxHeight: 400)
-            if service.failedCount > 0 {
-                Divider()
-                failedFooter
-            }
-            if service.canDiscardCurrentSession {
-                Divider()
-                discardFooter
-            }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 620)
-        .padding(0)
         .task {
             presentation.synchronizeImmediately(from: service)
         }
         .onChange(of: service.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: service)
         }
-        .confirmationDialog(
-            "batchAI.panel.discard.title",
-            isPresented: $showDiscardConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("batchAI.panel.discard.action", role: .destructive, action: discardCurrentSession)
-            Button("general.cancel", role: .cancel) {}
-        } message: {
-            Text("batchAI.panel.discard.message")
-        }
-    }
-
-    // MARK: - 顶部 header（标题 + 操作按钮）
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sparkles")
-                .foregroundStyle(.tint)
-            Text("batchAI.generateTags.title")
-                .font(.headline)
-            Spacer()
-            if !service.isFinished, service.isRunning {
-                if service.isPaused {
-                    Button {
-                        service.resume()
-                    } label: {
-                        Label("batchAI.panel.resume", systemImage: "play.fill")
-                            .labelStyle(.iconOnly)
-                    }
-                    .help("batchAI.panel.resume")
-                } else {
-                    Button {
-                        service.pause()
-                    } label: {
-                        Label("batchAI.panel.pause", systemImage: "pause.fill")
-                            .labelStyle(.iconOnly)
-                    }
-                    .help("batchAI.panel.pause")
-                }
-                Button(role: .destructive) {
-                    service.cancel()
-                } label: {
-                    Label("batchAI.panel.cancel", systemImage: "stop.fill")
-                        .labelStyle(.iconOnly)
-                }
-                .help("batchAI.panel.cancel")
-                // 用户已经点过取消但 in-flight job 还没跑完时禁用，避免重复点击让人困惑。
-                .disabled(service.isCancelling)
-            }
-            SheetCloseButton(
-                action: {
-                    if service.isFinished, !service.hasPendingTagReview {
-                        service.reset()
-                    }
-                    onClose()
-                },
-                iconFont: .system(size: 16, weight: .medium),
-                frameSize: 26
-            )
-            .keyboardShortcut(.cancelAction)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     // MARK: - 进度摘要
@@ -164,8 +86,8 @@ struct BatchAIQueuePanel: View {
                 .frame(height: Self.currentJobLabelHeight, alignment: .leading)
             countersRow
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
     }
 
     /// caption + small ProgressView 的稳定行高；必须与 `currentJobLabel` 占位一致。
@@ -260,12 +182,66 @@ struct BatchAIQueuePanel: View {
         .foregroundStyle(.secondary)
     }
 
-    // MARK: - 状态列表（可滚动）
+    // MARK: - 筛选与状态列表
+
+    private var resultToolbar: some View {
+        @Bindable var store = presentation
+        return HStack(spacing: 8) {
+            Picker("githubStarLists.aiGrouping.filter.label", selection: $store.filter) {
+                filterLabel("githubStarLists.aiGrouping.filter.tab.actionable", count: actionableCount)
+                    .tag(BatchAIResultFilter.actionable)
+                filterLabel("batchAI.panel.counter.pendingReview", count: service.pendingTagReviewCount)
+                    .tag(BatchAIResultFilter.pendingReview)
+                filterLabel("batchAI.panel.counter.failed", count: service.failedCount)
+                    .tag(BatchAIResultFilter.failed)
+                filterLabel("batchAI.panel.counter.completed", count: resolvedCompletedCount)
+                    .tag(BatchAIResultFilter.completed)
+                filterLabel("batchAI.panel.counter.ignored", count: service.ignoredCount)
+                    .tag(BatchAIResultFilter.ignored)
+                filterLabel("general.all", count: service.totalCount)
+                    .tag(BatchAIResultFilter.all)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize(horizontal: true, vertical: false)
+
+            Spacer(minLength: 8)
+
+            TextField("githubStarLists.aiGrouping.search.tab", text: $store.searchText)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+                .frame(width: 160)
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48, alignment: .leading)
+    }
+
+    private func filterLabel(_ key: LocalizedStringKey, count: Int) -> some View {
+        Text(key) + Text(verbatim: " \(count)")
+    }
+
+    private var actionableCount: Int {
+        max(0, service.totalCount - resolvedCompletedCount - service.ignoredCount)
+    }
+
+    private var resolvedCompletedCount: Int {
+        max(0, service.completedCount - service.pendingTagReviewCount)
+    }
 
     private var jobList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(presentation.visibleJobs.enumerated()), id: \.element.id) { rowIndex, job in
+        ZStack {
+            if presentation.visibleJobs.isEmpty {
+                if presentation.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ContentUnavailableView(
+                        "githubStarLists.aiGrouping.results.empty",
+                        systemImage: "tray",
+                        description: Text("githubStarLists.aiGrouping.results.empty.help")
+                    )
+                } else {
+                    ContentUnavailableView.search(text: presentation.searchText)
+                }
+            } else {
+                List(Array(presentation.visibleJobs.enumerated()), id: \.element.id) { rowIndex, job in
                     BatchAITagReviewRow(
                         job: job,
                         rowIndex: rowIndex,
@@ -282,61 +258,26 @@ struct BatchAIQueuePanel: View {
                         onIgnore: { service.ignoreSuggestedTags(repoId: job.repoId) },
                         onRetryGeneration: { service.retry(jobId: job.repoId) }
                     )
-                    Divider()
-                    if job.id == presentation.visibleJobs.last?.id {
-                        Color.clear
-                            .frame(height: 1)
-                            .onAppear {
-                                presentation.loadMore()
-                            }
+                    .automaticListPagination(
+                        appearingIndex: rowIndex,
+                        visibleItemCount: presentation.visibleJobs.count,
+                        loadedItemCount: presentation.visibleJobs.count,
+                        hasMore: presentation.canLoadMore,
+                        isLoading: false,
+                        identity: "batch-ai-\(presentation.filter.rawValue)-\(presentation.searchText)"
+                    ) {
+                        presentation.loadMore()
                     }
                 }
+                .listStyle(.inset)
             }
         }
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.4))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func toggleExpansion(for job: BatchAIJob) {
         guard !job.suggestedTags.isEmpty || job.errorDiagnostic != nil else { return }
         expandedRepoID = expandedRepoID == job.repoId ? nil : job.repoId
-    }
-
-    // MARK: - 失败底栏
-
-    private var failedFooter: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text(String(format: String.l10n("batchAI.panel.failedSummaryFormat"), service.failedCount))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Button("batchAI.panel.retryAll") {
-                service.retryAllFailed()
-            }
-            .controlSize(.small)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.orange.opacity(0.08))
-    }
-
-    /// 与 GitHub Lists 未分组整理一致：用户明确确认后才丢弃当前审核会话。
-    private var discardFooter: some View {
-        HStack {
-            Button("batchAI.panel.discard.action", role: .destructive) {
-                showDiscardConfirmation = true
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    private func discardCurrentSession() {
-        guard service.discardCurrentSession() else { return }
-        expandedRepoID = nil
-        onClose()
     }
 
     // MARK: - 派生

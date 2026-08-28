@@ -2,7 +2,7 @@
 //  BatchAIOptionsSheet.swift
 //  Starcat
 //
-//  HOM-52 - 批量整理启动前的操作选择 Sheet。
+//  HOM-52 - 批量整理固定工作区中的启动前配置页。
 //
 //  模块职责：
 //  - 固定生成标签，并让用户选择是否同时生成 AI 摘要。
@@ -30,14 +30,10 @@ import SwiftUI
 struct BatchAIOptionsSheet: View {
 
     let pendingCount: Int
-    let usesSelectedRepositories: Bool
     let skippedTaggedCount: Int
     @Binding var options: BatchAIQueueOptions
-    let configurationIssue: String?
     let canPrepareCodeContext: Bool
     let hasUsableExternalSearchProvider: Bool
-    let onCancel: () -> Void
-    let onStart: () -> Void
 
     /// 平均每 repo 5-10s（依据 RepoAIInsightService 实测），取中位 8s 给用户一个"约 N 分钟"参考。
     /// 实际进度估算由 BatchAIQueueService.estimatedTimeRemaining 接管。
@@ -45,110 +41,176 @@ struct BatchAIOptionsSheet: View {
 
     /// 2026-06-15:阈值滑杆出/收的 0.18s 动画在「关闭应用内动画」时跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            actionsSection
-            if let configurationIssue {
-                Label {
-                    Text(verbatim: configurationIssue)
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityElement(children: .combine)
+        VStack(alignment: .leading, spacing: 10) {
+            summaryCards
+
+            HStack(alignment: .top, spacing: 12) {
+                actionsPanel
+                sessionPanel
             }
-            footer
+            .frame(width: 932, height: 424, alignment: .top)
         }
-        .padding(20)
-        .frame(width: 480)
+        .padding(14)
+        .frame(width: 960, height: 516, alignment: .topLeading)
     }
 
-    // MARK: - Header
+    private var summaryCards: some View {
+        HStack(spacing: 10) {
+            summaryCard(
+                title: scopeTitle,
+                value: "\(pendingCount)",
+                icon: "shippingbox",
+                tint: .purple
+            )
+            summaryCard(
+                title: String.l10n("batchAI.generateTags.action.tags"),
+                value: "3–8",
+                icon: "tag",
+                tint: .blue
+            )
+            summaryCard(
+                title: String.l10n("batchAI.options.actionsLabel"),
+                value: "\(selectedActionCount)",
+                icon: "checklist",
+                tint: .green
+            )
+            summaryCard(
+                title: String(format: String.l10n("batchAI.options.estimateFormat"), estimatedMinutes),
+                value: "\(estimatedMinutes)",
+                icon: "clock",
+                tint: .orange
+            )
+        }
+        .frame(width: 932, height: 54)
+    }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.tint.opacity(0.12))
-                Image(systemName: "sparkles")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.tint)
-            }
-            .frame(width: 36, height: 36)
-
+    private func summaryCard(title: String, value: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(tint)
+                .frame(width: 22)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("batchAI.generateTags.title")
-                    .font(.headline)
-                Text(String(
-                    format: String.l10n(
-                        usesSelectedRepositories
-                            ? "batch.selectedCountFormat"
-                            : "batchAI.options.subtitleFormat"
-                    ),
-                    pendingCount
-                ))
-                    .font(.subheadline)
+                Text(verbatim: title)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                if skippedTaggedCount > 0 {
+                    .lineLimit(1)
+                Text(verbatim: value)
+                    .font(.headline.monospacedDigit())
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(width: 225.5, height: 54, alignment: .leading)
+        .background(
+            tint.opacity(colorScheme == .dark ? 0.22 : 0.12),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(tint.opacity(colorScheme == .dark ? 0.45 : 0.28))
+        }
+    }
+
+    private var actionsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("batchAI.options.actionsLabel")
+                .font(.headline)
+
+            ScrollView {
+                VStack(spacing: 8) {
+                    OptionCard(
+                        icon: "tag",
+                        title: "batchAI.generateTags.action.tags",
+                        subtitle: "batchAI.generateTags.action.tags.desc",
+                        isSelected: true,
+                        isDisabled: true,
+                        onToggle: {}
+                    )
+                    autoApplyCard
+                    summaryCard
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 640, height: 424, alignment: .top)
+        .background(panelBackground)
+        .overlay(panelBorder)
+    }
+
+    private var sessionPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("githubStarLists.aiGrouping.preflight.session")
+                .font(.headline)
+
+            sessionFact(
+                title: scopeTitle,
+                value: "\(pendingCount)",
+                icon: "magnifyingglass"
+            )
+            sessionFact(
+                title: String.l10n("batchAI.options.actionsLabel"),
+                value: "\(selectedActionCount)",
+                icon: "checklist"
+            )
+            sessionFact(
+                title: String.l10n("batchAI.options.threshold"),
+                value: options.autoApplyTags ? percentString(options.confidenceThreshold) : "—",
+                icon: "checkmark.seal"
+            )
+
+            if skippedTaggedCount > 0 {
+                Divider()
+                Label {
                     Text(String(
                         format: String.l10n("batchAI.selection.skippedTaggedFormat"),
                         skippedTaggedCount
                     ))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "tag.slash")
                 }
-            }
-
-            Spacer()
-
-            estimateChip
-        }
-    }
-
-    private var estimateChip: some View {
-        let seconds = Double(pendingCount) * Self.avgSecondsPerRepo
-        let minutes = max(1, Int((seconds / 60).rounded(.up)))
-        return HStack(spacing: 4) {
-            Image(systemName: "clock")
-                .font(.caption2)
-            Text(String(format: String.l10n("batchAI.options.estimateFormat"), minutes))
-                .font(.caption.monospacedDigit())
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.secondary.opacity(0.08), in: Capsule())
-    }
-
-    // MARK: - Actions Section
-
-    private var actionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("batchAI.options.actionsLabel")
-                .font(.caption.weight(.medium))
+                .font(.caption)
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
-            VStack(spacing: 8) {
-                OptionCard(
-                    icon: "tag",
-                    title: "batchAI.generateTags.action.tags",
-                    subtitle: "batchAI.generateTags.action.tags.desc",
-                    isSelected: true,
-                    isDisabled: true,
-                    onToggle: {}
-                )
-                autoApplyCard
-                summaryCard
+                .fixedSize(horizontal: false, vertical: true)
             }
+
+            Spacer(minLength: 0)
         }
+        .padding(12)
+        .frame(width: 280, height: 424, alignment: .topLeading)
+        .background(panelBackground)
+        .overlay(panelBorder)
+    }
+
+    private func sessionFact(title: String, value: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+            Text(verbatim: title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Text(verbatim: value)
+                .font(.caption.weight(.semibold).monospacedDigit())
+        }
+    }
+
+    private var panelBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.secondary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+    }
+
+    private var panelBorder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(Color.secondary.opacity(0.18))
     }
 
     // MARK: - Summary Card（带本次任务上下文子选项）
@@ -256,27 +318,20 @@ struct BatchAIOptionsSheet: View {
         // 已经能让用户理解依赖关系，不必再靠物理缩进强调。
     }
 
-    // MARK: - Footer
+    // MARK: - 辅助
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("general.cancel", action: onCancel)
-                .keyboardShortcut(.cancelAction)
-                .controlSize(.large)
-            Button {
-                onStart()
-            } label: {
-                Text(String(format: String.l10n("batchAI.generateTags.startFormat"), pendingCount))
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-            .disabled(!options.isValidForStart || pendingCount == 0 || configurationIssue != nil)
-        }
+    private var selectedActionCount: Int {
+        1 + (options.autoApplyTags ? 1 : 0) + (options.actions.contains(.summary) ? 1 : 0)
     }
 
-    // MARK: - 辅助
+    private var estimatedMinutes: Int {
+        let seconds = Double(pendingCount) * Self.avgSecondsPerRepo
+        return max(1, Int((seconds / 60).rounded(.up)))
+    }
+
+    private var scopeTitle: String {
+        String.l10n("githubStarLists.aiGrouping.preflight.toAnalyze")
+    }
 
     private func toggleAction(_ action: BatchAIAction) {
         if options.actions.contains(action) {

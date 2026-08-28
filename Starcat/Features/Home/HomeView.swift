@@ -99,10 +99,8 @@ struct HomeView: View {
     /// 开始使用清单的“添加标签”应直接打开 Tags 管理里的新建标签 sheet。
     @State private var showNewTagSheetOnTagManagementOpen: Bool = false
 
-    /// HOM-52：批量 AI 整理“操作选择” Sheet 的一次性展示载荷。
+    /// HOM-52：批量 AI 整理固定工作区的一次性启动载荷。
     @State private var batchAIOptionsPresentation: BatchAIOptionsPresentation?
-    /// HOM-52：批量 AI 整理进度面板 sheet 显示状态。
-    @State private var showBatchAIPanel: Bool = false
     /// 全部选中项均已有标签时给出轻量提示，避免点击按钮后毫无反馈。
     @State private var batchAISelectionNotice: String?
     /// HOM-52：当前正在编辑的 Options。
@@ -496,37 +494,6 @@ struct HomeView: View {
             if !isPresented {
                 releaseTimelineTargetID = nil
             }
-        }
-        // HOM-52：批量 AI 整理"操作选择" sheet
-        .sheet(item: $batchAIOptionsPresentation) { presentation in
-            BatchAIOptionsSheet(
-                pendingCount: presentation.pendingCount(
-                    untaggedCount: viewModel.untaggedCount
-                ),
-                usesSelectedRepositories: presentation.usesSelectedRepositories,
-                skippedTaggedCount: presentation.skippedTaggedCount,
-                options: $batchAIOptions,
-                configurationIssue: dependencies.batchAIQueueService.configurationIssue(
-                    for: batchAIOptions
-                ),
-                canPrepareCodeContext: dependencies.repoAIInsightService.canPrepareCodeContext,
-                hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
-                onCancel: dismissBatchAIOptions,
-                onStart: {
-                    Task {
-                        await startBatchAIIntegration(scope: presentation.scope)
-                    }
-                }
-            )
-            .appLocaleEnvironment()
-        }
-        // HOM-52：批量 AI 整理进度面板
-        .sheet(isPresented: $showBatchAIPanel) {
-            BatchAIQueuePanel(
-                service: dependencies.batchAIQueueService,
-                onClose: { showBatchAIPanel = false }
-            )
-            .appLocaleEnvironment()
         }
         .sheet(item: homePaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -1252,7 +1219,7 @@ struct HomeView: View {
             showGitHubStarListAIGroupingSheet: $showGitHubStarListAIGroupingSheet,
             onSelectRootPage: selectSidebarRootPage,
             onShowBatchAIPanel: {
-                showBatchAIPanel = true
+                presentBatchAIProgress()
             },
             onOpenSummaryTask: { repo in
                 openCompanionRepository(repo, openSummaryPanel: true)
@@ -1344,7 +1311,7 @@ struct HomeView: View {
                         }
                     },
                     onShowBatchAIPanel: {
-                        showBatchAIPanel = true
+                        presentBatchAIProgress()
                     },
                     onStartGitHubStarListAIGrouping: {
                         startGitHubStarListAIGrouping()
@@ -2206,18 +2173,18 @@ struct HomeView: View {
     ///
     /// 错误处理：fetchUntagged 失败仅记日志，不弹错——这是用户主动触发的场景，
     /// 失败时按钮仍可继续点（dependencies 状态未变，第二次点击会重试）。
-    private func startBatchAIIntegration(scope: BatchAIRepositoryScope) async {
+    private func startBatchAIIntegration(scope: BatchAIRepositoryScope) async -> Bool {
         do {
             try dependencies.entitlementGate.requirePro(.batchAI)
         } catch {
             paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
-            return
+            return false
         }
         batchAIOptions.actions.insert(.tags)
         guard dependencies.batchAIQueueService.configurationIssue(for: batchAIOptions) == nil else {
             // Sheet 会用同一预检结果展示具体原因并保持打开；这里防止设置在点击瞬间变化后
             // 仍去拉仓库或抢占正在运行的自动整理。
-            return
+            return false
         }
         let repositories: [Repo]
         do {
@@ -2226,21 +2193,21 @@ struct HomeView: View {
             }
         } catch {
             AppLog.ai.error("[batch-ai] resolve repositories failed: \(error.localizedDescription, privacy: .public)")
-            return
+            return false
         }
-        guard !repositories.isEmpty else { return }
+        guard !repositories.isEmpty else { return false }
         let wasSelectionScoped = scope.isSelectionScoped
         // 用户主动整理优先于静默自动轮次。必须等待旧 runLoop 完全退出后再复用
         // BatchAIQueueService，避免两轮同时改写 jobs / options 和标签数据。
         await dependencies.batchAIQueueService.preemptAutomaticRunForManualStart()
         guard dependencies.batchAIQueueService.start(repos: repositories, options: batchAIOptions) else {
-            return
+            return false
         }
         if wasSelectionScoped {
             dependencies.manageMultiSelectionStore.exit()
         }
         batchAIOptionsPresentation = nil
-        showBatchAIPanel = true
+        return true
     }
 
     /// 根据入口固定本次仓库范围，并把全局摘要上下文设置复制成“本次任务”初始值。
@@ -2254,10 +2221,24 @@ struct HomeView: View {
         batchAIOptions.actions.insert(.tags)
         batchAIOptions.codeContextEnabledOverride = dependencies.settings.aiRepoContextEnabled
         batchAIOptions.externalContextEnabledOverride = dependencies.settings.externalContextEnabled
-        // 最后一次性设置 item，让 SwiftUI 在创建 Sheet 时直接拿到本轮范围快照。
-        batchAIOptionsPresentation = BatchAIOptionsPresentation(
+        // 先固化本轮范围和数量，再创建 AppKit hosting tree，首帧不会读到上一轮全量状态。
+        let presentation = BatchAIOptionsPresentation(
             scope: scope,
             skippedTaggedCount: skippedTaggedCount
+        )
+        batchAIOptionsPresentation = presentation
+        let context = BatchAIWorkspacePreflightContext(
+            scope: presentation.scope,
+            pendingCount: presentation.pendingCount(untaggedCount: viewModel.untaggedCount),
+            skippedTaggedCount: presentation.skippedTaggedCount
+        )
+        BatchAIWorkspaceWindowController.present(
+            dependencies: dependencies,
+            initialMode: .preflight(context),
+            options: $batchAIOptions,
+            hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
+            onStart: startBatchAIIntegration,
+            onDismiss: dismissBatchAIOptions
         )
     }
 
@@ -2265,7 +2246,7 @@ struct HomeView: View {
     private func requestBatchAIOptions(scope: BatchAIRepositoryScope) {
         guard scope.pendingCount(untaggedCount: viewModel.untaggedCount) > 0 else { return }
         if dependencies.batchAIQueueService.hasPendingTagReview {
-            showBatchAIPanel = true
+            presentBatchAIProgress()
         } else {
             presentBatchAIOptions(scope: scope)
         }
@@ -2276,7 +2257,7 @@ struct HomeView: View {
     private func requestSelectedBatchAIOptions(repositories: [Repo]) async {
         guard !repositories.isEmpty else { return }
         if dependencies.batchAIQueueService.hasPendingTagReview {
-            showBatchAIPanel = true
+            presentBatchAIProgress()
             return
         }
 
@@ -2309,6 +2290,18 @@ struct HomeView: View {
     /// 取消配置只清理临时任务范围，不退出多选，让用户可以继续调整勾选结果。
     private func dismissBatchAIOptions() {
         batchAIOptionsPresentation = nil
+    }
+
+    /// 队列在窗口关闭后继续运行；状态入口只重新挂载审核工作区，不创建或覆盖任务。
+    private func presentBatchAIProgress() {
+        BatchAIWorkspaceWindowController.present(
+            dependencies: dependencies,
+            initialMode: .review,
+            options: $batchAIOptions,
+            hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
+            onStart: startBatchAIIntegration,
+            onDismiss: dismissBatchAIOptions
+        )
     }
 
     private var hasUsableExternalSearchProvider: Bool {
