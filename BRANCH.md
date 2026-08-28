@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-08-24
+> 最后核对：2026-08-29
 
 ## 登记说明
 
@@ -32,26 +32,22 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/collection-pipeline` | 本地；`../Starcat-collection-pipeline` worktree | 实现公开 Star 数据静默上报，并协调独立 Collection、Trainer 与 Recommend API v2。 | `已合并`；2026-08-24 已通过 merge commit 同步最新 `dev`，并 fast-forward 合回本地 `dev@1730c6be`，未 push。 | 保留本地分支和 worktree 作为短期回滚参照；删除需另行授权。 |
-| `codex/awesome-discovery` | 仅保留本地分支，无 worktree；基于本地 `dev@60b16b8f` | 实现探索 Awesome 模式、来源管理、Discovery API 集中解析和本地自定义来源。配套仓库 `starcat-discovery-api`、`starcat-site` 使用同名独立分支。 | `已合并`；2026-08-24 三个仓库均已合入各自本地 `dev`，Awesome worktree 已安全移除，均未 push。 | 保留本地分支作为短期回滚参照；验收后再单独授权删除。 |
-| `dev` | 本地 + `origin/dev`；当前无独立 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；已合入公开 Star 数据贡献与自研推荐 v2 链路；1.4.0 发版内容已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；已合入公开 Star 数据贡献、自研推荐 v2 与 Awesome 探索。1.4.0 发版内容已进入 `main`。 | 后续功能继续在 `dev` 开发；新的发版阻断问题仍回到 `dev` 修复并重新执行门禁。 |
+| `main` | 本地 + `origin/main` | 远端默认稳定主线和发布基线。 | `长期保留`；2026-08-21 已完成 1.4.0 发布：App Store Connect 构建有效，Direct 完成公证、官网、Sparkle、GitHub Release 和 Homebrew 发布。 | 保持稳定主线；后续功能与发版阻断修复仍先进入 `dev`。 |
 
 ## 推荐数据链路跨仓分支
 
-`supports/` 下的服务仍是独立 Git 仓库；下表只登记同一需求在四个仓库中的分支对应关系，不表示 Starcat 主仓库管理服务仓库的 Git 历史。
-
-| 项目 | 独立仓库位置 | 需求分支 | 当前状态 | 后续归宿 |
-|---|---|---|---|---|
-| Starcat | `../Starcat-collection-pipeline` worktree | `codex/collection-pipeline` | `已合并`；本地 `dev@1730c6be` 已包含完整链路，合并后全量测试与 Direct v2 live test 通过，未 push。 | 保留分支和 worktree；删除需另行授权。 |
-| `starcat-collection-api` | `supports/starcat-collection-api` | `codex/collection-pipeline` | `已合并`；需求分支与独立仓库 `main@afb8321` 原本完全一致，本次没有产生空提交或 push。 | 保留本地需求分支；删除需另行授权。 |
-| `starcat-recsys-trainer` | `supports/starcat-recsys-trainer` | `codex/collection-api-source` | `已合并`；已 fast-forward 进入独立仓库本地 `main@5525a5c`，`make check` 通过，未 push。 | 等待单独授权 push；需求分支删除需另行授权。 |
-| `starcat-recommend-api` | `supports/starcat-recommend-api` | `codex/trained-recommendations` | `已合并`；已 fast-forward 进入独立仓库本地 `dev@5f5c98a`，v1 保持不变且 v2 live 验收通过，未 push。 | 等待单独授权 push；需求分支删除需另行授权。 |
+2026-08-29 已按 dong4j 授权清理：Starcat `../Starcat-collection-pipeline` worktree 与各仓需求分支均已删除。独立仓库仍各自保留 `dev` / `main`，不由主仓库管理其 Git 历史。
 
 ## 近期已清理分支
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/collection-pipeline` | 已删除 | 2026-08-29 dong4j 确认删除。已是 local `dev` 的 ancestor，独有提交为 0，diff 为空；`../Starcat-collection-pipeline` worktree 干净后 `git worktree remove`，再 `git branch -d`。从未存在远端分支。配套 `starcat-collection-api` 同名本地分支一并删除。 |
+| `codex/awesome-discovery` | 已删除 | 2026-08-29 dong4j 确认删除。Starcat / `starcat-discovery-api` / `starcat-site` 三仓本地分支均已是各自 `dev` 的 ancestor，独有提交为 0，diff 为空；无 worktree。从未存在远端分支。 |
+| `codex/collection-api-source` | 已删除 | 2026-08-29 从 `starcat-recsys-trainer` 删除本地分支；已合入该仓 `dev`，从未存在远端分支。 |
+| `codex/trained-recommendations` | 已删除 | 2026-08-29 从 `starcat-recommend-api` 删除本地分支；已合入该仓 `dev`，从未存在远端分支。 |
+| `feature/export-server-package` | 已删除 | 2026-08-29 从 discovery / recommend / sharing / trending / weekly / wiki 六个 API 删除本地分支，并 `git push origin --delete` 清掉远端同名分支。删除前均为各自 `dev` 的 ancestor，独有提交为 0，diff 为空。 |
 | `codex/agent-runtime-trace` | 已删除 | 2026-08-22 已通过 fast-forward 合入本地 `dev`；dong4j 授权清理时 worktree 干净，`git cherry` 为空，分支独有提交为 0，diff 为空。对应 `../Starcat-agent-runtime-trace` worktree 与本地分支已清理；从未存在远端分支。 |
 | `codex/external-agent-runtime-poc` | 已删除 | 2026-08-21 已通过 merge commit 合入本地 `dev`；dong4j 授权清理时 worktree 干净，`git cherry` 为空，分支独有提交为 0，diff 为空。对应 `../Starcat-external-agent-runtime-poc` worktree 与本地分支已清理；从未存在远端分支。 |
 | `codex/curated-publisher` | 已删除 | dong4j 确认已全部合并进 `dev`；`git merge-base --is-ancestor` 成立，独有提交为 0，diff 为空。对应 `../Starcat-curated-publisher` worktree 与本地分支已清理；从未存在远端分支。 |
