@@ -6,7 +6,7 @@
 //
 //  模块职责：
 //  - 展示当前批次的总进度、剩余时间、当前 repo、单 job 状态列表（可滚动）。
-//  - 提供单项重试；暂停、取消、重试全部与关闭操作由固定工作区外壳统一承载。
+//  - 提供单项与批量重试；暂停、取消、批量应用与关闭操作由固定工作区外壳统一承载。
 //
 //  关键约束：
 //  - 状态列表每次只投影 100 条并渐进加载；完整选择与任务状态仍保留在 Service。
@@ -211,6 +211,13 @@ struct BatchAIQueuePanel: View {
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(width: 160)
+
+            Button("githubStarLists.aiGrouping.retryFailed.tab") {
+                service.retryAllFailed()
+            }
+            .controlSize(.small)
+            .fixedSize()
+            .disabled(service.failedCount == 0 || service.isCancelling)
         }
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48, alignment: .leading)
@@ -246,7 +253,11 @@ struct BatchAIQueuePanel: View {
                         job: job,
                         rowIndex: rowIndex,
                         isExpanded: expandedRepoID == job.repoId,
+                        isRepositorySelected: service.isRepoSelectedForTagApplication(repoId: job.repoId),
                         onToggleExpansion: { toggleExpansion(for: job) },
+                        onToggleRepositorySelection: {
+                            service.toggleRepoForTagApplication(repoId: job.repoId)
+                        },
                         onToggleTag: {
                             service.toggleSuggestedTag(repoId: job.repoId, suggestionID: $0)
                         },

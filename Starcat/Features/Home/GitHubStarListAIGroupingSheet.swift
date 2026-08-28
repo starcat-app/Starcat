@@ -131,8 +131,23 @@ struct GitHubStarListAIGroupingSheet: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .background(progressStatusTint.opacity(0.18), in: .capsule)
+                AIOrganizationTaskControls(
+                    isRunning: session.isRunning,
+                    isPaused: session.isPaused,
+                    isStopping: false,
+                    canContinue: !session.isRunning && presentation.snapshot.hasContinuableJobs,
+                    pauseTitle: "batchAI.panel.pause",
+                    resumeTitle: "githubStarLists.aiGrouping.continue",
+                    stopTitle: "githubStarLists.aiGrouping.stop",
+                    onPause: session.pauseAnalysis,
+                    onResume: session.resumeAnalysis,
+                    onContinue: session.continueManual,
+                    onStop: session.stopAnalysis,
+                    onClose: onClose
+                )
+            } else {
+                SheetCloseButton(action: onClose)
             }
-            SheetCloseButton(action: onClose)
         }
         .padding(.horizontal, 20)
         .frame(height: 64)
@@ -276,9 +291,10 @@ struct GitHubStarListAIGroupingSheet: View {
         .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48, alignment: .leading)
     }
 
+    @ViewBuilder
     private var footer: some View {
-        HStack(spacing: 10) {
-            if presentation.snapshot.totalCount == 0 {
+        if presentation.snapshot.totalCount == 0 {
+            HStack(spacing: 10) {
                 Label("githubStarLists.aiGrouping.privacy", systemImage: "lock.shield")
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
@@ -295,41 +311,26 @@ struct GitHubStarListAIGroupingSheet: View {
                         || session.preparedRepositoryCount == 0
                         || candidateListDisplays.isEmpty
                 )
-            } else {
-                if session.isRunning {
-                    Button("githubStarLists.aiGrouping.stop", action: session.stopAnalysis)
-                } else if presentation.snapshot.hasContinuableJobs {
-                    Button("githubStarLists.aiGrouping.continue", action: session.continueManual)
-                }
-
-                if !session.isRunning, !session.isApplying {
-                    Button("githubStarLists.aiGrouping.discard.action", role: .destructive) {
-                        showDiscardConfirmation = true
-                    }
-                }
-
-                Spacer()
-                Text(String(
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .frame(height: 58)
+        } else {
+            AIOrganizationReviewFooter(
+                discardTitle: "githubStarLists.aiGrouping.discard.action",
+                canDiscard: !session.isRunning && !session.isApplying,
+                selectionSummary: String(
                     format: String.l10n("githubStarLists.aiGrouping.selectionSummaryFormat"),
                     locale: locale,
                     presentation.snapshot.selectedRepositoryCount,
                     presentation.snapshot.selectedListCount
-                ))
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-
-                Button("action.close", action: onClose)
-                Button("githubStarLists.aiGrouping.applySelected") {
-                    showApplyConfirmation = true
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(presentation.snapshot.selectedRepositoryCount == 0 || session.isApplying)
-            }
+                ),
+                canApply: presentation.snapshot.selectedRepositoryCount > 0,
+                isApplying: session.isApplying,
+                onDiscard: { showDiscardConfirmation = true },
+                onApply: { showApplyConfirmation = true }
+            )
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .frame(height: 58)
     }
 
     private var candidateListDisplays: [GitHubStarListAIListDisplay] {
@@ -341,33 +342,34 @@ struct GitHubStarListAIGroupingSheet: View {
     private var progressTitleKey: LocalizedStringKey {
         if session.isApplying {
             "githubStarLists.aiGrouping.applying"
+        } else if session.isPaused {
+            "batchAI.panel.paused"
         } else if session.isRunning {
             "githubStarLists.aiGrouping.running"
         } else if presentation.snapshot.totalCount > 0,
                   presentation.snapshot.analyzedCount == presentation.snapshot.totalCount {
             "githubStarLists.aiGrouping.status.finished"
-        } else {
-            "batchAI.panel.paused"
-        }
+        } else { "batchAI.panel.cancelledByUser" }
     }
 
     private var progressStatusIcon: String {
         if session.isApplying { "icloud.and.arrow.up" }
+        else if session.isPaused { "pause.circle.fill" }
         else if session.isRunning { "sparkles" }
         else if presentation.snapshot.totalCount > 0,
                 presentation.snapshot.analyzedCount == presentation.snapshot.totalCount { "checkmark.circle" }
-        else { "pause.circle" }
+        else { "stop.circle" }
     }
 
     private var progressStatusTint: Color {
-        if session.isApplying || session.isRunning {
+        if session.isPaused {
+            .orange
+        } else if session.isApplying || session.isRunning {
             .accentColor
         } else if presentation.snapshot.totalCount > 0,
                   presentation.snapshot.analyzedCount == presentation.snapshot.totalCount {
             .green
-        } else {
-            .orange
-        }
+        } else { .red }
     }
 
     private func metricButton(

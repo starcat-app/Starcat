@@ -11,7 +11,7 @@
 //
 //  关键约束：
 //  - AI 只能返回用户已创建且填写了规则的 List；应用前仍会重新减去最新 membership；
-//  - 关闭窗口不取消，只有“停止分析”才取消 Task；generation 防止迟到结果覆盖新会话；
+//  - 关闭窗口不改变任务；暂停只阻止领取新仓库，停止才取消 Task；generation 防止迟到结果覆盖新会话；
 //  - GitHub 是远端真源。远端失败时绝不伪造本地成功，单仓失败也不阻断其余仓库。
 //
 
@@ -150,7 +150,8 @@ protocol GitHubStarListSuggestionProviding: AnyObject {
     func generateGitHubListSuggestions(
         for repos: [Repo],
         candidates: [GitHubStarListAIContext],
-        existingListIDsByRepo: [Int64: Set<String>]
+        existingListIDsByRepo: [Int64: Set<String>],
+        existingListNamesByRepo: [Int64: [String]]
     ) async throws -> [Int64: [GitHubStarListAISuggestion]]
 }
 
@@ -187,6 +188,8 @@ final class GitHubStarListAIGroupingSession {
     /// 点「开始整理」后才拉完整仓库；这段时间开始页必须继续显示，不能退回全屏 spinner。
     private(set) var isStartingManual = false
     private(set) var isRunning = false
+    /// 合作式暂停：已领取的 AI 请求继续收口，Worker 在下一次领取仓库前等待。
+    private(set) var isPaused = false
     private(set) var isApplying = false
     private(set) var contextErrorMessage: String?
     /// 开始页仓库总数。用 COUNT 查询，不订阅完整 `[Repo]`。
@@ -324,6 +327,22 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
+    /// 多选入口冻结用户点击时的仓库与 membership；后续「开始整理」不得再展开为全库范围。
+    func prepareManualContext(
+        from context: GitHubStarListAIGroupingPreflightContext,
+        repositories: [Repo],
+        existingMemberships: [Int64: Set<String>]
+    ) {
+        guard !repositories.isEmpty else { return }
+        if mode == .manual, !jobs.isEmpty { return }
+        prepareManualContext(from: context)
+        guard jobs.isEmpty else { return }
+        preparedRepos = repositories
+        existingListIDsByRepo = Dictionary(uniqueKeysWithValues: repositories.map { repo in
+            (repo.id, existingMemberships[repo.id] ?? [])
+        })
+    }
+
     /// 开始页改规则或新建分组后只重载 Lists / 规则 / 计数，不拉完整仓库。
     func reloadListsAndRules() async {
         do {
@@ -419,6 +438,18 @@ final class GitHubStarListAIGroupingSession {
         )
     }
 
+    /// 暂停只阻止 Worker 领取下一仓，不取消正在进行的 Provider 调用。
+    /// 这样已经返回的结果仍能即时进入审核列表，不会制造半完成状态。
+    func pauseAnalysis() {
+        guard mode == .manual, isRunning, !isPaused else { return }
+        isPaused = true
+    }
+
+    func resumeAnalysis() {
+        guard mode == .manual, isRunning, isPaused else { return }
+        isPaused = false
+    }
+
     func retryAnalysis(repoID: Int64) {
         guard mode == .manual,
               !isRunning,
@@ -469,6 +500,7 @@ final class GitHubStarListAIGroupingSession {
         runTask?.cancel()
         runTask = nil
         isRunning = false
+        isPaused = false
         for index in jobs.indices where jobs[index].status == .analyzing || jobs[index].status == .queued {
             jobs[index].status = .stopped
         }
@@ -482,6 +514,7 @@ final class GitHubStarListAIGroupingSession {
         applyTask?.cancel()
         applyTask = nil
         isApplying = false
+        isPaused = false
         jobs = []
         selectedListIDsByRepo = [:]
         ignoredRepoIDs = []
@@ -602,6 +635,7 @@ final class GitHubStarListAIGroupingSession {
         runTask?.cancel()
         self.mode = mode
         isRunning = true
+        isPaused = false
         contextErrorMessage = nil
         if replaceJobs {
             rateLimitCooldownUntil = nil
@@ -677,6 +711,10 @@ final class GitHubStarListAIGroupingSession {
             guard jobs.contains(where: {
                 $0.status == .queued && reposByID[$0.id] != nil
             }) else { return }
+            if isPaused {
+                try? await Task.sleep(for: .milliseconds(250))
+                continue
+            }
             if workerIndex >= activeConcurrency {
                 try? await Task.sleep(for: .milliseconds(250))
                 continue
@@ -712,10 +750,16 @@ final class GitHubStarListAIGroupingSession {
         generation: UInt64
     ) async {
         do {
+            let listNamesByID = Dictionary(uniqueKeysWithValues: availableLists.map { ($0.id, $0.name) })
+            let existingListNames = (existingMemberships[repo.id] ?? [])
+                .compactMap { listNamesByID[$0] }
+                .sorted()
             let results = try await insightService.generateGitHubListSuggestions(
                 for: [repo],
                 candidates: candidates,
-                existingListIDsByRepo: existingMemberships
+                existingListIDsByRepo: existingMemberships,
+                // 名称只随仓库 payload 交给模型作为分类参考，不改变候选集与审核流程。
+                existingListNamesByRepo: [repo.id: existingListNames]
             )
             try Task.checkCancellation()
             guard generation == self.generation else { return }

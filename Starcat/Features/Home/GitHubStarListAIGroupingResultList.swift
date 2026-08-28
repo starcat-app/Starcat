@@ -342,16 +342,28 @@ private struct GitHubStarListAIGroupingResultRow: View {
                     onToggleList: onToggleList
                 )
                 HStack(spacing: 8) {
+                    Button("batchAI.panel.review.selectAll", action: onSelectAllSuggestions)
+                        .controlSize(.small)
+                        .disabled(hasSelectedAllSuggestions || item.isApplying)
+                    Button("batchAI.panel.review.clear", action: onClearSelection)
+                        .controlSize(.small)
+                        .disabled(!item.hasSelection || item.isApplying)
+                    Spacer()
+                    Button("batchAI.panel.review.ignore", action: onIgnore)
+                        .controlSize(.small)
+                        .disabled(item.isApplying)
                     Button("action.apply", action: onApply)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .disabled(!item.hasSelection || item.isApplying)
-                    Button("githubStarLists.aiGrouping.action.ignore", action: onIgnore)
-                        .controlSize(.small)
-                        .disabled(item.isApplying)
                 }
             }
         }
+    }
+
+    /// “全选”只覆盖 AI 本次生成且尚未属于当前仓库的候选分组，与标签审核行的语义保持一致。
+    private var hasSelectedAllSuggestions: Bool {
+        item.actionableSuggestions.allSatisfy { item.selectedListIDs.contains($0.id) }
     }
 
     private func failureBox<Content: View>(@ViewBuilder content: () -> Content) -> some View {

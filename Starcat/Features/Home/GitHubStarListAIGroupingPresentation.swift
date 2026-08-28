@@ -206,6 +206,10 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     static func ordered(_ lhs: Self, _ rhs: Self) -> Bool {
         if lhs.sortRank != rhs.sortRank { return lhs.sortRank < rhs.sortRank }
         if lhs.finishedAt != rhs.finishedAt {
+            // 待确认建议按生成完成时间正序追加，避免后完成的结果不断插到列表顶部。
+            if lhs.sortRank == 2 {
+                return (lhs.finishedAt ?? .distantFuture) < (rhs.finishedAt ?? .distantFuture)
+            }
             return (lhs.finishedAt ?? .distantPast) > (rhs.finishedAt ?? .distantPast)
         }
         return lhs.repoFullName.localizedCaseInsensitiveCompare(rhs.repoFullName) == .orderedAscending

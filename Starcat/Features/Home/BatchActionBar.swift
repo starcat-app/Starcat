@@ -42,6 +42,8 @@ struct BatchActionBar: View {
     let store: MultiSelectionStore
     /// Manage 多选入口把仓库值快照交给 HomeView；Sheet 与队列仍由主窗口统一承载。
     let onStartSelectedBatchAI: (([Repo]) -> Void)?
+    /// AI 仓库分组复用同一份点击时快照，但进入 GitHub Lists 的独立审核窗口。
+    let onStartSelectedGitHubStarListAIGrouping: (([Repo]) -> Void)?
 
     @Environment(AppDependencies.self) private var dependencies
     /// 仅 manage 上下文需要；explore 上下文中为 nil（该环境未注入）。
@@ -171,6 +173,13 @@ struct BatchActionBar: View {
                 .labelStyle(.iconOnly)
                 .disabled(count == 0)
                 .help(Text("batchAI.generateTags.title"))
+
+                Button(action: startSelectedGitHubStarListAIGrouping) {
+                    Label("githubStarLists.aiGrouping.title", systemImage: "rectangle.stack.fill")
+                }
+                .labelStyle(.iconOnly)
+                .disabled(count == 0)
+                .help(Text("githubStarLists.aiGrouping.title"))
 
                 Button {
                     tagSheetRefreshID &+= 1
@@ -353,6 +362,18 @@ struct BatchActionBar: View {
     /// 固定点击时的完整 Repo 快照，后续打开配置 Sheet 或刷新列表都不能改变任务范围。
     private func startSelectedBatchAI() {
         guard let onStartSelectedBatchAI else { return }
+        guard let repositories = selectedRepositories() else { return }
+        onStartSelectedBatchAI(repositories)
+    }
+
+    private func startSelectedGitHubStarListAIGrouping() {
+        guard let onStartSelectedGitHubStarListAIGrouping else { return }
+        guard let repositories = selectedRepositories() else { return }
+        onStartSelectedGitHubStarListAIGrouping(repositories)
+    }
+
+    /// 两个 AI 批量入口必须使用完全相同的点击时快照，不能在窗口打开后重新读取当前列表。
+    private func selectedRepositories() -> [Repo]? {
         let repositoriesByID = Dictionary(uniqueKeysWithValues: viewModel.items.map { ($0.id, $0) })
         let repositories = store.sortedSnapshots.compactMap { repositoriesByID[$0.ghRepoId] }
         // MultiSelectionStore 会在列表刷新后剔除不可见项；这里仍做最后一道一致性校验，
@@ -361,9 +382,9 @@ struct BatchActionBar: View {
             AppLog.ai.error(
                 "[batch-ai] selected repository snapshot mismatch: selected=\(self.store.count, privacy: .public), resolved=\(repositories.count, privacy: .public)"
             )
-            return
+            return nil
         }
-        onStartSelectedBatchAI(repositories)
+        return repositories
     }
 
     /// 点击「批量取消 Star」：> 5 条走确认 sheet，否则直接 enqueue。

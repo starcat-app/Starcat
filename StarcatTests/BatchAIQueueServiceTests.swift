@@ -111,7 +111,45 @@ struct BatchAIQueueServiceTests {
         #expect(job.selectedSuggestedTagIDs == Set(Self.sampleSuggestions.map(\.id)))
         #expect(job.tagReviewState == .pending)
         #expect(service.pendingTagReviewCount == 1)
+        #expect(service.selectedRepoIDsForTagApplication == [repo.id])
+        #expect(service.selectedTagReviewRepositoryCount == 1)
         #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
+    }
+
+    @Test("批量应用只处理仓库复选框选中的建议")
+    func bulkReviewAppliesOnlySelectedRepositories() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let repoTagRepository = GRDBRepoTagRepository(database: database)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        var first = Repo.makeMinimal(owner: "acme", name: "bulk-first")
+        first.id = 520
+        var second = Repo.makeMinimal(owner: "acme", name: "bulk-second")
+        second.id = 521
+        try await database.insertRepoFixture(id: first.id, owner: "acme", name: "bulk-first")
+        try await database.insertRepoFixture(id: second.id, owner: "acme", name: "bulk-second")
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: [first, second], options: options))
+        await waitUntilStopped(service)
+        #expect(service.selectedRepoIDsForTagApplication == [first.id, second.id])
+
+        service.toggleRepoForTagApplication(repoId: second.id)
+        #expect(service.effectiveSelectedRepoIDsForTagApplication == [first.id])
+        await service.applySelectedTagReviewRepositories()
+
+        #expect(try await repoTagRepository.fetchTags(forRepo: first.id).count == 2)
+        #expect(try await repoTagRepository.fetchTags(forRepo: second.id).isEmpty)
+        #expect(service.jobs.first(where: { $0.repoId == first.id })?.tagReviewState == .applied)
+        #expect(service.jobs.first(where: { $0.repoId == second.id })?.tagReviewState == .pending)
+        #expect(service.selectedRepoIDsForTagApplication.isEmpty)
     }
 
     @Test("摘要上下文开关作为本次任务参数传给 Provider")

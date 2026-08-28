@@ -697,12 +697,14 @@ final class RepoAIInsightService {
     func generateGitHubListSuggestions(
         for repo: Repo,
         candidates: [GitHubStarListAIContext],
-        existingListIDs: Set<String>
+        existingListIDs: Set<String>,
+        existingListNames: [String] = []
     ) async throws -> [GitHubStarListAISuggestion] {
         let results = try await generateGitHubListSuggestions(
             for: [repo],
             candidates: candidates,
-            existingListIDsByRepo: [repo.id: existingListIDs]
+            existingListIDsByRepo: [repo.id: existingListIDs],
+            existingListNamesByRepo: [repo.id: existingListNames]
         )
         return results[repo.id] ?? []
     }
@@ -715,7 +717,8 @@ final class RepoAIInsightService {
     func generateGitHubListSuggestions(
         for repos: [Repo],
         candidates: [GitHubStarListAIContext],
-        existingListIDsByRepo: [Int64: Set<String>]
+        existingListIDsByRepo: [Int64: Set<String>],
+        existingListNamesByRepo: [Int64: [String]]
     ) async throws -> [Int64: [GitHubStarListAISuggestion]] {
         try enforceGenerationEntitlement(includeSummary: false, includeTags: true)
         try ensureGenerationClientsReady(includeSummary: false, includeTags: true)
@@ -738,7 +741,8 @@ final class RepoAIInsightService {
                 // README 只用于补充项目定位。按仓库限制长度，保证 12 个仓库的批量请求
                 // 不会因为某个超长 README 挤掉其余仓库或超过模型上下文窗口。
                 "readme": String(source.readme.prefix(2_400)),
-                "existing_list_ids": Array(existingListIDsByRepo[repo.id] ?? []).sorted()
+                "existing_list_ids": Array(existingListIDsByRepo[repo.id] ?? []).sorted(),
+                "existing_list_names": existingListNamesByRepo[repo.id] ?? []
             ])
         }
 

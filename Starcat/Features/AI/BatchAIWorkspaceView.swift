@@ -97,21 +97,24 @@ struct BatchAIWorkspaceView: View {
 
             if isReviewMode {
                 statusPill
-                if !service.isFinished, service.isRunning {
-                    pauseResumeButton
-                    Button(role: .destructive) {
-                        service.cancel()
-                    } label: {
-                        Label("batchAI.panel.cancel", systemImage: "stop.fill")
-                            .labelStyle(.iconOnly)
-                    }
-                    .help("batchAI.panel.cancel")
-                    .disabled(service.isCancelling)
-                }
+                AIOrganizationTaskControls(
+                    isRunning: service.isRunning,
+                    isPaused: service.isPaused,
+                    isStopping: service.isCancelling,
+                    canContinue: false,
+                    pauseTitle: "batchAI.panel.pause",
+                    resumeTitle: "batchAI.panel.resume",
+                    stopTitle: "batchAI.panel.cancel",
+                    onPause: service.pause,
+                    onResume: service.resume,
+                    onContinue: {},
+                    onStop: service.cancel,
+                    onClose: closeWorkspace
+                )
+            } else {
+                SheetCloseButton(action: closeWorkspace)
+                    .disabled(isStarting)
             }
-
-            SheetCloseButton(action: closeWorkspace)
-                .disabled(isStarting)
         }
         .padding(.horizontal, 20)
         .frame(height: 64)
@@ -175,26 +178,22 @@ struct BatchAIWorkspaceView: View {
                             || configurationIssue != nil
                     )
                 }
+                .padding(.horizontal, 20)
+                .frame(height: 58)
             case .review:
-                HStack(spacing: 10) {
-                    if service.canDiscardCurrentSession {
-                        Button("batchAI.panel.discard.action", role: .destructive) {
-                            showDiscardConfirmation = true
-                        }
+                AIOrganizationReviewFooter(
+                    discardTitle: "batchAI.panel.discard.action",
+                    canDiscard: service.canDiscardCurrentSession,
+                    selectionSummary: tagSelectionSummary,
+                    canApply: service.selectedTagReviewRepositoryCount > 0,
+                    isApplying: service.isApplyingSuggestedTags,
+                    onDiscard: { showDiscardConfirmation = true },
+                    onApply: {
+                        Task { await service.applySelectedTagReviewRepositories() }
                     }
-                    if service.failedCount > 0 {
-                        Button("batchAI.panel.retryAll") {
-                            service.retryAllFailed()
-                        }
-                    }
-                    Spacer()
-                    Button("action.close", action: closeWorkspace)
-                        .keyboardShortcut(.cancelAction)
-                }
+                )
             }
         }
-        .padding(.horizontal, 20)
-        .frame(height: 58)
     }
 
     private var configurationIssue: String? {
@@ -230,17 +229,11 @@ struct BatchAIWorkspaceView: View {
             .background(statusTint.opacity(0.18), in: .capsule)
     }
 
-    private var pauseResumeButton: some View {
-        Button {
-            service.isPaused ? service.resume() : service.pause()
-        } label: {
-            Label(
-                service.isPaused ? "batchAI.panel.resume" : "batchAI.panel.pause",
-                systemImage: service.isPaused ? "play.fill" : "pause.fill"
-            )
-            .labelStyle(.iconOnly)
-        }
-        .help(service.isPaused ? "batchAI.panel.resume" : "batchAI.panel.pause")
+    private var tagSelectionSummary: String {
+        String(
+            format: String.l10n("batch.selectedCountFormat"),
+            service.selectedTagReviewRepositoryCount
+        )
     }
 
     private var statusTitle: String {

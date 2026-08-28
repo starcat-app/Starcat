@@ -16,7 +16,9 @@ struct BatchAITagReviewRow: View {
     let job: BatchAIJob
     let rowIndex: Int
     let isExpanded: Bool
+    let isRepositorySelected: Bool
     let onToggleExpansion: () -> Void
+    let onToggleRepositorySelection: () -> Void
     let onToggleTag: (String) -> Void
     let onSelectAll: () -> Void
     let onClearSelection: () -> Void
@@ -33,6 +35,8 @@ struct BatchAITagReviewRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
+                repositorySelectionButton
+                    .frame(width: 16, height: 22)
                 summaryButton
                 if job.status == .failed {
                     Button("batchAI.panel.retry", action: onRetryGeneration)
@@ -53,6 +57,27 @@ struct BatchAITagReviewRow: View {
             withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
                 isHovered = hovering
             }
+        }
+    }
+
+    @ViewBuilder
+    private var repositorySelectionButton: some View {
+        if canSelectRepository {
+            Button(
+                isRepositorySelected
+                    ? "githubStarLists.aiGrouping.selection.clearRepo"
+                    : "githubStarLists.aiGrouping.selection.acceptRepo",
+                systemImage: isRepositorySelected ? "checkmark.square.fill" : "square",
+                action: onToggleRepositorySelection
+            )
+            .labelStyle(.iconOnly)
+            .foregroundStyle(isRepositorySelected ? Color.accentColor : .secondary)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+        } else {
+            Color.clear
+                .frame(width: 16, height: 16)
+                .accessibilityHidden(true)
         }
     }
 
@@ -212,7 +237,7 @@ struct BatchAITagReviewRow: View {
                 Spacer()
                 Button("batchAI.panel.review.ignore", action: onIgnore)
                     .controlSize(.small)
-                Button("batchAI.panel.review.applySelected", action: onApply)
+                Button("action.apply", action: onApply)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(job.selectedSuggestedTagIDs.isEmpty)
@@ -337,6 +362,11 @@ struct BatchAITagReviewRow: View {
         case .notRequired, .applying, .applied, .ignored:
             false
         }
+    }
+
+    /// 仓库复选框只决定底栏批量应用范围；行内标签选择仍由各自芯片维护。
+    private var canSelectRepository: Bool {
+        canEditSelection && !job.selectedSuggestedTagIDs.isEmpty
     }
 
     private var canExpand: Bool {

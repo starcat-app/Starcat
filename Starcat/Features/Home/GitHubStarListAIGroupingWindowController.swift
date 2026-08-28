@@ -33,6 +33,8 @@ final class GitHubStarListAIGroupingWindowController: NSWindowController, NSWind
     static func present(
         dependencies: AppDependencies,
         preflightContext: GitHubStarListAIGroupingPreflightContext,
+        selectedRepositories: [Repo] = [],
+        existingMemberships: [Int64: Set<String>] = [:],
         onDismiss: @escaping () -> Void
     ) {
         if let activeController {
@@ -43,7 +45,15 @@ final class GitHubStarListAIGroupingWindowController: NSWindowController, NSWind
         let session = dependencies.githubStarListAIGroupingSession
         // 必须在创建 hosting tree 之前完成：这样 SwiftUI 第一帧读取到的是一次性完成态，
         // 不会在窗口出现后因多个 @Observable 字段依次写入而重复布局。
-        session.prepareManualContext(from: preflightContext)
+        if selectedRepositories.isEmpty {
+            session.prepareManualContext(from: preflightContext)
+        } else {
+            session.prepareManualContext(
+                from: preflightContext,
+                repositories: selectedRepositories,
+                existingMemberships: existingMemberships
+            )
+        }
 
         var closeAction: (() -> Void)?
         let content = GitHubStarListAIGroupingSheet(

@@ -465,6 +465,8 @@ struct RepoListView: View {
     var onStartBatchAI: (() -> Void)?
     /// Manage 多选底栏的 AI 整理入口；参数是用户点击时的完整仓库值快照。
     var onStartSelectedBatchAI: (([Repo]) -> Void)?
+    /// Manage 多选底栏的 AI 仓库分组入口；参数同样冻结为点击时的仓库值快照。
+    var onStartSelectedGitHubStarListAIGrouping: (([Repo]) -> Void)?
     var onShowBatchAIPanel: (() -> Void)?
     /// 未分组中栏横幅的启动回调。Sheet 仍由 Sidebar / HomeView 共用一份状态承载。
     var onStartGitHubStarListAIGrouping: (() -> Void)?
@@ -910,19 +912,30 @@ struct RepoListView: View {
                 BatchActionBar(
                     context: .manage,
                     store: store,
-                    onStartSelectedBatchAI: onStartSelectedBatchAI
+                    onStartSelectedBatchAI: onStartSelectedBatchAI,
+                    onStartSelectedGitHubStarListAIGrouping: onStartSelectedGitHubStarListAIGrouping
                 )
             }
         case .trending:
             let store = exploreMultiSelectionStore
             if store.isActive {
-                BatchActionBar(context: .explore, store: store, onStartSelectedBatchAI: nil)
+                BatchActionBar(
+                    context: .explore,
+                    store: store,
+                    onStartSelectedBatchAI: nil,
+                    onStartSelectedGitHubStarListAIGrouping: nil
+                )
             }
         case .activity:
             if selectedActivityCategory == .undoStar {
                 let store = dependencies.undoStarMultiSelectionStore
                 if store.isActive {
-                    BatchActionBar(context: .explore, store: store, onStartSelectedBatchAI: nil)
+                    BatchActionBar(
+                        context: .explore,
+                        store: store,
+                        onStartSelectedBatchAI: nil,
+                        onStartSelectedGitHubStarListAIGrouping: nil
+                    )
                 }
             } else {
                 EmptyView()

@@ -81278,7 +81278,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pending Review"
+            "value" : "Review"
           }
         },
         "zh-Hans" : {
@@ -125064,19 +125064,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Suggested"
+            "value" : "Review"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有建议"
+            "value" : "待确认"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有建議"
+            "value" : "待確認"
           }
         }
       }

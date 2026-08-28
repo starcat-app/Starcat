@@ -42,6 +42,26 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(!alreadyGrouped.matches(filter: .suggestions, searchText: ""))
     }
 
+    @Test("待确认建议按生成完成时间正序排列")
+    func pendingSuggestionsKeepFirstCompletionAtTop() {
+        let firstCompleted = makeItem(
+            id: 1,
+            status: .completed,
+            suggestions: [suggestion],
+            finishedAt: Date(timeIntervalSince1970: 100)
+        )
+        let laterCompleted = makeItem(
+            id: 2,
+            status: .completed,
+            suggestions: [suggestion],
+            finishedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let ordered = [laterCompleted, firstCompleted].sorted(by: GitHubStarListAIReviewItem.ordered)
+
+        #expect(ordered.map(\.id) == [firstCompleted.id, laterCompleted.id])
+    }
+
     @Test("搜索同时覆盖仓库名、建议分组和当前分组")
     func searchesRepositoryAndGroups() {
         let item = makeItem(
@@ -343,7 +363,8 @@ struct GitHubStarListAIGroupingPresentationTests {
         currentLists: [GitHubStarListAIListDisplay] = [],
         suggestions: [GitHubStarListAISuggestionDisplay] = [],
         selectedListIDs: Set<String> = [],
-        applyState: GitHubStarListAIApplyState = .idle
+        applyState: GitHubStarListAIApplyState = .idle,
+        finishedAt: Date? = nil
     ) -> GitHubStarListAIReviewItem {
         GitHubStarListAIReviewItem(
             id: id,
@@ -357,7 +378,7 @@ struct GitHubStarListAIGroupingPresentationTests {
             applyState: applyState,
             isIgnoredByUser: false,
             analysisFailureMessage: nil,
-            finishedAt: nil
+            finishedAt: finishedAt
         )
     }
 

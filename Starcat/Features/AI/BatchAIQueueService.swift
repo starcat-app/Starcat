@@ -40,6 +40,14 @@ final class BatchAIQueueService {
     /// 列表层只观察轻量 revision，再按帧合并生成当前分页范围内的展示快照。
     private(set) var presentationRevision: UInt64 = 0
 
+    /// 用户在审核列表左侧勾选、准备参与批量应用的仓库。
+    ///
+    /// 这与 `BatchAIJob.selectedSuggestedTagIDs` 是两个层级：前者决定应用哪些仓库，
+    /// 后者决定每个仓库应用哪些标签。状态必须归队列会话持有，才能跨搜索、分页和关窗重开保留。
+    private(set) var selectedRepoIDsForTagApplication: Set<Int64> = [] {
+        didSet { presentationRevision &+= 1 }
+    }
+
     /// 本次启动时的执行配置。空表示当前没有进行中的批次。
     private(set) var options: BatchAIQueueOptions?
 
@@ -157,6 +165,33 @@ final class BatchAIQueueService {
 
     var hasPendingTagReview: Bool { pendingTagReviewCount > 0 }
 
+    /// 当前真正可以由“应用选中项”处理的仓库 ID。
+    /// 用户可以保留仓库勾选但暂时清空其标签；这种行不计入底栏有效选择，也不会触发空应用。
+    var effectiveSelectedRepoIDsForTagApplication: Set<Int64> {
+        Set(jobs.compactMap { job in
+            guard selectedRepoIDsForTagApplication.contains(job.repoId),
+                  !job.selectedSuggestedTagIDs.isEmpty
+            else { return nil }
+            switch job.tagReviewState {
+            case .pending, .failed:
+                return job.repoId
+            case .notRequired, .applying, .applied, .ignored:
+                return nil
+            }
+        })
+    }
+
+    var selectedTagReviewRepositoryCount: Int {
+        effectiveSelectedRepoIDsForTagApplication.count
+    }
+
+    var selectedTagReviewTagCount: Int {
+        let effectiveRepoIDs = effectiveSelectedRepoIDsForTagApplication
+        return jobs.lazy
+            .filter { effectiveRepoIDs.contains($0.repoId) }
+            .reduce(into: 0) { $0 += $1.selectedSuggestedTagIDs.count }
+    }
+
     /// 标签正在写入数据库时不能丢弃会话，否则 UI 状态虽已清空，异步写入仍可能继续完成。
     var isApplyingSuggestedTags: Bool {
         jobs.contains { job in
@@ -242,6 +277,7 @@ final class BatchAIQueueService {
                 ownerAvatarURL: repo.ownerAvatar
             )
         }
+        self.selectedRepoIDsForTagApplication = []
         self.repoCache = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
         self.isPaused = false
         self.isRunning = true
@@ -349,6 +385,7 @@ final class BatchAIQueueService {
     func reset() {
         guard !isRunning else { return }
         jobs = []
+        selectedRepoIDsForTagApplication = []
         options = nil
         startedAt = nil
         processingJobIDs = []
@@ -416,6 +453,27 @@ final class BatchAIQueueService {
 
     // MARK: - 人工标签审核
 
+    /// 切换仓库是否参与底栏“应用选中项”。只有仍可审核且至少保留一个标签的行可被勾选。
+    func toggleRepoForTagApplication(repoId: Int64) {
+        guard let job = jobs.first(where: { $0.repoId == repoId }),
+              !job.selectedSuggestedTagIDs.isEmpty
+        else { return }
+        switch job.tagReviewState {
+        case .pending, .failed:
+            if selectedRepoIDsForTagApplication.contains(repoId) {
+                selectedRepoIDsForTagApplication.remove(repoId)
+            } else {
+                selectedRepoIDsForTagApplication.insert(repoId)
+            }
+        case .notRequired, .applying, .applied, .ignored:
+            return
+        }
+    }
+
+    func isRepoSelectedForTagApplication(repoId: Int64) -> Bool {
+        selectedRepoIDsForTagApplication.contains(repoId)
+    }
+
     /// 切换单个候选标签的选中状态。
     func toggleSuggestedTag(repoId: Int64, suggestionID: String) {
         guard let index = jobs.firstIndex(where: { $0.repoId == repoId }),
@@ -466,6 +524,7 @@ final class BatchAIQueueService {
         case .pending, .failed:
             jobs[index].selectedSuggestedTagIDs = []
             jobs[index].tagReviewState = .ignored
+            selectedRepoIDsForTagApplication.remove(repoId)
         case .notRequired, .applying, .applied, .ignored:
             return
         }
@@ -527,10 +586,27 @@ final class BatchAIQueueService {
 
             guard let finalIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
             jobs[finalIndex].tagReviewState = .applied
+            selectedRepoIDsForTagApplication.remove(repoId)
             onTagsChanged?()
         } catch {
             guard let finalIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
             jobs[finalIndex].tagReviewState = .failed(BatchAIFailure(error: error))
+        }
+    }
+
+    /// 依照队列顺序应用底栏勾选的仓库。
+    ///
+    /// 标签可能需要按 canonical key 创建；串行复用单仓应用路径可以避免多个仓库同时创建同名标签，
+    /// 同时每完成一个仓库就即时更新该行。单仓失败会保留勾选并继续处理其余仓库。
+    func applySelectedTagReviewRepositories() async {
+        let selectedRepoIDs = effectiveSelectedRepoIDsForTagApplication
+        guard !selectedRepoIDs.isEmpty else { return }
+        let orderedRepoIDs = jobs
+            .map(\.repoId)
+            .filter { selectedRepoIDs.contains($0) }
+        for repoId in orderedRepoIDs {
+            guard !Task.isCancelled else { return }
+            await applySelectedSuggestedTags(repoId: repoId)
         }
     }
 
@@ -752,6 +828,8 @@ final class BatchAIQueueService {
             if !silent, !options.autoApplyTags, !suggestions.isEmpty {
                 jobs[idx].selectedSuggestedTagIDs = Set(suggestions.map(\.id))
                 jobs[idx].tagReviewState = .pending
+                // 与分组审核保持一致：有可执行建议的仓库默认进入批量应用集合，用户可手动取消。
+                selectedRepoIDsForTagApplication.insert(jobId)
             }
         }
 

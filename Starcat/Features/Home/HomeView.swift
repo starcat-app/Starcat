@@ -1310,6 +1310,9 @@ struct HomeView: View {
                             await requestSelectedBatchAIOptions(repositories: repositories)
                         }
                     },
+                    onStartSelectedGitHubStarListAIGrouping: { repositories in
+                        startSelectedGitHubStarListAIGrouping(repositories: repositories)
+                    },
                     onShowBatchAIPanel: {
                         presentBatchAIProgress()
                     },
@@ -2162,6 +2165,45 @@ struct HomeView: View {
         } catch {
             paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
         }
+    }
+
+    /// Manage 多选入口复用现有审核窗口，只把本次点击时冻结的仓库作为整理范围。
+    private func startSelectedGitHubStarListAIGrouping(repositories: [Repo]) {
+        do {
+            try dependencies.entitlementGate.requirePro(.batchAI)
+        } catch {
+            paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
+            return
+        }
+
+        let existingMemberships = Dictionary(uniqueKeysWithValues: repositories.map { repo in
+            (repo.id, viewModel.githubStarListIDsByRepo[repo.id] ?? [])
+        })
+        let membershipCounts = Dictionary(uniqueKeysWithValues: viewModel.githubStarLists.map { list in
+            let count = existingMemberships.values.count(where: { $0.contains(list.id) })
+            return (list.id, count)
+        })
+        let preflightContext = GitHubStarListAIGroupingPreflightContext(
+            repositoryCount: repositories.count,
+            ungroupedRepositoryCount: existingMemberships.values.count(where: \.isEmpty),
+            availableLists: viewModel.githubStarLists,
+            membershipCountByListID: membershipCounts,
+            rulesByListID: viewModel.githubStarListAIRulesByListID
+        )
+
+        PerformanceTracer.shared.mark(.gitHubStarListAIGroupingRequested)
+        GitHubStarListAIGroupingWindowController.present(
+            dependencies: dependencies,
+            preflightContext: preflightContext,
+            selectedRepositories: repositories,
+            existingMemberships: existingMemberships,
+            onDismiss: {
+                showGitHubStarListAIGroupingSheet = false
+            }
+        )
+        // Sidebar 仍用这份状态暂停装饰动画并统一处理窗口关闭；它再次请求 present 时，
+        // WindowController 会命中已存在窗口，不会用全库预检覆盖本次选中范围。
+        showGitHubStarListAIGroupingSheet = true
     }
 
     /// HOM-52：用户确认配置后的真正启动入口。

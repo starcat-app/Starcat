@@ -133,6 +133,73 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
     }
 
+    @Test("多选入口只分析冻结的仓库，并把已有分组名称交给 AI")
+    func selectedScopeUsesOnlyFrozenRepositoriesAndExistingGroupNames() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(delay: .milliseconds(5))
+        let environment = try await makeEnvironment(
+            repoCount: 4,
+            groupedRepoFullNames: ["octo/demo-2"],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+        await environment.session.prepareManualContext()
+        let repositories = try await GRDBRepoRepository(database: environment.database).fetchAllStarred()
+        let selectedRepositories = repositories.filter { [2, 4].contains($0.id) }
+        let preflightContext = GitHubStarListAIGroupingPreflightContext(
+            repositoryCount: 2,
+            ungroupedRepositoryCount: 1,
+            availableLists: environment.session.availableLists,
+            membershipCountByListID: ["list-1": 1],
+            rulesByListID: environment.session.rulesByListID
+        )
+
+        environment.session.prepareManualContext(
+            from: preflightContext,
+            repositories: selectedRepositories,
+            existingMemberships: [2: ["list-1"], 4: []]
+        )
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        #expect(environment.session.preparedRepositoryCount == 2)
+        #expect(Set(provider.calledRepoIDs) == [2, 4])
+        #expect(provider.existingListNamesByRepo[2] == ["Tools"])
+        #expect(provider.existingListNamesByRepo[4] == [])
+    }
+
+    @Test("暂停只阻止领取新仓库，继续后完成剩余队列")
+    func pauseWaitsBeforeNextClaimAndResumeCompletesQueue() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(100),
+            blockedRepoID: 2
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 8,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await provider.waitUntilBlockedCallStarts()
+        environment.session.pauseAnalysis()
+        #expect(environment.session.isRunning)
+        #expect(environment.session.isPaused)
+
+        // 首批五个请求可以正常收口，但暂停期间不能再领取第六个仓库。
+        try? await Task.sleep(for: .milliseconds(160))
+        #expect(provider.callSizes.count == 5)
+
+        environment.session.resumeAnalysis()
+        provider.releaseBlockedCall()
+        await waitUntilStopped(environment.session)
+
+        #expect(!environment.session.isPaused)
+        #expect(provider.callSizes.count == 8)
+        #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
+    }
+
     private func makeEnvironment(
         repoCount: Int,
         groupedRepoFullNames: [String],
@@ -222,6 +289,8 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
     private var blockedStartWaiters: [CheckedContinuation<Void, Never>] = []
 
     private(set) var callSizes: [Int] = []
+    private(set) var calledRepoIDs: [Int64] = []
+    private(set) var existingListNamesByRepo: [Int64: [String]] = [:]
     private(set) var maximumActiveCalls = 0
 
     init(delay: Duration, blockedRepoID: Int64? = nil) {
@@ -232,7 +301,8 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
     func generateGitHubListSuggestions(
         for repos: [Repo],
         candidates: [GitHubStarListAIContext],
-        existingListIDsByRepo: [Int64: Set<String>]
+        existingListIDsByRepo: [Int64: Set<String>],
+        existingListNamesByRepo: [Int64: [String]]
     ) async throws -> [Int64: [GitHubStarListAISuggestion]] {
         callSizes.append(repos.count)
         activeCalls += 1
@@ -243,6 +313,8 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
             Issue.record("分组 Worker 每次必须只提交一个仓库")
             return [:]
         }
+        calledRepoIDs.append(repo.id)
+        self.existingListNamesByRepo[repo.id] = existingListNamesByRepo[repo.id] ?? []
         if repo.id == blockedRepoID {
             await withCheckedContinuation { continuation in
                 blockedContinuation = continuation
