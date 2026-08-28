@@ -132,8 +132,8 @@ struct BatchAIQueueServiceTests {
         #expect(provider.lastExternalContextEnabledOverride == true)
     }
 
-    @Test("标签任务按最多八仓一批且同时只执行两批")
-    func tagGenerationUsesBoundedBatchConcurrency() async throws {
+    @Test("标签任务按仓库消费并限制为两路并发")
+    func tagGenerationUsesBoundedWorkerConcurrency() async throws {
         let provider = ConcurrentBatchAIInsightProvider(delay: .milliseconds(40))
         let service = try makeService(insightProvider: provider)
         let repos = makeRepos(count: 20, startingAt: 1_000)
@@ -143,11 +143,38 @@ struct BatchAIQueueServiceTests {
         #expect(service.start(repos: repos, options: options))
         await waitUntilStopped(service)
 
-        #expect(provider.batchSizes.sorted() == [4, 8, 8])
-        #expect(provider.maximumActiveBatchCalls == 2)
-        #expect(provider.individualCallCount == 0)
+        #expect(provider.batchSizes.isEmpty)
+        #expect(provider.individualCallCount == 20)
+        #expect(provider.maximumActiveIndividualCalls == 2)
         #expect(service.jobs.allSatisfy { $0.status == .completed })
         #expect(service.processingJobIDs.isEmpty)
+    }
+
+    @Test("Worker 完成仓库后即时写回并继续领取下一项")
+    func workerPublishesCompletionBeforeSlowerRequestFinishes() async throws {
+        let blockedRepoID: Int64 = 1_101
+        let provider = StaggeredBatchAIInsightProvider(blockedRepoID: blockedRepoID)
+        let service = try makeService(insightProvider: provider)
+        let repos = makeRepos(count: 3, startingAt: 1_100)
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: repos, options: options))
+        await provider.waitUntilBlockedCallStarts()
+        for _ in 0..<100 where service.finishedCount < 2 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(service.isRunning)
+        #expect(service.finishedCount == 2)
+        #expect(service.jobs.first(where: { $0.repoId == blockedRepoID })?.status == .processing)
+        #expect(service.jobs.first(where: { $0.repoId == 1_100 })?.status == .completed)
+        #expect(service.jobs.first(where: { $0.repoId == 1_102 })?.status == .completed)
+        #expect(provider.individualCallCount == 3)
+
+        provider.releaseBlockedCall()
+        await waitUntilStopped(service)
+        #expect(service.finishedCount == 3)
     }
 
     @Test("摘要任务保持单仓请求并限制为两路并发")
@@ -490,6 +517,81 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
             contextDegradationReason: nil,
             externalContextDegradationReason: nil
         )
+    }
+}
+
+/// 一个仓库保持阻塞、其余仓库立即返回，用于验证 Worker 不会等待慢请求才统一回写。
+@MainActor
+private final class StaggeredBatchAIInsightProvider: BatchAIInsightProviding {
+    private let blockedRepoID: Int64
+    private var blockedContinuation: CheckedContinuation<Void, Never>?
+    private var blockedStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var individualCallCount = 0
+
+    init(blockedRepoID: Int64) {
+        self.blockedRepoID = blockedRepoID
+    }
+
+    func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {}
+
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        Issue.record("仓库级 Worker 不应调用批量标签接口")
+        return [:]
+    }
+
+    func generateBatchInsight(
+        for repo: Repo,
+        existingTagHints: AITagHints,
+        includeSummary: Bool,
+        includeTags: Bool,
+        codeContextEnabledOverride: Bool?,
+        externalContextEnabledOverride: Bool?
+    ) async throws -> RepoAIInsightGeneration {
+        individualCallCount += 1
+        if repo.id == blockedRepoID {
+            await withCheckedContinuation { continuation in
+                blockedContinuation = continuation
+                let waiters = blockedStartWaiters
+                blockedStartWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+        }
+        return RepoAIInsightGeneration(
+            insight: RepoAIInsight(
+                oneLiner: "",
+                summary: "",
+                summaryMarkdown: nil,
+                platforms: [],
+                suitableFor: [],
+                strengths: [],
+                risks: [],
+                minimalExample: nil,
+                suggestedTags: [],
+                model: "test-model",
+                generatedAt: ISO8601DateFormatter.shared.string(from: .now),
+                contextMetadata: nil,
+                externalContextMarkdown: nil,
+                generationContextSettings: nil
+            ),
+            tagErrorMessage: nil,
+            contextDegradationReason: nil,
+            externalContextDegradationReason: nil
+        )
+    }
+
+    func waitUntilBlockedCallStarts() async {
+        guard blockedContinuation == nil else { return }
+        await withCheckedContinuation { continuation in
+            blockedStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseBlockedCall() {
+        blockedContinuation?.resume()
+        blockedContinuation = nil
     }
 }
 
