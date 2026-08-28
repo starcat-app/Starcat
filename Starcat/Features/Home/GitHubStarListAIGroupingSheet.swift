@@ -13,16 +13,31 @@ import SwiftUI
 struct GitHubStarListAIGroupingSheet: View {
     let session: GitHubStarListAIGroupingSession
     let preflightContext: GitHubStarListAIGroupingPreflightContext
-    let onApplied: @MainActor () async -> Void
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
-    @State private var presentation = GitHubStarListAIGroupingPresentationStore()
+    @State private var presentation: GitHubStarListAIGroupingPresentationStore
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
     /// 首帧事件每次窗口生命周期只记一次，避免视图重算重复记录。
     @State private var hasMarkedFirstFrame = false
+
+    init(
+        session: GitHubStarListAIGroupingSession,
+        preflightContext: GitHubStarListAIGroupingPreflightContext,
+        onClose: @escaping () -> Void
+    ) {
+        self.session = session
+        self.preflightContext = preflightContext
+        self.onClose = onClose
+
+        // WindowController 已在创建 SwiftUI 树前准备好会话。首帧直接注入完成态展示快照，
+        // 避免 `.task` 连续写 Observation 状态后再触发第二轮 AttributeGraph 布局。
+        let store = GitHubStarListAIGroupingPresentationStore()
+        store.synchronizeImmediately(from: session)
+        _presentation = State(initialValue: store)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,13 +55,6 @@ struct GitHubStarListAIGroupingSheet: View {
             guard !hasMarkedFirstFrame else { return }
             hasMarkedFirstFrame = true
             PerformanceTracer.shared.mark(.gitHubStarListAIGroupingFirstFrame)
-        }
-        .task {
-            session.onMembershipsChanged = {
-                Task { await onApplied() }
-            }
-            session.prepareManualContext(from: preflightContext)
-            presentation.synchronizeImmediately(from: session)
         }
         .onChange(of: session.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: session)
@@ -104,7 +112,7 @@ struct GitHubStarListAIGroupingSheet: View {
                     .padding(.vertical, 5)
                     .background(progressStatusTint.opacity(0.18), in: .capsule)
             }
-            SheetCloseButton { dismiss() }
+            SheetCloseButton(action: onClose)
         }
         .padding(.horizontal, 20)
         .frame(height: 64)
@@ -128,10 +136,8 @@ struct GitHubStarListAIGroupingSheet: View {
         }
     }
 
-    /// PresentationStore 在 Sheet 首次 `.task` 前还没有同步；第一帧直接使用 Sidebar
-    /// 已有的内存快照，避免用“正在准备”占位等待相同数据再次从 SQLite 返回。
     private var snapshot: GitHubStarListAIGroupingPresentationSnapshot {
-        presentation.isReady ? presentation.snapshot : preflightContext.presentationSnapshot
+        presentation.snapshot
     }
 
     private var reviewWorkspace: some View {
@@ -257,7 +263,7 @@ struct GitHubStarListAIGroupingSheet: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("action.close") { dismiss() }
+                Button("action.close", action: onClose)
                 Button("githubStarLists.aiGrouping.start") {
                     Task { await session.startManual() }
                 }
@@ -292,7 +298,7 @@ struct GitHubStarListAIGroupingSheet: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
 
-                Button("action.close") { dismiss() }
+                Button("action.close", action: onClose)
                 Button("githubStarLists.aiGrouping.applySelected") {
                     showApplyConfirmation = true
                 }

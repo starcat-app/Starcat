@@ -12,6 +12,22 @@
 
 import SwiftUI
 
+/// 固定窗口内的开始页几何规格。
+///
+/// 所有宽高都从 960 × 640 的窗口扣除 header/footer/padding 得出，避免内部双栏继续用
+/// `.infinity` 参与窗口 fitting-size 推导。仅分组列表保留真正需要的滚动区域。
+private enum GitHubStarListAIGroupingPreflightMetrics {
+    static let contentSize = CGSize(width: 960, height: 516)
+    static let innerWidth: CGFloat = 932
+    static let summaryCardWidth: CGFloat = 225.5
+    static let summaryHeight: CGFloat = 54
+    static let groupsPanelWidth: CGFloat = 640
+    static let sessionPanelWidth: CGFloat = 280
+    static let workspaceHeight: CGFloat = 424
+    static let groupsContentWidth: CGFloat = 616
+    static let groupsContentHeight: CGFloat = 366
+}
+
 struct GitHubStarListAIGroupingPreflightView: View {
     let snapshot: GitHubStarListAIGroupingPresentationSnapshot
     let session: GitHubStarListAIGroupingSession
@@ -29,12 +45,19 @@ struct GitHubStarListAIGroupingPreflightView: View {
             HStack(alignment: .top, spacing: 12) {
                 currentGroupsPanel
                 sessionPanel
-                    .frame(width: 280)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(
+                width: GitHubStarListAIGroupingPreflightMetrics.innerWidth,
+                height: GitHubStarListAIGroupingPreflightMetrics.workspaceHeight,
+                alignment: .top
+            )
         }
         .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(
+            width: GitHubStarListAIGroupingPreflightMetrics.contentSize.width,
+            height: GitHubStarListAIGroupingPreflightMetrics.contentSize.height,
+            alignment: .topLeading
+        )
     }
 
     private var summaryCards: some View {
@@ -65,6 +88,10 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 tint: .blue
             )
         }
+        .frame(
+            width: GitHubStarListAIGroupingPreflightMetrics.innerWidth,
+            height: GitHubStarListAIGroupingPreflightMetrics.summaryHeight
+        )
     }
 
     private func summaryCard(
@@ -98,7 +125,11 @@ struct GitHubStarListAIGroupingPreflightView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .frame(
+            width: GitHubStarListAIGroupingPreflightMetrics.summaryCardWidth,
+            height: GitHubStarListAIGroupingPreflightMetrics.summaryHeight,
+            alignment: .leading
+        )
         .background(
             tint.opacity(colorScheme == .dark ? 0.22 : 0.12),
             in: RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -110,7 +141,8 @@ struct GitHubStarListAIGroupingPreflightView: View {
     }
 
     private var currentGroupsPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let groups = filteredGroups
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Text("githubStarLists.aiGrouping.preflight.existingGroups")
                     .font(interfaceScale.font(.panelTitle))
@@ -122,115 +154,137 @@ struct GitHubStarListAIGroupingPreflightView: View {
                     .frame(width: 168)
             }
 
-            ZStack {
-                if snapshot.preflightGroups.isEmpty {
-                    ContentUnavailableView {
-                        Label("githubStarLists.aiGrouping.noAvailableGroups", systemImage: "tray")
-                    } description: {
-                        Text("githubStarLists.aiGrouping.results.empty.help")
-                    }
-                } else if filteredGroups.isEmpty {
-                    ContentUnavailableView(
-                        "githubStarLists.aiGrouping.noAvailableGroups",
-                        systemImage: "tray",
-                        description: Text("githubStarLists.aiGrouping.results.empty.help")
-                    )
+            Group {
+                if snapshot.preflightGroups.isEmpty || groups.isEmpty {
+                    emptyGroupsView
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(filteredGroups) { group in
+                            ForEach(groups) { group in
                                 GitHubStarListAIGroupingRuleCard(group: group, session: session)
                             }
                         }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(
+                width: GitHubStarListAIGroupingPreflightMetrics.groupsContentWidth,
+                height: GitHubStarListAIGroupingPreflightMetrics.groupsContentHeight,
+                alignment: .top
+            )
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(
+            width: GitHubStarListAIGroupingPreflightMetrics.groupsPanelWidth,
+            height: GitHubStarListAIGroupingPreflightMetrics.workspaceHeight,
+            alignment: .top
+        )
         .clipped()
         .modifier(GitHubStarListAIGroupingPanelChrome(colorScheme: colorScheme))
     }
 
+    /// 空状态只绘制固定尺寸的三行内容，不再使用会读取容器 ideal size 的
+    /// `ContentUnavailableView + ZStack` 组合。
+    private var emptyGroupsView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(interfaceScale.font(.workspaceTitle))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("githubStarLists.aiGrouping.noAvailableGroups")
+                .font(interfaceScale.font(.panelTitle))
+            Text("githubStarLists.aiGrouping.results.empty.help")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(
+            width: GitHubStarListAIGroupingPreflightMetrics.groupsContentWidth,
+            height: GitHubStarListAIGroupingPreflightMetrics.groupsContentHeight,
+            alignment: .center
+        )
+    }
+
     private var sessionPanel: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("githubStarLists.aiGrouping.preflight.session")
-                    .font(interfaceScale.font(.panelTitle))
+        VStack(alignment: .leading, spacing: 8) {
+            Text("githubStarLists.aiGrouping.preflight.session")
+                .font(interfaceScale.font(.panelTitle))
 
-                sessionFactRow(
-                    title: "githubStarLists.aiGrouping.preflight.toAnalyze",
-                    value: snapshot.preparedRepositoryCount,
-                    icon: "magnifyingglass"
-                )
-                sessionFactRow(
-                    title: "githubStarLists.aiGrouping.preflight.eligibleGroups",
-                    value: snapshot.candidateListCount,
-                    icon: "rectangle.stack"
-                )
-                sessionFactRow(
-                    title: "githubStarLists.aiGrouping.preflight.groupsWithoutRules",
-                    value: groupsWithoutRulesCount,
-                    icon: "square.dashed"
-                )
-                sessionFactRow(
-                    title: "githubStarLists.aiGrouping.preflight.autoOrganizeGroups",
-                    value: autoOrganizeGroupCount,
-                    icon: "bolt.horizontal"
-                )
+            sessionFactRow(
+                title: "githubStarLists.aiGrouping.preflight.toAnalyze",
+                value: snapshot.preparedRepositoryCount,
+                icon: "magnifyingglass"
+            )
+            sessionFactRow(
+                title: "githubStarLists.aiGrouping.preflight.eligibleGroups",
+                value: snapshot.candidateListCount,
+                icon: "rectangle.stack"
+            )
+            sessionFactRow(
+                title: "githubStarLists.aiGrouping.preflight.groupsWithoutRules",
+                value: groupsWithoutRulesCount,
+                icon: "square.dashed"
+            )
+            sessionFactRow(
+                title: "githubStarLists.aiGrouping.preflight.autoOrganizeGroups",
+                value: autoOrganizeGroupCount,
+                icon: "bolt.horizontal"
+            )
 
-                Divider()
+            Divider()
 
-                Label("githubStarLists.aiGrouping.preflight.writeAfterReview", systemImage: "checkmark.shield")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Label("githubStarLists.aiGrouping.preflight.writeAfterReview", systemImage: "checkmark.shield")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                Label(
-                    settings.githubStarListAutoGroupingSettings.enabled
-                        ? "githubStarLists.aiGrouping.preflight.autoGroupingOn"
-                        : "githubStarLists.aiGrouping.preflight.autoGroupingOff",
-                    systemImage: settings.githubStarListAutoGroupingSettings.enabled ? "checkmark.circle" : "pause.circle"
-                )
+            Label(
+                settings.githubStarListAutoGroupingSettings.enabled
+                    ? "githubStarLists.aiGrouping.preflight.autoGroupingOn"
+                    : "githubStarLists.aiGrouping.preflight.autoGroupingOff",
+                systemImage: settings.githubStarListAutoGroupingSettings.enabled ? "checkmark.circle" : "pause.circle"
+            )
+            .font(interfaceScale.font(.caption))
+            .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("settings.githubListGrouping.threshold.label")
+                    Spacer(minLength: 8)
+                    Text(verbatim: confidenceThresholdPercentString)
+                        .font(interfaceScale.font(.captionStrong))
+                        .foregroundStyle(.tint)
+                        .monospacedDigit()
+                }
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("settings.githubListGrouping.threshold.label")
-                        Spacer(minLength: 8)
-                        Text(verbatim: confidenceThresholdPercentString)
-                            .font(interfaceScale.font(.captionStrong))
-                            .foregroundStyle(.tint)
-                            .monospacedDigit()
-                    }
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
+                Slider(value: confidenceThresholdBinding, in: 0.5...1.0, step: 0.05)
+                    .controlSize(.mini)
 
-                    Slider(value: confidenceThresholdBinding, in: 0.5...1.0, step: 0.05)
-                        .controlSize(.mini)
-
-                    Text(String(
-                        format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
-                        locale: locale,
-                        confidenceThresholdPercentString
-                    ))
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    sessionNote("githubStarLists.aiGrouping.preflight.overlapNote")
-                    sessionNote("githubStarLists.aiGrouping.preflight.closedSetHelp")
-                }
+                Text(String(
+                    format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
+                    locale: locale,
+                    confidenceThresholdPercentString
+                ))
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            VStack(alignment: .leading, spacing: 8) {
+                sessionNote("githubStarLists.aiGrouping.preflight.overlapNote")
+                sessionNote("githubStarLists.aiGrouping.preflight.closedSetHelp")
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(12)
+        .frame(
+            width: GitHubStarListAIGroupingPreflightMetrics.sessionPanelWidth,
+            height: GitHubStarListAIGroupingPreflightMetrics.workspaceHeight,
+            alignment: .topLeading
+        )
+        .clipped()
         .modifier(GitHubStarListAIGroupingPanelChrome(colorScheme: colorScheme))
     }
 

@@ -236,27 +236,12 @@ struct SidebarView: View {
             )
             .appLocaleEnvironment()
         }
-        .sheet(isPresented: $showGitHubStarListAIGroupingSheet) {
-            GitHubStarListAIGroupingSheet(
-                session: dependencies.githubStarListAIGroupingSession,
-                preflightContext: GitHubStarListAIGroupingPreflightContext(
-                    repositoryCount: viewModel.totalCount,
-                    ungroupedRepositoryCount: viewModel.githubStarListUngroupedCount,
-                    availableLists: viewModel.githubStarLists,
-                    membershipCountByListID: viewModel.githubStarListCounts,
-                    rulesByListID: viewModel.githubStarListAIRulesByListID
-                ),
-                onApplied: {
-                    await viewModel.refreshSidebar()
-                    await viewModel.reloadItems(forceRefresh: true)
-                }
-            )
-            // 统一注入 Sheet 依赖的设置、字号与本地化环境。
-            .appSheetRootEnvironment(dependencies)
-        }
         .onChange(of: showGitHubStarListAIGroupingSheet) { _, isPresented in
-            // 只释放未启动的人工会话；开始页数据仍由 HomeViewModel 的 Sidebar 内存快照持有。
-            if !isPresented {
+            if isPresented {
+                presentGitHubStarListAIGroupingWindow()
+            } else {
+                GitHubStarListAIGroupingWindowController.dismissIfPresented()
+                // 只释放未启动的人工会话；开始页数据仍由 HomeViewModel 的 Sidebar 内存快照持有。
                 dependencies.githubStarListAIGroupingSession.releaseManualContextIfUnused()
             }
         }
@@ -304,6 +289,26 @@ struct SidebarView: View {
         } message: { _ in
             Text("githubStarLists.editor.delete.message")
         }
+    }
+
+    /// 使用固定尺寸的 AppKit sheet 承载审核工作区。
+    ///
+    /// SwiftUI `.sheet` 会在 AppKit 正式展示前反复询问整棵双栏视图的 fitting size；
+    /// 这里先用 Sidebar 的内存快照一次性准备会话，再交给固定几何窗口，避免首帧布局参与尺寸猜测。
+    private func presentGitHubStarListAIGroupingWindow() {
+        GitHubStarListAIGroupingWindowController.present(
+            dependencies: dependencies,
+            preflightContext: GitHubStarListAIGroupingPreflightContext(
+                repositoryCount: viewModel.totalCount,
+                ungroupedRepositoryCount: viewModel.githubStarListUngroupedCount,
+                availableLists: viewModel.githubStarLists,
+                membershipCountByListID: viewModel.githubStarListCounts,
+                rulesByListID: viewModel.githubStarListAIRulesByListID
+            ),
+            onDismiss: {
+                showGitHubStarListAIGroupingSheet = false
+            }
+        )
     }
 
     // MARK: - 底部后台任务状态条
