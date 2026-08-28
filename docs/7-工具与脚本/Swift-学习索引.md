@@ -141,6 +141,8 @@
 | `Section` / `DisclosureGroup` | Sidebar 分组 | "SwiftUI Section List sidebar" |
 | `.listRowBackground` / `.listRowSeparator` | `RepoListView` 清掉系统 row 背景 / 分割线，让 `RepoRowView` 自己表达卡片选中态 | "SwiftUI listRowBackground listRowSeparator macOS" |
 | `GeometryReader` | `LayoutDebugOverlay` 的 SwiftUI fallback；真实窗口尺寸已改由 `NSViewRepresentable` 读取 `NSWindow.contentView.bounds`，避免 NavigationSplitView 折叠 sidebar 后误读局部容器 | "SwiftUI GeometryReader proxy size" |
+| `Layout` / `sizeThatFits(proposal:)` | `GitHubMarkdownFitWidthImage` 把宽图压进窗口；`LazyVStack` 常给 `.unspecified` 宽度，必须另备容器宽度 | "SwiftUI Layout protocol sizeThatFits ProposedViewSize" |
+| `PreferenceKey` | `GitHubMarkdownFitWidthImage` 从弹窗根视图回传实际宽度给 Markdown 图 | "SwiftUI PreferenceKey onPreferenceChange" |
 
 ### 3.3 修饰符
 

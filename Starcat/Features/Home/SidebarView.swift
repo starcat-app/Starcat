@@ -1096,7 +1096,10 @@ struct SidebarView: View {
                 AwesomeSourceLogo(source: source, size: 18)
                     .id(source.imageURL?.absoluteString ?? source.repoFullName)
             } else {
-                exploreSidebarSystemIcon("sparkles.rectangle.stack", color: .purple)
+                exploreSidebarSystemIcon(
+                    "sparkles.rectangle.stack",
+                    color: ExploreMode.awesomeAllSourcesIconColor
+                )
             }
         } title: {
             HStack(spacing: 5) {

@@ -33,6 +33,7 @@ Starcat 1.5.0 continues the Activity inbox so you can handle Issue / PR status, 
 
 ### Fixes
 
+- Release notes images: Screenshots in the subscription timeline now shrink to the window width instead of being clipped.
 - README translation on repo change: Switching repositories during translation no longer writes the previous README’s translation into the current detail view.
 - Event-timeline translation: Opening posts and every comment get side-by-side translations; event rows stay original.
 - Comment box on thread change: Switching Issues collapses the AI reply box and stops generation so drafts do not carry over.

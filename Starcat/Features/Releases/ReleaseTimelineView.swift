@@ -58,6 +58,9 @@ struct ReleaseTimelineView: View {
         //     英文 "Mark all read" / "Check" 也不再 truncation；高度不变
         .frame(minWidth: 540, minHeight: 520)
         .frame(idealWidth: 620, idealHeight: 640)
+        // 窗口宽度由 sheet 决定，不能从会被大图撑开的 Markdown 自己量。
+        // 行左右各 16pt padding，灌进图片 Layout 时要扣掉。
+        .reportingMarkdownContainerWidth(horizontalInset: 16)
         .task {
             if viewModel == nil {
                 viewModel = ReleaseTimelineViewModel(
@@ -477,13 +480,14 @@ private struct ReleaseTimelineRow: View {
             )
             .help(isBodyExpanded ? Text("releases.row.collapseNotes") : Text("releases.row.expandNotes"))
             if isBodyExpanded {
-                // MarkdownUI 默认按截图像素尺寸排版，会撑破 540–620pt 窗口；这里按容器宽度等比适配。
-                Markdown(body)
+                // 列表项下一行的截图要先抬成块，再按窗口宽度等比缩小。
+                Markdown(GitHubMarkdownPreparing.prepare(body))
                     .font(interfaceScale.font(.caption))
                     .textSelection(.enabled)
                     .fittedGitHubMarkdownImages()
             }
         }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
     private func pinAndToggleBody() {

@@ -6,7 +6,8 @@
 //
 //  设计约束：
 //  - 上半部分由 `RepoDetailScaffold` 统一渲染，本文件只负责 body slot。
-//  - Release notes 使用 GitHub API 返回的完整 Markdown 原文，交给 MarkdownUI 渲染。
+//  - Release notes 先做 GitHub Markdown 预处理（HTML `<img>`、列表项独立行图片），
+//    再交给 MarkdownUI；大图按详情栏宽度等比缩小。
 //  - ScrollView 必须把 offset 回传给 Scaffold，保证 hero + RepoLocalSections 跟随折叠，
 //    与 Manage / Trending / Activity repo-backed 的 README 详情体验一致。
 //
@@ -54,6 +55,7 @@ struct ActivityReleaseDetailContent: View {
         }
         .scrollPosition(id: $scrollAnchorReleaseID, anchor: .top)
         .detailScrollViewStyle()
+        .reportingMarkdownContainerWidth(horizontalInset: 24)
         .onScrollGeometryChange(for: RepoDetailScrollReport.self) { geometry in
             let overflow = max(0, geometry.contentSize.height - geometry.containerSize.height)
             return RepoDetailScrollReport(
@@ -189,7 +191,7 @@ struct ActivityReleaseDetailContent: View {
     private func releaseBody(_ release: ReleaseRecord) -> some View {
         if let markdown = release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
            !markdown.isEmpty {
-            Markdown(markdown)
+            Markdown(GitHubMarkdownPreparing.prepare(markdown))
                 .textSelection(.enabled)
                 // 与订阅发布时间线同一套：大截图按详情栏宽度等比缩小，避免被卡片裁切。
                 .fittedGitHubMarkdownImages()

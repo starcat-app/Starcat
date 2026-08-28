@@ -56,4 +56,56 @@ struct MarkdownImageFittingTests {
         #expect(modified.value(forHTTPHeaderField: "Authorization") == nil)
         #expect(modified.value(forHTTPHeaderField: "User-Agent") == AppConstants.httpUserAgent)
     }
+
+    @Test("Layout 拿不到提议宽度时，回退到窗口测到的容器宽度")
+    func availableWidthFallsBackToContainerWhenProposalMissing() {
+        #expect(
+            MarkdownImageFitting.availableWidth(proposal: 588, containerWidth: 620) == 588
+        )
+        #expect(
+            MarkdownImageFitting.availableWidth(proposal: nil, containerWidth: 588) == 588
+        )
+        #expect(
+            MarkdownImageFitting.availableWidth(proposal: 0, containerWidth: 588) == 588
+        )
+        #expect(
+            MarkdownImageFitting.availableWidth(proposal: nil, containerWidth: 0) == nil
+        )
+    }
+
+    @Test("列表项下一行的独立图提升为块，MarkdownUI 才会走可缩放的 ImageProvider")
+    func prepareIsolatesListItemImagesIntoBlocks() {
+        let raw = """
+        - GitHub notification inbox: hello
+          ![shot](https://cdn.dong4j.site/source/image/a.png)
+        """
+        let prepared = GitHubMarkdownPreparing.prepare(raw)
+        #expect(prepared.contains("hello\n\n"))
+        #expect(prepared.contains("![shot](https://cdn.dong4j.site/source/image/a.png)"))
+        #expect(!prepared.contains("hello\n  ![shot]"))
+    }
+
+    @Test("HTML img 收成 Markdown 图，Release notes 里带 width 的截图才能走适配")
+    func prepareConvertsHTMLImages() {
+        let html = #"<img width="1672" alt="inbox" src="https://github.com/user-attachments/assets/abc" />"#
+        let prepared = GitHubMarkdownPreparing.prepare(html)
+        #expect(prepared.contains("![inbox](https://github.com/user-attachments/assets/abc)"))
+        #expect(!prepared.contains("<img"))
+    }
+
+    @Test("句子中间的小图保持 inline，避免被抬成通栏块")
+    func prepareLeavesMidSentenceImagesInline() {
+        let raw = "See ![icon](https://example.com/i.png) here"
+        #expect(GitHubMarkdownPreparing.prepare(raw) == raw)
+    }
+
+    @Test("代码块里的图片语法原样保留")
+    func prepareSkipsFencedCodeBlocks() {
+        let raw = """
+        ```
+        ![not-an-image](https://example.com/x.png)
+        ```
+        """
+        #expect(GitHubMarkdownPreparing.prepare(raw) == raw)
+    }
 }
