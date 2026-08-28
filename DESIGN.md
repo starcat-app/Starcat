@@ -364,6 +364,12 @@ Settings 是配置表单，不是功能展示页。section 标题简短，说明
 
 Sheet / popover 应只承载一个明确任务。Sheet header 右上角关闭使用 `SheetCloseButton`；轻量上下文使用 popover；阻塞式任务或复杂表单使用 sheet。不要在 sheet 内再放一组浮动大卡片。
 
+### Sheet 尺寸与承载策略
+
+Sheet 必须先明确尺寸所有权：内容短小、单列且自然高度稳定时，使用 SwiftUI 自动 `.sheet`；产品已经定义固定工作区尺寸，或页面包含双栏、多滚动区、大列表、多个 `.infinity` 时，使用固定 AppKit sheet。
+
+仅在 SwiftUI 根视图上设置固定 `.frame(width:height:)`，不能阻止 presentation bridge 反复执行 fitting-size 计算。固定工作区必须由 `NSWindow` 持有明确尺寸，并设置 `NSHostingController.sizingOptions = []`；首帧轻量快照应在创建 hosting tree 前一次性准备。完整选型、实现约束和验收清单见 [`docs/5-规范/UI-Sheet-尺寸与承载规范.md`](docs/5-规范/UI-Sheet-尺寸与承载规范.md)。
+
 API Key、provider、模型、缓存、导出等设置 UI 需要统一：输入控件宽度稳定，测试结果提示收敛为单条，成功/失败状态不改变布局高度。
 
 ## Do's and Don'ts
@@ -397,6 +403,7 @@ Don't:
 - 是否使用 `.primary` / `.secondary`，没有把 `.tertiary` 用作普通文字或图标？
 - 使用 `.buttonStyle(.plain)` 的按钮是否紧跟 `.focusEffectDisabled()`？
 - Sheet 关闭是否使用 `SheetCloseButton`？
+- Sheet 是否按 [`UI-Sheet-尺寸与承载规范`](docs/5-规范/UI-Sheet-尺寸与承载规范.md) 明确选择自动尺寸或固定 AppKit 承载？
 - icon-only 刷新是否使用 `SyncIconButton` / `StarsSyncButton`？
 - 是否避免了 `Stepper`、随机渐变、大圆角卡片、卡片套卡片和网页式 hero？
 - 明暗主题下文字、图标、状态 pill 是否可读？
