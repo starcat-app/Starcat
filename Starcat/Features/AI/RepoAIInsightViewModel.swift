@@ -99,6 +99,15 @@ final class RepoAIInsightViewModel {
     /// UI 用它决定是否展示「获取外部资料 → 准备摘要请求」两段 chip。
     private(set) var usesExternalContextForCurrentGeneration = false
 
+    /// 下一次点「生成 / 重新生成」是否准备代码上下文。
+    ///
+    /// 打开面板时从全局 `aiRepoContextEnabled` 拷贝；用户可在空态改，但只覆盖本次
+    /// 生成，禁止写回设置。默认 true 对齐全局默认值，避免 sync 前空态闪一下关闭态。
+    var includeCodeContextForNextGeneration = true
+
+    /// 下一次生成是否拉取 External Search。同样只作用于本次，不改全局开关。
+    var includeExternalSearchForNextGeneration = false
+
     /// 本次生成的代码上下文准备进度；面板空态不会启动或展示该状态机。
     private(set) var prepProgress: PrepProgress = .idle
 
@@ -147,6 +156,21 @@ final class RepoAIInsightViewModel {
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
     }
+
+    /// 把本次生成选项重置成当前全局设置（含私仓外搜门控后的有效值）。
+    ///
+    /// 只在面板打开 / 换仓时调用。生成过程中不重置，避免后台任务还在跑时把用户
+    /// 刚选的本次覆盖冲掉。
+    func syncGenerationOptions(for repo: Repo) {
+        guard !isGenerating else { return }
+        let defaults = service.seededGenerationOptions(for: repo)
+        includeCodeContextForNextGeneration = defaults.includeCodeContext
+        includeExternalSearchForNextGeneration = defaults.includeExternalSearch
+    }
+
+    /// 当前环境能不能准备代码上下文（有 Provider）。与本次开关正交：没 Provider 时
+    /// 即使用户打开开关，生成路径仍会 skip，避免空等三步进度。
+    var canPrepareCodeContext: Bool { service.canPrepareCodeContext }
 
     func load(repo: Repo) async {
         // 每个 session 只绑定一个 repo。重复挂载同一面板时直接复用内存状态，
@@ -288,10 +312,13 @@ final class RepoAIInsightViewModel {
         }
 
         let codeContextRequest = RepoAICodeContextRequest()
-        let usesCodeContext = service.isCodeContextEnabled
-        // 把点击瞬间的开关状态冻结到本次请求：生成过程中即使用户在设置里打开开关，
-        // 本次也不会突然开始下载 / 外部搜索；下一次生成再使用新设置。
-        let usesExternalContext = service.isExternalContextAllowed(for: repo)
+        // 冻结的是面板上的本次覆盖，不是全局设置：用户关掉本次代码上下文后，
+        // 即使设置页仍开着，这次也不下载 ZIP / 不跑外搜。
+        let usesCodeContext = includeCodeContextForNextGeneration && service.canPrepareCodeContext
+        let usesExternalContext = service.isExternalContextAllowed(
+            for: repo,
+            enabledOverride: includeExternalSearchForNextGeneration
+        )
         if !usesCodeContext {
             codeContextRequest.skip()
         }
@@ -344,6 +371,8 @@ final class RepoAIInsightViewModel {
                 for: repo,
                 existingTagHints: hints,
                 includeTags: includeTags,
+                codeContextEnabledOverride: includeCodeContextForNextGeneration,
+                externalContextEnabledOverride: includeExternalSearchForNextGeneration,
                 codeContextRequest: codeContextRequest,
                 onContextProgress: { [weak self] progress in
                     guard let self,

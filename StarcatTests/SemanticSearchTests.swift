@@ -292,6 +292,32 @@ struct RepoAIInsightTests {
         #expect(normalized.map(\.name) == ["AI", "new-domain"])
     }
 
+    @Test("AI Tags: 入选后按置信度从高到低展示")
+    func sortsNormalizedSuggestionsByConfidenceDescending() {
+        let normalized = AITagSuggestionPolicy.normalizedSuggestions(
+            [
+                AITagSuggestion(name: "AI", confidence: 0.70, reason: "已有但把握较低"),
+                AITagSuggestion(name: "new-domain", confidence: 0.95, reason: "新标签但把握更高"),
+                AITagSuggestion(name: "Swift", confidence: 0.88, reason: "已有")
+            ],
+            vocabulary: ["AI", "Swift"]
+        )
+
+        #expect(normalized.map(\.name) == ["new-domain", "Swift", "AI"])
+        #expect(normalized.map(\.confidence) == [0.95, 0.88, 0.70])
+    }
+
+    @Test("AI Tags: 置信度相同保持原相对顺序")
+    func keepsOriginalOrderWhenConfidenceTies() {
+        let sorted = AITagSuggestionPolicy.sortedByConfidenceDescending([
+            AITagSuggestion(name: "短视频", confidence: 0.90, reason: "a"),
+            AITagSuggestion(name: "Python", confidence: 0.90, reason: "b"),
+            AITagSuggestion(name: "AI视频生成", confidence: 0.95, reason: "c")
+        ])
+
+        #expect(sorted.map(\.name) == ["AI视频生成", "短视频", "Python"])
+    }
+
     @Test("AI Tags: 全库词表不再固定截断到 Top 30")
     func tagHintsIncludeVocabularyBeyondThirty() async throws {
         let database = try InMemoryDatabaseManager()

@@ -102,7 +102,7 @@ struct RepoAIInsight: Codable, Equatable, Sendable {
 /// **存 effective 值而非原始 settings 字段**：见 `RepoAIInsight.generationContextSettings`
 /// 的注释，避免 stale 判定逻辑散落。
 struct GenerationContextSettings: Codable, Equatable, Sendable {
-    /// 生成时 `settings.aiRepoContextEnabled` 的值（用户当时是否想要代码上下文）。
+    /// 生成时用户是否想要代码上下文（本次覆盖或当时的全局开关）。
     var codeContextEnabled: Bool
 
     /// 生成时 External Search 外部材料**最终是否被允许**（开关 + 私仓门控的 effective 结果）。
@@ -233,8 +233,23 @@ enum AITagSuggestionPolicy {
 
             seenKeys.insert(key)
         }
-        // 即使模型先输出新词，也让可复用的已有标签优先占据 3 个展示槽位。
-        return Array((existingResults + newResults).prefix(maximumSuggestionCount))
+        // 选哪些标签仍由词表复用 + 新标签配额决定；展示顺序按置信度从高到低，
+        // 避免模型乱序或「已有标签在前」让高置信度项沉到列表下面。
+        return sortedByConfidenceDescending(
+            Array((existingResults + newResults).prefix(maximumSuggestionCount))
+        )
+    }
+
+    /// 同分保持输入相对顺序，避免刷新时行位置跳动。
+    static func sortedByConfidenceDescending(_ suggestions: [AITagSuggestion]) -> [AITagSuggestion] {
+        suggestions.enumerated()
+            .sorted { lhs, rhs in
+                if lhs.element.confidence != rhs.element.confidence {
+                    return lhs.element.confidence > rhs.element.confidence
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
     }
 }
 

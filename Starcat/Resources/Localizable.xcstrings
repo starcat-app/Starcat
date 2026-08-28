@@ -40296,6 +40296,23 @@
         }
       }
     },
+    "ai.assistant.summary.empty.lead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose what extra context this summary should use. You can change these for this run only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择这次摘要要带上哪些额外上下文。下面的选项只对本次生成生效。"
+          }
+        }
+      }
+    },
     "ai.assistant.summary.empty.title" : {
       "localizations" : {
         "ar" : {
@@ -41872,6 +41889,142 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟程式碼上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.codeContext.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyze the repository code structure so the AI can understand the project more accurately. Related code is prepared only after you generate."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分析仓库代码结构，帮助 AI 更准确地理解项目。相关代码仅在点击生成后准备。"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.codeContext.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code Context"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码上下文"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.externalSearch.privateBlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This repository is private, and Settings currently disallow external search for private repos."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前仓库是私有仓库，且设置未允许对私有仓库使用外部搜索。"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.externalSearch.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fetch web sources as extra context for this summary. Private repositories still follow the Allow Private Repos setting."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "检索网页资料作为本次摘要的补充上下文。私有仓库仍受「允许私有仓库」设置约束。"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.externalSearch.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "External Search"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部搜索"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.externalSearch.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No External Search provider is configured."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未配置可用的外部搜索服务。"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.footnote" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These choices apply only to this summary. They do not change your default settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这两个选项只对本次生成生效，不会改设置里的默认开关。"
+          }
+        }
+      }
+    },
+    "ai.assistant.summary.options.section" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This generation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次生成"
           }
         }
       }

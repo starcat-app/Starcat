@@ -31,10 +31,10 @@ final class ExternalSearchContextProvider {
         self.providerFactory = providerFactory
     }
 
-    func collect(for repo: Repo) async throws -> AIExternalContext? {
+    func collect(for repo: Repo, enabledOverride: Bool? = nil) async throws -> AIExternalContext? {
         guard Self.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
-            enabled: settings.externalContextEnabled,
+            enabled: enabledOverride ?? settings.externalContextEnabled,
             allowPrivate: settings.externalSearchAllowPrivateRepos
         ) else {
             return nil

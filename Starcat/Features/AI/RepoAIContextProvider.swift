@@ -144,9 +144,12 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
     }
 
     @MainActor
-    private func snapshotSettings(maximumArchiveBytes: Int) -> SettingsSnapshot {
+    private func snapshotSettings(
+        maximumArchiveBytes: Int,
+        enabledOverride: Bool? = nil
+    ) -> SettingsSnapshot {
         SettingsSnapshot(
-            enabled: settings.aiRepoContextEnabled,
+            enabled: enabledOverride ?? settings.aiRepoContextEnabled,
             tokenBudget: settings.aiRepoContextTokenBudget,
             tier1MaxLines: settings.aiRepoContextTier1MaxLines,
             maximumArchiveBytes: maximumArchiveBytes
@@ -172,7 +175,8 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
             for: repo,
             onProgress: onProgress,
             beforeStep: nil,
-            maximumArchiveBytes: userLimitBytes
+            maximumArchiveBytes: userLimitBytes,
+            enabledOverride: nil
         )
     }
 
@@ -183,7 +187,8 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
     func contextOutcome(
         for repo: Repo,
         onProgress: RepoAIContextProgressCallback? = nil,
-        beforeStep: RepoAIContextStepGate?
+        beforeStep: RepoAIContextStepGate?,
+        enabledOverride: Bool? = nil
     ) async throws -> RepoAIContextOutcome {
         let userLimitBytes = await MainActor.run {
             settings.aiRepoContextMaximumArchiveMB * 1_000_000
@@ -192,7 +197,8 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
             for: repo,
             onProgress: onProgress,
             beforeStep: beforeStep,
-            maximumArchiveBytes: userLimitBytes
+            maximumArchiveBytes: userLimitBytes,
+            enabledOverride: enabledOverride
         )
     }
 
@@ -200,10 +206,14 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
         for repo: Repo,
         onProgress: RepoAIContextProgressCallback?,
         beforeStep: RepoAIContextStepGate?,
-        maximumArchiveBytes: Int
+        maximumArchiveBytes: Int,
+        enabledOverride: Bool?
     ) async throws -> RepoAIContextOutcome {
         // 先把 settings 快照到本地（一次性跨 MainActor 调用，后续 pipeline 用快照）。
-        let snapshot = await snapshotSettings(maximumArchiveBytes: maximumArchiveBytes)
+        let snapshot = await snapshotSettings(
+            maximumArchiveBytes: maximumArchiveBytes,
+            enabledOverride: enabledOverride
+        )
 
         // ① 总开关 guard：关掉 = 完全跳过下游链路（语义上 ≠ 失败，UI 不显示 banner）
         guard snapshot.enabled else { return .featureDisabled }

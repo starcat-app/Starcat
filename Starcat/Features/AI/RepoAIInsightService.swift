@@ -225,15 +225,28 @@ final class RepoAIInsightService {
         settings.aiRepoContextEnabled && repoAIContextProvider != nil
     }
 
+    /// 当前进程是否装配了代码上下文 Provider。与全局/本次开关正交。
+    var canPrepareCodeContext: Bool { repoAIContextProvider != nil }
+
+    /// 打开摘要面板时拷贝到「本次生成」开关的默认值。
+    ///
+    /// 代码上下文跟全局总开关；外部搜索跟全局总开关 + 私仓门控。不把 Provider 是否
+    /// 存在折进代码开关默认值，让 UI 能显示「开着但当前不可用」。
+    func seededGenerationOptions(for repo: Repo) -> (includeCodeContext: Bool, includeExternalSearch: Bool) {
+        (
+            settings.aiRepoContextEnabled,
+            isExternalContextAllowed(for: repo)
+        )
+    }
+
     /// 单仓摘要本次是否会进入 External Search 拉取。
     ///
-    /// 与 `ExternalSearchContextProvider.collect` 的门控一致（总开关 + 私仓白名单）；
-    /// ViewModel 用它在生成开始时冻结「是否展示外部搜索步骤」，避免生成中途改设置
-    /// 导致进度 chip 突然出现 / 消失。
-    func isExternalContextAllowed(for repo: Repo) -> Bool {
+    /// `enabledOverride` 供单仓面板的本次覆盖使用；nil 时读全局 `externalContextEnabled`。
+    /// 私仓白名单始终走设置，本次开关不能绕过。
+    func isExternalContextAllowed(for repo: Repo, enabledOverride: Bool? = nil) -> Bool {
         ExternalSearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
-            enabled: settings.externalContextEnabled,
+            enabled: enabledOverride ?? settings.externalContextEnabled,
             allowPrivate: settings.externalSearchAllowPrivateRepos
         )
     }
@@ -365,12 +378,19 @@ final class RepoAIInsightService {
         return try Self.decodeInsight(json: record.summaryJson)
     }
 
+    /// 生成单仓摘要（及可选标签）。
+    ///
+    /// `codeContextEnabledOverride` / `externalContextEnabledOverride` 供单仓面板
+    /// 「本次生成」开关使用：非 nil 时覆盖全局设置，但**不得**写回 `AppSettings`。
+    /// 其它调用方（批量整理 / MCP / 分享）保持 nil，继续走全局开关。
     func generateInsight(
         for repo: Repo,
         existingTagHints: AITagHints = .empty,
         includeSummary: Bool = true,
         includeTags: Bool = true,
         allowExternalContext: Bool = true,
+        codeContextEnabledOverride: Bool? = nil,
+        externalContextEnabledOverride: Bool? = nil,
         codeContextRequest: RepoAICodeContextRequest? = nil,
         onContextProgress: RepoAIContextProgressCallback? = nil,
         onContextResolved: (@MainActor () -> Void)? = nil,
@@ -384,7 +404,8 @@ final class RepoAIInsightService {
             for: repo,
             codeContextRequest: codeContextRequest,
             onContextProgress: onContextProgress,
-            includeInsights: includeSummary
+            includeInsights: includeSummary,
+            codeContextEnabledOverride: codeContextEnabledOverride
         )
         // 分享任务允许用户取消。部分 provider 可能在最后一个 checkpoint 后正常返回，
         // 这里必须重新检查外层 Task，避免继续进入外部搜索或 LLM 请求。
@@ -398,12 +419,15 @@ final class RepoAIInsightService {
         var externalDegradationReason: ExternalContextDegradationReason?
         let shouldCollectExternal = includeSummary
             && allowExternalContext
-            && isExternalContextAllowed(for: repo)
+            && isExternalContextAllowed(for: repo, enabledOverride: externalContextEnabledOverride)
         if shouldCollectExternal {
             // 先通知 UI 进入「获取外部资料」，再 await collect；否则几秒外搜会被误标成「准备摘要请求」。
             onExternalContextProgress?(.started)
             do {
-                resolvedExternalContext = try await externalContextProvider.collect(for: repo)
+                resolvedExternalContext = try await externalContextProvider.collect(
+                    for: repo,
+                    enabledOverride: externalContextEnabledOverride
+                )
             } catch {
                 // Cancellation 代表用户明确终止任务，不能按“外部搜索降级”吞掉后继续生成。
                 // URLSession 取消有时表现为 URLError.cancelled，因此同时检查 Task 状态。
@@ -525,11 +549,10 @@ final class RepoAIInsightService {
         // 与 chatStream 的 ExternalSearchContextProvider.allowsExternalContext(...) 同款判定，
         // 避免后续 UI 层重复计算 3 个开关的组合。
         insight.generationContextSettings = GenerationContextSettings(
-            codeContextEnabled: settings.aiRepoContextEnabled,
-            externalContextAllowed: ExternalSearchContextProvider.allowsExternalContext(
-                repoIsPrivate: repo.isPrivate,
-                enabled: settings.externalContextEnabled,
-                allowPrivate: settings.externalSearchAllowPrivateRepos
+            codeContextEnabled: codeContextEnabledOverride ?? settings.aiRepoContextEnabled,
+            externalContextAllowed: isExternalContextAllowed(
+                for: repo,
+                enabledOverride: externalContextEnabledOverride
             )
         )
 
@@ -1350,7 +1373,8 @@ final class RepoAIInsightService {
         for repo: Repo,
         codeContextRequest: RepoAICodeContextRequest? = nil,
         onContextProgress: RepoAIContextProgressCallback? = nil,
-        includeInsights: Bool = true
+        includeInsights: Bool = true,
+        codeContextEnabledOverride: Bool? = nil
     ) async throws -> Source {
         let markdown = try await readmeRepository.findContent(repoId: repo.id)
         let readme: Readme? = (markdown == nil)
@@ -1437,7 +1461,8 @@ final class RepoAIInsightService {
         var contextMeta: RepoAIInsightContextMeta?
         var degradationReason: ContextDegradationReason?
         var codeContextXml = ""
-        if includeInsights, let provider = repoAIContextProvider {
+        let wantsCodeContext = codeContextEnabledOverride ?? settings.aiRepoContextEnabled
+        if includeInsights, wantsCodeContext, let provider = repoAIContextProvider {
             // 只有单仓摘要会创建 request，因此也只有该路径插入 3 秒可取消缓冲。
             // provider 在真实步骤 progress 发出后才调用 gate，ZIP 缓存命中时不会调用
             // 下载 gate；这样既给用户取消窗口，也不为跳过的步骤人为加时。
@@ -1453,7 +1478,8 @@ final class RepoAIInsightService {
                 try await provider.contextOutcome(
                     for: repo,
                     onProgress: onContextProgress,
-                    beforeStep: beforeStep
+                    beforeStep: beforeStep,
+                    enabledOverride: codeContextEnabledOverride
                 )
             }
             let outcome = if let codeContextRequest {

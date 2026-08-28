@@ -11,8 +11,8 @@
 //    任一时刻只创建并展示「摘要」**或**「对话」之一，中间 segmented toggle 切换。
 //  - 摘要部分复用既有的 `RepoAIInsightViewModel`（生成 / 缓存 / 标签推荐三段），
 //    对话部分由新的 `RepoAIChatViewModel` 承担。
-//  - 空态只说明项目上下文的启用状态；解析分支、下载 ZIP、生成 XML 只在用户发起
-//    生成 / 重新生成后执行并展示进度。
+//  - 空态让用户为这一次生成选择代码上下文 / 外部搜索；解析分支、下载 ZIP、生成 XML
+//    只在用户发起生成 / 重新生成后执行并展示进度。本次选择不写回全局设置。
 //
 //  关键约束（HOM-150 累计 4 轮 dong4j 反馈整合）：
 //  - **单面板互斥**（dong4j 2026-06-04 15:30）：用 `AIPanelMode` 枚举控制当前激活
@@ -292,6 +292,7 @@ struct RepoAIWindowContentView: View {
             // 直接覆盖式赋值实现，每次 task 重跑都重新读取当前 registry。
             starredAtOpen = dependencies.starredRegistry.contains(ghRepoId: repo.id)
             await initializeInsightViewModelIfNeeded()
+            insightVM?.syncGenerationOptions(for: repo)
             await insightVM?.load(repo: repo)
             if autoGenerateSummaryOnOpen, !didRunInitialExternalSummaryRequest {
                 didRunInitialExternalSummaryRequest = true
@@ -552,7 +553,8 @@ struct RepoAIWindowContentView: View {
     private static let summaryBottomAnchorID = "summary-bottom-anchor"
 
     private func summaryHeader(vm: RepoAIInsightViewModel) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        @Bindable var vm = vm
+        return HStack(alignment: .center, spacing: 10) {
             Label("ai.assistant.summary.title", systemImage: "sparkles")
                 .font(interfaceScale.font(.panelTitle, weight: .semibold))
                 .labelStyle(.titleAndIcon)
@@ -567,10 +569,30 @@ struct RepoAIWindowContentView: View {
                 // 让"打开代码上下文"找得到地方挂。
                 //
                 // Menu 项：
-                //   1. 重新生成：与历史按钮等价；
-                //   2. 打开代码上下文：当 insight.contextMetadata 非 nil 才出现
+                //   1. 本次代码上下文 / 外部搜索：与空态卡片同一份 ViewModel 绑定，
+                //      重新生成前仍能改，且不写回全局设置；
+                //   2. 重新生成：与历史按钮等价；
+                //   3. 打开代码上下文：当 insight.contextMetadata 非 nil 才出现
                 //      （README-only 路径下没意义）；点击调 RepoContextStorage.shared.revealProject。
                 Menu {
+                    Toggle(isOn: $vm.includeCodeContextForNextGeneration) {
+                        Label(
+                            "ai.assistant.summary.options.codeContext.title",
+                            systemImage: "doc.text.magnifyingglass"
+                        )
+                    }
+                    .disabled(!vm.canPrepareCodeContext)
+
+                    Toggle(isOn: $vm.includeExternalSearchForNextGeneration) {
+                        Label(
+                            "ai.assistant.summary.options.externalSearch.title",
+                            systemImage: "globe"
+                        )
+                    }
+                    .disabled(isExternalSearchBlockedForCurrentRepo)
+
+                    Divider()
+
                     Button {
                         dependencies.repoAIInsightSessionStore.startGeneration(
                             for: repo,
@@ -633,16 +655,27 @@ struct RepoAIWindowContentView: View {
         }
     }
 
-    @ViewBuilder
     private func emptySummaryState(vm: RepoAIInsightViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("ai.assistant.summary.empty.title")
-                .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
-            Text("ai.assistant.summary.empty.description")
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
+        @Bindable var vm = vm
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ai.assistant.summary.empty.title")
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
+                Text("ai.assistant.summary.empty.lead")
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            codeContextAvailabilityRow
+            RepoAIGenerationOptionsSection(
+                includeCodeContext: $vm.includeCodeContextForNextGeneration,
+                includeExternalSearch: $vm.includeExternalSearchForNextGeneration,
+                isDisabled: vm.isGenerating,
+                canPrepareCodeContext: vm.canPrepareCodeContext,
+                repoIsPrivate: repo.isPrivate,
+                allowPrivateExternalSearch: settings.externalSearchAllowPrivateRepos,
+                hasUsableExternalSearchProvider: hasUsableExternalSearchProvider
+            )
 
             Button {
                 // R-01 §3.2.7 Step 8：includeTags 由窗口打开瞬间冻结的 star 状态决定。
@@ -658,34 +691,20 @@ struct RepoAIWindowContentView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .focusEffectDisabled()
             .disabled(vm.isGenerating)
         }
     }
 
-    /// 面板空态只呈现配置状态，不在这里启动或暗示任何下载任务。
-    @ViewBuilder
-    private var codeContextAvailabilityRow: some View {
-        HStack(spacing: 6) {
-            if settings.aiRepoContextEnabled {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Text("ai.assistant.summary.codeContext.enabled")
-                    .foregroundStyle(.secondary)
-            } else {
-                Image(systemName: "circle")
-                    .foregroundStyle(.secondary)
-                Text("ai.assistant.summary.codeContext.disabled")
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Button("ai.assistant.summary.codeContext.openSettings") {
-                    openCodeContextSettings()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-        }
-        .font(interfaceScale.font(.captionSmall))
+    /// 当前仓库是否被私仓门控或缺少 Provider 拦住，不能开本次外部搜索。
+    private var isExternalSearchBlockedForCurrentRepo: Bool {
+        (repo.isPrivate && !settings.externalSearchAllowPrivateRepos)
+            || !hasUsableExternalSearchProvider
+    }
+
+    private var hasUsableExternalSearchProvider: Bool {
+        ExternalSearchRegistry(settings: settings).usableProviderIDs().isEmpty == false
     }
 
     /// 打开「设置 → AI → 项目上下文」。
@@ -1182,19 +1201,13 @@ struct RepoAIWindowContentView: View {
         )
     }
 
-    /// 推荐标签块。视觉上比对话气泡克制：
-    /// "tag name + reason + 置信度 + 应用按钮"，与旧详情页 AI Tab 的样式对齐。
+    /// 推荐标签列表。多条建议必须能扫读，所以做成斑马纹行，而不是一张卡片里用 Divider 硬隔。
     ///
-    /// Y9.2（2026-06-14 dong4j 反馈玻璃态主题适配）：
-    ///   - 整体加 `.regularMaterial` 卡片容器 + 细描边，让标签块从 NSVisualEffectView popover
-    ///     玻璃态背景里"浮起来"，原方案直接堆在 ScrollView 内容区里文字飘在材质上看着空；
-    ///   - 单条 tag 行之间加 `Divider().opacity(0.35)`，弱化但保留分隔感；
-    ///   - `tag.reason` 字号改 `.caption2`，跟"tag name"层级拉开但仍维持 `.secondary`；
-    ///   - 应用按钮统一用 `.bordered` controlSize=`.small`，让 macOS 自动跟随主题渲染
-    ///     （原默认风格在玻璃态下会渲染成纯白底/纯黑字与背景脱节，与"复制完整对话"按钮
-    ///     是同款 bug，一并修掉）。
+    /// - 标题 / 「全部应用」留在列表外，不参与斑马；
+    /// - hover 覆盖斑马底，让光标所在行可辨；
+    /// - 行本身不可点，只有「应用」才会落库，保持「AI 只建议、用户确认后写入」。
     private func tagSuggestionsBlock(_ tags: [AITagSuggestion], vm: RepoAIInsightViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("ai.assistant.tags.title")
                     .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
@@ -1206,36 +1219,25 @@ struct RepoAIWindowContentView: View {
                 .controlSize(.small)
                 .disabled(tags.allSatisfy { vm.appliedTagNames.contains($0.name.trimmingNormalized) })
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
 
-            ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
-                if index > 0 {
-                    Divider().opacity(0.35)
-                }
-                let isApplied = vm.appliedTagNames.contains(tag.name.trimmingNormalized)
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tag.name)
-                            .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
-                        Text(tag.reason)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text("\(Int((max(0, min(tag.confidence, 1)) * 100).rounded()))%")
-                        .font(interfaceScale.font(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    // tag.name / tag.reason 是后端 / 模型返回的原始字符串，无需本地化
-                    // （内容本身就是 i18n-中立的、给当前用户语言生成的）。
-                    Button(isApplied ? "ai.assistant.tags.applied" : "ai.assistant.tags.apply") {
+            VStack(spacing: 0) {
+                ForEach(
+                    Array(AITagSuggestionPolicy.sortedByConfidenceDescending(tags).enumerated()),
+                    id: \.element.id
+                ) { index, tag in
+                    AITagSuggestionRow(
+                        tag: tag,
+                        rowIndex: index,
+                        isApplied: vm.appliedTagNames.contains(tag.name.trimmingNormalized)
+                    ) {
                         Task { await vm.applyTag(tag, repo: repo) }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(isApplied)
                 }
             }
         }
-        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.regularMaterial)
@@ -1244,6 +1246,7 @@ struct RepoAIWindowContentView: View {
                         .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                 )
         )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     /// Y2（2026-06-13）：footer 两行结构。
@@ -2384,6 +2387,97 @@ struct RepoAIWindowContentView: View {
                         .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
                 )
         )
+    }
+}
+
+/// 摘要面板推荐标签的行底色。
+///
+/// 斑马纹让多条建议可扫；hover 用更高对比覆盖斑马，表达「光标正在这一行」。
+enum AITagSuggestionRowChrome {
+    static func background(rowIndex: Int, isHovered: Bool) -> Color {
+        if isHovered {
+            return Color.accentColor.opacity(0.10)
+        }
+        // 浓度对齐 RAG 工作台斑马纹：primary 极低透明，明暗主题都能扫出来。
+        return rowIndex.isMultiple(of: 2)
+            ? Color.clear
+            : Color.primary.opacity(0.045)
+    }
+
+    /// 置信度用色阶扫读，阈值对齐 GitHub Lists 分组审核。
+    /// 这是状态色而不是正文灰阶，所以不用 `.secondary`。
+    static func confidenceColor(_ confidence: Double) -> Color {
+        if confidence >= 0.9 { return .green }
+        if confidence >= 0.7 { return .accentColor }
+        return .orange
+    }
+}
+
+/// 单条推荐标签。hover 状态必须放在独立 View 里，ForEach 闭包不能持有 `@State`。
+private struct AITagSuggestionRow: View {
+    let tag: AITagSuggestion
+    let rowIndex: Int
+    let isApplied: Bool
+    let onApply: () -> Void
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(tag.name)
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(confidencePercentText)
+                    .font(interfaceScale.font(.caption, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(AITagSuggestionRowChrome.confidenceColor(tag.confidence))
+                // tag.name / tag.reason 是模型返回的原始字符串，无需本地化。
+                Button(isApplied ? "ai.assistant.tags.applied" : "ai.assistant.tags.apply") {
+                    onApply()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isApplied)
+            }
+
+            dashedRowDivider
+
+            Text(tag.reason)
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(AITagSuggestionRowChrome.background(rowIndex: rowIndex, isHovered: isHovered))
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var confidencePercentText: String {
+        "\(Int((max(0, min(tag.confidence, 1)) * 100).rounded()))%"
+    }
+
+    /// 名称行和描述行之间的虚线，避免两行糊成一块。
+    /// 用单条 Path 而不是 1pt Rectangle 描边：后者四边都会画，看起来像实心细条。
+    private var dashedRowDivider: some View {
+        GeometryReader { proxy in
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 0.5))
+                path.addLine(to: CGPoint(x: proxy.size.width, y: 0.5))
+            }
+            .stroke(
+                Color.secondary.opacity(0.40),
+                style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 3])
+            )
+        }
+        .frame(height: 1)
+        .accessibilityHidden(true)
     }
 }
 
