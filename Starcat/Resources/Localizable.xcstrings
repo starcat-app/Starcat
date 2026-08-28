@@ -80092,6 +80092,57 @@
         }
       }
     },
+    "batchAI.panel.discard.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard This Run"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃本次整理"
+          }
+        }
+      }
+    },
+    "batchAI.panel.discard.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unapplied AI tag suggestions and this run’s progress will be permanently removed. Tags and summaries already saved will remain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未应用的 AI 标签建议和本次进度将被永久清除；已经保存的标签与摘要会继续保留。"
+          }
+        }
+      }
+    },
+    "batchAI.panel.discard.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard this AI tag run?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃本次 AI 标签生成？"
+          }
+        }
+      }
+    },
     "batchAI.panel.failedSummaryFormat" : {
       "extractionState" : "stale",
       "localizations" : {

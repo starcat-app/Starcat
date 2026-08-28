@@ -26,6 +26,7 @@ struct BatchAIQueuePanel: View {
     @Bindable var service: BatchAIQueueService
     @State private var expandedRepoID: Int64?
     @State private var presentation = BatchAIQueuePresentationStore()
+    @State private var showDiscardConfirmation = false
 
     /// 调用方提供的关闭回调（关闭 sheet）。
     let onClose: () -> Void
@@ -42,6 +43,10 @@ struct BatchAIQueuePanel: View {
                 Divider()
                 failedFooter
             }
+            if service.canDiscardCurrentSession {
+                Divider()
+                discardFooter
+            }
         }
         .frame(width: 620)
         .padding(0)
@@ -50,6 +55,16 @@ struct BatchAIQueuePanel: View {
         }
         .onChange(of: service.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: service)
+        }
+        .confirmationDialog(
+            "batchAI.panel.discard.title",
+            isPresented: $showDiscardConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("batchAI.panel.discard.action", role: .destructive, action: discardCurrentSession)
+            Button("general.cancel", role: .cancel) {}
+        } message: {
+            Text("batchAI.panel.discard.message")
         }
     }
 
@@ -304,6 +319,24 @@ struct BatchAIQueuePanel: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.orange.opacity(0.08))
+    }
+
+    /// 与 GitHub Lists 未分组整理一致：用户明确确认后才丢弃当前审核会话。
+    private var discardFooter: some View {
+        HStack {
+            Button("batchAI.panel.discard.action", role: .destructive) {
+                showDiscardConfirmation = true
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private func discardCurrentSession() {
+        guard service.discardCurrentSession() else { return }
+        expandedRepoID = nil
+        onClose()
     }
 
     // MARK: - 派生

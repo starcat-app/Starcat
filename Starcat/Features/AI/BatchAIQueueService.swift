@@ -156,6 +156,18 @@ final class BatchAIQueueService {
 
     var hasPendingTagReview: Bool { pendingTagReviewCount > 0 }
 
+    /// 标签正在写入数据库时不能丢弃会话，否则 UI 状态虽已清空，异步写入仍可能继续完成。
+    var isApplyingSuggestedTags: Bool {
+        jobs.contains { job in
+            if case .applying = job.tagReviewState { true } else { false }
+        }
+    }
+
+    /// 运行中的 Worker 必须先终止；标签应用中的会话则等待本次数据库写入收口。
+    var canDiscardCurrentSession: Bool {
+        !isRunning && !jobs.isEmpty && !isApplyingSuggestedTags
+    }
+
     /// 全部 job 都进入终态时认为本次批次结束。
     var isFinished: Bool { !jobs.isEmpty && finishedCount == jobs.count }
 
@@ -345,6 +357,18 @@ final class BatchAIQueueService {
         sharedTagLibrary = nil
         retryNotBeforeByRepoID = [:]
         rateLimitCooldownUntil = nil
+        repoCache = [:]
+    }
+
+    /// 放弃当前批次的内存态结果，让用户可以立即开始下一批整理。
+    ///
+    /// 已经写入数据库的标签与摘要不属于队列内存，必须保留；这里只清除尚未应用的建议、
+    /// 失败记录和进度。返回 false 表示 Worker 或标签落库仍在执行，调用方应保持窗口不变。
+    @discardableResult
+    func discardCurrentSession() -> Bool {
+        guard canDiscardCurrentSession else { return false }
+        reset()
+        return true
     }
 
     /// 重试单个失败的 job。

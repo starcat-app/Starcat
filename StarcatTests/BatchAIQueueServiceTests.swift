@@ -270,6 +270,30 @@ struct BatchAIQueueServiceTests {
         await waitUntilStopped(service)
     }
 
+    @Test("放弃待确认结果后清空会话并允许启动下一批")
+    func discardPendingReviewAllowsReplacementBatch() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let service = try makeService(insightProvider: provider)
+        var first = Repo.makeMinimal(owner: "acme", name: "discard-first")
+        first.id = 810
+        var second = Repo.makeMinimal(owner: "acme", name: "discard-second")
+        second.id = 811
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: [first], options: options))
+        await waitUntilStopped(service)
+        #expect(service.hasPendingTagReview)
+        #expect(service.canDiscardCurrentSession)
+
+        #expect(service.discardCurrentSession())
+        #expect(service.jobs.isEmpty)
+        #expect(service.options == nil)
+        #expect(!service.hasPendingTagReview)
+        #expect(service.start(repos: [second], options: options))
+        await waitUntilStopped(service)
+    }
+
     private static let sampleSuggestions = [
         AITagSuggestion(name: "Swift", confidence: 0.96, reason: "主要开发语言"),
         AITagSuggestion(name: "CLI", confidence: 0.82, reason: "提供命令行工具")
