@@ -103,9 +103,10 @@ struct HomeView: View {
     @State private var showBatchAIOptions: Bool = false
     /// HOM-52：批量 AI 整理进度面板 sheet 显示状态。
     @State private var showBatchAIPanel: Bool = false
-    /// HOM-52：当前正在编辑的 Options（启动 sheet 时初始化，跨 sheet 关闭保留以记住上次选择）。
+    /// HOM-52：当前正在编辑的 Options。
     /// 手动入口固定生成标签，自动应用与摘要默认关闭；不能改全局 Options 默认值，
-    /// 因为自动整理仍依赖其“摘要 + 标签”的既有组合。
+    /// 因为自动整理仍依赖其“摘要 + 标签”的既有组合。摘要的两个上下文选项会在每次打开
+    /// Sheet 时重新读取全局设置，但 Sheet 内修改不会回写全局。
     @State private var batchAIOptions: BatchAIQueueOptions = {
         var options = BatchAIQueueOptions()
         options.actions = [.tags]
@@ -502,6 +503,8 @@ struct HomeView: View {
                 configurationIssue: dependencies.batchAIQueueService.configurationIssue(
                     for: batchAIOptions
                 ),
+                canPrepareCodeContext: dependencies.repoAIInsightService.canPrepareCodeContext,
+                hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
                 onCancel: {
                     showBatchAIOptions = false
                 },
@@ -1330,9 +1333,7 @@ struct HomeView: View {
                             // 不能打开新批次后静默覆盖已经生成的标签。
                             showBatchAIPanel = true
                         } else {
-                            // “批量生成标签”的手动入口始终包含标签任务；摘要只保留为附加选项。
-                            batchAIOptions.actions.insert(.tags)
-                            showBatchAIOptions = true
+                            presentBatchAIOptions()
                         }
                     },
                     onShowBatchAIPanel: {
@@ -2227,6 +2228,21 @@ struct HomeView: View {
         }
         showBatchAIOptions = false
         showBatchAIPanel = true
+    }
+
+    /// 打开手动批量生成标签 Sheet，并把全局摘要上下文设置复制成“本次任务”初始值。
+    ///
+    /// 这里故意只读 `AppSettings`，后续交互只改 `batchAIOptions`，因此用户在 Sheet 中
+    /// 临时开关代码上下文或外部搜索，不会污染单仓摘要面板与下一次打开时的全局默认值。
+    private func presentBatchAIOptions() {
+        batchAIOptions.actions.insert(.tags)
+        batchAIOptions.codeContextEnabledOverride = dependencies.settings.aiRepoContextEnabled
+        batchAIOptions.externalContextEnabledOverride = dependencies.settings.externalContextEnabled
+        showBatchAIOptions = true
+    }
+
+    private var hasUsableExternalSearchProvider: Bool {
+        !ExternalSearchRegistry(settings: dependencies.settings).usableProviderIDs().isEmpty
     }
 
     private var homePaywallBinding: Binding<ProPaywallContext?> {

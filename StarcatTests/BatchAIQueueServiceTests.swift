@@ -114,6 +114,24 @@ struct BatchAIQueueServiceTests {
         #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
     }
 
+    @Test("摘要上下文开关作为本次任务参数传给 Provider")
+    func summaryContextOverridesAreForwardedPerRun() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: [])
+        let service = try makeService(insightProvider: provider)
+        var repo = Repo.makeMinimal(owner: "acme", name: "summary-context")
+        repo.id = 909
+        var options = BatchAIQueueOptions()
+        options.actions = [.summary]
+        options.codeContextEnabledOverride = false
+        options.externalContextEnabledOverride = true
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        #expect(provider.lastCodeContextEnabledOverride == false)
+        #expect(provider.lastExternalContextEnabledOverride == true)
+    }
+
     @Test("确认只应用用户保留的标签并创建新标签")
     func confirmAppliesOnlySelectedSuggestions() async throws {
         let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
@@ -311,7 +329,9 @@ private final class BlockingBatchAIInsightProvider: BatchAIInsightProviding {
         for repo: Repo,
         existingTagHints: AITagHints,
         includeSummary: Bool,
-        includeTags: Bool
+        includeTags: Bool,
+        codeContextEnabledOverride: Bool?,
+        externalContextEnabledOverride: Bool?
     ) async throws -> RepoAIInsightGeneration {
         generationCount += 1
         let waiters = generationStartWaiters
@@ -339,6 +359,8 @@ private final class BlockingBatchAIInsightProvider: BatchAIInsightProviding {
 @MainActor
 private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
     let suggestions: [AITagSuggestion]
+    private(set) var lastCodeContextEnabledOverride: Bool?
+    private(set) var lastExternalContextEnabledOverride: Bool?
 
     init(suggestions: [AITagSuggestion]) {
         self.suggestions = suggestions
@@ -350,9 +372,13 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
         for repo: Repo,
         existingTagHints: AITagHints,
         includeSummary: Bool,
-        includeTags: Bool
+        includeTags: Bool,
+        codeContextEnabledOverride: Bool?,
+        externalContextEnabledOverride: Bool?
     ) async throws -> RepoAIInsightGeneration {
-        RepoAIInsightGeneration(
+        lastCodeContextEnabledOverride = codeContextEnabledOverride
+        lastExternalContextEnabledOverride = externalContextEnabledOverride
+        return RepoAIInsightGeneration(
             insight: RepoAIInsight(
                 oneLiner: "",
                 summary: "",

@@ -614,13 +614,18 @@ final class BatchAIQueueService {
             hints = .empty
         }
 
+        let includesSummary = options.shouldRun(.summary, forRepoID: jobId)
+        let includesTags = options.shouldRun(.tags, forRepoID: jobId)
         let insight: RepoAIInsightGeneration?
-        if options.shouldRun(.summary, forRepoID: jobId) || options.shouldRun(.tags, forRepoID: jobId) {
+        if includesSummary || includesTags {
             insight = try await insightService.generateBatchInsight(
                 for: repo,
                 existingTagHints: hints,
-                includeSummary: options.shouldRun(.summary, forRepoID: jobId),
-                includeTags: options.shouldRun(.tags, forRepoID: jobId)
+                includeSummary: includesSummary,
+                includeTags: includesTags,
+                // 标签单独运行时不需要摘要上下文，避免无意义地准备代码或外部搜索。
+                codeContextEnabledOverride: includesSummary ? options.codeContextEnabledOverride : nil,
+                externalContextEnabledOverride: includesSummary ? options.externalContextEnabledOverride : nil
             )
         } else {
             insight = nil

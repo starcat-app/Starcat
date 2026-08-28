@@ -250,6 +250,17 @@ struct BatchAIQueueOptions: Equatable, Sendable {
     /// 用户首次大批量整理时主动开启，平时小批量保持手动确认更安全。
     var autoApplyTags: Bool = false
 
+    /// 本次摘要生成是否启用代码上下文。
+    ///
+    /// nil 表示沿用调用方原有策略；手动批量入口会在每次打开 Sheet 时从全局设置生成快照，
+    /// 后续只修改这份任务参数，避免把临时选择写回全局设置。
+    var codeContextEnabledOverride: Bool?
+
+    /// 本次摘要生成是否启用外部搜索。
+    ///
+    /// nil 保留自动整理的既有行为（批量任务不主动开启外部搜索）；手动入口会传入明确值。
+    var externalContextEnabledOverride: Bool?
+
     /// 自动应用标签时的置信度阈值（0.0 ~ 1.0）。
     ///
     /// 仅当 `autoApplyTags == true` 时生效；低于阈值的标签会进入 ignored 桶并展示原因。

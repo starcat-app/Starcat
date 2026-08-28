@@ -6,6 +6,7 @@
 //
 //  模块职责：
 //  - 固定生成标签，并让用户选择是否同时生成 AI 摘要。
+//  - 摘要开启时，提供仅对本次任务生效的代码上下文与外部搜索子选项。
 //  - 让用户决定是否"自动应用推荐标签"+ 设置置信度阈值。
 //  - 显示本次将处理的 repo 数量与简单时长估算。
 //
@@ -31,6 +32,8 @@ struct BatchAIOptionsSheet: View {
     let pendingCount: Int
     @Binding var options: BatchAIQueueOptions
     let configurationIssue: String?
+    let canPrepareCodeContext: Bool
+    let hasUsableExternalSearchProvider: Bool
     let onCancel: () -> Void
     let onStart: () -> Void
 
@@ -126,15 +129,56 @@ struct BatchAIOptionsSheet: View {
                     onToggle: {}
                 )
                 autoApplyCard
-                OptionCard(
-                    icon: "doc.text",
-                    title: "batchAI.options.action.summary",
-                    subtitle: "batchAI.options.action.summary.desc",
-                    isSelected: options.actions.contains(.summary),
-                    onToggle: { toggleAction(.summary) }
-                )
+                summaryCard
             }
         }
+    }
+
+    // MARK: - Summary Card（带本次任务上下文子选项）
+
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            OptionCard(
+                icon: "doc.text",
+                title: "batchAI.options.action.summary",
+                subtitle: "batchAI.options.action.summary.desc",
+                isSelected: options.actions.contains(.summary),
+                onToggle: { toggleAction(.summary) }
+            )
+
+            if options.actions.contains(.summary) {
+                VStack(spacing: 6) {
+                    OptionCard(
+                        icon: "chevron.left.forwardslash.chevron.right",
+                        title: "ai.assistant.summary.options.codeContext.title",
+                        subtitle: "ai.assistant.summary.options.codeContext.subtitle",
+                        isSelected: options.codeContextEnabledOverride == true,
+                        isDisabled: !canPrepareCodeContext,
+                        isNested: true,
+                        onToggle: {
+                            options.codeContextEnabledOverride = !(options.codeContextEnabledOverride ?? false)
+                        }
+                    )
+                    OptionCard(
+                        icon: "network",
+                        title: "ai.assistant.summary.options.externalSearch.title",
+                        subtitle: hasUsableExternalSearchProvider
+                            ? "ai.assistant.summary.options.externalSearch.subtitle"
+                            : "ai.assistant.summary.options.externalSearch.unavailable",
+                        isSelected: options.externalContextEnabledOverride == true,
+                        isDisabled: !hasUsableExternalSearchProvider,
+                        isNested: true,
+                        onToggle: {
+                            options.externalContextEnabledOverride = !(options.externalContextEnabledOverride ?? false)
+                        }
+                    )
+                }
+                .padding(8)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: options.actions.contains(.summary))
     }
 
     // MARK: - Auto-apply Card（带子设置：阈值滑条）
@@ -255,6 +299,7 @@ private struct OptionCard: View {
     let subtitle: LocalizedStringKey
     let isSelected: Bool
     var isDisabled: Bool = false
+    var isNested: Bool = false
     let onToggle: () -> Void
 
     @State private var isHovered: Bool = false
@@ -264,7 +309,7 @@ private struct OptionCard: View {
         Button {
             onToggle()
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: isNested ? 10 : 12) {
                 iconBadge
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -279,7 +324,7 @@ private struct OptionCard: View {
                 Spacer(minLength: 8)
                 checkmark
             }
-            .padding(12)
+            .padding(isNested ? 9 : 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .background(cardBackground)
@@ -303,7 +348,7 @@ private struct OptionCard: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
         }
-        .frame(width: 28, height: 28)
+        .frame(width: isNested ? 24 : 28, height: isNested ? 24 : 28)
     }
 
     @ViewBuilder
