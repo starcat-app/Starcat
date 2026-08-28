@@ -40,4 +40,22 @@ struct BatchAIRepositoryScopeTests {
         #expect(scope.pendingCount(untaggedCount: 7) == 7)
         #expect(resolved.map(\.id) == [202])
     }
+
+    @Test("多选范围排除已有标签仓库并保持顺序")
+    func selectedScopeFiltersTaggedRepositories() {
+        var first = Repo.makeMinimal(owner: "acme", name: "first")
+        first.id = 301
+        var tagged = Repo.makeMinimal(owner: "acme", name: "tagged")
+        tagged.id = 302
+        var last = Repo.makeMinimal(owner: "acme", name: "last")
+        last.id = 303
+        let existingTag = Tag.fixture(id: "swift", name: "Swift")
+
+        let filtered = BatchAIRepositoryScope.filterUntaggedRepositories(
+            [first, tagged, last],
+            tagAssignments: [tagged.id: [existingTag]]
+        )
+
+        #expect(filtered.map(\.id) == [301, 303])
+    }
 }

@@ -31,6 +31,7 @@ struct BatchAIOptionsSheet: View {
 
     let pendingCount: Int
     let usesSelectedRepositories: Bool
+    let skippedTaggedCount: Int
     @Binding var options: BatchAIQueueOptions
     let configurationIssue: String?
     let canPrepareCodeContext: Bool
@@ -95,6 +96,14 @@ struct BatchAIOptionsSheet: View {
                 ))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                if skippedTaggedCount > 0 {
+                    Text(String(
+                        format: String.l10n("batchAI.selection.skippedTaggedFormat"),
+                        skippedTaggedCount
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()

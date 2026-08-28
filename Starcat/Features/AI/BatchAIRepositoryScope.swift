@@ -25,6 +25,16 @@ enum BatchAIRepositoryScope {
         }
     }
 
+    /// 多选入口只保留数据库中没有任何标签关联的仓库，并保持用户原始选择顺序。
+    ///
+    /// 这里接收一次性批量查询结果，而不是逐仓读取标签，避免大量选择时产生 N+1 SQLite 查询。
+    static func filterUntaggedRepositories(
+        _ repositories: [Repo],
+        tagAssignments: [Int64: [Tag]]
+    ) -> [Repo] {
+        repositories.filter { tagAssignments[$0.id]?.isEmpty != false }
+    }
+
     /// 只有“全部未分类”需要延迟读取数据库；已选范围必须返回点击入口时的值快照。
     @MainActor
     func resolveRepositories(

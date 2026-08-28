@@ -105,6 +105,10 @@ struct HomeView: View {
     @State private var showBatchAIPanel: Bool = false
     /// 配置 Sheet 当前对应的仓库范围；默认入口仍是全部未分类仓库。
     @State private var batchAIRepositoryScope: BatchAIRepositoryScope = .allUntagged
+    /// 多选入口中因已有标签而被跳过的数量，仅用于当前配置 Sheet 的透明反馈。
+    @State private var batchAISkippedTaggedCount = 0
+    /// 全部选中项均已有标签时给出轻量提示，避免点击按钮后毫无反馈。
+    @State private var batchAISelectionNotice: String?
     /// HOM-52：当前正在编辑的 Options。
     /// 手动入口固定生成标签，自动应用与摘要默认关闭；不能改全局 Options 默认值，
     /// 因为自动整理仍依赖其“摘要 + 标签”的既有组合。摘要的两个上下文选项会在每次打开
@@ -504,6 +508,7 @@ struct HomeView: View {
                     untaggedCount: viewModel.untaggedCount
                 ),
                 usesSelectedRepositories: batchAIRepositoryScope.isSelectionScoped,
+                skippedTaggedCount: batchAISkippedTaggedCount,
                 options: $batchAIOptions,
                 configurationIssue: dependencies.batchAIQueueService.configurationIssue(
                     for: batchAIOptions
@@ -893,6 +898,11 @@ struct HomeView: View {
         .toast(
             message: $listPreferenceResetToast,
             icon: "arrow.counterclockwise",
+            bottomPadding: 24
+        )
+        .toast(
+            message: $batchAISelectionNotice,
+            icon: "tag",
             bottomPadding: 24
         )
         )
@@ -1357,7 +1367,9 @@ struct HomeView: View {
                         requestBatchAIOptions(scope: .allUntagged)
                     },
                     onStartSelectedBatchAI: { repositories in
-                        requestBatchAIOptions(scope: .selected(repositories))
+                        Task {
+                            await requestSelectedBatchAIOptions(repositories: repositories)
+                        }
                     },
                     onShowBatchAIPanel: {
                         showBatchAIPanel = true
@@ -2256,6 +2268,7 @@ struct HomeView: View {
             dependencies.manageMultiSelectionStore.exit()
         }
         batchAIRepositoryScope = .allUntagged
+        batchAISkippedTaggedCount = 0
         showBatchAIOptions = false
         showBatchAIPanel = true
     }
@@ -2275,6 +2288,7 @@ struct HomeView: View {
     /// 新任务不能覆盖尚未确认的标签；两个入口共用同一条守门逻辑。
     private func requestBatchAIOptions(scope: BatchAIRepositoryScope) {
         guard scope.pendingCount(untaggedCount: viewModel.untaggedCount) > 0 else { return }
+        batchAISkippedTaggedCount = 0
         if dependencies.batchAIQueueService.hasPendingTagReview {
             showBatchAIPanel = true
         } else {
@@ -2282,10 +2296,43 @@ struct HomeView: View {
         }
     }
 
+    /// 多选列表可能来自全部仓库、语言或其它分类；开始前必须以数据库标签关系过滤，
+    /// 不能依赖列表缓存，否则用户刚添加标签后仍可能重复触发 AI 生成。
+    private func requestSelectedBatchAIOptions(repositories: [Repo]) async {
+        guard !repositories.isEmpty else { return }
+        if dependencies.batchAIQueueService.hasPendingTagReview {
+            showBatchAIPanel = true
+            return
+        }
+
+        let assignments: [Int64: [Tag]]
+        do {
+            assignments = try await dependencies.repoTagRepository.fetchAllTagAssignments()
+        } catch {
+            AppLog.ai.error(
+                "[batch-ai] load tag assignments failed: \(error.localizedDescription, privacy: .public)"
+            )
+            batchAISelectionNotice = String.l10n("batch.loadTagsFailed")
+            return
+        }
+
+        let eligible = BatchAIRepositoryScope.filterUntaggedRepositories(
+            repositories,
+            tagAssignments: assignments
+        )
+        batchAISkippedTaggedCount = repositories.count - eligible.count
+        guard !eligible.isEmpty else {
+            batchAISelectionNotice = String.l10n("batchAI.selection.allTagged")
+            return
+        }
+        presentBatchAIOptions(scope: .selected(eligible))
+    }
+
     /// 取消配置只清理临时任务范围，不退出多选，让用户可以继续调整勾选结果。
     private func dismissBatchAIOptions() {
         showBatchAIOptions = false
         batchAIRepositoryScope = .allUntagged
+        batchAISkippedTaggedCount = 0
     }
 
     private var hasUsableExternalSearchProvider: Bool {
