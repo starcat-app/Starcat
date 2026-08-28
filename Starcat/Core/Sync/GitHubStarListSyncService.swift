@@ -134,6 +134,15 @@ final class GitHubStarListSyncService {
         try await repository.fetchAllAIRules()
     }
 
+    /// 开始页只用分组计数，避免为概览去解码全部 membership 行。
+    func repoCountsByList() async throws -> [String: Int] {
+        try await repository.repoCountsByList()
+    }
+
+    func ungroupedRepoCount() async throws -> Int {
+        try await repository.ungroupedRepoCount()
+    }
+
     /// 手动/自动 AI 整理在启动时读取完整快照，避免依赖当前 Sidebar 是否已经展开。
     func allLists() async throws -> [GitHubStarList] {
         try await repository.fetchAllLists()

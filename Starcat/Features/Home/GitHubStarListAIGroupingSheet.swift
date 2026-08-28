@@ -17,9 +17,12 @@ struct GitHubStarListAIGroupingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
+    @Environment(AppDependencies.self) private var dependencies
     @State private var presentation = GitHubStarListAIGroupingPresentationStore()
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
+    /// 新建分组挂在本窗口根上，避免 Preflight 再 nested 一层；macOS nested sheet 会误触发父视图 onDisappear。
+    @State private var showCreateGroupSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,8 +46,20 @@ struct GitHubStarListAIGroupingSheet: View {
         .onChange(of: session.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: session)
         }
-        .onDisappear {
-            session.releaseManualContextIfUnused()
+        .sheet(isPresented: $showCreateGroupSheet) {
+            GitHubStarListEditorSheet(
+                list: nil,
+                service: dependencies.githubStarListSyncService,
+                onSaved: {
+                    await session.reloadListsAndRules()
+                    session.onMembershipsChanged?()
+                }
+            )
+            // 与侧栏新建分组同一口径。不要套 appSheetRootEnvironment：嵌套 sheet 再注入整棵
+            // AppDependencies 会让首帧变慢，而且编辑器并不读取那些环境对象。
+            .appLocaleEnvironment()
+            .starcatAnimationOverride()
+            .environment(\.starcatInterfaceScale, interfaceScale)
         }
         .confirmationDialog(
             "githubStarLists.aiGrouping.applyConfirm.title",
@@ -120,7 +135,8 @@ struct GitHubStarListAIGroupingSheet: View {
         } else if presentation.snapshot.totalCount == 0 {
             GitHubStarListAIGroupingPreflightView(
                 snapshot: presentation.snapshot,
-                session: session
+                session: session,
+                showCreateGroupSheet: $showCreateGroupSheet
             )
         } else {
             reviewWorkspace
@@ -265,6 +281,7 @@ struct GitHubStarListAIGroupingSheet: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(
                     session.isLoadingContext
+                        || session.isStartingManual
                         || session.preparedRepositoryCount == 0
                         || candidateListDisplays.isEmpty
                 )

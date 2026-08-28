@@ -227,7 +227,6 @@ struct GitHubStarListAIGroupingPresentationTests {
             instruction: "Database projects",
             colorHex: "#34C759"
         )
-        let repos = [makeRepo(id: 1), makeRepo(id: 2), makeRepo(id: 3)]
         let rules = [
             "swift": GitHubStarListAIRule(
                 listId: "swift",
@@ -240,13 +239,15 @@ struct GitHubStarListAIGroupingPresentationTests {
         let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
             jobs: [],
             availableLists: [swiftList, databaseList],
-            existingListIDsByRepo: [
-                1: ["swift", "database"],
-                2: ["swift"]
-            ],
+            existingListIDsByRepo: [:],
             selectedListIDsByRepo: [:],
             ignoredRepoIDs: [],
-            preparedRepositories: repos,
+            preparedRepositoryCount: 3,
+            ungroupedRepositoryCount: 1,
+            membershipCountByListID: [
+                "swift": 2,
+                "database": 1
+            ],
             rulesByListID: rules
         )
 

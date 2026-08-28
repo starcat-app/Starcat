@@ -113,6 +113,7 @@
 |---|---|---|
 | `View` / `body` | 所有 `*View.swift` | "SwiftUI View protocol body" |
 | `@Observable` | `HomeViewModel` / `ReadmeViewModel` / `RepoNoteAIGenerationViewModel`（七步状态机仅读暴露）/ `AppDependencies` | "Observation framework Swift 5.9 macros" |
+| `@ObservationIgnored` | `GitHubStarListAIGroupingSession.preparedRepos`（近 2,000 条仓库不能订阅进 SwiftUI body） | "ObservationIgnored Swift Observation" |
 | `@State` | `HomeView` 持有 `ReadmeViewModel` | "SwiftUI State property wrapper" |
 | `@Binding` | `$vm.selectedRepoID` 传给子 View | "SwiftUI Binding two-way" |
 | `@Environment(\.colorScheme)` | `ReadmeWebView` 切深浅色 | "SwiftUI Environment values" |

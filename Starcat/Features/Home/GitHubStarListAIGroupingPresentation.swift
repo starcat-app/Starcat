@@ -183,8 +183,8 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
 
 /// 将会话状态一次性投影为审核页快照。
 ///
-/// 这里故意把映射、排序与筛选计数收敛成单次刷新，避免 SwiftUI 高频调用 `body`
-/// 时重复扫描近 2,000 个任务。多分组使用 `Set<String>` 保留，不做单选降级。
+/// 开始页计数来自 COUNT / GROUP BY，不扫描完整仓库数组。审核列表的映射、排序
+/// 与筛选仍收敛成单次刷新，避免 SwiftUI 高频 `body` 重复扫描近 2,000 个任务。
 struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let items: [GitHubStarListAIReviewItem]
     let availableLists: [GitHubStarListAIListDisplay]
@@ -215,38 +215,21 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         existingListIDsByRepo: [Int64: Set<String>],
         selectedListIDsByRepo: [Int64: Set<String>],
         ignoredRepoIDs: Set<Int64>,
-        preparedRepositories: [Repo] = [],
+        preparedRepositoryCount: Int = 0,
+        ungroupedRepositoryCount: Int = 0,
+        membershipCountByListID: [String: Int] = [:],
         rulesByListID: [String: GitHubStarListAIRule] = [:]
     ) {
         let orderedLists = availableLists.sorted { $0.name < $1.name }
         let listsByID = Dictionary(uniqueKeysWithValues: orderedLists.map { ($0.id, $0) })
-        let preparedRepoIDs = Set(preparedRepositories.map(\.id))
-        let preparedRepoNamesByID = Dictionary(
-            uniqueKeysWithValues: preparedRepositories.map { ($0.id, $0.fullName) }
-        )
-        var groupedRepoIDs: Set<Int64> = []
-        var membershipCountByListID: [String: Int] = [:]
-        var samplesByListID: [String: [String]] = [:]
-
-        // membership 允许一仓多组，因此分组内计数可以重叠；顶部“已分组”只按仓库去重。
-        for (repoID, listIDs) in existingListIDsByRepo where preparedRepoIDs.contains(repoID) {
-            let knownListIDs = listIDs.filter { listsByID[$0] != nil }
-            guard !knownListIDs.isEmpty else { continue }
-            groupedRepoIDs.insert(repoID)
-            for listID in knownListIDs {
-                membershipCountByListID[listID, default: 0] += 1
-                if let name = preparedRepoNamesByID[repoID], samplesByListID[listID, default: []].count < 3 {
-                    samplesByListID[listID, default: []].append(name)
-                }
-            }
-        }
 
         let preflightGroups = orderedLists.map { list in
             let rule = rulesByListID[list.id]
             return GitHubStarListAIPreflightGroupDisplay(
                 list: list,
                 repositoryCount: membershipCountByListID[list.id, default: 0],
-                sampleRepositoryNames: samplesByListID[list.id, default: []],
+                // 样例名不再为概览去扫完整仓库表；卡片只展示计数。
+                sampleRepositoryNames: [],
                 hasAIRule: !(rule?.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
                 autoApplyEnabled: rule?.autoApplyEnabled ?? false
             )
@@ -315,9 +298,9 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
 
         self.items = projectedItems.sorted(by: GitHubStarListAIReviewItem.ordered)
         self.availableLists = orderedLists
-        self.preparedRepositoryCount = preparedRepositories.count
-        self.groupedRepositoryCount = groupedRepoIDs.count
-        self.ungroupedRepositoryCount = max(0, preparedRepositories.count - groupedRepoIDs.count)
+        self.preparedRepositoryCount = preparedRepositoryCount
+        self.ungroupedRepositoryCount = ungroupedRepositoryCount
+        self.groupedRepositoryCount = max(0, preparedRepositoryCount - ungroupedRepositoryCount)
         self.candidateListCount = preflightGroups.filter(\.hasAIRule).count
         self.preflightGroups = preflightGroups
         self.analyzedCount = analyzedCount

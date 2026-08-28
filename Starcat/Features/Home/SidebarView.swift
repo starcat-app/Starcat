@@ -241,8 +241,15 @@ struct SidebarView: View {
                     await viewModel.reloadItems(forceRefresh: true)
                 }
             )
-            // 开始页会再 nested 一层新建分组 Sheet；显式注入避免 macOS nested sheet 丢 environment。
+            // 开始页会再打开新建分组 Sheet；显式注入避免 macOS nested sheet 丢 environment。
             .appSheetRootEnvironment(dependencies)
+        }
+        .onChange(of: showGitHubStarListAIGroupingSheet) { _, isPresented in
+            // 不能绑在分组窗口的 onDisappear：macOS 弹出新建分组 nested sheet 时父视图
+            // 经常走 disappear，会把刚准备好的上下文清掉并再次全量准备。
+            if !isPresented {
+                dependencies.githubStarListAIGroupingSession.releaseManualContextIfUnused()
+            }
         }
         .sheet(isPresented: $showProjectAccessSheet) {
             ProjectAccessSheet {

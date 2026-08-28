@@ -157,9 +157,18 @@ final class GitHubStarListAIGroupingSession {
         didSet { presentationRevision &+= 1 }
     }
     private(set) var isLoadingContext = false
+    /// 点「开始整理」后才拉完整仓库；这段时间开始页必须继续显示，不能退回全屏 spinner。
+    private(set) var isStartingManual = false
     private(set) var isRunning = false
     private(set) var isApplying = false
     private(set) var contextErrorMessage: String?
+    /// 开始页仓库总数。用 COUNT 查询，不订阅完整 `[Repo]`。
+    private(set) var preparedRepositoryCount = 0 {
+        didSet { presentationRevision &+= 1 }
+    }
+    private(set) var ungroupedRepositoryCount = 0 {
+        didSet { presentationRevision &+= 1 }
+    }
 
     /// 审核页只观察轻量 revision，再按帧合并生成展示快照。
     /// 不能让 SwiftUI 的 body 直接读取并转换近 2,000 个 jobs，否则每个批次状态变化都会重复排序和筛选。
@@ -168,7 +177,11 @@ final class GitHubStarListAIGroupingSession {
     /// 应用成功后由 Sidebar 注入，合并刷新 Lists 计数与当前仓库列表。
     var onMembershipsChanged: (() -> Void)?
 
-    private var preparedRepos: [Repo] = []
+    /// 完整仓库只在点「开始整理」后加载。开始页若观察这个数组，1965 条赋值会拖住主线程 SwiftUI。
+    @ObservationIgnored private var preparedRepos: [Repo] = []
+    /// 0 个分组时 `availableLists` 为空，不能用它判断「已经准备过」。
+    @ObservationIgnored private var hasPreparedManualContext = false
+    @ObservationIgnored private(set) var membershipCountByListID: [String: Int] = [:]
     private var runTask: Task<Void, Never>?
     private var applyTask: Task<Void, Never>?
     private var generation: UInt64 = 0
@@ -190,11 +203,9 @@ final class GitHubStarListAIGroupingSession {
     }
 
     var totalCount: Int { jobs.count }
-    var preparedRepositoryCount: Int { preparedRepos.count }
-    /// 展示层只读复用已准备好的仓库快照，用于一次性生成整理前统计。
-    ///
-    /// 数组是 Copy-on-Write；这里不会复制近 2,000 个仓库，也不会把仓库查询搬进 SwiftUI `body`。
-    var preparedRepositoriesForPresentation: [Repo] { preparedRepos }
+    /// 分析 payload 是否已从数据库展开。开始页为 false；点「开始整理」后为 true。
+    var hasLoadedStarredRepositories: Bool { !preparedRepos.isEmpty }
+    var preparedRepositoryIDs: [Int64] { preparedRepos.map(\.id) }
     var analyzedCount: Int { jobs.filter { $0.status == .completed || $0.status == .failed }.count }
     var suggestedCount: Int { jobs.filter { !$0.suggestions.isEmpty }.count }
     var noMatchCount: Int { jobs.filter { $0.status == .completed && $0.suggestions.isEmpty }.count }
@@ -210,7 +221,6 @@ final class GitHubStarListAIGroupingSession {
         }.count
     }
     var isFinished: Bool { !jobs.isEmpty && analyzedCount == jobs.count }
-    var hasManualContext: Bool { mode == .manual && !availableLists.isEmpty }
 
     var candidateContexts: [GitHubStarListAIContext] {
         availableLists.compactMap { list in
@@ -226,9 +236,13 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
-    /// Sheet 打开时只准备快照。已存在的人工会话直接复用，避免关闭再开重置选择与结果。
+    /// Sheet 打开时只准备开始页计数。已存在的人工会话直接复用，避免关闭再开重置选择与结果。
+    ///
+    /// 开始页不调用 `fetchAllStarred()`：近 2,000 个完整 `Repo` 会把主线程卡在 spinner 上。
+    /// 用户还没有任何分组时 `availableLists` 为空，必须用 `hasPreparedManualContext` 判断，
+    /// 否则 nested sheet 触发 `.task` 重启会反复准备。
     func prepareManualContext() async {
-        if mode == .manual, !availableLists.isEmpty { return }
+        if hasPreparedManualContext, mode == .manual { return }
         if mode == .automatic {
             stopAnalysis()
         }
@@ -236,35 +250,59 @@ final class GitHubStarListAIGroupingSession {
         contextErrorMessage = nil
         defer { isLoadingContext = false }
         do {
-            async let reposResult = repoRepository.fetchAllStarred()
+            async let starredCountResult = repoRepository.starredCount()
+            async let ungroupedResult = listService.ungroupedRepoCount()
+            async let membershipCountsResult = listService.repoCountsByList()
             async let listsResult = listService.allLists()
             async let rulesResult = listService.allAIRules()
-            async let assignmentsResult = listService.allListAssignments()
-            preparedRepos = try await reposResult
+            membershipCountByListID = try await membershipCountsResult
+            preparedRepositoryCount = try await starredCountResult
+            ungroupedRepositoryCount = try await ungroupedResult
             availableLists = try await listsResult
             let rules = try await rulesResult
             rulesByListID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
-            existingListIDsByRepo = try await assignmentsResult.mapValues { Set($0.map(\.id)) }
             mode = .manual
+            hasPreparedManualContext = true
             if jobs.isEmpty {
                 selectedListIDsByRepo = [:]
                 ignoredRepoIDs = []
             }
         } catch {
             contextErrorMessage = error.localizedDescription
+            hasPreparedManualContext = false
         }
     }
 
-    /// 开始页改规则后只重载 Lists / 规则，不重拉近 2,000 个仓库，也不清空已有审核会话。
+    /// 开始页改规则或新建分组后只重载 Lists / 规则 / 计数，不拉完整仓库。
     func reloadListsAndRules() async {
         do {
             async let listsResult = listService.allLists()
             async let rulesResult = listService.allAIRules()
+            async let membershipCountsResult = listService.repoCountsByList()
+            async let ungroupedResult = listService.ungroupedRepoCount()
+            async let starredCountResult = repoRepository.starredCount()
+            membershipCountByListID = try await membershipCountsResult
+            preparedRepositoryCount = try await starredCountResult
+            ungroupedRepositoryCount = try await ungroupedResult
             availableLists = try await listsResult
             let rules = try await rulesResult
             rulesByListID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
         } catch {
             AppLog.ai.error("[githubListGrouping] reload lists/rules failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 点「开始整理」才展开全部 starred 仓库和 membership。开始页打开路径不得调用。
+    func ensureStarredRepositoriesLoaded() async {
+        guard preparedRepos.isEmpty else { return }
+        do {
+            async let reposResult = repoRepository.fetchAllStarred()
+            async let assignmentsResult = listService.allListAssignments()
+            preparedRepos = try await reposResult
+            preparedRepositoryCount = preparedRepos.count
+            existingListIDsByRepo = try await assignmentsResult.mapValues { Set($0.map(\.id)) }
+        } catch {
+            contextErrorMessage = error.localizedDescription
         }
     }
 
@@ -296,10 +334,14 @@ final class GitHubStarListAIGroupingSession {
             contextErrorMessage = error.localizedDescription
             return
         }
-        if mode != .manual || availableLists.isEmpty {
+        if !hasPreparedManualContext {
             await prepareManualContext()
         }
         guard contextErrorMessage == nil, !candidateContexts.isEmpty else { return }
+        isStartingManual = true
+        defer { isStartingManual = false }
+        await ensureStarredRepositoriesLoaded()
+        guard contextErrorMessage == nil, !preparedRepos.isEmpty else { return }
         beginAnalysis(
             repos: preparedRepos,
             candidates: candidateContexts,
@@ -401,11 +443,16 @@ final class GitHubStarListAIGroupingSession {
         selectedListIDsByRepo = [:]
         ignoredRepoIDs = []
         preparedRepos = []
+        preparedRepositoryCount = 0
+        ungroupedRepositoryCount = 0
+        membershipCountByListID = [:]
+        hasPreparedManualContext = false
         availableLists = []
         rulesByListID = [:]
         existingListIDsByRepo = [:]
         mode = .idle
         contextErrorMessage = nil
+        isStartingManual = false
     }
 
     /// 只准备了上下文但没有启动分析时，Sheet 关闭应释放人工模式，让后台自动分组继续工作。
@@ -715,10 +762,15 @@ final class GitHubStarListAIGroupingSession {
         selectedListIDsByRepo = [:]
         ignoredRepoIDs = []
         preparedRepos = []
+        preparedRepositoryCount = 0
+        ungroupedRepositoryCount = 0
+        membershipCountByListID = [:]
+        hasPreparedManualContext = false
         availableLists = []
         rulesByListID = [:]
         existingListIDsByRepo = [:]
         isRunning = false
+        isStartingManual = false
         mode = .idle
     }
 }
