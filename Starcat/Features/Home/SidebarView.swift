@@ -98,6 +98,8 @@ struct SidebarView: View {
     @Binding var showTagManagement: Bool
     /// HOM-47：触发 Release 时间线 sheet。
     @Binding var showReleaseTimeline: Bool
+    /// GitHub Lists AI 手动整理与审核 Sheet。真源在 HomeView，侧栏 popover「打开审核」与中栏横幅共用。
+    @Binding var showGitHubStarListAIGroupingSheet: Bool
     /// Root page 切换允许 HomeView 在写入 `selectedPage` 前先准备跨页状态。
     ///
     /// 这里保持 Sidebar 只表达“用户想切到哪个 root page”，真正的 Manage /
@@ -130,8 +132,6 @@ struct SidebarView: View {
     @State private var hoveredGitHubStarListID: String?
     /// 分组行右键删除的二次确认对象。「未分组」没有删除入口。
     @State private var gitHubStarListPendingDelete: GitHubStarList?
-    /// GitHub Lists AI 手动整理与审核 Sheet。
-    @State private var showGitHubStarListAIGroupingSheet = false
     /// “我的项目”独立授权和同步状态 Sheet。
     @State private var showProjectAccessSheet = false
     /// 探索页当前由系统 `List(selection:)` 高亮的行。
@@ -241,7 +241,8 @@ struct SidebarView: View {
                     await viewModel.reloadItems(forceRefresh: true)
                 }
             )
-            .appLocaleEnvironment()
+            // 开始页会再 nested 一层新建分组 Sheet；显式注入避免 macOS nested sheet 丢 environment。
+            .appSheetRootEnvironment(dependencies)
         }
         .sheet(isPresented: $showProjectAccessSheet) {
             ProjectAccessSheet {
@@ -1468,32 +1469,6 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sidebar.githubStarLists.add"))
-
-            Button {
-                do {
-                    try dependencies.entitlementGate.requirePro(.batchAI)
-                    showGitHubStarListAIGroupingSheet = true
-                } catch {
-                    // 付费墙由 HomeView 统一承载，避免在 Sidebar 再维护一套 sheet 状态。
-                    NotificationCenter.default.post(
-                        name: .starcatWorkspaceRequiresProPaywall,
-                        object: ProFeature.batchAI
-                    )
-                }
-            } label: {
-                Image(systemName: "circle.dotted.circle")
-                    .font(interfaceScale.font(.iconMedium, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(
-                !viewModel.hasGitHubStarListAIRules
-                    || authSession.state.user == nil
-            )
-            .help(Text("sidebar.githubStarLists.aiGrouping"))
 
             SyncIconButton(
                 isRefreshing: dependencies.githubStarListSyncService.isSyncing,

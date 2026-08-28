@@ -7,7 +7,8 @@
 //  页面展示全部仓库、去重后的已分组/未分组数量，以及每个现有分组的规则。
 //  所有统计都由 PresentationSnapshot 一次性生成，SwiftUI body 不扫描完整仓库集合。
 //  置信度写入 GitHubStarListAutoGroupingSettings。分组 AI 规则在卡片内折叠填写，
-//  空规则不能打开自动整理；不经过分组编辑 Sheet。
+//  空规则不能打开自动整理。开始页提供「新增分组」，复用现有 GitHubStarListEditorSheet，
+//  避免用户还没建分组就打开整理时左侧是空的。
 //
 
 import SwiftUI
@@ -17,10 +18,13 @@ struct GitHubStarListAIGroupingPreflightView: View {
     let session: GitHubStarListAIGroupingSession
 
     @Environment(AppSettings.self) private var settings
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
+    /// 复用侧栏同一套新建分组 Sheet；nested sheet 需要自己挂 environment。
+    @State private var showCreateGroupSheet = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -35,6 +39,18 @@ struct GitHubStarListAIGroupingPreflightView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $showCreateGroupSheet) {
+            GitHubStarListEditorSheet(
+                list: nil,
+                service: dependencies.githubStarListSyncService,
+                onSaved: {
+                    // 只重载 Lists / 规则，不重拉近 2,000 个仓库；侧栏计数走现有 membership 回调。
+                    await session.reloadListsAndRules()
+                    session.onMembershipsChanged?()
+                }
+            )
+            .appSheetRootEnvironment(dependencies)
+        }
     }
 
     private var summaryCards: some View {
@@ -115,6 +131,19 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 Text("githubStarLists.aiGrouping.preflight.existingGroups")
                     .font(interfaceScale.font(.panelTitle))
                 Spacer(minLength: 0)
+                Button {
+                    showCreateGroupSheet = true
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(interfaceScale.font(.iconMedium, weight: .medium))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("sidebar.githubStarLists.add"))
                 TextField("githubStarLists.aiGrouping.search.groups", text: $searchText)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.small)
@@ -123,7 +152,17 @@ struct GitHubStarListAIGroupingPreflightView: View {
             }
 
             ZStack {
-                if filteredGroups.isEmpty {
+                if snapshot.preflightGroups.isEmpty {
+                    ContentUnavailableView {
+                        Label("githubStarLists.aiGrouping.noAvailableGroups", systemImage: "tray")
+                    } description: {
+                        Text("githubStarLists.aiGrouping.results.empty.help")
+                    } actions: {
+                        Button("sidebar.githubStarLists.add") {
+                            showCreateGroupSheet = true
+                        }
+                    }
+                } else if filteredGroups.isEmpty {
                     ContentUnavailableView(
                         "githubStarLists.aiGrouping.noAvailableGroups",
                         systemImage: "tray",

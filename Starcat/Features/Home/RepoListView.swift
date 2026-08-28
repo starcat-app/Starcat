@@ -464,6 +464,8 @@ struct RepoListView: View {
     /// 这两个动作产生 sheet 由 HomeView 统一承载（避免 RepoListView 多持一个 @State）。
     var onStartBatchAI: (() -> Void)?
     var onShowBatchAIPanel: (() -> Void)?
+    /// 未分组中栏横幅的启动回调。Sheet 仍由 Sidebar / HomeView 共用一份状态承载。
+    var onStartGitHubStarListAIGrouping: (() -> Void)?
     /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
     var onOpenSearchCenter: (() -> Void)?
     /// 覆盖式知识库 RAG 工作台由 HomeView 承载；列表 toolbar 只暴露入口。
@@ -1669,7 +1671,14 @@ struct RepoListView: View {
                 } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                     emptyState(systemImage: "exclamationmark.triangle", title: "error.loadFailed", subtitleText: error)
                 } else if viewModel.items.isEmpty {
-                    emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+                    if selectedPage == .manage, viewModel.selection == .githubStarListUngrouped {
+                        // 未分组数量为 0 时仍要露出横幅（按钮灰掉），不能只在有列表时才插入。
+                        listWithOptionalBanner {
+                            emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+                        }
+                    } else {
+                        emptyState(systemImage: emptyImage, title: emptyTitle, subtitle: emptySubtitle)
+                    }
                 } else {
                     listWithOptionalBanner { unifiedListContent($bindableVM.selectedRepoID) }
                 }
@@ -1825,7 +1834,7 @@ struct RepoListView: View {
         RelativeTimeText.pastEvent(date, locale: locale)
     }
 
-    /// HOM-52：仅在 Untagged 视图非空时，在列表顶部插入"批量 AI 整理"入口横幅。
+    /// 在 Untagged / 未分组视图顶部插入整理入口横幅。
     ///
     /// 之所以包成 ViewBuilder + closure 而不是把 banner 塞进每个 list view：
     /// unifiedListContent 是带泛型 selection 的 List，加 banner 会破坏 List 滚动语义；
@@ -1841,6 +1850,15 @@ struct RepoListView: View {
                     service: dependencies.batchAIQueueService,
                     onStart: { onStartBatchAI?() },
                     onShowPanel: { onShowBatchAIPanel?() }
+                )
+                content()
+            }
+        } else if selectedPage == .manage, viewModel.selection == .githubStarListUngrouped {
+            VStack(spacing: 0) {
+                GitHubStarListUngroupedBanner(
+                    ungroupedCount: viewModel.githubStarListUngroupedCount,
+                    isLoggedIn: authSession.state.user != nil,
+                    onStart: { onStartGitHubStarListAIGrouping?() }
                 )
                 content()
             }

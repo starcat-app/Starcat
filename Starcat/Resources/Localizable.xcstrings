@@ -124253,6 +124253,50 @@
         }
       }
     },
+    "githubStarLists.ungroupedBanner.hint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Let AI recommend groups for all ungrouped repositories at once."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "让 AI 一次性为所有未分组仓库推荐分组。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讓 AI 一次為所有未分組倉庫推薦分組。"
+          }
+        }
+      }
+    },
+    "githubStarLists.ungroupedBanner.titleFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d ungrouped repositories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 个未分组仓库"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%d 個未分組倉庫"
+          }
+        }
+      }
+    },
     "githubStarLists.aiGrouping.action.acceptAll" : {
       "localizations" : {
         "en" : {

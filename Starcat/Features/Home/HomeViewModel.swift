@@ -1858,12 +1858,6 @@ final class HomeViewModel {
         return try await githubStarListRepository.fetchAllAIRules()
     }
 
-    var hasGitHubStarListAIRules: Bool {
-        githubStarListAIRulesByListID.values.contains {
-            !$0.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-    }
-
     /// 一个仓库可以同时属于多个 GitHub Lists；菜单通过这个查询展示每一项的独立状态。
     func isRepo(_ repoID: Int64, inGitHubStarList listID: String) -> Bool {
         githubStarListIDsByRepo[repoID]?.contains(listID) == true

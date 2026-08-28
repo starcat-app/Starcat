@@ -105,6 +105,8 @@ struct HomeView: View {
     @State private var showBatchAIPanel: Bool = false
     /// HOM-52：当前正在编辑的 Options（启动 sheet 时初始化，跨 sheet 关闭保留以记住上次选择）。
     @State private var batchAIOptions: BatchAIQueueOptions = BatchAIQueueOptions()
+    /// GitHub Lists AI 分组审核 sheet。中栏「未分组」横幅与侧栏后台任务 popover 共用。
+    @State private var showGitHubStarListAIGroupingSheet = false
     /// 当前需要展示的 Pro 付费墙上下文。由批量 AI 等主窗口入口触发。
     @State private var paywallContext: ProPaywallContext?
     /// 工作台入口缺少有效对话模型时，由主窗口展示可操作提示，而不是静默失败。
@@ -1228,6 +1230,7 @@ struct HomeView: View {
             selectedInsightsTopic: $selectedInsightsTopic,
             showTagManagement: $showTagManagement,
             showReleaseTimeline: $showReleaseTimeline,
+            showGitHubStarListAIGroupingSheet: $showGitHubStarListAIGroupingSheet,
             onSelectRootPage: selectSidebarRootPage,
             onShowBatchAIPanel: {
                 showBatchAIPanel = true
@@ -1320,6 +1323,9 @@ struct HomeView: View {
                     },
                     onShowBatchAIPanel: {
                         showBatchAIPanel = true
+                    },
+                    onStartGitHubStarListAIGrouping: {
+                        startGitHubStarListAIGrouping()
                     },
                     onOpenSearchCenter: {
                         presentSearchCenterForGettingStarted()
@@ -2155,6 +2161,16 @@ struct HomeView: View {
         case .error:          return "error"
         case .loaded(let html, _):
             return "loaded:\(html.count)"
+        }
+    }
+
+    /// 未分组中栏横幅「开始整理」：先过 Pro 门控，再打开现有 GitHub Lists 审核 sheet。
+    private func startGitHubStarListAIGrouping() {
+        do {
+            try dependencies.entitlementGate.requirePro(.batchAI)
+            showGitHubStarListAIGroupingSheet = true
+        } catch {
+            paywallContext = ProPaywallContext(feature: .batchAI, message: error.localizedDescription)
         }
     }
 
