@@ -6,7 +6,7 @@
 //
 //  模块职责：
 //  - 承载关闭 Sheet 后仍继续存在的分析进度、审核选择和应用结果；
-//  - 以小批量、有限并发调用 AI，避免复用标签队列造成文案与取消语义串线；
+//  - 以五个长期 Worker 单仓调用 AI，完成一个仓库就立即发布结果并领取下一项；
 //  - 把 GitHub mutation 的可重试错误、组织 OAuth 限制和永久错误分开呈现。
 //
 //  关键约束：
@@ -141,12 +141,27 @@ struct GitHubStarListAIGroupingPreflightContext: Equatable, Sendable {
     let rulesByListID: [String: GitHubStarListAIRule]
 }
 
+/// GitHub Lists 建议生成的最小能力边界。
+///
+/// 会话只依赖这一项能力，测试可注入可控 Provider 验证 Worker 并发与渐进回写，
+/// 不需要触发真实 AI Provider 或修改用户的全局 AI 设置。
+@MainActor
+protocol GitHubStarListSuggestionProviding: AnyObject {
+    func generateGitHubListSuggestions(
+        for repos: [Repo],
+        candidates: [GitHubStarListAIContext],
+        existingListIDsByRepo: [Int64: Set<String>]
+    ) async throws -> [Int64: [GitHubStarListAISuggestion]]
+}
+
+extension RepoAIInsightService: GitHubStarListSuggestionProviding {}
+
 @MainActor
 @Observable
 final class GitHubStarListAIGroupingSession {
     private let repoRepository: any RepoRepositoryProtocol
     private let listService: GitHubStarListSyncService
-    private let insightService: RepoAIInsightService
+    private let insightService: any GitHubStarListSuggestionProviding
     private let entitlementGate: EntitlementGate
 
     private(set) var mode: GitHubStarListAIGroupingSessionMode = .idle
@@ -197,15 +212,17 @@ final class GitHubStarListAIGroupingSession {
     private var runTask: Task<Void, Never>?
     private var applyTask: Task<Void, Never>?
     private var generation: UInt64 = 0
+    private var rateLimitCooldownUntil: Date?
 
-    private static let manualBatchSize = 12
-    private static let manualConcurrency = 2
-    private static let automaticBatchSize = 8
+    /// 固定五个长期 Worker；不要为每个仓库创建一个 Task，否则大列表会产生无界任务。
+    private static let defaultConcurrency = 5
+    /// 命中 Provider 429 后只让 Worker 0 继续领取任务，避免五路请求持续放大限流。
+    private static let rateLimitCooldown: TimeInterval = 30
 
     init(
         repoRepository: any RepoRepositoryProtocol,
         listService: GitHubStarListSyncService,
-        insightService: RepoAIInsightService,
+        insightService: any GitHubStarListSuggestionProviding,
         entitlementGate: EntitlementGate
     ) {
         self.repoRepository = repoRepository
@@ -381,8 +398,6 @@ final class GitHubStarListAIGroupingSession {
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            batchSize: Self.manualBatchSize,
-            concurrency: Self.manualConcurrency,
             automaticThreshold: nil
         )
     }
@@ -399,8 +414,6 @@ final class GitHubStarListAIGroupingSession {
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            batchSize: Self.manualBatchSize,
-            concurrency: Self.manualConcurrency,
             automaticThreshold: nil,
             replaceJobs: false
         )
@@ -416,8 +429,6 @@ final class GitHubStarListAIGroupingSession {
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            batchSize: 1,
-            concurrency: 1,
             automaticThreshold: nil,
             replaceJobs: false
         )
@@ -448,8 +459,6 @@ final class GitHubStarListAIGroupingSession {
             candidates: automaticCandidates,
             existingMemberships: existingListIDsByRepo,
             mode: .automatic,
-            batchSize: Self.automaticBatchSize,
-            concurrency: 1,
             automaticThreshold: GitHubStarListAutoGroupingSettings.clamp(confidenceThreshold)
         )
         return true
@@ -487,6 +496,7 @@ final class GitHubStarListAIGroupingSession {
         mode = .idle
         contextErrorMessage = nil
         isStartingManual = false
+        rateLimitCooldownUntil = nil
     }
 
     /// 只准备了上下文但没有启动分析时，Sheet 关闭应释放人工模式，让后台自动分组继续工作。
@@ -584,8 +594,6 @@ final class GitHubStarListAIGroupingSession {
         candidates: [GitHubStarListAIContext],
         existingMemberships: [Int64: Set<String>],
         mode: GitHubStarListAIGroupingSessionMode,
-        batchSize: Int,
-        concurrency: Int,
         automaticThreshold: Double?,
         replaceJobs: Bool = true
     ) {
@@ -596,6 +604,7 @@ final class GitHubStarListAIGroupingSession {
         isRunning = true
         contextErrorMessage = nil
         if replaceJobs {
+            rateLimitCooldownUntil = nil
             jobs = repos.map { GitHubStarListAIGroupingJob(repo: $0) }
             selectedListIDsByRepo = [:]
             ignoredRepoIDs = []
@@ -613,8 +622,6 @@ final class GitHubStarListAIGroupingSession {
                 repos: repos,
                 candidates: candidates,
                 existingMemberships: existingMemberships,
-                batchSize: batchSize,
-                concurrency: max(1, concurrency),
                 automaticThreshold: automaticThreshold,
                 generation: currentGeneration
             )
@@ -625,53 +632,123 @@ final class GitHubStarListAIGroupingSession {
         repos: [Repo],
         candidates: [GitHubStarListAIContext],
         existingMemberships: [Int64: Set<String>],
-        batchSize: Int,
-        concurrency: Int,
         automaticThreshold: Double?,
         generation: UInt64
     ) async {
-        let batches = stride(from: 0, to: repos.count, by: batchSize).map { start in
-            Array(repos[start..<min(start + batchSize, repos.count)])
-        }
+        let reposByID = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
 
-        var cursor = 0
-        while cursor < batches.count, !Task.isCancelled, generation == self.generation {
-            let wave = Array(batches[cursor..<min(cursor + concurrency, batches.count)])
-            cursor += wave.count
-            let waveRepoIDs = Set(wave.flatMap { $0.map(\.id) })
-            for index in jobs.indices where waveRepoIDs.contains(jobs[index].id) {
-                jobs[index].status = .analyzing
-            }
-
-            await withTaskGroup(of: AnalysisOutcome.self) { group in
-                for batch in wave {
-                    group.addTask { [insightService] in
-                        do {
-                            let results = try await insightService.generateGitHubListSuggestions(
-                                for: batch,
-                                candidates: candidates,
-                                existingListIDsByRepo: existingMemberships
-                            )
-                            return .success(repos: batch, results: results)
-                        } catch {
-                            return .failure(repos: batch, error: BatchAIFailure(error: error))
-                        }
-                    }
-                }
-
-                for await outcome in group {
-                    guard generation == self.generation, !Task.isCancelled else { continue }
-                    await self.integrate(outcome, automaticThreshold: automaticThreshold)
+        // 只创建五个长期 Worker。领取动作在 MainActor 上原子完成，因此同一仓库不会被重复消费；
+        // 网络 await 期间 MainActor 会让出执行权，五个请求仍能并行在途。
+        await withTaskGroup(of: Void.self) { group in
+            for workerIndex in 0..<Self.defaultConcurrency {
+                group.addTask { [weak self] in
+                    await self?.runWorker(
+                        index: workerIndex,
+                        reposByID: reposByID,
+                        candidates: candidates,
+                        existingMemberships: existingMemberships,
+                        automaticThreshold: automaticThreshold,
+                        generation: generation
+                    )
                 }
             }
+            await group.waitForAll()
         }
 
-        guard generation == self.generation else { return }
+        guard generation == self.generation, !Task.isCancelled else { return }
         isRunning = false
         runTask = nil
         if mode == .automatic {
             resetToIdle()
         }
+    }
+
+    /// Worker 每次只领取一个仓库；该仓库完成后立即回写，再领取下一项。
+    /// 这保证慢请求只阻塞自己的 Worker，不会让同一批次的其它仓库等待统一收口。
+    private func runWorker(
+        index workerIndex: Int,
+        reposByID: [Int64: Repo],
+        candidates: [GitHubStarListAIContext],
+        existingMemberships: [Int64: Set<String>],
+        automaticThreshold: Double?,
+        generation: UInt64
+    ) async {
+        while !Task.isCancelled, generation == self.generation {
+            guard jobs.contains(where: {
+                $0.status == .queued && reposByID[$0.id] != nil
+            }) else { return }
+            if workerIndex >= activeConcurrency {
+                try? await Task.sleep(for: .milliseconds(250))
+                continue
+            }
+
+            guard let repo = claimNextRepo(from: reposByID) else { return }
+            await processClaimedRepo(
+                repo,
+                candidates: candidates,
+                existingMemberships: existingMemberships,
+                automaticThreshold: automaticThreshold,
+                generation: generation
+            )
+            // 每完成一个仓库就让出 MainActor，让观察层有机会立即刷新该行状态。
+            await Task.yield()
+        }
+    }
+
+    /// MainActor 串行执行领取与状态切换，相当于队列的原子 pop。
+    private func claimNextRepo(from reposByID: [Int64: Repo]) -> Repo? {
+        guard let index = jobs.firstIndex(where: {
+            $0.status == .queued && reposByID[$0.id] != nil
+        }) else { return nil }
+        jobs[index].status = .analyzing
+        return reposByID[jobs[index].id]
+    }
+
+    private func processClaimedRepo(
+        _ repo: Repo,
+        candidates: [GitHubStarListAIContext],
+        existingMemberships: [Int64: Set<String>],
+        automaticThreshold: Double?,
+        generation: UInt64
+    ) async {
+        do {
+            let results = try await insightService.generateGitHubListSuggestions(
+                for: [repo],
+                candidates: candidates,
+                existingListIDsByRepo: existingMemberships
+            )
+            try Task.checkCancellation()
+            guard generation == self.generation else { return }
+            await integrate(
+                .success(repos: [repo], results: results),
+                automaticThreshold: automaticThreshold
+            )
+        } catch {
+            guard generation == self.generation,
+                  !Task.isCancelled,
+                  !(error is CancellationError)
+            else { return }
+            if isRateLimited(error) {
+                rateLimitCooldownUntil = .now.addingTimeInterval(Self.rateLimitCooldown)
+            }
+            await integrate(
+                .failure(repos: [repo], error: BatchAIFailure(error: error)),
+                automaticThreshold: automaticThreshold
+            )
+        }
+    }
+
+    private var activeConcurrency: Int {
+        guard let cooldownUntil = rateLimitCooldownUntil, cooldownUntil > .now else {
+            return Self.defaultConcurrency
+        }
+        return 1
+    }
+
+    private func isRateLimited(_ error: Error) -> Bool {
+        guard let aiError = error as? AIClientError else { return false }
+        if case .rateLimited = aiError { return true }
+        return false
     }
 
     private func integrate(
@@ -803,6 +880,7 @@ final class GitHubStarListAIGroupingSession {
         availableLists = []
         rulesByListID = [:]
         existingListIDsByRepo = [:]
+        rateLimitCooldownUntil = nil
         isRunning = false
         isStartingManual = false
         mode = .idle

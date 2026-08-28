@@ -2,7 +2,7 @@
 //  GitHubStarListAIGroupingSessionTests.swift
 //  StarcatTests
 //
-//  验证 AI 仓库分组开始页不拉取完整仓库表，以及关闭窗口才释放未使用上下文。
+//  验证 AI 仓库分组的轻量开始页、五 Worker 队列与单仓渐进回写。
 //
 
 import Foundation
@@ -82,15 +82,69 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(!environment.session.hasLoadedStarredRepositories)
     }
 
+    @Test("AI 分组按仓库消费并限制为五路并发")
+    func groupingUsesFiveSingleRepoWorkers() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(delay: .milliseconds(40))
+        let environment = try await makeEnvironment(
+            repoCount: 20,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        #expect(provider.callSizes.count == 20)
+        #expect(provider.callSizes.allSatisfy { $0 == 1 })
+        #expect(provider.maximumActiveCalls == 5)
+        #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
+    }
+
+    @Test("Worker 完成仓库后立即回写，不等待慢请求统一收口")
+    func groupingPublishesCompletionBeforeSlowerRequestFinishes() async throws {
+        let blockedRepoID: Int64 = 2
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(5),
+            blockedRepoID: blockedRepoID
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 8,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await provider.waitUntilBlockedCallStarts()
+        for _ in 0..<200 where environment.session.analyzedCount < 7 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(environment.session.isRunning)
+        #expect(environment.session.analyzedCount == 7)
+        #expect(environment.session.jobs.first(where: { $0.id == blockedRepoID })?.status == .analyzing)
+        #expect(environment.session.jobs.filter { $0.id != blockedRepoID }.allSatisfy { $0.status == .completed })
+
+        provider.releaseBlockedCall()
+        await waitUntilStopped(environment.session)
+        #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
+    }
+
     private func makeEnvironment(
         repoCount: Int,
-        groupedRepoFullNames: [String]
+        groupedRepoFullNames: [String],
+        aiRule: (instruction: String, autoApplyEnabled: Bool)? = nil,
+        insightService: (any GitHubStarListSuggestionProviding)? = nil
     ) async throws -> (session: GitHubStarListAIGroupingSession, database: InMemoryDatabaseManager) {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixtures(count: repoCount)
         let listRepository = GRDBGitHubStarListRepository(database: database)
+        let hasList = !groupedRepoFullNames.isEmpty || aiRule != nil
         try await listRepository.replaceRemoteSnapshot(
-            lists: groupedRepoFullNames.isEmpty ? [] : [
+            lists: hasList ? [
                 GitHubStarListRemoteRecord(
                     id: "list-1",
                     name: "Tools",
@@ -100,7 +154,7 @@ struct GitHubStarListAIGroupingSessionTests {
                     createdAt: "2026-08-28T00:00:00Z",
                     updatedAt: "2026-08-28T00:00:00Z"
                 )
-            ],
+            ] : [],
             memberships: groupedRepoFullNames.map {
                 GitHubStarListRemoteMembership(listId: "list-1", repoFullName: $0)
             },
@@ -113,27 +167,106 @@ struct GitHubStarListAIGroupingSessionTests {
             tokenProvider: StubTokenProvider(token: "test-token")
         )
         let listService = GitHubStarListSyncService(apiClient: client, repository: listRepository)
+        if let aiRule {
+            try await listService.saveAIRule(
+                listID: "list-1",
+                instruction: aiRule.instruction,
+                autoApplyEnabled: aiRule.autoApplyEnabled
+            )
+        }
         let suiteName = "test.starcat.list-grouping.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let keychain = InMemoryKeychain()
         let settings = AppSettings(defaults: defaults, keychain: keychain)
-        let insight = RepoAIInsightService(
-            summaryRepository: GRDBAISummaryRepository(database: database),
-            readmeRepository: ReadmeRepository(database: database),
-            settings: settings,
-            keychain: keychain
-        )
+        let resolvedInsightService: any GitHubStarListSuggestionProviding
+        if let insightService {
+            resolvedInsightService = insightService
+        } else {
+            resolvedInsightService = RepoAIInsightService(
+                summaryRepository: GRDBAISummaryRepository(database: database),
+                readmeRepository: ReadmeRepository(database: database),
+                settings: settings,
+                keychain: keychain
+            )
+        }
         let session = GitHubStarListAIGroupingSession(
             repoRepository: GRDBRepoRepository(database: database),
             listService: listService,
-            insightService: insight,
+            insightService: resolvedInsightService,
             entitlementGate: EntitlementGate(
                 entitlementProvider: GroupingSessionTestEntitlementProvider(isPro: true),
                 userIDProvider: { 1 }
             )
         )
         return (session, database)
+    }
+
+    private func waitUntilStopped(_ session: GitHubStarListAIGroupingSession) async {
+        for _ in 0..<400 {
+            if !session.isRunning { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("GitHub Lists AI 分组未在预期时间内结束")
+    }
+}
+
+/// 同时记录在途请求，并可阻塞指定仓库，验证固定 Worker 数和逐仓即时回写。
+@MainActor
+private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSuggestionProviding {
+    private let delay: Duration
+    private let blockedRepoID: Int64?
+    private var activeCalls = 0
+    private var blockedCallStarted = false
+    private var blockedContinuation: CheckedContinuation<Void, Never>?
+    private var blockedStartWaiters: [CheckedContinuation<Void, Never>] = []
+
+    private(set) var callSizes: [Int] = []
+    private(set) var maximumActiveCalls = 0
+
+    init(delay: Duration, blockedRepoID: Int64? = nil) {
+        self.delay = delay
+        self.blockedRepoID = blockedRepoID
+    }
+
+    func generateGitHubListSuggestions(
+        for repos: [Repo],
+        candidates: [GitHubStarListAIContext],
+        existingListIDsByRepo: [Int64: Set<String>]
+    ) async throws -> [Int64: [GitHubStarListAISuggestion]] {
+        callSizes.append(repos.count)
+        activeCalls += 1
+        maximumActiveCalls = max(maximumActiveCalls, activeCalls)
+        defer { activeCalls -= 1 }
+
+        guard let repo = repos.first, repos.count == 1 else {
+            Issue.record("分组 Worker 每次必须只提交一个仓库")
+            return [:]
+        }
+        if repo.id == blockedRepoID {
+            await withCheckedContinuation { continuation in
+                blockedContinuation = continuation
+                blockedCallStarted = true
+                let waiters = blockedStartWaiters
+                blockedStartWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+        } else {
+            try await Task.sleep(for: delay)
+        }
+        return [repo.id: []]
+    }
+
+    func waitUntilBlockedCallStarts() async {
+        guard !blockedCallStarted else { return }
+        await withCheckedContinuation { continuation in
+            blockedStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseBlockedCall() {
+        blockedContinuation?.resume()
+        blockedContinuation = nil
     }
 }
 
