@@ -524,30 +524,6 @@ struct HomeView: View {
             )
             .appLocaleEnvironment()
         }
-        // GitHub Lists AI 整理与“未分类”配置窗口共用 Home 根级宿主，避免 Sidebar
-        // 大型视图树参与 Sheet 布局；新增分组在窗口内部切页，不再创建 nested Sheet。
-        .sheet(
-            isPresented: $showGitHubStarListAIGroupingSheet,
-            onDismiss: {
-                dependencies.githubStarListAIGroupingSession.releaseManualContextIfUnused()
-            }
-        ) {
-            GitHubStarListAIGroupingSheet(
-                session: dependencies.githubStarListAIGroupingSession,
-                listService: dependencies.githubStarListSyncService,
-                onApplied: {
-                    await viewModel.refreshSidebar()
-                    await viewModel.reloadItems(forceRefresh: true)
-                }
-            )
-            // 本窗口只读取 locale、字号和 AppSettings；不要改回 appSheetRootEnvironment，
-            // 否则会重新订阅整套 AppDependencies 环境图并拖慢首帧布局。
-            .starcatAnimationOverride()
-            .appLocaleEnvironment()
-            .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
-            .dynamicTypeSize(dependencies.settings.interfaceScale.dynamicTypeSize)
-            .environment(dependencies.settings)
-        }
         // HOM-52：批量 AI 整理进度面板
         .sheet(isPresented: $showBatchAIPanel) {
             BatchAIQueuePanel(

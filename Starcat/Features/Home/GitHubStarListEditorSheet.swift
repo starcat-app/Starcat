@@ -19,9 +19,6 @@ struct GitHubStarListEditorSheet: View {
     let list: GitHubStarList?
     let service: GitHubStarListSyncService
     let onSaved: @MainActor () async -> Void
-    /// 非 nil 时由宿主接管关闭动作；AI 分组开始页用它在同一 Sheet 内返回，
-    /// 避免创建第二个 AppKit Sheet 窗口。普通独立 Sheet 仍走环境 dismiss。
-    let onClose: (() -> Void)?
     /// 开始页「添加 / 修改 AI 规则」需要一进来就看到规则区，避免还要再点一次折叠标题。
     let expandAIRuleOnOpen: Bool
 
@@ -55,13 +52,11 @@ struct GitHubStarListEditorSheet: View {
         list: GitHubStarList?,
         service: GitHubStarListSyncService,
         expandAIRuleOnOpen: Bool = false,
-        onClose: (() -> Void)? = nil,
         onSaved: @escaping @MainActor () async -> Void
     ) {
         self.list = list
         self.service = service
         self.expandAIRuleOnOpen = expandAIRuleOnOpen
-        self.onClose = onClose
         self.onSaved = onSaved
         _name = State(initialValue: list?.name ?? "")
         _description = State(initialValue: list?.description ?? "")
@@ -120,7 +115,7 @@ struct GitHubStarListEditorSheet: View {
             Spacer(minLength: 8)
 
             SheetCloseButton {
-                close()
+                dismiss()
             }
         }
         .padding(.horizontal, 20)
@@ -306,7 +301,7 @@ struct GitHubStarListEditorSheet: View {
             Spacer()
 
             Button("common.cancel") {
-                close()
+                dismiss()
             }
             .disabled(isSaving)
 
@@ -366,7 +361,7 @@ struct GitHubStarListEditorSheet: View {
                 )
             }
             await onSaved()
-            close()
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -397,18 +392,9 @@ struct GitHubStarListEditorSheet: View {
         do {
             try await service.deleteList(id: list.id)
             await onSaved()
-            close()
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
-        }
-    }
-
-    /// 嵌入式编辑器只切回父页面，独立 Sheet 才真正关闭窗口。
-    private func close() {
-        if let onClose {
-            onClose()
-        } else {
-            dismiss()
         }
     }
 }
