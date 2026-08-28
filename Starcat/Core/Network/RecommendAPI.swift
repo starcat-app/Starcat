@@ -29,7 +29,9 @@ enum RecommendationAPIContract: Sendable {
     var cacheKey: String {
         switch self {
         case .simRepoV1: "simrepo-v1"
-        case .trainedV2: "trained-v2"
+        // display_score 是一次展示语义迁移；升级作用域让旧 v12 磁盘快照自然 miss，
+        // 避免用户继续看到 raw co-star score，且无需手动清理整个推荐缓存。
+        case .trainedV2: "trained-v2-display-score-v1"
         }
     }
 }
@@ -118,7 +120,7 @@ actor RecommendAPI {
     ///
     /// 设置页可热切换 URL；缓存若只按 repoID 命中，会把本地模型结果误当成线上
     /// SimRepo 结果。作用域不包含 API Key，既能隔离服务又不会把凭据写入磁盘。
-    func recommendationCacheScope() -> String {
+    func recommendationCacheScope() async -> String {
         "\(contract.cacheKey)|\(baseURL.absoluteString)"
     }
 }

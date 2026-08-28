@@ -250,7 +250,7 @@ private actor RecommendationFetcherStub: RecommendationStatusFetching {
         )
     }
 
-    func recommendationCacheScope() -> String {
+    func recommendationCacheScope() async -> String {
         serviceScope
     }
 

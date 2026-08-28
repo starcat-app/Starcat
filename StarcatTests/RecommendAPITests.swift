@@ -50,6 +50,8 @@ struct RecommendAPITests {
         #expect(page.items.first?.reasons == ["costar", "source_repo_id:42"])
         #expect(page.items.first?.displayScore == 0.956)
         #expect(page.items.first?.asSemanticSearchHit().displayScore == 0.956)
+        let cacheScope = await api.recommendationCacheScope()
+        #expect(cacheScope == "trained-v2-display-score-v1|https://recommend.test.invalid")
     }
 
     private func makeAPI(contract: RecommendationAPIContract) -> RecommendAPI {
