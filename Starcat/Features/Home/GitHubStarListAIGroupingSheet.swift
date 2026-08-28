@@ -17,9 +17,12 @@ struct GitHubStarListAIGroupingSheet: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
+    @Environment(AppDependencies.self) private var dependencies
     @State private var presentation: GitHubStarListAIGroupingPresentationStore
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
+    /// 创建表单使用轻量 SwiftUI sheet；外层固定 AppKit sheet 不再参与它的尺寸协商。
+    @State private var showCreateGroupSheet = false
     /// 首帧事件每次窗口生命周期只记一次，避免视图重算重复记录。
     @State private var hasMarkedFirstFrame = false
 
@@ -58,6 +61,23 @@ struct GitHubStarListAIGroupingSheet: View {
         }
         .onChange(of: session.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: session)
+        }
+        .sheet(isPresented: $showCreateGroupSheet) {
+            GitHubStarListEditorSheet(
+                list: nil,
+                service: dependencies.githubStarListSyncService,
+                onSaved: {
+                    await session.reloadListsAndRules()
+                    session.onMembershipsChanged?()
+                }
+            )
+            .onAppear {
+                PerformanceTracer.shared.mark(.gitHubStarListCreateFirstFrame)
+            }
+            // 新建表单只需要本地化、字号和动画环境；不要给轻量 sheet 重复注入完整依赖树。
+            .appLocaleEnvironment()
+            .starcatAnimationOverride()
+            .environment(\.starcatInterfaceScale, interfaceScale)
         }
         .confirmationDialog(
             "githubStarLists.aiGrouping.applyConfirm.title",
@@ -129,7 +149,8 @@ struct GitHubStarListAIGroupingSheet: View {
         } else if snapshot.totalCount == 0 {
             GitHubStarListAIGroupingPreflightView(
                 snapshot: snapshot,
-                session: session
+                session: session,
+                showCreateGroupSheet: $showCreateGroupSheet
             )
         } else {
             reviewWorkspace
