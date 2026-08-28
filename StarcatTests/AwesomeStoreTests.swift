@@ -136,6 +136,34 @@ struct AwesomeStoreTests {
         #expect(store.currentRepositoryCount == 130)
     }
 
+    @Test("来源总数与中栏同时包含 GitHub 仓库和资源条目")
+    @MainActor
+    func sourceCountsAndVisibleItemsIncludeResources() async throws {
+        let source = Self.source(
+            id: "resources",
+            isEnabled: true,
+            githubRepoCount: 1,
+            externalEntryCount: 2,
+            resourceEntryCount: 3
+        )
+        let repository = AwesomeStoreRepositoryFake(
+            sources: [source],
+            repositoriesBySource: [source.id: [Self.repositoryItem(id: 1, source: source)]],
+            resourcesBySource: [source.id: [Self.resourceItem(source: source)]]
+        )
+        let service = AwesomeCustomSourceService(github: AwesomeStoreGitHubFake(), repository: repository)
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        await store.loadAwesome()
+        store.selectSource(source.id)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(store.allRepositoryCount == 6)
+        #expect(store.currentRepositoryCount == 6)
+        #expect(store.repositories.count == 1)
+        #expect(store.resources.map(\.title) == ["External resource"])
+    }
+
     @Test("Awesome 多选只切换批量集合而单选才打开详情")
     @MainActor
     func awesomeSelectionPolicyUsesSharedMultiSelectionStore() {
@@ -251,7 +279,9 @@ struct AwesomeStoreTests {
         id: String = "one",
         kind: AwesomeSourceKind = .managed,
         isEnabled: Bool = false,
-        githubRepoCount: Int = 1
+        githubRepoCount: Int = 1,
+        externalEntryCount: Int = 0,
+        resourceEntryCount: Int = 0
     ) -> AwesomeSource {
         AwesomeSource(
             id: id,
@@ -273,7 +303,8 @@ struct AwesomeStoreTests {
             sourceLanguage: "Swift",
             languageBytes: ["Swift": 900, "Shell": 100],
             githubRepoCount: githubRepoCount,
-            externalEntryCount: 0,
+            externalEntryCount: externalEntryCount,
+            resourceEntryCount: resourceEntryCount,
             isAvailable: true,
             isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 0),
@@ -308,11 +339,30 @@ struct AwesomeStoreTests {
             )]
         )
     }
+
+    private static func resourceItem(source: AwesomeSource) -> AwesomeResourceItem {
+        AwesomeResourceItem(
+            id: "resource:one",
+            targetType: .externalResource,
+            title: "External resource",
+            description: "README evidence",
+            url: URL(string: "https://example.com/resource")!,
+            evidence: AwesomeEntryEvidence(
+                source: source,
+                entryTitle: "External resource",
+                entryDescription: "README evidence",
+                sectionPath: ["Resources"],
+                entryOrder: 1,
+                sourceAnchorURL: nil
+            )
+        )
+    }
 }
 
 private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
     private var sourceValues: [AwesomeSource]
     private let repositoriesBySource: [String: [AwesomeRepositoryItem]]
+    private let resourcesBySource: [String: [AwesomeResourceItem]]
     private let delaysBySource: [String: UInt64]
     private let setupDelayNanoseconds: UInt64
     private var setupCompleted = false
@@ -322,11 +372,13 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
     init(
         sources: [AwesomeSource],
         repositoriesBySource: [String: [AwesomeRepositoryItem]] = [:],
+        resourcesBySource: [String: [AwesomeResourceItem]] = [:],
         delaysBySource: [String: UInt64] = [:],
         setupDelayNanoseconds: UInt64 = 0
     ) {
         sourceValues = sources
         self.repositoriesBySource = repositoriesBySource
+        self.resourcesBySource = resourcesBySource
         self.delaysBySource = delaysBySource
         self.setupDelayNanoseconds = setupDelayNanoseconds
     }
@@ -342,6 +394,10 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
         }
         guard let sourceID else { return repositoriesBySource.values.flatMap { $0 } }
         return repositoriesBySource[sourceID] ?? []
+    }
+    func resources(sourceID: String?) async -> [AwesomeResourceItem] {
+        guard let sourceID else { return resourcesBySource.values.flatMap { $0 } }
+        return resourcesBySource[sourceID] ?? []
     }
     func hasCompletedSourceSetup() async -> Bool {
         if setupDelayNanoseconds > 0 {
@@ -426,6 +482,7 @@ private actor AwesomeStoreRepositoryFake: AwesomeRepositoryProtocol {
                 languageBytes: source.languageBytes,
                 githubRepoCount: source.githubRepoCount,
                 externalEntryCount: source.externalEntryCount,
+                resourceEntryCount: source.resourceEntryCount,
                 isAvailable: source.isAvailable,
                 isEnabled: enabledSourceIDs.contains(source.id),
                 addedAt: source.addedAt,

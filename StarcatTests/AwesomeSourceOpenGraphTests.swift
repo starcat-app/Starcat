@@ -119,6 +119,7 @@ struct AwesomeSourceOpenGraphTests {
             languageBytes: [:],
             githubRepoCount: 0,
             externalEntryCount: 0,
+            resourceEntryCount: 0,
             isAvailable: true,
             isEnabled: false,
             addedAt: updatedAt,

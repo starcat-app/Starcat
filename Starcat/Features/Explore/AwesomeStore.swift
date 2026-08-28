@@ -16,6 +16,7 @@ import Observation
 final class AwesomeStore {
     private(set) var sources: [AwesomeSource] = []
     private(set) var repositories: [AwesomeRepositoryItem] = []
+    private(set) var resources: [AwesomeResourceItem] = []
     private(set) var hasCompletedSourceSetup = false
     private(set) var isLoading = false
     private(set) var isRefreshing = false
@@ -54,7 +55,7 @@ final class AwesomeStore {
     /// “Awesome”主分类和“全部 Awesome”表达所有已启用来源的条目总和。
     /// 产品口径不做跨来源去重，也不随当前来源选择变化。
     var allRepositoryCount: Int {
-        enabledSources.reduce(0) { $0 + $1.githubRepoCount }
+        enabledSources.reduce(0) { $0 + $1.totalEntryCount }
     }
     /// 当前来源的总数必须来自该来源自己的目录元数据，不能误用全部来源条目总和。
     /// 后者只适用于“全部 Awesome”；混用会把 awesome-react 显示成 `2 / 267`。
@@ -62,7 +63,7 @@ final class AwesomeStore {
         guard let selectedSourceID,
               let source = sources.first(where: { $0.id == selectedSourceID })
         else { return allRepositoryCount }
-        return source.githubRepoCount
+        return source.totalEntryCount
     }
 
     /// 加载 Awesome 本地快照并按缓存策略刷新，不触发任何页面展示副作用。
@@ -209,6 +210,7 @@ final class AwesomeStore {
         customSourceParseTasks = [:]
         sources = []
         repositories = []
+        resources = []
         hasCompletedSourceSetup = false
         isLoading = false
         isRefreshing = false
@@ -270,10 +272,13 @@ final class AwesomeStore {
 
     private func reloadRepositories() async {
         let requestedSourceID = selectedSourceID
-        let visible = await repository.repositories(sourceID: requestedSourceID)
+        async let visibleRepositories = repository.repositories(sourceID: requestedSourceID)
+        async let visibleResources = repository.resources(sourceID: requestedSourceID)
+        let (visible, resourceItems) = await (visibleRepositories, visibleResources)
         // GRDB/测试替身不保证响应取消；旧选择即使晚返回，也不能覆盖当前来源。
         guard !Task.isCancelled, selectedSourceID == requestedSourceID else { return }
         repositories = visible
+        resources = resourceItems
         if let selectedRepositoryID,
            !repositories.contains(where: { $0.id == selectedRepositoryID }) {
             self.selectedRepositoryID = nil

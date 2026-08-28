@@ -325,7 +325,7 @@ struct AwesomeSourceCard: View {
 
     /// 整句仍走同一条 format，只把数字加重，避免拆成两段 key 把中英语序弄坏。
     private var containedCountLabel: Text {
-        let count = source.githubRepoCount
+        let count = source.totalEntryCount
         let full = String(
             format: String.l10n("awesome.sources.containedCountFormat"),
             count

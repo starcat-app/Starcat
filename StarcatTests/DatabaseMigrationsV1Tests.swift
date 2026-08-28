@@ -33,7 +33,7 @@ struct DatabaseMigrationsV1Tests {
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision",
             "data_contribution_preferences", "data_contribution_outbox",
-            "github_star_list_ai_rules"
+            "github_star_list_ai_rules", "awesome_resource_entries"
         ]
         try db.read { db in
             for table in expectedTables {
@@ -177,15 +177,18 @@ struct DatabaseMigrationsV1Tests {
             #expect(applied.contains("v28-awesome-source-description"))
             #expect(applied.contains("v29-awesome-source-card-metadata"))
             #expect(applied.contains("v30-awesome-entry-updated-at"))
+            #expect(applied.contains("v33-awesome-resource-entries"))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
+            #expect(try db.tableExists("awesome_resource_entries"))
             #expect(try db.tableExists("awesome_state"))
             #expect(try db.columns(in: "awesome_entries").map(\.name).contains("repo_updated_at"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("source_stars"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("entries_checked_at"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("repo_description"))
             #expect(try db.columns(in: "awesome_sources").map(\.name).contains("language_bytes_json"))
+            #expect(try db.columns(in: "awesome_sources").map(\.name).contains("resource_entry_count"))
             let state = try AwesomeStateRecord.fetchOne(db)
             #expect(state?.hasCompletedSourceSetup == false)
         }
@@ -386,6 +389,40 @@ struct DatabaseMigrationsV1Tests {
                 arguments: ["custom:example/list"]
             )
             #expect(try AwesomeCustomSourceParseRecord.fetchCount(db) == 0)
+        }
+    }
+
+    @Test("v33 独立存储非仓库资源并失效 managed 条目缓存")
+    func awesomeResourceEntriesMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v32-github-star-list-ai-rules")
+        try writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO awesome_sources (
+                    source_id, kind, display_name, repo_full_name, repo_url,
+                    entries_etag, entries_checked_at, added_at, updated_at
+                ) VALUES (?, 'managed', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    "design", "Design", "VoltAgent/awesome-design-md",
+                    "https://github.com/VoltAgent/awesome-design-md", "\"legacy\"",
+                    "2026-08-28T08:00:00Z", "2026-08-28T08:00:00Z", "2026-08-28T08:00:00Z",
+                ]
+            )
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            #expect(try db.tableExists("awesome_resource_entries"))
+            #expect(try db.columns(in: "awesome_sources").map(\.name).contains("resource_entry_count"))
+            let fetchedSource = try AwesomeSourceRecord.fetchOne(db, key: "design")
+            let source = try #require(fetchedSource)
+            #expect(source.entriesETag == nil)
+            #expect(source.entriesCheckedAt == nil)
         }
     }
 

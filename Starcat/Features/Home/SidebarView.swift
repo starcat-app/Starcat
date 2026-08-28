@@ -1090,7 +1090,7 @@ struct SidebarView: View {
     private func awesomeSourceRow(_ source: AwesomeSource?) -> some View {
         exploreSelectableRow(
             selection: .awesomeSource(source?.id),
-            count: source?.githubRepoCount ?? dependencies.awesomeStore.allRepositoryCount
+            count: source?.totalEntryCount ?? dependencies.awesomeStore.allRepositoryCount
         ) {
             if let source {
                 AwesomeSourceLogo(source: source, size: 18)

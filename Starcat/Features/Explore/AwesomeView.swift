@@ -8,6 +8,7 @@
 //  去重结果展示；单来源沿 README 原始顺序分组，来源描述只作为 metadata，不覆盖官方描述。
 //
 
+import AppKit
 import SwiftUI
 
 struct AwesomeView: View {
@@ -51,9 +52,9 @@ struct AwesomeView: View {
             sort = .original
             reportCount()
         }
-        .onChange(of: filteredRepositoryIDs) { _, visibleIDs in
+        .onChange(of: filteredDisplayItemIDs) { _, _ in
             reportCount()
-            retainVisibleMultiSelection(visibleIDs)
+            retainVisibleMultiSelection(filteredRepositoryIDs)
         }
     }
 
@@ -125,7 +126,7 @@ struct AwesomeView: View {
             ContentUnavailableView {
                 Label("sidebar.loginPrompt", systemImage: "person.crop.circle.badge.exclamationmark")
             }
-        } else if store.isLoading, store.repositories.isEmpty {
+        } else if store.isLoading, store.repositories.isEmpty, store.resources.isEmpty {
             RepoSkeletonListView(rowCount: 10)
         } else if store.enabledSources.isEmpty {
             ContentUnavailableView {
@@ -137,7 +138,7 @@ struct AwesomeView: View {
                     Task { await store.presentSourceManager() }
                 }
             }
-        } else if filteredRepositories.isEmpty {
+        } else if filteredDisplayItems.isEmpty {
             ContentUnavailableView.search(text: searchText)
         } else {
             repositoryList
@@ -149,8 +150,13 @@ struct AwesomeView: View {
         return List {
             ForEach(sectionGroups) { group in
                 Section(group.title) {
-                    ForEach(group.repositories) { repo in
-                        repositoryRow(repo)
+                    ForEach(group.items) { item in
+                        switch item {
+                        case .repository(let repo):
+                            repositoryRow(repo)
+                        case .resource(let resource):
+                            resourceRow(resource)
+                        }
                     }
                 }
             }
@@ -170,6 +176,48 @@ struct AwesomeView: View {
             .disabled(!multiStore.isActive)
             .hidden()
         }
+    }
+
+    private func resourceRow(_ resource: AwesomeResourceItem) -> some View {
+        let multiStore = dependencies.exploreMultiSelectionStore
+        return Button {
+            // 资源条目不是 GitHub 仓库，不能进入仓库多选状态或详情页；单击直接打开原始证据 URL。
+            guard !multiStore.isActive else { return }
+            NSWorkspace.shared.open(resource.url)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: resource.targetType == .repositoryResource ? "doc.text" : "link")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 38, height: 38)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(resource.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let description = resource.description, !description.isEmpty {
+                        Text(description)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Text(resource.url.host ?? resource.url.absoluteString)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.up.right.square")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 5)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(multiStore.isActive)
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
     private func repositoryRow(_ repo: AwesomeRepositoryItem) -> some View {
@@ -213,9 +261,10 @@ struct AwesomeView: View {
 
     private var availableSections: [String] {
         var seen: Set<String> = []
-        return store.repositories.compactMap { repo in
-            let section = repo.evidence.first?.sectionPath.joined(separator: " / ")
-            guard let section, !section.isEmpty, seen.insert(section).inserted else { return nil }
+        return (store.repositories.map { AwesomeDisplayItem.repository($0) }
+            + store.resources.map { AwesomeDisplayItem.resource($0) }).compactMap { item in
+            let section = item.sectionPath.joined(separator: " / ")
+            guard !section.isEmpty, seen.insert(section).inserted else { return nil }
             return section
         }
     }
@@ -233,40 +282,71 @@ struct AwesomeView: View {
                 + repo.evidence.flatMap { [$0.entryTitle, $0.entryDescription, $0.source.displayName] }
             return fields.compactMap { $0?.lowercased() }.contains { $0.contains(query) }
         }
+        return filtered
+    }
+
+    private var filteredResources: [AwesomeResourceItem] {
+        guard resourcesMatchGlobalFilters else { return [] }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return store.resources.filter { resource in
+            let matchesSection = selectedSection == nil ||
+                resource.evidence.sectionPath.joined(separator: " / ") == selectedSection
+            guard matchesSection else { return false }
+            guard !query.isEmpty else { return true }
+            return [resource.title, resource.description, resource.url.absoluteString]
+                .compactMap { $0?.lowercased() }
+                .contains { $0.contains(query) }
+        }
+    }
+
+    /// 仓库专属筛选无法解释外站资源。只要用户启用了任一仓库事实筛选，就隐藏资源条目，
+    /// 避免把“缺少 GitHub 元数据”误判为满足筛选条件。
+    private var resourcesMatchGlobalFilters: Bool {
+        guard !settings.hideArchived, !settings.hideForks, settings.globalFilterLanguages.isEmpty else { return false }
+        guard case .all = settings.starFilter, case .all = settings.libraryFilter else { return false }
+        guard case .unknown = settings.wikiAvailabilityFilter,
+              case .unknown = settings.healthAvailabilityFilter,
+              case .unknown = settings.openSSFAvailabilityFilter
+        else { return false }
+        return true
+    }
+
+    private var filteredDisplayItems: [AwesomeDisplayItem] {
+        let items = filteredRepositories.map(AwesomeDisplayItem.repository)
+            + filteredResources.map(AwesomeDisplayItem.resource)
         switch sort {
         case .original:
-            return filtered
+            return items.sorted(by: AwesomeDisplayItem.originalOrder)
         case .stars:
-            return filtered.sorted { $0.stars == $1.stars ? $0.id < $1.id : $0.stars > $1.stars }
+            return items.sorted(by: AwesomeDisplayItem.starOrder)
         case .updated:
-            return filtered.sorted {
-                if $0.updatedAt != $1.updatedAt {
-                    return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
-                }
-                return $0.id < $1.id
-            }
+            return items.sorted(by: AwesomeDisplayItem.updatedOrder)
         case .name:
-            return filtered.sorted { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
+            return items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         }
     }
 
     private var sectionGroups: [AwesomeSectionGroup] {
         guard store.selectedSourceID != nil, sort == .original, selectedSection == nil else {
-            return [AwesomeSectionGroup(title: String.l10n("awesome.section.results"), repositories: filteredRepositories)]
+            return [AwesomeSectionGroup(title: String.l10n("awesome.section.results"), items: filteredDisplayItems)]
         }
         var order: [String] = []
-        let grouped = Dictionary(grouping: filteredRepositories) { repo in
-            repo.evidence.first?.sectionPath.joined(separator: " / ") ?? String.l10n("awesome.section.other")
+        let grouped = Dictionary(grouping: filteredDisplayItems) { item in
+            item.sectionPath.joined(separator: " / ").nilIfEmpty ?? String.l10n("awesome.section.other")
         }
-        for repo in filteredRepositories {
-            let title = repo.evidence.first?.sectionPath.joined(separator: " / ") ?? String.l10n("awesome.section.other")
+        for item in filteredDisplayItems {
+            let title = item.sectionPath.joined(separator: " / ").nilIfEmpty ?? String.l10n("awesome.section.other")
             if !order.contains(title) { order.append(title) }
         }
-        return order.map { AwesomeSectionGroup(title: $0, repositories: grouped[$0] ?? []) }
+        return order.map { AwesomeSectionGroup(title: $0, items: grouped[$0] ?? []) }
     }
 
     private var filteredRepositoryIDs: [Int64] {
         filteredRepositories.map(\.id)
+    }
+
+    private var filteredDisplayItemIDs: [String] {
+        filteredDisplayItems.map(\.id)
     }
 
     private func selectionSnapshot(for repo: AwesomeRepositoryItem) -> SelectionSnapshot {
@@ -337,7 +417,7 @@ struct AwesomeView: View {
     }
 
     private func reportCount() {
-        onRepoCountChange(filteredRepositories.count)
+        onRepoCountChange(filteredDisplayItems.count)
     }
 }
 
@@ -445,8 +525,81 @@ private enum AwesomeSortOption: String, CaseIterable, Identifiable {
 
 private struct AwesomeSectionGroup: Identifiable {
     let title: String
-    let repositories: [AwesomeRepositoryItem]
+    let items: [AwesomeDisplayItem]
     var id: String { title }
+}
+
+private enum AwesomeDisplayItem: Identifiable {
+    case repository(AwesomeRepositoryItem)
+    case resource(AwesomeResourceItem)
+
+    var id: String {
+        switch self {
+        case .repository(let repo): return "repo:\(repo.id)"
+        case .resource(let resource): return "resource:\(resource.id)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .repository(let repo): return repo.fullName
+        case .resource(let resource): return resource.title
+        }
+    }
+
+    var sectionPath: [String] {
+        switch self {
+        case .repository(let repo): return repo.evidence.first?.sectionPath ?? []
+        case .resource(let resource): return resource.evidence.sectionPath
+        }
+    }
+
+    private var entryOrder: Int {
+        switch self {
+        case .repository(let repo): return repo.evidence.first?.entryOrder ?? .max
+        case .resource(let resource): return resource.evidence.entryOrder
+        }
+    }
+
+    private var sourceOrder: Int {
+        switch self {
+        case .repository(let repo): return repo.evidence.first?.source.sortOrder ?? .max
+        case .resource(let resource): return resource.evidence.source.sortOrder
+        }
+    }
+
+    static func originalOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+        if lhs.sourceOrder != rhs.sourceOrder { return lhs.sourceOrder < rhs.sourceOrder }
+        if lhs.entryOrder != rhs.entryOrder { return lhs.entryOrder < rhs.entryOrder }
+        return lhs.id < rhs.id
+    }
+
+    static func starOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.repository(let left), .repository(let right)):
+            return left.stars == right.stars ? left.id < right.id : left.stars > right.stars
+        case (.repository, .resource): return true
+        case (.resource, .repository): return false
+        case (.resource, .resource): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    static func updatedOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+        switch (lhs, rhs) {
+        case (.repository(let left), .repository(let right)):
+            if left.updatedAt != right.updatedAt {
+                return (left.updatedAt ?? .distantPast) > (right.updatedAt ?? .distantPast)
+            }
+            return left.id < right.id
+        case (.repository, .resource): return true
+        case (.resource, .repository): return false
+        case (.resource, .resource): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 private struct AwesomeWikiAvailabilityTaskIdentity: Hashable {

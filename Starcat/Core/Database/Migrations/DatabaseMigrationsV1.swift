@@ -114,6 +114,46 @@ enum DatabaseMigrations {
         registerV30AwesomeEntryUpdatedAt(into: &migrator)
         registerV31AwesomeCustomSourceParsing(into: &migrator)
         registerV32GitHubStarListAIRules(into: &migrator)
+        registerV33AwesomeResourceEntries(into: &migrator)
+    }
+
+    // MARK: - v33-awesome-resource-entries：Awesome 非仓库资源（2026-08-28）
+
+    /// 外部目录与来源仓库内文件没有 GitHub repo ID，必须独立保存，不能用 0 作为伪主键。
+    /// 迁移仅新增可重建缓存表和计数字段，并失效 managed ETag 触发下一次刷新回填。
+    private static func registerV33AwesomeResourceEntries(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v33-awesome-resource-entries") { db in
+            guard try db.tableExists("awesome_sources") else { return }
+            let sourceColumns = Set(try db.columns(in: "awesome_sources").map(\.name))
+            if !sourceColumns.contains("resource_entry_count") {
+                try db.alter(table: "awesome_sources") { table in
+                    table.add(column: "resource_entry_count", .integer).notNull().defaults(to: 0)
+                }
+            }
+            try db.create(table: "awesome_resource_entries", ifNotExists: true) { table in
+                table.column("source_id", .text).notNull()
+                    .references("awesome_sources", column: "source_id", onDelete: .cascade)
+                table.column("target_key", .text).notNull()
+                table.column("target_type", .text).notNull()
+                table.column("raw_url", .text).notNull()
+                table.column("entry_title", .text).notNull()
+                table.column("entry_description", .text)
+                table.column("section_path_json", .text).notNull().defaults(to: "[]")
+                table.column("entry_order", .integer).notNull()
+                table.column("source_anchor_url", .text)
+                table.column("cached_at", .text).notNull()
+                table.primaryKey(["source_id", "target_key"])
+            }
+            try db.create(
+                index: "idx_awesome_resource_entries_source_order",
+                on: "awesome_resource_entries",
+                columns: ["source_id", "entry_order"],
+                ifNotExists: true
+            )
+            try db.execute(
+                sql: "UPDATE awesome_sources SET entries_etag = NULL, entries_checked_at = NULL WHERE kind = 'managed'"
+            )
+        }
     }
 
     /// AI 分组规则是 Starcat 用户数据，必须与 GitHub 远端 description 分表保存。

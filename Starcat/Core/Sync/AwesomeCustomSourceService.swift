@@ -306,6 +306,7 @@ actor AwesomeCustomSourceService {
             languageBytes: sourceRepo.language.map { [$0: 1] } ?? [:],
             githubRepoCount: githubRepoCount,
             externalEntryCount: externalEntryCount,
+            resourceEntryCount: 0,
             isAvailable: true,
             isEnabled: true,
             addedAt: now,

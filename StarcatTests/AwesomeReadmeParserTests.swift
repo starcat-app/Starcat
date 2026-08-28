@@ -268,6 +268,7 @@ struct AwesomeReadmeParserTests {
             languageBytes: [:],
             githubRepoCount: 1,
             externalEntryCount: 0,
+            resourceEntryCount: 0,
             isAvailable: true,
             isEnabled: false,
             addedAt: .distantPast,

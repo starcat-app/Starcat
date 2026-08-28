@@ -39,6 +39,7 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
     let languageBytes: [String: Int]?
     let githubRepoCount: Int
     let externalEntryCount: Int
+    let resourceEntryCount: Int?
     let lastSyncedAt: String?
     let updatedAt: String
 
@@ -62,13 +63,14 @@ struct AwesomeSourceDTO: Codable, Identifiable, Hashable, Sendable {
         case languageBytes = "language_bytes"
         case githubRepoCount = "github_repo_count"
         case externalEntryCount = "external_entry_count"
+        case resourceEntryCount = "resource_entry_count"
         case lastSyncedAt = "last_synced_at"
         case updatedAt = "updated_at"
     }
 }
 
 struct AwesomeEntryDTO: Codable, Hashable, Sendable {
-    let ghRepoID: Int64
+    let ghRepoID: Int64?
     let owner: String
     let name: String
     let fullName: String
@@ -94,6 +96,9 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
     let sectionPath: [String]
     let entryOrder: Int
     let sourceAnchorURL: String?
+    /// 旧缓存没有该字段时仍按 GitHub 仓库处理；新服务会显式返回三种目标类型。
+    var targetType: AwesomeEntryTargetType? = nil
+    var rawURL: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case ghRepoID = "gh_repo_id"
@@ -122,7 +127,131 @@ struct AwesomeEntryDTO: Codable, Hashable, Sendable {
         case sectionPath = "section_path"
         case entryOrder = "entry_order"
         case sourceAnchorURL = "source_anchor_url"
+        case targetType = "target_type"
+        case rawURL = "raw_url"
     }
+
+    init(
+        ghRepoID: Int64?,
+        owner: String,
+        name: String,
+        fullName: String,
+        description: String?,
+        ownerAvatar: String?,
+        homepage: String?,
+        language: String?,
+        stars: Int,
+        forks: Int,
+        watchers: Int,
+        subscribers: Int,
+        openIssues: Int,
+        defaultBranch: String,
+        licenseSpdx: String?,
+        topics: [String],
+        isArchived: Bool,
+        isFork: Bool,
+        pushedAt: String?,
+        updatedAt: String,
+        createdAt: String,
+        entryTitle: String,
+        entryDescription: String?,
+        sectionPath: [String],
+        entryOrder: Int,
+        sourceAnchorURL: String?,
+        targetType: AwesomeEntryTargetType? = nil,
+        rawURL: String? = nil
+    ) {
+        self.ghRepoID = ghRepoID
+        self.owner = owner
+        self.name = name
+        self.fullName = fullName
+        self.description = description
+        self.ownerAvatar = ownerAvatar
+        self.homepage = homepage
+        self.language = language
+        self.stars = stars
+        self.forks = forks
+        self.watchers = watchers
+        self.subscribers = subscribers
+        self.openIssues = openIssues
+        self.defaultBranch = defaultBranch
+        self.licenseSpdx = licenseSpdx
+        self.topics = topics
+        self.isArchived = isArchived
+        self.isFork = isFork
+        self.pushedAt = pushedAt
+        self.updatedAt = updatedAt
+        self.createdAt = createdAt
+        self.entryTitle = entryTitle
+        self.entryDescription = entryDescription
+        self.sectionPath = sectionPath
+        self.entryOrder = entryOrder
+        self.sourceAnchorURL = sourceAnchorURL
+        self.targetType = targetType
+        self.rawURL = rawURL
+    }
+
+    /// Discovery 对资源条目不会伪造 owner、Stars、创建时间等 GitHub 仓库事实，JSON 中会
+    /// 直接省略这些字段；GitHub Repo 则继续执行严格解码，避免服务端契约退化被静默吞掉。
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedTargetType = try container.decodeIfPresent(AwesomeEntryTargetType.self, forKey: .targetType)
+        let isRepository = decodedTargetType == nil || decodedTargetType == .githubRepository
+
+        ghRepoID = try container.decodeIfPresent(Int64.self, forKey: .ghRepoID)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        ownerAvatar = try container.decodeIfPresent(String.self, forKey: .ownerAvatar)
+        homepage = try container.decodeIfPresent(String.self, forKey: .homepage)
+        language = try container.decodeIfPresent(String.self, forKey: .language)
+        licenseSpdx = try container.decodeIfPresent(String.self, forKey: .licenseSpdx)
+        pushedAt = try container.decodeIfPresent(String.self, forKey: .pushedAt)
+        entryDescription = try container.decodeIfPresent(String.self, forKey: .entryDescription)
+        sourceAnchorURL = try container.decodeIfPresent(String.self, forKey: .sourceAnchorURL)
+        targetType = decodedTargetType
+        rawURL = try container.decodeIfPresent(String.self, forKey: .rawURL)
+
+        if isRepository {
+            owner = try container.decode(String.self, forKey: .owner)
+            name = try container.decode(String.self, forKey: .name)
+            fullName = try container.decode(String.self, forKey: .fullName)
+            stars = try container.decode(Int.self, forKey: .stars)
+            forks = try container.decode(Int.self, forKey: .forks)
+            watchers = try container.decode(Int.self, forKey: .watchers)
+            subscribers = try container.decode(Int.self, forKey: .subscribers)
+            openIssues = try container.decode(Int.self, forKey: .openIssues)
+            defaultBranch = try container.decode(String.self, forKey: .defaultBranch)
+            topics = try container.decode([String].self, forKey: .topics)
+            isArchived = try container.decode(Bool.self, forKey: .isArchived)
+            isFork = try container.decode(Bool.self, forKey: .isFork)
+            updatedAt = try container.decode(String.self, forKey: .updatedAt)
+            createdAt = try container.decode(String.self, forKey: .createdAt)
+        } else {
+            owner = try container.decodeIfPresent(String.self, forKey: .owner) ?? ""
+            name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+            fullName = try container.decodeIfPresent(String.self, forKey: .fullName) ?? ""
+            stars = try container.decodeIfPresent(Int.self, forKey: .stars) ?? 0
+            forks = try container.decodeIfPresent(Int.self, forKey: .forks) ?? 0
+            watchers = try container.decodeIfPresent(Int.self, forKey: .watchers) ?? 0
+            subscribers = try container.decodeIfPresent(Int.self, forKey: .subscribers) ?? 0
+            openIssues = try container.decodeIfPresent(Int.self, forKey: .openIssues) ?? 0
+            defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch) ?? ""
+            topics = try container.decodeIfPresent([String].self, forKey: .topics) ?? []
+            isArchived = try container.decodeIfPresent(Bool.self, forKey: .isArchived) ?? false
+            isFork = try container.decodeIfPresent(Bool.self, forKey: .isFork) ?? false
+            updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt) ?? ""
+            createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        }
+
+        entryTitle = try container.decode(String.self, forKey: .entryTitle)
+        sectionPath = try container.decodeIfPresent([String].self, forKey: .sectionPath) ?? []
+        entryOrder = try container.decode(Int.self, forKey: .entryOrder)
+    }
+}
+
+enum AwesomeEntryTargetType: String, Codable, Hashable, Sendable {
+    case githubRepository = "github_repo"
+    case externalResource = "external_resource"
+    case repositoryResource = "repository_resource"
 }
 
 struct AwesomeEntriesSnapshotDTO: Codable, Sendable {
@@ -178,11 +307,17 @@ struct AwesomeSource: Identifiable, Hashable, Sendable {
     let languageBytes: [String: Int]
     let githubRepoCount: Int
     let externalEntryCount: Int
+    let resourceEntryCount: Int
     let isAvailable: Bool
     let isEnabled: Bool
     let addedAt: Date
     let lastSyncedAt: Date?
     let updatedAt: Date
+
+    /// Sidebar、来源卡片和中栏标题统一使用服务端三类条目的直接相加口径。
+    var totalEntryCount: Int {
+        githubRepoCount + externalEntryCount + resourceEntryCount
+    }
 
     func localizedSummary(languageCode: String?) -> String? {
         let prefersChinese = languageCode?.lowercased().hasPrefix("zh") == true
@@ -192,6 +327,16 @@ struct AwesomeSource: Identifiable, Hashable, Sendable {
             return trimmed?.isEmpty == false ? trimmed : nil
         }.first
     }
+}
+
+/// 非 GitHub 仓库条目不伪造 Stars/Forks 等仓库事实，只保留 README 证据和可打开 URL。
+struct AwesomeResourceItem: Identifiable, Hashable, Sendable {
+    let id: String
+    let targetType: AwesomeEntryTargetType
+    let title: String
+    let description: String?
+    let url: URL
+    let evidence: AwesomeEntryEvidence
 }
 
 /// 单个 Repo 在一个来源中的原始条目事实。

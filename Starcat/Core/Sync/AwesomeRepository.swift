@@ -23,6 +23,7 @@ protocol AwesomeRepositoryProtocol: Sendable {
     func sources() async -> [AwesomeSource]
     func enabledSources() async -> [AwesomeSource]
     func repositories(sourceID: String?) async -> [AwesomeRepositoryItem]
+    func resources(sourceID: String?) async -> [AwesomeResourceItem]
     func hasCompletedSourceSetup() async -> Bool
     func refreshCatalog(policy: AwesomeRefreshPolicy) async throws -> [AwesomeSource]
     func refreshEnabledEntries(policy: AwesomeRefreshPolicy) async -> [String: String]
@@ -58,6 +59,8 @@ enum AwesomeRefreshPolicy: Sendable, Equatable {
 }
 
 extension AwesomeRepositoryProtocol {
+    func resources(sourceID _: String? = nil) async -> [AwesomeResourceItem] { [] }
+
     func refreshCatalog() async throws -> [AwesomeSource] {
         try await refreshCatalog(policy: .ifStale)
     }
@@ -141,6 +144,29 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         } catch {
             if error is CancellationError || Task.isCancelled { return [] }
             AppLog.database.warning("Awesome repositories read failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    func resources(sourceID: String? = nil) async -> [AwesomeResourceItem] {
+        do {
+            return try await database.writer.read { db in
+                let sources = try Self.readSources(db: db, enabledOnly: true)
+                let visibleSources = sourceID.map { id in sources.filter { $0.id == id } } ?? sources
+                guard !visibleSources.isEmpty else { return [] }
+                let sourceMap = Dictionary(uniqueKeysWithValues: visibleSources.map { ($0.id, $0) })
+                let records = try AwesomeResourceEntryRecord
+                    .filter(visibleSources.map(\.id).contains(Column("source_id")))
+                    .order(Column("entry_order").asc, Column("target_key").asc)
+                    .fetchAll(db)
+                return records.compactMap { record in
+                    guard let source = sourceMap[record.sourceID] else { return nil }
+                    return record.toDomain(source: source)
+                }
+            }
+        } catch {
+            if error is CancellationError || Task.isCancelled { return [] }
+            AppLog.database.warning("Awesome resources read failed: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -297,7 +323,9 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
             ).save(db)
             try db.execute(sql: "DELETE FROM awesome_entries WHERE source_id = ?", arguments: [source.id])
             for entry in entries {
-                try AwesomeEntryRecord.from(entry, sourceID: source.id, cachedAt: cachedAt).insert(db)
+                if let record = AwesomeEntryRecord.from(entry, sourceID: source.id, cachedAt: cachedAt) {
+                    try record.insert(db)
+                }
             }
             try AwesomeCustomSourceParseRecord.from(parseState).save(db)
         }
@@ -369,7 +397,9 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         let cachedAt = ISO8601DateFormatter.shared.string(from: now())
         try await database.writer.write { db in
             for entry in entries {
-                try AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: cachedAt).save(db)
+                if let record = AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: cachedAt) {
+                    try record.save(db)
+                }
             }
             let entryCount = try Int.fetchOne(
                 db,
@@ -393,8 +423,8 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         try await database.writer.write { db in
             let entryCount = try Int.fetchOne(
                 db,
-                sql: "SELECT COUNT(*) FROM awesome_entries WHERE source_id = ?",
-                arguments: [sourceID]
+                sql: "SELECT (SELECT COUNT(*) FROM awesome_entries WHERE source_id = ?) + (SELECT COUNT(*) FROM awesome_resource_entries WHERE source_id = ?)",
+                arguments: [sourceID, sourceID]
             ) ?? 0
             try db.execute(
                 sql: """
@@ -454,12 +484,25 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         guard let snapshot = result.snapshot else { return }
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM awesome_entries WHERE source_id = ?", arguments: [sourceID])
+            try db.execute(sql: "DELETE FROM awesome_resource_entries WHERE source_id = ?", arguments: [sourceID])
             for entry in snapshot.entries {
-                try AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt).insert(db)
+                if entry.targetType == .externalResource || entry.targetType == .repositoryResource {
+                    if let record = AwesomeResourceEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt) {
+                        try record.insert(db)
+                    }
+                } else if let record = AwesomeEntryRecord.from(entry, sourceID: sourceID, cachedAt: checkedAt) {
+                    try record.insert(db)
+                }
             }
+            let githubCount = snapshot.entries.count { $0.targetType == nil || $0.targetType == .githubRepository }
+            let externalCount = snapshot.entries.count { $0.targetType == .externalResource }
+            let resourceCount = snapshot.entries.count { $0.targetType == .repositoryResource }
             try db.execute(
-                sql: "UPDATE awesome_sources SET entries_etag = ?, entries_checked_at = ?, github_repo_count = ?, last_synced_at = ? WHERE source_id = ?",
-                arguments: [result.etag, checkedAt, snapshot.entries.count, result.generatedAt ?? checkedAt, sourceID]
+                sql: "UPDATE awesome_sources SET entries_etag = ?, entries_checked_at = ?, github_repo_count = ?, external_entry_count = ?, resource_entry_count = ?, last_synced_at = ? WHERE source_id = ?",
+                arguments: [
+                    result.etag, checkedAt, githubCount, externalCount, resourceCount,
+                    result.generatedAt ?? checkedAt, sourceID,
+                ]
             )
         }
     }
@@ -582,6 +625,7 @@ private extension AwesomeSourceRecord {
             languageBytesJSON: Self.encodeLanguageBytes(dto.languageBytes ?? [:]),
             githubRepoCount: dto.githubRepoCount,
             externalEntryCount: dto.externalEntryCount,
+            resourceEntryCount: dto.resourceEntryCount ?? 0,
             isAvailable: true,
             catalogETag: catalogETag,
             entriesETag: entriesETag,
@@ -614,6 +658,7 @@ private extension AwesomeSourceRecord {
             languageBytesJSON: Self.encodeLanguageBytes(source.languageBytes),
             githubRepoCount: source.githubRepoCount,
             externalEntryCount: source.externalEntryCount,
+            resourceEntryCount: source.resourceEntryCount,
             isAvailable: source.isAvailable,
             catalogETag: nil,
             entriesETag: nil,
@@ -654,6 +699,7 @@ private extension AwesomeSourceRecord {
             languageBytes: Self.decodeLanguageBytes(languageBytesJSON),
             githubRepoCount: githubRepoCount,
             externalEntryCount: externalEntryCount,
+            resourceEntryCount: resourceEntryCount,
             isAvailable: isAvailable,
             isEnabled: isEnabled,
             addedAt: addedAt,
@@ -674,12 +720,13 @@ private extension AwesomeSourceRecord {
 }
 
 private extension AwesomeEntryRecord {
-    static func from(_ dto: AwesomeEntryDTO, sourceID: String, cachedAt: String) -> AwesomeEntryRecord {
+    static func from(_ dto: AwesomeEntryDTO, sourceID: String, cachedAt: String) -> AwesomeEntryRecord? {
+        guard let ghRepoID = dto.ghRepoID else { return nil }
         let sectionData = (try? JSONEncoder().encode(dto.sectionPath)) ?? Data("[]".utf8)
         let topicsData = (try? JSONEncoder().encode(dto.topics)) ?? Data("[]".utf8)
         return AwesomeEntryRecord(
             sourceID: sourceID,
-            ghRepoID: dto.ghRepoID,
+            ghRepoID: ghRepoID,
             owner: dto.owner,
             name: dto.name,
             fullName: dto.fullName,
@@ -726,6 +773,56 @@ private extension AwesomeEntryRecord {
     var topics: [String] {
         topicsJSON.data(using: .utf8)
             .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+    }
+}
+
+private extension AwesomeResourceEntryRecord {
+    static func from(_ dto: AwesomeEntryDTO, sourceID: String, cachedAt: String) -> AwesomeResourceEntryRecord? {
+        guard let targetType = dto.targetType,
+              targetType != .githubRepository,
+              let rawURL = dto.rawURL,
+              let url = URL(string: rawURL),
+              url.scheme?.lowercased() == "https"
+        else { return nil }
+        let sectionData = (try? JSONEncoder().encode(dto.sectionPath)) ?? Data("[]".utf8)
+        return AwesomeResourceEntryRecord(
+            sourceID: sourceID,
+            targetKey: "\(targetType.rawValue):\(url.absoluteString)",
+            targetType: targetType.rawValue,
+            rawURL: url.absoluteString,
+            entryTitle: dto.entryTitle,
+            entryDescription: dto.entryDescription,
+            sectionPathJSON: String(decoding: sectionData, as: UTF8.self),
+            entryOrder: dto.entryOrder,
+            sourceAnchorURL: dto.sourceAnchorURL,
+            cachedAt: cachedAt
+        )
+    }
+
+    func toDomain(source: AwesomeSource) -> AwesomeResourceItem? {
+        guard let targetType = AwesomeEntryTargetType(rawValue: targetType),
+              targetType != .githubRepository,
+              let url = URL(string: rawURL),
+              url.scheme?.lowercased() == "https"
+        else { return nil }
+        let path = sectionPathJSON.data(using: .utf8)
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        let anchor = sourceAnchorURL.flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
+        return AwesomeResourceItem(
+            id: "\(sourceID):\(targetKey)",
+            targetType: targetType,
+            title: entryTitle,
+            description: entryDescription,
+            url: url,
+            evidence: AwesomeEntryEvidence(
+                source: source,
+                entryTitle: entryTitle,
+                entryDescription: entryDescription,
+                sectionPath: path,
+                entryOrder: entryOrder,
+                sourceAnchorURL: anchor
+            )
+        )
     }
 }
 

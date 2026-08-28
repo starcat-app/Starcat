@@ -182,6 +182,49 @@ struct AwesomeRepositoryTests {
         #expect(await repository.repositories(sourceID: "one").first?.evidence.count == 1)
     }
 
+    @Test("外部资源与仓库文件独立持久化且不伪造 GitHub 仓库")
+    func resourcesPersistWithoutFakeRepositoryFacts() async throws {
+        let api = FakeAwesomeAPI()
+        await api.setCatalog([
+            Self.source(
+                id: "resources",
+                order: 1,
+                githubRepoCount: 0,
+                externalEntryCount: 1,
+                resourceEntryCount: 1
+            )
+        ], etag: "catalog-1")
+        await api.setEntries(sourceID: "resources", entries: [
+            Self.resourceEntry(
+                type: .externalResource,
+                title: "Design resource",
+                url: "https://getdesign.md/resource",
+                order: 1
+            ),
+            Self.resourceEntry(
+                type: .repositoryResource,
+                title: "Cursor rule",
+                url: "https://github.com/PatrickJS/awesome-cursorrules/blob/main/rules/swift.md",
+                order: 2
+            )
+        ])
+        let repository = AwesomeRepository(api: api, database: try InMemoryDatabaseManager())
+
+        _ = try await repository.refreshCatalog()
+        try await repository.completeSourceSetup(enabledSourceIDs: ["resources"])
+        #expect(await repository.refreshEnabledEntries().isEmpty)
+
+        #expect(await repository.repositories(sourceID: "resources").isEmpty)
+        let resources = await repository.resources(sourceID: "resources")
+        #expect(resources.map(\.targetType) == [.externalResource, .repositoryResource])
+        #expect(resources.map(\.title) == ["Design resource", "Cursor rule"])
+        #expect(resources.map(\.url.absoluteString) == [
+            "https://getdesign.md/resource",
+            "https://github.com/PatrickJS/awesome-cursorrules/blob/main/rules/swift.md"
+        ])
+        #expect(await repository.sources().first?.totalEntryCount == 2)
+    }
+
     @Test("同序条目证据按来源 ID 稳定排序")
     func evidenceUsesSourceIDAsFinalTieBreaker() async throws {
         let api = FakeAwesomeAPI()
@@ -373,7 +416,10 @@ struct AwesomeRepositoryTests {
         id: String,
         order: Int,
         displayName: String? = nil,
-        languageBytes: [String: Int]? = ["Swift": 900, "Shell": 100]
+        languageBytes: [String: Int]? = ["Swift": 900, "Shell": 100],
+        githubRepoCount: Int = 1,
+        externalEntryCount: Int = 0,
+        resourceEntryCount: Int = 0
     ) -> AwesomeSourceDTO {
         AwesomeSourceDTO(
             id: id,
@@ -393,8 +439,9 @@ struct AwesomeRepositoryTests {
             sourceOpenIssues: 28,
             sourceLanguage: "Swift",
             languageBytes: languageBytes,
-            githubRepoCount: 1,
-            externalEntryCount: 0,
+            githubRepoCount: githubRepoCount,
+            externalEntryCount: externalEntryCount,
+            resourceEntryCount: resourceEntryCount,
             lastSyncedAt: "2026-08-24T08:00:00Z",
             updatedAt: "2026-08-24T08:00:00Z"
         )
@@ -431,6 +478,44 @@ struct AwesomeRepositoryTests {
         )
     }
 
+    private static func resourceEntry(
+        type: AwesomeEntryTargetType,
+        title: String,
+        url: String,
+        order: Int
+    ) -> AwesomeEntryDTO {
+        AwesomeEntryDTO(
+            ghRepoID: nil,
+            owner: "",
+            name: "",
+            fullName: "",
+            description: nil,
+            ownerAvatar: nil,
+            homepage: nil,
+            language: nil,
+            stars: 0,
+            forks: 0,
+            watchers: 0,
+            subscribers: 0,
+            openIssues: 0,
+            defaultBranch: "",
+            licenseSpdx: nil,
+            topics: [],
+            isArchived: false,
+            isFork: false,
+            pushedAt: nil,
+            updatedAt: "",
+            createdAt: "",
+            entryTitle: title,
+            entryDescription: "README evidence",
+            sectionPath: ["Resources"],
+            entryOrder: order,
+            sourceAnchorURL: nil,
+            targetType: type,
+            rawURL: url
+        )
+    }
+
     private static func customSource(
         isEnabled: Bool = true,
         lastSyncedAt: Date? = Date(timeIntervalSince1970: 1)
@@ -456,6 +541,7 @@ struct AwesomeRepositoryTests {
             languageBytes: ["Swift": 1],
             githubRepoCount: 1,
             externalEntryCount: 0,
+            resourceEntryCount: 0,
             isAvailable: true,
             isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 1),

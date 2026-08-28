@@ -16,7 +16,7 @@ struct AwesomeAPITests {
     func sourceCatalogDecodesManagedCards() async throws {
         let api = makeAPI { request in
             let body = Data(#"""
-            {"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","repo_description":"Swift resources","image_url":"https://example.com/awesome.png","summary_zh":"Swift 资源","summary_en":"Swift resources","featured":true,"sort_order":2,"source_stars":9012,"source_forks":812,"source_watchers":9012,"source_subscribers":73,"source_open_issues":28,"source_language":"Swift","language_bytes":{"Swift":900,"Shell":100},"github_repo_count":123,"external_entry_count":4,"last_synced_at":"2026-08-24T08:00:00Z","updated_at":"2026-08-24T08:00:00Z"}],"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
+            {"schema_version":1,"data":[{"id":"awesome-swift","display_name":"Awesome Swift","repo_full_name":"matteocrippa/awesome-swift","repo_url":"https://github.com/matteocrippa/awesome-swift","repo_description":"Swift resources","image_url":"https://example.com/awesome.png","summary_zh":"Swift 资源","summary_en":"Swift resources","featured":true,"sort_order":2,"source_stars":9012,"source_forks":812,"source_watchers":9012,"source_subscribers":73,"source_open_issues":28,"source_language":"Swift","language_bytes":{"Swift":900,"Shell":100},"github_repo_count":123,"external_entry_count":4,"resource_entry_count":7,"last_synced_at":"2026-08-24T08:00:00Z","updated_at":"2026-08-24T08:00:00Z"}],"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
             """#.utf8)
             return (Self.response(200, request: request, headers: ["ETag": "\"catalog-1\""]), body)
         }
@@ -30,6 +30,7 @@ struct AwesomeAPITests {
         #expect(result.sources.first?.sourceSubscribers == 73)
         #expect(result.sources.first?.languageBytes == ["Swift": 900, "Shell": 100])
         #expect(result.sources.first?.githubRepoCount == 123)
+        #expect(result.sources.first?.resourceEntryCount == 7)
         #expect(result.etag == "\"catalog-1\"")
         #expect(result.generatedAt == "2026-08-24T08:00:00Z")
     }
@@ -96,6 +97,24 @@ struct AwesomeAPITests {
         #expect(entry.updatedAt == "2026-08-23T12:34:56Z")
         #expect(entry.sectionPath == ["Languages"])
         #expect(entry.entryDescription == "The language")
+    }
+
+    @Test("资源条目解码目标类型和原始 URL 且不要求 GitHub 仓库 ID")
+    func entrySnapshotDecodesExternalResourceWithoutRepositoryIdentity() async throws {
+        let api = makeAPI { request in
+            let body = Data(#"""
+            {"schema_version":1,"data":{"source":{"id":"design","display_name":"Design Resources","updated_at":"2026-08-24T08:00:00Z"},"entries":[{"target_type":"external_resource","stars":0,"forks":0,"watchers":0,"subscribers":0,"open_issues":0,"default_branch":"","topics":[],"is_archived":false,"is_fork":false,"updated_at":"","created_at":"","entry_title":"Design resource","entry_description":"Reusable design reference","section_path":["Resources"],"raw_url":"https://getdesign.md/resource","source_anchor_url":"","entry_order":1}]},"meta":{"total":1,"generated_at":"2026-08-24T08:00:00Z"}}
+            """#.utf8)
+            return (Self.response(200, request: request), body)
+        }
+
+        let result = try await api.fetchAwesomeEntries(sourceID: "design")
+        let entry = try #require(result.snapshot?.entries.first)
+
+        #expect(entry.ghRepoID == nil)
+        #expect(entry.targetType == .externalResource)
+        #expect(entry.rawURL == "https://getdesign.md/resource")
+        #expect(entry.entryTitle == "Design resource")
     }
 
     @Test("条目缺少 GitHub 基础事实时拒绝不完整契约")

@@ -34,6 +34,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
     var languageBytesJSON: String
     var githubRepoCount: Int
     var externalEntryCount: Int
+    var resourceEntryCount: Int
     var isAvailable: Bool
     var catalogETag: String?
     var entriesETag: String?
@@ -63,6 +64,7 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         case languageBytesJSON = "language_bytes_json"
         case githubRepoCount = "github_repo_count"
         case externalEntryCount = "external_entry_count"
+        case resourceEntryCount = "resource_entry_count"
         case isAvailable = "is_available"
         case catalogETag = "catalog_etag"
         case entriesETag = "entries_etag"
@@ -70,6 +72,35 @@ struct AwesomeSourceRecord: Codable, FetchableRecord, PersistableRecord, Equatab
         case addedAt = "added_at"
         case lastSyncedAt = "last_synced_at"
         case updatedAt = "updated_at"
+    }
+}
+
+/// 外站资源与来源仓库内文件使用独立表，避免给非仓库条目伪造 gh_repo_id。
+struct AwesomeResourceEntryRecord: Codable, FetchableRecord, PersistableRecord, Equatable {
+    static let databaseTableName = "awesome_resource_entries"
+
+    var sourceID: String
+    var targetKey: String
+    var targetType: String
+    var rawURL: String
+    var entryTitle: String
+    var entryDescription: String?
+    var sectionPathJSON: String
+    var entryOrder: Int
+    var sourceAnchorURL: String?
+    var cachedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case sourceID = "source_id"
+        case targetKey = "target_key"
+        case targetType = "target_type"
+        case rawURL = "raw_url"
+        case entryTitle = "entry_title"
+        case entryDescription = "entry_description"
+        case sectionPathJSON = "section_path_json"
+        case entryOrder = "entry_order"
+        case sourceAnchorURL = "source_anchor_url"
+        case cachedAt = "cached_at"
     }
 }
 
