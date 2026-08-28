@@ -45,6 +45,83 @@ struct RecommendationCacheTests {
         #expect(await fetcher.callCount() == 0)
     }
 
+    @Test("自研模型版本未变化时保留已上屏缓存")
+    func trainedSnapshotKeepsCacheAfterNotModified() async throws {
+        let (cache, root) = makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cachedItem = Self.makeItem(repoID: 2, fullName: "cached/v13")
+        try await cache.save(snapshot: Self.makeSnapshot(
+            repoID: 1,
+            items: [cachedItem],
+            isFresh: true,
+            modelVersion: "model-v13"
+        ))
+        let fetcher = RecommendationFetcherStub(
+            page: Self.makePage(repoID: 1, items: []),
+            revalidation: .notModified
+        )
+        let service = RecommendationContextService(cache: cache, fetcher: fetcher)
+        let viewModel = RepoRecommendationViewModel()
+
+        await viewModel.loadInitial(repoID: 1, service: service)
+
+        #expect(viewModel.items == [cachedItem])
+        #expect(await fetcher.callCount() == 0)
+        #expect(await fetcher.revalidationCallCount() == 1)
+    }
+
+    @Test("自研模型升级后立即替换缓存且不等待 TTL")
+    func trainedSnapshotReplacesCacheAfterModelUpgrade() async throws {
+        let (cache, root) = makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let oldItem = Self.makeItem(repoID: 2, fullName: "cached/v13")
+        try await cache.save(snapshot: Self.makeSnapshot(
+            repoID: 1,
+            items: [oldItem],
+            isFresh: true,
+            modelVersion: "model-v13"
+        ))
+        let newItem = Self.makeItem(repoID: 3, fullName: "remote/v14")
+        let newPage = Self.makePage(repoID: 1, items: [newItem], modelVersion: "model-v14")
+        let fetcher = RecommendationFetcherStub(page: newPage, revalidation: .modified(newPage))
+        let service = RecommendationContextService(cache: cache, fetcher: fetcher)
+        let viewModel = RepoRecommendationViewModel()
+
+        await viewModel.loadInitial(repoID: 1, service: service)
+
+        #expect(viewModel.items == [newItem])
+        #expect(await fetcher.callCount() == 0)
+        #expect(await fetcher.revalidationCallCount() == 1)
+        let stored = await cache.load(repoID: 1)
+        #expect(stored?.modelVersion == "model-v14")
+        #expect(stored?.items == [newItem])
+    }
+
+    @Test("模型版本检查失败时静默保留缓存")
+    func trainedSnapshotKeepsCacheWhenRevalidationFails() async throws {
+        let (cache, root) = makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cachedItem = Self.makeItem(repoID: 2, fullName: "cached/offline")
+        try await cache.save(snapshot: Self.makeSnapshot(
+            repoID: 1,
+            items: [cachedItem],
+            isFresh: true,
+            modelVersion: "model-v13"
+        ))
+        let fetcher = RecommendationFetcherStub(
+            page: Self.makePage(repoID: 1, items: []),
+            revalidationError: RecommendationFetcherStubError.offline
+        )
+        let service = RecommendationContextService(cache: cache, fetcher: fetcher)
+        let viewModel = RepoRecommendationViewModel()
+
+        await viewModel.loadInitial(repoID: 1, service: service)
+
+        #expect(viewModel.items == [cachedItem])
+        #expect(viewModel.errorMessage == nil)
+        #expect(await fetcher.callCount() == 0)
+    }
+
     @Test("stale 快照刷新并替换为远端结果")
     func staleSnapshotRefreshesNetwork() async throws {
         let (cache, root) = makeCache()
@@ -136,6 +213,41 @@ struct RecommendationCacheTests {
         #expect(await fetcher.callCount() == 1)
     }
 
+    @Test("翻页遇到新模型时丢弃旧页并重拉第一页")
+    func loadMoreRestartsFromFirstPageAfterModelUpgrade() async throws {
+        let (cache, root) = makeCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let oldItems = (1...10).map {
+            Self.makeItem(repoID: Int64($0 + 1), fullName: "v13/repo-\($0)")
+        }
+        let current = Self.makeSnapshot(
+            repoID: 1,
+            items: oldItems,
+            isFresh: true,
+            hasMore: true,
+            nextOffset: 10,
+            modelVersion: "model-v13"
+        )
+        let newFirstPage = Self.makePage(
+            repoID: 1,
+            items: [Self.makeItem(repoID: 99, fullName: "v14/first")],
+            modelVersion: "model-v14"
+        )
+        let newSecondPage = Self.makePage(
+            repoID: 1,
+            items: [Self.makeItem(repoID: 100, fullName: "v14/second")],
+            modelVersion: "model-v14"
+        )
+        let fetcher = RecommendationFetcherStub(pages: [0: newFirstPage, 10: newSecondPage])
+        let service = RecommendationContextService(cache: cache, fetcher: fetcher)
+
+        let refreshed = try await service.refreshNextPage(repoID: 1, currentSnapshot: current)
+
+        #expect(refreshed.modelVersion == "model-v14")
+        #expect(refreshed.items == newFirstPage.items)
+        #expect(await fetcher.requestedOffsets() == [10, 0])
+    }
+
     @Test("切换推荐服务后旧作用域缓存不会命中")
     func serviceScopeMismatchRefreshesInsteadOfReusingCache() async throws {
         let (cache, root) = makeCache()
@@ -175,13 +287,14 @@ struct RecommendationCacheTests {
         isFresh: Bool,
         hasMore: Bool = false,
         nextOffset: Int? = nil,
-        serviceScope: String = "recommendation-default"
+        serviceScope: String = "recommendation-default",
+        modelVersion: String? = "test-v1"
     ) -> RecommendationCacheSnapshot {
         let now = Date()
         return RecommendationCacheSnapshot(
             repoID: repoID,
             serviceScope: serviceScope,
-            modelVersion: "test-v1",
+            modelVersion: modelVersion,
             probedAt: now,
             nextProbeAt: now.addingTimeInterval(isFresh ? 3_600 : -1),
             items: items,
@@ -207,13 +320,14 @@ struct RecommendationCacheTests {
 
     private static func makePage(
         repoID: Int64,
-        items: [RepoRecommendationItem]
+        items: [RepoRecommendationItem],
+        modelVersion: String? = nil
     ) -> RepoRecommendationPage {
         RepoRecommendationPage(
             source: "embedding",
             fallback: false,
             repoID: repoID,
-            modelVersion: nil,
+            modelVersion: modelVersion,
             items: items,
             hasMore: false,
             nextOffset: nil
@@ -225,16 +339,33 @@ struct RecommendationCacheTests {
 private actor RecommendationFetcherStub: RecommendationStatusFetching {
     private let pages: [Int: RepoRecommendationPage]
     private let serviceScope: String
+    private let revalidation: RecommendationRevalidationResult
+    private let revalidationError: (any Error & Sendable)?
     private var offsets: [Int] = []
+    private var revalidationCalls = 0
 
-    init(page: RepoRecommendationPage, serviceScope: String = "recommendation-default") {
+    init(
+        page: RepoRecommendationPage,
+        serviceScope: String = "recommendation-default",
+        revalidation: RecommendationRevalidationResult = .unsupported,
+        revalidationError: (any Error & Sendable)? = nil
+    ) {
         self.pages = [0: page]
         self.serviceScope = serviceScope
+        self.revalidation = revalidation
+        self.revalidationError = revalidationError
     }
 
-    init(pages: [Int: RepoRecommendationPage], serviceScope: String = "recommendation-default") {
+    init(
+        pages: [Int: RepoRecommendationPage],
+        serviceScope: String = "recommendation-default",
+        revalidation: RecommendationRevalidationResult = .unsupported,
+        revalidationError: (any Error & Sendable)? = nil
+    ) {
         self.pages = pages
         self.serviceScope = serviceScope
+        self.revalidation = revalidation
+        self.revalidationError = revalidationError
     }
 
     func fetchRecommendations(repoID: Int64, limit: Int, offset: Int) async throws -> RepoRecommendationPage {
@@ -254,6 +385,19 @@ private actor RecommendationFetcherStub: RecommendationStatusFetching {
         serviceScope
     }
 
+    func revalidateRecommendations(
+        repoID: Int64,
+        limit: Int,
+        offset: Int,
+        cachedModelVersion: String?
+    ) async throws -> RecommendationRevalidationResult {
+        revalidationCalls += 1
+        if let revalidationError {
+            throw revalidationError
+        }
+        return revalidation
+    }
+
     func callCount() -> Int {
         offsets.count
     }
@@ -261,4 +405,12 @@ private actor RecommendationFetcherStub: RecommendationStatusFetching {
     func requestedOffsets() -> [Int] {
         offsets
     }
+
+    func revalidationCallCount() -> Int {
+        revalidationCalls
+    }
+}
+
+private enum RecommendationFetcherStubError: Error, Sendable {
+    case offline
 }

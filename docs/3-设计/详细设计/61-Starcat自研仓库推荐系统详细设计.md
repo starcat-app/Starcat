@@ -449,6 +449,8 @@ GET /api/v2/repos/{repo_id}/recommendations
 
 客户端详情页每次只请求并展示 10 条推荐；磁盘已经缓存多页时，“更多”先按 10 条解锁本地结果，只有缓存前缀全部展示后才请求下一页。缓存文件读写和 JSON 编解码由独立 actor 执行，不占用 MainActor；缓存键额外包含服务地址与 API contract，避免 Direct 本地 v2 和线上 SimRepo v1 结果互相污染。弹窗中的百分比统一标记为“匹配度”，它表示模型校准后的相对强度，不表示统计置信度。
 
+每份 v2 磁盘快照同时保存响应的 `model_version`。再次打开详情时先显示缓存首批，随后用 `model_version + repo_id + limit + offset` 组成的 `ETag` 发送 `If-None-Match` 条件请求：同一模型返回 304，不查询 SQLite 或传输推荐正文；v13 → v14 等模型切换返回 200，客户端立即用新模型第一页原子覆盖磁盘快照和当前 UI，不等待本地 TTL。重验证失败时静默保留已有缓存；翻页响应若属于另一模型版本，则禁止拼接旧页并重新获取新模型第一页。
+
 `score` 始终保留 Trainer 的原始排序分。由于 co-star shrinkage 分数与 SimRepo/Qdrant 向量分数不在同一尺度，ServingBundle 额外按全部有效推荐边的经验累积分布生成 `display_score`：它表示该关系在当前模型中的全局百分位，最高封顶 `0.99`，不改变原始排序。单仓 v2 接口返回该可选字段；多 seed 正负加权结果不再服从单边分布，因此不返回展示分。客户端优先展示 `display_score`，旧 Bundle 和 v1 响应缺失时回退 `score`。
 
 `starcat-recommend-api` 按不可变 `model_version` 复用只读 SQLite 连接池。模型激活切换时，正在执行的旧版本请求继续持有原 Bundle；旧连接仅在引用归零后回收，服务退出时统一关闭。该连接池只优化 v2 ServingBundle 查询，不改变 `/api/v1` SimRepo 缓存语义。
@@ -491,13 +493,14 @@ Content-Type: application/zip
 | 状态 | 语义 |
 |---|---|
 | 200 | 正常或明确 `degraded=true` 的可用结果 |
+| 304 | v2 条件请求命中同一模型版本，复用本地推荐快照 |
 | 400 | 参数非法 |
 | 404 | repo 不存在或当前模型无任何候选 |
 | 422 | 输入全部被过滤 |
 | 429 | 限流，带 `Retry-After` |
 | 503 | active model / serving store 不可用，不返回伪结果 |
 
-响应使用 ETag，客户端缓存 key 必须包含 model version、输入和过滤器。服务端推荐正常 TTL 24 小时；repo metadata 可单独更短刷新，不必重算向量。
+v2 单仓响应的 ETag 包含 model version、repo、limit 与 offset，并设置 `Cache-Control: private, no-cache`。客户端缓存文件按 repo 覆盖保存，快照内部记录 model version；每次复用前条件重验证，因此新 Bundle 激活不依赖本地推荐 TTL。v1 SimRepo 仍使用原有分层 TTL；repo metadata 可单独刷新，不必重算推荐关系。
 
 ## 12. 评估方案
 

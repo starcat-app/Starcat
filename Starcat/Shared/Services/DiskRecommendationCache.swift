@@ -9,7 +9,7 @@
 //    落盘，后续命中直接读盘，省掉重复网络往返。
 //  - 给 `RepoRecommendationViewModel` 用 cache-first 模式消费：
 //      1) 详情页打开 → 后台 actor 读 cache，MainActor 不做文件 I/O；
-//      2) fresh 快照直接使用，stale / miss 才异步拉新 + 写盘；
+//      2) 缓存立即上屏；v2 用模型 ETag 重验证，v1 才按 TTL 判断是否拉新；
 //      3) 每次只向 UI 暴露 10 条，更多缓存由用户点击“更多”后分批展示。
 //  - 暴露 `@Observable` 派生量给设置页存储 Tab 渲染「推荐缓存 X 项 · Y KB」+ 清除按钮。
 //
@@ -19,10 +19,9 @@
 //       ephemeral repo（trending/weekly id=0），repoID > 0 是天然守卫。
 //    2. **TTL 按结果分层（有结果 7d / 空结果 1h）**：有结果的 embedding 推荐较稳定，
 //       一周重算一次足够；空结果可能只是后端尚未完成计算，短 TTL 便于尽快恢复。
-//    3. **不做 stale 后台刷新**：wiki 有 SWR 模式（cachedLinks + refreshInBackground
-//       并发去重）是因为 wiki 列表通常较稳定；推荐是"看到新东西"的发现型能力，
-//       stale 直接重新拉即可，不保留旧值。`RecommendationContextService` 提供
-//       最小异步接口，VM 走简单两段式（cache → fetch）。
+//    3. **v2 按模型版本重验证**：缓存先上屏，再发送 `If-None-Match`。同一不可变
+//       ServingBundle 返回 304，不读 SQLite 推荐正文；v13 → v14 返回 200 并原子覆盖。
+//       SimRepo v1 没有模型版本，继续使用有结果 7d / 空结果 1h 的 TTL。
 //    4. **不做单 repo 清理入口**：与 wiki 同款决策 —— 推荐与 star 状态解耦，
 //       unstar 不删 cache。设置页只有"清除全部"一个总闸。
 //    5. **错误不落盘**：与 wiki 同款（wiki 也只在 save 成功路径上写盘）。API 失败
@@ -66,7 +65,8 @@ struct RecommendationCacheSnapshot: Codable, Sendable, Equatable {
     /// 编排层会把它视为 miss，避免本地 v2 与线上 v1 互相污染。
     let serviceScope: String?
 
-    /// 生成本快照的 ServingBundle 版本。v1 没有模型版本时为 nil。
+    /// 生成本快照的 ServingBundle 版本。v2 每次复用缓存前用它生成条件请求 ETag；
+    /// v1 没有模型版本时为 nil。
     let modelVersion: String?
 
     /// 本次探测时刻（UTC）。给排查 / UI 显示用，**不参与 fresh / stale 判定**——

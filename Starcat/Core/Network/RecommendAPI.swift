@@ -36,6 +36,16 @@ enum RecommendationAPIContract: Sendable {
     }
 }
 
+/// 缓存快照向推荐服务重验证后的结果。
+///
+/// `.unsupported` 只用于仍走 SimRepo v1 的兼容路径；自研 v2 必须明确区分 304 与新页面，
+/// 否则调用方无法判断应保留缓存还是覆盖为新模型结果。
+enum RecommendationRevalidationResult: Sendable {
+    case unsupported
+    case notModified
+    case modified(RepoRecommendationPage)
+}
+
 actor RecommendAPI {
     private static let timeout: TimeInterval = 30
 
@@ -68,6 +78,48 @@ actor RecommendAPI {
 
     /// 拉取某个 GitHub repo id 的相似仓库推荐。
     func fetchRecommendations(repoID: Int64, limit: Int = 10, offset: Int = 0) async throws -> RepoRecommendationPage {
+        let result = try await performRecommendationsRequest(
+            repoID: repoID,
+            limit: limit,
+            offset: offset,
+            ifNoneMatch: nil
+        )
+        guard case .modified(let page) = result else {
+            // 未发送条件头时服务端不应返回 304；若代理错误返回，按坏响应处理而不是
+            // 伪造空页面覆盖本地缓存。
+            throw StarcatEnvelopeNetworkError.transport(URLError(.badServerResponse))
+        }
+        return page
+    }
+
+    /// 用缓存快照里的模型版本重验证自研推荐第一页。
+    ///
+    /// v2 的 ETag 由不可变 ServingBundle 版本和分页参数共同组成；模型未变化时服务端
+    /// 直接返回 304，不读取 SQLite 或传输推荐正文。v1 保持原 TTL 策略，不增加请求。
+    func revalidateRecommendations(
+        repoID: Int64,
+        limit: Int,
+        offset: Int,
+        cachedModelVersion: String?
+    ) async throws -> RecommendationRevalidationResult {
+        guard case .trainedV2 = contract else { return .unsupported }
+        let entityTag = cachedModelVersion.flatMap {
+            Self.recommendationEntityTag(modelVersion: $0, repoID: repoID, limit: limit, offset: offset)
+        }
+        return try await performRecommendationsRequest(
+            repoID: repoID,
+            limit: limit,
+            offset: offset,
+            ifNoneMatch: entityTag
+        )
+    }
+
+    private func performRecommendationsRequest(
+        repoID: Int64,
+        limit: Int,
+        offset: Int,
+        ifNoneMatch: String?
+    ) async throws -> RecommendationRevalidationResult {
         guard repoID > 0, limit > 0, offset >= 0 else {
             throw StarcatEnvelopeNetworkError.invalidURL
         }
@@ -85,10 +137,16 @@ actor RecommendAPI {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        // 推荐正文由 DiskRecommendationCache 统一管理；关闭 URLCache 的透明 304 合并，
+        // 让本 actor 能可靠区分服务端 304 与携带新模型正文的 200。
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
         if let apiKey, !apiKey.isEmpty {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        if let ifNoneMatch {
+            request.setValue(ifNoneMatch, forHTTPHeaderField: "If-None-Match")
         }
         StarcatGatewayRouting.applyServiceHeader(to: &request, service: .recommend)
 
@@ -100,12 +158,40 @@ actor RecommendAPI {
             throw StarcatEnvelopeNetworkError.transport(error)
         }
 
-        return try StarcatEnvelopeDecoder.decode(
-            RepoRecommendationPage.self,
-            data: data,
-            response: response,
-            decoder: decoder
+        if let http = response as? HTTPURLResponse, http.statusCode == 304 {
+            return .notModified
+        }
+
+        return .modified(
+            try StarcatEnvelopeDecoder.decode(
+                RepoRecommendationPage.self,
+                data: data,
+                response: response,
+                decoder: decoder
+            )
         )
+    }
+
+    /// 与 Recommend API 的 ETag 契约保持一致。版本字符不满足 Registry 白名单时不发送
+    /// 条件头，安全退化成完整 200 请求，避免把异常服务端数据写进 HTTP header。
+    private static func recommendationEntityTag(
+        modelVersion: String,
+        repoID: Int64,
+        limit: Int,
+        offset: Int
+    ) -> String? {
+        guard !modelVersion.isEmpty,
+              modelVersion.utf8.count <= 128,
+              modelVersion.unicodeScalars.allSatisfy({ scalar in
+                  let value = scalar.value
+                  return (48...57).contains(value)
+                      || (65...90).contains(value)
+                      || (97...122).contains(value)
+                      || value == 46
+                      || value == 95
+                      || value == 45
+              }) else { return nil }
+        return "\"recommendation:\(modelVersion):\(repoID):\(limit):\(offset)\""
     }
 
     func updateBaseURL(_ url: URL) {

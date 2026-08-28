@@ -13,8 +13,8 @@
 //    已删除（铁律 #1），VM 现在只负责数据 load / loadMore / reset 三件事。
 //  - **v1.1.1 修订（2026-06-29）**：从直接调 `RecommendAPI` 改为走
 //    `RecommendationContextService`（read-through cache）。`loadInitial` 先异步读磁盘 cache，
-//    但磁盘 I/O 在独立 actor 中执行，不阻塞主线程；fresh 快照直接返回，只有 stale / miss
-//    才走 refresh 拉新 + 写盘。
+//    但磁盘 I/O 在独立 actor 中执行，不阻塞主线程；SimRepo v1 继续按 TTL 刷新，自研 v2
+//    在缓存上屏后用模型版本 ETag 条件重验证，版本变化才下载并覆盖推荐正文。
 //
 
 import Foundation
@@ -37,13 +37,14 @@ final class RepoRecommendationViewModel {
 
     var hasItems: Bool { !items.isEmpty }
 
-    /// 初次加载：先异步读 cache，再按 freshness 决定是否 refresh。
+    /// 初次加载：先异步读 cache，再按契约执行版本重验证或 TTL refresh。
     ///
     /// 流程：
     /// 1. `guard loadedRepoID != repoID` —— 同一 repo 重复进入详情页不重拉；
     /// 2. 在后台 actor 读 cache → 赋 items / hasMore（**这一步不进网络**）；
-    /// 3. fresh 快照直接返回；stale / miss 才走 `service.refresh` 拉新 + 写盘；
-    /// 4. 错误：保留旧 cache 值（如果 1 有），errorMessage 给 UI 显示。
+    /// 3. 自研 v2 用 ETag 后台重验证，304 保留缓存、200 覆盖为新模型；
+    /// 4. 不支持版本重验证的 v1 才按 freshness 决定是否 refresh；
+    /// 5. 错误：已有缓存时静默保留；cache miss 则由 UI 展示刷新错误。
     func loadInitial(repoID: Int64, service: RecommendationContextService) async {
         guard repoID > 0 else {
             clear()
@@ -63,6 +64,32 @@ final class RepoRecommendationViewModel {
         guard !Task.isCancelled, loadedRepoID == repoID else { return }
         if let snapshot = await service.cachedSnapshot(repoID: repoID, serviceScope: serviceScope) {
             apply(snapshot: snapshot, pageSize: service.pageSize, resetVisibleItems: true)
+            do {
+                let revalidation = try await service.revalidateCachedSnapshot(
+                    repoID: repoID,
+                    snapshot: snapshot,
+                    serviceScope: serviceScope
+                )
+                guard !Task.isCancelled, loadedRepoID == repoID else { return }
+                switch revalidation {
+                case .notModified:
+                    return
+                case .modified(let refreshed):
+                    apply(snapshot: refreshed, pageSize: service.pageSize, resetVisibleItems: true)
+                    return
+                case .unsupported:
+                    break
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                // 模型版本检查是推荐旁路中的旁路。缓存已经上屏时，断网或旧服务不支持
+                // 条件请求都不能拖慢、清空详情页，也不向用户报告错误。
+                AppLog.network.debug(
+                    "recommend: model revalidation failed for repo \(repoID, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
             // 推荐缓存把空结果与有结果的重探时刻都编码在 snapshot 里；这里必须真正
             // 尊重 freshness，否则 1h / 7d TTL 只停留在磁盘字段上，每次进详情仍会打服务端。
             if snapshot.freshness() == .fresh {

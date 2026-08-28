@@ -54,6 +54,49 @@ struct RecommendAPITests {
         #expect(cacheScope == "trained-v2-display-score-v1|https://recommend.test.invalid")
     }
 
+    @Test("自研缓存按模型版本发送 ETag 并接受 304")
+    func trainedBundleRevalidatesWithModelVersionETag() async throws {
+        let api = makeAPI(contract: .trainedV2)
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.value(forHTTPHeaderField: "If-None-Match") == "\"recommendation:costar-real-v1:42:10:0\"")
+            return Self.response(for: request, body: "", statusCode: 304)
+        }
+
+        let result = try await api.revalidateRecommendations(
+            repoID: 42,
+            limit: 10,
+            offset: 0,
+            cachedModelVersion: "costar-real-v1"
+        )
+
+        guard case .notModified = result else {
+            Issue.record("同一模型版本应返回 notModified")
+            return
+        }
+    }
+
+    @Test("服务端模型升级后条件请求返回新页面")
+    func trainedBundleRevalidationReturnsNewModel() async throws {
+        let api = makeAPI(contract: .trainedV2)
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.value(forHTTPHeaderField: "If-None-Match") == "\"recommendation:costar-old-v1:42:10:0\"")
+            return Self.response(for: request, body: Self.v2Body)
+        }
+
+        let result = try await api.revalidateRecommendations(
+            repoID: 42,
+            limit: 10,
+            offset: 0,
+            cachedModelVersion: "costar-old-v1"
+        )
+
+        guard case .modified(let page) = result else {
+            Issue.record("模型升级后应返回 modified 页面")
+            return
+        }
+        #expect(page.modelVersion == "costar-real-v1")
+    }
+
     private func makeAPI(contract: RecommendationAPIContract) -> RecommendAPI {
         URLProtocolStub.reset()
         return RecommendAPI(
@@ -64,10 +107,14 @@ struct RecommendAPITests {
         )
     }
 
-    private static func response(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
+    private static func response(
+        for request: URLRequest,
+        body: String,
+        statusCode: Int = 200
+    ) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!

@@ -32,10 +32,26 @@ import Foundation
 /// conform。顶层 protocol 不带 actor isolation，actor 自身的 async method 直接满足要求。
 protocol RecommendationStatusFetching: Sendable {
     func fetchRecommendations(repoID: Int64, limit: Int, offset: Int) async throws -> RepoRecommendationPage
+    func revalidateRecommendations(
+        repoID: Int64,
+        limit: Int,
+        offset: Int,
+        cachedModelVersion: String?
+    ) async throws -> RecommendationRevalidationResult
     func recommendationCacheScope() async -> String
 }
 
 extension RecommendationStatusFetching {
+    /// 不支持模型版本的 Provider 保持现有 TTL 行为，不能为了统一接口而额外打网络请求。
+    func revalidateRecommendations(
+        repoID: Int64,
+        limit: Int,
+        offset: Int,
+        cachedModelVersion: String?
+    ) async throws -> RecommendationRevalidationResult {
+        .unsupported
+    }
+
     /// 测试 stub 或固定实现未声明作用域时使用稳定默认值。
     func recommendationCacheScope() async -> String { "recommendation-default" }
 }
@@ -88,6 +104,33 @@ final class RecommendationContextService {
         await fetcher.recommendationCacheScope()
     }
 
+    /// 对已上屏缓存执行轻量模型版本重验证。
+    ///
+    /// 304 保留原快照；200 才构造并原子覆盖磁盘文件。这样详情首帧不等待网络，
+    /// v13 → v14 又无需等待本地 7 天 TTL。
+    func revalidateCachedSnapshot(
+        repoID: Int64,
+        snapshot: RecommendationCacheSnapshot,
+        serviceScope: String
+    ) async throws -> RecommendationCacheRevalidationResult {
+        let result = try await fetcher.revalidateRecommendations(
+            repoID: repoID,
+            limit: pageSize,
+            offset: 0,
+            cachedModelVersion: snapshot.modelVersion
+        )
+        switch result {
+        case .unsupported:
+            return .unsupported
+        case .notModified:
+            return .notModified
+        case .modified(let page):
+            let refreshed = makeSnapshot(page: page, repoID: repoID, serviceScope: serviceScope)
+            try await cache.save(snapshot: refreshed)
+            return .modified(refreshed)
+        }
+    }
+
     // MARK: - 异步刷新
 
     /// 拉一次最新推荐 + 写盘 + 返回新 snapshot。**会抛错给调用方**（调用方写入 `errorMessage` 给 UI）。
@@ -105,16 +148,7 @@ final class RecommendationContextService {
         let networkStartedAt = ContinuousClock.now
         let page = try await fetcher.fetchRecommendations(repoID: repoID, limit: pageSize, offset: offset)
         let networkElapsed = networkStartedAt.duration(to: .now)
-        let snapshot = RecommendationCacheSnapshot(
-            repoID: repoID,
-            serviceScope: serviceScope,
-            modelVersion: page.modelVersion,
-            probedAt: Date(),
-            nextProbeAt: RecommendationCacheSnapshot.computeNextProbeAt(items: page.items),
-            items: page.items,
-            hasMore: page.hasMore,
-            nextOffset: page.nextOffset
-        )
+        let snapshot = makeSnapshot(page: page, repoID: repoID, serviceScope: serviceScope)
         let saveStartedAt = ContinuousClock.now
         try await cache.save(snapshot: snapshot)
         let saveElapsed = saveStartedAt.duration(to: .now)
@@ -147,6 +181,12 @@ final class RecommendationContextService {
             offset: nextOffset
         )
         let networkElapsed = networkStartedAt.duration(to: .now)
+        if let newVersion = newPage.modelVersion,
+           currentSnapshot.modelVersion != newVersion {
+            // 翻页请求跨过模型激活边界时，旧第一页与新第二页不可合并。重新获取新模型
+            // 第一页，确保一个磁盘快照只属于一个不可变 ServingBundle。
+            return try await refresh(repoID: repoID, serviceScope: serviceScope)
+        }
         let merged = currentSnapshot.items + newPage.items
         let snapshot = RecommendationCacheSnapshot(
             repoID: repoID,
@@ -166,4 +206,28 @@ final class RecommendationContextService {
         )
         return snapshot
     }
+
+    private func makeSnapshot(
+        page: RepoRecommendationPage,
+        repoID: Int64,
+        serviceScope: String
+    ) -> RecommendationCacheSnapshot {
+        RecommendationCacheSnapshot(
+            repoID: repoID,
+            serviceScope: serviceScope,
+            modelVersion: page.modelVersion,
+            probedAt: Date(),
+            nextProbeAt: RecommendationCacheSnapshot.computeNextProbeAt(items: page.items),
+            items: page.items,
+            hasMore: page.hasMore,
+            nextOffset: page.nextOffset
+        )
+    }
+}
+
+/// 编排层把网络 DTO 转成缓存快照后的重验证结果。
+enum RecommendationCacheRevalidationResult: Sendable {
+    case unsupported
+    case notModified
+    case modified(RecommendationCacheSnapshot)
 }
