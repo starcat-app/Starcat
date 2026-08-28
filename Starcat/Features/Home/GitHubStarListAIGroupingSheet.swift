@@ -12,28 +12,28 @@ import SwiftUI
 
 struct GitHubStarListAIGroupingSheet: View {
     let session: GitHubStarListAIGroupingSession
+    let listService: GitHubStarListSyncService
     let onApplied: @MainActor () async -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
-    @Environment(AppDependencies.self) private var dependencies
     @State private var presentation = GitHubStarListAIGroupingPresentationStore()
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
-    /// 新建分组挂在本窗口根上，避免 Preflight 再 nested 一层；macOS nested sheet 会误触发父视图 onDisappear。
-    @State private var showCreateGroupSheet = false
-    /// nested Sheet 可能让父内容重复触发 onAppear；首帧事件每次窗口生命周期只记一次。
+    /// 新建分组和开始页共用同一个 AppKit Sheet，只切换 SwiftUI 内容。
+    /// 不能改回 nested `.sheet`：第二个子窗口的挂载和解除正是新增/关闭卡顿的根因。
+    @State private var isCreatingGroup = false
+    /// 首帧事件每次窗口生命周期只记一次。
     @State private var hasMarkedFirstFrame = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            footer
+        Group {
+            if isCreatingGroup {
+                createGroupEditor
+            } else {
+                groupingWorkspace
+            }
         }
         // 固定窗口：min/max 同值，避免 macOS sheet 按内容把窗口撑出屏幕。
         .frame(minWidth: 960, maxWidth: 960, minHeight: 640, maxHeight: 640)
@@ -47,29 +47,14 @@ struct GitHubStarListAIGroupingSheet: View {
             session.onMembershipsChanged = {
                 Task { await onApplied() }
             }
+            // 先发布已有快照或零值开始页，让静态结构随 Sheet 首帧立即出现；
+            // 五个轻量 SQLite 汇总查询完成后再无动画刷新数字和分组。
+            presentation.synchronizeImmediately(from: session)
             await session.prepareManualContext()
             presentation.synchronizeImmediately(from: session)
         }
         .onChange(of: session.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: session)
-        }
-        .sheet(isPresented: $showCreateGroupSheet) {
-            GitHubStarListEditorSheet(
-                list: nil,
-                service: dependencies.githubStarListSyncService,
-                onSaved: {
-                    await session.reloadListsAndRules()
-                    session.onMembershipsChanged?()
-                }
-            )
-            .onAppear {
-                PerformanceTracer.shared.mark(.gitHubStarListCreateFirstFrame)
-            }
-            // 与侧栏新建分组同一口径。不要套 appSheetRootEnvironment：嵌套 sheet 再注入整棵
-            // AppDependencies 会让首帧变慢，而且编辑器并不读取那些环境对象。
-            .appLocaleEnvironment()
-            .starcatAnimationOverride()
-            .environment(\.starcatInterfaceScale, interfaceScale)
         }
         .confirmationDialog(
             "githubStarLists.aiGrouping.applyConfirm.title",
@@ -100,6 +85,37 @@ struct GitHubStarListAIGroupingSheet: View {
             Button("general.cancel", role: .cancel) {}
         } message: {
             Text("githubStarLists.aiGrouping.discard.message")
+        }
+    }
+
+    private var groupingWorkspace: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            footer
+        }
+    }
+
+    private var createGroupEditor: some View {
+        GitHubStarListEditorSheet(
+            list: nil,
+            service: listService,
+            onClose: {
+                isCreatingGroup = false
+            },
+            onSaved: {
+                await session.reloadListsAndRules()
+                session.onMembershipsChanged?()
+            }
+        )
+        // 编辑器保持原有 520pt 表单宽度，外层只负责占满现有 Sheet，
+        // 切页时不会重新协商 NSWindow 尺寸。
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            PerformanceTracer.shared.mark(.gitHubStarListCreateFirstFrame)
         }
     }
 
@@ -134,9 +150,7 @@ struct GitHubStarListAIGroupingSheet: View {
 
     @ViewBuilder
     private var content: some View {
-        if session.isLoadingContext || !presentation.isReady {
-            loadingState
-        } else if let message = session.contextErrorMessage {
+        if let message = session.contextErrorMessage {
             ContentUnavailableView(
                 "githubStarLists.aiGrouping.loadFailed",
                 systemImage: "exclamationmark.triangle",
@@ -146,20 +160,11 @@ struct GitHubStarListAIGroupingSheet: View {
             GitHubStarListAIGroupingPreflightView(
                 snapshot: presentation.snapshot,
                 session: session,
-                showCreateGroupSheet: $showCreateGroupSheet
+                isCreatingGroup: $isCreatingGroup
             )
         } else {
             reviewWorkspace
         }
-    }
-
-    private var loadingState: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-            Text("githubStarLists.aiGrouping.preparing")
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var reviewWorkspace: some View {
