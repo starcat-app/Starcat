@@ -14,7 +14,7 @@ import Testing
 @Suite("WidgetSnapshotStore")
 struct WidgetSnapshotStoreTests {
 
-    @Test("ready 快照可以按 v2 契约往返编码")
+    @Test("ready 快照可以按 v3 契约往返编码")
     func roundTripsReadySnapshot() throws {
         try withTemporaryDirectory { directory in
             // 取整秒，避免 JSON ISO8601 编解码的亚秒精度差异干扰契约断言。
@@ -67,7 +67,7 @@ struct WidgetSnapshotStoreTests {
         }
     }
 
-    @Test("v2 Extension 可以读取缺少趋势字段的 v1 ready 快照")
+    @Test("v3 Extension 可以读取缺少趋势字段的 v1 ready 快照")
     func loadsLegacyV1ReadySnapshot() throws {
         try withTemporaryDirectory { directory in
             let rawJSON = """
@@ -90,6 +90,45 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.schemaVersion == 1)
             #expect(loaded.accountState == .ready)
             #expect(loaded.collectionTrend == nil)
+        }
+    }
+
+    @Test("v3 Extension 可以读取缺少单日点的 v2 趋势快照")
+    func loadsLegacyV2TrendSnapshot() throws {
+        try withTemporaryDirectory { directory in
+            let rawJSON = """
+            {
+              "schemaVersion": 2,
+              "generatedAt": "2026-07-30T08:00:00Z",
+              "accountState": "ready",
+              "focusRepositories": [],
+              "rediscoveryRepository": null,
+              "unreadReleaseCount": 0,
+              "unreadReleases": [],
+              "collectionTrend": {
+                "totalCount": 3,
+                "addedInLast30DaysCount": 2,
+                "weeklyPoints": [{
+                  "weekStart": "2026-07-27T00:00:00Z",
+                  "count": 2
+                }],
+                "statusBreakdown": {
+                  "unreadCount": 1,
+                  "readCount": 1,
+                  "usingCount": 1
+                }
+              }
+            }
+            """
+            try Data(rawJSON.utf8).write(
+                to: WidgetSharedConfiguration.snapshotURL(containerURL: directory)
+            )
+
+            let loaded = try WidgetSnapshotStore(containerURL: directory).load()
+
+            #expect(loaded.schemaVersion == 2)
+            #expect(loaded.collectionTrend?.dailyPoints == nil)
+            #expect(loaded.collectionTrend?.weeklyPoints.count == 1)
         }
     }
 
@@ -279,6 +318,12 @@ struct WidgetSnapshotStoreTests {
             weeklyPoints: [
                 WidgetCollectionTrendPoint(
                     weekStart: Date(timeIntervalSince1970: 1_753_660_800),
+                    count: 2
+                )
+            ],
+            dailyPoints: [
+                WidgetCollectionTrendDay(
+                    date: Date(timeIntervalSince1970: 1_753_660_800),
                     count: 2
                 )
             ],

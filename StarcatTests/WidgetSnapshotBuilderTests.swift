@@ -130,7 +130,7 @@ struct WidgetSnapshotBuilderTests {
         )
     }
 
-    @Test("收藏趋势补齐十二周并排除私有和不可访问仓库")
+    @Test("收藏趋势补齐十二周和二十六周日历并排除私有及不可访问仓库")
     func buildsCollectionTrendProjection() async throws {
         let database = try InMemoryDatabaseManager(userId: 42)
         let dates = [
@@ -177,6 +177,23 @@ struct WidgetSnapshotBuilderTests {
         #expect(trend.weeklyPoints.count == 12)
         #expect(trend.weeklyPoints.map(\.count).reduce(0, +) == 4)
         #expect(trend.weeklyPoints.last?.count == 2)
+        let dailyPoints = try #require(trend.dailyPoints)
+        #expect(dailyPoints.count == 26 * 7)
+        #expect(dailyPoints.map(\.count).reduce(0, +) == 4)
+        #expect(
+            dailyPoints.first?.date
+                == ISO8601DateFormatter().date(from: "2026-02-02T00:00:00Z")
+        )
+        #expect(
+            dailyPoints.last?.date
+                == ISO8601DateFormatter().date(from: "2026-08-02T00:00:00Z")
+        )
+        let countsByDay = Dictionary(uniqueKeysWithValues: dailyPoints.map {
+            (String(ISO8601DateFormatter.shared.string(from: $0.date).prefix(10)), $0.count)
+        })
+        #expect(countsByDay["2026-07-30"] == 1)
+        #expect(countsByDay["2026-07-29"] == 0)
+        #expect(countsByDay["2026-08-02"] == 0)
         #expect(trend.statusBreakdown.unreadCount == 1)
         #expect(trend.statusBreakdown.readCount == 2)
         #expect(trend.statusBreakdown.usingCount == 1)

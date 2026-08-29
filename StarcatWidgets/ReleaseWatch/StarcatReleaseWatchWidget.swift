@@ -20,7 +20,7 @@ struct StarcatReleaseWatchWidget: Widget {
         }
         .configurationDisplayName("widget.releaseWatch.displayName")
         .description("widget.releaseWatch.description")
-        .supportedFamilies([.systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
@@ -60,20 +60,64 @@ struct StarcatReleaseWatchWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: StarcatWidgetEntry
 
+    private var timelineURL: URL {
+        WidgetAppDeepLink(destination: .releaseTimeline).url
+    }
+
     var body: some View {
         if let emptyView = entry.content.emptyView {
             emptyView
         } else if let snapshot = entry.snapshot, !snapshot.unreadReleases.isEmpty {
-            releaseList(snapshot: snapshot)
+            if family == .systemSmall {
+                releaseSummary(snapshot: snapshot)
+            } else {
+                releaseList(snapshot: snapshot)
+            }
         } else {
             StarcatWidgetEmptyView(
                 symbol: "checkmark.circle",
                 titleKey: "widget.releaseWatch.empty.title",
                 subtitleKey: "widget.releaseWatch.empty.subtitle",
-                openURL: WidgetAppDeepLink(destination: .releaseTimeline).url,
+                openURL: timelineURL,
                 accessibilityHintKey: "widget.releaseWatch.openTimeline"
             )
         }
+    }
+
+    /// Small 采用单 KPI 卡片：图标建立语义，大数字优先表达需要处理的 Release 数量。
+    private func releaseSummary(snapshot: WidgetSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: "shippingbox.fill")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Spacer()
+                if entry.isStale {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("widget.common.stale"))
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Text(verbatim: "\(snapshot.unreadReleaseCount)")
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+                .contentTransition(.numericText())
+                .minimumScaleFactor(0.75)
+                .lineLimit(1)
+            Text("widget.releaseWatch.unreadLabel")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .widgetURL(timelineURL)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("widget.releaseWatch.unread \(snapshot.unreadReleaseCount)"))
+        .accessibilityHint(Text("widget.releaseWatch.openTimeline"))
     }
 
     private func releaseList(snapshot: WidgetSnapshot) -> some View {

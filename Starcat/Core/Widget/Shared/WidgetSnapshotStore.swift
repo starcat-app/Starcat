@@ -61,8 +61,8 @@ struct WidgetSnapshotStore: Sendable {
             throw WidgetSnapshotStoreError.corruptedSnapshot
         }
 
-        // v2 只增加可选趋势字段，v1 文件仍可安全读取；未来版本继续明确拒绝，
-        // 避免旧 Extension 猜测尚未理解的新隐私或业务语义。
+        // v2 增加可选趋势字段，v3 在趋势内增加可选单日点；旧文件仍可安全读取。
+        // 未来版本继续明确拒绝，避免旧 Extension 猜测尚未理解的新隐私或业务语义。
         guard (1...WidgetSnapshot.currentSchemaVersion).contains(snapshot.schemaVersion) else {
             throw WidgetSnapshotStoreError.unsupportedSchemaVersion(snapshot.schemaVersion)
         }

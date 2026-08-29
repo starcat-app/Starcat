@@ -461333,6 +461333,57 @@
         }
       }
     },
+    "widget.collectionTrend.configuration.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a color palette for this heatmap."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为这个热力图选择配色。"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.configuration.palette" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heatmap palette"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "热力图配色"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.configuration.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Customize Star Rhythm"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义收藏趋势"
+          }
+        }
+      }
+    },
     "widget.collectionTrend.description" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -461401,6 +461452,23 @@
         }
       }
     },
+    "widget.collectionTrend.heatmapDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "See the daily rhythm of your public GitHub stars over the last 26 weeks."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看最近 26 周公开 GitHub 收藏的每日节奏。"
+          }
+        }
+      }
+    },
     "widget.collectionTrend.last30Days" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -461432,6 +461500,108 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Starcat 中打开我的洞察"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.palette.ember" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ember"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "余烬"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.palette.evergreen" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Evergreen"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常青"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.palette.nordic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nordic"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "北境"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.palette.ocean" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ocean"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "海洋"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.palette.system" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随系统"
+          }
+        }
+      }
+    },
+    "widget.collectionTrend.palette.type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heatmap palette"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "热力图配色"
           }
         }
       }
@@ -462168,6 +462338,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 个未读 Release"
+          }
+        }
+      }
+    },
+    "widget.releaseWatch.unreadLabel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unread releases"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未读 Release"
           }
         }
       }

@@ -2,12 +2,13 @@
 //  StarcatCollectionTrendWidget.swift
 //  StarcatWidgets
 //
-//  用 Swift Charts 展示公开收藏的近 12 周增长节奏与阅读状态分布。
+//  用收藏日历热力图展示公开 GitHub Star 的增长节奏与整理状态。
 //
 //  Widget Extension 只读取 App Group 聚合快照，不访问 GRDB、网络或 Keychain。
-//  三种尺寸共用同一份趋势数据，按系统分配空间逐级增加信息密度。
+//  每个 Widget 实例可独立选择热力图配色，系统背景与文字语义色保持不变。
 //
 
+import AppIntents
 import Charts
 import SwiftUI
 import WidgetKit
@@ -17,71 +18,101 @@ struct StarcatCollectionTrendWidget: Widget {
     private let kind = "com.starcat.widget.collection-trend"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: StarcatCollectionTrendProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: CollectionTrendConfigurationIntent.self,
+            provider: StarcatCollectionTrendProvider()
+        ) { entry in
             StarcatCollectionTrendWidgetView(entry: entry)
                 .containerBackground(for: .widget) {
                     Color.clear
                 }
         }
         .configurationDisplayName("widget.collectionTrend.displayName")
-        .description("widget.collectionTrend.description")
+        .description("widget.collectionTrend.heatmapDescription")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
+/// 时间线条目把共享快照与单实例主题组合起来，不把展示偏好写入业务快照。
+struct StarcatCollectionTrendEntry: TimelineEntry {
+    let date: Date
+    let base: StarcatWidgetEntry
+    let palette: CollectionTrendPalette
+}
+
 /// 收藏趋势沿用标准快照刷新节奏；主应用发布新快照后仍会主动 reload timeline。
-struct StarcatCollectionTrendProvider: TimelineProvider {
-    func placeholder(in context: Context) -> StarcatWidgetEntry {
-        .placeholder
+struct StarcatCollectionTrendProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> StarcatCollectionTrendEntry {
+        makeEntry(base: .placeholder, configuration: CollectionTrendConfigurationIntent())
     }
 
-    func getSnapshot(
-        in context: Context,
-        completion: @escaping (StarcatWidgetEntry) -> Void
-    ) {
-        completion(context.isPreview ? .placeholder : StarcatWidgetSnapshotLoader.load())
+    func snapshot(
+        for configuration: CollectionTrendConfigurationIntent,
+        in context: Context
+    ) async -> StarcatCollectionTrendEntry {
+        makeEntry(
+            base: context.isPreview ? .placeholder : StarcatWidgetSnapshotLoader.load(),
+            configuration: configuration
+        )
     }
 
-    func getTimeline(
-        in context: Context,
-        completion: @escaping (Timeline<StarcatWidgetEntry>) -> Void
-    ) {
-        let entry = StarcatWidgetSnapshotLoader.load()
-        completion(
-            Timeline(
-                entries: [entry],
-                policy: .after(
-                    StarcatWidgetSnapshotLoader.nextRefresh(
-                        after: entry.date,
-                        isReady: entry.snapshot != nil,
-                        kind: .standard
-                    )
+    func timeline(
+        for configuration: CollectionTrendConfigurationIntent,
+        in context: Context
+    ) async -> Timeline<StarcatCollectionTrendEntry> {
+        let base = StarcatWidgetSnapshotLoader.load()
+        let entry = makeEntry(base: base, configuration: configuration)
+        return Timeline(
+            entries: [entry],
+            policy: .after(
+                StarcatWidgetSnapshotLoader.nextRefresh(
+                    after: entry.date,
+                    isReady: entry.base.snapshot != nil,
+                    kind: .standard
                 )
             )
         )
     }
+
+    private func makeEntry(
+        base: StarcatWidgetEntry,
+        configuration: CollectionTrendConfigurationIntent
+    ) -> StarcatCollectionTrendEntry {
+        StarcatCollectionTrendEntry(
+            date: base.date,
+            base: base,
+            palette: configuration.palette
+        )
+    }
 }
 
-/// 按 Small / Medium / Large 渐进呈现趋势指标。
+/// Small / Medium / Large 逐级增加指标密度，热力图始终是主要视觉焦点。
 struct StarcatCollectionTrendWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: StarcatWidgetEntry
+    let entry: StarcatCollectionTrendEntry
 
     private var insightsURL: URL {
         WidgetAppDeepLink(destination: .insights).url
     }
 
+    private var referenceDate: Date {
+        entry.base.snapshot?.generatedAt ?? entry.date
+    }
+
     var body: some View {
-        if let emptyView = entry.content.emptyView {
+        if let emptyView = entry.base.content.emptyView {
             emptyView
-        } else if let trend = entry.snapshot?.collectionTrend {
-            trendContent(trend)
+        } else if let trend = entry.base.snapshot?.collectionTrend,
+                  let dailyPoints = trend.dailyPoints,
+                  !dailyPoints.isEmpty {
+            trendContent(trend, dailyPoints: dailyPoints)
                 .widgetURL(insightsURL)
                 .accessibilityHint(Text("widget.collectionTrend.openInsights"))
         } else {
-            // v1 ready 快照没有趋势字段；引导打开主应用发布 v2，而不是把它误报成零收藏。
+            // v1/v2 快照没有单日聚合，不能伪造星期分布；等待主应用发布 v3 快照。
             StarcatWidgetEmptyView(
-                symbol: "chart.bar.xaxis",
+                symbol: "square.grid.3x3",
                 titleKey: "widget.collectionTrend.empty.title",
                 subtitleKey: "widget.collectionTrend.empty.subtitle",
                 openURL: insightsURL,
@@ -91,91 +122,101 @@ struct StarcatCollectionTrendWidgetView: View {
     }
 
     @ViewBuilder
-    private func trendContent(_ trend: WidgetCollectionTrend) -> some View {
+    private func trendContent(
+        _ trend: WidgetCollectionTrend,
+        dailyPoints: [WidgetCollectionTrendDay]
+    ) -> some View {
         switch family {
         case .systemSmall:
-            smallContent(trend)
+            smallContent(trend, dailyPoints: dailyPoints)
         case .systemLarge:
-            largeContent(trend)
+            largeContent(trend, dailyPoints: dailyPoints)
         default:
-            mediumContent(trend)
+            mediumContent(trend, dailyPoints: dailyPoints)
         }
     }
 
-    /// Small 以“近 30 天”为主指标，同时保留 6 周方向感和公开收藏总数。
-    private func smallContent(_ trend: WidgetCollectionTrend) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            StarcatWidgetHeader(
-                "widget.collectionTrend.title",
-                systemImage: "chart.bar.xaxis",
-                isStale: entry.isStale
-            )
-
-            VStack(alignment: .leading, spacing: 0) {
+    /// Small 去掉传统标题栏，把有限面积留给最近七周热力格。
+    private func smallContent(
+        _ trend: WidgetCollectionTrend,
+        dailyPoints: [WidgetCollectionTrendDay]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 5) {
+                Image(systemName: "square.grid.3x3.fill")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 4)
+                Text("widget.collectionTrend.last30Days")
+                    .foregroundStyle(.secondary)
                 Text(verbatim: "\(trend.addedInLast30DaysCount)")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .fontWeight(.bold)
                     .foregroundStyle(.primary)
                     .contentTransition(.numericText())
-                Text("widget.collectionTrend.last30Days")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if entry.base.isStale {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("widget.common.stale"))
+                }
             }
+            .font(.caption)
 
-            collectionChart(
-                points: Array(trend.weeklyPoints.suffix(6)),
-                height: 42
+            StarcatCollectionHeatmap(
+                points: dailyPoints,
+                weekCount: 7,
+                referenceDate: referenceDate,
+                palette: entry.palette
             )
-
-            HStack {
-                Text("widget.collectionTrend.publicScope")
-                Spacer(minLength: 6)
-                Text(verbatim: "\(trend.totalCount)")
-                    .fontWeight(.semibold)
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
     }
 
-    /// Medium 用三项统计解释 12 周柱形图，避免只给一张没有上下文的图。
-    private func mediumContent(_ trend: WidgetCollectionTrend) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            StarcatWidgetHeader(
-                "widget.collectionTrend.title",
-                systemImage: "chart.bar.xaxis",
-                isStale: entry.isStale
-            ) {
-                Text("widget.collectionTrend.publicScope")
-            }
-
-            HStack(spacing: 18) {
-                metric(
-                    value: "\(trend.weeklyPoints.last?.count ?? 0)",
-                    titleKey: "widget.collectionTrend.thisWeek"
+    /// Medium 使用左右分栏：十三周热力图负责节奏，右侧大数字负责快速扫描。
+    private func mediumContent(
+        _ trend: WidgetCollectionTrend,
+        dailyPoints: [WidgetCollectionTrendDay]
+    ) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 9) {
+                compactTitle
+                StarcatCollectionHeatmap(
+                    points: dailyPoints,
+                    weekCount: 13,
+                    referenceDate: referenceDate,
+                    palette: entry.palette
                 )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider().opacity(0.35)
+
+            VStack(alignment: .leading, spacing: 2) {
                 metric(
                     value: "\(trend.addedInLast30DaysCount)",
-                    titleKey: "widget.collectionTrend.last30Days"
+                    titleKey: "widget.collectionTrend.last30Days",
+                    prominent: true
                 )
+                Spacer(minLength: 8)
                 metric(
                     value: "\(trend.totalCount)",
                     titleKey: "widget.collectionTrend.total"
                 )
             }
-
-            collectionChart(points: trend.weeklyPoints, height: 54)
+            .frame(width: 92, alignment: .leading)
         }
         .accessibilityElement(children: .contain)
     }
 
-    /// Large 增加周均与状态分布，让“收藏速度”和“整理进度”在同一张卡片里形成闭环。
-    private func largeContent(_ trend: WidgetCollectionTrend) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+    /// Large 同时呈现二十六周日历、核心指标和现有阅读状态分布。
+    private func largeContent(
+        _ trend: WidgetCollectionTrend,
+        dailyPoints: [WidgetCollectionTrendDay]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
             StarcatWidgetHeader(
                 "widget.collectionTrend.title",
-                systemImage: "chart.bar.xaxis",
-                isStale: entry.isStale
+                systemImage: "square.grid.3x3.fill",
+                isStale: entry.base.isStale
             ) {
                 Text("widget.collectionTrend.publicScope")
             }
@@ -199,7 +240,13 @@ struct StarcatCollectionTrendWidgetView: View {
                 )
             }
 
-            collectionChart(points: trend.weeklyPoints, height: 106)
+            StarcatCollectionHeatmap(
+                points: dailyPoints,
+                weekCount: 26,
+                referenceDate: referenceDate,
+                palette: entry.palette
+            )
+            .frame(height: 92)
 
             Divider().opacity(0.35)
 
@@ -208,39 +255,36 @@ struct StarcatCollectionTrendWidgetView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// 当前周使用强调色，历史周降为 secondary；坐标轴隐藏后更适合桌面卡片密度。
-    private func collectionChart(
-        points: [WidgetCollectionTrendPoint],
-        height: CGFloat
-    ) -> some View {
-        let lastWeek = points.last?.weekStart
-        let maximum = max(1, points.map(\.count).max() ?? 0)
-
-        return Chart(points, id: \.weekStart) { point in
-            BarMark(
-                x: .value("Week", point.weekStart),
-                y: .value("Count", point.count)
-            )
-            .foregroundStyle(
-                point.weekStart == lastWeek
-                    ? Color.accentColor
-                    : Color.secondary.opacity(0.35)
-            )
-            .cornerRadius(3)
+    private var compactTitle: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "square.grid.3x3.fill")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("widget.collectionTrend.title")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if entry.base.isStale {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(Text("widget.common.stale"))
+            }
         }
-        .chartXScale(range: .plotDimension(padding: 3))
-        .chartYScale(domain: 0...maximum)
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .frame(height: height)
-        // 数值已经由上方指标和状态行完整表达，隐藏逐柱 VoiceOver 可避免 12 次冗余朗读。
-        .accessibilityHidden(true)
+        .font(.caption.weight(.semibold))
     }
 
-    private func metric(value: String, titleKey: LocalizedStringKey) -> some View {
+    private func metric(
+        value: String,
+        titleKey: LocalizedStringKey,
+        prominent: Bool = false
+    ) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(verbatim: value)
-                .font(.title3.weight(.bold))
+                .font(
+                    prominent
+                        ? .system(size: 30, weight: .bold, design: .rounded)
+                        : .title3.weight(.bold)
+                )
                 .foregroundStyle(.primary)
                 .contentTransition(.numericText())
             Text(titleKey)

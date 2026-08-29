@@ -71,6 +71,15 @@ struct WidgetCollectionTrendPoint: Codable, Equatable, Sendable {
     let count: Int
 }
 
+/// 收藏热力图的单日聚合点。
+///
+/// 日期统一使用 UTC 零点，避免主应用与 Widget Extension 分别按本地时区分组后
+/// 产生错列；未来日期会以 0 补齐，保证当前周仍能保持固定的七行网格。
+struct WidgetCollectionTrendDay: Codable, Equatable, Sendable {
+    let date: Date
+    let count: Int
+}
+
 /// 公开收藏的阅读状态聚合。
 struct WidgetCollectionStatusBreakdown: Codable, Equatable, Sendable {
     let unreadCount: Int
@@ -85,12 +94,27 @@ struct WidgetCollectionTrend: Codable, Equatable, Sendable {
     let totalCount: Int
     let addedInLast30DaysCount: Int
     let weeklyPoints: [WidgetCollectionTrendPoint]
+    let dailyPoints: [WidgetCollectionTrendDay]?
     let statusBreakdown: WidgetCollectionStatusBreakdown
+
+    init(
+        totalCount: Int,
+        addedInLast30DaysCount: Int,
+        weeklyPoints: [WidgetCollectionTrendPoint],
+        dailyPoints: [WidgetCollectionTrendDay]? = nil,
+        statusBreakdown: WidgetCollectionStatusBreakdown
+    ) {
+        self.totalCount = totalCount
+        self.addedInLast30DaysCount = addedInLast30DaysCount
+        self.weeklyPoints = weeklyPoints
+        self.dailyPoints = dailyPoints
+        self.statusBreakdown = statusBreakdown
+    }
 }
 
 /// App Group 中 `widget-snapshot-v1.json` 的顶层契约。
 struct WidgetSnapshot: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
 
     let schemaVersion: Int
     let generatedAt: Date
