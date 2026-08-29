@@ -5,7 +5,7 @@
 //  HOM-52 - 批量标签固定工作区中的进度与审核内容。
 //
 //  模块职责：
-//  - 展示当前批次的总进度、状态统计与单 job 审核列表（可滚动）。
+//  - 展示当前批次的总进度、互斥状态 Tab 与单 job 审核列表（可滚动）。
 //  - 提供单项与批量重试；暂停、取消、批量应用与关闭操作由固定工作区外壳统一承载。
 //
 //  关键约束：
@@ -24,6 +24,7 @@ struct BatchAIQueuePanel: View {
     @Bindable var service: BatchAIQueueService
     @State private var expandedRepoID: Int64?
     @State private var presentation = BatchAIQueuePresentationStore()
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,40 +52,15 @@ struct BatchAIQueuePanel: View {
                 service.finishedCount,
                 service.totalCount
             ))
-            .font(.caption)
+            .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
             .monospacedDigit()
             ProgressView(value: progressFraction)
                 .progressViewStyle(.linear)
                 .tint(service.failedCount > 0 ? .orange : .accentColor)
-            countersRow
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
-    }
-
-    private var countersRow: some View {
-        HStack(spacing: 18) {
-            // 待确认属于已处理但尚未完成审核，不能再计入“成功”造成重复统计。
-            counter(label: "batchAI.panel.counter.completed", count: resolvedCompletedCount, color: .green)
-            counter(
-                label: "batchAI.panel.counter.pendingReview",
-                count: service.pendingTagReviewCount,
-                color: .accentColor
-            )
-            counter(label: "batchAI.panel.counter.failed", count: service.failedCount, color: .red)
-            counter(label: "batchAI.panel.counter.ignored", count: service.ignoredCount, color: .gray)
-            Spacer()
-        }
-    }
-
-    private func counter(label: LocalizedStringKey, count: Int, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(label).font(.caption)
-            Text(verbatim: "\(count)").font(.caption.monospacedDigit())
-        }
-        .foregroundStyle(.secondary)
     }
 
     // MARK: - 筛选与状态列表
@@ -93,17 +69,20 @@ struct BatchAIQueuePanel: View {
         @Bindable var store = presentation
         return HStack(spacing: 8) {
             Picker("githubStarLists.aiGrouping.filter.label", selection: $store.filter) {
-                filterLabel("githubStarLists.aiGrouping.filter.tab.actionable", count: actionableCount)
+                filterLabel(
+                    "githubStarLists.aiGrouping.filter.tab.actionable",
+                    count: store.count(for: .actionable)
+                )
                     .tag(BatchAIResultFilter.actionable)
-                filterLabel("batchAI.panel.counter.pendingReview", count: service.pendingTagReviewCount)
+                filterLabel("batchAI.panel.counter.pendingReview", count: store.count(for: .pendingReview))
                     .tag(BatchAIResultFilter.pendingReview)
-                filterLabel("batchAI.panel.counter.failed", count: service.failedCount)
-                    .tag(BatchAIResultFilter.failed)
-                filterLabel("batchAI.panel.counter.completed", count: resolvedCompletedCount)
+                filterLabel("batchAI.panel.counter.completed", count: store.count(for: .completed))
                     .tag(BatchAIResultFilter.completed)
-                filterLabel("batchAI.panel.counter.ignored", count: service.ignoredCount)
+                filterLabel("batchAI.panel.counter.failed", count: store.count(for: .failed))
+                    .tag(BatchAIResultFilter.failed)
+                filterLabel("batchAI.panel.counter.ignored", count: store.count(for: .ignored))
                     .tag(BatchAIResultFilter.ignored)
-                filterLabel("general.all", count: service.totalCount)
+                filterLabel("general.all", count: store.count(for: .all))
                     .tag(BatchAIResultFilter.all)
             }
             .pickerStyle(.segmented)
@@ -114,15 +93,23 @@ struct BatchAIQueuePanel: View {
 
             TextField("githubStarLists.aiGrouping.search.tab", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
+                .font(interfaceScale.font(.caption))
                 .controlSize(.small)
                 .frame(width: 160)
 
-            Button("githubStarLists.aiGrouping.retryFailed.tab") {
-                service.retryAllFailed()
+            if store.filter == .failed {
+                Button("githubStarLists.aiGrouping.retryFailed.tab") {
+                    Task { await service.retryAllFailures() }
+                }
+                .controlSize(.small)
+                .fixedSize()
+                .disabled(
+                    store.count(for: .failed) == 0
+                        || service.isCancelling
+                        || service.isRunning
+                        || service.isApplyingSuggestedTags
+                )
             }
-            .controlSize(.small)
-            .fixedSize()
-            .disabled(service.failedCount == 0 || service.isCancelling)
         }
         .padding(.horizontal, 20)
         .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48, alignment: .leading)
@@ -130,14 +117,6 @@ struct BatchAIQueuePanel: View {
 
     private func filterLabel(_ key: LocalizedStringKey, count: Int) -> some View {
         Text(key) + Text(verbatim: " \(count)")
-    }
-
-    private var actionableCount: Int {
-        max(0, service.totalCount - resolvedCompletedCount - service.ignoredCount)
-    }
-
-    private var resolvedCompletedCount: Int {
-        max(0, service.completedCount - service.pendingTagReviewCount)
     }
 
     private var jobList: some View {
@@ -192,8 +171,14 @@ struct BatchAIQueuePanel: View {
     }
 
     private func toggleExpansion(for job: BatchAIJob) {
-        guard job.errorDiagnostic != nil else { return }
+        guard canExpand(job) else { return }
         expandedRepoID = expandedRepoID == job.repoId ? nil : job.repoId
+    }
+
+    private func canExpand(_ job: BatchAIJob) -> Bool {
+        if job.errorDiagnostic != nil { return true }
+        if case .failed = job.tagReviewState { return true }
+        return false
     }
 
     // MARK: - 派生

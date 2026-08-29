@@ -18,20 +18,23 @@ struct GitHubStarListAIGroupingPresentationTests {
         colorHex: "#FF9500"
     )
 
-    @Test("建议、无匹配和分析失败筛选不会混入其它状态")
+    @Test("待处理、待确认、无匹配和分析失败互不重叠")
     func filtersByReviewStatus() {
+        let queued = makeItem(id: 0, status: .queued)
         let suggested = makeItem(id: 1, status: .completed, suggestions: [suggestion])
         let noMatch = makeItem(id: 2, status: .completed)
         let failed = makeItem(id: 3, status: .failed)
 
+        #expect(queued.matches(filter: .actionable, searchText: ""))
+        #expect(!queued.matches(filter: .suggestions, searchText: ""))
         #expect(suggested.matches(filter: .suggestions, searchText: ""))
-        #expect(suggested.matches(filter: .actionable, searchText: ""))
+        #expect(!suggested.matches(filter: .actionable, searchText: ""))
         #expect(suggested.canReviewSuggestions)
         #expect(!suggested.matches(filter: .noMatch, searchText: ""))
         #expect(noMatch.matches(filter: .noMatch, searchText: ""))
         #expect(!noMatch.matches(filter: .actionable, searchText: ""))
         #expect(failed.matches(filter: .analysisFailed, searchText: ""))
-        #expect(failed.matches(filter: .actionable, searchText: ""))
+        #expect(!failed.matches(filter: .actionable, searchText: ""))
 
         let alreadyGrouped = makeItem(
             id: 4,
@@ -41,6 +44,8 @@ struct GitHubStarListAIGroupingPresentationTests {
         )
         #expect(!alreadyGrouped.hasActionableSuggestions)
         #expect(!alreadyGrouped.matches(filter: .suggestions, searchText: ""))
+        #expect(alreadyGrouped.matches(filter: .noMatch, searchText: ""))
+        #expect(!alreadyGrouped.canReviewSuggestions)
     }
 
     @Test("待确认建议按生成完成时间正序排列")
@@ -243,7 +248,7 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(snapshot.totalCount == 1)
         #expect(snapshot.analyzedCount == 1)
         #expect(snapshot.suggestionCount == 1)
-        #expect(snapshot.actionableCount == 1)
+        #expect(snapshot.actionableCount == 0)
         #expect(snapshot.selectedRepositoryCount == 1)
         #expect(snapshot.selectedListCount == 3)
         #expect(item.selectedListIDs == ["swift", "database", "skills"])
@@ -388,6 +393,66 @@ struct GitHubStarListAIGroupingPresentationTests {
         }
     }
 
+    @Test("除全部外每个仓库恰好属于一个业务 Tab")
+    func specializedFiltersPartitionAllJobs() {
+        var queued = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        queued.status = .queued
+        var suggested = GitHubStarListAIGroupingJob(repo: makeRepo(id: 2))
+        suggested.status = .completed
+        suggested.suggestions = [
+            GitHubStarListAISuggestion(listId: "swift", confidence: 0.96, reason: "Swift")
+        ]
+        var noMatch = GitHubStarListAIGroupingJob(repo: makeRepo(id: 3))
+        noMatch.status = .completed
+        var analysisFailed = GitHubStarListAIGroupingJob(repo: makeRepo(id: 4))
+        analysisFailed.status = .failed
+        var applyFailed = GitHubStarListAIGroupingJob(repo: makeRepo(id: 5))
+        applyFailed.status = .completed
+        applyFailed.applyState = .failed(
+            GitHubStarListAIApplyFailure(kind: .transport, detail: "offline")
+        )
+        var applied = GitHubStarListAIGroupingJob(repo: makeRepo(id: 6))
+        applied.status = .completed
+        applied.applyState = .applied(["swift"])
+        var automaticallyIgnored = GitHubStarListAIGroupingJob(repo: makeRepo(id: 7))
+        automaticallyIgnored.status = .completed
+        automaticallyIgnored.applyState = .ignored(
+            GitHubStarListAIApplyFailure(kind: .organizationOAuthRestriction, detail: nil)
+        )
+        var ignored = GitHubStarListAIGroupingJob(repo: makeRepo(id: 8))
+        ignored.status = .completed
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [queued, suggested, noMatch, analysisFailed, applyFailed, applied, automaticallyIgnored, ignored],
+            availableLists: [swiftList],
+            existingListIDsByRepo: [6: ["swift"]],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: [8]
+        )
+        let specializedFilters = GitHubStarListAIResultFilter.allCases.filter { $0 != .all }
+
+        for item in snapshot.items {
+            #expect(specializedFilters.count { item.matches(filter: $0, searchText: "") } == 1)
+        }
+        #expect(specializedFilters.reduce(0) { $0 + snapshot.count(for: $1) } == snapshot.totalCount)
+    }
+
+    @Test("已应用仓库编辑 membership 时仍只属于已应用 Tab")
+    func appliedMembershipEditStaysApplied() {
+        let item = makeItem(
+            id: 9,
+            status: .completed,
+            currentLists: [swiftList],
+            suggestions: [suggestion],
+            applyState: .applying,
+            hasAppliedMembershipDraft: true
+        )
+
+        #expect(item.reviewState == .applied)
+        #expect(item.matches(filter: .applied, searchText: ""))
+        #expect(!item.matches(filter: .suggestions, searchText: ""))
+    }
+
     private var suggestion: GitHubStarListAISuggestionDisplay {
         GitHubStarListAISuggestionDisplay(
             list: swiftList,
@@ -403,6 +468,7 @@ struct GitHubStarListAIGroupingPresentationTests {
         suggestions: [GitHubStarListAISuggestionDisplay] = [],
         selectedListIDs: Set<String> = [],
         applyState: GitHubStarListAIApplyState = .idle,
+        hasAppliedMembershipDraft: Bool = false,
         finishedAt: Date? = nil
     ) -> GitHubStarListAIReviewItem {
         GitHubStarListAIReviewItem(
@@ -417,6 +483,7 @@ struct GitHubStarListAIGroupingPresentationTests {
             appliedGroupSummaries: [],
             applyState: applyState,
             isIgnoredByUser: false,
+            hasAppliedMembershipDraft: hasAppliedMembershipDraft,
             analysisFailureMessage: nil,
             finishedAt: finishedAt
         )

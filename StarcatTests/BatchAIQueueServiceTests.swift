@@ -121,6 +121,57 @@ struct BatchAIQueueServiceTests {
         #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
     }
 
+    @Test("自动应用时低于阈值的标签进入待确认且默认不勾选")
+    func autoApplyKeepsBelowThresholdSuggestionsForManualReview() async throws {
+        let suggestions = [
+            AITagSuggestion(name: "Swift", confidence: 0.80, reason: "主要开发语言"),
+            AITagSuggestion(name: "CLI", confidence: 0.70, reason: "提供命令行工具")
+        ]
+        let provider = ImmediateBatchAIInsightProvider(suggestions: suggestions)
+        let service = try makeService(insightProvider: provider)
+        var repo = Repo.makeMinimal(owner: "acme", name: "below-threshold")
+        repo.id = 506
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.autoApplyTags = true
+        options.confidenceThreshold = 0.85
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.status == .completed)
+        #expect(job.suggestedTags == suggestions)
+        #expect(job.selectedSuggestedTagIDs.isEmpty)
+        #expect(job.tagReviewState == .pending)
+        #expect(job.belowThresholdTags.map(\.name) == ["Swift", "CLI"])
+        #expect(BatchAIQueuePresentationStore.primaryState(for: job) == .pendingReview)
+        #expect(service.pendingTagReviewCount == 1)
+        #expect(service.ignoredCount == 0)
+    }
+
+    @Test("静默自动整理没有审核入口时仍忽略全部低于阈值的标签")
+    func silentAutoApplyKeepsBelowThresholdResultIgnored() async throws {
+        let suggestions = [AITagSuggestion(name: "Swift", confidence: 0.70, reason: "主要开发语言")]
+        let provider = ImmediateBatchAIInsightProvider(suggestions: suggestions)
+        let service = try makeService(insightProvider: provider)
+        var repo = Repo.makeMinimal(owner: "acme", name: "silent-below-threshold")
+        repo.id = 507
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.autoApplyTags = true
+        options.confidenceThreshold = 0.85
+
+        #expect(service.start(repos: [repo], options: options, silent: true))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.status == .ignored)
+        #expect(job.tagReviewState == .notRequired)
+        #expect(job.belowThresholdTags.map(\.name) == ["Swift"])
+        #expect(service.pendingTagReviewCount == 0)
+    }
+
     @Test("批量应用只处理仓库复选框选中的建议")
     func bulkReviewAppliesOnlySelectedRepositories() async throws {
         let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
@@ -286,6 +337,9 @@ struct BatchAIQueueServiceTests {
         let presentation = BatchAIQueuePresentationStore()
         presentation.synchronizeImmediately(from: service)
         #expect(presentation.filter == .actionable)
+        #expect(presentation.matchingJobCount == 0)
+
+        presentation.filter = .pendingReview
         #expect(presentation.matchingJobCount == 120)
         #expect(presentation.visibleJobs.count == 100)
 
@@ -301,6 +355,34 @@ struct BatchAIQueueServiceTests {
         #expect(presentation.visibleJobs.count == 100)
         presentation.filter = .completed
         #expect(presentation.visibleJobs.isEmpty)
+    }
+
+    @Test("标签整理主状态互斥覆盖处理、审核、失败、完成和忽略")
+    func presentationPrimaryStateIsExclusive() {
+        var pending = BatchAIJob(repoId: 1, repoFullName: "acme/pending")
+        pending.status = .processing
+
+        var review = BatchAIJob(repoId: 2, repoFullName: "acme/review")
+        review.status = .completed
+        review.tagReviewState = .pending
+
+        var failed = BatchAIJob(repoId: 3, repoFullName: "acme/failed")
+        failed.status = .completed
+        failed.tagReviewState = .failed(.unknown("offline"))
+
+        var completed = BatchAIJob(repoId: 4, repoFullName: "acme/completed")
+        completed.status = .completed
+        completed.tagReviewState = .applied
+
+        var ignored = BatchAIJob(repoId: 5, repoFullName: "acme/ignored")
+        ignored.status = .completed
+        ignored.tagReviewState = .ignored
+
+        #expect(BatchAIQueuePresentationStore.primaryState(for: pending) == .pending)
+        #expect(BatchAIQueuePresentationStore.primaryState(for: review) == .pendingReview)
+        #expect(BatchAIQueuePresentationStore.primaryState(for: failed) == .failed)
+        #expect(BatchAIQueuePresentationStore.primaryState(for: completed) == .completed)
+        #expect(BatchAIQueuePresentationStore.primaryState(for: ignored) == .ignored)
     }
 
     @Test("确认只应用用户保留的标签并创建新标签")

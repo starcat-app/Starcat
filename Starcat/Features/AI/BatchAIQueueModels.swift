@@ -11,9 +11,8 @@
 //  关键约束：
 //  - Job 是**会话级**对象：纯内存持有，不落库。详细理由见 BatchAIQueueService 文件头。
 //    （已有 AI 摘要会命中 ai_summaries 表，所以重启后再次处理也不会浪费 AI 配额。）
-//  - 状态枚举与 "ignored" 的引入：dong4j 2026-06-06 16:21 评审决议——
-//    当开启"自动应用标签"时，置信度低于阈值的推荐应被**自动忽略**（不计入失败、不重试）。
-//    `ignored` 与 `failed` 在 UX 上必须区分，否则用户会误以为 AI 失败率虚高。
+//  - 自动应用只处理达到阈值的推荐；人工窗口把低于阈值的推荐留在“待确认”，
+//    静默后台任务因没有审核入口才记为 ignored。`ignored` 与 `failed` 仍须在 UX 上区分。
 //  - 操作集 Options.actions 用 Set<Action> 保证多选幂等；手动入口固定生成标签，摘要可选。
 //
 
@@ -25,8 +24,8 @@ import Foundation
 ///
 /// 状态流转：
 /// ```
-///                     ┌──> .completed    （应用了 N 个标签 / 摘要写入成功）
-/// .queued ─> .processing ──> .ignored     （AI 返回的所有标签都低于置信度阈值）
+///                     ┌──> .completed    （生成完成；标签可能已应用或正在待确认）
+/// .queued ─> .processing ──> .ignored     （静默任务的所有标签都低于置信度阈值）
 ///                     │
 ///                     └──> .failed        （重试 N 次仍失败：网络/AI Key/JSON 解析等）
 /// ```
@@ -167,9 +166,9 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
     /// 与 AI 生成终态分离的人工审核状态。
     var tagReviewState: BatchAITagReviewState = .notRequired
 
-    /// 因低于置信度阈值被忽略的标签（status == .ignored 时填）。
-    /// 仍保留 `(name, confidence)` 二元组以便 UI 提示"X% < 阈值 Y%"。
-    var ignoredTagsBelowThreshold: [(name: String, confidence: Double)] = []
+    /// 低于自动应用阈值、需要人工确认的标签；静默后台任务会将其作为 ignored 结果展示。
+    /// 保留 `(name, confidence)` 二元组，避免提示阈值原因时再次扫描完整建议数组。
+    var belowThresholdTags: [(name: String, confidence: Double)] = []
 
     /// 进入终态的时间戳，便于按"最近完成"排序。
     var finishedAt: Date?
@@ -189,7 +188,7 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
         self.ownerAvatarURL = ownerAvatarURL
     }
 
-    // `ignoredTagsBelowThreshold` 含元组数组，Equatable 需要手写。
+    // `belowThresholdTags` 含元组数组，Equatable 需要手写。
     static func == (lhs: BatchAIJob, rhs: BatchAIJob) -> Bool {
         guard lhs.repoId == rhs.repoId,
               lhs.repoFullName == rhs.repoFullName,
@@ -206,9 +205,9 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
               lhs.tagReviewState == rhs.tagReviewState,
               lhs.finishedAt == rhs.finishedAt,
               lhs.didGenerateSummary == rhs.didGenerateSummary,
-              lhs.ignoredTagsBelowThreshold.count == rhs.ignoredTagsBelowThreshold.count
+              lhs.belowThresholdTags.count == rhs.belowThresholdTags.count
         else { return false }
-        for (l, r) in zip(lhs.ignoredTagsBelowThreshold, rhs.ignoredTagsBelowThreshold) {
+        for (l, r) in zip(lhs.belowThresholdTags, rhs.belowThresholdTags) {
             if l.name != r.name || l.confidence != r.confidence { return false }
         }
         return true

@@ -487,6 +487,21 @@ final class BatchAIQueueService {
         }
     }
 
+    /// “失败”Tab 同时收纳生成失败和人工应用失败；批量重试必须覆盖两条恢复路径。
+    /// 先串行重试标签落库，避免它与重新启动的 AI Worker 同时修改同一会话状态。
+    func retryAllFailures() async {
+        guard !isRunning, !isApplyingSuggestedTags else { return }
+        let reviewFailureRepoIDs = jobs.compactMap { job -> Int64? in
+            if case .failed = job.tagReviewState { return job.repoId }
+            return nil
+        }
+        for repoID in reviewFailureRepoIDs {
+            guard !Task.isCancelled else { return }
+            await applySelectedSuggestedTags(repoId: repoID)
+        }
+        retryAllFailed()
+    }
+
     // MARK: - 人工标签审核
 
     /// 切换仓库是否参与底栏“应用选中项”。只有仍可审核且至少保留一个标签的行可被勾选。
@@ -871,24 +886,33 @@ final class BatchAIQueueService {
 
         // 标签子分支：
         // - 没勾选标签 → 直接 completed（summary 已写）。
-        // - 勾选 + autoApply=true → 按置信度阈值过滤后落库；全部低于阈值 → ignored；否则 completed。
+        // - 勾选 + autoApply=true → 高于阈值的标签自动落库，低于阈值的标签留给用户确认。
+        //   静默后台任务没有人工审核入口，仍把全部低于阈值的结果记为 ignored。
         // - 勾选 + autoApply=false → 标签建议保留在当前批量会话中，由用户在同一窗口逐仓确认。
         //   这种情况 status = completed（生成任务本身已完成），审核进度由 tagReviewState 单独表达。
         if didTags, options.autoApplyTags {
             let belowThreshold = suggestions.filter { $0.confidence < options.confidenceThreshold }
             let aboveThreshold = suggestions.filter { $0.confidence >= options.confidenceThreshold }
 
-            if aboveThreshold.isEmpty, !suggestions.isEmpty {
-                jobs[idx].ignoredTagsBelowThreshold = belowThreshold.map { ($0.name, $0.confidence) }
-                shouldMarkIgnored = true
-            } else {
+            if !aboveThreshold.isEmpty {
                 let appliedNames = await applyTagsToRepo(repoId: jobId, suggestions: aboveThreshold)
                 guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
                 jobs[currentIndex].appliedTagNames = appliedNames
-                jobs[currentIndex].ignoredTagsBelowThreshold = belowThreshold.map { ($0.name, $0.confidence) }
                 if !appliedNames.isEmpty {
                     hasPendingTagsChangedNotification = true
                 }
+            }
+
+            guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
+            jobs[currentIndex].belowThresholdTags = belowThreshold.map { ($0.name, $0.confidence) }
+            if !silent, !belowThreshold.isEmpty {
+                // 阈值只决定能否自动应用，不能替用户丢弃有效建议；低置信度项默认不勾选，
+                // 必须由用户在“待确认”中明确选择后再写入本地标签。
+                jobs[currentIndex].suggestedTags = belowThreshold
+                jobs[currentIndex].selectedSuggestedTagIDs = []
+                jobs[currentIndex].tagReviewState = .pending
+            } else if aboveThreshold.isEmpty, !suggestions.isEmpty {
+                shouldMarkIgnored = true
             }
         }
 

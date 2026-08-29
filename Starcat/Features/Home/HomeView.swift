@@ -2262,17 +2262,17 @@ struct HomeView: View {
         return true
     }
 
-    /// 根据入口固定本次仓库范围，并把全局摘要上下文设置复制成“本次任务”初始值。
+    /// 根据入口固定本次仓库范围，并重置本轮可选操作。
     ///
-    /// 这里故意只读 `AppSettings`，后续交互只改 `batchAIOptions`，因此用户在 Sheet 中
-    /// 临时开关代码上下文或外部搜索，不会污染单仓摘要面板与下一次打开时的全局默认值。
+    /// 生成标签是固定主任务；摘要及其上下文每轮默认关闭，避免上一轮选择或全局摘要设置
+    /// 意外影响新的批量整理任务。
     private func presentBatchAIOptions(
         scope: BatchAIRepositoryScope,
         skippedTaggedCount: Int = 0
     ) {
-        batchAIOptions.actions.insert(.tags)
-        batchAIOptions.codeContextEnabledOverride = dependencies.settings.aiRepoContextEnabled
-        batchAIOptions.externalContextEnabledOverride = dependencies.settings.externalContextEnabled
+        batchAIOptions.actions = [.tags]
+        batchAIOptions.codeContextEnabledOverride = false
+        batchAIOptions.externalContextEnabledOverride = false
         // 先固化本轮范围和数量，再创建 AppKit hosting tree，首帧不会读到上一轮全量状态。
         let presentation = BatchAIOptionsPresentation(
             scope: scope,

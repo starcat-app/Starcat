@@ -127,6 +127,21 @@ enum GitHubStarListAIResultFilter: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
+/// 审核列表中一个仓库唯一所属的业务状态。
+///
+/// `all` 只是筛选视图，不属于主状态。所有其它 Tab、计数、排序和行操作都必须从这里派生，
+/// 避免同一仓库同时进入“待处理”和“待确认”等互相冲突的分类。
+enum GitHubStarListAIReviewState: Int, CaseIterable, Sendable {
+    case pendingAnalysis
+    case pendingReview
+    case noMatch
+    case analysisFailed
+    case applyFailed
+    case applied
+    case automaticallyIgnored
+    case ignored
+}
+
 struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     let id: Int64
     let repo: Repo
@@ -140,6 +155,8 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     let appliedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
     let applyState: GitHubStarListAIApplyState
     let isIgnoredByUser: Bool
+    /// 已应用仓库正在编辑完整 membership 时，即使 applyState 临时进入 applying，也仍属于“已应用”。
+    let hasAppliedMembershipDraft: Bool
     let analysisFailureMessage: String?
     let finishedAt: Date?
 
@@ -159,22 +176,25 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
         membershipEditorListIDs != Set(currentLists.map(\.id))
     }
     var isIgnored: Bool { isIgnoredByUser || automaticallyIgnoredFailure != nil }
+    /// 单一主状态先处理终态和失败，再处理分析进度，最后解释 completed 的业务结果。
+    var reviewState: GitHubStarListAIReviewState {
+        if automaticallyIgnoredFailure != nil { return .automaticallyIgnored }
+        if isIgnoredByUser { return .ignored }
+        if applyFailure != nil { return .applyFailed }
+        if isApplied || (isApplying && hasAppliedMembershipDraft) { return .applied }
+        if status == .failed { return .analysisFailed }
+        if status == .queued || status == .analyzing || status == .stopped {
+            return .pendingAnalysis
+        }
+        return hasActionableSuggestions || isApplying ? .pendingReview : .noMatch
+    }
+
     /// 待确认建议与已应用结果都可展开编辑；忽略和失败终态只保留诊断摘要。
     var canReviewSuggestions: Bool {
-        status == .completed
-            && !isApplied
-            && !isIgnored
-            && applyFailure == nil
-            && hasSuggestions
+        reviewState == .pendingReview
     }
-    var isActionable: Bool {
-        !isIgnored && (status == .analyzing
-            || status == .failed
-            || applyFailure != nil
-            // 自动应用成功后以仓库为单位进入“已应用”，避免同时出现在待处理与待确认。
-            || (!isApplied && hasActionableSuggestions))
-    }
-    var isNoMatch: Bool { !isIgnored && status == .completed && suggestions.isEmpty }
+    var isActionable: Bool { reviewState == .pendingAnalysis }
+    var isNoMatch: Bool { reviewState == .noMatch }
     var isApplied: Bool {
         if case .applied = applyState { true } else { false }
     }
@@ -193,23 +213,23 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     func matches(filter: GitHubStarListAIResultFilter, searchText: String) -> Bool {
         let matchesFilter = switch filter {
         case .actionable:
-            isActionable
+            reviewState == .pendingAnalysis
         case .all:
             true
         case .suggestions:
-            !isApplied && hasActionableSuggestions && applyFailure == nil && !isIgnored
+            reviewState == .pendingReview
         case .noMatch:
-            isNoMatch
+            reviewState == .noMatch
         case .analysisFailed:
-            status == .failed
+            reviewState == .analysisFailed
         case .applyFailed:
-            applyFailure != nil
+            reviewState == .applyFailed
         case .applied:
-            isApplied
+            reviewState == .applied
         case .automaticallyIgnored:
-            automaticallyIgnoredFailure != nil
+            reviewState == .automaticallyIgnored
         case .ignored:
-            isIgnoredByUser && automaticallyIgnoredFailure == nil
+            reviewState == .ignored
         }
         guard matchesFilter else { return false }
 
@@ -234,14 +254,16 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     }
 
     private var sortRank: Int {
-        if status == .analyzing { return 0 }
-        if applyFailure != nil { return 1 }
-        if isIgnored { return 6 }
-        if isApplied { return 4 }
-        if hasActionableSuggestions { return 2 }
-        if status == .failed { return 3 }
-        if isNoMatch { return 5 }
-        return 7
+        switch reviewState {
+        case .pendingAnalysis: 0
+        case .applyFailed: 1
+        case .pendingReview: 2
+        case .analysisFailed: 3
+        case .applied: 4
+        case .noMatch: 5
+        case .automaticallyIgnored: 6
+        case .ignored: 7
+        }
     }
 }
 
@@ -355,6 +377,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 ),
                 applyState: job.applyState,
                 isIgnoredByUser: ignoredRepoIDs.contains(job.id),
+                hasAppliedMembershipDraft: editedListIDsByRepo[job.id] != nil,
                 analysisFailureMessage: job.analysisFailure?.localizedMessage,
                 finishedAt: job.finishedAt
             )
@@ -364,16 +387,28 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                (job.status == .completed || job.status == .failed) {
                 analyzedCount += 1
             }
-            if item.matches(filter: .suggestions, searchText: "") { suggestionCount += 1 }
-            if item.isNoMatch { noMatchCount += 1 }
-            if job.status == .failed { analysisFailedCount += 1 }
-            if item.applyFailure != nil { applyFailedCount += 1 }
+            // 每个仓库只累加一个主状态；“全部”由 items.count 单独计算。
+            switch item.reviewState {
+            case .pendingAnalysis:
+                actionableCount += 1
+            case .pendingReview:
+                suggestionCount += 1
+            case .noMatch:
+                noMatchCount += 1
+            case .analysisFailed:
+                analysisFailedCount += 1
+            case .applyFailed:
+                applyFailedCount += 1
+            case .applied:
+                appliedCount += 1
+            case .automaticallyIgnored:
+                automaticallyIgnoredCount += 1
+            case .ignored:
+                ignoredCount += 1
+            }
             if item.applyFailure?.isRetryable == true { recoverableApplyFailureCount += 1 }
-            if item.isApplied { appliedCount += 1 }
-            if item.automaticallyIgnoredFailure != nil { automaticallyIgnoredCount += 1 }
-            if item.isIgnoredByUser && item.automaticallyIgnoredFailure == nil { ignoredCount += 1 }
-            if item.isActionable { actionableCount += 1 }
-            if !selection.isEmpty {
+            if !selection.isEmpty,
+               item.reviewState == .pendingReview || item.reviewState == .applyFailed {
                 selectedRepositoryCount += 1
                 selectedListIDs.formUnion(selection)
             }

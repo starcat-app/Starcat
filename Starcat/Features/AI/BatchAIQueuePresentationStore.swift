@@ -14,14 +14,23 @@ import Observation
 
 /// 批量标签审核列表的展示筛选。
 ///
-/// `actionable` 同时包含生成失败和待人工确认项，作为默认入口避免用户漏掉仍需处理的仓库。
+/// `actionable` 沿用既有枚举名，但业务语义只表示仍在排队或处理中的仓库。
 enum BatchAIResultFilter: String, CaseIterable, Sendable {
     case actionable
     case pendingReview
-    case failed
     case completed
+    case failed
     case ignored
     case all
+}
+
+/// 标签整理列表中一个仓库唯一所属的业务状态；`all` 仅是汇总筛选。
+enum BatchAIPrimaryState: Int, CaseIterable, Hashable, Sendable {
+    case pending
+    case pendingReview
+    case completed
+    case failed
+    case ignored
 }
 
 @MainActor
@@ -44,6 +53,7 @@ final class BatchAIQueuePresentationStore {
     private(set) var totalJobCount = 0
     private(set) var matchingJobCount = 0
     private(set) var canLoadMore = false
+    private(set) var primaryStateCounts: [BatchAIPrimaryState: Int] = [:]
 
     @ObservationIgnored private var visibleLimit = BatchAIQueuePresentationStore.pageSize
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
@@ -105,6 +115,9 @@ final class BatchAIQueuePresentationStore {
         }
         allJobs = service.jobs
         totalJobCount = allJobs.count
+        primaryStateCounts = allJobs.reduce(into: [:]) { counts, job in
+            counts[Self.primaryState(for: job), default: 0] += 1
+        }
         rebuildVisibleJobs()
     }
 
@@ -112,14 +125,11 @@ final class BatchAIQueuePresentationStore {
         let matchingJobs = allJobs.filter { job in
             matchesFilter(job) && matchesSearch(job)
         }
-        let failed = matchingJobs.filter { $0.status == .failed }
-        let pendingReview = matchingJobs.filter {
-            $0.status != .failed && Self.needsTagReview($0)
+        // 全部视图按主状态分区，同一状态内保留 Service 队列顺序。
+        let displayOrder: [BatchAIPrimaryState] = [.pending, .pendingReview, .completed, .failed, .ignored]
+        let ordered = displayOrder.flatMap { state in
+            matchingJobs.filter { Self.primaryState(for: $0) == state }
         }
-        let others = matchingJobs.filter {
-            $0.status != .failed && !Self.needsTagReview($0)
-        }
-        let ordered = failed + pendingReview + others
         matchingJobCount = ordered.count
         visibleJobs = Array(ordered.prefix(visibleLimit))
         canLoadMore = visibleJobs.count < ordered.count
@@ -133,18 +143,15 @@ final class BatchAIQueuePresentationStore {
     private func matchesFilter(_ job: BatchAIJob) -> Bool {
         switch filter {
         case .actionable:
-            job.status == .queued
-                || job.status == .processing
-                || job.status == .failed
-                || Self.needsTagReview(job)
+            Self.primaryState(for: job) == .pending
         case .pendingReview:
-            Self.needsTagReview(job)
+            Self.primaryState(for: job) == .pendingReview
         case .failed:
-            job.status == .failed
+            Self.primaryState(for: job) == .failed
         case .completed:
-            job.status == .completed && !Self.needsTagReview(job)
+            Self.primaryState(for: job) == .completed
         case .ignored:
-            job.status == .ignored || job.tagReviewState == .ignored
+            Self.primaryState(for: job) == .ignored
         case .all:
             true
         }
@@ -161,12 +168,32 @@ final class BatchAIQueuePresentationStore {
         return candidates.contains { $0.localizedLowercase.contains(normalizedSearchText) }
     }
 
-    private static func needsTagReview(_ job: BatchAIJob) -> Bool {
+    /// 生成状态和人工审核状态在这里合并成唯一分类，避免两个 Tab 各自解释同一组字段。
+    static func primaryState(for job: BatchAIJob) -> BatchAIPrimaryState {
+        if job.status == .failed { return .failed }
+        if case .failed = job.tagReviewState { return .failed }
+        if job.status == .ignored || job.tagReviewState == .ignored { return .ignored }
+        if job.status == .queued || job.status == .processing { return .pending }
         switch job.tagReviewState {
-        case .pending, .applying, .failed:
-            true
-        case .notRequired, .applied, .ignored:
-            false
+        case .pending, .applying:
+            return .pendingReview
+        case .notRequired, .applied:
+            return .completed
+        case .failed:
+            return .failed
+        case .ignored:
+            return .ignored
+        }
+    }
+
+    func count(for filter: BatchAIResultFilter) -> Int {
+        switch filter {
+        case .actionable: primaryStateCounts[.pending, default: 0]
+        case .pendingReview: primaryStateCounts[.pendingReview, default: 0]
+        case .failed: primaryStateCounts[.failed, default: 0]
+        case .completed: primaryStateCounts[.completed, default: 0]
+        case .ignored: primaryStateCounts[.ignored, default: 0]
+        case .all: totalJobCount
         }
     }
 }

@@ -50,8 +50,8 @@ struct BatchAITagReviewRow: View {
                 suggestionReviewContent
                     .padding(.leading, contentColumnLeadingInset)
             }
-            if isExpanded, let diagnostic = job.errorDiagnostic {
-                diagnosticContent(diagnostic)
+            if isExpanded {
+                expandedFailureContent
                     .padding(.leading, contentColumnLeadingInset)
             }
         }
@@ -115,7 +115,7 @@ struct BatchAITagReviewRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(verbatim: job.repoFullName)
-                        .font(interfaceScale.font(.bodyEmphasis, weight: .semibold).monospaced())
+                        .font(interfaceScale.font(.rowTitle))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -125,7 +125,7 @@ struct BatchAITagReviewRow: View {
                 }
                 if let displayDescription {
                     Text(verbatim: displayDescription)
-                        .font(interfaceScale.font(.captionSmall))
+                        .font(interfaceScale.font(.body))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -133,7 +133,7 @@ struct BatchAITagReviewRow: View {
                 }
                 if let detailText {
                     Text(verbatim: detailText)
-                        .font(interfaceScale.font(.captionSmall))
+                        .font(interfaceScale.font(.caption))
                         .foregroundStyle(detailColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -237,7 +237,7 @@ struct BatchAITagReviewRow: View {
     @ViewBuilder
     private var reviewActions: some View {
         switch job.tagReviewState {
-        case .pending, .failed:
+        case .pending:
             HStack(spacing: 8) {
                 Button("batchAI.panel.review.selectAll", action: onSelectAll)
                     .controlSize(.small)
@@ -253,17 +253,33 @@ struct BatchAITagReviewRow: View {
                     .controlSize(.small)
                     .disabled(job.selectedSuggestedTagIDs.isEmpty)
             }
+        case .failed:
+            HStack(spacing: 8) {
+                Button("batchAI.panel.review.selectAll", action: onSelectAll)
+                    .controlSize(.small)
+                    .disabled(job.selectedSuggestedTagIDs.count == job.suggestedTags.count)
+                Button("batchAI.panel.review.clear", action: onClearSelection)
+                    .controlSize(.small)
+                    .disabled(job.selectedSuggestedTagIDs.isEmpty)
+                Spacer()
+                Button("batchAI.panel.review.ignore", action: onIgnore)
+                    .controlSize(.small)
+                Button("action.retry", action: onApply)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(job.selectedSuggestedTagIDs.isEmpty)
+            }
         case .applying:
             Label("batchAI.panel.review.applying", systemImage: "arrow.down.circle")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         case .applied:
             Label("batchAI.panel.review.applied", systemImage: "checkmark.circle.fill")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.green)
         case .ignored:
             Label("batchAI.panel.review.ignored", systemImage: "minus.circle")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         case .notRequired:
             EmptyView()
@@ -273,7 +289,7 @@ struct BatchAITagReviewRow: View {
     private func diagnosticContent(_ diagnostic: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: diagnostic)
-                .font(.caption.monospaced())
+                .font(interfaceScale.font(.caption).monospaced())
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
@@ -285,7 +301,7 @@ struct BatchAITagReviewRow: View {
                     didCopy ? "batchAI.panel.row.copiedDetails" : "batchAI.panel.row.copyDetails",
                     systemImage: didCopy ? "checkmark.circle.fill" : "doc.on.doc"
                 )
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(didCopy ? Color.green : .secondary)
             }
         }
@@ -295,10 +311,32 @@ struct BatchAITagReviewRow: View {
     }
 
     @ViewBuilder
+    private var expandedFailureContent: some View {
+        if let diagnostic = job.errorDiagnostic {
+            diagnosticContent(diagnostic)
+        } else if case .failed(let failure) = job.tagReviewState {
+            Text(verbatim: failure.localizedMessage)
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    @ViewBuilder
     private var statusIcon: some View {
         if job.tagReviewState == .applying {
             ProgressView()
                 .controlSize(.small)
+        } else if job.tagReviewState == .ignored {
+            Image(systemName: "minus.circle.fill")
+                .foregroundStyle(.secondary)
+        } else if case .failed = job.tagReviewState {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
         } else {
             switch job.status {
             case .queued:
@@ -329,7 +367,7 @@ struct BatchAITagReviewRow: View {
         case .completed:
             completedDetailText
         case .ignored:
-            job.ignoredTagsBelowThreshold.prefix(3).map { suggestion in
+            job.belowThresholdTags.prefix(3).map { suggestion in
                 "\(suggestion.name)(\(Int((suggestion.confidence * 100).rounded()))%)"
             }.joined(separator: ", ")
         case .failed:
@@ -340,6 +378,9 @@ struct BatchAITagReviewRow: View {
     private var completedDetailText: String {
         switch job.tagReviewState {
         case .pending:
+            if !job.belowThresholdTags.isEmpty {
+                return String.l10n("githubStarLists.aiGrouping.status.suggested")
+            }
             return String(
                 format: String.l10n("batchAI.panel.review.pendingFormat"),
                 locale: locale,
@@ -381,7 +422,9 @@ struct BatchAITagReviewRow: View {
     }
 
     private var canExpand: Bool {
-        job.errorDiagnostic != nil
+        if job.errorDiagnostic != nil { return true }
+        if case .failed = job.tagReviewState { return true }
+        return false
     }
 
     private var detailColor: Color {

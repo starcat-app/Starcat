@@ -16,6 +16,8 @@ struct GitHubStarListAIGroupingResultList: View {
     let filter: GitHubStarListAIResultFilter
     let availableLists: [GitHubStarListAIListDisplay]
     let hasMore: Bool
+    let canRetryAnalysis: Bool
+    let canRetryAutomaticallyIgnored: Bool
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
     let onClearSelection: (Int64) -> Void
@@ -53,6 +55,8 @@ struct GitHubStarListAIGroupingResultList: View {
                             item: item,
                             availableLists: availableLists,
                             isExpanded: expandedRepoID == item.id,
+                            canRetryAnalysis: canRetryAnalysis,
+                            canRetryAutomaticallyIgnored: canRetryAutomaticallyIgnored,
                             onToggleExpansion: { toggleExpansion(for: item) },
                             onToggleList: { onToggleList(item.id, $0) },
                             onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
@@ -107,7 +111,7 @@ struct GitHubStarListAIGroupingResultList: View {
         guard item.automaticallyIgnoredFailure != nil
                 || item.applyFailure != nil
                 || item.status == .failed
-                || item.isApplied
+                || item.reviewState == .applied
         else { return }
         expandedRepoID = expandedRepoID == item.id ? nil : item.id
     }
@@ -117,6 +121,8 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     let item: GitHubStarListAIReviewItem
     let availableLists: [GitHubStarListAIListDisplay]
     let isExpanded: Bool
+    let canRetryAnalysis: Bool
+    let canRetryAutomaticallyIgnored: Bool
     let onToggleExpansion: () -> Void
     let onToggleList: (String) -> Void
     let onSelectAllSuggestions: () -> Void
@@ -140,6 +146,8 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
         lhs.item == rhs.item
             && lhs.availableLists == rhs.availableLists
             && lhs.isExpanded == rhs.isExpanded
+            && lhs.canRetryAnalysis == rhs.canRetryAnalysis
+            && lhs.canRetryAutomaticallyIgnored == rhs.canRetryAutomaticallyIgnored
     }
 
     var body: some View {
@@ -264,7 +272,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.red)
                 .lineLimit(1)
-        } else if item.isApplied, !item.appliedGroupSummaries.isEmpty {
+        } else if item.reviewState == .applied, !item.appliedGroupSummaries.isEmpty {
             groupSummaryLine(
                 prefix: "githubStarLists.aiGrouping.appliedJoinPrefix",
                 groups: item.appliedGroupSummaries,
@@ -323,7 +331,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
 
     @ViewBuilder
     private var expandedContent: some View {
-        if item.isApplied {
+        if item.reviewState == .applied {
             appliedMembershipEditor
         } else if let failure = item.automaticallyIgnoredFailure {
             failureBox {
@@ -339,6 +347,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                         Spacer()
                         Button("action.retry", action: onRetryAutomaticallyIgnored)
                             .controlSize(.small)
+                            .disabled(!canRetryAutomaticallyIgnored)
                     }
                 }
             }
@@ -370,6 +379,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                     Spacer()
                     Button("action.retry", action: onRetryAnalysis)
                         .controlSize(.small)
+                        .disabled(!canRetryAnalysis)
                 }
             }
         }
@@ -522,7 +532,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
         item.automaticallyIgnoredFailure != nil
             || item.applyFailure != nil
             || item.status == .failed
-            || item.isApplied
+            || item.reviewState == .applied
     }
 
     private var statusLabelColor: Color {

@@ -86,7 +86,8 @@ final class RepoListAISummaryAvailability {
 /// 只观察导航计数的局部 modifier。
 ///
 /// 数量文案走系统 `navigationSubtitle`，和面包屑共用标题栏左缘，不能改成内容区内边距。
-/// 系统 subtitle 只能接 String；探索的 info 按钮用探针贴到这行文字右侧，星标 / 活动附件槽仍空。
+/// 系统 subtitle 只能接 String；探索的 info 按钮、星标真实 List 的可见性图标
+/// 都用探针贴到这行文字右侧。活动附件槽仍空。
 ///
 /// 关键约束：调用方传入 Manage 的静态数量文案，但不读取 `metrics`；Trending / Activity
 /// 回写数量时，SwiftUI 只会重算这个 modifier，不会重新求值 `RepoListView.body`。
@@ -100,6 +101,8 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let selectedWeeklyLanguage: String?
     let selectedActivityCategory: ActivityCategory
     let manageSubtitle: String
+    /// 仅真实 GitHub List 有值；未分组和其它星标入口保持 nil。
+    let listVisibilityBadge: GitHubStarListVisibilityBadge?
     let metrics: RepoListNavigationMetrics
     let exploreCatalogStore: ExploreCatalogStore
     let trendingLanguageStore: TrendingLanguageStore
@@ -118,6 +121,14 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
                     TitlebarSubtitleAccessoryAttacher(subtitle: countText) {
                         ExploreModeInfoButton(mode: selectedExploreMode)
                             .id(selectedExploreMode)
+                    }
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+                } else if let listVisibilityBadge, !countText.isEmpty {
+                    TitlebarSubtitleAccessoryAttacher(subtitle: countText) {
+                        GitHubStarListVisibilityBadgeView(badge: listVisibilityBadge)
+                            .id(listVisibilityBadge)
                     }
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
@@ -742,7 +753,14 @@ struct RepoListView: View {
     private var listColumnChrome: some View {
         // 非 Manage 页面不能求值 `manageNavigationSubtitle`，否则会把 HomeViewModel 的
         // items / collection 计数重新带入 Explore 与 Activity 的观察图。
+        // 可见性徽标同样只在 Manage 读取 `githubStarLists`，避免探索页被 List 同步刷新拖着重绘。
         let manageSubtitle = selectedPage == .manage ? manageNavigationSubtitle : ""
+        let listVisibilityBadge = selectedPage == .manage
+            ? GitHubStarListVisibilityBadge.make(
+                selection: viewModel.selection,
+                lists: viewModel.githubStarLists
+            )
+            : nil
         contentBody
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(.clear)
@@ -756,6 +774,7 @@ struct RepoListView: View {
                 selectedWeeklyLanguage: selectedWeeklyLanguage,
                 selectedActivityCategory: selectedActivityCategory,
                 manageSubtitle: manageSubtitle,
+                listVisibilityBadge: listVisibilityBadge,
                 metrics: navigationMetrics,
                 exploreCatalogStore: dependencies.exploreCatalogStore,
                 trendingLanguageStore: dependencies.trendingLanguageStore,

@@ -26,7 +26,7 @@ private enum GitHubStarListAIGroupingPreflightMetrics {
     static let sessionPanelWidth: CGFloat = 280
     static let workspaceHeight: CGFloat = 424
     static let groupsContentWidth: CGFloat = 616
-    static let groupsContentHeight: CGFloat = 366
+    static let groupsContentHeight: CGFloat = 340
 }
 
 struct GitHubStarListAIGroupingPreflightView: View {
@@ -171,6 +171,13 @@ struct GitHubStarListAIGroupingPreflightView: View {
                     .frame(width: 168)
             }
 
+            // 隐私说明属于整批规则的共同约束，只展示一次，避免每张分组卡重复占用空间。
+            Text("githubStarLists.aiGrouping.preflight.rulesPrivacyNote")
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
             Group {
                 if snapshot.preflightGroups.isEmpty || groups.isEmpty {
                     emptyGroupsView
@@ -255,49 +262,53 @@ struct GitHubStarListAIGroupingPreflightView: View {
 
             Divider()
 
-            Toggle("githubStarLists.aiGrouping.preflight.autoConfirm", isOn: $autoConfirmEnabled)
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .font(interfaceScale.font(.caption))
-
-            Text(verbatim: autoConfirmDescription)
-            .font(interfaceScale.font(.caption))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-
-            if autoConfirmEnabled {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("settings.githubListGrouping.threshold.label")
-                        Spacer(minLength: 8)
-                        Text(verbatim: confidenceThresholdPercentString)
-                            .font(interfaceScale.font(.captionStrong))
-                            .foregroundStyle(.tint)
-                            .monospacedDigit()
-                    }
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-
-                    Slider(value: confidenceThresholdBinding, in: 0.5...1.0, step: 0.05)
-                        .controlSize(.mini)
-
-                    Text(String(
-                        format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
-                        locale: locale,
-                        confidenceThresholdPercentString
-                    ))
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            // macOS 26 的系统 Switch 在固定 AppKit hosting sheet 中会出现 thumb 消失或拉伸。
+            // 继续使用 Toggle 持有语义和 Binding，只把轨道绘制收敛为稳定的紧凑样式。
+            Toggle(isOn: $autoConfirmEnabled) {
+                HStack(spacing: 8) {
+                    Text("githubStarLists.aiGrouping.preflight.autoConfirm")
+                    GitHubStarListAIGroupingSwitchIndicator(isOn: autoConfirmEnabled)
                 }
+                .contentShape(Rectangle())
+            }
+            .toggleStyle(.button)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .font(interfaceScale.font(.caption))
+
+            // 阈值始终展开；关闭自动确认时只禁用 Slider，保留当前数值和说明。
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("settings.githubListGrouping.threshold.label")
+                    Spacer(minLength: 8)
+                    Text(verbatim: confidenceThresholdPercentString)
+                        .font(interfaceScale.font(.captionStrong))
+                        .foregroundStyle(.tint)
+                        .monospacedDigit()
+                }
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+
+                Slider(value: confidenceThresholdBinding, in: 0.5...1.0, step: 0.05)
+                    .controlSize(.mini)
+                    .disabled(!autoConfirmEnabled)
+
+                Text(String(
+                    format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
+                    locale: locale,
+                    confidenceThresholdPercentString
+                ))
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 if snapshot.preparedAutomaticallyIgnoredRepoCount > 0 {
-                    sessionNote("githubStarLists.aiGrouping.filter.automaticallyIgnored.persistentReason")
+                    sessionNote("githubStarLists.aiGrouping.preflight.automaticallyIgnoredCompactReason")
                 }
-                sessionNote("githubStarLists.aiGrouping.preflight.overlapNote")
-                sessionNote("githubStarLists.aiGrouping.preflight.closedSetHelp")
+                sessionNote("githubStarLists.aiGrouping.preflight.multipleGroupsCompactNote")
+                sessionNote("githubStarLists.aiGrouping.preflight.configuredGroupsCompactNote")
             }
         }
         .padding(12)
@@ -356,18 +367,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
         "\(Int((settings.githubStarListAutoGroupingSettings.confidenceThreshold * 100).rounded()))%"
     }
 
-    private var autoConfirmDescription: String {
-        if autoConfirmEnabled {
-            String(
-                format: String.l10n("githubStarLists.aiGrouping.preflight.autoConfirm.enabledFormat"),
-                locale: locale,
-                confidenceThresholdPercentString
-            )
-        } else {
-            String.l10n("githubStarLists.aiGrouping.preflight.autoConfirm.disabled")
-        }
-    }
-
     private var confidenceThresholdBinding: Binding<Double> {
         Binding(
             get: { settings.githubStarListAutoGroupingSettings.confidenceThreshold },
@@ -377,6 +376,33 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 settings.githubStarListAutoGroupingSettings = grouping
             }
         )
+    }
+}
+
+/// 仅用于 AI 分组预检页的稳定 Switch 轨道；thumb 位置同时提供非颜色状态区分。
+private struct GitHubStarListAIGroupingSwitchIndicator: View {
+    let isOn: Bool
+
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(isOn ? Color.accentColor : Color.secondary.opacity(0.36))
+
+            Circle()
+                .fill(.white)
+                .overlay {
+                    Circle()
+                        .stroke(.black.opacity(0.08), lineWidth: 0.5)
+                }
+                .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
+                .padding(2)
+                .offset(x: isOn ? 20 : 0)
+        }
+        .frame(width: 44, height: 24)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isOn)
+        .accessibilityHidden(true)
     }
 }
 
@@ -451,12 +477,6 @@ private struct GitHubStarListAIGroupingRuleCard: View {
                 .textFieldStyle(.roundedBorder)
                 .font(interfaceScale.font(.caption))
                 .lineLimit(2...4)
-
-                Text("githubStarLists.editor.aiRule.help")
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
             } else {
                 Text(verbatim: hasRuleDraft
                      ? instruction

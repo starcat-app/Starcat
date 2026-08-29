@@ -617,6 +617,21 @@ final class GitHubStarListAIGroupingSession {
         )
     }
 
+    /// 分析失败与应用失败是两条独立恢复路径；批量重试只重新排队分析失败仓库。
+    func retryAllAnalysisFailures() {
+        guard mode == .manual, !isRunning, !isApplying else { return }
+        let repos = jobs.compactMap { $0.status == .failed ? $0.repo : nil }
+        guard !repos.isEmpty else { return }
+        beginAnalysis(
+            repos: repos,
+            candidates: candidateContexts,
+            existingMemberships: existingListIDsByRepo,
+            mode: .manual,
+            automaticThreshold: manualAutomaticThreshold,
+            replaceJobs: false
+        )
+    }
+
     /// 后台自动分组使用独立会话，但不保留审核选择。人工任务优先，运行中时后台直接让位。
     func startAutomatic(
         repos: [Repo],

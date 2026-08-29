@@ -192,6 +192,8 @@ struct GitHubStarListAIGroupingSheet: View {
                 filter: presentation.filter,
                 availableLists: presentation.snapshot.availableLists,
                 hasMore: presentation.canLoadMore,
+                canRetryAnalysis: !session.isRunning && !session.isApplying,
+                canRetryAutomaticallyIgnored: !session.isRunning && !session.isApplying,
                 onToggleList: { repoID, listID in
                     performReviewUpdate { session.toggleSelection(repoID: repoID, listID: listID) }
                 },
@@ -250,13 +252,6 @@ struct GitHubStarListAIGroupingSheet: View {
             )
             HStack(spacing: 18) {
                 metricButton(
-                    "githubStarLists.aiGrouping.metric.pendingReview",
-                    value: presentation.snapshot.suggestionCount,
-                    icon: "circle.fill",
-                    tint: .accentColor,
-                    filter: .suggestions
-                )
-                metricButton(
                     "githubStarLists.aiGrouping.metric.noMatch",
                     value: presentation.snapshot.noMatchCount,
                     icon: "minus.circle",
@@ -271,11 +266,18 @@ struct GitHubStarListAIGroupingSheet: View {
                     filter: .analysisFailed
                 )
                 metricButton(
-                    "githubStarLists.aiGrouping.filter.applyFailed",
-                    value: presentation.snapshot.applyFailedCount,
-                    icon: "exclamationmark.circle.fill",
-                    tint: .red,
-                    filter: .applyFailed
+                    "githubStarLists.aiGrouping.filter.automaticallyIgnored",
+                    value: presentation.snapshot.automaticallyIgnoredCount,
+                    icon: "minus.circle.fill",
+                    tint: .orange,
+                    filter: .automaticallyIgnored
+                )
+                metricButton(
+                    "githubStarLists.aiGrouping.filter.ignored",
+                    value: presentation.snapshot.ignoredCount,
+                    icon: "eye.slash.fill",
+                    tint: .secondary,
+                    filter: .ignored
                 )
                 Spacer()
             }
@@ -290,11 +292,9 @@ struct GitHubStarListAIGroupingSheet: View {
             Picker("githubStarLists.aiGrouping.filter.label", selection: $store.filter) {
                 filterLabel(.actionable, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.actionable)
                 filterLabel(.suggestions, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.suggestions)
-                filterLabel(.applyFailed, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applyFailed)
                 filterLabel(.applied, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applied)
+                filterLabel(.applyFailed, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.applyFailed)
                 filterLabel(.all, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.all)
-                filterLabel(.automaticallyIgnored, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.automaticallyIgnored)
-                filterLabel(.ignored, snapshot: store.snapshot).tag(GitHubStarListAIResultFilter.ignored)
             }
             .pickerStyle(.segmented)
             .controlSize(.regular)
@@ -311,24 +311,28 @@ struct GitHubStarListAIGroupingSheet: View {
                 .frame(width: 128)
                 .layoutPriority(1)
 
-            Button(retryAllTitleKey) {
-                if store.filter == .automaticallyIgnored {
-                    Task {
-                        await session.retryAllAutomaticallyIgnored()
-                        presentation.synchronizeImmediately(from: session)
+            if shouldShowRetryAll(for: store.filter) {
+                Button(retryAllTitleKey) {
+                    if store.filter == .automaticallyIgnored {
+                        Task {
+                            await session.retryAllAutomaticallyIgnored()
+                            presentation.synchronizeImmediately(from: session)
+                        }
+                    } else if store.filter == .analysisFailed {
+                        session.retryAllAnalysisFailures()
+                    } else {
+                        session.retryAllRecoverableApplyFailures()
                     }
-                } else {
-                    session.retryAllRecoverableApplyFailures()
                 }
+                .controlSize(.small)
+                .fixedSize()
+                .layoutPriority(1)
+                .disabled(
+                    session.isApplying
+                        || session.isRunning
+                        || retryAllCount(snapshot: store.snapshot, filter: store.filter) == 0
+                )
             }
-            .controlSize(.small)
-            .fixedSize()
-            .layoutPriority(1)
-            .disabled(
-                session.isApplying
-                    || session.isRunning
-                    || retryAllCount(snapshot: store.snapshot, filter: store.filter) == 0
-            )
         }
         .padding(.horizontal, 20)
         // 工具栏高度固定并从左侧开始排版；空结果只影响下方容器，不再把此行垂直居中。
@@ -458,9 +462,21 @@ struct GitHubStarListAIGroupingSheet: View {
         snapshot: GitHubStarListAIGroupingPresentationSnapshot,
         filter: GitHubStarListAIResultFilter
     ) -> Int {
-        filter == .automaticallyIgnored
-            ? snapshot.automaticallyIgnoredCount
-            : snapshot.recoverableApplyFailureCount
+        switch filter {
+        case .analysisFailed:
+            snapshot.analysisFailedCount
+        case .applyFailed:
+            snapshot.recoverableApplyFailureCount
+        case .automaticallyIgnored:
+            snapshot.automaticallyIgnoredCount
+        default:
+            0
+        }
+    }
+
+    /// 重试是当前失败分类的上下文操作，不能在其它 Tab 里处理用户看不见的项目。
+    private func shouldShowRetryAll(for filter: GitHubStarListAIResultFilter) -> Bool {
+        filter == .analysisFailed || filter == .applyFailed || filter == .automaticallyIgnored
     }
 
     private func filterLabel(

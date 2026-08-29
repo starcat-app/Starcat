@@ -837,12 +837,17 @@ struct AISettingsTab: View {
         Section {
             DisclosureGroup(isExpanded: $isGitHubListGroupingExpanded) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Toggle(isOn: githubListGroupingBinding(\.enabled)) {
-                        // 触发方式已经改为下方独立配置，不能继续展示旧的“固定在启动和
-                        // 同步后执行”说明，否则会与实际开关状态冲突。
-                        Text("settings.githubListGrouping.enabled.title")
-                    }
-                    .padding(.vertical, 8)
+                    // 与「标签分类」总开关同款：标题与备注分行，避免 Toggle thumb 被挤出裁切。
+                    // 备注只说后台整理未分组仓库；启动 / 同步触发已拆到下方独立开关，不能再写死。
+                    Toggle("settings.githubListGrouping.enabled.title", isOn: githubListGroupingBinding(\.enabled))
+                        .toggleStyle(.switch)
+                        .padding(.vertical, 8)
+
+                    Text("settings.githubListGrouping.enabled.description")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 8)
 
                     Group {
                         githubListGroupingTriggerGroup
@@ -898,15 +903,17 @@ struct AISettingsTab: View {
         autoTidySectionHeader("settings.autoTidy.triggers.label")
 
         autoTidyRow {
-            Toggle(
-                "settings.autoTidy.trigger.onLaunch",
+            autoTidyToggle(
+                title: "settings.autoTidy.trigger.onLaunch",
+                description: "settings.githubListGrouping.trigger.onLaunch.description",
                 isOn: githubListGroupingBinding(\.triggerOnLaunch)
             )
         }
         Divider()
         autoTidyRow {
-            Toggle(
-                "settings.autoTidy.trigger.onSync",
+            autoTidyToggle(
+                title: "settings.autoTidy.trigger.onSync",
+                description: "settings.githubListGrouping.trigger.onSync.description",
                 isOn: githubListGroupingBinding(\.triggerOnSync)
             )
         }
@@ -930,7 +937,10 @@ struct AISettingsTab: View {
                 .frame(width: 80)
                 .help("1 - 24")
             } label: {
-                Text("settings.autoTidy.trigger.scheduledInterval")
+                autoTidyLabel(
+                    title: "settings.autoTidy.trigger.scheduledInterval",
+                    description: "settings.autoTidy.trigger.scheduledInterval.description"
+                )
             }
             .disabled(!settings.githubStarListAutoGroupingSettings.triggerScheduled)
             .opacity(settings.githubStarListAutoGroupingSettings.triggerScheduled ? 1.0 : 0.5)
@@ -956,7 +966,10 @@ struct AISettingsTab: View {
                 .frame(width: 80)
                 .help("5 - 500")
             } label: {
-                Text("settings.autoTidy.range.maxPerRun")
+                autoTidyLabel(
+                    title: "settings.autoTidy.range.maxPerRun",
+                    description: "settings.githubListGrouping.range.maxPerRun.description"
+                )
             }
         }
         Divider()
@@ -966,7 +979,10 @@ struct AISettingsTab: View {
                     Text(order.displayNameKey).tag(order)
                 }
             } label: {
-                Text("settings.autoTidy.range.sortOrder")
+                autoTidyLabel(
+                    title: "settings.autoTidy.range.sortOrder",
+                    description: "settings.githubListGrouping.range.sortOrder.description"
+                )
             }
             .pickerStyle(.menu)
         }
