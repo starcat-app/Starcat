@@ -34,6 +34,9 @@ struct ActivityReleaseDetailContent: View {
     @State private var scrollAnchorReleaseID: Int64?
     /// 展开/折叠布局重算期间暂停向 Scaffold 上报滚动，避免 hero 折叠 progress 跟着抖。
     @State private var isExpansionLayoutPass = false
+    /// 附件下载结果挂在详情底部，避免行内 toast 居中。
+    @State private var downloadToast: String?
+    @State private var downloadToastDirectory: URL?
 
     var body: some View {
         ScrollView {
@@ -56,6 +59,10 @@ struct ActivityReleaseDetailContent: View {
         .scrollPosition(id: $scrollAnchorReleaseID, anchor: .top)
         .detailScrollViewStyle()
         .reportingMarkdownContainerWidth(horizontalInset: 24)
+        .releaseAssetDownloadToast(
+            message: $downloadToast,
+            directoryURL: $downloadToastDirectory
+        )
         .onScrollGeometryChange(for: RepoDetailScrollReport.self) { geometry in
             let overflow = max(0, geometry.contentSize.height - geometry.containerSize.height)
             return RepoDetailScrollReport(
@@ -217,8 +224,18 @@ struct ActivityReleaseDetailContent: View {
                 )
             ) {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(assets) { asset in
-                        ReleaseAssetRowView(asset: asset)
+                    ForEach(Array(assets.enumerated()), id: \.element.id) { index, asset in
+                        ReleaseAssetRowView(
+                            asset: asset,
+                            rowIndex: index,
+                            onDownloadFinished: { finish in
+                                ReleaseAssetDownloadToastSupport.apply(
+                                    finish,
+                                    message: &downloadToast,
+                                    directoryURL: &downloadToastDirectory
+                                )
+                            }
+                        )
                     }
                 }
                 .padding(.top, 4)

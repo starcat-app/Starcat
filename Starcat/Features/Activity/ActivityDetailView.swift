@@ -88,6 +88,9 @@ struct ActivityDetailView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
     @Environment(AppDependencies.self) private var dependencies
+    /// 非 repo release 详情里的附件下载 toast（底部）。
+    @State private var releaseAssetDownloadToast: String?
+    @State private var releaseAssetDownloadDirectory: URL?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -121,6 +124,10 @@ struct ActivityDetailView: View {
         // 让 .detailContentTransition() 的非对称 transition(insertion: opacity + offset y:14
         // / removal: 仅 opacity)在 0.4s 内完成插值 — 视觉上"轻轻落下"。
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: item?.id ?? "activity-empty")
+        .releaseAssetDownloadToast(
+            message: $releaseAssetDownloadToast,
+            directoryURL: $releaseAssetDownloadDirectory
+        )
     }
 
     // MARK: - 非 repo-backed 自绘详情
@@ -412,8 +419,18 @@ struct ActivityDetailView: View {
                         Divider()
                         Text("activity.detail.assets")
                             .font(.headline)
-                        ForEach(assets) { asset in
-                            ReleaseAssetRowView(asset: asset)
+                        ForEach(Array(assets.enumerated()), id: \.element.id) { index, asset in
+                            ReleaseAssetRowView(
+                                asset: asset,
+                                rowIndex: index,
+                                onDownloadFinished: { finish in
+                                    ReleaseAssetDownloadToastSupport.apply(
+                                        finish,
+                                        message: &releaseAssetDownloadToast,
+                                        directoryURL: &releaseAssetDownloadDirectory
+                                    )
+                                }
+                            )
                         }
                     }
                 }

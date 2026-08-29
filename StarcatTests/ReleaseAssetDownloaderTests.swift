@@ -117,6 +117,49 @@ struct ReleaseAssetDownloaderTests {
             try await downloader.download(asset: sampleAsset(), to: destination)
         }
     }
+
+    @Test("下载过程通过 onProgress 回传 0...1")
+    func reportsProgress() async throws {
+        URLProtocolStub.reset()
+        let payload = Data(repeating: 0x41, count: 8_192)
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Length": "\(payload.count)"]
+            )!
+            return (response, payload)
+        }
+
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("release-download-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let progressBox = LockedProgressBox()
+        let downloader = makeDownloader()
+        try await downloader.download(asset: sampleAsset(), to: destination) { fraction in
+            progressBox.record(fraction)
+        }
+
+        #expect(progressBox.values.contains { $0 >= 0 })
+        #expect(progressBox.values.last == 1)
+        let saved = try Data(contentsOf: destination)
+        #expect(saved == payload)
+    }
+}
+
+private final class LockedProgressBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [Double] = []
+
+    var values: [Double] {
+        lock.withLock { recorded }
+    }
+
+    func record(_ value: Double) {
+        lock.withLock { recorded.append(value) }
+    }
 }
 
 private final class LockedCallCounter: @unchecked Sendable {

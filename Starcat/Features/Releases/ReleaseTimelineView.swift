@@ -34,6 +34,9 @@ struct ReleaseTimelineView: View {
 
     @State private var viewModel: ReleaseTimelineViewModel?
     @State private var copyToast: String?
+    /// 下载完成走系统 `.toast`（底部），与复制 toast 共用窗口底边，避免行内居中。
+    @State private var downloadToast: String?
+    @State private var downloadToastDirectory: URL?
     /// 折叠/展开前锚定当前 release 行，避免 ScrollView 因高度突变乱跳。
     @State private var scrollAnchorReleaseID: Int64?
 
@@ -86,6 +89,10 @@ struct ReleaseTimelineView: View {
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .releaseAssetDownloadToast(
+            message: $downloadToast,
+            directoryURL: $downloadToastDirectory
+        )
     }
 
     // MARK: - Header
@@ -182,6 +189,13 @@ struct ReleaseTimelineView: View {
                                 },
                                 onCopyAsset: { url in
                                     copyToPasteboard(url)
+                                },
+                                onDownloadFinished: { finish in
+                                    ReleaseAssetDownloadToastSupport.apply(
+                                        finish,
+                                        message: &downloadToast,
+                                        directoryURL: &downloadToastDirectory
+                                    )
                                 }
                             )
                             .id(entry.id)
@@ -375,6 +389,7 @@ private struct ReleaseTimelineRow: View {
     let onPinScrollAnchor: () -> Void
     let onToggleRead: (Bool) -> Void
     let onCopyAsset: (String) -> Void
+    let onDownloadFinished: (ReleaseAssetDownloadToastSupport.Finish) -> Void
 
     /// Release notes 全文展开（点击摘要区切换）。
     @State private var isBodyExpanded = false
@@ -529,7 +544,12 @@ private struct ReleaseTimelineRow: View {
 
                 if assets.count <= 3 || isAssetsExpanded {
                     ForEach(assets) { asset in
-                        ReleaseAssetRowView(asset: asset, layout: .compact, onCopyLink: onCopyAsset)
+                        ReleaseAssetRowView(
+                            asset: asset,
+                            layout: .compact,
+                            onCopyLink: onCopyAsset,
+                            onDownloadFinished: onDownloadFinished
+                        )
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 2)
                             .background(.bar.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))

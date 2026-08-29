@@ -141,6 +141,9 @@ struct RepositoryInsightsView: View {
     @State private var hoveredContributorID: String?
     /// 发布节奏默认只展示最新 Release 的前 3 个附件。
     @State private var isReleaseAssetsExpanded = false
+    /// 附件下载结果挂在洞察面板底部，避免行内 toast 看起来像屏幕中间弹出。
+    @State private var releaseAssetDownloadToast: String?
+    @State private var releaseAssetDownloadDirectory: URL?
     /// 时间线默认只展示最近几条，避免整页被事件列表撑满。
     @State private var isTimelineExpanded = false
     /// 贡献者默认截断；更多走底部「查看全部」，不在网格里再塞 +N。
@@ -254,10 +257,16 @@ struct RepositoryInsightsView: View {
         }
         // 与 Release 详情一致：body 吃满 Scaffold 剩余空间，滚动发生在内容区自身。
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .releaseAssetDownloadToast(
+            message: $releaseAssetDownloadToast,
+            directoryURL: $releaseAssetDownloadDirectory
+        )
         .onChange(of: repo.id) { _, _ in
             // 切仓库时清掉旧高度，避免短暂锁在上一仓的 contentSize。
             insightsContentHeight = 0
             isReleaseAssetsExpanded = false
+            releaseAssetDownloadToast = nil
+            releaseAssetDownloadDirectory = nil
         }
         .accessibilityLabel(Text("insights.repo.mode.insights"))
     }
@@ -2383,8 +2392,19 @@ struct RepositoryInsightsView: View {
             .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(visibleAssets) { asset in
-                    ReleaseAssetRowView(asset: asset, layout: .compact)
+                ForEach(Array(visibleAssets.enumerated()), id: \.element.id) { index, asset in
+                    ReleaseAssetRowView(
+                        asset: asset,
+                        layout: .compact,
+                        rowIndex: index,
+                        onDownloadFinished: { finish in
+                            ReleaseAssetDownloadToastSupport.apply(
+                                finish,
+                                message: &releaseAssetDownloadToast,
+                                directoryURL: &releaseAssetDownloadDirectory
+                            )
+                        }
+                    )
                 }
             }
 
