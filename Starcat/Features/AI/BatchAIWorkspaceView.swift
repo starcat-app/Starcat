@@ -258,9 +258,7 @@ struct BatchAIWorkspaceView: View {
     }
 
     private func closeWorkspace() {
-        if service.isFinished, !service.hasPendingTagReview {
-            service.reset()
-        }
+        // 会话清理由 WindowController 的统一 dismiss 出口执行，确保系统关闭路径语义一致。
         onClose()
     }
 

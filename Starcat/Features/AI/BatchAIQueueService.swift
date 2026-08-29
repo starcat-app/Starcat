@@ -199,13 +199,41 @@ final class BatchAIQueueService {
         }
     }
 
+    /// 手动任务关闭后仍值得保留的内容：未处理队列、分析失败或待确认/应用失败的标签。
+    /// 自动后台任务由调度器记录结果，不应反过来阻塞用户发起新的手动整理。
+    var hasUnresolvedManualWork: Bool {
+        guard !silent, !jobs.isEmpty else { return false }
+        return jobs.contains { job in
+            switch job.status {
+            case .queued, .processing, .failed:
+                return true
+            case .completed, .ignored:
+                break
+            }
+            switch job.tagReviewState {
+            case .pending, .applying, .failed:
+                return true
+            case .notRequired, .applied, .ignored:
+                return false
+            }
+        }
+    }
+
     /// 运行中的 Worker 必须先终止；标签应用中的会话则等待本次数据库写入收口。
     var canDiscardCurrentSession: Bool {
-        !isRunning && !jobs.isEmpty && !isApplyingSuggestedTags
+        !isRunning && !isApplyingSuggestedTags && hasUnresolvedManualWork
     }
 
     /// 全部 job 都进入终态时认为本次批次结束。
     var isFinished: Bool { !jobs.isEmpty && finishedCount == jobs.count }
+
+    var isManualSessionResolved: Bool {
+        !silent
+            && !jobs.isEmpty
+            && !isRunning
+            && !isApplyingSuggestedTags
+            && !hasUnresolvedManualWork
+    }
 
     /// 失败列表（按时间倒序），用于 UI 顶部"X 个失败"红色提示与"重试全部"按钮。
     var failedJobs: [BatchAIJob] {
@@ -242,10 +270,10 @@ final class BatchAIQueueService {
             AppLog.ai.warning("[batch-ai] start() ignored: already running")
             return false
         }
-        guard !hasPendingTagReview else {
-            // 人工审核结果只存在当前会话内。新批次直接替换 jobs 会造成不可恢复的数据丢失，
-            // 因此必须先回到现有窗口应用或忽略，再允许开始下一轮。
-            AppLog.ai.warning("[batch-ai] start() ignored: pending tag review exists")
+        guard !hasUnresolvedManualWork else {
+            // 人工审核与失败结果只存在当前会话内。新批次直接替换 jobs 会造成不可恢复的数据丢失，
+            // 因此必须先回到现有窗口处理或明确放弃，再允许开始下一轮。
+            AppLog.ai.warning("[batch-ai] start() ignored: unresolved manual session exists")
             return false
         }
         do {
@@ -405,6 +433,14 @@ final class BatchAIQueueService {
     @discardableResult
     func discardCurrentSession() -> Bool {
         guard canDiscardCurrentSession else { return false }
+        reset()
+        return true
+    }
+
+    /// 完整结果在窗口打开期间保留供复查；窗口关闭或下一轮配置出现时再清理。
+    @discardableResult
+    func finishManualSessionIfResolved() -> Bool {
+        guard isManualSessionResolved else { return false }
         reset()
         return true
     }

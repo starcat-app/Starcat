@@ -36,9 +36,15 @@ final class BatchAIWorkspaceWindowController: NSWindowController, NSWindowDelega
             return
         }
 
+        let service = dependencies.batchAIQueueService
+        if case .preflight = initialMode {
+            // 上一轮若在窗口关闭后才完成，这里先收口，避免旧结果继续占用新任务状态。
+            service.finishManualSessionIfResolved()
+        }
+
         var closeAction: (() -> Void)?
         let content = BatchAIWorkspaceView(
-            service: dependencies.batchAIQueueService,
+            service: service,
             initialMode: initialMode,
             options: options,
             canPrepareCodeContext: dependencies.repoAIInsightService.canPrepareCodeContext,
@@ -70,7 +76,11 @@ final class BatchAIWorkspaceWindowController: NSWindowController, NSWindowDelega
         window.contentMaxSize = BatchAIWorkspaceWindowMetrics.contentSize
         window.backgroundColor = .windowBackgroundColor
 
-        let controller = BatchAIWorkspaceWindowController(window: window, onDismiss: onDismiss)
+        let controller = BatchAIWorkspaceWindowController(window: window) {
+            // 统一覆盖标题栏关闭按钮、系统关闭和外部 binding 关闭。
+            service.finishManualSessionIfResolved()
+            onDismiss()
+        }
         closeAction = { [weak controller] in controller?.dismiss() }
         activeController = controller
         controller.presentFromCurrentWindow()

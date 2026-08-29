@@ -2287,7 +2287,7 @@ struct HomeView: View {
     /// 新任务不能覆盖尚未确认的标签；两个入口共用同一条守门逻辑。
     private func requestBatchAIOptions(scope: BatchAIRepositoryScope) {
         guard scope.pendingCount(untaggedCount: viewModel.untaggedCount) > 0 else { return }
-        if dependencies.batchAIQueueService.hasPendingTagReview {
+        if dependencies.batchAIQueueService.hasUnresolvedManualWork {
             presentBatchAIProgress()
         } else {
             presentBatchAIOptions(scope: scope)
@@ -2298,7 +2298,7 @@ struct HomeView: View {
     /// 不能依赖列表缓存，否则用户刚添加标签后仍可能重复触发 AI 生成。
     private func requestSelectedBatchAIOptions(repositories: [Repo]) async {
         guard !repositories.isEmpty else { return }
-        if dependencies.batchAIQueueService.hasPendingTagReview {
+        if dependencies.batchAIQueueService.hasUnresolvedManualWork {
             presentBatchAIProgress()
             return
         }

@@ -18,8 +18,8 @@ import Testing
 @MainActor
 struct BatchAIQueueServiceTests {
 
-    @Test("终止会取消当前生成并释放队列供下一批启动")
-    func cancelStopsInflightGenerationAndAllowsRestart() async throws {
+    @Test("终止会保留失败结果，明确放弃后才允许下一批启动")
+    func cancelKeepsFailureUntilDiscardAndAllowsRestart() async throws {
         let provider = BlockingBatchAIInsightProvider()
         let service = try makeService(insightProvider: provider)
         var repo = Repo.makeMinimal(owner: "acme", name: "first")
@@ -36,9 +36,14 @@ struct BatchAIQueueServiceTests {
         #expect(service.jobs.count == 1)
         #expect(service.jobs.first?.status == .failed)
         #expect(service.jobs.first?.failure == .cancelled)
+        #expect(service.hasUnresolvedManualWork)
+        #expect(service.canDiscardCurrentSession)
+        #expect(!service.finishManualSessionIfResolved())
 
         var nextRepo = Repo.makeMinimal(owner: "acme", name: "second")
         nextRepo.id = 202
+        #expect(!service.start(repos: [nextRepo], options: BatchAIQueueOptions()))
+        #expect(service.discardCurrentSession())
         #expect(service.start(repos: [nextRepo], options: BatchAIQueueOptions()))
         service.cancel()
         await waitUntilStopped(service)
@@ -150,6 +155,16 @@ struct BatchAIQueueServiceTests {
         #expect(service.jobs.first(where: { $0.repoId == first.id })?.tagReviewState == .applied)
         #expect(service.jobs.first(where: { $0.repoId == second.id })?.tagReviewState == .pending)
         #expect(service.selectedRepoIDsForTagApplication.isEmpty)
+        #expect(service.hasUnresolvedManualWork)
+        #expect(service.canDiscardCurrentSession)
+        #expect(!service.finishManualSessionIfResolved())
+
+        service.ignoreSuggestedTags(repoId: second.id)
+        #expect(service.isManualSessionResolved)
+        #expect(!service.canDiscardCurrentSession)
+        #expect(service.finishManualSessionIfResolved())
+        #expect(service.jobs.isEmpty)
+        #expect(service.options == nil)
     }
 
     @Test("摘要上下文开关作为本次任务参数传给 Provider")

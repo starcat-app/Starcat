@@ -100,6 +100,12 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(provider.callSizes.allSatisfy { $0 == 1 })
         #expect(provider.maximumActiveCalls == 5)
         #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
+        #expect(environment.session.isManualSessionResolved)
+        #expect(!environment.session.canDiscardManualSession)
+
+        environment.session.releaseManualSessionOnWindowDismiss()
+        #expect(environment.session.jobs.isEmpty)
+        #expect(environment.session.mode == .idle)
     }
 
     @Test("Worker 完成仓库后立即回写，不等待慢请求统一收口")
@@ -224,6 +230,12 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(environment.session.existingListIDsByRepo[1, default: []].isEmpty)
         #expect(environment.session.selectedListIDsByRepo[1] == ["list-1"])
         #expect(environment.session.jobs.first?.applyState == .idle)
+        #expect(environment.session.hasUnresolvedManualWork)
+        #expect(environment.session.canDiscardManualSession)
+
+        environment.session.releaseManualSessionOnWindowDismiss()
+        #expect(environment.session.jobs.count == 1)
+        #expect(environment.session.mode == .manual)
     }
 
     @Test("本次自动确认只写入达到阈值且分组已授权的建议")
@@ -276,6 +288,15 @@ struct GitHubStarListAIGroupingSessionTests {
             return body.contains("updateUserListsForItem")
         }
         #expect(mutationCount == 1)
+        #expect(environment.session.hasUnresolvedManualWork)
+        #expect(environment.session.canDiscardManualSession)
+
+        environment.session.ignore(repoID: 2)
+        #expect(environment.session.isManualSessionResolved)
+        #expect(!environment.session.canDiscardManualSession)
+        #expect(environment.session.finishManualSessionIfResolved())
+        #expect(environment.session.jobs.isEmpty)
+        #expect(environment.session.mode == .idle)
     }
 
     private func makeEnvironment(

@@ -347,7 +347,7 @@ struct GitHubStarListAIGroupingSheet: View {
         } else {
             AIOrganizationReviewFooter(
                 discardTitle: "githubStarLists.aiGrouping.discard.action",
-                canDiscard: !session.isRunning && !session.isApplying,
+                canDiscard: session.canDiscardManualSession,
                 selectionSummary: String(
                     format: String.l10n("githubStarLists.aiGrouping.selectionSummaryFormat"),
                     locale: locale,

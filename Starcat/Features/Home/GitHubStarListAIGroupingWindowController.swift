@@ -43,6 +43,9 @@ final class GitHubStarListAIGroupingWindowController: NSWindowController, NSWind
         }
 
         let session = dependencies.githubStarListAIGroupingSession
+        // 窗口关闭后任务可能继续在后台收口；再次打开前清除已经没有待办的旧结果，
+        // 否则 prepareManualContext 会因 jobs 非空而继续恢复上一轮审核页。
+        session.finishManualSessionIfResolved()
         // 必须在创建 hosting tree 之前完成：这样 SwiftUI 第一帧读取到的是一次性完成态，
         // 不会在窗口出现后因多个 @Observable 字段依次写入而重复布局。
         if selectedRepositories.isEmpty {
@@ -87,10 +90,11 @@ final class GitHubStarListAIGroupingWindowController: NSWindowController, NSWind
         window.contentMaxSize = GitHubStarListAIGroupingWindowMetrics.contentSize
         window.backgroundColor = .windowBackgroundColor
 
-        let controller = GitHubStarListAIGroupingWindowController(
-            window: window,
-            onDismiss: onDismiss
-        )
+        let controller = GitHubStarListAIGroupingWindowController(window: window) {
+            // 统一覆盖标题栏关闭按钮、系统关闭和外部 binding 关闭。
+            session.releaseManualSessionOnWindowDismiss()
+            onDismiss()
+        }
         closeAction = { [weak controller] in controller?.dismiss() }
         activeController = controller
         controller.presentFromCurrentWindow()

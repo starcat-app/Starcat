@@ -256,6 +256,46 @@ final class GitHubStarListAIGroupingSession {
     }
     var isFinished: Bool { !jobs.isEmpty && analyzedCount == jobs.count }
 
+    /// 关闭窗口后仍值得保留的人工任务：尚未分析完、失败可重试，或建议仍等待用户处理。
+    /// 已应用、已忽略、无匹配以及建议已属于现有分组的仓库都已经收口，不应阻塞下一轮整理。
+    var hasUnresolvedManualWork: Bool {
+        guard mode == .manual, !jobs.isEmpty else { return false }
+        return jobs.contains { job in
+            if ignoredRepoIDs.contains(job.id) { return false }
+            switch job.status {
+            case .queued, .analyzing, .failed, .stopped:
+                return true
+            case .completed:
+                break
+            }
+            switch job.applyState {
+            case .applying, .failed:
+                return true
+            case .applied, .ignored:
+                return false
+            case .idle:
+                let currentListIDs = existingListIDsByRepo[job.id] ?? []
+                let manuallySelectedListIDs = (selectedListIDsByRepo[job.id] ?? [])
+                    .subtracting(currentListIDs)
+                if !manuallySelectedListIDs.isEmpty { return true }
+                return job.suggestions.contains { !currentListIDs.contains($0.listId) }
+            }
+        }
+    }
+
+    /// 只有非运行态且仍有内容会被丢失时，“放弃本次整理”才有实际语义。
+    var canDiscardManualSession: Bool {
+        !isRunning && !isApplying && hasUnresolvedManualWork
+    }
+
+    var isManualSessionResolved: Bool {
+        mode == .manual
+            && !jobs.isEmpty
+            && !isRunning
+            && !isApplying
+            && !hasUnresolvedManualWork
+    }
+
     var candidateContexts: [GitHubStarListAIContext] {
         availableLists.compactMap { list in
             guard let rule = rulesByListID[list.id],
@@ -539,6 +579,20 @@ final class GitHubStarListAIGroupingSession {
         isStartingManual = false
         rateLimitCooldownUntil = nil
         manualAutomaticThreshold = nil
+    }
+
+    /// 结果在窗口仍打开时保留供用户复查；关闭窗口或再次打开入口时才结束已完全收口的会话。
+    @discardableResult
+    func finishManualSessionIfResolved() -> Bool {
+        guard isManualSessionResolved else { return false }
+        resetToIdle()
+        return true
+    }
+
+    /// 所有窗口关闭路径共用同一个出口：空开始页释放上下文，未解决任务继续保留。
+    func releaseManualSessionOnWindowDismiss() {
+        if finishManualSessionIfResolved() { return }
+        releaseManualContextIfUnused()
     }
 
     /// 只准备了上下文但没有启动分析时，Sheet 关闭应释放人工模式，让后台自动分组继续工作。
