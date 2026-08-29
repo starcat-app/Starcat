@@ -138,7 +138,7 @@
 - 支撑项目开源治理文件和双语 README；
 - `supports/clone-all.sh`；
 - `supports/scripts/sync-starcat-readme-promo.py`；
-- `supports/{README,SYNC,AGENTS,CLAUDE}.md`；
+- `supports/{README,SYNC,AGENTS}.md`；
 - 按类型选择的 CI、Release、Dependabot、Fly.io 或商店发布文件。
 
 建议触发场景：

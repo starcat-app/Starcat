@@ -7,7 +7,7 @@
 > - [`03-Starred-Repo-周报-Agent方案.md`](03-Starred-Repo-周报-Agent方案.md):对比——03 偏用户 stars 库个人周报,本方案偏全网热门 / 手选 repo 的公开内容周刊
 > - [`16-Agent底层平台技术方案.md`](16-Agent底层平台技术方案.md):Agent Workspace / Runtime / Tool / Artifact 底座
 > - [`17-GitHubWeeklyReportAgent技术实现方案.md`](17-GitHubWeeklyReportAgent技术实现方案.md):本 Agent 的工程落地方案
-> - [`../CLAUDE.md`](../CLAUDE.md):AI 保守策略(预览 → 确认 → 写入)
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):AI 保守策略(预览 → 确认 → 写入)
 
 ---
 

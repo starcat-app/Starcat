@@ -20,7 +20,7 @@
 > - [`19-Cline-Agent设计学习心得.md`](19-Cline-Agent设计学习心得.md):Prompt、Tool Loop、Approval 与统一工作台边界
 > - [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md):Direct 版通过双向协议接入 Codex、Claude Code、Gemini CLI，以 Agent 工作台为主入口，并由 Starcat 统一承载动态审批与 RAG Tool 边界
 > - [`../AI代理API设计.md`](../AI代理API设计.md):Starcat 现有 AI Proxy 协议
-> - [`../CLAUDE.md`](../CLAUDE.md):项目铁律与 UI 规范
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):项目铁律与 UI 规范
 > - [`../功能清单.md`](../功能清单.md):P0/P1/P2 优先级矩阵
 
 ---
@@ -67,7 +67,7 @@ Starcat 已经是"GitHub Stars 管理 + 本地知识库"工具,2026 年大多数
 
 | 维度 | 现状 | 对 agent 方案的影响 |
 |---|---|---|
-| 最低系统版本 | macOS 15 Sequoia(见 `CLAUDE.md` 技术栈) | 排除 Foundation Models 作为默认路径 |
+| 最低系统版本 | macOS 15 Sequoia(见 `AGENTS.md` 技术栈) | 排除 Foundation Models 作为默认路径 |
 | AI Provider | `AIClient` / `OpenAIClient` / `AIConfiguration` 已有,统一接 AI Proxy | 只需扩展 function calling 字段,无需新建调用层 |
 | 工具能力 | GitHub API / `AnySearchWebProvider` / `RepoAIContextProvider` 已成熟 | agent 的"工具"几乎都是 Starcat 已有能力的薄包装 |
 | 上下文打包 | `RepoContextPacker` 支持 token budget / tier rules | agent 多步循环里可以塞进完整 repo context |

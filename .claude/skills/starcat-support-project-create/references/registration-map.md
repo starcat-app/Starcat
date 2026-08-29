@@ -64,10 +64,9 @@ README 都有且只有一对 `starcat-promo` marker。
 
 - `supports/README.md`：总数、分类表、GitHub URL、用途和独立仓库数量；
 - `supports/SYNC.md`：独立仓库数量、清单、clone 流程和决策记录；
-- `supports/AGENTS.md`：只有类型、架构、运行或跨项目规则变化时更新；
-- `supports/CLAUDE.md`：只有硬性协作/技术栈/部署规则变化时更新。
+- `supports/AGENTS.md`：只有类型、架构、运行或跨项目规则变化时更新。
 
-高层目录结构发生变化时再同步根 `AGENTS.md` / `CLAUDE.md`。不要为普通新项目修改
+高层目录结构发生变化时再同步根 `AGENTS.md`。不要为普通新项目修改
 `docs/功能实现总览.md`。
 
 ## 类型专属登记
@@ -75,7 +74,7 @@ README 都有且只有一对 `starcat-promo` marker。
 | 类型 | 额外中央文件 |
 |---|---|
 | Go API | `supports/start-all.sh`、`supports/Makefile`、Fly scripts/docs、API 总览 |
-| Browser Extension | `supports/extensions/AGENTS.md`、`supports/extensions/CLAUDE.md`、发布文档 |
+| Browser Extension | `supports/extensions/AGENTS.md`、`supports/extensions/.claude/CLAUDE.md`、发布文档 |
 | Homebrew | 对应上游 Release skill、安装文档和 Audit Action |
 | CLI/Launcher | 相关集成设计、发布 Skill、安装入口 |
 | Docs/Site | `supports/README.md` 与官网/文档单一来源说明 |

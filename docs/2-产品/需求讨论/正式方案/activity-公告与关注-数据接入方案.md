@@ -388,7 +388,7 @@ dong4j 2026-06-16 决策 M3：**切 3 个 PR**，每个 PR 可独立 review + �
 
 每个 PR 完成后必须：
 
-1. 在 `docs/功能实现总览.md` 追加 `- [x] PR-N` 条目 + `> 实现：...` 行（CLAUDE.md 铁律）
+1. 在 `docs/功能实现总览.md` 追加 `- [x] PR-N` 条目 + `> 实现：...` 行（AGENTS.md 铁律）
 2. 跑 `xcodegen generate` 同步 project（新增 swift 文件后必须）
 3. 跑 `xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test`
 

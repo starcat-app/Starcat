@@ -987,7 +987,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
 其他 AI 开始实施前必须：
 
-1. 读取根目录 `AGENTS.md`、`CLAUDE.md`、`DESIGN.md`。
+1. 读取根目录 `AGENTS.md`、`DESIGN.md`。
 2. 只读检查 `docs/功能实现总览.md`，不得未经确认写入。
 3. 检查主仓库、`supports/starcat-discovery-api`、`supports/starcat-site` 各自分支和脏状态；它们是独立 Git 仓库。
 4. 读取当时最新数据库 migration 编号，使用下一可用 `registerVN`，不得照抄本文建议编号覆盖并行变更。

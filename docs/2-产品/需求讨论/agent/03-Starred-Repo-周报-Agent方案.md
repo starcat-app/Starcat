@@ -6,7 +6,7 @@
 > **关联文档**:
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
 > - [`02-替代品推荐-Agent方案.md`](02-替代品推荐-Agent方案.md):共用 `AgentOrchestrator`
-> - [`../CLAUDE.md`](../CLAUDE.md):NSBackgroundActivityScheduler 已有规划
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):NSBackgroundActivityScheduler 已有规划
 > - [`../概要设计.md`](../概要设计.md):后台任务设计
 
 ---
@@ -27,7 +27,7 @@
 | 触发方式 | 说明 | 推荐 |
 |---|---|---|
 | **被动拉取**: 打开 app 时检查"上次生成周报距今 > 7 天?" | 无需后台,简单可靠 | 🥇 MVP |
-| **主动推送**: `NSBackgroundActivityScheduler` 周一早上 8 点跑 | 见 `CLAUDE.md` "后台任务" | 🥈 v1.1 |
+| **主动推送**: `NSBackgroundActivityScheduler` 周一早上 8 点跑 | 见 `AGENTS.md` "后台任务" | 🥈 v1.1 |
 | **手动触发**: 设置页"立即生成本周周报"按钮 | 调试 / 试用 | ✅ 必备 |
 
 **MVP 推荐**: 被动拉取 + 手动触发,**不**做后台推送(等用户量起来再加)。
@@ -237,7 +237,7 @@ func checkWeeklyReport() async {
 ### 7.3 后台推送(可选,不做 MVP)
 
 如果未来要做 `NSBackgroundActivityScheduler` 周一早上 8 点跑:
-- 见 `CLAUDE.md` "后台任务" 章节
+- 见 `AGENTS.md` "后台任务" 章节
 - 需要 `Info.plist` 加 `NSBackgroundActivityScheduler` 权限说明
 - App Sandbox 不影响(macOS 不像 iOS 那么严)
 - 跑完通过 `UNUserNotificationCenter` 推本地通知

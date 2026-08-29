@@ -6,7 +6,7 @@
 > - [`05-Apple-Foundation-Models-深度研究报告.md`](05-Apple-Foundation-Models-深度研究报告.md):FM 技术细节
 > - [`01-Foundation-Models-可行性分析.md`](01-Foundation-Models-可行性分析.md):MVP 决策
 > - [`02-替代品推荐-Agent方案.md`](02-替代品推荐-Agent方案.md):云端 agent 范本
-> - [`../CLAUDE.md`](../CLAUDE.md):macOS 15+ / AI 保守策略铁律
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):macOS 15+ / AI 保守策略铁律
 > - [`../AI代理API设计.md`](../AI代理API设计.md):现有 AI Proxy 协议
 
 ---

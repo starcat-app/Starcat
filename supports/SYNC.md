@@ -22,8 +22,8 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 | 路径 | 说明 |
 |------|------|
-| `AGENTS.md` | supports/ 目录的 AI 协作规范 |
-| `CLAUDE.md` | supports/ 目录的 Claude Code 规则 |
+| `AGENTS.md` | supports/ 目录的 AI 协作唯一维护源 |
+| `.claude/CLAUDE.md` | Claude Code 配置入口（固定引用 `AGENTS.md`，勿写规范正文） |
 | `Makefile` | 运维命令入口（fly 部署、secrets 同步等） |
 | `README.md` | 支撑项目总览 |
 | `SYNC.md` | 本文档 |
@@ -33,7 +33,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | `backups/` | Fly 数据备份目录结构 |
 | `docs/` | 设计文档、改造方案、指南 |
 | `extensions/AGENTS.md` | 浏览器插件目录的 AI 协作规范 |
-| `extensions/CLAUDE.md` | 浏览器插件目录的 Claude Code 规则 |
+| `extensions/.claude/CLAUDE.md` | 浏览器插件目录 Claude Code 配置入口 |
 | `scripts/` | 运维脚本（fly-backup、fly-restore、fly-secrets 等） |
 
 > `.gitignore` 规则：`supports/*` 默认忽略全部，再用 `!` 逐目录/文件放行。
@@ -100,7 +100,7 @@ cd supports
 4. 更新 `README.md` 的项目总数、分类表和 GitHub URL；
 5. 验证根 `.gitignore` 仍忽略新项目工作树，禁止用 `git add -f` 加入主仓库。
 
-API 或新的项目类型还要同步 `AGENTS.md`、`CLAUDE.md` 和对应运维/发布文档。
+API 或新的项目类型还要同步 `AGENTS.md` 和对应运维/发布文档。
 
 ---
 

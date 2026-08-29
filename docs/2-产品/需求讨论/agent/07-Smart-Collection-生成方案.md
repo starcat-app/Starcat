@@ -6,7 +6,7 @@
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
 > - [`02-替代品推荐-Agent方案.md`](02-替代品推荐-Agent方案.md):共用 `AgentOrchestrator` + `AgentTool` 协议
 > - Starcat 已有 Smart Collection 实现(详见代码 `Starcat/Features/SmartCollection/`)
-> - [`../CLAUDE.md`](../CLAUDE.md):AI 保守策略(预览 → 确认 → 写入)
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):AI 保守策略(预览 → 确认 → 写入)
 
 ---
 

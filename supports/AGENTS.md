@@ -5,6 +5,23 @@
 
 ---
 
+## AI 协作者开工前必读
+
+1. **根 [`AGENTS.md`](../AGENTS.md)** — Starcat 主仓库全局规则
+2. **本文档** — supports/ 整体结构、独立仓库边界与 Go API 通用约定
+3. **被修改项目的 `AGENTS.md`** — 每个独立仓库必须提供的项目特定开发规范
+
+每个独立仓库统一以根 `AGENTS.md` 为唯一维护源；跨 Agent 规范只改该文件。
+
+**特殊项目约束：**
+
+- `starcat-recsys-trainer` 是私有 Python 3.12 + uv 离线管道，以项目 `README.md` 和 `docs/使用说明.md` 为准；按建立需求暂不创建 CI workflow，本地变更必须执行 `make check`。
+- `starcat-collection-api` 是私有 Go 1.25 独立服务，**不可**导入 `starcat-api` Gateway；它与 Trainer 之间只允许 Admin Key 保护的 Pull 导出。
+
+`supports/` 下的 `.github`、官网、文档、API、CLI、插件、Homebrew 和本地化目录均可能是独立 Git 仓库。**修改前**先在目标目录运行 `git status -sb` 并核对 remote；不要把多个独立仓库的改动混成主仓库提交。
+
+---
+
 ## 目录定位
 
 `supports/` 是 Starcat 主项目的**配套项目工作区**。Starcat 主项目（根目录）是 macOS 客户端；本目录中的 GitHub 项目各自拥有独立 remote、分支、CI/CD 和发布边界。
@@ -62,6 +79,50 @@
 - **Docker** — 多阶段构建,slim / scratch 镜像
 - **Fly.io** — 当前为 6 个业务独立 App；目标为 `starcat-api` 聚合 App，license 和 collection 继续独立
 - **GitHub Actions** — CI(`go vet` + `gofmt` + 编译 + 单测) + CD(fly deploy) + Release(多平台二进制 + GitHub Release),三个 workflow 串联: `go.yml` 成功 → `fly-deploy.yml` + `release.yml` 并行跑
+
+### Go 版本一致性（2026-06-08 起）
+
+**6 个可聚合 API + Collection API 必须保持 Go directive 一致**（统一为 `go 1.25.0`）：
+
+| 项目 | go.mod | workflows/go.yml |
+|------|--------|-----------------|
+| starcat-sharing-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-trending-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-weekly-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-wiki-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-recommend-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-discovery-api | `go 1.25.0` | `go-version: [1.25]` |
+| starcat-collection-api | `go 1.25.0` | `go-version-file: go.mod` |
+
+**禁止行为：**
+
+- ❌ 只升级某一个可聚合 API 的 Go 版本（六个需同步）；Collection 也必须继续使用同一 Go directive
+- ❌ 升级 Go 后忘了同步 `workflows/go.yml` 的矩阵版本
+- ❌ 升级 Go 后没跑 `go build ./... && go vet ./...` 验证
+
+### Module path 与 import 规范
+
+各 API 项目的 `module` 指令必须使用完整路径（2026-06-08 已统一）：
+
+```
+github.com/starcat-app/starcat-sharing-api
+github.com/starcat-app/starcat-trending-api
+github.com/starcat-app/starcat-weekly-api
+github.com/starcat-app/starcat-wiki-api
+github.com/starcat-app/starcat-recommend-api
+github.com/starcat-app/starcat-discovery-api
+github.com/starcat-app/starcat-collection-api
+```
+
+**项目内 import 必须用绝对路径**（用 module path 前缀），不允许相对路径：
+
+```go
+// ✅ 正确
+import "github.com/starcat-app/starcat-weekly-api/internal/handler"
+
+// ❌ 错误：Go 1.16+ 不支持
+import "./internal/handler"
+```
 
 ---
 
@@ -123,6 +184,11 @@ go mod tidy
 go build ./... && go vet ./...
 ```
 
+**升级后必须：**
+
+- 在该项目的 `CHANGELOG.md` 追加依赖升级记录
+- 如果升级导致 breaking change，更新该项目的 `AGENTS.md` 和 `README.md`
+
 ### 升级 Go 版本(必须所有 API 项目同步)
 
 ```bash
@@ -153,7 +219,7 @@ cd ../starcat-discovery-api && go mod tidy && go build ./... && go vet ./...
 3. 在 `supports/scripts/sync-starcat-readme-promo.py` 登记并生成中英文 Starcat
    推广区块。
 4. 同步 `supports/clone-all.sh`、`supports/README.md` 和 `supports/SYNC.md`；
-   类型或运维拓扑变化时再同步本 `AGENTS.md` 与 `CLAUDE.md`。
+   类型或运维拓扑变化时再同步本 `AGENTS.md`。
 5. 创建 GitHub 组织仓库、设置 visibility、推送和配置 secrets 前单独确认外部副作用。
 
 新增 Go API 还必须沿用现有服务规范：
@@ -325,6 +391,24 @@ ghp_xxx****abcd
 
 ---
 
+## AI 协作者必做 / 必不做
+
+### 必做项
+
+✅ 修改任何 Go 代码后必须跑 `go build ./... && go vet ./...`
+✅ 新增 Go 文件后必须 `git add` 并跑 build 验证
+✅ 改 `go.mod` 必须跑 `go mod tidy` 同步 `go.sum`
+✅ PR 必须填写 `.github/PULL_REQUEST_TEMPLATE.md`
+✅ Bug 报告必须用 `.github/ISSUE_TEMPLATE/bug_report.yml`
+
+### 必不做项
+
+❌ **不要改 `fly.toml` 的 `app` 字段** — 那是 Fly.io 平台的应用名，改了会创建新应用
+❌ **不要在 main.go 里硬编码端口/路径** — 用环境变量（`PORT`、`BASE_URL`、`STORE_FILE`）
+❌ **不要跨项目 import** — sharing 不能 import trending 的代码
+
+---
+
 ## 注意事项(踩过的坑)
 
 1. **编译产物不能进 git**:`/server`、`/bin/`、`.idea/`、`.vscode/`、`.DS_Store` 都被 .gitignore 忽略
@@ -349,8 +433,7 @@ ghp_xxx****abcd
 
 | 文件 | 用途 |
 |------|------|
-| `CLAUDE.md` | Claude Code 硬性协作规则 |
-| `AGENTS.md` | 本文档,综合介绍 |
+| `AGENTS.md` | 本文档，supports/ AI 协作唯一维护源 |
 | `README.md` | supports 服务群本地运行与运维入口 |
 | `Makefile` | supports 服务群 Fly.io 运维命令聚合 |
 | `start-all.sh` | 本地一次性启动所有 API 服务 |
@@ -381,18 +464,22 @@ ghp_xxx****abcd
 
 | 文档 | 路径 |
 |------|------|
-| Starcat 全局规则 | `../CLAUDE.md` |
+| Starcat 全局规则 | `../AGENTS.md` |
 | 工程进度索引 | `../docs/功能实现总览.md` |
 | 前端 R-01 设计 | `../docs/3-设计/详细设计/18-三场景共用架构.md` |
 
-### 各项目详细文档
+### API 项目协作规范
 
-- [starcat-weekly-api/AGENTS.md](./starcat-weekly-api/AGENTS.md) — 周刊后端开发规范
-- [starcat-sharing-api/README.md](./starcat-sharing-api/README.md) — 分享服务 API 文档
-- [starcat-trending-api/README.md](./starcat-trending-api/README.md) — Trending 服务 API 文档
-- [starcat-wiki-api/README.md](./starcat-wiki-api/README.md) — Wiki 服务 API 文档
-- [starcat-recommend-api/README.md](./starcat-recommend-api/README.md) — 推荐服务 API 文档
-- [starcat-discovery-api/README.md](./starcat-discovery-api/README.md) — 探索发现服务 API 文档
+- [starcat-api/AGENTS.md](./starcat-api/AGENTS.md) — 聚合网关
+- [starcat-api-kit/AGENTS.md](./starcat-api-kit/AGENTS.md) — 共享 Go Kit
+- [starcat-collection-api/AGENTS.md](./starcat-collection-api/AGENTS.md) — 推荐数据收集
+- [starcat-license-api/AGENTS.md](./starcat-license-api/AGENTS.md) — Direct License
+- [starcat-sharing-api/AGENTS.md](./starcat-sharing-api/AGENTS.md) — 分享服务
+- [starcat-trending-api/AGENTS.md](./starcat-trending-api/AGENTS.md) — Trending 服务
+- [starcat-weekly-api/AGENTS.md](./starcat-weekly-api/AGENTS.md) — Weekly 服务
+- [starcat-wiki-api/AGENTS.md](./starcat-wiki-api/AGENTS.md) — Wiki 服务
+- [starcat-recommend-api/AGENTS.md](./starcat-recommend-api/AGENTS.md) — 推荐服务
+- [starcat-discovery-api/AGENTS.md](./starcat-discovery-api/AGENTS.md) — 探索服务
 
 ---
 

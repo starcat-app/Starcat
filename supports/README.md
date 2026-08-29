@@ -154,7 +154,8 @@ secrets 需要单独确认。
 
 | 路径 | 说明 |
 |------|------|
-| `AGENTS.md` / `CLAUDE.md` | AI 协作规范 |
+| `AGENTS.md` | supports/ AI 协作唯一维护源 |
+| `.claude/CLAUDE.md` | Claude Code 配置入口（固定引用 `AGENTS.md`，勿写规范正文） |
 | `SYNC.md` | 文件同步说明 |
 | `README.md` | 本文档 |
 | `Makefile` | 运维命令入口 |
@@ -163,7 +164,8 @@ secrets 需要单独确认。
 | `.claude/` | supports/ 专用 IDE 权限 |
 | `backups/` | Fly 备份目录结构 |
 | `docs/` | 设计文档、方案、指南 |
-| `extensions/{AGENTS,CLAUDE}.md` | 插件目录 AI 规范 |
+| `extensions/AGENTS.md` | 插件目录 AI 协作规范 |
+| `extensions/.claude/CLAUDE.md` | 插件目录 Claude Code 配置入口 |
 | `scripts/` | 运维脚本 |
 
 ### 独立 git 仓库（各自管理）
@@ -200,6 +202,5 @@ secrets 需要单独确认。
 
 - [`SYNC.md`](./SYNC.md) — 文件同步说明（git 管理 vs 跨机器同步）
 - [本地编译教程](../docs/7-工具与脚本/本地编译教程.md) — 从源码编 App、本地 API 和 CLI
-- [主仓库 CLAUDE.md](../CLAUDE.md)
-- [supports/CLAUDE.md](./CLAUDE.md)
+- [主仓库 AGENTS.md](../AGENTS.md)
 - [supports/AGENTS.md](./AGENTS.md)

@@ -550,7 +550,7 @@ https://github.com/settings/applications/3633797
 - [x] `supports/SYNC.md`
 - [x] `supports/clone-all.sh`
 - [x] `supports/AGENTS.md`
-- [x] `supports/CLAUDE.md`（核对后无旧 owner 引用）
+- [x] `supports/.claude/CLAUDE.md`（Claude Code 配置入口，固定引用 `supports/AGENTS.md`）
 - [x] `supports/scripts/sync-starcat-readme-promo.py`（核对后无旧 Private owner 引用）
 - [x] 其它脚本、配置、测试、文档中的旧 owner 引用已替换或分类；迁移来源记录、旧地址防泄漏断言与自动托管快照除外。
 - [x] `raw.githubusercontent.com/dong4j/starcat-pro/*` 改为组织 namespace。
@@ -606,7 +606,7 @@ rg -n --hidden --no-ignore \
 - [x] 更新 `supports/README.md` 的仓库数量、owner、公开 / 私有标记和 clone 示例。
 - [x] 更新 `supports/SYNC.md` 的独立仓库清单与新机器 clone 流程。
 - [x] 更新 `supports/clone-all.sh` 的所有 GitHub URL 和项目数量。
-- [x] 更新 `supports/AGENTS.md` / `supports/CLAUDE.md` 中的 module path 和 clone 示例。
+- [x] 更新 `supports/AGENTS.md` 中的 module path 和 clone 示例。
 - [x] 更新 `docs/1-立项/开发前问题清单.md` 中“OAuth App 未注册”的过期结论，记录 OAuth App 已转移到组织。
 - [x] 检查其它设计、发版、插件与 CLI 文档中的旧 owner；Multica 自动托管内容改为更新项目资源源数据。
 - [x] 未修改 `docs/功能实现总览.md`；如需登记迁移完成状态，另行提交草稿并等待 dong4j 明确授权。

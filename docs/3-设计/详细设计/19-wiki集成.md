@@ -1560,7 +1560,7 @@ Starcat 客户端 GRDB `trending_repos` 表（`Starcat/Core/Database/Models/Tren
 1. `supports/start-all.sh:57-61` `SERVICES` 数组追加 `"starcat-wiki-api|wiki|5004|STORE_FILE API_KEYS"`
 2. `supports/AGENTS.md` 项目对照表追加 `starcat-wiki-api`（端口 5004）
 3. `supports/AGENTS.md:273-281` 跨项目共享代码同步约定，envelope/auth 改为"4 份一致"
-4. `supports/CLAUDE.md:11-20` Go 版本表追加 `starcat-wiki-api 1.25.0`
+4. `supports/AGENTS.md:11-20` Go 版本表追加 `starcat-wiki-api 1.25.0`
 5. `supports/scripts/gen-api-key.sh` 注释（如硬编码 3 个服务）
 6. `docs/功能实现总览.md` 追加 "外部文档索引发现" 章节 + 复选框条目 + 实现说明（**v0.3 后 zread 周 trending 不在 wiki-api 范围内，对应条目归 trending 章节**）
 7. `docs/3-设计/详细设计/README.md` 文档索引追加 "19-wiki 集成"

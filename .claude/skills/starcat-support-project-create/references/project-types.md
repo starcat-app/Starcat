@@ -18,7 +18,7 @@
 
 新增 Go API 时不能只创建仓库，还要同步：
 
-- `supports/AGENTS.md` 和 `supports/CLAUDE.md` 的项目、端口、存储与 Fly app；
+- `supports/AGENTS.md` 的项目、端口、存储与 Fly app；
 - `supports/start-all.sh` 和 `supports/Makefile`；
 - Fly status/health/secrets 脚本；
 - 有状态服务的 backup/restore/wipe；

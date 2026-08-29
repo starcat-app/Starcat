@@ -232,9 +232,10 @@ supports/*
 !supports/docs/
 !supports/scripts/
 !supports/extensions/
+!supports/extensions/.claude/CLAUDE.md
 # 单文件放行
 !supports/AGENTS.md
-!supports/CLAUDE.md
+!supports/.claude/CLAUDE.md
 !supports/SYNC.md
 !supports/clone-all.sh
 !supports/.dockerignore

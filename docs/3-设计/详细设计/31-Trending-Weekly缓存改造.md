@@ -163,7 +163,7 @@ Weekly 数据量级（~4000 条）远大于 Trending（300 条/桶），原"分�
 | `weekly_bulk_languages` | `key` | 后端 languages 聚合 1:1，附 `sort_order` 保留后端原始顺序 |
 | `weekly_bulk_meta` | `id = "singleton"` 单行 | etag / last_fetched_at / generated_at / total |
 
-产品未上线 → 直接改 v1-initial 不写 ALTER（遵循 CLAUDE.md 铁律 #1）。
+产品未上线 → 直接改 v1-initial 不写 ALTER（遵循 AGENTS.md 铁律 #1）。
 
 #### 4.3.2 dataSource 双轨制
 

@@ -111,7 +111,7 @@ supports/scripts/sync-starcat-readme-promo.py
 - `supports/scripts/sync-starcat-readme-promo.py`
 - `supports/README.md`
 - `supports/SYNC.md`
-- 必要时同步 `supports/AGENTS.md` 与 `supports/CLAUDE.md`
+- 必要时同步 `supports/AGENTS.md`
 
 API、扩展或新分发类型还要同步对应运维入口和类型文档。完整映射见
 `references/registration-map.md`。

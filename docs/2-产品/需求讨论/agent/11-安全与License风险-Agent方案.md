@@ -5,7 +5,7 @@
 > **关联文档**:
 > - Starcat 已有 `RepoHealthSheet`(部分能力,见 `Starcat/Features/Health/`)
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
-> - [`../CLAUDE.md`](../CLAUDE.md):AI 保守策略(风险结论预览 → 确认 → 写入)
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):AI 保守策略(风险结论预览 → 确认 → 写入)
 
 ---
 

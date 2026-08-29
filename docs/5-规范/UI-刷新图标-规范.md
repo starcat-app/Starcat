@@ -1,7 +1,7 @@
 # UI 规范:刷新图标
 
 > **强制,2026-06-26 起生效**；点击确认反馈与最短可见时长条款于 **2026-07-29** 补齐。
-> 来源:从 `CLAUDE.md` 沉淀到本目录。`CLAUDE.md` / `AGENTS.md` 保留引用链接,不重复正文。
+> 来源：早期从根协作规范沉淀到本目录；现行维护源为根 `AGENTS.md`。`AGENTS.md` 只保留引用链接，不重复正文。
 > 实现单一入口:`Starcat/Shared/Components/SyncIconButton.swift`
 
 ---

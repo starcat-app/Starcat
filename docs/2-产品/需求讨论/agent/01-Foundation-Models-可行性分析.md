@@ -4,7 +4,7 @@
 > **状态**: 技术调研(2026-06-27),未立项。
 > **关联文档**:
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md):总览
-> - [`../CLAUDE.md`](../CLAUDE.md):macOS 15+ 最低版本约束
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):macOS 15+ 最低版本约束
 > - [Apple 官方文档](https://developer.apple.com/documentation/foundationmodels)
 
 ---
@@ -38,7 +38,7 @@ Apple Foundation Models(下文简称 FM)是 Apple 在 WWDC25 推出的**端侧�
 
 ### 3.1 系统版本冲突(致命)
 
-- Starcat `CLAUDE.md` 明确写:**"macOS 15+ 最低支持"**
+- Starcat `AGENTS.md` 明确写:**"macOS 15+ 最低支持"**
 - FM 需要 **macOS 26+**
 - 结论:**FM 不能作为 Starcat 的默认或必选能力**
 

@@ -7,7 +7,7 @@
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
 > - [`../AI代理API设计.md`](../AI代理API设计.md):现有 AI Proxy 协议
 > - [`../功能清单.md`](../功能清单.md):P0/P1/P2 优先级
-> - [`../CLAUDE.md`](../CLAUDE.md):AI 保守策略铁律
+> - [`../../../../AGENTS.md`](../../../../AGENTS.md):AI 保守策略铁律
 
 ---
 
