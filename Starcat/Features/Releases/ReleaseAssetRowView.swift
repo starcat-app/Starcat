@@ -255,10 +255,13 @@ private struct ReleaseAssetDownloadProgressRing: View {
     /// 与 compact captionSmall / standard caption 的 glyph 直径对齐。
     let side: CGFloat
 
-    private var lineWidth: CGFloat { max(1, side / 11) }
+    /// 直径跟图标走；描边略粗，保证蓝色进度在小尺寸下仍清晰可读。
+    private var lineWidth: CGFloat { 2 }
 
     var body: some View {
         let clamped = min(1, max(0, progress))
+        // stroke 居中画在路径上，内缩半线宽，避免加粗后视觉外扩超过图标外接圆。
+        let inset = lineWidth / 2
         ZStack {
             Circle()
                 .stroke(Color.secondary.opacity(0.25), lineWidth: lineWidth)
@@ -270,6 +273,7 @@ private struct ReleaseAssetDownloadProgressRing: View {
                 )
                 .rotationEffect(.degrees(-90))
         }
+        .padding(inset)
         .frame(width: side, height: side)
         .accessibilityLabel(Text("releases.downloadAsset"))
         .accessibilityValue(Text("\(Int((clamped * 100).rounded()))%"))
