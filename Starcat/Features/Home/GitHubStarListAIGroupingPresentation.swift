@@ -113,7 +113,7 @@ enum GitHubStarListAIResultFilter: String, CaseIterable, Identifiable, Sendable 
         switch self {
         case .actionable: "githubStarLists.aiGrouping.filter.tab.actionable"
         case .all: "general.all"
-        case .suggestions: "githubStarLists.aiGrouping.filter.tab.suggestions"
+        case .suggestions: "githubStarLists.aiGrouping.filter.suggestions"
         case .noMatch: "githubStarLists.aiGrouping.filter.noMatch"
         case .analysisFailed: "githubStarLists.aiGrouping.filter.analysisFailed"
         case .applyFailed: "githubStarLists.aiGrouping.filter.tab.applyFailed"

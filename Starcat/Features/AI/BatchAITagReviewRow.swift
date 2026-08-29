@@ -2,11 +2,11 @@
 //  BatchAITagReviewRow.swift
 //  Starcat
 //
-//  批量标签生成窗口中的单仓库审核行。
+//  AI 标签整理窗口中的单仓库审核行。
 //
 //  关键约束：
 //  - 生成、选择和应用必须在同一窗口完成，不能把用户导向仓库详情页；
-//  - 标题行整行可点击，chevron 只表达状态；
+//  - 普通建议直接展示标签与操作；只有失败诊断仍通过标题行折叠查看；
 //  - 同一行只负责展示会话内建议，用户确认后才触发标签与 repo_tags 落库。
 //
 
@@ -32,6 +32,9 @@ struct BatchAITagReviewRow: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
+    /// 复选框 16 + 间距 8 + Logo 26 + 间距 10，确保建议与操作始终从状态文案列开始。
+    private let contentColumnLeadingInset: CGFloat = 60
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
@@ -43,9 +46,13 @@ struct BatchAITagReviewRow: View {
                         .controlSize(.small)
                 }
             }
-            if isExpanded {
-                expandedContent
-                    .padding(.leading, 36)
+            if !job.suggestedTags.isEmpty {
+                suggestionReviewContent
+                    .padding(.leading, contentColumnLeadingInset)
+            }
+            if isExpanded, let diagnostic = job.errorDiagnostic {
+                diagnosticContent(diagnostic)
+                    .padding(.leading, contentColumnLeadingInset)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -81,57 +88,66 @@ struct BatchAITagReviewRow: View {
         }
     }
 
+    @ViewBuilder
     private var summaryButton: some View {
-        Button(action: onToggleExpansion) {
-            HStack(alignment: .top, spacing: 10) {
-                RemoteAvatar(
-                    urlString: resolvedAvatarURL,
-                    size: 26,
-                    fallbackSymbol: "shippingbox.circle.fill"
-                )
-                .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(verbatim: job.repoFullName)
-                            .font(interfaceScale.font(.bodyEmphasis, weight: .semibold).monospaced())
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        statusIcon
-                            .frame(width: 16, height: 16)
-                            .layoutPriority(1)
-                    }
-                    if let displayDescription {
-                        Text(verbatim: displayDescription)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .help(displayDescription)
-                    }
-                    if let detailText {
-                        Text(verbatim: detailText)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(detailColor)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
+        if canExpand {
+            Button(action: onToggleExpansion) {
+                summaryContent
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(job.repoFullName)
+        } else {
+            summaryContent
+                .help(job.repoFullName)
+        }
+    }
+
+    private var summaryContent: some View {
+        HStack(alignment: .top, spacing: 10) {
+            RemoteAvatar(
+                urlString: resolvedAvatarURL,
+                size: 26,
+                fallbackSymbol: "shippingbox.circle.fill"
+            )
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(verbatim: job.repoFullName)
+                        .font(interfaceScale.font(.bodyEmphasis, weight: .semibold).monospaced())
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    statusIcon
+                        .frame(width: 16, height: 16)
+                        .layoutPriority(1)
                 }
-                Spacer(minLength: 6)
-                if canExpand {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(interfaceScale.font(.captionSmall).bold())
+                if let displayDescription {
+                    Text(verbatim: displayDescription)
+                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                        .padding(.top, 2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(displayDescription)
+                }
+                if let detailText {
+                    Text(verbatim: detailText)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(detailColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            .contentShape(Rectangle())
+            Spacer(minLength: 6)
+            if canExpand {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(interfaceScale.font(.captionSmall).bold())
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                    .padding(.top, 2)
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(!canExpand)
-        .help(job.repoFullName)
     }
 
     /// 优先复用同步得到的头像地址；缺失时沿用所有仓库列表共用的 GitHub owner fallback。
@@ -161,15 +177,10 @@ struct BatchAITagReviewRow: View {
         return rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
-    @ViewBuilder
-    private var expandedContent: some View {
-        if !job.suggestedTags.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                tagChips
-                reviewActions
-            }
-        } else if let diagnostic = job.errorDiagnostic {
-            diagnosticContent(diagnostic)
+    private var suggestionReviewContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            tagChips
+            reviewActions
         }
     }
 
@@ -370,7 +381,7 @@ struct BatchAITagReviewRow: View {
     }
 
     private var canExpand: Bool {
-        !job.suggestedTags.isEmpty || job.errorDiagnostic != nil
+        job.errorDiagnostic != nil
     }
 
     private var detailColor: Color {

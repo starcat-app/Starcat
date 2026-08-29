@@ -100,7 +100,8 @@ struct GitHubStarListAIGroupingResultList: View {
 
     private func toggleExpansion(for item: GitHubStarListAIReviewItem) {
         guard item.automaticallyIgnoredFailure != nil
-                || (!item.isIgnoredByUser && (item.hasSuggestions || item.applyFailure != nil || item.status == .failed))
+                || item.applyFailure != nil
+                || item.status == .failed
         else { return }
         expandedRepoID = expandedRepoID == item.id ? nil : item.id
     }
@@ -122,16 +123,23 @@ private struct GitHubStarListAIGroupingResultRow: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
 
+    /// 复选框 16 + 间距 8 + Logo 26 + 间距 10，确保建议与操作始终从状态文案列开始。
+    private let contentColumnLeadingInset: CGFloat = 60
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
                 selectionButton
-                    .frame(width: 16)
+                    .frame(width: 16, height: 22)
                 summaryButton
             }
-            if isExpanded {
-                expandedContent
-                    .padding(.leading, 30)
+            if showsInlineReview {
+                suggestionReviewContent
+                    .padding(.leading, contentColumnLeadingInset)
+            }
+            if isExpanded, canExpand {
+                diagnosticContent
+                    .padding(.leading, contentColumnLeadingInset)
             }
         }
         .padding(.vertical, 5)
@@ -159,52 +167,61 @@ private struct GitHubStarListAIGroupingResultRow: View {
         }
     }
 
+    @ViewBuilder
     private var summaryButton: some View {
-        Button(action: onToggleExpansion) {
-            HStack(spacing: 10) {
-                RemoteAvatar(
-                    urlString: item.repo.ownerAvatar ?? RepoAvatarURL.from(owner: item.repo.owner),
-                    size: 22,
-                    fallbackSymbol: "shippingbox.circle.fill"
-                )
-                .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(verbatim: item.repoFullName)
-                            .font(interfaceScale.font(.rowTitle))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        statusIcon
-                            .frame(width: 16, height: 16)
-                            .layoutPriority(1)
-                    }
-                    if let description = item.repoDescription {
-                        Text(verbatim: description)
-                            .font(interfaceScale.font(.body))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .help(description)
-                    }
-                    summaryLine
-                }
-                Spacer(minLength: 8)
-                statusLabel
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(statusLabelColor)
-                if canExpand {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
+        if canExpand {
+            Button(action: onToggleExpansion) {
+                summaryContent
+                    .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(item.repoFullName)
+        } else {
+            summaryContent
+                .help(item.repoFullName)
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(!canExpand)
-        .help(item.repoFullName)
+    }
+
+    private var summaryContent: some View {
+        HStack(alignment: .top, spacing: 10) {
+            RemoteAvatar(
+                urlString: item.repo.ownerAvatar ?? RepoAvatarURL.from(owner: item.repo.owner),
+                size: 26,
+                fallbackSymbol: "shippingbox.circle.fill"
+            )
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(verbatim: item.repoFullName)
+                        .font(interfaceScale.font(.rowTitle))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    statusIcon
+                        .frame(width: 16, height: 16)
+                        .layoutPriority(1)
+                }
+                if let description = item.repoDescription {
+                    Text(verbatim: description)
+                        .font(interfaceScale.font(.body))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(description)
+                }
+                summaryLine
+            }
+            Spacer(minLength: 8)
+            statusLabel
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(statusLabelColor)
+            if canExpand {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     @ViewBuilder
@@ -236,7 +253,7 @@ private struct GitHubStarListAIGroupingResultRow: View {
                 fallbackColor: .green
             )
         } else if item.hasActionableSuggestions {
-            // 用户取消全部勾选后只保留“有建议”状态，不能继续展示任何未选中的分组。
+            // 用户取消全部勾选后只保留“待确认”状态，不能继续展示任何未选中的分组。
             Text("githubStarLists.aiGrouping.status.suggested")
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
@@ -287,7 +304,7 @@ private struct GitHubStarListAIGroupingResultRow: View {
     }
 
     @ViewBuilder
-    private var expandedContent: some View {
+    private var diagnosticContent: some View {
         if let failure = item.automaticallyIgnoredFailure {
             failureBox {
                 VStack(alignment: .leading, spacing: 7) {
@@ -300,10 +317,6 @@ private struct GitHubStarListAIGroupingResultRow: View {
                     }
                 }
             }
-        } else if item.isIgnoredByUser {
-            Text("githubStarLists.aiGrouping.status.ignored")
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
         } else if let failure = item.applyFailure {
             failureBox {
                 VStack(alignment: .leading, spacing: 7) {
@@ -334,29 +347,31 @@ private struct GitHubStarListAIGroupingResultRow: View {
                         .controlSize(.small)
                 }
             }
-        } else {
-            VStack(alignment: .leading, spacing: 10) {
-                GitHubStarListAIGroupingChipBar(
-                    lists: availableLists,
-                    item: item,
-                    onToggleList: onToggleList
-                )
-                HStack(spacing: 8) {
-                    Button("batchAI.panel.review.selectAll", action: onSelectAllSuggestions)
-                        .controlSize(.small)
-                        .disabled(hasSelectedAllSuggestions || item.isApplying)
-                    Button("batchAI.panel.review.clear", action: onClearSelection)
-                        .controlSize(.small)
-                        .disabled(!item.hasSelection || item.isApplying)
-                    Spacer()
-                    Button("batchAI.panel.review.ignore", action: onIgnore)
-                        .controlSize(.small)
-                        .disabled(item.isApplying)
-                    Button("action.apply", action: onApply)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(!item.hasSelection || item.isApplying)
-                }
+        }
+    }
+
+    private var suggestionReviewContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GitHubStarListAIGroupingChipBar(
+                lists: availableLists,
+                item: item,
+                onToggleList: onToggleList
+            )
+            HStack(spacing: 8) {
+                Button("batchAI.panel.review.selectAll", action: onSelectAllSuggestions)
+                    .controlSize(.small)
+                    .disabled(hasSelectedAllSuggestions || item.isApplying)
+                Button("batchAI.panel.review.clear", action: onClearSelection)
+                    .controlSize(.small)
+                    .disabled(!item.hasSelection || item.isApplying)
+                Spacer()
+                Button("batchAI.panel.review.ignore", action: onIgnore)
+                    .controlSize(.small)
+                    .disabled(item.isApplying)
+                Button("action.apply", action: onApply)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(!item.hasSelection || item.isApplying)
             }
         }
     }
@@ -433,8 +448,6 @@ private struct GitHubStarListAIGroupingResultRow: View {
             Text("githubStarLists.aiGrouping.filter.analysisFailed")
         } else if item.status == .analyzing {
             Text("githubStarLists.aiGrouping.status.processing")
-        } else if item.hasActionableSuggestions {
-            Text("githubStarLists.aiGrouping.status.suggested")
         } else if item.isNoMatch {
             Text("githubStarLists.aiGrouping.status.noMatch")
         }
@@ -455,7 +468,17 @@ private struct GitHubStarListAIGroupingResultRow: View {
 
     private var canExpand: Bool {
         item.automaticallyIgnoredFailure != nil
-            || (!item.isIgnoredByUser && (item.hasSuggestions || item.applyFailure != nil || item.status == .failed))
+            || item.applyFailure != nil
+            || item.status == .failed
+    }
+
+    /// 正常建议始终直接可审阅；折叠只保留失败诊断，避免用户先展开才能应用。
+    private var showsInlineReview: Bool {
+        item.automaticallyIgnoredFailure == nil
+            && !item.isIgnoredByUser
+            && item.applyFailure == nil
+            && item.status != .failed
+            && item.hasSuggestions
     }
 
     private var statusLabelColor: Color {

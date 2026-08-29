@@ -2,7 +2,7 @@
 //  BatchAIWorkspaceView.swift
 //  Starcat
 //
-//  批量标签生成的固定尺寸工作区。
+//  AI 标签整理的固定尺寸工作区。
 //
 //  SwiftUI 只负责配置、队列状态与审核交互；窗口生命周期和固定尺寸由
 //  BatchAIWorkspaceWindowController 持有。启动成功后在同一个窗口内从配置页切换到审核页，
@@ -15,8 +15,6 @@ struct BatchAIWorkspacePreflightContext {
     let scope: BatchAIRepositoryScope
     let pendingCount: Int
     let skippedTaggedCount: Int
-
-    var usesSelectedRepositories: Bool { scope.isSelectionScoped }
 }
 
 enum BatchAIWorkspaceInitialMode {
@@ -86,9 +84,9 @@ struct BatchAIWorkspaceView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text("batchAI.generateTags.title")
+                Text("batchAI.organizeTags.title")
                     .font(interfaceScale.font(.workspaceTitle))
-                Text(verbatim: headerSubtitle)
+                Text("batchAI.organizeTags.subtitle.compact")
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -204,22 +202,6 @@ struct BatchAIWorkspaceView: View {
         if case .review = mode { true } else { false }
     }
 
-    private var headerSubtitle: String {
-        switch mode {
-        case .preflight(let context):
-            let key = context.usesSelectedRepositories
-                ? "batch.selectedCountFormat"
-                : "batchAI.options.subtitleFormat"
-            return String(format: String.l10n(key), context.pendingCount)
-        case .review:
-            return String(
-                format: String.l10n("batchAI.panel.progressFormat"),
-                service.finishedCount,
-                service.totalCount
-            )
-        }
-    }
-
     private var statusPill: some View {
         Label(statusTitle, systemImage: statusIcon)
             .font(interfaceScale.font(.captionStrong))
@@ -239,13 +221,7 @@ struct BatchAIWorkspaceView: View {
     private var statusTitle: String {
         if service.isCancelling { return String.l10n("batchAI.panel.cancelling") }
         if service.isPaused { return String.l10n("batchAI.panel.paused") }
-        if service.isRunning {
-            return String(
-                format: String.l10n("batch.progress.processingFormat"),
-                service.finishedCount + service.processingJobIDs.count,
-                service.totalCount
-            )
-        }
+        if service.isRunning { return String.l10n("batchAI.organizeTags.running") }
         if service.hasPendingTagReview { return String.l10n("batchAI.panel.review.pending") }
         if service.isFinished { return String.l10n("batchAI.panel.finished") }
         return String.l10n("batchAI.panel.finished")
