@@ -37,11 +37,18 @@ struct WidgetSnapshotBuilder: Sendable {
 
     func build(
         generatedAt: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        contributionCalendar: ContributionCalendarPayload? = nil
     ) async throws -> WidgetSnapshot {
         guard let userID = database.currentUserId else {
             throw WidgetSnapshotBuilderError.noAuthenticatedUser
         }
+
+        let contributionActivity = Self.makeContributionActivity(
+            from: contributionCalendar,
+            generatedAt: generatedAt,
+            calendar: calendar
+        )
 
         return try await database.writer.read { db in
             let focusRows = try Row.fetchAll(
@@ -170,9 +177,66 @@ struct WidgetSnapshotBuilder: Sendable {
                 rediscoveryRepository: rediscovery,
                 unreadReleaseCount: unreadReleaseCount,
                 unreadReleases: releases,
-                collectionTrend: collectionTrend
+                collectionTrend: collectionTrend,
+                contributionActivity: contributionActivity
             )
         }
+    }
+
+    /// 把主应用贡献缓存压缩成 Widget 可读取的匿名聚合投影。
+    ///
+    /// 保留 GitHub 周边界与官方贡献等级，避免 Extension 重新推导日期或强度；
+    /// “今日”按主应用当前日历生成 `YYYY-MM-DD`，与 GraphQL 日期字段直接比较。
+    private static func makeContributionActivity(
+        from payload: ContributionCalendarPayload?,
+        generatedAt: Date,
+        calendar: Calendar
+    ) -> WidgetContributionActivity? {
+        guard let payload else { return nil }
+
+        let weeks = payload.weeks.map { week in
+            WidgetContributionWeek(
+                days: week.contributionDays.map { day in
+                    WidgetContributionDay(
+                        date: day.date,
+                        count: max(0, day.contributionCount),
+                        level: WidgetContributionLevel(rawValue: day.contributionLevel.rawValue)
+                            ?? .none,
+                        weekday: min(6, max(0, day.weekday))
+                    )
+                }
+            )
+        }
+        let days = weeks.flatMap(\.days)
+        let today = contributionDateString(for: generatedAt, calendar: calendar)
+        let stats = payload.activityStats
+
+        return WidgetContributionActivity(
+            totalContributions: max(0, payload.totalContributions),
+            todayContributions: days.first(where: { $0.date == today })?.count ?? 0,
+            bestDayContributions: days.map(\.count).max() ?? 0,
+            weeks: Array(weeks.suffix(53)),
+            stats: WidgetContributionStats(
+                commits: stats.commits,
+                issues: stats.issues,
+                pullRequests: stats.pullRequests,
+                reviews: stats.reviews,
+                repositories: stats.repositories
+            )
+        )
+    }
+
+    private static func contributionDateString(
+        for date: Date,
+        calendar: Calendar
+    ) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(
+            format: "%04d-%02d-%02d",
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0
+        )
     }
 
     /// 构建 12 周汇总、26 周单日热力点与公开收藏整理状态。

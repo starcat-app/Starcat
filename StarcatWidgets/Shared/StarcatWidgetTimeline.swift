@@ -2,7 +2,7 @@
 //  StarcatWidgetTimeline.swift
 //  StarcatWidgets
 //
-//  四个 Widget 共用的快照加载、错误降级和 Timeline 基础模型。
+//  Widget Extension 共用的快照加载、错误降级和 Timeline 基础模型。
 //
 
 import Foundation
@@ -221,6 +221,29 @@ private extension WidgetSnapshot {
             }
             return WidgetCollectionTrendDay(date: day, count: count)
         }
+        let contributionDateFormatter = ISO8601DateFormatter()
+        contributionDateFormatter.formatOptions = [.withFullDate]
+        let contributionWeeks = stride(from: 0, to: dailyPoints.count, by: 7).map { start in
+            WidgetContributionWeek(
+                days: dailyPoints[start..<min(start + 7, dailyPoints.count)].enumerated().map {
+                    weekday,
+                    point in
+                    let level: WidgetContributionLevel = switch point.count {
+                    case 0: .none
+                    case 1: .firstQuartile
+                    case 2: .secondQuartile
+                    case 3: .thirdQuartile
+                    default: .fourthQuartile
+                    }
+                    return WidgetContributionDay(
+                        date: contributionDateFormatter.string(from: point.date),
+                        count: point.count,
+                        level: level,
+                        weekday: weekday
+                    )
+                }
+            )
+        }
 
         return WidgetSnapshot(
             generatedAt: now,
@@ -238,6 +261,19 @@ private extension WidgetSnapshot {
                     unreadCount: 481,
                     readCount: 402,
                     usingCount: 205
+                )
+            ),
+            contributionActivity: WidgetContributionActivity(
+                totalContributions: 1_088,
+                todayContributions: 5,
+                bestDayContributions: 57,
+                weeks: contributionWeeks,
+                stats: WidgetContributionStats(
+                    commits: 860,
+                    issues: 72,
+                    pullRequests: 103,
+                    reviews: 41,
+                    repositories: 12
                 )
             )
         )

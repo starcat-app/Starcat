@@ -866,7 +866,8 @@ final class AppDependencies {
             throw error
         }
         self.database = db
-        self.widgetRefreshCoordinator = WidgetRefreshCoordinator(database: db)
+        let widgetCoordinator = WidgetRefreshCoordinator(database: db)
+        self.widgetRefreshCoordinator = widgetCoordinator
         let repositoryInsightsContextScopeState = RepositoryInsightsContextScopeState(
             scope: RepositoryInsightsContextScope(userID: db.currentUserId)
         )
@@ -1596,6 +1597,11 @@ final class AppDependencies {
         // 未挂在协议上以保持 Mock 简单（详见 ContributionService.swift 注释）。
         let contributionSvc = ContributionService(apiClient: api)
         self.contributionService = contributionSvc
+        widgetCoordinator.attachContributionService(contributionSvc)
+        contributionSvc.onPayloadDidChange = { [weak widgetCoordinator] in
+            // 贡献缓存更新后只重建匿名聚合快照；Widget Extension 不持有 GitHub Token。
+            widgetCoordinator?.scheduleReadyRefresh()
+        }
         // 2026-06-15 修复(切换账号草坪不刷新):把 service 挂到 AuthSession,让 signOut /
         // invalidateSession / restore 401 三处的"登出联动清理"都能 reset 草坪缓存,
         // 否则 B 登录后 sidebar `.task` 触发的 `load(login: B)` 会因 lastFetchedAt 还在

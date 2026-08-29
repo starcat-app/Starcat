@@ -59,6 +59,11 @@ extension GitHubAPIClient {
         query($login: String!) {
           user(login: $login) {
             contributionsCollection {
+              totalCommitContributions
+              totalIssueContributions
+              totalPullRequestContributions
+              totalPullRequestReviewContributions
+              totalRepositoryContributions
               contributionCalendar {
                 totalContributions
                 weeks {
@@ -82,7 +87,17 @@ extension GitHubAPIClient {
             struct UserNode: Decodable {
                 let contributionsCollection: CollectionNode
                 struct CollectionNode: Decodable {
-                    let contributionCalendar: ContributionCalendarPayload
+                    let totalCommitContributions: Int
+                    let totalIssueContributions: Int
+                    let totalPullRequestContributions: Int
+                    let totalPullRequestReviewContributions: Int
+                    let totalRepositoryContributions: Int
+                    let contributionCalendar: CalendarNode
+
+                    struct CalendarNode: Decodable {
+                        let totalContributions: Int
+                        let weeks: [ContributionWeek]
+                    }
                 }
             }
         }
@@ -92,10 +107,20 @@ extension GitHubAPIClient {
             variables: ["login": login],
             as: Response.self
         )
-        guard let payload = resp.user?.contributionsCollection.contributionCalendar else {
+        guard let collection = resp.user?.contributionsCollection else {
             throw NetworkError.notFound
         }
-        return payload
+        return ContributionCalendarPayload(
+            totalContributions: collection.contributionCalendar.totalContributions,
+            weeks: collection.contributionCalendar.weeks,
+            activityStats: ContributionActivityStats(
+                commits: collection.totalCommitContributions,
+                issues: collection.totalIssueContributions,
+                pullRequests: collection.totalPullRequestContributions,
+                reviews: collection.totalPullRequestReviewContributions,
+                repositories: collection.totalRepositoryContributions
+            )
+        )
     }
 }
 
@@ -112,20 +137,82 @@ extension GitHubAPIClient {
 /// payload 序列化到 UserDefaults 做磁盘缓存。Swift 要求 `Encodable` 自动合成
 /// `encode(to:)` 必须与类型声明同源文件，所以这里直接挂 Codable，而非在 service
 /// 文件里 extension（会触发 `extension outside of file ... prevents automatic synthesis`）。
-struct ContributionCalendarPayload: Codable, Equatable {
+struct ContributionCalendarPayload: Codable, Equatable, Sendable {
     /// 近 1 年总贡献数。
     let totalContributions: Int
     /// 53 周快照，每周含 7 天（最后一周可能不满 7 天，因为日历对齐）。
     let weeks: [ContributionWeek]
+    /// 同一时间窗口内的五类贡献统计，供桌面 Widget 的雷达图使用。
+    let activityStats: ContributionActivityStats
+
+    init(
+        totalContributions: Int,
+        weeks: [ContributionWeek],
+        activityStats: ContributionActivityStats = .empty
+    ) {
+        self.totalContributions = max(0, totalContributions)
+        self.weeks = weeks
+        self.activityStats = activityStats
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case totalContributions
+        case weeks
+        case activityStats
+    }
+
+    /// 旧版 UserDefaults 缓存没有五维统计；缺失时回落为零，保留草坪秒显能力。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            totalContributions: try container.decode(Int.self, forKey: .totalContributions),
+            weeks: try container.decode([ContributionWeek].self, forKey: .weeks),
+            activityStats: try container.decodeIfPresent(
+                ContributionActivityStats.self,
+                forKey: .activityStats
+            ) ?? .empty
+        )
+    }
+}
+
+/// GitHub `ContributionsCollection` 在同一时间窗口内提供的五类活动统计。
+struct ContributionActivityStats: Codable, Equatable, Sendable {
+    let commits: Int
+    let issues: Int
+    let pullRequests: Int
+    let reviews: Int
+    let repositories: Int
+
+    init(
+        commits: Int,
+        issues: Int,
+        pullRequests: Int,
+        reviews: Int,
+        repositories: Int
+    ) {
+        self.commits = max(0, commits)
+        self.issues = max(0, issues)
+        self.pullRequests = max(0, pullRequests)
+        self.reviews = max(0, reviews)
+        self.repositories = max(0, repositories)
+    }
+
+    static let empty = ContributionActivityStats(
+        commits: 0,
+        issues: 0,
+        pullRequests: 0,
+        reviews: 0,
+        repositories: 0
+    )
 }
 
 /// 一周（7 天）。
-struct ContributionWeek: Codable, Equatable {
+struct ContributionWeek: Codable, Equatable, Sendable {
     let contributionDays: [ContributionDay]
 }
 
 /// 单天贡献数据。
-struct ContributionDay: Codable, Equatable {
+struct ContributionDay: Codable, Equatable, Sendable {
     /// ISO8601 日期（`YYYY-MM-DD`），用于 tooltip 显示。
     let date: String
     /// 当天贡献数（commit + PR + Issue + Review）。
@@ -140,7 +227,7 @@ struct ContributionDay: Codable, Equatable {
 ///
 /// 渲染时按分级取颜色，而非按 count 自己分桶——保证与 GitHub 主页视觉完全一致。
 /// 解码用 `RawValue: String`，未知值（GitHub 未来扩展）回落到 `.none`。
-enum ContributionLevel: String, Codable, Equatable {
+enum ContributionLevel: String, Codable, Equatable, Sendable {
     case none = "NONE"
     case firstQuartile = "FIRST_QUARTILE"
     case secondQuartile = "SECOND_QUARTILE"

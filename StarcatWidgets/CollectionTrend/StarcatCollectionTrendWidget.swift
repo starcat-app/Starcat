@@ -9,7 +9,6 @@
 //
 
 import AppIntents
-import Charts
 import SwiftUI
 import WidgetKit
 
@@ -30,7 +29,7 @@ struct StarcatCollectionTrendWidget: Widget {
         }
         .configurationDisplayName("widget.collectionTrend.displayName")
         .description("widget.collectionTrend.heatmapDescription")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
@@ -87,7 +86,7 @@ struct StarcatCollectionTrendProvider: AppIntentTimelineProvider {
     }
 }
 
-/// Small / Medium / Large 逐级增加指标密度，热力图始终是主要视觉焦点。
+/// Small / Medium 逐级增加指标密度，热力图始终是主要视觉焦点。
 struct StarcatCollectionTrendWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: StarcatCollectionTrendEntry
@@ -129,8 +128,6 @@ struct StarcatCollectionTrendWidgetView: View {
         switch family {
         case .systemSmall:
             smallContent(trend, dailyPoints: dailyPoints)
-        case .systemLarge:
-            largeContent(trend, dailyPoints: dailyPoints)
         default:
             mediumContent(trend, dailyPoints: dailyPoints)
         }
@@ -207,54 +204,6 @@ struct StarcatCollectionTrendWidgetView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// Large 同时呈现二十六周日历、核心指标和现有阅读状态分布。
-    private func largeContent(
-        _ trend: WidgetCollectionTrend,
-        dailyPoints: [WidgetCollectionTrendDay]
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            StarcatWidgetHeader(
-                "widget.collectionTrend.title",
-                systemImage: "square.grid.3x3.fill",
-                isStale: entry.base.isStale
-            ) {
-                Text("widget.collectionTrend.publicScope")
-            }
-
-            HStack(spacing: 24) {
-                metric(
-                    value: "\(trend.weeklyPoints.last?.count ?? 0)",
-                    titleKey: "widget.collectionTrend.thisWeek"
-                )
-                metric(
-                    value: "\(trend.addedInLast30DaysCount)",
-                    titleKey: "widget.collectionTrend.last30Days"
-                )
-                metric(
-                    value: weeklyAverageText(trend.weeklyPoints),
-                    titleKey: "widget.collectionTrend.weeklyAverage"
-                )
-                metric(
-                    value: "\(trend.totalCount)",
-                    titleKey: "widget.collectionTrend.total"
-                )
-            }
-
-            StarcatCollectionHeatmap(
-                points: dailyPoints,
-                weekCount: 26,
-                referenceDate: referenceDate,
-                palette: entry.palette
-            )
-            .frame(height: 92)
-
-            Divider().opacity(0.35)
-
-            statusDistribution(trend.statusBreakdown)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
     private var compactTitle: some View {
         HStack(spacing: 5) {
             Image(systemName: "square.grid.3x3.fill")
@@ -294,80 +243,4 @@ struct StarcatCollectionTrendWidgetView: View {
         }
     }
 
-    private func statusDistribution(
-        _ breakdown: WidgetCollectionStatusBreakdown
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Chart {
-                BarMark(
-                    x: .value("Count", breakdown.unreadCount),
-                    y: .value("Status", "Public")
-                )
-                .foregroundStyle(.orange)
-                BarMark(
-                    x: .value("Count", breakdown.readCount),
-                    y: .value("Status", "Public")
-                )
-                .foregroundStyle(.blue)
-                BarMark(
-                    x: .value("Count", breakdown.usingCount),
-                    y: .value("Status", "Public")
-                )
-                .foregroundStyle(.green)
-            }
-            .chartXScale(
-                domain: 0...max(
-                    1,
-                    breakdown.unreadCount + breakdown.readCount + breakdown.usingCount
-                )
-            )
-            .chartXAxis(.hidden)
-            .chartYAxis(.hidden)
-            .frame(height: 10)
-            .accessibilityHidden(true)
-
-            HStack(spacing: 16) {
-                statusLabel(
-                    color: .orange,
-                    titleKey: "widget.collectionTrend.unread",
-                    count: breakdown.unreadCount
-                )
-                statusLabel(
-                    color: .blue,
-                    titleKey: "widget.collectionTrend.read",
-                    count: breakdown.readCount
-                )
-                statusLabel(
-                    color: .green,
-                    titleKey: "widget.collectionTrend.using",
-                    count: breakdown.usingCount
-                )
-            }
-        }
-    }
-
-    private func statusLabel(
-        color: Color,
-        titleKey: LocalizedStringKey,
-        count: Int
-    ) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            Text(titleKey)
-                .foregroundStyle(.secondary)
-            Text(verbatim: "\(count)")
-                .fontWeight(.semibold)
-                .foregroundStyle(.primary)
-        }
-        .font(.caption)
-    }
-
-    private func weeklyAverageText(_ points: [WidgetCollectionTrendPoint]) -> String {
-        guard !points.isEmpty else { return "0" }
-        let average = Double(points.map(\.count).reduce(0, +)) / Double(points.count)
-        return average.formatted(.number.precision(.fractionLength(1)))
-    }
 }

@@ -14,7 +14,7 @@ import Testing
 @Suite("WidgetSnapshotStore")
 struct WidgetSnapshotStoreTests {
 
-    @Test("ready 快照可以按 v3 契约往返编码")
+    @Test("ready 快照可以按 v4 契约往返编码")
     func roundTripsReadySnapshot() throws {
         try withTemporaryDirectory { directory in
             // 取整秒，避免 JSON ISO8601 编解码的亚秒精度差异干扰契约断言。
@@ -26,7 +26,8 @@ struct WidgetSnapshotStoreTests {
                 rediscoveryRepository: makeRepository(id: 2),
                 unreadReleaseCount: 1,
                 unreadReleases: [makeRelease(id: 10, repositoryID: 1)],
-                collectionTrend: makeCollectionTrend()
+                collectionTrend: makeCollectionTrend(),
+                contributionActivity: makeContributionActivity()
             )
             let store = WidgetSnapshotStore(containerURL: directory)
 
@@ -53,6 +54,7 @@ struct WidgetSnapshotStoreTests {
             #expect(snapshot.unreadReleaseCount == 0)
             #expect(snapshot.unreadReleases.isEmpty)
             #expect(snapshot.collectionTrend == nil)
+            #expect(snapshot.contributionActivity == nil)
         }
 
         try withTemporaryDirectory { directory in
@@ -64,10 +66,11 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.focusRepositories.isEmpty)
             #expect(loaded.unreadReleases.isEmpty)
             #expect(loaded.collectionTrend == nil)
+            #expect(loaded.contributionActivity == nil)
         }
     }
 
-    @Test("v3 Extension 可以读取缺少趋势字段的 v1 ready 快照")
+    @Test("v4 Extension 可以读取缺少趋势字段的 v1 ready 快照")
     func loadsLegacyV1ReadySnapshot() throws {
         try withTemporaryDirectory { directory in
             let rawJSON = """
@@ -90,10 +93,11 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.schemaVersion == 1)
             #expect(loaded.accountState == .ready)
             #expect(loaded.collectionTrend == nil)
+            #expect(loaded.contributionActivity == nil)
         }
     }
 
-    @Test("v3 Extension 可以读取缺少单日点的 v2 趋势快照")
+    @Test("v4 Extension 可以读取缺少单日点的 v2 趋势快照")
     func loadsLegacyV2TrendSnapshot() throws {
         try withTemporaryDirectory { directory in
             let rawJSON = """
@@ -129,6 +133,7 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.schemaVersion == 2)
             #expect(loaded.collectionTrend?.dailyPoints == nil)
             #expect(loaded.collectionTrend?.weeklyPoints.count == 1)
+            #expect(loaded.contributionActivity == nil)
         }
     }
 
@@ -181,6 +186,7 @@ struct WidgetSnapshotStoreTests {
             #expect(loaded.unreadReleaseCount == 0)
             #expect(loaded.unreadReleases.isEmpty)
             #expect(loaded.collectionTrend == nil)
+            #expect(loaded.contributionActivity == nil)
         }
     }
 
@@ -331,6 +337,31 @@ struct WidgetSnapshotStoreTests {
                 unreadCount: 1,
                 readCount: 1,
                 usingCount: 1
+            )
+        )
+    }
+
+    private func makeContributionActivity() -> WidgetContributionActivity {
+        WidgetContributionActivity(
+            totalContributions: 1_088,
+            todayContributions: 5,
+            bestDayContributions: 57,
+            weeks: [
+                WidgetContributionWeek(days: [
+                    WidgetContributionDay(
+                        date: "2026-08-29",
+                        count: 5,
+                        level: .secondQuartile,
+                        weekday: 6
+                    )
+                ])
+            ],
+            stats: WidgetContributionStats(
+                commits: 900,
+                issues: 78,
+                pullRequests: 103,
+                reviews: 120,
+                repositories: 7
             )
         )
     }

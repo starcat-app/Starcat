@@ -63,6 +63,13 @@ final class ContributionService {
     /// 上次成功加载时间戳，用于判 TTL 与显示 "X 分钟前"。
     private(set) var lastFetchedAt: Date?
 
+    /// 草坪从磁盘恢复或网络更新后通知 Widget 快照重建。
+    ///
+    /// 这是装配层副作用，不属于 SwiftUI 可观察状态；调用方必须弱捕获，避免与
+    /// `WidgetRefreshCoordinator` 形成生命周期环。
+    @ObservationIgnored
+    var onPayloadDidChange: (() -> Void)?
+
     // MARK: - 依赖
 
     /// GraphQL 调用入口；与 REST 同一个 client，复用 token 注入与集中式 401。
@@ -129,6 +136,7 @@ final class ContributionService {
                 self.lastFetchedAt = Date()
                 self.lastError = nil
                 self.persistToDisk(login: login, payload: fetched, fetchedAt: Date())
+                self.onPayloadDidChange?()
                 AppLog.network.info("Contribution calendar fetched: login=\(login, privacy: .public), total=\(fetched.totalContributions, privacy: .public)")
             } catch is CancellationError {
                 AppLog.network.info("Contribution fetch cancelled: login=\(login, privacy: .public)")
@@ -183,6 +191,7 @@ final class ContributionService {
             let envelope = try JSONDecoder().decode(DiskEnvelope.self, from: data)
             self.payload = envelope.payload
             self.lastFetchedAt = Date(timeIntervalSince1970: envelope.fetchedAt)
+            self.onPayloadDidChange?()
             AppLog.network.debug("Contribution restored from disk: login=\(login, privacy: .public)")
         } catch {
             // 解码失败（schema 演进 / 损坏）→ 清掉脏数据

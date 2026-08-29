@@ -20,7 +20,7 @@ struct StarcatReleaseWatchWidget: Widget {
         }
         .configurationDisplayName("widget.releaseWatch.displayName")
         .description("widget.releaseWatch.description")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
@@ -121,8 +121,7 @@ struct StarcatReleaseWatchWidgetView: View {
     }
 
     private func releaseList(snapshot: WidgetSnapshot) -> some View {
-        let limit = family == .systemLarge ? 6 : 3
-        return VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             StarcatWidgetHeader(
                 "widget.releaseWatch.title",
                 systemImage: "shippingbox",
@@ -136,7 +135,7 @@ struct StarcatReleaseWatchWidgetView: View {
             }
             .padding(.bottom, 6)
 
-            ForEach(Array(snapshot.unreadReleases.prefix(limit).enumerated()), id: \.element.id) {
+            ForEach(Array(snapshot.unreadReleases.prefix(3).enumerated()), id: \.element.id) {
                 index,
                 release in
                 Link(destination: release.openURL) {
@@ -144,7 +143,7 @@ struct StarcatReleaseWatchWidgetView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                if index < min(limit, snapshot.unreadReleases.count) - 1 {
+                if index < min(3, snapshot.unreadReleases.count) - 1 {
                     Divider().opacity(0.35)
                 }
             }

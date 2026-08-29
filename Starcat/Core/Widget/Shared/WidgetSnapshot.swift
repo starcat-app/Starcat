@@ -112,9 +112,52 @@ struct WidgetCollectionTrend: Codable, Equatable, Sendable {
     }
 }
 
+/// 贡献热力格使用 GitHub 官方五档分级，不在 Widget Extension 内重新分桶。
+enum WidgetContributionLevel: String, Codable, Equatable, Sendable {
+    case none = "NONE"
+    case firstQuartile = "FIRST_QUARTILE"
+    case secondQuartile = "SECOND_QUARTILE"
+    case thirdQuartile = "THIRD_QUARTILE"
+    case fourthQuartile = "FOURTH_QUARTILE"
+}
+
+/// 单日贡献的最小跨进程投影。
+struct WidgetContributionDay: Codable, Equatable, Sendable {
+    let date: String
+    let count: Int
+    let level: WidgetContributionLevel
+    let weekday: Int
+}
+
+/// 保留 GitHub 原始周边界，避免首尾不完整周在 Widget 中错列。
+struct WidgetContributionWeek: Codable, Equatable, Sendable {
+    let days: [WidgetContributionDay]
+}
+
+/// 雷达图使用的五类贡献统计。
+struct WidgetContributionStats: Codable, Equatable, Sendable {
+    let commits: Int
+    let issues: Int
+    let pullRequests: Int
+    let reviews: Int
+    let repositories: Int
+}
+
+/// GitHub 贡献卡片所需的完整只读投影。
+///
+/// 日期仅保留 `YYYY-MM-DD`，不携带用户名、Token 或仓库身份；五维统计和总数均为
+/// 当前 `ContributionsCollection` 时间窗口径。
+struct WidgetContributionActivity: Codable, Equatable, Sendable {
+    let totalContributions: Int
+    let todayContributions: Int
+    let bestDayContributions: Int
+    let weeks: [WidgetContributionWeek]
+    let stats: WidgetContributionStats
+}
+
 /// App Group 中 `widget-snapshot-v1.json` 的顶层契约。
 struct WidgetSnapshot: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
 
     let schemaVersion: Int
     let generatedAt: Date
@@ -124,6 +167,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     let unreadReleaseCount: Int
     let unreadReleases: [WidgetRelease]
     let collectionTrend: WidgetCollectionTrend?
+    let contributionActivity: WidgetContributionActivity?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -134,6 +178,7 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         case unreadReleaseCount
         case unreadReleases
         case collectionTrend
+        case contributionActivity
     }
 
     /// 构造快照时集中执行账户隔离不变量。
@@ -148,7 +193,8 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         rediscoveryRepository: WidgetRepository? = nil,
         unreadReleaseCount: Int = 0,
         unreadReleases: [WidgetRelease] = [],
-        collectionTrend: WidgetCollectionTrend? = nil
+        collectionTrend: WidgetCollectionTrend? = nil,
+        contributionActivity: WidgetContributionActivity? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
@@ -160,12 +206,14 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
             self.unreadReleaseCount = max(0, unreadReleaseCount)
             self.unreadReleases = Array(unreadReleases.prefix(6))
             self.collectionTrend = collectionTrend
+            self.contributionActivity = contributionActivity
         } else {
             self.focusRepositories = []
             self.rediscoveryRepository = nil
             self.unreadReleaseCount = 0
             self.unreadReleases = []
             self.collectionTrend = nil
+            self.contributionActivity = nil
         }
     }
 
@@ -198,6 +246,11 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
             collectionTrend: try container.decodeIfPresent(
                 WidgetCollectionTrend.self,
                 forKey: .collectionTrend
+            ),
+            // v1-v3 文件没有 GitHub 贡献投影；可选解码保证升级后仍能展示旧组件。
+            contributionActivity: try container.decodeIfPresent(
+                WidgetContributionActivity.self,
+                forKey: .contributionActivity
             )
         )
     }

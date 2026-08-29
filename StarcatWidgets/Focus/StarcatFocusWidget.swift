@@ -25,7 +25,7 @@ struct StarcatFocusWidget: Widget {
         }
         .configurationDisplayName("widget.focus.displayName")
         .description("widget.focus.description")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
@@ -106,10 +106,8 @@ struct StarcatFocusWidgetView: View {
         switch family {
         case .systemSmall:
             smallContent(repository: entry.repositories[0])
-        case .systemMedium:
-            repositoryDashboard(limit: 3, usesSplitLayout: true)
         default:
-            repositoryDashboard(limit: 6, usesSplitLayout: false)
+            repositoryDashboard(limit: 3)
         }
     }
 
@@ -163,8 +161,7 @@ struct StarcatFocusWidgetView: View {
 
     @ViewBuilder
     private func repositoryDashboard(
-        limit: Int,
-        usesSplitLayout: Bool
+        limit: Int
     ) -> some View {
         let repositories = Array(entry.repositories.prefix(limit))
         let secondaryRepositories = Array(repositories.dropFirst())
@@ -176,42 +173,23 @@ struct StarcatFocusWidgetView: View {
                     systemImage: "scope",
                     isStale: entry.base.isStale
                 )
-                .padding(.bottom, usesSplitLayout ? 8 : 5)
+                .padding(.bottom, 8)
 
-                if usesSplitLayout {
-                    HStack(alignment: .top, spacing: 14) {
-                        Link(destination: featuredRepository.openURL) {
-                            StarcatFocusFeaturedRepository(
-                                repository: featuredRepository,
-                                isExpanded: false
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if !secondaryRepositories.isEmpty {
-                            Divider().opacity(0.35)
-
-                            VStack(alignment: .leading, spacing: 0) {
-                                secondaryRepositoryList(secondaryRepositories)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                } else {
+                HStack(alignment: .top, spacing: 14) {
                     Link(destination: featuredRepository.openURL) {
-                        StarcatFocusFeaturedRepository(
-                            repository: featuredRepository,
-                            isExpanded: true
-                        )
+                        StarcatFocusFeaturedRepository(repository: featuredRepository)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     if !secondaryRepositories.isEmpty {
                         Divider().opacity(0.35)
-                        secondaryRepositoryList(secondaryRepositories)
+
+                        VStack(alignment: .leading, spacing: 0) {
+                            secondaryRepositoryList(secondaryRepositories)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }

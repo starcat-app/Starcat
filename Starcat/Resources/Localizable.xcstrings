@@ -461975,6 +461975,167 @@
         }
       }
     },
+    "widget.contribution.best" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Best" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "峰值" } }
+      }
+    },
+    "widget.contribution.empty.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Starcat to sync your latest GitHub contribution data." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 Starcat 同步最新 GitHub 贡献数据。" } }
+      }
+    },
+    "widget.contribution.empty.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution Data Not Ready" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贡献数据尚未就绪" } }
+      }
+    },
+    "widget.contribution.heatmap.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show your GitHub contribution activity over the past year." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看过去一年的 GitHub 贡献活跃度。" } }
+      }
+    },
+    "widget.contribution.heatmap.displayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution Heatmap" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贡献热力图" } }
+      }
+    },
+    "widget.contribution.openStarcat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Starcat to refresh contribution data" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开 Starcat 刷新贡献数据" } }
+      }
+    },
+    "widget.contribution.overview.accessibility %lld %lld %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today %1$lld contributions, best day %2$lld, %3$lld total contributions in the past year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今日 %1$lld 次贡献，单日峰值 %2$lld，过去一年共 %3$lld 次贡献" } }
+      }
+    },
+    "widget.contribution.overview.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "See today's contributions, best day, total, heatmap, and activity mix." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看今日贡献、单日峰值、总数、热力图与活动结构。" } }
+      }
+    },
+    "widget.contribution.overview.displayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution Overview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贡献概览" } }
+      }
+    },
+    "widget.contribution.radar.accessibility %lld %lld %lld %lld %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Commits %1$lld, issues %2$lld, pull requests %3$lld, reviews %4$lld, repositories %5$lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提交 %1$lld，Issue %2$lld，Pull Request %3$lld，评审 %4$lld，仓库 %5$lld" } }
+      }
+    },
+    "widget.contribution.radar.commit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Commit" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提交" } }
+      }
+    },
+    "widget.contribution.radar.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Compare commits, issues, pull requests, reviews, and repositories." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "对比提交、Issue、Pull Request、评审与仓库贡献。" } }
+      }
+    },
+    "widget.contribution.radar.displayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution Radar" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贡献雷达图" } }
+      }
+    },
+    "widget.contribution.radar.issue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Issue" } }
+      }
+    },
+    "widget.contribution.radar.pullRequest" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Pull Req" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "Pull Request" } }
+      }
+    },
+    "widget.contribution.radar.repository" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repo" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } }
+      }
+    },
+    "widget.contribution.radar.review" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Review" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "评审" } }
+      }
+    },
+    "widget.contribution.summary.accessibility %lld %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today %1$lld contributions, %2$lld total contributions in the past year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今日 %1$lld 次贡献，过去一年共 %2$lld 次贡献" } }
+      }
+    },
+    "widget.contribution.summary.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "See your recent heatmap, today's contributions, and total contributions." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看近期贡献热力图、今日贡献与贡献总数。" } }
+      }
+    },
+    "widget.contribution.summary.displayName" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Contribution Summary" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "贡献摘要" } }
+      }
+    },
+    "widget.contribution.today" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Today" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "今日" } }
+      }
+    },
+    "widget.contribution.total" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Total" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "总计" } }
+      }
+    },
+    "widget.contribution.total.accessibility %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld contributions in the past year" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "过去一年共 %lld 次贡献" } }
+      }
+    },
     "widget.focus.configuration.description" : {
       "extractionState" : "manual",
       "localizations" : {

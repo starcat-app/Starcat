@@ -15,5 +15,9 @@ struct StarcatWidgetBundle: WidgetBundle {
         StarcatRediscoveryWidget()
         StarcatReleaseWatchWidget()
         StarcatCollectionTrendWidget()
+        StarcatContributionHeatmapWidget()
+        StarcatContributionRadarWidget()
+        StarcatContributionSummaryWidget()
+        StarcatContributionOverviewWidget()
     }
 }

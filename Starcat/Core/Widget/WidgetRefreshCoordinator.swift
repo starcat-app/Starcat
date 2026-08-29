@@ -17,11 +17,17 @@ import WidgetKit
 final class WidgetRefreshCoordinator {
     private let builder: WidgetSnapshotBuilder
     private let publicationGate = WidgetSnapshotPublicationGate()
+    private weak var contributionService: ContributionService?
     private var observers: [NSObjectProtocol] = []
     private var pendingRefreshTask: Task<Void, Never>?
 
     init(database: any DatabaseManaging) {
         self.builder = WidgetSnapshotBuilder(database: database)
+    }
+
+    /// 装配主应用已有的贡献缓存；Extension 仍只读取匿名 App Group 快照。
+    func attachContributionService(_ contributionService: ContributionService) {
+        self.contributionService = contributionService
     }
 
     /// 注册会改变 Widget 投影的本地事件。
@@ -74,7 +80,9 @@ final class WidgetRefreshCoordinator {
         }
         do {
             let context = try makePublishingContext()
-            let snapshot = try await builder.build()
+            let snapshot = try await builder.build(
+                contributionCalendar: contributionService?.payload
+            )
             let enrichedSnapshot = await context.avatarCache.enrich(snapshot)
             // 账号切换或更新的发布请求可能发生在上面任一 await 期间。保存前最后
             // 校验 revision + user ID，避免旧账号 ready 覆盖刚写入的 preparing。
