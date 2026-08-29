@@ -373188,6 +373188,40 @@
         }
       }
     },
+    "settings.services.history.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Provides star growth history and trend data for repository insights."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为仓库洞察提供 Star 增长历史与趋势数据。"
+          }
+        }
+      }
+    },
+    "settings.services.history.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star History API"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Star 历史 API"
+          }
+        }
+      }
+    },
     "settings.services.intro" : {
       "localizations" : {
         "ar" : {

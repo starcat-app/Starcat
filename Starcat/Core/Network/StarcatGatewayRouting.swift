@@ -25,9 +25,8 @@ enum StarcatGatewayRouting {
         request.setValue(service.rawValue, forHTTPHeaderField: serviceHeaderName)
     }
 
-    /// Star History 已从 Discovery 拆成独立后端，但当前不进入「设置 → 服务」列表，
-    /// 因此使用专用入口写入稳定的 `history` 路由名，避免为了一个分流头扩大设置模型。
+    /// History 的兼容入口；路由值统一取独立 `ThirdPartyService.history`，避免再维护第二份字面量。
     static func applyHistoryServiceHeader(to request: inout URLRequest) {
-        request.setValue("history", forHTTPHeaderField: serviceHeaderName)
+        applyServiceHeader(to: &request, service: .history)
     }
 }

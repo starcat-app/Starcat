@@ -80,7 +80,7 @@ help: ## 列出所有可用命令
 	@echo "  make clean                  删除 build/ 目录（清掉 xcodebuild 的 DerivedData 与产物）"
 	@echo "  make start-supports         启动 supports/ 目录下的所有后端服务（trending / wiki / weekly / sharing / recommend / discovery）"
 	@echo "  make sync-fly-secrets              从 supports 各 API .env 并行同步 secrets 到 Fly.io"
-	@echo "  make setup-production-api-keys    从 starcat-api/.env 共用 Key 写入 Secrets.xcconfig（六槽同值）"
+	@echo "  make setup-production-api-keys    从 starcat-api/.env 共用 Key 写入 Secrets.xcconfig（七槽同值）"
 	@echo "  make deploy-pages                部署生产 nginx + 静态页到 https://starcat.ink"
 	@echo "  make deploy-pages-test           部署测试 nginx + 静态页到 https://test.starcat.ink"
 	@echo ""
@@ -258,7 +258,7 @@ stop-supports: ## 停止 supports/ 目录下的后端服务总入口
 sync-fly-secrets: ## 从 supports 各 API .env 同步 fly secrets
 	@$(MAKE) -C supports fly-secrets-all
 
-setup-production-api-keys: ## 从 starcat-api/.env 共用 Key 写入 Secrets.xcconfig（六槽同值）
+setup-production-api-keys: ## 从 starcat-api/.env 共用 Key 写入 Secrets.xcconfig（七槽同值）
 	@bash scripts/sync-production-api-keys-from-env.sh
 
 deploy-pages: ## 部署生产 nginx + 静态页到 https://starcat.ink

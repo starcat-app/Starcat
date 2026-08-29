@@ -1342,7 +1342,7 @@ final class AppDependencies {
         self.discoveryAPI = discoveryAPIInstance
         let starHistoryAPIInstance = StarHistoryAPI(
             baseURL: AppEndpoints.History.baseURL,
-            apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
+            apiKey: StarcatAPIKeyResolver.resolve(for: .history)
         )
         self.starHistoryAPI = starHistoryAPIInstance
         let repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
@@ -1977,9 +1977,8 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
-        case .discovery:
-            await discoveryAPI.updateBaseURL(target)
-            await starHistoryAPI.updateBaseURL(target)
+        case .discovery: await discoveryAPI.updateBaseURL(target)
+        case .history: await starHistoryAPI.updateBaseURL(target)
         }
 
         // 3) trending sidebar 语言列表跟随 baseURL 重拉（指向新地址的实际数据）。
@@ -2029,9 +2028,8 @@ final class AppDependencies {
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
         case .recommend: await recommendAPI.updateAPIKey(resolved)
-        case .discovery:
-            await discoveryAPI.updateAPIKey(resolved)
-            await starHistoryAPI.updateAPIKey(resolved)
+        case .discovery: await discoveryAPI.updateAPIKey(resolved)
+        case .history: await starHistoryAPI.updateAPIKey(resolved)
         }
 
         // 4) trending API Key 改了 → 立刻用新 key 重拉一次语言列表。

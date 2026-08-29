@@ -5,7 +5,7 @@
 #
 # 聚合时代（starcat-api）：从 supports/starcat-api/.env 的 STARCAT_SHARED_API_KEY
 # （或 TRENDING_API_KEYS 的第一个）读取**同一把** key，**只更新**
-# Configs/Secrets.xcconfig 里六个 STARCAT_PRODUCTION_API_KEY_* 行。
+# Configs/Secrets.xcconfig 里七个 STARCAT_PRODUCTION_API_KEY_* 行。
 #
 # ⚠️ 禁止整文件重写：License / OAuth / Aptabase / Sparkle / DEVELOPMENT_TEAM 等
 # 其它配置必须原样保留。
@@ -33,6 +33,7 @@ KEY_NAMES=(
   STARCAT_PRODUCTION_API_KEY_WIKI
   STARCAT_PRODUCTION_API_KEY_RECOMMEND
   STARCAT_PRODUCTION_API_KEY_DISCOVERY
+  STARCAT_PRODUCTION_API_KEY_HISTORY
 )
 
 # --- 旧逻辑（独立 *.fly.dev / 每仓一把 Key；整文件重写）已废弃，保留注释勿删 ---
@@ -110,7 +111,7 @@ PY
   mv "${tmp}" "${file}"
 }
 
-echo ">>> 从 starcat-api/.env 更新 Secrets.xcconfig 六个 API Key（原地替换，保留其它配置）"
+echo ">>> 从 starcat-api/.env 更新 Secrets.xcconfig 七个 API Key（原地替换，保留其它配置）"
 
 SHARED_KEY="$(read_shared_api_key)"
 
@@ -133,6 +134,6 @@ for name in "${KEY_NAMES[@]}"; do
   upsert_key_line "${CONFIG}" "${name}" "${SHARED_KEY}"
 done
 
-echo "  ok 六个 STARCAT_PRODUCTION_API_KEY_* <- starcat-api 共用 Key（原地更新）"
+echo "  ok 七个 STARCAT_PRODUCTION_API_KEY_* <- starcat-api 共用 Key（原地更新）"
 echo "ok 其它配置未改动"
 echo "  下一步: xcodegen generate && 重新 build App"

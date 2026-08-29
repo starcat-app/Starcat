@@ -34,11 +34,13 @@
 //  - v9（2026-07-08）：新增 Direct License 后端端点。该服务不放进「设置 → 服务」列表，
 //    因为它承载支付 / 授权，不应暴露为普通 BYOK 服务。
 //  - v10（2026-08-07）：后端引入 starcat-api 聚合网关文档化；当时默认 URL 仍各独立 `*.fly.dev`。
-//  - v11（2026-08-07 B 方案）：六个业务服务默认 productionURL 统一为
+//  - v11（2026-08-07 B 方案）：业务服务默认 productionURL 统一为
 //    `https://starcat-api.fly.dev`，业务/ping 请求带 `X-SC-Svc`，聚合 `/healthz` 不带头
 //    （见 `StarcatGatewayRouting`）。
 //    Path / ping envelope 不变；用户自托管仍可在设置页覆盖各服务 baseURL。
 //    审查结论见 docs/4-工程进度/重构专项/API聚合与Kit抽离专项/03-Starcat客户端契约审查.md。
+//  - v12（2026-08-29）：History 从 Discovery 的设置槽拆出，拥有独立 URL / API Key；
+//    生产仍走同一聚合 Host，本地可单独指向 `http://127.0.0.1:5014`。
 //
 //  非 REST 链接（GitHub 网页跳转、第三方装饰链接）**不**放本文件：
 //    - GitHub 网页跳转（github.com/{login}, github.com/{owner}/{repo} 等）→ `GitHubURLs.swift`
@@ -66,7 +68,7 @@ import SwiftUI
 /// 不可实例化，仅暴露嵌套命名空间。
 enum AppEndpoints {
 
-    // MARK: - 自建后端 1/6：Weekly（阮一峰周刊推荐 GitHub 项目）
+    // MARK: - 自建后端 1/7：Weekly（阮一峰周刊推荐 GitHub 项目）
 
     /// Weekly 多来源后端 endpoint 集合。
     enum Weekly {
@@ -119,7 +121,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 2/6：Trending（GitHub Trending 抓取）
+    // MARK: - 自建后端 2/7：Trending（GitHub Trending 抓取）
 
     /// GitHub Trending 后端 endpoint 集合。
     enum Trending {
@@ -153,7 +155,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 3/6：Sharing（AI 分享卡）
+    // MARK: - 自建后端 3/7：Sharing（AI 分享卡）
 
     /// AI 分享卡后端 endpoint 集合。
     ///
@@ -193,7 +195,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 4/6：Wiki（外部文档站索引探测）
+    // MARK: - 自建后端 4/7：Wiki（外部文档站索引探测）
 
     /// DeepWiki / Zread / Google Code Wiki 收录状态探测后端。
     enum Wiki {
@@ -221,7 +223,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 5/6：Recommend（相似仓库推荐）
+    // MARK: - 自建后端 5/7：Recommend（相似仓库推荐）
 
     /// 相似仓库推荐后端 endpoint 集合。
     enum Recommend {
@@ -251,7 +253,7 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 自建后端 6/6：Discovery（探索发现与榜单）
+    // MARK: - 自建后端 6/7：Discovery（探索发现与榜单）
 
     /// 探索发现后端 endpoint 集合。
     enum Discovery {
@@ -291,10 +293,6 @@ enum AppEndpoints {
             /// `GET /healthz` —— 状态栏服务可用性巡检端点。
             static let healthz = "/healthz"
 
-            /// 公开仓库星标历史；稳定 repo ID 和范围由 query 参数提供。
-            static func starHistory(owner: String, repo: String) -> String {
-                "/api/v1/repos/\(owner)/\(repo)/star-history"
-            }
         }
 
         @MainActor
@@ -303,22 +301,25 @@ enum AppEndpoints {
         }
     }
 
-    // MARK: - 聚合后端 7：History（公开仓库 Star 历史）
+    // MARK: - 自建后端 7/7：History（公开仓库 Star 历史）
 
     /// Star History 从 Discovery 迁出的独立服务。
     ///
-    /// 这一期只切换业务路由，不新增设置卡片；baseURL 继续跟随 Discovery 的自托管地址，
-    /// API Key 也沿用同一份聚合服务 Key。这样不引入用户设置迁移，同时本地验证仍可通过
-    /// Discovery 自定义 URL 指向聚合服务。
+    /// 独立设置槽让本地 History 验证不再改写 Discovery 地址；生产默认仍走聚合网关。
     enum History {
         static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
 
         @MainActor
         static var baseURL: URL {
-            Discovery.baseURL
+            AppEndpoints.resolve(production: productionURL, service: .history)
         }
 
         enum Paths {
+            /// `GET /api/v1/ping` —— 设置页测试连接，需 Bearer Auth。
+            static let ping = "/api/v1/ping"
+            /// `GET /healthz` —— 状态栏进程可用性巡检，无需鉴权。
+            static let healthz = "/healthz"
+
             static func starHistory(owner: String, repo: String) -> String {
                 "/api/v1/repos/\(owner)/\(repo)/star-history"
             }
@@ -554,6 +555,7 @@ enum AppEndpoints {
         case .wiki:     return Wiki.baseURL
         case .recommend: return Recommend.baseURL
         case .discovery: return Discovery.baseURL
+        case .history:   return History.baseURL
         }
     }
 
@@ -567,6 +569,7 @@ enum AppEndpoints {
         case .wiki:     return Wiki.productionURL
         case .recommend: return Recommend.productionURL
         case .discovery: return Discovery.productionURL
+        case .history:   return History.productionURL
         }
     }
 

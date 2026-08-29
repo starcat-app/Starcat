@@ -22,6 +22,38 @@ import Foundation
 @Suite("ThirdPartyService")
 struct ThirdPartyServiceTests {
 
+    @Test("History 是独立可配置服务")
+    func historyIsFirstClassConfigurableService() {
+        #expect(ThirdPartyService.allCases.map(\.rawValue).contains("history"))
+    }
+
+    @Test("History 配置不污染 Discovery")
+    @MainActor
+    func historyConfigurationIsIndependentFromDiscovery() {
+        let suiteName = "test.starcat.history-service.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+
+        settings.setCustomURL("http://127.0.0.1:5014", for: .history)
+        settings.setCustomAPIKey("history-local-key", for: .history)
+
+        #expect(settings.customServiceURL(for: .history) == "http://127.0.0.1:5014")
+        #expect(settings.customServiceAPIKey(for: .history) == "history-local-key")
+        #expect(settings.customServiceURL(for: .discovery) == nil)
+        #expect(settings.customServiceAPIKey(for: .discovery) == nil)
+    }
+
+    @Test("History 使用独立端点和生产 Key 槽")
+    func historyUsesIndependentEndpointAndProductionKeySlot() {
+        let localBaseURL = URL(string: "http://127.0.0.1:5014")!
+
+        #expect(ThirdPartyService.history.productionAPIKeyInfoPlistKey == "STARCAT_PRODUCTION_API_KEY_HISTORY")
+        #expect(ThirdPartyService.history.pingURL(base: localBaseURL).path == "/api/v1/ping")
+        #expect(ThirdPartyService.history.healthURL(base: localBaseURL).path == "/healthz")
+        #expect(ThirdPartyService.history.productionURL == AppEndpoints.History.productionURL)
+    }
+
     // MARK: - validate 通用规范化
 
     @Test("validate: 空字符串 → .empty")
@@ -190,7 +222,7 @@ struct ThirdPartyServiceTests {
 
     // MARK: - healthURL
 
-    @Test("healthURL: 6 个服务统一命中 /healthz")
+    @Test("healthURL: 7 个服务统一命中 /healthz")
     func healthURLUnifiedPath() {
         for service in ThirdPartyService.allCases {
             let url = service.healthURL(base: URL(string: "https://api.local")!)

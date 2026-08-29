@@ -7,8 +7,8 @@
 //  设计要点：
 //  - 用户可以为每个 `ThirdPartyService` 填入自部署后的 URL，留空 = 走 fly.io 生产默认值。
 //  - 校验只做格式（http/https + host 非空），不发网络请求；「测试」走 `/api/v1/ping` 探测。
-//  - 进入 Tab 时并发对四个服务各跑一次 ping（与手动点「测试」同逻辑），结果落在各卡片 Test 行左侧。
-//  - intro 行右侧汇总 pill 由四路 ping 聚合；点击跳转公开状态页（Better Stack status page）。
+//  - 进入 Tab 时并发对全部服务各跑一次 ping（与手动点「测试」同逻辑），结果落在各卡片 Test 行左侧。
+//  - intro 行右侧汇总 pill 由全部 ping 聚合；点击跳转公开状态页（Better Stack status page）。
 //  - 修改后**热生效**——通过 `AppDependencies.setServiceURL(_:for:)` 同时写
 //    `AppSettings.customServiceURLs` 持久化 + 推送到对应 API actor `updateBaseURL`。
 //  - 整页用 `ThirdPartyService.allCases` 自动渲染，新增服务时无需改本视图代码。
@@ -33,7 +33,7 @@ struct ServicesSettingsTab: View {
     @State private var draftAPIKeys: [String: String] = [:]
     @State private var revealAPIKey: [String: Bool] = [:]
     @State private var healthResults: [String: HealthCheckOutcome] = [:]
-    /// 正在进行 ping 的服务 id（支持进入页并发四路探测）。
+    /// 正在进行 ping 的服务 id（支持进入页并发探测全部服务）。
     @State private var probingServiceIDs: Set<String> = []
     @State private var savingServiceID: String?
 

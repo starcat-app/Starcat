@@ -63,6 +63,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     case recommend
     /// 探索发现后端（GET /api/v1/discovery/*）。
     case discovery
+    /// 公开仓库 Star 历史后端（GET /api/v1/repos/{owner}/{repo}/star-history）。
+    case history
 
     var id: String { rawValue }
 
@@ -75,6 +77,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return "STARCAT_PRODUCTION_API_KEY_WIKI"
         case .recommend: return "STARCAT_PRODUCTION_API_KEY_RECOMMEND"
         case .discovery: return "STARCAT_PRODUCTION_API_KEY_DISCOVERY"
+        case .history:   return "STARCAT_PRODUCTION_API_KEY_HISTORY"
         }
     }
 
@@ -89,6 +92,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return "settings.services.wiki.title"
         case .recommend: return "settings.services.recommend.title"
         case .discovery: return "settings.services.discovery.title"
+        case .history:   return "settings.services.history.title"
         }
     }
 
@@ -101,6 +105,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return "settings.services.wiki.description"
         case .recommend: return "settings.services.recommend.description"
         case .discovery: return "settings.services.discovery.description"
+        case .history:   return "settings.services.history.description"
         }
     }
 
@@ -116,6 +121,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return "book.pages"
         case .recommend: return "point.3.connected.trianglepath.dotted"
         case .discovery: return "safari"
+        case .history:   return "chart.xyaxis.line"
         }
     }
 
@@ -129,6 +135,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return "#8B5CF6" // Violet：与知识库 / 文档入口区分现有三个服务
         case .recommend: return "#34D399" // Emerald：与"发现相似项目"的推荐语义区分现有服务
         case .discovery: return "#F59E0B" // Amber：探索入口用暖色，与推荐 emerald 区分
+        case .history:   return "#007AFF" // System blue：与洞察页 Star 趋势图保持同一语义
         }
     }
 
@@ -157,6 +164,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return URL(string: "https://github.com/starcat-app/starcat-wiki-api")!
         case .recommend: return URL(string: "https://github.com/starcat-app/starcat-recommend-api")!
         case .discovery: return URL(string: "https://github.com/starcat-app/starcat-discovery-api")!
+        case .history:   return URL(string: "https://github.com/starcat-app/starcat-history-api")!
         }
     }
 
@@ -189,12 +197,14 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Recommend.Paths.ping, to: normalized)
         case .discovery:
             return AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.ping, to: normalized)
+        case .history:
+            return AppEndpoints.appendPath(AppEndpoints.History.Paths.ping, to: normalized)
         }
     }
 
     /// 给定生效 baseURL 构造状态栏服务可用性巡检 URL（2026-06-21）。
     ///
-    /// `/healthz` 是后端进程级健康检查，不需要 Authorization。默认聚合 URL 下六个服务会
+    /// `/healthz` 是后端进程级健康检查，不需要 Authorization。默认聚合 URL 下七个服务会
     /// 命中同一网关 healthz；设置页「测试连接」仍走 `pingURL(base:)`，校验服务类型 + API Key。
     func healthURL(base: URL) -> URL {
         let normalized = normalizedBaseURL(base)
@@ -211,6 +221,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
             return AppEndpoints.appendPath(AppEndpoints.Recommend.Paths.healthz, to: normalized)
         case .discovery:
             return AppEndpoints.appendPath(AppEndpoints.Discovery.Paths.healthz, to: normalized)
+        case .history:
+            return AppEndpoints.appendPath(AppEndpoints.History.Paths.healthz, to: normalized)
         }
     }
 
