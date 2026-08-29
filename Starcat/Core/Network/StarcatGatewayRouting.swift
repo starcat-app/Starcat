@@ -17,11 +17,17 @@ enum StarcatGatewayRouting {
     /// 与网关 `gateway.HeaderService` 一致。
     static let serviceHeaderName = "X-SC-Svc"
 
-    /// 六个业务 API 的默认聚合入口（不含 license）。
+    /// 七个业务 API 的默认聚合入口（不含 license）。
     static let aggregatedProductionURL = URL(string: "https://starcat-api.fly.dev")!
 
     /// 在请求上写入分流头。`service` 的 rawValue 即网关 byName 键。
     static func applyServiceHeader(to request: inout URLRequest, service: ThirdPartyService) {
         request.setValue(service.rawValue, forHTTPHeaderField: serviceHeaderName)
+    }
+
+    /// Star History 已从 Discovery 拆成独立后端，但当前不进入「设置 → 服务」列表，
+    /// 因此使用专用入口写入稳定的 `history` 路由名，避免为了一个分流头扩大设置模型。
+    static func applyHistoryServiceHeader(to request: inout URLRequest) {
+        request.setValue("history", forHTTPHeaderField: serviceHeaderName)
     }
 }

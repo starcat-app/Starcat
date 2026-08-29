@@ -318,7 +318,8 @@ final class AppDependencies {
     /// 探索发现与榜单查询客户端。
     /// 构造期不发网络请求；Explore 入口按用户筛选懒加载发现 / 热门 / 新发布数据。
     let discoveryAPI: DiscoveryAPI
-    /// 公共仓库星标历史客户端；与 Discovery 共用服务地址和 API Key，但保持独立 HTTP 契约。
+    /// 公共仓库星标历史客户端；业务路由已迁到独立 History 服务。
+    /// 本期仍复用 Discovery 设置中的聚合地址与公共 API Key，不扩大设置模型。
     let starHistoryAPI: StarHistoryAPI
 
     /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
@@ -1340,7 +1341,7 @@ final class AppDependencies {
         )
         self.discoveryAPI = discoveryAPIInstance
         let starHistoryAPIInstance = StarHistoryAPI(
-            baseURL: AppEndpoints.Discovery.baseURL,
+            baseURL: AppEndpoints.History.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .discovery)
         )
         self.starHistoryAPI = starHistoryAPIInstance

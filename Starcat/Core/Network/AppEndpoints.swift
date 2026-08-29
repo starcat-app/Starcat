@@ -8,7 +8,7 @@
 //  `BaseURL + Paths.xxx` 形式登记，**禁止**在调用方文件里硬编码 path 字符串。
 //
 //  组织结构：每个后端服务一个嵌套 enum 命名空间（Weekly / Trending / Sharing / Wiki /
-//  Recommend / Discovery /
+//  Recommend / Discovery / History /
 //  GitHubREST / GitHubOAuth），命名空间内含三件套：
 //    - `baseURL`        ：服务的 base URL；自建后端走 AppSettings 可热更新，固定端走 let。
 //    - `Paths`           ：path 常量目录（扁平命名，工厂方法处理 path 参数）。
@@ -303,6 +303,28 @@ enum AppEndpoints {
         }
     }
 
+    // MARK: - 聚合后端 7：History（公开仓库 Star 历史）
+
+    /// Star History 从 Discovery 迁出的独立服务。
+    ///
+    /// 这一期只切换业务路由，不新增设置卡片；baseURL 继续跟随 Discovery 的自托管地址，
+    /// API Key 也沿用同一份聚合服务 Key。这样不引入用户设置迁移，同时本地验证仍可通过
+    /// Discovery 自定义 URL 指向聚合服务。
+    enum History {
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
+
+        @MainActor
+        static var baseURL: URL {
+            Discovery.baseURL
+        }
+
+        enum Paths {
+            static func starHistory(owner: String, repo: String) -> String {
+                "/api/v1/repos/\(owner)/\(repo)/star-history"
+            }
+        }
+    }
+
     // MARK: - 独立数据收集服务（不走聚合 Gateway）
 
     /// 公开 Star 数据贡献使用独立域名和鉴权边界，不属于 ThirdPartyService 设置，
@@ -558,6 +580,7 @@ enum AppEndpoints {
         AppLog.network.info("endpoint.wiki     = \(Wiki.baseURL.absoluteString, privacy: .public)")
         AppLog.network.info("endpoint.recommend= \(Recommend.baseURL.absoluteString, privacy: .public)")
         AppLog.network.info("endpoint.discovery= \(Discovery.baseURL.absoluteString, privacy: .public)")
+        AppLog.network.info("endpoint.history  = \(History.baseURL.absoluteString, privacy: .public)")
     }
 
     // MARK: - Private

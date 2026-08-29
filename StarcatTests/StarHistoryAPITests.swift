@@ -2,7 +2,7 @@
 //  StarHistoryAPITests.swift
 //  StarcatTests
 //
-//  验证 Discovery 星标历史客户端的请求契约、状态码映射和隐私边界。
+//  验证独立 History 服务的请求契约、状态码映射和隐私边界。
 //
 
 import Foundation
@@ -70,6 +70,7 @@ struct StarHistoryAPITests {
         #expect(received.url?.query?.contains("repo_id=42") == true)
         #expect(received.url?.query?.contains("range=1y") == true)
         #expect(received.value(forHTTPHeaderField: "Authorization") == "Bearer discovery-key")
+        #expect(received.value(forHTTPHeaderField: "X-SC-Svc") == "history")
         #expect(received.value(forHTTPHeaderField: "If-None-Match") == "\"history-v0\"")
         #expect(etag == "\"history-v1\"")
         #expect(series.repoID == 42)

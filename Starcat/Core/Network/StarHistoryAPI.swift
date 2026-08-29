@@ -160,7 +160,7 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
             throw StarHistoryAPIError.invalidRepository
         }
 
-        let path = AppEndpoints.Discovery.Paths.starHistory(
+        let path = AppEndpoints.History.Paths.starHistory(
             owner: request.owner,
             repo: request.name
         )
@@ -183,7 +183,7 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
         if let apiKey, !apiKey.isEmpty {
             urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
-        StarcatGatewayRouting.applyServiceHeader(to: &urlRequest, service: .discovery)
+        StarcatGatewayRouting.applyHistoryServiceHeader(to: &urlRequest)
         if let ifNoneMatch, !ifNoneMatch.isEmpty {
             urlRequest.setValue(ifNoneMatch, forHTTPHeaderField: "If-None-Match")
         }
