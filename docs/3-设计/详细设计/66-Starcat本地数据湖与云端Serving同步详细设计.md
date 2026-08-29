@@ -260,14 +260,13 @@ source=gh_archive
 precision=estimated
 ```
 
-为了兼容现有 UI 的绝对 Star 数，服务可按当前 GitHub `stargazers_count` 建立单一当前锚点：
+为了兼容现有 UI 的绝对 Star 数，服务按当前 GitHub `stargazers_count` 对累计 WatchEvent 形状做单一当前锚点校准：
 
 ```text
-baseline = max(0, current_stars - cumulative_events(anchor_date))
-stars(day) = baseline + cumulative_events(day)
+stars(day) = round(current_stars * cumulative_events(day) / cumulative_events(anchor_date))
 ```
 
-这是“不考虑 Unstar”的估算模型，不做多锚点插值、群体校准或 Unstar 重算。当前锚点不可用时返回可解释的 building/unavailable，不把纯事件累计伪装为权威 Star 总数。
+这是“不还原 Unstar”的估算模型，不做多锚点插值、群体校准或 Unstar 重算；输出单调钳制并让覆盖末点等于当前公开 Star 数。当前锚点不可用时返回可解释的 building/unavailable，不把纯事件累计伪装为权威 Star 总数。
 
 ### 7.2 每日流程
 
@@ -322,7 +321,7 @@ Content-Type: application/zip
 
 1. 校验文件白名单、manifest、checksum 和 SQLite `quick_check`。
 2. 校验 schema、日期连续性和 source watermark。
-3. 在单个事务中 Upsert `repo_star_daily` 并登记 `applied_deltas`。
+3. 在单个事务中把当日计数合并进按 repo 压缩的 Serving 时间序列，并登记 `applied_deltas`。
 4. 成功后推进 active watermark 并更新受影响 repo 的 ETag。
 5. 同一 `delta_id + checksum` 重传返回成功；同一 `delta_id` 内容不同返回 409。
 6. 任一步骤失败都不改变 active watermark。

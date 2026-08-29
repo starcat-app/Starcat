@@ -104,13 +104,13 @@ anchorStars = anchorDate 的 stargazers_count
 在明确“不处理 Unstar”的前提下：
 
 ```text
-baseline = max(0, anchorStars - cumulative(anchorDate))
-estimatedStars(d) = baseline + cumulative(d)
+estimatedStars(d) = round(anchorStars * cumulative(d) / cumulative(anchorDate))
 ```
 
 约束：
 
-- `baseline` 只用于把覆盖期内 WatchEvent 累计值转换成 UI 需要的绝对 Star 数。
+- 比例校准只用于把覆盖期内 WatchEvent 累计形状映射到 UI 需要的绝对 Star 数，不还原具体 Unstar。
+- 输出按日期单调不减并钳制到 `anchorStars`，最后一个覆盖点固定等于当前公开 Star 数。
 - 2016 年以前创建的仓库只声明覆盖从 2016-01-01 开始，不能展示为完整生命周期。
 - 当前锚点不存在或已过期时，任务进入 building/unavailable，不把纯事件数伪装成绝对 Star 数。
 - 新锚点只影响下一次重建结果，不回写或伪造 Raw WatchEvent。
@@ -225,22 +225,25 @@ CREATE TABLE repositories (
 
 服务在公共查询和锚点刷新前复核仓库仍然公开。Public 变为 Private/Internal 后停止返回公共曲线，并从 active Serving 结果移除。
 
-### 8.2 日级 WatchEvent
+### 8.2 压缩 WatchEvent 时间序列
 
 ```sql
-CREATE TABLE repo_star_daily (
-  repo_id INTEGER NOT NULL,
-  event_date TEXT NOT NULL,
-  event_count INTEGER NOT NULL,
+CREATE TABLE repo_history_series (
+  repo_id INTEGER PRIMARY KEY,
+  coverage_start_day INTEGER NOT NULL,
+  coverage_end_day INTEGER NOT NULL,
+  event_total INTEGER NOT NULL,
+  point_count INTEGER NOT NULL,
+  encoding TEXT NOT NULL,
+  series BLOB NOT NULL,
   source_watermark TEXT NOT NULL,
-  PRIMARY KEY(repo_id, event_date)
+  series_checksum TEXT NOT NULL
 );
-
-CREATE INDEX idx_repo_star_daily_lookup
-ON repo_star_daily(repo_id, event_date);
 ```
 
-每个 repo 最多只有覆盖期内每天一个聚合点。API 查询时按日期排序并计算累计值；不保存每个事件，也不为没有 WatchEvent 的日期制造一行。
+本地 History Silver 仍按 `repo_id + event_date + event_count` 保存日级 Parquet，便于审计、增量和重建。云端 Serving 为避免约 `2.09 亿` repo-day 行及其索引开销，改为每个 repo 一行：`series` 使用版本化的 unsigned varint 依次编码“相邻日期差值、当日事件数”。API 通过整数主键读取单行、解码并计算累计曲线；不保存每个事件，也不为没有 WatchEvent 的日期制造点。
+
+编码必须确定性、可校验并设置 point/event 上限。未知 `encoding`、校验失败、日期非递增或累计溢出均视为 Store 损坏，禁止返回部分曲线。
 
 ### 8.3 Delta 和部署
 
@@ -282,7 +285,7 @@ manifest.json
 checksums.json
 ```
 
-服务端校验文件白名单、路径安全、manifest 版本、checksum、SQLite `quick_check`、必需表、日期连续性和 source watermark。验证通过后在一个事务内 Upsert 并推进 active watermark。
+服务端校验文件白名单、路径安全、manifest 版本、checksum、SQLite `quick_check`、必需表、日期连续性和 source watermark。验证通过后在一个事务内解码、追加并重新编码受影响的 `repo_history_series`，登记 Delta 后再推进 active watermark。
 
 ### 9.2 Full Snapshot
 
@@ -310,35 +313,32 @@ GET /api/v1/repos/{owner}/{repo}/star-history
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "data": {
     "repo_id": 41881900,
     "full_name": "microsoft/vscode",
     "range": "1y",
-    "status": "ready",
+    "current_stars": 168742,
+    "coverage_start": "2016-01-01",
+    "generated_at": "2026-08-26T00:00:00Z",
     "model_version": "watch-events-no-unstar-v1",
-    "coverage": {
-      "starts_on": "2016-01-01",
-      "ends_on": "2026-08-25"
-    },
+    "active_watermark": "2026-08-25",
     "points": [
       {
         "date": "2026-08-25",
-        "stars": 168742,
+        "count": 168742,
         "source": "gh_archive",
         "precision": "estimated"
       }
-    ],
-    "sources": ["gh_archive"]
+    ]
   },
   "meta": {
-    "generated_at": "2026-08-26T00:00:00Z",
-    "cache_status": "fresh"
+    "cache": "fresh"
   }
 }
 ```
 
-客户端 v1 DTO 无法识别的新字段必须可忽略。`source/precision/points` 语义保持，切换 endpoint 不要求重做 UI。
+响应必须保持现有 Starcat v1 DTO 所需的 `current_stars`、`coverage_start`、`generated_at` 和 `points[].count` 字段；`model_version`、`active_watermark` 等只能作为可忽略的新增字段。`source/precision/points` 语义保持，切换 endpoint 不要求重做 UI。
 
 ### 10.1 Building
 
@@ -501,7 +501,7 @@ history_store_bytes
 2. History 与 Trainer 共享本地唯一 WatchEvent Raw Dataset，但各自生成独立派生产物。
 3. 公共曲线不处理 Unstar，采用单一当前锚点和 WatchEvent 累积估算。
 4. 当前阶段不建设 History 用户贡献、群体快照、多锚点或参与者删除重算。
-5. 云端只接收 repo-day 聚合 Delta 和完整 Snapshot，不接收原始事件或 actor。
+5. 云端只接收 repo-day 聚合 Delta 和按 repo 压缩的完整 Snapshot，不接收原始事件或 actor。
 6. 每日同步 Delta、每月生成 Snapshot；失败不推进 active watermark。
 7. 现有 Starcat API DTO、Repository 合并和 UI 保持兼容，仅迁移 endpoint。
 8. Discovery History 是迁移期实现，稳定后必须删除。
