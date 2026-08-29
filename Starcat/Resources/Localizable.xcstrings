@@ -125834,19 +125834,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Suggested"
+            "value" : "Below threshold. Review manually."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有建议"
+            "value" : "低于设置的阈值，请手动处理"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "有建議"
+            "value" : "低於設定的閾值，請手動處理"
           }
         }
       }

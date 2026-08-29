@@ -37,21 +37,28 @@ final class GitHubStarListAIGroupingPresentationStore {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
 
     private static let pageSize = 100
+    /// 运行中最多每秒刷新十次审核快照；进度仍足够及时，同时给滚动和行布局留出主线程时间。
+    private static let refreshInterval: Duration = .milliseconds(100)
 
-    /// 连续的任务状态写入会让 revision 快速递增；短暂合并后只生成一次完整快照。
+    /// 连续的任务状态写入会让 revision 快速递增；固定时间窗内只生成一次最新快照。
+    /// 不能在每次 revision 时取消并重启计时，否则持续运行时既可能饿死刷新，也会在短间隔内反复重建全量结果。
     func scheduleSynchronize(from session: GitHubStarListAIGroupingSession, immediate: Bool = false) {
-        refreshTask?.cancel()
-        let revision = session.presentationRevision
+        if immediate {
+            synchronizeImmediately(from: session)
+            return
+        }
+        guard refreshTask == nil else { return }
         refreshTask = Task { [weak self, weak session] in
-            guard let self, let session else { return }
-            if !immediate {
-                do {
-                    try await Task.sleep(for: .milliseconds(20))
-                } catch {
-                    return
-                }
+            guard let self else { return }
+            do {
+                try await Task.sleep(for: Self.refreshInterval)
+            } catch {
+                self.refreshTask = nil
+                return
             }
-            guard !Task.isCancelled, revision == session.presentationRevision else { return }
+            self.refreshTask = nil
+            guard !Task.isCancelled, let session else { return }
+            // 不保留旧 revision；时间窗结束时直接读取会话最新值，一次吸收期间所有变化。
             synchronize(from: session)
         }
     }
@@ -64,6 +71,7 @@ final class GitHubStarListAIGroupingPresentationStore {
 
     func synchronizeImmediately(from session: GitHubStarListAIGroupingSession) {
         refreshTask?.cancel()
+        refreshTask = nil
         synchronize(from: session)
     }
 

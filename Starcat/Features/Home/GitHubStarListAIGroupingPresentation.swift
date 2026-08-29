@@ -151,6 +151,15 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     var hasActionableSuggestions: Bool { !actionableSuggestions.isEmpty }
     var hasSelection: Bool { !selectedListIDs.isEmpty }
     var isIgnored: Bool { isIgnoredByUser || automaticallyIgnoredFailure != nil }
+    /// 只有仍等待用户决策的完成态建议才创建完整编辑器。
+    /// 已应用、已忽略和失败等终态只保留摘要，避免长列表为不可操作行重复布局整套 Chip。
+    var canReviewSuggestions: Bool {
+        status == .completed
+            && !isApplied
+            && !isIgnored
+            && applyFailure == nil
+            && hasSuggestions
+    }
     var isActionable: Bool {
         !isIgnored && (status == .analyzing
             || status == .failed

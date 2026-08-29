@@ -26,6 +26,7 @@ struct GitHubStarListAIGroupingPresentationTests {
 
         #expect(suggested.matches(filter: .suggestions, searchText: ""))
         #expect(suggested.matches(filter: .actionable, searchText: ""))
+        #expect(suggested.canReviewSuggestions)
         #expect(!suggested.matches(filter: .noMatch, searchText: ""))
         #expect(noMatch.matches(filter: .noMatch, searchText: ""))
         #expect(!noMatch.matches(filter: .actionable, searchText: ""))
@@ -89,6 +90,7 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(applied.actionableSuggestions.isEmpty)
         #expect(applied.matches(filter: .applied, searchText: ""))
         #expect(!applied.matches(filter: .suggestions, searchText: ""))
+        #expect(!applied.canReviewSuggestions)
 
         let failure = GitHubStarListAIApplyFailure(kind: .transport, detail: "offline")
         let applyFailed = makeItem(
@@ -100,6 +102,7 @@ struct GitHubStarListAIGroupingPresentationTests {
         )
         #expect(applyFailed.matches(filter: .applyFailed, searchText: ""))
         #expect(!applyFailed.matches(filter: .suggestions, searchText: ""))
+        #expect(!applyFailed.canReviewSuggestions)
     }
 
     @Test("组织 OAuth 限制不可重试，传输错误可重试")

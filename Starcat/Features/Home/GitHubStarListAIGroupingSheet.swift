@@ -192,16 +192,36 @@ struct GitHubStarListAIGroupingSheet: View {
                 filter: presentation.filter,
                 availableLists: presentation.snapshot.availableLists,
                 hasMore: presentation.canLoadMore,
-                onToggleList: session.toggleSelection,
-                onSelectAllSuggestions: session.selectAllSuggestions,
-                onClearSelection: session.clearSelection,
-                onApply: { session.applySelected(repoIDs: Set([$0])) },
-                onIgnore: session.ignore,
-                onRetryAnalysis: session.retryAnalysis,
-                onRetryApply: session.retryApply,
+                onToggleList: { repoID, listID in
+                    performReviewUpdate { session.toggleSelection(repoID: repoID, listID: listID) }
+                },
+                onSelectAllSuggestions: { repoID in
+                    performReviewUpdate { session.selectAllSuggestions(repoID: repoID) }
+                },
+                onClearSelection: { repoID in
+                    performReviewUpdate { session.clearSelection(repoID: repoID) }
+                },
+                onApply: { repoID in
+                    performReviewUpdate { session.applySelected(repoIDs: Set([repoID])) }
+                },
+                onIgnore: { repoID in
+                    performReviewUpdate { session.ignore(repoID: repoID) }
+                },
+                onRetryAnalysis: { repoID in
+                    performReviewUpdate { session.retryAnalysis(repoID: repoID) }
+                },
+                onRetryApply: { repoID in
+                    performReviewUpdate { session.retryApply(repoID: repoID) }
+                },
                 onLoadMore: presentation.loadMore
             )
         }
+    }
+
+    /// 用户主动操作必须立即反映到当前行；后台 Worker 的连续状态变化仍走 100ms 合并刷新。
+    private func performReviewUpdate(_ update: () -> Void) {
+        update()
+        presentation.synchronizeImmediately(from: session)
     }
 
     private var progressSummary: some View {

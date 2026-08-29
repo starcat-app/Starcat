@@ -60,6 +60,7 @@ struct GitHubStarListAIGroupingResultList: View {
                             onRetryAnalysis: { onRetryAnalysis(item.id) },
                             onRetryApply: { onRetryApply(item.id) }
                         )
+                        .equatable()
                         .automaticListPagination(
                             appearingIndex: index,
                             visibleItemCount: items.count,
@@ -107,7 +108,7 @@ struct GitHubStarListAIGroupingResultList: View {
     }
 }
 
-private struct GitHubStarListAIGroupingResultRow: View {
+private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     let item: GitHubStarListAIReviewItem
     let availableLists: [GitHubStarListAIListDisplay]
     let isExpanded: Bool
@@ -126,6 +127,14 @@ private struct GitHubStarListAIGroupingResultRow: View {
     /// 复选框 16 + 间距 8 + Logo 26 + 间距 10，确保建议与操作始终从状态文案列开始。
     private let contentColumnLeadingInset: CGFloat = 60
 
+    /// 行操作始终绑定同一个 Sheet 会话，真正影响渲染的只有数据、分组配置和展开态。
+    /// 忽略每次父视图刷新都会重建的闭包，避免一个仓库进度变化让其它可见行重复计算 body。
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.item == rhs.item
+            && lhs.availableLists == rhs.availableLists
+            && lhs.isExpanded == rhs.isExpanded
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
@@ -133,7 +142,7 @@ private struct GitHubStarListAIGroupingResultRow: View {
                     .frame(width: 16, height: 22)
                 summaryButton
             }
-            if showsInlineReview {
+            if item.canReviewSuggestions {
                 suggestionReviewContent
                     .padding(.leading, contentColumnLeadingInset)
             }
@@ -148,18 +157,20 @@ private struct GitHubStarListAIGroupingResultRow: View {
     @ViewBuilder
     private var selectionButton: some View {
         // 左侧只留勾选列，状态图标跟在仓库名后面，logo 和名称才能跨行对齐。
-        if item.hasSelection {
-            Button("githubStarLists.aiGrouping.selection.clearRepo", systemImage: "checkmark.square.fill", action: onClearSelection)
-                .labelStyle(.iconOnly)
-                .foregroundStyle(.tint)
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-        } else if item.hasActionableSuggestions {
-            Button("githubStarLists.aiGrouping.action.acceptAll", systemImage: "square", action: onSelectAllSuggestions)
-                .labelStyle(.iconOnly)
-                .foregroundStyle(.secondary)
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
+        if item.canReviewSuggestions {
+            if item.hasSelection {
+                Button("githubStarLists.aiGrouping.selection.clearRepo", systemImage: "checkmark.square.fill", action: onClearSelection)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.tint)
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+            } else {
+                Button("githubStarLists.aiGrouping.action.acceptAll", systemImage: "square", action: onSelectAllSuggestions)
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+            }
         } else {
             Color.clear
                 .frame(width: 16, height: 16)
@@ -472,19 +483,10 @@ private struct GitHubStarListAIGroupingResultRow: View {
             || item.status == .failed
     }
 
-    /// 正常建议始终直接可审阅；折叠只保留失败诊断，避免用户先展开才能应用。
-    private var showsInlineReview: Bool {
-        item.automaticallyIgnoredFailure == nil
-            && !item.isIgnoredByUser
-            && item.applyFailure == nil
-            && item.status != .failed
-            && item.hasSuggestions
-    }
-
     private var statusLabelColor: Color {
         if item.applyFailure != nil || item.status == .failed {
             .red
-        } else if item.hasActionableSuggestions {
+        } else if item.canReviewSuggestions {
             .accentColor
         } else {
             .secondary
