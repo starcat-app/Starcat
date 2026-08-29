@@ -2,7 +2,7 @@
 //  StarHistoryAPITests.swift
 //  StarcatTests
 //
-//  验证独立 History 服务的请求契约、状态码映射和隐私边界。
+//  验证 History 原始事件契约、本地校准与隐私边界。
 //
 
 import Foundation
@@ -12,15 +12,15 @@ import Testing
 @Suite("Star History API", .serialized)
 struct StarHistoryAPITests {
 
-    @Test("200 响应应携带鉴权与 ETag 并解码类型化序列")
-    func readyResponseUsesExpectedContract() async throws {
+    @Test("events 200 应本地校准并携带鉴权与 ETag")
+    func readyEventsResponseNormalizesLocally() async throws {
         URLProtocolStub.reset()
         URLProtocolStub.requestHandler = { request in
             let response = HTTPURLResponse(
                 url: request.url!,
                 statusCode: 200,
                 httpVersion: "HTTP/1.1",
-                headerFields: ["ETag": "\"history-v1\""]
+                headerFields: ["ETag": "\"history-events-v1\""]
             )!
             let body = Data(
                 """
@@ -29,23 +29,13 @@ struct StarHistoryAPITests {
                   "data": {
                     "repo_id": 42,
                     "full_name": "octo/history",
-                    "current_stars": 120,
-                    "range": "1y",
-                    "coverage_start": "2025-07-27",
-                    "generated_at": "2026-07-27T08:30:00Z",
-                    "points": [
-                      {
-                        "date": "2025-07-27",
-                        "count": 80,
-                        "source": "gh_archive",
-                        "precision": "estimated"
-                      },
-                      {
-                        "date": "2026-07-27",
-                        "count": 120,
-                        "source": "discovery_snapshot",
-                        "precision": "snapshot"
-                      }
+                    "coverage_start": "2026-01-01",
+                    "coverage_end": "2026-08-25",
+                    "event_total": 4,
+                    "generated_at": "2026-08-29T12:00:00Z",
+                    "events": [
+                      { "date": "2026-01-01", "count": 1 },
+                      { "date": "2026-08-25", "count": 3 }
                     ]
                   }
                 }
@@ -56,9 +46,9 @@ struct StarHistoryAPITests {
         let api = makeAPI()
 
         let result = try await api.fetch(
-            request: request(),
-            range: .oneYear,
-            ifNoneMatch: "\"history-v0\""
+            request: request(currentStars: 100),
+            range: .all,
+            ifNoneMatch: "\"history-events-v0\""
         )
         let received = try #require(URLProtocolStub.receivedRequests.first)
 
@@ -66,18 +56,20 @@ struct StarHistoryAPITests {
             Issue.record("Expected ready response")
             return
         }
-        #expect(received.url?.path == "/api/v1/repos/octo/history/star-history")
+        #expect(received.url?.path == "/api/v1/repos/octo/history/star-history/events")
         #expect(received.url?.query?.contains("repo_id=42") == true)
-        #expect(received.url?.query?.contains("range=1y") == true)
-        #expect(received.value(forHTTPHeaderField: "Authorization") == "Bearer discovery-key")
+        #expect(received.url?.query?.contains("current_stars") != true)
+        #expect(received.value(forHTTPHeaderField: "Authorization") == "Bearer history-key")
         #expect(received.value(forHTTPHeaderField: "X-SC-Svc") == "history")
-        #expect(received.value(forHTTPHeaderField: "If-None-Match") == "\"history-v0\"")
-        #expect(etag == "\"history-v1\"")
+        #expect(received.value(forHTTPHeaderField: "If-None-Match") == "\"history-events-v0\"")
+        #expect(etag == "\"history-events-v1\"")
         #expect(series.repoID == 42)
         #expect(series.fullName == "octo/history")
-        #expect(series.currentStars == 120)
-        #expect(series.points.map(\.source) == [.ghArchive, .discoverySnapshot])
-        #expect(series.points.map(\.precision) == [.estimated, .snapshot])
+        #expect(series.currentStars == 100)
+        #expect(series.points.count == 2)
+        #expect(series.points.last?.count == 100)
+        #expect(series.points.map(\.source) == [.ghArchive, .ghArchive])
+        #expect(series.points.map(\.precision) == [.estimated, .estimated])
     }
 
     @Test("202 与 304 应作为协议内状态返回")
@@ -160,12 +152,12 @@ struct StarHistoryAPITests {
     @Test("私有仓库应在构造网络请求前拒绝")
     func privateRepositoryNeverLeavesDevice() async throws {
         URLProtocolStub.reset()
-        var privateRequest = request()
-        privateRequest = StarHistoryRequest(
-            repoID: privateRequest.repoID,
-            owner: privateRequest.owner,
-            name: privateRequest.name,
-            isPrivate: true
+        let privateRequest = StarHistoryRequest(
+            repoID: 42,
+            owner: "octo",
+            name: "history",
+            isPrivate: true,
+            currentStars: 10
         )
 
         do {
@@ -181,15 +173,39 @@ struct StarHistoryAPITests {
         #expect(URLProtocolStub.receivedRequests.isEmpty)
     }
 
+    @Test("本地 Normalize 应把终点锚到 currentStars")
+    func normalizeAnchorsLastPointToCurrentStars() throws {
+        let fetchedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let points = try StarHistoryCurveBuilder.normalize(
+            events: [
+                .init(date: StarHistoryDateCodec.date(from: "2026-01-01")!, count: 1),
+                .init(date: StarHistoryDateCodec.date(from: "2026-08-25")!, count: 3)
+            ],
+            currentStars: 100,
+            fetchedAt: fetchedAt
+        )
+        #expect(points.count == 2)
+        #expect(points[0].count == 25)
+        #expect(points[1].count == 100)
+        #expect(points[0].source == .ghArchive)
+        #expect(points[0].precision == .estimated)
+    }
+
     private func makeAPI() -> StarHistoryAPI {
         StarHistoryAPI(
-            baseURL: URL(string: "https://discovery.example.test")!,
-            apiKey: "discovery-key",
+            baseURL: URL(string: "https://history.example.test")!,
+            apiKey: "history-key",
             session: URLProtocolStub.ephemeralSession()
         )
     }
 
-    private func request() -> StarHistoryRequest {
-        StarHistoryRequest(repoID: 42, owner: "octo", name: "history", isPrivate: false)
+    private func request(currentStars: Int = 120) -> StarHistoryRequest {
+        StarHistoryRequest(
+            repoID: 42,
+            owner: "octo",
+            name: "history",
+            isPrivate: false,
+            currentStars: currentStars
+        )
     }
 }

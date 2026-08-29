@@ -2,12 +2,13 @@
 //  StarHistoryAPI.swift
 //  Starcat
 //
-//  starcat-discovery-api 仓库星标历史客户端。
+//  starcat-history-api 客户端。
 //
 //  关键约束：
-//  - 私有仓库在构造 URL 前直接拒绝，任何仓库身份都不会发送给公共 Discovery 服务。
-//  - 200 / 202 / 304 都是协议内状态，调用方不应把 building 或 not-modified 当成通用失败。
-//  - ETag 只由 Repository 保存和复用；API 层保持纯 HTTP / DTO 映射职责。
+//  - Starcat 走 `/star-history/events` 拿原始日事件，再用本地 Repo.starsCount 校准；
+//    这样不消耗服务端 GitHub metadata 额度，曲线终点也与详情页 hero 一致。
+//  - 私有仓库在构造 URL 前直接拒绝，任何仓库身份都不会发送给公共 History 服务。
+//  - 200 / 202 / 304 都是协议内状态；ETag 只由 Repository 保存和复用。
 //
 
 import Foundation
@@ -25,12 +26,15 @@ struct StarHistoryRequest: Equatable, Sendable {
     let owner: String
     let name: String
     let isPrivate: Bool
+    /// 本地缓存的当前星标数；校准锚点，不发给 events 接口。
+    let currentStars: Int
 
-    init(repoID: Int64, owner: String, name: String, isPrivate: Bool) {
+    init(repoID: Int64, owner: String, name: String, isPrivate: Bool, currentStars: Int) {
         self.repoID = repoID
         self.owner = owner
         self.name = name
         self.isPrivate = isPrivate
+        self.currentStars = max(0, currentStars)
     }
 
     init(repo: Repo) {
@@ -38,6 +42,7 @@ struct StarHistoryRequest: Equatable, Sendable {
         owner = repo.owner
         name = repo.name
         isPrivate = repo.isPrivate
+        currentStars = max(0, repo.starsCount)
     }
 }
 
@@ -154,13 +159,15 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
             throw StarHistoryAPIError.privateRepository
         }
         guard request.repoID > 0,
+              request.currentStars >= 0,
               isValidPathPart(request.owner),
               isValidPathPart(request.name)
         else {
             throw StarHistoryAPIError.invalidRepository
         }
 
-        let path = AppEndpoints.History.Paths.starHistory(
+        // Starcat 专用原始事件接口：服务端不打 GitHub，客户端用本地 starsCount 校准。
+        let path = AppEndpoints.History.Paths.starHistoryEvents(
             owner: request.owner,
             repo: request.name
         )
@@ -169,8 +176,7 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
             throw StarHistoryAPIError.invalidRepository
         }
         components.queryItems = [
-            URLQueryItem(name: "repo_id", value: String(request.repoID)),
-            URLQueryItem(name: "range", value: range.rawValue)
+            URLQueryItem(name: "repo_id", value: String(request.repoID))
         ]
         guard let url = components.url else {
             throw StarHistoryAPIError.invalidRepository
@@ -209,7 +215,12 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
 
         switch response.statusCode {
         case 200:
-            return try decodeReady(data: data, response: response)
+            return try decodeEventsReady(
+                data: data,
+                response: response,
+                request: request,
+                range: range
+            )
         case 202:
             return .building(retryAfter: retryAfter(from: response) ?? Self.defaultRetryAfter)
         case 304:
@@ -219,52 +230,56 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
         }
     }
 
-    private func decodeReady(
+    private func decodeEventsReady(
         data: Data,
-        response: HTTPURLResponse
+        response: HTTPURLResponse,
+        request: StarHistoryRequest,
+        range: StarHistoryRange
     ) throws -> StarHistoryAPIResult {
-        let envelope: StarcatEnvelope<StarHistoryResponseDTO>
+        let envelope: StarcatEnvelope<StarHistoryEventsResponseDTO>
         do {
-            envelope = try decoder.decode(StarcatEnvelope<StarHistoryResponseDTO>.self, from: data)
+            envelope = try decoder.decode(StarcatEnvelope<StarHistoryEventsResponseDTO>.self, from: data)
         } catch {
             throw StarHistoryAPIError.decoding(error.localizedDescription)
         }
 
         let dto = envelope.data
         guard dto.repoID > 0,
-              dto.currentStars >= 0,
-              let range = StarHistoryRange(rawValue: dto.range),
               let generatedAt = parseRFC3339(dto.generatedAt)
         else {
-            throw StarHistoryAPIError.decoding("Invalid star history response metadata.")
+            throw StarHistoryAPIError.decoding("Invalid star history events metadata.")
         }
-        let points = try dto.points.map { point -> StarHistoryPoint in
-            guard point.count >= 0,
-                  let date = StarHistoryDateCodec.date(from: point.date),
-                  let source = StarHistorySource(rawValue: point.source),
-                  source.isRemote,
-                  let precision = StarHistoryPrecision(rawValue: point.precision)
+        guard dto.repoID == request.repoID else {
+            throw StarHistoryAPIError.repositoryIDMismatch
+        }
+
+        let events = try dto.events.map { event -> StarHistoryCurveBuilder.DailyEvent in
+            guard event.count > 0,
+                  let date = StarHistoryDateCodec.date(from: event.date)
             else {
-                throw StarHistoryAPIError.decoding("Invalid star history point.")
+                throw StarHistoryAPIError.decoding("Invalid star history event.")
             }
-            return StarHistoryPoint(
-                date: date,
-                count: point.count,
-                source: source,
-                precision: precision,
-                fetchedAt: generatedAt
-            )
+            return StarHistoryCurveBuilder.DailyEvent(date: date, count: event.count)
         }
+
+        let normalized = try StarHistoryCurveBuilder.normalize(
+            events: events,
+            currentStars: request.currentStars,
+            fetchedAt: generatedAt
+        )
+        let points = StarHistoryCurveBuilder.selectRange(normalized, range: range)
         let coverageStart = dto.coverageStart.flatMap(StarHistoryDateCodec.date(from:))
+            ?? normalized.first?.date
+
         return .ready(
             series: StarHistoryRemoteSeries(
                 repoID: dto.repoID,
                 fullName: dto.fullName,
-                currentStars: dto.currentStars,
+                currentStars: request.currentStars,
                 range: range,
                 coverageStart: coverageStart,
                 generatedAt: generatedAt,
-                points: points.sorted { $0.date < $1.date }
+                points: points
             ),
             etag: response.value(forHTTPHeaderField: "ETag")
         )
@@ -281,6 +296,7 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
         case 401:
             return .unauthorized
         case 404:
+            // HISTORY_NOT_FOUND 与仓库不存在都映射为 notFound；上层用 stale 提示即可。
             return .repositoryNotFound
         case 409:
             return .repositoryIDMismatch
@@ -315,29 +331,27 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
     }
 }
 
-private struct StarHistoryResponseDTO: Decodable, Sendable {
+private struct StarHistoryEventsResponseDTO: Decodable, Sendable {
     let repoID: Int64
     let fullName: String
-    let currentStars: Int
-    let range: String
     let coverageStart: String?
+    let coverageEnd: String?
+    let eventTotal: Int64
     let generatedAt: String
-    let points: [StarHistoryPointDTO]
+    let events: [StarHistoryEventDTO]
 
     enum CodingKeys: String, CodingKey {
         case repoID = "repo_id"
         case fullName = "full_name"
-        case currentStars = "current_stars"
-        case range
         case coverageStart = "coverage_start"
+        case coverageEnd = "coverage_end"
+        case eventTotal = "event_total"
         case generatedAt = "generated_at"
-        case points
+        case events
     }
 }
 
-private struct StarHistoryPointDTO: Decodable, Sendable {
+private struct StarHistoryEventDTO: Decodable, Sendable {
     let date: String
     let count: Int
-    let source: String
-    let precision: String
 }

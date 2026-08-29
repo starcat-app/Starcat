@@ -323,6 +323,11 @@ enum AppEndpoints {
             static func starHistory(owner: String, repo: String) -> String {
                 "/api/v1/repos/\(owner)/\(repo)/star-history"
             }
+
+            /// Starcat 专用：原始日事件，客户端用本地 starsCount 校准。
+            static func starHistoryEvents(owner: String, repo: String) -> String {
+                "/api/v1/repos/\(owner)/\(repo)/star-history/events"
+            }
         }
     }
 
