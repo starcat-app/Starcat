@@ -248,11 +248,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 icon: "square.dashed"
             )
             sessionFactRow(
-                title: "githubStarLists.aiGrouping.preflight.autoOrganizeGroups",
-                value: autoOrganizeGroupCount,
-                icon: "bolt.horizontal"
-            )
-            sessionFactRow(
                 title: "githubStarLists.aiGrouping.filter.automaticallyIgnored",
                 value: snapshot.preparedAutomaticallyIgnoredRepoCount,
                 icon: "exclamationmark.circle"
@@ -348,10 +343,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
         snapshot.preflightGroups.filter { !$0.hasAIRule }.count
     }
 
-    private var autoOrganizeGroupCount: Int {
-        snapshot.preflightGroups.filter(\.autoApplyEnabled).count
-    }
-
     private var filteredGroups: [GitHubStarListAIPreflightGroupDisplay] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return snapshot.preflightGroups }
@@ -399,7 +390,6 @@ private struct GitHubStarListAIGroupingRuleCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded: Bool
     @State private var instruction: String
-    @State private var autoApplyEnabled: Bool
     @State private var saveTask: Task<Void, Never>?
 
     init(group: GitHubStarListAIPreflightGroupDisplay, session: GitHubStarListAIGroupingSession) {
@@ -407,7 +397,6 @@ private struct GitHubStarListAIGroupingRuleCard: View {
         self.session = session
         _isExpanded = State(initialValue: !group.hasAIRule)
         _instruction = State(initialValue: group.list.instruction)
-        _autoApplyEnabled = State(initialValue: group.autoApplyEnabled)
     }
 
     private var hasRuleDraft: Bool {
@@ -468,16 +457,6 @@ private struct GitHubStarListAIGroupingRuleCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Toggle(isOn: $autoApplyEnabled) {
-                    Text("githubStarLists.aiGrouping.preflight.autoOrganize")
-                        .font(interfaceScale.font(.caption))
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .disabled(!hasRuleDraft)
-                .help(hasRuleDraft
-                      ? LocalizedStringKey("githubStarLists.editor.aiRule.autoApply")
-                      : LocalizedStringKey("githubStarLists.editor.aiRule.autoApply.disabledHelp"))
             } else {
                 Text(verbatim: hasRuleDraft
                      ? instruction
@@ -494,13 +473,7 @@ private struct GitHubStarListAIGroupingRuleCard: View {
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
         .onChange(of: instruction) { _, _ in
-            if !hasRuleDraft {
-                autoApplyEnabled = false
-            }
             scheduleSave()
-        }
-        .onChange(of: autoApplyEnabled) { _, _ in
-            saveNow()
         }
         .onDisappear {
             saveTask?.cancel()
@@ -521,19 +494,15 @@ private struct GitHubStarListAIGroupingRuleCard: View {
         }
     }
 
-    private func saveNow() {
-        saveTask?.cancel()
-        Task { await persistIfNeeded() }
-    }
-
     private func persistIfNeeded() async {
         let normalized = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        let enabled = !normalized.isEmpty && autoApplyEnabled
-        guard normalized != group.list.instruction || enabled != group.autoApplyEnabled else { return }
+        let currentRule = session.rulesByListID[group.list.id]
+        guard normalized != currentRule?.instruction else { return }
         await session.saveRule(
             listID: group.list.id,
             instruction: instruction,
-            autoApplyEnabled: autoApplyEnabled
+            // 手动整理页只编辑 AI 判断规则；后台写入授权仍由分组编辑器单独控制。
+            autoApplyEnabled: currentRule?.autoApplyEnabled ?? group.autoApplyEnabled
         )
     }
 }

@@ -124,32 +124,69 @@ struct GitHubStarListAIGroupingPolicyTests {
     }
 }
 
-@Suite("GitHub Star List 自动分组分页")
-struct GitHubStarListAutoGroupingPagingTests {
-    @Test("后台分页推进到下一批并在末页归零")
-    func advancesAndWrapsWithoutRepeatingLatestRepos() {
-        let repos = (1...105).map { makeRepo(id: Int64($0)) }
+@Suite("GitHub Star List 自动分组候选")
+struct GitHubStarListAutoGroupingCandidateTests {
+    @Test("截取批量前排除已有分组、v34 自动忽略和当前规则已尝试仓库")
+    func excludesResolvedRepositoriesBeforeApplyingLimit() {
+        let repos = (1...10).map { makeRepo(id: Int64($0), starredAt: "2026-08-\($0)") }
 
-        let first = AutoTidyScheduler.automaticGroupingPage(from: repos, offset: 0, limit: 50)
-        let second = AutoTidyScheduler.automaticGroupingPage(from: repos, offset: first.nextOffset, limit: 50)
-        let last = AutoTidyScheduler.automaticGroupingPage(from: repos, offset: second.nextOffset, limit: 50)
+        let picked = GitHubStarListAIGroupingSession.automaticRepositories(
+            from: repos,
+            existingListIDsByRepo: [10: ["group"]],
+            automaticallyIgnoredRepoIDs: [9],
+            attemptedRepositoryIDs: [8],
+            sortOrder: .recentlyStarred,
+            limit: 5
+        )
 
-        #expect(first.repos.map(\.id) == Array(1...50).map(Int64.init))
-        #expect(second.repos.map(\.id) == Array(51...100).map(Int64.init))
-        #expect(last.repos.map(\.id) == Array(101...105).map(Int64.init))
-        #expect(last.nextOffset == 0)
+        #expect(picked.map(\.id) == [7, 6, 5, 4, 3])
     }
 
-    @Test("仓库数量缩小时过期游标钳制到最后一条")
-    func clampsStaleOffsetAfterRepositoryCountShrinks() {
-        let repos = (1...3).map { makeRepo(id: Int64($0)) }
-        let page = AutoTidyScheduler.automaticGroupingPage(from: repos, offset: 99, limit: 50)
+    @Test("规则顺序不改变指纹，规则内容或阈值变化会改变指纹")
+    func fingerprintTracksOnlyDecisionConfiguration() {
+        let first = GitHubStarListAIContext(
+            listId: "ai",
+            name: "AI",
+            instruction: "AI repositories",
+            autoApplyEnabled: true
+        )
+        let second = GitHubStarListAIContext(
+            listId: "skills",
+            name: "Skills",
+            instruction: "Agent skills",
+            autoApplyEnabled: true
+        )
+        let baseline = GitHubStarListAIGroupingSession.automaticConfigurationFingerprint(
+            candidates: [first, second],
+            confidenceThreshold: 0.9
+        )
+        let reordered = GitHubStarListAIGroupingSession.automaticConfigurationFingerprint(
+            candidates: [second, first],
+            confidenceThreshold: 0.9
+        )
+        let changedThreshold = GitHubStarListAIGroupingSession.automaticConfigurationFingerprint(
+            candidates: [first, second],
+            confidenceThreshold: 0.85
+        )
+        let changedRule = GitHubStarListAIGroupingSession.automaticConfigurationFingerprint(
+            candidates: [
+                GitHubStarListAIContext(
+                    listId: first.listId,
+                    name: first.name,
+                    instruction: "Only local AI repositories",
+                    autoApplyEnabled: true
+                ),
+                second
+            ],
+            confidenceThreshold: 0.9
+        )
 
-        #expect(page.repos.map(\.id) == [3])
-        #expect(page.nextOffset == 0)
+        #expect(baseline == reordered)
+        #expect(baseline != changedThreshold)
+        #expect(baseline != changedRule)
     }
 
-    private func makeRepo(id: Int64) -> Repo {
+    private func makeRepo(id: Int64, starredAt: String? = nil) -> Repo {
         Repo(
             id: id,
             owner: "owner",
@@ -173,7 +210,7 @@ struct GitHubStarListAutoGroupingPagingTests {
             pushedAt: nil,
             createdAt: nil,
             updatedAt: nil,
-            starredAt: nil,
+            starredAt: starredAt,
             cachedAt: nil
         )
     }

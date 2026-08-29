@@ -836,39 +836,41 @@ struct AISettingsTab: View {
     private var githubListGroupingSection: some View {
         Section {
             DisclosureGroup(isExpanded: $isGitHubListGroupingExpanded) {
-                // DisclosureGroup 内不会自动生成 Form 行分隔线；显式分隔两项配置，
-                // 保持与展开前的视觉节奏一致。
                 VStack(alignment: .leading, spacing: 0) {
                     Toggle(isOn: githubListGroupingBinding(\.enabled)) {
-                        autoTidyLabel(
-                            title: "settings.githubListGrouping.enabled.title",
-                            description: "settings.githubListGrouping.enabled.description"
-                        )
+                        // 触发方式已经改为下方独立配置，不能继续展示旧的“固定在启动和
+                        // 同步后执行”说明，否则会与实际开关状态冲突。
+                        Text("settings.githubListGrouping.enabled.title")
                     }
                     .padding(.vertical, 8)
 
-                    Divider()
+                    Group {
+                        githubListGroupingTriggerGroup
+                        githubListGroupingRangeGroup
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        LabeledContent("settings.githubListGrouping.threshold.label") {
-                            Text(verbatim: githubListGroupingThresholdPercentString)
-                                .font(.callout.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(.tint)
+                        Divider()
+                        autoTidySectionHeader("settings.autoTidy.actions.label")
+                        VStack(alignment: .leading, spacing: 6) {
+                            LabeledContent("settings.githubListGrouping.threshold.label") {
+                                Text(verbatim: githubListGroupingThresholdPercentString)
+                                    .font(.callout.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(.tint)
+                            }
+                            Slider(
+                                value: githubListGroupingBinding(\.confidenceThreshold),
+                                in: 0.5...1.0,
+                                step: 0.05
+                            )
+                            .controlSize(.mini)
+                            Text(String(
+                                format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
+                                githubListGroupingThresholdPercentString
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
-                        Slider(
-                            value: githubListGroupingBinding(\.confidenceThreshold),
-                            in: 0.5...1.0,
-                            step: 0.05
-                        )
-                        .controlSize(.mini)
-                        Text(String(
-                            format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
-                            githubListGroupingThresholdPercentString
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.vertical, 8)
                     .disabled(!settings.githubStarListAutoGroupingSettings.enabled)
                     .opacity(settings.githubStarListAutoGroupingSettings.enabled ? 1.0 : 0.5)
                 }
@@ -885,6 +887,88 @@ struct AISettingsTab: View {
             if isGitHubListGroupingExpanded {
                 Text("settings.githubListGrouping.footer")
             }
+        }
+    }
+
+    /// 仓库分组拥有自己的触发策略，不能借用标签整理开关；否则用户关闭“同步后加标签”
+    /// 时会意外停止 GitHub Lists 整理，或反过来被不相关的触发器启动。
+    @ViewBuilder
+    private var githubListGroupingTriggerGroup: some View {
+        Divider()
+        autoTidySectionHeader("settings.autoTidy.triggers.label")
+
+        autoTidyRow {
+            Toggle(
+                "settings.autoTidy.trigger.onLaunch",
+                isOn: githubListGroupingBinding(\.triggerOnLaunch)
+            )
+        }
+        Divider()
+        autoTidyRow {
+            Toggle(
+                "settings.autoTidy.trigger.onSync",
+                isOn: githubListGroupingBinding(\.triggerOnSync)
+            )
+        }
+        Divider()
+        autoTidyRow {
+            Toggle(
+                "settings.autoTidy.trigger.scheduled",
+                isOn: githubListGroupingBinding(\.triggerScheduled)
+            )
+        }
+        Divider()
+        autoTidyRow {
+            LabeledContent {
+                TextField(
+                    "",
+                    value: githubListGroupingScheduledIntervalHoursBinding,
+                    format: .number.grouping(.never)
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .help("1 - 24")
+            } label: {
+                Text("settings.autoTidy.trigger.scheduledInterval")
+            }
+            .disabled(!settings.githubStarListAutoGroupingSettings.triggerScheduled)
+            .opacity(settings.githubStarListAutoGroupingSettings.triggerScheduled ? 1.0 : 0.5)
+        }
+    }
+
+    /// 后台分组只从“未分组”仓库里按此范围取候选；v34 持久化的 OAuth 限制仓库会在
+    /// 截取批量前排除，不能占用用户配置的单轮数量。
+    @ViewBuilder
+    private var githubListGroupingRangeGroup: some View {
+        Divider()
+        autoTidySectionHeader("settings.autoTidy.range.label")
+
+        autoTidyRow {
+            LabeledContent {
+                TextField(
+                    "",
+                    value: githubListGroupingMaxPerRunBinding,
+                    format: .number.grouping(.never)
+                )
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+                .help("5 - 500")
+            } label: {
+                Text("settings.autoTidy.range.maxPerRun")
+            }
+        }
+        Divider()
+        autoTidyRow {
+            Picker(selection: githubListGroupingBinding(\.sortOrder)) {
+                ForEach(AutoTidySortOrder.allCases) { order in
+                    Text(order.displayNameKey).tag(order)
+                }
+            } label: {
+                Text("settings.autoTidy.range.sortOrder")
+            }
+            .pickerStyle(.menu)
         }
     }
 
@@ -1239,6 +1323,29 @@ struct AISettingsTab: View {
                 var s = self.settings.autoTidySettings
                 s.scheduledIntervalHours = AutoTidySettings.clampScheduledIntervalHours(newValue)
                 self.settings.autoTidySettings = s
+            }
+        )
+    }
+
+    private var githubListGroupingMaxPerRunBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.githubStarListAutoGroupingSettings.maxPerRun },
+            set: { newValue in
+                var grouping = self.settings.githubStarListAutoGroupingSettings
+                grouping.maxPerRun = GitHubStarListAutoGroupingSettings.clampMaxPerRun(newValue)
+                self.settings.githubStarListAutoGroupingSettings = grouping
+            }
+        )
+    }
+
+    private var githubListGroupingScheduledIntervalHoursBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.githubStarListAutoGroupingSettings.scheduledIntervalHours },
+            set: { newValue in
+                var grouping = self.settings.githubStarListAutoGroupingSettings
+                grouping.scheduledIntervalHours =
+                    GitHubStarListAutoGroupingSettings.clampScheduledIntervalHours(newValue)
+                self.settings.githubStarListAutoGroupingSettings = grouping
             }
         )
     }

@@ -15,6 +15,7 @@
 //  - GitHub 是远端真源。远端失败时绝不伪造本地成功，单仓失败也不阻断其余仓库。
 //
 
+import CryptoKit
 import Foundation
 import Observation
 
@@ -30,6 +31,14 @@ enum GitHubStarListAIGroupingSessionMode: Equatable, Sendable {
     case idle
     case manual
     case automatic
+}
+
+/// 后台调度器需要区分“没有启动条件”和“当前规则已经处理完”，否则无法安全保存
+/// 低置信度仓库的有限队列进度。
+enum GitHubStarListAIAutomaticStartResult: Equatable, Sendable {
+    case unavailable
+    case upToDate(configurationFingerprint: String)
+    case started(configurationFingerprint: String, repositoryCount: Int)
 }
 
 enum GitHubStarListAIApplyFailureKind: Equatable, Sendable {
@@ -251,6 +260,11 @@ final class GitHubStarListAIGroupingSession {
     var onMembershipsChanged: (() -> Void)?
     /// 自动忽略标记变化只需刷新 Sidebar 预检快照，不必重载当前仓库列表。
     var onAutoIgnoredReposChanged: (() -> Void)?
+    /// 后台分析已完成但没有达到自动应用阈值时，通知调度器保存“本规则已尝试”。
+    /// 应用失败不走这里，保留给下一次触发重试。
+    var onAutomaticSuggestionsDeferred: (
+        (_ configurationFingerprint: String, _ repoIDs: Set<Int64>) -> Void
+    )?
 
     /// 完整仓库只在点「开始整理」后加载。开始页若观察这个数组，1965 条赋值会拖住主线程 SwiftUI。
     @ObservationIgnored private var preparedRepos: [Repo] = []
@@ -263,6 +277,10 @@ final class GitHubStarListAIGroupingSession {
     private var rateLimitCooldownUntil: Date?
     /// 人工整理启动时冻结自动确认阈值；暂停、继续和单仓重试必须保持同一语义。
     @ObservationIgnored private var manualAutomaticThreshold: Double?
+    /// 当前后台任务对应的规则与阈值快照。只在 automatic mode 生命周期内有效。
+    @ObservationIgnored private var automaticConfigurationFingerprint: String?
+    /// 五个 Worker 的低置信度/无匹配结果先在内存合并，整轮结束只写一次 UserDefaults。
+    @ObservationIgnored private var automaticDeferredRepoIDs: Set<Int64> = []
 
     /// 固定五个长期 Worker；不要为每个仓库创建一个 Task，否则大列表会产生无界任务。
     private static let defaultConcurrency = 5
@@ -602,9 +620,13 @@ final class GitHubStarListAIGroupingSession {
     /// 后台自动分组使用独立会话，但不保留审核选择。人工任务优先，运行中时后台直接让位。
     func startAutomatic(
         repos: [Repo],
-        confidenceThreshold: Double
-    ) async -> Bool {
-        guard mode != .manual, !isRunning, !isApplying, !repos.isEmpty else { return false }
+        confidenceThreshold: Double,
+        maxPerRun: Int,
+        sortOrder: AutoTidySortOrder,
+        attemptedRepositoryIDs: Set<Int64>,
+        previousConfigurationFingerprint: String?
+    ) async -> GitHubStarListAIAutomaticStartResult {
+        guard mode != .manual, !isRunning, !isApplying, !repos.isEmpty else { return .unavailable }
         do {
             async let listsResult = listService.allLists()
             async let rulesResult = listService.allAIRules()
@@ -617,25 +639,83 @@ final class GitHubStarListAIGroupingSession {
             preparedAutomaticallyIgnoredRepoIDs = Set(try await autoIgnoredResult.map(\.repoId))
         } catch {
             AppLog.ai.error("[githubListGrouping] automatic context failed: \(error.localizedDescription, privacy: .public)")
-            return false
+            return .unavailable
         }
         let automaticCandidates = candidateContexts.filter(\.autoApplyEnabled)
-        guard !automaticCandidates.isEmpty else { return false }
-        let eligibleRepos = repos.filter { repo in
-            (existingListIDsByRepo[repo.id] ?? []).isEmpty
-                && !preparedAutomaticallyIgnoredRepoIDs.contains(repo.id)
+        guard !automaticCandidates.isEmpty else { return .unavailable }
+        let threshold = GitHubStarListAutoGroupingSettings.clamp(confidenceThreshold)
+        let configurationFingerprint = Self.automaticConfigurationFingerprint(
+            candidates: automaticCandidates,
+            confidenceThreshold: threshold
+        )
+        // 规则或阈值变化后，旧的低置信度/无匹配记录失效；所有未分组仓库重新获得判断机会。
+        let activeAttemptedRepositoryIDs = previousConfigurationFingerprint == configurationFingerprint
+            ? attemptedRepositoryIDs
+            : []
+        let pickedRepos = Self.automaticRepositories(
+            from: repos,
+            existingListIDsByRepo: existingListIDsByRepo,
+            automaticallyIgnoredRepoIDs: preparedAutomaticallyIgnoredRepoIDs,
+            attemptedRepositoryIDs: activeAttemptedRepositoryIDs,
+            sortOrder: sortOrder,
+            limit: maxPerRun
+        )
+        guard !pickedRepos.isEmpty else {
+            return .upToDate(configurationFingerprint: configurationFingerprint)
         }
-        // 调度器按稳定的全库游标翻页。即使当前页全部已经分组或被持久化忽略，
-        // 也要报告“已消费”，否则游标会永远卡在这一页重复检查。
-        guard !eligibleRepos.isEmpty else { return true }
+        automaticConfigurationFingerprint = configurationFingerprint
+        automaticDeferredRepoIDs = []
         beginAnalysis(
-            repos: eligibleRepos,
+            repos: pickedRepos,
             candidates: automaticCandidates,
             existingMemberships: existingListIDsByRepo,
             mode: .automatic,
-            automaticThreshold: GitHubStarListAutoGroupingSettings.clamp(confidenceThreshold)
+            automaticThreshold: threshold
         )
-        return true
+        return .started(
+            configurationFingerprint: configurationFingerprint,
+            repositoryCount: pickedRepos.count
+        )
+    }
+
+    /// 只把会改变 AI 判断或自动应用结果的字段纳入指纹。触发时机、批量大小和排序变化
+    /// 不会让已经明确低于阈值的仓库重复消耗 AI 配额。
+    nonisolated static func automaticConfigurationFingerprint(
+        candidates: [GitHubStarListAIContext],
+        confidenceThreshold: Double
+    ) -> String {
+        let groups = candidates
+            .sorted { $0.listId < $1.listId }
+            .map { candidate in
+                [candidate.listId, candidate.name, candidate.instruction]
+                    .joined(separator: "\u{1F}")
+            }
+            .joined(separator: "\u{1E}")
+        let payload = "\(GitHubStarListAutoGroupingSettings.clamp(confidenceThreshold))\u{1D}\(groups)"
+        return SHA256.hash(data: Data(payload.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    /// 后台队列的唯一候选口径：未分组来源仍做 membership 防御检查，并在批量截取前
+    /// 排除 v34 永久忽略项和当前规则已尝试项，避免二者占掉 `maxPerRun` 名额。
+    nonisolated static func automaticRepositories(
+        from repos: [Repo],
+        existingListIDsByRepo: [Int64: Set<String>],
+        automaticallyIgnoredRepoIDs: Set<Int64>,
+        attemptedRepositoryIDs: Set<Int64>,
+        sortOrder: AutoTidySortOrder,
+        limit: Int
+    ) -> [Repo] {
+        let eligibleRepos = repos.filter { repo in
+            (existingListIDsByRepo[repo.id] ?? []).isEmpty
+                && !automaticallyIgnoredRepoIDs.contains(repo.id)
+                && !attemptedRepositoryIDs.contains(repo.id)
+        }
+        return sortOrder.pick(
+            from: eligibleRepos,
+            limit: GitHubStarListAutoGroupingSettings.clampMaxPerRun(limit)
+        )
     }
 
     func stopAnalysis() {
@@ -1009,6 +1089,12 @@ final class GitHubStarListAIGroupingSession {
         isRunning = false
         runTask = nil
         if mode == .automatic {
+            if let automaticConfigurationFingerprint, !automaticDeferredRepoIDs.isEmpty {
+                onAutomaticSuggestionsDeferred?(
+                    automaticConfigurationFingerprint,
+                    automaticDeferredRepoIDs
+                )
+            }
             resetToIdle()
         }
     }
@@ -1134,6 +1220,11 @@ final class GitHubStarListAIGroupingSession {
                     selectedListIDsByRepo[repo.id] = Set(approved.map(\.listId))
                     if !approved.isEmpty {
                         await applyOne(repo: repo, allowAutomaticRetry: true)
+                    } else if mode == .automatic,
+                              automaticConfigurationFingerprint != nil {
+                        // 无匹配或低于阈值都已完成本规则下的判断；继续保持未分组，但不要
+                        // 在下一次后台触发时无限重复。人工自动确认不写这份后台进度。
+                        automaticDeferredRepoIDs.insert(repo.id)
                     }
                 } else {
                     // 每次都从当前 membership 派生默认选择，关闭再开不会把已应用关系重新选中。
@@ -1315,6 +1406,8 @@ final class GitHubStarListAIGroupingSession {
         existingListIDsByRepo = [:]
         rateLimitCooldownUntil = nil
         manualAutomaticThreshold = nil
+        automaticConfigurationFingerprint = nil
+        automaticDeferredRepoIDs = []
         isRunning = false
         isStartingManual = false
         mode = .idle

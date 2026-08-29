@@ -601,6 +601,9 @@ struct HomeView: View {
         .onChange(of: settings.autoTidySettings) { _, _ in
             dependencies.autoTidyScheduler.reconfigure()
         }
+        .onChange(of: settings.githubStarListAutoGroupingSettings.scheduleConfiguration) { _, _ in
+            dependencies.autoTidyScheduler.reconfigure()
+        }
         )
     }
 
@@ -1858,7 +1861,7 @@ struct HomeView: View {
         }
         // HOM-126：启动自动后台 AI 整理调度器。
         // - `start()` 内部幂等，HomeView 多次进入只装一次。
-        // - 启动后挂启动延迟（60s 后触发一次）+ 24h 定时器 + onBatchFinished 回调。
+        // - 启动后分别按标签整理和仓库分组设置挂启动延迟、定时器与结果回调。
         // - 同步完成事件由下方 `.onChange(of: syncManager.state)` 转发给调度器
         //   （理由见 AutoTidyScheduler.notifySyncStateChanged 文档）。
         dependencies.autoTidyScheduler.start()

@@ -1636,7 +1636,14 @@ struct AutoTidySettingsTests {
         #expect(t.generateSummary == false, "默认只跑标签，摘要烧 token 更多")
         #expect(t.generateTags == true)
         #expect(s.githubStarListAutoGroupingSettings.enabled == false, "后台 GitHub 写入默认必须关闭")
+        #expect(s.githubStarListAutoGroupingSettings.triggerOnLaunch == true)
+        #expect(s.githubStarListAutoGroupingSettings.triggerOnSync == true)
+        #expect(s.githubStarListAutoGroupingSettings.triggerScheduled == false)
+        #expect(s.githubStarListAutoGroupingSettings.scheduledIntervalHours == 1)
+        #expect(s.githubStarListAutoGroupingSettings.maxPerRun == 50)
+        #expect(s.githubStarListAutoGroupingSettings.sortOrder == .recentlyStarred)
         #expect(s.githubStarListAutoGroupingSettings.confidenceThreshold == 0.90)
+        #expect(s.githubStarListAutoGroupingSettings.attemptedRepositoryIDs.isEmpty)
         #expect(t.useConfidenceThreshold == true, "默认启用阈值过滤，保险地只应用高置信度标签")
         #expect(t.confidenceThreshold == 0.90)
         #expect(t.lastRunAt == nil)
@@ -1662,7 +1669,15 @@ struct AutoTidySettingsTests {
         s1.autoTidySettings = t
         s1.githubStarListAutoGroupingSettings = GitHubStarListAutoGroupingSettings(
             enabled: true,
-            confidenceThreshold: 0.80
+            triggerOnLaunch: false,
+            triggerOnSync: false,
+            triggerScheduled: true,
+            scheduledIntervalHours: 6,
+            maxPerRun: 200,
+            sortOrder: .earliestStarred,
+            confidenceThreshold: 0.80,
+            attemptedRepositoryIDs: [11, 22],
+            attemptConfigurationFingerprint: "rules-v1"
         )
 
         let s2 = AppSettings(defaults: defaults)
@@ -1673,7 +1688,15 @@ struct AutoTidySettingsTests {
         #expect(s2.autoTidySettings.sortOrder == .random)
         #expect(s2.autoTidySettings.generateSummary == true)
         #expect(s2.githubStarListAutoGroupingSettings.enabled == true)
+        #expect(s2.githubStarListAutoGroupingSettings.triggerOnLaunch == false)
+        #expect(s2.githubStarListAutoGroupingSettings.triggerOnSync == false)
+        #expect(s2.githubStarListAutoGroupingSettings.triggerScheduled == true)
+        #expect(s2.githubStarListAutoGroupingSettings.scheduledIntervalHours == 6)
+        #expect(s2.githubStarListAutoGroupingSettings.maxPerRun == 200)
+        #expect(s2.githubStarListAutoGroupingSettings.sortOrder == .earliestStarred)
         #expect(s2.githubStarListAutoGroupingSettings.confidenceThreshold == 0.80)
+        #expect(s2.githubStarListAutoGroupingSettings.attemptedRepositoryIDs == [11, 22])
+        #expect(s2.githubStarListAutoGroupingSettings.attemptConfigurationFingerprint == "rules-v1")
         #expect(s2.autoTidySettings.useConfidenceThreshold == false)
         #expect(s2.autoTidySettings.confidenceThreshold == 0.75, "用户值在 toggle 关掉时也应保留，便于再次开启时还原")
         #expect(s2.autoTidySettings.lastRunAt?.timeIntervalSince1970 == 1_700_000_000)
@@ -1735,6 +1758,28 @@ struct AutoTidySettingsTests {
         #expect(migrated?.confidenceThreshold == 0.87)
         #expect(GitHubStarListAutoGroupingSettings(enabled: true, confidenceThreshold: 0.2).confidenceThreshold == 0.5)
         #expect(GitHubStarListAutoGroupingSettings(enabled: true, confidenceThreshold: 2).confidenceThreshold == 1)
+    }
+
+    @Test("GitHub Lists 自动分组旧 JSON 补齐独立触发与范围默认值")
+    func decodesGitHubListGroupingForwardCompat() throws {
+        let partialJSON = #"{"enabled":true,"confidenceThreshold":0.8}"#
+        let decoded = try JSONDecoder().decode(
+            GitHubStarListAutoGroupingSettings.self,
+            from: Data(partialJSON.utf8)
+        )
+
+        #expect(decoded.triggerOnLaunch == true)
+        #expect(decoded.triggerOnSync == true)
+        #expect(decoded.triggerScheduled == false)
+        #expect(decoded.scheduledIntervalHours == 1)
+        #expect(decoded.maxPerRun == 50)
+        #expect(decoded.sortOrder == .recentlyStarred)
+        #expect(decoded.attemptedRepositoryIDs.isEmpty)
+        #expect(decoded.attemptConfigurationFingerprint == nil)
+        #expect(GitHubStarListAutoGroupingSettings.clampScheduledIntervalHours(0) == 1)
+        #expect(GitHubStarListAutoGroupingSettings.clampScheduledIntervalHours(25) == 24)
+        #expect(GitHubStarListAutoGroupingSettings.clampMaxPerRun(1) == 5)
+        #expect(GitHubStarListAutoGroupingSettings.clampMaxPerRun(600) == 500)
     }
 
     @Test("makeBatchOptions: 只勾摘要 → actions={summary}, autoApply=false")
