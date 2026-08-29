@@ -234,7 +234,7 @@ struct GitHubStarListAIGroupingPreflightView: View {
 
             sessionFactRow(
                 title: "githubStarLists.aiGrouping.preflight.toAnalyze",
-                value: snapshot.preparedRepositoryCount,
+                value: snapshot.analysisTotalCount,
                 icon: "magnifyingglass"
             )
             sessionFactRow(
@@ -251,6 +251,11 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 title: "githubStarLists.aiGrouping.preflight.autoOrganizeGroups",
                 value: autoOrganizeGroupCount,
                 icon: "bolt.horizontal"
+            )
+            sessionFactRow(
+                title: "githubStarLists.aiGrouping.filter.automaticallyIgnored",
+                value: snapshot.preparedAutomaticallyIgnoredRepoCount,
+                icon: "exclamationmark.circle"
             )
 
             Divider()
@@ -293,6 +298,9 @@ struct GitHubStarListAIGroupingPreflightView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                if snapshot.preparedAutomaticallyIgnoredRepoCount > 0 {
+                    sessionNote("githubStarLists.aiGrouping.filter.automaticallyIgnored.persistentReason")
+                }
                 sessionNote("githubStarLists.aiGrouping.preflight.overlapNote")
                 sessionNote("githubStarLists.aiGrouping.preflight.closedSetHelp")
             }

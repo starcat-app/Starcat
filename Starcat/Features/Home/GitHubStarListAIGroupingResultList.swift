@@ -5,7 +5,7 @@
 //  AI 仓库分组的紧凑审核列表。
 //
 //  默认只渲染展示缓存给出的首批结果；行内保持单行摘要，展开后用芯片墙改分组。
-//  一个仓库可以同时加入多个 List；已有 membership 不能从这里移除。
+//  一个仓库可以同时加入多个 List；已应用结果展开后可精确修改完整 membership。
 //
 
 import SwiftUI
@@ -23,6 +23,8 @@ struct GitHubStarListAIGroupingResultList: View {
     let onIgnore: (Int64) -> Void
     let onRetryAnalysis: (Int64) -> Void
     let onRetryApply: (Int64) -> Void
+    let onDiscardAppliedChanges: (Int64) -> Void
+    let onRetryAutomaticallyIgnored: (Int64) -> Void
     let onLoadMore: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -58,7 +60,9 @@ struct GitHubStarListAIGroupingResultList: View {
                             onApply: { onApply(item.id) },
                             onIgnore: { onIgnore(item.id) },
                             onRetryAnalysis: { onRetryAnalysis(item.id) },
-                            onRetryApply: { onRetryApply(item.id) }
+                            onRetryApply: { onRetryApply(item.id) },
+                            onDiscardAppliedChanges: { onDiscardAppliedChanges(item.id) },
+                            onRetryAutomaticallyIgnored: { onRetryAutomaticallyIgnored(item.id) }
                         )
                         .equatable()
                         .automaticListPagination(
@@ -88,7 +92,7 @@ struct GitHubStarListAIGroupingResultList: View {
                 .font(interfaceScale.font(.iconMedium))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("githubStarLists.aiGrouping.filter.automaticallyIgnored.reason")
+            Text("githubStarLists.aiGrouping.filter.automaticallyIgnored.persistentReason")
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -103,6 +107,7 @@ struct GitHubStarListAIGroupingResultList: View {
         guard item.automaticallyIgnoredFailure != nil
                 || item.applyFailure != nil
                 || item.status == .failed
+                || item.isApplied
         else { return }
         expandedRepoID = expandedRepoID == item.id ? nil : item.id
     }
@@ -120,6 +125,8 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     let onIgnore: () -> Void
     let onRetryAnalysis: () -> Void
     let onRetryApply: () -> Void
+    let onDiscardAppliedChanges: () -> Void
+    let onRetryAutomaticallyIgnored: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
@@ -147,7 +154,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                     .padding(.leading, contentColumnLeadingInset)
             }
             if isExpanded, canExpand {
-                diagnosticContent
+                expandedContent
                     .padding(.leading, contentColumnLeadingInset)
             }
         }
@@ -315,16 +322,23 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     }
 
     @ViewBuilder
-    private var diagnosticContent: some View {
-        if let failure = item.automaticallyIgnoredFailure {
+    private var expandedContent: some View {
+        if item.isApplied {
+            appliedMembershipEditor
+        } else if let failure = item.automaticallyIgnoredFailure {
             failureBox {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(verbatim: failure.localizedMessage)
                         .font(interfaceScale.font(.caption))
                         .foregroundStyle(.secondary)
-                    if let destination = URL(string: "https://github.com/\(item.repoFullName)") {
-                        Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
-                            .font(interfaceScale.font(.caption))
+                    HStack(spacing: 8) {
+                        if let destination = URL(string: "https://github.com/\(item.repoFullName)") {
+                            Link("githubStarLists.aiGrouping.applyFailure.openGitHub", destination: destination)
+                                .font(interfaceScale.font(.caption))
+                        }
+                        Spacer()
+                        Button("action.retry", action: onRetryAutomaticallyIgnored)
+                            .controlSize(.small)
                     }
                 }
             }
@@ -366,6 +380,8 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
             GitHubStarListAIGroupingChipBar(
                 lists: availableLists,
                 item: item,
+                selectedListIDs: Set(item.currentLists.map(\.id)).union(item.selectedListIDs),
+                lockedListIDs: Set(item.currentLists.map(\.id)),
                 onToggleList: onToggleList
             )
             HStack(spacing: 8) {
@@ -383,6 +399,31 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(!item.hasSelection || item.isApplying)
+            }
+        }
+    }
+
+    private var appliedMembershipEditor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GitHubStarListAIGroupingChipBar(
+                lists: availableLists,
+                item: item,
+                selectedListIDs: item.membershipEditorListIDs,
+                lockedListIDs: [],
+                onToggleList: onToggleList
+            )
+            HStack(spacing: 8) {
+                Button("batchAI.panel.review.clear", action: onClearSelection)
+                    .controlSize(.small)
+                    .disabled(item.membershipEditorListIDs.isEmpty || item.isApplying)
+                Button("general.cancel", action: onDiscardAppliedChanges)
+                    .controlSize(.small)
+                    .disabled(!item.hasMembershipChanges || item.isApplying)
+                Spacer()
+                Button("action.apply", action: onApply)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(!item.hasMembershipChanges || item.isApplying)
             }
         }
     }
@@ -481,6 +522,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
         item.automaticallyIgnoredFailure != nil
             || item.applyFailure != nil
             || item.status == .failed
+            || item.isApplied
     }
 
     private var statusLabelColor: Color {
@@ -504,6 +546,8 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
 private struct GitHubStarListAIGroupingChipBar: View {
     let lists: [GitHubStarListAIListDisplay]
     let item: GitHubStarListAIReviewItem
+    let selectedListIDs: Set<String>
+    let lockedListIDs: Set<String>
     let onToggleList: (String) -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -565,8 +609,8 @@ private struct GitHubStarListAIGroupingChipBar: View {
 
     private func chip(_ list: GitHubStarListAIListDisplay) -> some View {
         let groupColor = Color(hex: list.colorHex) ?? .accentColor
-        let isLocked = item.currentLists.contains { $0.id == list.id }
-        let isSelected = isLocked || item.selectedListIDs.contains(list.id)
+        let isLocked = lockedListIDs.contains(list.id)
+        let isSelected = selectedListIDs.contains(list.id)
         let suggestion = item.actionableSuggestions.first { $0.id == list.id }
         // 选中靠勾 + 分组淡底 + 主色文字；未选靠灰底 + 次要文字。不用铺满高饱和色。
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)

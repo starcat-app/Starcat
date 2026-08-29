@@ -127,6 +127,16 @@ struct GitHubStarListAIGroupingJob: Identifiable, Equatable, Sendable {
     var analysisFailure: BatchAIFailure?
     var applyState: GitHubStarListAIApplyState = .idle
     var finishedAt: Date?
+    /// 持久化自动忽略项只参与本轮审计展示，不计入 AI 分析进度，也不会被 Worker 领取。
+    var isExcludedFromAnalysis = false
+
+    var isApplied: Bool {
+        if case .applied = applyState { true } else { false }
+    }
+
+    var automaticallyIgnoredFailure: GitHubStarListAIApplyFailure? {
+        if case .ignored(let failure) = applyState { failure } else { nil }
+    }
 }
 
 /// 仓库分组开始页使用的轻量内存快照。
@@ -136,9 +146,32 @@ struct GitHubStarListAIGroupingJob: Identifiable, Equatable, Sendable {
 struct GitHubStarListAIGroupingPreflightContext: Equatable, Sendable {
     let repositoryCount: Int
     let ungroupedRepositoryCount: Int
+    /// 本次真正会进入 AI 队列的数量。多选入口可包含已有分组仓库，因此不能由“未分组”反推。
+    let analysisRepositoryCount: Int
+    /// 这些仓库仍展示在本轮结果中，但只有用户手动重试后才会重新进入 AI 队列。
+    let automaticallyIgnoredRepoIDs: Set<Int64>
     let availableLists: [GitHubStarList]
     let membershipCountByListID: [String: Int]
     let rulesByListID: [String: GitHubStarListAIRule]
+
+    init(
+        repositoryCount: Int,
+        ungroupedRepositoryCount: Int,
+        analysisRepositoryCount: Int? = nil,
+        automaticallyIgnoredRepoIDs: Set<Int64> = [],
+        availableLists: [GitHubStarList],
+        membershipCountByListID: [String: Int],
+        rulesByListID: [String: GitHubStarListAIRule]
+    ) {
+        self.repositoryCount = repositoryCount
+        self.ungroupedRepositoryCount = ungroupedRepositoryCount
+        self.automaticallyIgnoredRepoIDs = automaticallyIgnoredRepoIDs
+        self.analysisRepositoryCount = analysisRepositoryCount
+            ?? max(0, ungroupedRepositoryCount - automaticallyIgnoredRepoIDs.count)
+        self.availableLists = availableLists
+        self.membershipCountByListID = membershipCountByListID
+        self.rulesByListID = rulesByListID
+    }
 }
 
 /// GitHub Lists 建议生成的最小能力边界。
@@ -181,6 +214,10 @@ final class GitHubStarListAIGroupingSession {
     private(set) var selectedListIDsByRepo: [Int64: Set<String>] = [:] {
         didSet { presentationRevision &+= 1 }
     }
+    /// “已应用”行展开后的最终 membership 草稿；与待确认建议的新增集合分开保存。
+    private(set) var editedListIDsByRepo: [Int64: Set<String>] = [:] {
+        didSet { presentationRevision &+= 1 }
+    }
     private(set) var ignoredRepoIDs: Set<Int64> = [] {
         didSet { presentationRevision &+= 1 }
     }
@@ -199,6 +236,12 @@ final class GitHubStarListAIGroupingSession {
     private(set) var ungroupedRepositoryCount = 0 {
         didSet { presentationRevision &+= 1 }
     }
+    private(set) var preparedAnalysisRepositoryCount = 0 {
+        didSet { presentationRevision &+= 1 }
+    }
+    private(set) var preparedAutomaticallyIgnoredRepoIDs: Set<Int64> = [] {
+        didSet { presentationRevision &+= 1 }
+    }
 
     /// 审核页只观察轻量 revision，再按帧合并生成展示快照。
     /// 不能让 SwiftUI 的 body 直接读取并转换近 2,000 个 jobs，否则每个批次状态变化都会重复排序和筛选。
@@ -206,6 +249,8 @@ final class GitHubStarListAIGroupingSession {
 
     /// 应用成功后由 Sidebar 注入，合并刷新 Lists 计数与当前仓库列表。
     var onMembershipsChanged: (() -> Void)?
+    /// 自动忽略标记变化只需刷新 Sidebar 预检快照，不必重载当前仓库列表。
+    var onAutoIgnoredReposChanged: (() -> Void)?
 
     /// 完整仓库只在点「开始整理」后加载。开始页若观察这个数组，1965 条赋值会拖住主线程 SwiftUI。
     @ObservationIgnored private var preparedRepos: [Repo] = []
@@ -223,6 +268,10 @@ final class GitHubStarListAIGroupingSession {
     private static let defaultConcurrency = 5
     /// 命中 Provider 429 后只让 Worker 0 继续领取任务，避免五路请求持续放大限流。
     private static let rateLimitCooldown: TimeInterval = 30
+    private static let organizationOAuthRestrictionFailure = GitHubStarListAIApplyFailure(
+        kind: .organizationOAuthRestriction,
+        detail: nil
+    )
 
     init(
         repoRepository: any RepoRepositoryProtocol,
@@ -237,10 +286,13 @@ final class GitHubStarListAIGroupingSession {
     }
 
     var totalCount: Int { jobs.count }
+    var analysisTotalCount: Int { jobs.count { !$0.isExcludedFromAnalysis } }
     /// 分析 payload 是否已从数据库展开。开始页为 false；点「开始整理」后为 true。
     var hasLoadedStarredRepositories: Bool { !preparedRepos.isEmpty }
     var preparedRepositoryIDs: [Int64] { preparedRepos.map(\.id) }
-    var analyzedCount: Int { jobs.filter { $0.status == .completed || $0.status == .failed }.count }
+    var analyzedCount: Int {
+        jobs.count { !$0.isExcludedFromAnalysis && ($0.status == .completed || $0.status == .failed) }
+    }
     var suggestedCount: Int { jobs.filter { !$0.suggestions.isEmpty }.count }
     var noMatchCount: Int { jobs.filter { $0.status == .completed && $0.suggestions.isEmpty }.count }
     var analysisFailedCount: Int { jobs.filter { $0.status == .failed }.count }
@@ -254,7 +306,7 @@ final class GitHubStarListAIGroupingSession {
             if case .applied = $0.applyState { true } else { false }
         }.count
     }
-    var isFinished: Bool { !jobs.isEmpty && analyzedCount == jobs.count }
+    var isFinished: Bool { !jobs.isEmpty && analyzedCount == analysisTotalCount }
 
     /// 关闭窗口后仍值得保留的人工任务：尚未分析完、失败可重试，或建议仍等待用户处理。
     /// 已应用、已忽略、无匹配以及建议已属于现有分组的仓库都已经收口，不应阻塞下一轮整理。
@@ -328,12 +380,18 @@ final class GitHubStarListAIGroupingSession {
             async let membershipCountsResult = listService.repoCountsByList()
             async let listsResult = listService.allLists()
             async let rulesResult = listService.allAIRules()
+            async let autoIgnoredResult = listService.allAIAutoIgnoredRepos()
             membershipCountByListID = try await membershipCountsResult
             preparedRepositoryCount = try await starredCountResult
             ungroupedRepositoryCount = try await ungroupedResult
             availableLists = try await listsResult
             let rules = try await rulesResult
             rulesByListID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
+            preparedAutomaticallyIgnoredRepoIDs = Set(try await autoIgnoredResult.map(\.repoId))
+            preparedAnalysisRepositoryCount = max(
+                0,
+                ungroupedRepositoryCount - preparedAutomaticallyIgnoredRepoIDs.count
+            )
             mode = .manual
             hasPreparedManualContext = true
             if jobs.isEmpty {
@@ -357,6 +415,8 @@ final class GitHubStarListAIGroupingSession {
         }
         preparedRepositoryCount = context.repositoryCount
         ungroupedRepositoryCount = context.ungroupedRepositoryCount
+        preparedAnalysisRepositoryCount = context.analysisRepositoryCount
+        preparedAutomaticallyIgnoredRepoIDs = context.automaticallyIgnoredRepoIDs
         availableLists = context.availableLists
         membershipCountByListID = context.membershipCountByListID
         rulesByListID = context.rulesByListID
@@ -393,26 +453,51 @@ final class GitHubStarListAIGroupingSession {
             async let membershipCountsResult = listService.repoCountsByList()
             async let ungroupedResult = listService.ungroupedRepoCount()
             async let starredCountResult = repoRepository.starredCount()
+            async let autoIgnoredResult = listService.allAIAutoIgnoredRepos()
             membershipCountByListID = try await membershipCountsResult
             preparedRepositoryCount = try await starredCountResult
             ungroupedRepositoryCount = try await ungroupedResult
             availableLists = try await listsResult
             let rules = try await rulesResult
             rulesByListID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
+            let autoIgnoredRepoIDs = Set(try await autoIgnoredResult.map(\.repoId))
+            if preparedRepos.isEmpty {
+                preparedAutomaticallyIgnoredRepoIDs = autoIgnoredRepoIDs
+                preparedAnalysisRepositoryCount = max(0, ungroupedRepositoryCount - autoIgnoredRepoIDs.count)
+            } else {
+                preparedAutomaticallyIgnoredRepoIDs = autoIgnoredRepoIDs.intersection(preparedRepos.map(\.id))
+                preparedAnalysisRepositoryCount = max(
+                    0,
+                    preparedRepos.count - preparedAutomaticallyIgnoredRepoIDs.count
+                )
+            }
         } catch {
             AppLog.ai.error("[githubListGrouping] reload lists/rules failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    /// 点「开始整理」才展开全部 starred 仓库和 membership。开始页打开路径不得调用。
+    /// 点「开始整理」才展开未分组仓库和 membership。开始页打开路径不得调用。
+    /// 多选入口已经冻结 `preparedRepos`，因此仍会保留用户明确选中的已有分组仓库。
     func ensureStarredRepositoriesLoaded() async {
         guard preparedRepos.isEmpty else { return }
         do {
-            async let reposResult = repoRepository.fetchAllStarred()
+            async let reposResult = repoRepository.fetchListPage(
+                scope: .githubStarListUngrouped,
+                filters: .empty,
+                sort: .starredAtDesc,
+                limit: Int.max,
+                offset: 0
+            )
             async let assignmentsResult = listService.allListAssignments()
+            async let autoIgnoredResult = listService.allAIAutoIgnoredRepos()
             preparedRepos = try await reposResult
-            preparedRepositoryCount = preparedRepos.count
             existingListIDsByRepo = try await assignmentsResult.mapValues { Set($0.map(\.id)) }
+            preparedAutomaticallyIgnoredRepoIDs = Set(try await autoIgnoredResult.map(\.repoId))
+                .intersection(preparedRepos.map(\.id))
+            preparedAnalysisRepositoryCount = max(
+                0,
+                preparedRepos.count - preparedAutomaticallyIgnoredRepoIDs.count
+            )
         } catch {
             contextErrorMessage = error.localizedDescription
         }
@@ -465,7 +550,8 @@ final class GitHubStarListAIGroupingSession {
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            automaticThreshold: manualAutomaticThreshold
+            automaticThreshold: manualAutomaticThreshold,
+            automaticallyIgnoredRepoIDs: preparedAutomaticallyIgnoredRepoIDs
         )
     }
 
@@ -523,18 +609,27 @@ final class GitHubStarListAIGroupingSession {
             async let listsResult = listService.allLists()
             async let rulesResult = listService.allAIRules()
             async let assignmentsResult = listService.allListAssignments()
+            async let autoIgnoredResult = listService.allAIAutoIgnoredRepos()
             availableLists = try await listsResult
             let rules = try await rulesResult
             rulesByListID = Dictionary(uniqueKeysWithValues: rules.map { ($0.listId, $0) })
             existingListIDsByRepo = try await assignmentsResult.mapValues { Set($0.map(\.id)) }
+            preparedAutomaticallyIgnoredRepoIDs = Set(try await autoIgnoredResult.map(\.repoId))
         } catch {
             AppLog.ai.error("[githubListGrouping] automatic context failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
         let automaticCandidates = candidateContexts.filter(\.autoApplyEnabled)
         guard !automaticCandidates.isEmpty else { return false }
+        let eligibleRepos = repos.filter { repo in
+            (existingListIDsByRepo[repo.id] ?? []).isEmpty
+                && !preparedAutomaticallyIgnoredRepoIDs.contains(repo.id)
+        }
+        // 调度器按稳定的全库游标翻页。即使当前页全部已经分组或被持久化忽略，
+        // 也要报告“已消费”，否则游标会永远卡在这一页重复检查。
+        guard !eligibleRepos.isEmpty else { return true }
         beginAnalysis(
-            repos: repos,
+            repos: eligibleRepos,
             candidates: automaticCandidates,
             existingMemberships: existingListIDsByRepo,
             mode: .automatic,
@@ -565,10 +660,13 @@ final class GitHubStarListAIGroupingSession {
         isPaused = false
         jobs = []
         selectedListIDsByRepo = [:]
+        editedListIDsByRepo = [:]
         ignoredRepoIDs = []
         preparedRepos = []
         preparedRepositoryCount = 0
         ungroupedRepositoryCount = 0
+        preparedAnalysisRepositoryCount = 0
+        preparedAutomaticallyIgnoredRepoIDs = []
         membershipCountByListID = [:]
         hasPreparedManualContext = false
         availableLists = []
@@ -603,6 +701,11 @@ final class GitHubStarListAIGroupingSession {
     }
 
     func toggleSelection(repoID: Int64, listID: String) {
+        if jobs.first(where: { $0.id == repoID })?.isApplied == true
+            || editedListIDsByRepo[repoID] != nil {
+            toggleAppliedMembership(repoID: repoID, listID: listID)
+            return
+        }
         guard mode == .manual,
               availableLists.contains(where: { $0.id == listID }),
               !(existingListIDsByRepo[repoID] ?? []).contains(listID)
@@ -627,6 +730,11 @@ final class GitHubStarListAIGroupingSession {
     }
 
     func clearSelection(repoID: Int64) {
+        if jobs.first(where: { $0.id == repoID })?.isApplied == true
+            || editedListIDsByRepo[repoID] != nil {
+            clearAppliedMemberships(repoID: repoID)
+            return
+        }
         selectedListIDsByRepo[repoID] = []
         resetApplyStateForNewReview(repoID: repoID)
     }
@@ -635,6 +743,74 @@ final class GitHubStarListAIGroupingSession {
         selectedListIDsByRepo[repoID] = []
         ignoredRepoIDs.insert(repoID)
         resetApplyStateForNewReview(repoID: repoID)
+    }
+
+    /// 已应用行编辑的是最终 membership，因此已有分组也允许取消勾选。
+    func toggleAppliedMembership(repoID: Int64, listID: String) {
+        guard mode == .manual,
+              availableLists.contains(where: { $0.id == listID }),
+              let job = jobs.first(where: { $0.id == repoID }),
+              job.isApplied || editedListIDsByRepo[repoID] != nil,
+              job.applyState != .applying
+        else { return }
+        var edited = editedListIDsByRepo[repoID] ?? existingListIDsByRepo[repoID] ?? []
+        if edited.contains(listID) {
+            edited.remove(listID)
+        } else {
+            edited.insert(listID)
+        }
+        editedListIDsByRepo[repoID] = edited
+    }
+
+    func clearAppliedMemberships(repoID: Int64) {
+        guard jobs.first(where: { $0.id == repoID })?.isApplied == true
+            || editedListIDsByRepo[repoID] != nil
+        else { return }
+        editedListIDsByRepo[repoID] = []
+    }
+
+    func discardAppliedMembershipChanges(repoID: Int64) {
+        editedListIDsByRepo.removeValue(forKey: repoID)
+    }
+
+    func applyMembershipChanges(repoID: Int64) {
+        guard mode == .manual,
+              !isApplying,
+              let job = jobs.first(where: { $0.id == repoID }),
+              let desiredListIDs = editedListIDsByRepo[repoID],
+              desiredListIDs != (existingListIDsByRepo[repoID] ?? [])
+        else { return }
+        isApplying = true
+        applyTask = Task { [weak self] in
+            guard let self else { return }
+            await self.applyExactMemberships(
+                repo: job.repo,
+                desiredListIDs: desiredListIDs,
+                allowAutomaticRetry: true
+            )
+            self.isApplying = false
+            self.applyTask = nil
+        }
+    }
+
+    func applyReview(repoID: Int64) {
+        if editedListIDsByRepo[repoID] != nil {
+            applyMembershipChanges(repoID: repoID)
+        } else {
+            applySelected(repoIDs: [repoID])
+        }
+    }
+
+    /// 持久化自动忽略只有显式重试才解除；解除后重新分析，而不是直接重放旧 mutation。
+    func retryAutomaticallyIgnored(repoID: Int64) async {
+        await retryAutomaticallyIgnored(repoIDs: [repoID])
+    }
+
+    func retryAllAutomaticallyIgnored() async {
+        let repoIDs = Set(jobs.compactMap { job -> Int64? in
+            job.automaticallyIgnoredFailure == nil ? nil : job.id
+        })
+        await retryAutomaticallyIgnored(repoIDs: repoIDs)
     }
 
     func applySelected(repoIDs: Set<Int64>? = nil) {
@@ -670,19 +846,83 @@ final class GitHubStarListAIGroupingSession {
         isApplying = true
         applyTask = Task { [weak self] in
             guard let self else { return }
-            await self.refreshMembershipsBeforeApply()
-            await self.applyOne(repo: job.repo, allowAutomaticRetry: true)
+            if let desiredListIDs = self.editedListIDsByRepo[repoID] {
+                await self.applyExactMemberships(
+                    repo: job.repo,
+                    desiredListIDs: desiredListIDs,
+                    allowAutomaticRetry: true
+                )
+            } else {
+                await self.refreshMembershipsBeforeApply()
+                await self.applyOne(repo: job.repo, allowAutomaticRetry: true)
+            }
             self.isApplying = false
             self.applyTask = nil
         }
     }
 
     func retryAllRecoverableApplyFailures() {
-        let repoIDs = Set(jobs.compactMap { job -> Int64? in
-            guard case .failed(let failure) = job.applyState, failure.isRetryable else { return nil }
-            return job.id
-        })
-        applySelected(repoIDs: repoIDs)
+        guard mode == .manual, !isApplying else { return }
+        let retryJobs = jobs.filter { job in
+            guard case .failed(let failure) = job.applyState else { return false }
+            return failure.isRetryable
+        }
+        guard !retryJobs.isEmpty else { return }
+
+        isApplying = true
+        applyTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshMembershipsBeforeApply()
+            for job in retryJobs {
+                guard !Task.isCancelled else { break }
+                if let desiredListIDs = self.editedListIDsByRepo[job.id] {
+                    await self.applyExactMemberships(
+                        repo: job.repo,
+                        desiredListIDs: desiredListIDs,
+                        allowAutomaticRetry: true
+                    )
+                } else {
+                    await self.applyOne(repo: job.repo, allowAutomaticRetry: true)
+                }
+            }
+            self.isApplying = false
+            self.applyTask = nil
+        }
+    }
+
+    private func retryAutomaticallyIgnored(repoIDs: Set<Int64>) async {
+        guard mode == .manual, !isRunning, !isApplying, !repoIDs.isEmpty else { return }
+        let retryRepos = jobs.compactMap { job -> Repo? in
+            guard repoIDs.contains(job.id), job.automaticallyIgnoredFailure != nil else { return nil }
+            return job.repo
+        }
+        guard !retryRepos.isEmpty else { return }
+        do {
+            for repo in retryRepos {
+                try await listService.clearAIAutoIgnored(repoID: repo.id)
+            }
+        } catch {
+            contextErrorMessage = error.localizedDescription
+            return
+        }
+        onAutoIgnoredReposChanged?()
+        preparedAutomaticallyIgnoredRepoIDs.subtract(retryRepos.map(\.id))
+        preparedAnalysisRepositoryCount += retryRepos.count
+        for repo in retryRepos {
+            guard let index = jobs.firstIndex(where: { $0.id == repo.id }) else { continue }
+            jobs[index].isExcludedFromAnalysis = false
+            jobs[index].applyState = .idle
+            jobs[index].suggestions = []
+            jobs[index].finishedAt = nil
+        }
+        beginAnalysis(
+            repos: retryRepos,
+            candidates: candidateContexts,
+            existingMemberships: existingListIDsByRepo,
+            mode: .manual,
+            automaticThreshold: manualAutomaticThreshold,
+            replaceJobs: false
+        )
     }
 
     private func beginAnalysis(
@@ -691,7 +931,8 @@ final class GitHubStarListAIGroupingSession {
         existingMemberships: [Int64: Set<String>],
         mode: GitHubStarListAIGroupingSessionMode,
         automaticThreshold: Double?,
-        replaceJobs: Bool = true
+        replaceJobs: Bool = true,
+        automaticallyIgnoredRepoIDs: Set<Int64> = []
     ) {
         generation &+= 1
         let currentGeneration = generation
@@ -702,8 +943,20 @@ final class GitHubStarListAIGroupingSession {
         contextErrorMessage = nil
         if replaceJobs {
             rateLimitCooldownUntil = nil
-            jobs = repos.map { GitHubStarListAIGroupingJob(repo: $0) }
+            jobs = repos.map { repo in
+                guard automaticallyIgnoredRepoIDs.contains(repo.id) else {
+                    return GitHubStarListAIGroupingJob(repo: repo)
+                }
+                return GitHubStarListAIGroupingJob(
+                    repo: repo,
+                    status: .completed,
+                    applyState: .ignored(Self.organizationOAuthRestrictionFailure),
+                    finishedAt: .now,
+                    isExcludedFromAnalysis: true
+                )
+            }
             selectedListIDsByRepo = [:]
+            editedListIDsByRepo = [:]
             ignoredRepoIDs = []
         } else {
             let retryIDs = Set(repos.map(\.id))
@@ -936,6 +1189,7 @@ final class GitHubStarListAIGroupingSession {
                 let confirmed = added.isEmpty ? requested : added
                 existingListIDsByRepo[repo.id] = current.union(confirmed)
                 selectedListIDsByRepo[repo.id] = []
+                await clearPersistedAutoIgnore(repoID: repo.id)
                 if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
                     jobs[latestIndex].applyState = .applied(confirmed)
                 }
@@ -947,6 +1201,7 @@ final class GitHubStarListAIGroupingSession {
                     // 组织限制作用于整个仓库，不区分目标 List。清空该仓库的全部选择并记录终态，
                     // 让批处理继续，同时保留原因供“全部”筛选审计。
                     selectedListIDsByRepo[repo.id] = []
+                    await persistAutoIgnore(repoID: repo.id)
                     if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
                         jobs[latestIndex].applyState = .ignored(failure)
                     }
@@ -966,6 +1221,74 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
+    /// 已应用结果编辑走完整集合替换，既能新增也能移除；失败分类与首次应用保持一致。
+    private func applyExactMemberships(
+        repo: Repo,
+        desiredListIDs: Set<String>,
+        allowAutomaticRetry: Bool
+    ) async {
+        guard let index = jobs.firstIndex(where: { $0.id == repo.id }) else { return }
+        jobs[index].applyState = .applying
+        let maximumAttempts = allowAutomaticRetry ? 3 : 1
+        var lastFailure: GitHubStarListAIApplyFailure?
+
+        for attempt in 1...maximumAttempts {
+            do {
+                try await listService.setLists(for: repo, listIDs: desiredListIDs)
+                existingListIDsByRepo[repo.id] = desiredListIDs
+                editedListIDsByRepo.removeValue(forKey: repo.id)
+                await clearPersistedAutoIgnore(repoID: repo.id)
+                if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
+                    jobs[latestIndex].applyState = .applied(desiredListIDs)
+                }
+                onMembershipsChanged?()
+                return
+            } catch {
+                let failure = GitHubStarListAIApplyFailure.classify(error)
+                if failure.shouldAutomaticallyIgnore {
+                    await persistAutoIgnore(repoID: repo.id)
+                    if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
+                        jobs[latestIndex].applyState = .ignored(failure)
+                    }
+                    return
+                }
+                lastFailure = failure
+                guard failure.isRetryable, attempt < maximumAttempts, !Task.isCancelled else { break }
+                try? await Task.sleep(for: .milliseconds(Int64(attempt * 600)))
+            }
+        }
+
+        if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
+            jobs[latestIndex].applyState = .failed(
+                lastFailure ?? GitHubStarListAIApplyFailure(kind: .permanent, detail: nil)
+            )
+        }
+    }
+
+    private func persistAutoIgnore(repoID: Int64) async {
+        do {
+            try await listService.markAIAutoIgnored(
+                repoID: repoID,
+                reason: .organizationOAuthRestriction
+            )
+            preparedAutomaticallyIgnoredRepoIDs.insert(repoID)
+            onAutoIgnoredReposChanged?()
+        } catch {
+            // 远端限制已经发生，本轮仍必须收敛成忽略；持久化失败只影响跨轮次去重。
+            AppLog.database.error("[githubListGrouping] persist auto-ignore failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func clearPersistedAutoIgnore(repoID: Int64) async {
+        guard preparedAutomaticallyIgnoredRepoIDs.contains(repoID) else { return }
+        do {
+            try await listService.clearAIAutoIgnored(repoID: repoID)
+            preparedAutomaticallyIgnoredRepoIDs.remove(repoID)
+        } catch {
+            AppLog.database.error("[githubListGrouping] clear auto-ignore failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// 用户重新勾选、清空或忽略后，旧的应用结果已经不再描述当前审核计划。
     /// 清回 idle 可避免“绿色已应用/红色失败”覆盖新的待应用选择。
     private func resetApplyStateForNewReview(repoID: Int64) {
@@ -978,10 +1301,13 @@ final class GitHubStarListAIGroupingSession {
     private func resetToIdle() {
         jobs = []
         selectedListIDsByRepo = [:]
+        editedListIDsByRepo = [:]
         ignoredRepoIDs = []
         preparedRepos = []
         preparedRepositoryCount = 0
         ungroupedRepositoryCount = 0
+        preparedAnalysisRepositoryCount = 0
+        preparedAutomaticallyIgnoredRepoIDs = []
         membershipCountByListID = [:]
         hasPreparedManualContext = false
         availableLists = []

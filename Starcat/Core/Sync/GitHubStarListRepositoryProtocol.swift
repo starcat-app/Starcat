@@ -57,4 +57,13 @@ protocol GitHubStarListRepositoryProtocol: Sendable {
     func findAIRule(listId: String) async throws -> GitHubStarListAIRule?
 
     func fetchAllAIRules() async throws -> [GitHubStarListAIRule]
+
+    // MARK: - Starcat AI 自动忽略
+
+    /// 只返回仍为 starred 且未分组的仓库；其它历史行不应污染下一轮预检统计。
+    func fetchAIAutoIgnoredRepos() async throws -> [GitHubStarListAIAutoIgnoredRepo]
+
+    func upsertAIAutoIgnoredRepo(_ record: GitHubStarListAIAutoIgnoredRepo) async throws
+
+    func deleteAIAutoIgnoredRepo(repoId: Int64) async throws
 }

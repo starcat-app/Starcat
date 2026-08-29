@@ -51,6 +51,27 @@ struct GitHubStarListSyncServiceTests {
         #expect(URLProtocolStub.receivedRequests.count == requestCount)
     }
 
+    @Test("精确编辑 membership 可同时移除旧分组并加入新分组")
+    func setListsReplacesRemoteAndLocalMemberships() async throws {
+        let environment = try await makeEnvironment(existingListIDs: ["list-a", "list-b"])
+        Self.stubSuccessfulMutations()
+
+        try await environment.service.setLists(
+            for: environment.repo,
+            listIDs: ["list-b", "list-c"]
+        )
+
+        #expect(try await environment.repository.listIds(forRepo: environment.repo.id) == [
+            "list-b", "list-c"
+        ])
+        let mutationRequests = try URLProtocolStub.receivedRequests.filter {
+            try Self.graphQLQuery(from: $0).contains("updateUserListsForItem")
+        }
+        #expect(mutationRequests.count == 1)
+        let variables = try Self.graphQLVariables(from: #require(mutationRequests.first))
+        #expect(variables["listIds"] as? [String] == ["list-b", "list-c"])
+    }
+
     @Test("远端 mutation 失败时不产生本地 membership，随后可安全重试")
     func remoteFailureDoesNotWriteLocalMembership() async throws {
         let environment = try await makeEnvironment(existingListIDs: ["list-a"])

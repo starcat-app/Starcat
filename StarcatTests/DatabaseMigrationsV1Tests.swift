@@ -33,7 +33,8 @@ struct DatabaseMigrationsV1Tests {
             "rag_conversations", "rag_messages", "rag_message_citations",
             "rag_message_remote_contexts", "rag_metadata_revision",
             "data_contribution_preferences", "data_contribution_outbox",
-            "github_star_list_ai_rules", "awesome_resource_entries"
+            "github_star_list_ai_rules", "github_star_list_ai_auto_ignored_repos",
+            "awesome_resource_entries"
         ]
         try db.read { db in
             for table in expectedTables {
@@ -54,6 +55,29 @@ struct DatabaseMigrationsV1Tests {
             #expect(try db.tableExists("github_star_list_ai_rules"))
             #expect(try db.columns(in: "github_star_list_ai_rules").map(\.name) == [
                 "list_id", "instruction", "auto_apply_enabled", "updated_at"
+            ])
+        }
+    }
+
+    @Test("v34 应追加 GitHub List AI 自动忽略表")
+    func githubStarListAIAutoIgnoredMigration() throws {
+        let writer = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(writer, upTo: "v33-awesome-resource-entries")
+
+        try writer.read { db in
+            let tableExists = try db.tableExists("github_star_list_ai_auto_ignored_repos")
+            #expect(!tableExists)
+        }
+
+        try migrator.migrate(writer)
+
+        try writer.read { db in
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v34-github-star-list-ai-auto-ignored"))
+            #expect(try db.columns(in: "github_star_list_ai_auto_ignored_repos").map(\.name) == [
+                "repo_id", "reason", "updated_at"
             ])
         }
     }

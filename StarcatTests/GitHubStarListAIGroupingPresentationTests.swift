@@ -91,6 +91,7 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(applied.matches(filter: .applied, searchText: ""))
         #expect(!applied.matches(filter: .suggestions, searchText: ""))
         #expect(!applied.canReviewSuggestions)
+        #expect(applied.canEditAppliedMemberships)
 
         let failure = GitHubStarListAIApplyFailure(kind: .transport, detail: "offline")
         let applyFailed = makeItem(
@@ -411,6 +412,7 @@ struct GitHubStarListAIGroupingPresentationTests {
             currentLists: currentLists,
             suggestions: suggestions,
             selectedListIDs: selectedListIDs,
+            membershipEditorListIDs: Set(currentLists.map(\.id)),
             selectedGroupSummaries: [],
             appliedGroupSummaries: [],
             applyState: applyState,

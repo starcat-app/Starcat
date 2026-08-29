@@ -52,9 +52,12 @@ extension GitHubStarListAIGroupingPreflightContext {
             availableLists: listDisplays,
             existingListIDsByRepo: [:],
             selectedListIDsByRepo: [:],
+            editedListIDsByRepo: [:],
             ignoredRepoIDs: [],
             preparedRepositoryCount: repositoryCount,
             ungroupedRepositoryCount: ungroupedRepositoryCount,
+            preparedAnalysisRepositoryCount: analysisRepositoryCount,
+            preparedAutomaticallyIgnoredRepoCount: automaticallyIgnoredRepoIDs.count,
             membershipCountByListID: membershipCountByListID,
             rulesByListID: rulesByListID
         )
@@ -131,6 +134,8 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     let currentLists: [GitHubStarListAIListDisplay]
     let suggestions: [GitHubStarListAISuggestionDisplay]
     let selectedListIDs: Set<String>
+    /// 已应用行展开时的最终 membership 草稿；未修改时等于当前分组集合。
+    let membershipEditorListIDs: Set<String>
     let selectedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
     let appliedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
     let applyState: GitHubStarListAIApplyState
@@ -150,9 +155,11 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     }
     var hasActionableSuggestions: Bool { !actionableSuggestions.isEmpty }
     var hasSelection: Bool { !selectedListIDs.isEmpty }
+    var hasMembershipChanges: Bool {
+        membershipEditorListIDs != Set(currentLists.map(\.id))
+    }
     var isIgnored: Bool { isIgnoredByUser || automaticallyIgnoredFailure != nil }
-    /// 只有仍等待用户决策的完成态建议才创建完整编辑器。
-    /// 已应用、已忽略和失败等终态只保留摘要，避免长列表为不可操作行重复布局整套 Chip。
+    /// 待确认建议与已应用结果都可展开编辑；忽略和失败终态只保留诊断摘要。
     var canReviewSuggestions: Bool {
         status == .completed
             && !isApplied
@@ -171,6 +178,7 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     var isApplied: Bool {
         if case .applied = applyState { true } else { false }
     }
+    var canEditAppliedMemberships: Bool { isApplied && !isApplying }
     var isApplying: Bool { applyState == .applying }
     var applyFailure: GitHubStarListAIApplyFailure? {
         if case .failed(let failure) = applyState { failure } else { nil }
@@ -247,6 +255,8 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let preparedRepositoryCount: Int
     let groupedRepositoryCount: Int
     let ungroupedRepositoryCount: Int
+    let analysisTotalCount: Int
+    let preparedAutomaticallyIgnoredRepoCount: Int
     let candidateListCount: Int
     let preflightGroups: [GitHubStarListAIPreflightGroupDisplay]
     let analyzedCount: Int
@@ -270,9 +280,12 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         availableLists: [GitHubStarListAIListDisplay],
         existingListIDsByRepo: [Int64: Set<String>],
         selectedListIDsByRepo: [Int64: Set<String>],
+        editedListIDsByRepo: [Int64: Set<String>] = [:],
         ignoredRepoIDs: Set<Int64>,
         preparedRepositoryCount: Int = 0,
         ungroupedRepositoryCount: Int = 0,
+        preparedAnalysisRepositoryCount: Int? = nil,
+        preparedAutomaticallyIgnoredRepoCount: Int = 0,
         membershipCountByListID: [String: Int] = [:],
         rulesByListID: [String: GitHubStarListAIRule] = [:]
     ) {
@@ -319,6 +332,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 )
             }
             let selection = (selectedListIDsByRepo[job.id] ?? []).subtracting(currentIDs)
+            let membershipEditorListIDs = editedListIDsByRepo[job.id] ?? currentIDs
             let appliedListIDs: Set<String> = if case .applied(let ids) = job.applyState { ids } else { [] }
             let item = GitHubStarListAIReviewItem(
                 id: job.id,
@@ -327,6 +341,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 currentLists: currentLists,
                 suggestions: suggestions,
                 selectedListIDs: selection,
+                membershipEditorListIDs: membershipEditorListIDs,
                 // 两处摘要和芯片墙都沿用 `orderedLists`，只改变展示顺序，不遗漏多选结果。
                 selectedGroupSummaries: Self.makeGroupSummaries(
                     listIDs: selection,
@@ -334,7 +349,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                     suggestions: suggestions
                 ),
                 appliedGroupSummaries: Self.makeGroupSummaries(
-                    listIDs: appliedListIDs,
+                    listIDs: Self.itemAppliedListIDs(currentIDs: currentIDs, appliedListIDs: appliedListIDs),
                     orderedLists: orderedLists,
                     suggestions: suggestions
                 ),
@@ -345,7 +360,10 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
             )
             projectedItems.append(item)
 
-            if job.status == .completed || job.status == .failed { analyzedCount += 1 }
+            if !job.isExcludedFromAnalysis,
+               (job.status == .completed || job.status == .failed) {
+                analyzedCount += 1
+            }
             if item.matches(filter: .suggestions, searchText: "") { suggestionCount += 1 }
             if item.isNoMatch { noMatchCount += 1 }
             if job.status == .failed { analysisFailedCount += 1 }
@@ -368,6 +386,9 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         self.availableLists = orderedLists
         self.preparedRepositoryCount = preparedRepositoryCount
         self.ungroupedRepositoryCount = ungroupedRepositoryCount
+        self.analysisTotalCount = preparedAnalysisRepositoryCount
+            ?? jobs.count { !$0.isExcludedFromAnalysis }
+        self.preparedAutomaticallyIgnoredRepoCount = preparedAutomaticallyIgnoredRepoCount
         self.groupedRepositoryCount = max(0, preparedRepositoryCount - ungroupedRepositoryCount)
         self.candidateListCount = preflightGroups.filter(\.hasAIRule).count
         self.preflightGroups = preflightGroups
@@ -423,6 +444,15 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         availableLists: [],
         existingListIDsByRepo: [:],
         selectedListIDsByRepo: [:],
+        editedListIDsByRepo: [:],
         ignoredRepoIDs: []
     )
+
+    /// 应用成功后展示当前完整 membership；旧快照缺少 current 时再回退到本次应用集合。
+    private static func itemAppliedListIDs(
+        currentIDs: Set<String>,
+        appliedListIDs: Set<String>
+    ) -> Set<String> {
+        currentIDs.isEmpty ? appliedListIDs : currentIDs
+    }
 }

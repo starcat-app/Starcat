@@ -198,4 +198,34 @@ struct GitHubStarListRepositoryTests {
 
         #expect(try await repo.ungroupedRepoCount() == 1)
     }
+
+    @Test("AI 自动忽略: 只返回仍未分组的 starred 仓库，并支持显式清除")
+    func aiAutoIgnoredReposOnlyIncludeEligibleRepositories() async throws {
+        let (repo, db) = try makeRepo()
+        try await db.insertRepoFixture(id: 1, owner: "octo", name: "one")
+        try await db.insertRepoFixture(id: 2, owner: "octo", name: "two")
+        try await db.insertRepoFixture(id: 3, owner: "octo", name: "three")
+        try await db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0 WHERE id = 3")
+        }
+        try await repo.replaceRemoteSnapshot(
+            lists: [remoteList(id: "list-1", name: "Tools")],
+            memberships: [
+                GitHubStarListRemoteMembership(listId: "list-1", repoFullName: "octo/two")
+            ],
+            syncedAt: Date(timeIntervalSince1970: 0)
+        )
+        for repoID in 1...3 {
+            try await repo.upsertAIAutoIgnoredRepo(GitHubStarListAIAutoIgnoredRepo(
+                repoId: Int64(repoID),
+                reason: .organizationOAuthRestriction,
+                updatedAt: "2026-08-29T00:00:0\(repoID)Z"
+            ))
+        }
+
+        #expect(try await repo.fetchAIAutoIgnoredRepos().map(\.repoId) == [1])
+
+        try await repo.deleteAIAutoIgnoredRepo(repoId: 1)
+        #expect(try await repo.fetchAIAutoIgnoredRepos().isEmpty)
+    }
 }

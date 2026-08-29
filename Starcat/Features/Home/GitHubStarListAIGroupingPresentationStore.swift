@@ -89,9 +89,12 @@ final class GitHubStarListAIGroupingPresentationStore {
             availableLists: availableLists,
             existingListIDsByRepo: session.existingListIDsByRepo,
             selectedListIDsByRepo: session.selectedListIDsByRepo,
+            editedListIDsByRepo: session.editedListIDsByRepo,
             ignoredRepoIDs: session.ignoredRepoIDs,
             preparedRepositoryCount: session.preparedRepositoryCount,
             ungroupedRepositoryCount: session.ungroupedRepositoryCount,
+            preparedAnalysisRepositoryCount: session.preparedAnalysisRepositoryCount,
+            preparedAutomaticallyIgnoredRepoCount: session.preparedAutomaticallyIgnoredRepoIDs.count,
             membershipCountByListID: session.membershipCountByListID,
             rulesByListID: session.rulesByListID
         )

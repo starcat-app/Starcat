@@ -273,6 +273,11 @@ struct SidebarView: View {
                     await viewModel.reloadItems(forceRefresh: true)
                 }
             }
+            dependencies.githubStarListAIGroupingSession.onAutoIgnoredReposChanged = {
+                Task { @MainActor in
+                    await viewModel.refreshSidebar()
+                }
+            }
         }
         .alert(
             "githubStarLists.editor.delete.title",
@@ -296,11 +301,19 @@ struct SidebarView: View {
     /// SwiftUI `.sheet` 会在 AppKit 正式展示前反复询问整棵双栏视图的 fitting size；
     /// 这里先用 Sidebar 的内存快照一次性准备会话，再交给固定几何窗口，避免首帧布局参与尺寸猜测。
     private func presentGitHubStarListAIGroupingWindow() {
+        let automaticallyIgnoredRepoIDs = viewModel.githubStarListAIAutoIgnoredRepoIDs.filter { repoID in
+            viewModel.githubStarListIDsByRepo[repoID]?.isEmpty ?? true
+        }
         GitHubStarListAIGroupingWindowController.present(
             dependencies: dependencies,
             preflightContext: GitHubStarListAIGroupingPreflightContext(
                 repositoryCount: viewModel.totalCount,
                 ungroupedRepositoryCount: viewModel.githubStarListUngroupedCount,
+                analysisRepositoryCount: max(
+                    0,
+                    viewModel.githubStarListUngroupedCount - automaticallyIgnoredRepoIDs.count
+                ),
+                automaticallyIgnoredRepoIDs: automaticallyIgnoredRepoIDs,
                 availableLists: viewModel.githubStarLists,
                 membershipCountByListID: viewModel.githubStarListCounts,
                 rulesByListID: viewModel.githubStarListAIRulesByListID

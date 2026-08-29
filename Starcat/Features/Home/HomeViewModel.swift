@@ -520,6 +520,8 @@ final class HomeViewModel {
     private(set) var githubStarListCounts: [String: Int] = [:]
     /// 虚拟「未分组」计数。
     private(set) var githubStarListUngroupedCount: Int = 0
+    /// 确定性 GitHub 限制导致的跨轮次跳过集合；预检和多选入口只读这份 Sidebar 快照。
+    private(set) var githubStarListAIAutoIgnoredRepoIDs: Set<Int64> = []
     /// repo id → GitHub List ids。右键菜单只读这份随 Sidebar 一起刷新的快照，
     /// 避免 View 构建期间逐行访问数据库，也避免把多对多关系误判成唯一归属。
     private(set) var githubStarListIDsByRepo: [Int64: Set<String>] = [:]
@@ -1452,6 +1454,7 @@ final class HomeViewModel {
         githubStarLists = []
         githubStarListCounts = [:]
         githubStarListUngroupedCount = 0
+        githubStarListAIAutoIgnoredRepoIDs = []
         githubStarListIDsByRepo = [:]
         githubStarListAIRulesByListID = [:]
         userSmartCollections = []
@@ -1546,6 +1549,7 @@ final class HomeViewModel {
             async let githubUngroupedCountResult = fetchGitHubStarListUngroupedCount()
             async let githubAssignmentsResult = fetchGitHubStarListAssignments()
             async let githubAIRulesResult = fetchGitHubStarListAIRules()
+            async let githubAutoIgnoredResult = fetchGitHubStarListAIAutoIgnoredRepos()
             async let smartCollectionsResult = fetchUserSmartCollections()
             async let releaseSubscriptionCountResult = fetchReleaseSubscriptionCount()
             // HOM-179：一并刷新 repo→tagIds 映射，让 selectedTagIds 多选过滤实时生效。
@@ -1568,6 +1572,9 @@ final class HomeViewModel {
             self.githubStarListIDsByRepo = githubAssignments.mapValues { Set($0.map(\.id)) }
             self.githubStarListAIRulesByListID = Dictionary(
                 uniqueKeysWithValues: try await githubAIRulesResult.map { ($0.listId, $0) }
+            )
+            self.githubStarListAIAutoIgnoredRepoIDs = Set(
+                try await githubAutoIgnoredResult.map(\.repoId)
             )
             self.userSmartCollections = try await smartCollectionsResult
             self.releaseSubscriptionCount = try await releaseSubscriptionCountResult
@@ -1862,6 +1869,11 @@ final class HomeViewModel {
     private func fetchGitHubStarListAIRules() async throws -> [GitHubStarListAIRule] {
         guard let githubStarListRepository else { return [] }
         return try await githubStarListRepository.fetchAllAIRules()
+    }
+
+    private func fetchGitHubStarListAIAutoIgnoredRepos() async throws -> [GitHubStarListAIAutoIgnoredRepo] {
+        guard let githubStarListRepository else { return [] }
+        return try await githubStarListRepository.fetchAIAutoIgnoredRepos()
     }
 
     /// 一个仓库可以同时属于多个 GitHub Lists；菜单通过这个查询展示每一项的独立状态。

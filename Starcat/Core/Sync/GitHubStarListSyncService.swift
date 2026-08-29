@@ -145,6 +145,25 @@ final class GitHubStarListSyncService {
         try await repository.fetchAllListAssignments()
     }
 
+    func allAIAutoIgnoredRepos() async throws -> [GitHubStarListAIAutoIgnoredRepo] {
+        try await repository.fetchAIAutoIgnoredRepos()
+    }
+
+    func markAIAutoIgnored(
+        repoID: Int64,
+        reason: GitHubStarListAIAutoIgnoreReason
+    ) async throws {
+        try await repository.upsertAIAutoIgnoredRepo(GitHubStarListAIAutoIgnoredRepo(
+            repoId: repoID,
+            reason: reason,
+            updatedAt: ISO8601DateFormatter.shared.string(from: Date())
+        ))
+    }
+
+    func clearAIAutoIgnored(repoID: Int64) async throws {
+        try await repository.deleteAIAutoIgnoredRepo(repoId: repoID)
+    }
+
     /// 保存本地 AI 规则。这里不经过 GitHub API，避免把 Starcat 私有上下文混进远端描述。
     func saveAIRule(
         listID: String,
@@ -182,6 +201,12 @@ final class GitHubStarListSyncService {
     func removeRepo(_ repo: Repo, fromList listID: String) async throws {
         var listIDs = Set(try await repository.listIds(forRepo: repo.id))
         listIDs.remove(listID)
+        try await replaceRepoLists(repo, with: Array(listIDs))
+    }
+
+    /// 把一个仓库的 membership 精确替换成审核页当前勾选集合。
+    /// 该入口用于编辑“已应用”结果，必须允许同时新增和移除分组。
+    func setLists(for repo: Repo, listIDs: Set<String>) async throws {
         try await replaceRepoLists(repo, with: Array(listIDs))
     }
 

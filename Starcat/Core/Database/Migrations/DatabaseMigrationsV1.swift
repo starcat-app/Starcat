@@ -44,7 +44,8 @@
 //    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
 //    `v27-ai-usage-estimated-cost` / `v28-awesome-source-description`
 //    `v29-awesome-source-card-metadata` / `v30-awesome-entry-updated-at` /
-//    `v31-awesome-custom-source-parsing`
+//    `v31-awesome-custom-source-parsing` / `v32-github-star-list-ai-rules` /
+//    `v33-awesome-resource-entries` / `v34-github-star-list-ai-auto-ignored`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -115,6 +116,24 @@ enum DatabaseMigrations {
         registerV31AwesomeCustomSourceParsing(into: &migrator)
         registerV32GitHubStarListAIRules(into: &migrator)
         registerV33AwesomeResourceEntries(into: &migrator)
+        registerV34GitHubStarListAIAutoIgnored(into: &migrator)
+    }
+
+    // MARK: - v34-github-star-list-ai-auto-ignored：AI 分组自动忽略（2026-08-29）
+
+    /// 组织 OAuth 限制是仓库级确定性失败，跨轮次保存后可避免持续消耗 AI 与 GitHub 请求。
+    /// 标记依附当前账号数据库中的 repo；仓库删除时级联清理，手动重试时由业务层主动移除。
+    private static func registerV34GitHubStarListAIAutoIgnored(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v34-github-star-list-ai-auto-ignored") { db in
+            guard try db.tableExists("repos") else { return }
+            try db.create(table: "github_star_list_ai_auto_ignored_repos", ifNotExists: true) { table in
+                table.column("repo_id", .integer)
+                    .primaryKey()
+                    .references("repos", column: "id", onDelete: .cascade)
+                table.column("reason", .text).notNull()
+                table.column("updated_at", .text).notNull()
+            }
+        }
     }
 
     // MARK: - v33-awesome-resource-entries：Awesome 非仓库资源（2026-08-28）

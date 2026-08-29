@@ -202,7 +202,7 @@ struct GitHubStarListAIGroupingSheet: View {
                     performReviewUpdate { session.clearSelection(repoID: repoID) }
                 },
                 onApply: { repoID in
-                    performReviewUpdate { session.applySelected(repoIDs: Set([repoID])) }
+                    performReviewUpdate { session.applyReview(repoID: repoID) }
                 },
                 onIgnore: { repoID in
                     performReviewUpdate { session.ignore(repoID: repoID) }
@@ -212,6 +212,15 @@ struct GitHubStarListAIGroupingSheet: View {
                 },
                 onRetryApply: { repoID in
                     performReviewUpdate { session.retryApply(repoID: repoID) }
+                },
+                onDiscardAppliedChanges: { repoID in
+                    performReviewUpdate { session.discardAppliedMembershipChanges(repoID: repoID) }
+                },
+                onRetryAutomaticallyIgnored: { repoID in
+                    Task {
+                        await session.retryAutomaticallyIgnored(repoID: repoID)
+                        presentation.synchronizeImmediately(from: session)
+                    }
                 },
                 onLoadMore: presentation.loadMore
             )
@@ -230,14 +239,14 @@ struct GitHubStarListAIGroupingSheet: View {
                 format: String.l10n("githubStarLists.aiGrouping.progressFormat"),
                 locale: locale,
                 presentation.snapshot.analyzedCount,
-                presentation.snapshot.totalCount
+                presentation.snapshot.analysisTotalCount
             ))
             .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
             .monospacedDigit()
             ProgressView(
                 value: Double(presentation.snapshot.analyzedCount),
-                total: Double(max(presentation.snapshot.totalCount, 1))
+                total: Double(max(presentation.snapshot.analysisTotalCount, 1))
             )
             HStack(spacing: 18) {
                 metricButton(
@@ -302,13 +311,24 @@ struct GitHubStarListAIGroupingSheet: View {
                 .frame(width: 128)
                 .layoutPriority(1)
 
-            Button("githubStarLists.aiGrouping.retryFailed.tab") {
-                session.retryAllRecoverableApplyFailures()
+            Button(retryAllTitleKey) {
+                if store.filter == .automaticallyIgnored {
+                    Task {
+                        await session.retryAllAutomaticallyIgnored()
+                        presentation.synchronizeImmediately(from: session)
+                    }
+                } else {
+                    session.retryAllRecoverableApplyFailures()
+                }
             }
             .controlSize(.small)
             .fixedSize()
             .layoutPriority(1)
-            .disabled(session.isApplying || store.snapshot.recoverableApplyFailureCount == 0)
+            .disabled(
+                session.isApplying
+                    || session.isRunning
+                    || retryAllCount(snapshot: store.snapshot, filter: store.filter) == 0
+            )
         }
         .padding(.horizontal, 20)
         // 工具栏高度固定并从左侧开始排版；空结果只影响下方容器，不再把此行垂直居中。
@@ -337,7 +357,8 @@ struct GitHubStarListAIGroupingSheet: View {
                 .disabled(
                     session.isLoadingContext
                         || session.isStartingManual
-                        || session.preparedRepositoryCount == 0
+                        || (session.preparedAnalysisRepositoryCount == 0
+                            && session.preparedAutomaticallyIgnoredRepoIDs.isEmpty)
                         || candidateListDisplays.isEmpty
                 )
             }
@@ -376,7 +397,7 @@ struct GitHubStarListAIGroupingSheet: View {
         } else if session.isRunning {
             "githubStarLists.aiGrouping.running"
         } else if presentation.snapshot.totalCount > 0,
-                  presentation.snapshot.analyzedCount == presentation.snapshot.totalCount {
+                  presentation.snapshot.analyzedCount == presentation.snapshot.analysisTotalCount {
             "githubStarLists.aiGrouping.status.finished"
         } else { "batchAI.panel.cancelledByUser" }
     }
@@ -386,7 +407,7 @@ struct GitHubStarListAIGroupingSheet: View {
         else if session.isPaused { "pause.circle.fill" }
         else if session.isRunning { "sparkles" }
         else if presentation.snapshot.totalCount > 0,
-                presentation.snapshot.analyzedCount == presentation.snapshot.totalCount { "checkmark.circle" }
+                presentation.snapshot.analyzedCount == presentation.snapshot.analysisTotalCount { "checkmark.circle" }
         else { "stop.circle" }
     }
 
@@ -396,7 +417,7 @@ struct GitHubStarListAIGroupingSheet: View {
         } else if session.isApplying || session.isRunning {
             .accentColor
         } else if presentation.snapshot.totalCount > 0,
-                  presentation.snapshot.analyzedCount == presentation.snapshot.totalCount {
+                  presentation.snapshot.analyzedCount == presentation.snapshot.analysisTotalCount {
             .green
         } else { .red }
     }
@@ -425,6 +446,21 @@ struct GitHubStarListAIGroupingSheet: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+    }
+
+    private var retryAllTitleKey: LocalizedStringKey {
+        presentation.filter == .automaticallyIgnored
+            ? "batchAI.panel.retryAll"
+            : "githubStarLists.aiGrouping.retryFailed.tab"
+    }
+
+    private func retryAllCount(
+        snapshot: GitHubStarListAIGroupingPresentationSnapshot,
+        filter: GitHubStarListAIResultFilter
+    ) -> Int {
+        filter == .automaticallyIgnored
+            ? snapshot.automaticallyIgnoredCount
+            : snapshot.recoverableApplyFailureCount
     }
 
     private func filterLabel(

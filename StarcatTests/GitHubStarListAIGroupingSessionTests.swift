@@ -62,11 +62,11 @@ struct GitHubStarListAIGroupingSessionTests {
 
         await environment.session.ensureStarredRepositoriesLoaded()
         #expect(environment.session.hasLoadedStarredRepositories)
-        #expect(environment.session.preparedRepositoryIDs.sorted() == [1, 2, 3])
+        #expect(environment.session.preparedRepositoryIDs.sorted() == [2, 3])
         #expect(environment.session.existingListIDsByRepo[1] == ["list-1"])
 
         await environment.session.ensureStarredRepositoriesLoaded()
-        #expect(environment.session.preparedRepositoryIDs.count == 3)
+        #expect(environment.session.preparedRepositoryIDs.count == 2)
     }
 
     @Test("关闭窗口才释放未使用的开始页上下文")
@@ -299,12 +299,88 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(environment.session.mode == .idle)
     }
 
+    @Test("持久化自动忽略会跨轮展示但不重复分析，手动重试后重新进入队列")
+    func persistedAutoIgnoreRequiresExplicitRetry() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(delay: .milliseconds(1))
+        let environment = try await makeEnvironment(
+            repoCount: 2,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+        try await environment.listService.markAIAutoIgnored(
+            repoID: 1,
+            reason: .organizationOAuthRestriction
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        #expect(provider.calledRepoIDs == [2])
+        #expect(environment.session.preparedAnalysisRepositoryCount == 1)
+        #expect(environment.session.preparedAutomaticallyIgnoredRepoIDs == [1])
+        #expect(environment.session.jobs.first(where: { $0.id == 1 })?.automaticallyIgnoredFailure != nil)
+        #expect(try await environment.listService.allAIAutoIgnoredRepos().map(\.repoId) == [1])
+
+        await environment.session.retryAutomaticallyIgnored(repoID: 1)
+        await waitUntilStopped(environment.session)
+
+        #expect(provider.calledRepoIDs == [2, 1])
+        #expect(environment.session.preparedAutomaticallyIgnoredRepoIDs.isEmpty)
+        #expect(try await environment.listService.allAIAutoIgnoredRepos().isEmpty)
+    }
+
+    @Test("已应用结果可展开后精确移除原分组")
+    func appliedResultCanReplaceMemberships() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            suggestionsByRepoID: [
+                1: [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.95, reason: "Tools")]
+            ]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 1,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: true),
+            insightService: provider
+        )
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+            let payload = if body.contains("repository(owner:") {
+                Data(#"{"data":{"repository":{"id":"repo-node"}}}"#.utf8)
+            } else {
+                Data(#"{"data":{"updateUserListsForItem":{"lists":[]}}}"#.utf8)
+            }
+            return (Self.response(200, for: request), payload)
+        }
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual(autoConfirmEnabled: true, confidenceThreshold: 0.90)
+        await waitUntilStopped(environment.session)
+        #expect(environment.session.existingListIDsByRepo[1] == ["list-1"])
+
+        environment.session.toggleSelection(repoID: 1, listID: "list-1")
+        #expect(environment.session.editedListIDsByRepo[1] == [])
+        environment.session.applyReview(repoID: 1)
+        await waitUntilApplyStopped(environment.session)
+
+        #expect(environment.session.existingListIDsByRepo[1] == [])
+        #expect(environment.session.jobs.first?.applyState == .applied([]))
+        #expect(environment.session.editedListIDsByRepo[1] == nil)
+    }
+
     private func makeEnvironment(
         repoCount: Int,
         groupedRepoFullNames: [String],
         aiRule: (instruction: String, autoApplyEnabled: Bool)? = nil,
         insightService: (any GitHubStarListSuggestionProviding)? = nil
-    ) async throws -> (session: GitHubStarListAIGroupingSession, database: InMemoryDatabaseManager) {
+    ) async throws -> (
+        session: GitHubStarListAIGroupingSession,
+        database: InMemoryDatabaseManager,
+        listService: GitHubStarListSyncService
+    ) {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixtures(count: repoCount)
         let listRepository = GRDBGitHubStarListRepository(database: database)
@@ -365,7 +441,7 @@ struct GitHubStarListAIGroupingSessionTests {
                 userIDProvider: { 1 }
             )
         )
-        return (session, database)
+        return (session, database, listService)
     }
 
     private func waitUntilStopped(_ session: GitHubStarListAIGroupingSession) async {
@@ -374,6 +450,23 @@ struct GitHubStarListAIGroupingSessionTests {
             try? await Task.sleep(for: .milliseconds(10))
         }
         Issue.record("GitHub Lists AI 分组未在预期时间内结束")
+    }
+
+    private func waitUntilApplyStopped(_ session: GitHubStarListAIGroupingSession) async {
+        for _ in 0..<400 {
+            if !session.isApplying { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("GitHub Lists membership 应用未在预期时间内结束")
+    }
+
+    nonisolated private static func response(_ statusCode: Int, for request: URLRequest) -> HTTPURLResponse {
+        HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        )!
     }
 }
 

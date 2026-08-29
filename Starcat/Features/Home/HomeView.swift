@@ -2186,6 +2186,13 @@ struct HomeView: View {
         let preflightContext = GitHubStarListAIGroupingPreflightContext(
             repositoryCount: repositories.count,
             ungroupedRepositoryCount: existingMemberships.values.count(where: \.isEmpty),
+            analysisRepositoryCount: max(
+                0,
+                repositories.count - viewModel.githubStarListAIAutoIgnoredRepoIDs
+                    .intersection(Set(repositories.map(\.id))).count
+            ),
+            automaticallyIgnoredRepoIDs: viewModel.githubStarListAIAutoIgnoredRepoIDs
+                .intersection(Set(repositories.map(\.id))),
             availableLists: viewModel.githubStarLists,
             membershipCountByListID: membershipCounts,
             rulesByListID: viewModel.githubStarListAIRulesByListID
