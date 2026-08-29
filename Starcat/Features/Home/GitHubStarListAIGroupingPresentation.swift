@@ -155,7 +155,8 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
         !isIgnored && (status == .analyzing
             || status == .failed
             || applyFailure != nil
-            || (hasActionableSuggestions && !isApplied))
+            // 自动应用成功后以仓库为单位进入“已应用”，避免同时出现在待处理与待确认。
+            || (!isApplied && hasActionableSuggestions))
     }
     var isNoMatch: Bool { !isIgnored && status == .completed && suggestions.isEmpty }
     var isApplied: Bool {
@@ -179,7 +180,7 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
         case .all:
             true
         case .suggestions:
-            hasActionableSuggestions && applyFailure == nil && !isIgnored
+            !isApplied && hasActionableSuggestions && applyFailure == nil && !isIgnored
         case .noMatch:
             isNoMatch
         case .analysisFailed:
@@ -219,9 +220,9 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
         if status == .analyzing { return 0 }
         if applyFailure != nil { return 1 }
         if isIgnored { return 6 }
+        if isApplied { return 4 }
         if hasActionableSuggestions { return 2 }
         if status == .failed { return 3 }
-        if isApplied { return 4 }
         if isNoMatch { return 5 }
         return 7
     }

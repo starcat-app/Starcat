@@ -216,6 +216,8 @@ final class GitHubStarListAIGroupingSession {
     private var applyTask: Task<Void, Never>?
     private var generation: UInt64 = 0
     private var rateLimitCooldownUntil: Date?
+    /// 人工整理启动时冻结自动确认阈值；暂停、继续和单仓重试必须保持同一语义。
+    @ObservationIgnored private var manualAutomaticThreshold: Double?
 
     /// 固定五个长期 Worker；不要为每个仓库创建一个 Task，否则大列表会产生无界任务。
     private static let defaultConcurrency = 5
@@ -397,7 +399,10 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
-    func startManual() async {
+    func startManual(
+        autoConfirmEnabled: Bool = false,
+        confidenceThreshold: Double = GitHubStarListAutoGroupingSettings.default.confidenceThreshold
+    ) async {
         do {
             try entitlementGate.requirePro(.batchAI)
         } catch {
@@ -412,12 +417,15 @@ final class GitHubStarListAIGroupingSession {
         defer { isStartingManual = false }
         await ensureStarredRepositoriesLoaded()
         guard contextErrorMessage == nil, !preparedRepos.isEmpty else { return }
+        manualAutomaticThreshold = autoConfirmEnabled
+            ? GitHubStarListAutoGroupingSettings.clamp(confidenceThreshold)
+            : nil
         beginAnalysis(
             repos: preparedRepos,
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            automaticThreshold: nil
+            automaticThreshold: manualAutomaticThreshold
         )
     }
 
@@ -433,7 +441,7 @@ final class GitHubStarListAIGroupingSession {
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            automaticThreshold: nil,
+            automaticThreshold: manualAutomaticThreshold,
             replaceJobs: false
         )
     }
@@ -460,7 +468,7 @@ final class GitHubStarListAIGroupingSession {
             candidates: candidateContexts,
             existingMemberships: existingListIDsByRepo,
             mode: .manual,
-            automaticThreshold: nil,
+            automaticThreshold: manualAutomaticThreshold,
             replaceJobs: false
         )
     }
@@ -530,6 +538,7 @@ final class GitHubStarListAIGroupingSession {
         contextErrorMessage = nil
         isStartingManual = false
         rateLimitCooldownUntil = nil
+        manualAutomaticThreshold = nil
     }
 
     /// 只准备了上下文但没有启动分析时，Sheet 关闭应释放人工模式，让后台自动分组继续工作。
@@ -925,6 +934,7 @@ final class GitHubStarListAIGroupingSession {
         rulesByListID = [:]
         existingListIDsByRepo = [:]
         rateLimitCooldownUntil = nil
+        manualAutomaticThreshold = nil
         isRunning = false
         isStartingManual = false
         mode = .idle

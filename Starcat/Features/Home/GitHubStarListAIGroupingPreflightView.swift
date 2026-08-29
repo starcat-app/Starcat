@@ -6,8 +6,9 @@
 //
 //  页面展示全部仓库、去重后的已分组/未分组数量，以及每个现有分组的规则。
 //  所有统计都由 PresentationSnapshot 一次性生成，SwiftUI body 不扫描完整仓库集合。
-//  置信度写入 GitHubStarListAutoGroupingSettings。分组 AI 规则在卡片内折叠填写，
-//  空规则不能打开自动整理。开始页把“新增分组”的展示状态交给外层审核窗口持有。
+//  本次自动确认开关只属于当前窗口，置信度仍写入 GitHubStarListAutoGroupingSettings。
+//  分组 AI 规则在卡片内折叠填写，空规则不能打开自动整理。
+//  开始页把“新增分组”的展示状态交给外层审核窗口持有。
 //
 
 import SwiftUI
@@ -37,6 +38,7 @@ struct GitHubStarListAIGroupingPreflightView: View {
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
+    @Binding var autoConfirmEnabled: Bool
     @Binding var showCreateGroupSheet: Bool
 
     var body: some View {
@@ -253,43 +255,41 @@ struct GitHubStarListAIGroupingPreflightView: View {
 
             Divider()
 
-            Label("githubStarLists.aiGrouping.preflight.writeAfterReview", systemImage: "checkmark.shield")
+            Toggle("githubStarLists.aiGrouping.preflight.autoConfirm", isOn: $autoConfirmEnabled)
+                .toggleStyle(.switch)
+                .controlSize(.small)
                 .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
 
-            Label(
-                settings.githubStarListAutoGroupingSettings.enabled
-                    ? "githubStarLists.aiGrouping.preflight.autoGroupingOn"
-                    : "githubStarLists.aiGrouping.preflight.autoGroupingOff",
-                systemImage: settings.githubStarListAutoGroupingSettings.enabled ? "checkmark.circle" : "pause.circle"
-            )
+            Text(verbatim: autoConfirmDescription)
             .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("settings.githubListGrouping.threshold.label")
-                    Spacer(minLength: 8)
-                    Text(verbatim: confidenceThresholdPercentString)
-                        .font(interfaceScale.font(.captionStrong))
-                        .foregroundStyle(.tint)
-                        .monospacedDigit()
+            if autoConfirmEnabled {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("settings.githubListGrouping.threshold.label")
+                        Spacer(minLength: 8)
+                        Text(verbatim: confidenceThresholdPercentString)
+                            .font(interfaceScale.font(.captionStrong))
+                            .foregroundStyle(.tint)
+                            .monospacedDigit()
+                    }
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+
+                    Slider(value: confidenceThresholdBinding, in: 0.5...1.0, step: 0.05)
+                        .controlSize(.mini)
+
+                    Text(String(
+                        format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
+                        locale: locale,
+                        confidenceThresholdPercentString
+                    ))
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-
-                Slider(value: confidenceThresholdBinding, in: 0.5...1.0, step: 0.05)
-                    .controlSize(.mini)
-
-                Text(String(
-                    format: String.l10n("settings.githubListGrouping.threshold.hintFormat"),
-                    locale: locale,
-                    confidenceThresholdPercentString
-                ))
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -355,6 +355,18 @@ struct GitHubStarListAIGroupingPreflightView: View {
 
     private var confidenceThresholdPercentString: String {
         "\(Int((settings.githubStarListAutoGroupingSettings.confidenceThreshold * 100).rounded()))%"
+    }
+
+    private var autoConfirmDescription: String {
+        if autoConfirmEnabled {
+            String(
+                format: String.l10n("githubStarLists.aiGrouping.preflight.autoConfirm.enabledFormat"),
+                locale: locale,
+                confidenceThresholdPercentString
+            )
+        } else {
+            String.l10n("githubStarLists.aiGrouping.preflight.autoConfirm.disabled")
+        }
     }
 
     private var confidenceThresholdBinding: Binding<Double> {

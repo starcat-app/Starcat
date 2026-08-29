@@ -18,9 +18,12 @@ struct GitHubStarListAIGroupingSheet: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(AppSettings.self) private var settings
     @State private var presentation: GitHubStarListAIGroupingPresentationStore
     @State private var showApplyConfirmation = false
     @State private var showDiscardConfirmation = false
+    /// 与标签整理一致，本次人工整理默认仍需确认；开关只在当前窗口生命周期内生效。
+    @State private var autoConfirmEnabled = false
     /// 创建表单使用轻量 SwiftUI sheet；外层固定 AppKit sheet 不再参与它的尺寸协商。
     @State private var showCreateGroupSheet = false
     /// 首帧事件每次窗口生命周期只记一次，避免视图重算重复记录。
@@ -118,7 +121,7 @@ struct GitHubStarListAIGroupingSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("githubStarLists.aiGrouping.title")
                     .font(interfaceScale.font(.workspaceTitle))
-                Text("githubStarLists.aiGrouping.subtitle.compact")
+                    Text("githubStarLists.aiGrouping.subtitle.organize")
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
             }
@@ -165,6 +168,7 @@ struct GitHubStarListAIGroupingSheet: View {
             GitHubStarListAIGroupingPreflightView(
                 snapshot: snapshot,
                 session: session,
+                autoConfirmEnabled: $autoConfirmEnabled,
                 showCreateGroupSheet: $showCreateGroupSheet
             )
         } else {
@@ -302,7 +306,12 @@ struct GitHubStarListAIGroupingSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("action.close", action: onClose)
                 Button("githubStarLists.aiGrouping.start") {
-                    Task { await session.startManual() }
+                    Task {
+                        await session.startManual(
+                            autoConfirmEnabled: autoConfirmEnabled,
+                            confidenceThreshold: settings.githubStarListAutoGroupingSettings.confidenceThreshold
+                        )
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(

@@ -278,6 +278,41 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(item.appliedGroupSummaries.map(\.confidence) == [0.91, 0.96])
     }
 
+    @Test("部分建议自动应用后，仓库只进入已应用")
+    func partiallyAppliedSuggestionsStayOutOfPendingFilters() {
+        let databaseList = GitHubStarListAIListDisplay(
+            id: "database",
+            name: "Databases",
+            instruction: "Database projects",
+            colorHex: "#34C759"
+        )
+        var job = GitHubStarListAIGroupingJob(repo: makeRepo(id: 1))
+        job.status = .completed
+        job.suggestions = [
+            GitHubStarListAISuggestion(listId: "swift", confidence: 0.96, reason: "High"),
+            GitHubStarListAISuggestion(listId: "database", confidence: 0.75, reason: "Review")
+        ]
+        job.applyState = .applied(["swift"])
+
+        let snapshot = GitHubStarListAIGroupingPresentationSnapshot(
+            jobs: [job],
+            availableLists: [swiftList, databaseList],
+            existingListIDsByRepo: [1: ["swift"]],
+            selectedListIDsByRepo: [:],
+            ignoredRepoIDs: []
+        )
+
+        let item = try! #require(snapshot.items.first)
+        #expect(item.isApplied)
+        #expect(item.actionableSuggestions.map(\.id) == ["database"])
+        #expect(!item.matches(filter: .suggestions, searchText: ""))
+        #expect(!item.matches(filter: .actionable, searchText: ""))
+        #expect(item.matches(filter: .applied, searchText: ""))
+        #expect(snapshot.appliedCount == 1)
+        #expect(snapshot.suggestionCount == 0)
+        #expect(snapshot.actionableCount == 0)
+    }
+
     @Test("整理前统计按仓库去重并保留一仓多组的各组计数")
     func preflightCountsOverlappingMemberships() {
         let databaseList = GitHubStarListAIListDisplay(

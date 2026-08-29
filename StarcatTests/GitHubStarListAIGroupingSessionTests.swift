@@ -200,6 +200,84 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
     }
 
+    @Test("关闭本次自动确认时，高置信度建议仍进入人工审核")
+    func manualRunKeepsSuggestionsPendingWhenAutoConfirmIsOff() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            suggestionsByRepoID: [
+                1: [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.95, reason: "Tools")]
+            ]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 1,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: true),
+            insightService: provider
+        )
+        URLProtocolStub.reset()
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual(autoConfirmEnabled: false, confidenceThreshold: 0.90)
+        await waitUntilStopped(environment.session)
+
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
+        #expect(environment.session.existingListIDsByRepo[1, default: []].isEmpty)
+        #expect(environment.session.selectedListIDsByRepo[1] == ["list-1"])
+        #expect(environment.session.jobs.first?.applyState == .idle)
+    }
+
+    @Test("本次自动确认只写入达到阈值且分组已授权的建议")
+    func manualAutoConfirmAppliesOnlyQualifiedSuggestions() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            suggestionsByRepoID: [
+                1: [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.95, reason: "High")],
+                2: [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.80, reason: "Low")]
+            ]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 2,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: true),
+            insightService: provider
+        )
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+            let payload = if body.contains("repository(owner:") {
+                Data(#"{"data":{"repository":{"id":"repo-node"}}}"#.utf8)
+            } else {
+                Data(#"{"data":{"updateUserListsForItem":{"lists":[]}}}"#.utf8)
+            }
+            guard let url = request.url,
+                  let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+                  )
+            else { throw URLError(.badURL) }
+            return (response, payload)
+        }
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual(autoConfirmEnabled: true, confidenceThreshold: 0.90)
+        await waitUntilStopped(environment.session)
+
+        #expect(environment.session.existingListIDsByRepo[1] == ["list-1"])
+        #expect(environment.session.existingListIDsByRepo[2, default: []].isEmpty)
+        #expect(environment.session.selectedListIDsByRepo[1] == [])
+        #expect(environment.session.selectedListIDsByRepo[2] == [])
+        #expect(environment.session.jobs.first(where: { $0.id == 1 })?.applyState == .applied(["list-1"]))
+        #expect(environment.session.jobs.first(where: { $0.id == 2 })?.applyState == .idle)
+
+        let mutationCount = URLProtocolStub.receivedRequests.count { request in
+            let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
+            return body.contains("updateUserListsForItem")
+        }
+        #expect(mutationCount == 1)
+    }
+
     private func makeEnvironment(
         repoCount: Int,
         groupedRepoFullNames: [String],
@@ -283,6 +361,7 @@ struct GitHubStarListAIGroupingSessionTests {
 private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSuggestionProviding {
     private let delay: Duration
     private let blockedRepoID: Int64?
+    private let suggestionsByRepoID: [Int64: [GitHubStarListAISuggestion]]
     private var activeCalls = 0
     private var blockedCallStarted = false
     private var blockedContinuation: CheckedContinuation<Void, Never>?
@@ -293,9 +372,14 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
     private(set) var existingListNamesByRepo: [Int64: [String]] = [:]
     private(set) var maximumActiveCalls = 0
 
-    init(delay: Duration, blockedRepoID: Int64? = nil) {
+    init(
+        delay: Duration,
+        blockedRepoID: Int64? = nil,
+        suggestionsByRepoID: [Int64: [GitHubStarListAISuggestion]] = [:]
+    ) {
         self.delay = delay
         self.blockedRepoID = blockedRepoID
+        self.suggestionsByRepoID = suggestionsByRepoID
     }
 
     func generateGitHubListSuggestions(
@@ -326,7 +410,7 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
         } else {
             try await Task.sleep(for: delay)
         }
-        return [repo.id: []]
+        return [repo.id: suggestionsByRepoID[repo.id] ?? []]
     }
 
     func waitUntilBlockedCallStarts() async {
