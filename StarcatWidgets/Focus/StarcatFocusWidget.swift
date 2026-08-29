@@ -107,16 +107,16 @@ struct StarcatFocusWidgetView: View {
         case .systemSmall:
             smallContent(repository: entry.repositories[0])
         case .systemMedium:
-            repositoryList(limit: 3, showsDescription: false, usesCompactRows: false)
+            repositoryDashboard(limit: 3, usesSplitLayout: true)
         default:
-            repositoryList(limit: 6, showsDescription: true, usesCompactRows: true)
+            repositoryDashboard(limit: 6, usesSplitLayout: false)
         }
     }
 
     private func smallContent(repository: WidgetRepository) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 38)
+                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 42)
                 Spacer()
                 if entry.base.isStale {
                     Image(systemName: "clock.badge.exclamationmark")
@@ -132,18 +132,28 @@ struct StarcatFocusWidgetView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Text(verbatim: repository.name)
-                .font(.headline)
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-            if let language = repository.language {
-                Label {
-                    Text(verbatim: language)
-                } icon: {
-                    Image(systemName: "chevron.left.forwardslash.chevron.right")
+
+            HStack(spacing: 8) {
+                if let language = repository.language {
+                    Label {
+                        Text(verbatim: language)
+                    } icon: {
+                        Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    }
+                    .lineLimit(1)
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+
+                Label {
+                    Text(repository.starsCount, format: .number.notation(.compactName))
+                } icon: {
+                    Image(systemName: "star.fill")
+                }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .widgetURL(repository.openURL)
         .accessibilityElement(children: .combine)
@@ -151,36 +161,77 @@ struct StarcatFocusWidgetView: View {
         .accessibilityHint(Text("widget.common.openRepository"))
     }
 
-    private func repositoryList(
+    @ViewBuilder
+    private func repositoryDashboard(
         limit: Int,
-        showsDescription: Bool,
-        usesCompactRows: Bool
+        usesSplitLayout: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            StarcatWidgetHeader(
-                "widget.focus.title",
-                systemImage: "scope",
-                isStale: entry.base.isStale
-            )
-            .padding(.bottom, usesCompactRows ? 4 : 6)
+        let repositories = Array(entry.repositories.prefix(limit))
+        let secondaryRepositories = Array(repositories.dropFirst())
 
-            // Gallery 占位数据会复用同一个仓库填满列表；使用当前 Timeline 内唯一的
-            // 行位置作为视图身份，避免重复 repo ID 触发 SwiftUI 未定义 diff 行为。
-            ForEach(Array(entry.repositories.prefix(limit).enumerated()), id: \.offset) {
-                index,
-                repository in
-                Link(destination: repository.openURL) {
-                    StarcatFocusRepositoryRow(
-                        repository: repository,
-                        showsDescription: showsDescription,
-                        usesCompactLayout: usesCompactRows
-                    )
+        if let featuredRepository = repositories.first {
+            VStack(alignment: .leading, spacing: 0) {
+                StarcatWidgetHeader(
+                    "widget.focus.title",
+                    systemImage: "scope",
+                    isStale: entry.base.isStale
+                )
+                .padding(.bottom, usesSplitLayout ? 8 : 5)
+
+                if usesSplitLayout {
+                    HStack(alignment: .top, spacing: 14) {
+                        Link(destination: featuredRepository.openURL) {
+                            StarcatFocusFeaturedRepository(
+                                repository: featuredRepository,
+                                isExpanded: false
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if !secondaryRepositories.isEmpty {
+                            Divider().opacity(0.35)
+
+                            VStack(alignment: .leading, spacing: 0) {
+                                secondaryRepositoryList(secondaryRepositories)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } else {
+                    Link(destination: featuredRepository.openURL) {
+                        StarcatFocusFeaturedRepository(
+                            repository: featuredRepository,
+                            isExpanded: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+
+                    if !secondaryRepositories.isEmpty {
+                        Divider().opacity(0.35)
+                        secondaryRepositoryList(secondaryRepositories)
+                    }
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                if index < min(limit, entry.repositories.count) - 1 {
-                    Divider().opacity(0.35)
-                }
+            }
+        }
+    }
+
+    private func secondaryRepositoryList(
+        _ repositories: [WidgetRepository]
+    ) -> some View {
+        // Gallery 占位数据会复用同一个仓库填满列表，因此视图身份必须使用当前位置；
+        // 若直接使用 repository.id，重复 ID 会让 SwiftUI 的 diff 结果变得不确定。
+        ForEach(Array(repositories.enumerated()), id: \.offset) { index, repository in
+            Link(destination: repository.openURL) {
+                StarcatFocusRepositoryRow(repository: repository)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+
+            if index < repositories.count - 1 {
+                Divider().opacity(0.35)
             }
         }
     }
@@ -188,30 +239,15 @@ struct StarcatFocusWidgetView: View {
 
 private struct StarcatFocusRepositoryRow: View {
     let repository: WidgetRepository
-    let showsDescription: Bool
-    let usesCompactLayout: Bool
 
     var body: some View {
-        HStack(spacing: usesCompactLayout ? 7 : 8) {
-            StarcatWidgetAvatar(
-                fileName: repository.avatarFileName,
-                size: usesCompactLayout ? 28 : 30
-            )
-            VStack(alignment: .leading, spacing: usesCompactLayout ? 1 : 2) {
+        HStack(spacing: 8) {
+            StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 28)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: "\(repository.owner)/\(repository.name)")
-                    .font(
-                        usesCompactLayout
-                            ? .caption.weight(.semibold)
-                            : .subheadline.weight(.semibold)
-                    )
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                if showsDescription, let description = repository.description {
-                    Text(verbatim: description)
-                        .font(usesCompactLayout ? .caption2 : .caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
                 HStack(spacing: 6) {
                     if let language = repository.language {
                         Text(verbatim: language)
@@ -219,15 +255,16 @@ private struct StarcatFocusRepositoryRow: View {
                     }
                     StarcatFocusStatusLabel(source: repository.focusSource)
                 }
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
             Image(systemName: "chevron.right")
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
-        .padding(.vertical, usesCompactLayout ? 2 : 5)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(repository.focusAccessibilityLabel)
@@ -240,7 +277,7 @@ private struct StarcatFocusRepositoryRow: View {
 ///
 /// `.pinned` 仍参与主应用快照排序，但不再渲染成文字或图标，避免被误解为
 /// Widget 内的置顶操作；`.using` 是用户主动维护的工作状态，因此继续展示。
-private struct StarcatFocusStatusLabel: View {
+struct StarcatFocusStatusLabel: View {
     let source: WidgetFocusSource?
 
     @ViewBuilder
@@ -257,7 +294,7 @@ private struct StarcatFocusStatusLabel: View {
     }
 }
 
-private extension WidgetRepository {
+extension WidgetRepository {
     /// 显式 label 会覆盖 `.combine` 的自动结果，因此只补充仍然可见的“使用中”状态。
     var focusAccessibilityLabel: Text {
         let repository = Text(verbatim: "\(owner)/\(name)")

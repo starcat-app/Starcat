@@ -80,13 +80,13 @@ struct StarcatRediscoveryWidgetView: View {
 
     private func smallContent(repository: WidgetRepository) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 38)
-                Text("widget.rediscovery.title")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            HStack {
+                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 42)
                 Spacer()
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 if entry.isStale {
                     Image(systemName: "clock.badge.exclamationmark")
                         .font(.caption)
@@ -94,16 +94,18 @@ struct StarcatRediscoveryWidgetView: View {
                         .accessibilityLabel(Text("widget.common.stale"))
                 }
             }
-            Text(verbatim: "\(repository.owner)/\(repository.name)")
-                .font(.headline)
+
+            Spacer(minLength: 0)
+
+            Text(verbatim: repository.owner)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text(verbatim: repository.name)
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-            if let description = repository.description {
-                Text(verbatim: description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+
             HStack(spacing: 8) {
                 if let language = repository.language {
                     Label {
@@ -122,80 +124,107 @@ struct StarcatRediscoveryWidgetView: View {
                     Image(systemName: "star.fill")
                 }
             }
-            .font(.caption2)
+            .font(.caption)
             .foregroundStyle(.secondary)
         }
         .widgetURL(repository.openURL)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+        .accessibilityLabel(repository.rediscoveryAccessibilityLabel)
         .accessibilityHint(Text("widget.common.openRepository"))
     }
 
     private func mediumContent(repository: WidgetRepository) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            StarcatWidgetHeader(
-                "widget.rediscovery.title",
-                systemImage: "clock.arrow.circlepath",
-                isStale: entry.isStale
-            )
-            .padding(.bottom, 8)
-
-            HStack(spacing: 12) {
-                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 58)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: "\(repository.owner)/\(repository.name)")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if let description = repository.description {
-                        Text(verbatim: description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    HStack(spacing: 8) {
-                        if let language = repository.language {
-                            Label {
-                                Text(verbatim: language)
-                            } icon: {
-                                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                            }
-                        }
-                        Label {
-                            Text(repository.starsCount, format: .number)
-                        } icon: {
-                            Image(systemName: "star.fill")
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                    if !repository.tags.isEmpty {
-                        HStack(spacing: 6) {
-                            // 快照已按用户排序保存最多 3 个标签。这里保留全部投影，
-                            // 让 Medium 的剩余高度承载真实信息，而不是继续显示空白。
-                            ForEach(repository.tags.prefix(3), id: \.self) { tag in
-                                Text(verbatim: "#\(tag)")
-                                    .lineLimit(1)
-                            }
-                        }
-                        .font(.caption2)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "clock.arrow.circlepath")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("widget.rediscovery.title")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if entry.isStale {
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel(Text("widget.common.stale"))
                     }
                 }
+                .font(.caption.weight(.semibold))
+
                 Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
+                StarcatWidgetAvatar(fileName: repository.avatarFileName, size: 42)
+                Text(verbatim: repository.owner)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(verbatim: repository.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
             }
-            .frame(maxHeight: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            Divider().opacity(0.35)
+
+            VStack(alignment: .leading, spacing: 6) {
+                if let description = repository.description {
+                    Text(verbatim: description)
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
+                }
+
+                Spacer(minLength: 4)
+
+                HStack(spacing: 10) {
+                    if let language = repository.language {
+                        Label {
+                            Text(verbatim: language)
+                        } icon: {
+                            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                        }
+                        .lineLimit(1)
+                    }
+
+                    Label {
+                        Text(repository.starsCount, format: .number.notation(.compactName))
+                    } icon: {
+                        Image(systemName: "star.fill")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                HStack(spacing: 6) {
+                    ForEach(repository.tags.prefix(3), id: \.self) { tag in
+                        Text(verbatim: "#\(tag)")
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .widgetURL(repository.openURL)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(verbatim: "\(repository.owner)/\(repository.name)"))
+        .accessibilityLabel(repository.rediscoveryAccessibilityLabel)
         .accessibilityHint(Text("widget.common.openRepository"))
+    }
+}
+
+private extension WidgetRepository {
+    var rediscoveryAccessibilityLabel: Text {
+        Text("widget.rediscovery.title")
+            + Text(verbatim: ", \(owner)/\(name)")
     }
 }
