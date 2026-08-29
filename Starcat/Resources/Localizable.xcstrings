@@ -131954,6 +131954,22 @@
         }
       }
     },
+    "insights.repo.star.share.copyImage" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy card image"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制卡片图片"
+          }
+        }
+      }
+    },
     "insights.repo.star.source.estimated" : {
       "localizations" : {
         "en" : {

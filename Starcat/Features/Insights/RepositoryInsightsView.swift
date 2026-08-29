@@ -148,8 +148,11 @@ struct RepositoryInsightsView: View {
     /// ScrollView 内容固有高度。Hero 折叠后视口变高时，用它锁死 contentSize，
     /// 避免 VStack 吃满纵向 proposal 在末卡后留下可滚留白。
     @State private var insightsContentHeight: CGFloat = 0
+    /// 屏幕上 Star 趋势卡的实测尺寸，屏外克隆必须按这个 frame 截，否则 Charts 会被压扁。
+    @State private var starHistoryCardSize: CGSize = .zero
 
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AuthSession.self) private var authSession
@@ -766,6 +769,23 @@ struct RepositoryInsightsView: View {
     }
 
     private var starHistorySection: some View {
+        starHistoryCard(isShareCapture: false)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: StarHistoryCardSizeKey.self,
+                        value: geometry.size
+                    )
+                }
+            }
+            .onPreferenceChange(StarHistoryCardSizeKey.self) { size in
+                starHistoryCardSize = size
+            }
+    }
+
+    /// 屏幕与剪贴板共用同一套卡片；导出态只藏操作 chrome，不另起布局。
+    @ViewBuilder
+    private func starHistoryCard(isShareCapture: Bool) -> some View {
         InsightsSectionContainer(
             title: "insights.repo.section.stars",
             subtitle: "insights.repo.section.stars.subtitle",
@@ -775,13 +795,17 @@ struct RepositoryInsightsView: View {
             headerTrailing: {
                 HStack(spacing: 6) {
                     starDataSourceBadge
-                    GrowthShareCopyButton {
-                        starHistoryShareText
+                    if StarHistoryShareCaptureChrome.showsActionButtons(isShareCapture) {
+                        starHistoryShareButton
                     }
                 }
             }
         ) {
             VStack(alignment: .leading, spacing: 12) {
+                if StarHistoryShareCaptureChrome.showsRepositoryIdentity(isShareCapture) {
+                    starHistoryExportIdentity
+                }
+
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 18) {
                         if isStarHistoryWaitingForFirstPaint {
@@ -791,7 +815,7 @@ struct RepositoryInsightsView: View {
                             starMetrics
                         }
                         Spacer(minLength: 8)
-                        starControls
+                        starControls(isShareCapture: isShareCapture)
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         if isStarHistoryWaitingForFirstPaint {
@@ -799,7 +823,7 @@ struct RepositoryInsightsView: View {
                         } else {
                             starMetrics
                         }
-                        starControls
+                        starControls(isShareCapture: isShareCapture)
                     }
                 }
 
@@ -817,7 +841,7 @@ struct RepositoryInsightsView: View {
                     // 图表单独做范围过渡；只用淡入淡出，不用上下位移（会顶布局抖页面）。
                     VStack(alignment: .leading, spacing: 10) {
                         ZStack(alignment: .topLeading) {
-                            starChart
+                            starChart(isShareCapture: isShareCapture)
                                 .id(starHistoryViewModel.range)
                                 .transition(.opacity)
                                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -827,7 +851,7 @@ struct RepositoryInsightsView: View {
                             value: starHistoryViewModel.range
                         )
 
-                        starFooter
+                        starFooter(isShareCapture: isShareCapture)
                     }
                 } else {
                     chartEmptyState(
@@ -837,10 +861,13 @@ struct RepositoryInsightsView: View {
                 }
 
                 if displayedStarPoints.isEmpty,
-                   StarHistoryRestrictionNoticePolicy.shouldShow(
-                    points: displayedStarPoints,
-                    phase: starHistoryViewModel.phase,
-                    isPrivateRepository: repo.isPrivate
+                   StarHistoryShareCaptureChrome.showsRestrictionLink(
+                    isShareCapture,
+                    allowedByPolicy: StarHistoryRestrictionNoticePolicy.shouldShow(
+                        points: displayedStarPoints,
+                        phase: starHistoryViewModel.phase,
+                        isPrivateRepository: repo.isPrivate
+                    )
                    ) {
                     starHistoryRestrictionLink
                         .padding(.horizontal, 2)
@@ -849,23 +876,31 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    /// Star 历史分享只带当前图表范围的公开统计，不外带任何用户私有数据。
-    private var starHistoryShareText: String {
-        var details: [String] = []
-        if let currentStars = displayedStarPoints.last?.count {
-            details.append("Current stars: \(currentStars.formatted(.number.locale(locale)))")
+    /// 视觉仍跟其它增长分享入口对齐；写入的是卡片图，不是摘要文本。
+    private var starHistoryShareButton: some View {
+        CopyFeedbackButton(
+            performCopy: copyStarHistoryCardImage,
+            tooltip: "insights.repo.star.share.copyImage"
+        ) { didCopy in
+            Image(systemName: didCopy ? "checkmark.circle.fill" : "square.and.arrow.up")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                .frame(width: 24, height: 24)
         }
-        if let first = displayedStarPoints.first,
-           let latest = displayedStarPoints.last,
-           first.id != latest.id {
-            let change = latest.count - first.count
-            let formatted = abs(change).formatted(.number.locale(locale))
-            details.append("Visible change: \(change >= 0 ? "+" : "−")\(formatted)")
-        }
-        return GrowthAttribution.repositoryShareText(
-            title: "Star history for \(repo.fullName)",
-            details: details,
-            repo: repo
+        .accessibilityLabel(Text("insights.repo.star.share.copyImage"))
+    }
+
+    /// 按屏幕上的实测尺寸克隆导出态卡片。尺寸未就绪或渲染失败都不写剪贴板。
+    private func copyStarHistoryCardImage() -> Bool {
+        ViewSnapshotPasteboard.copyImage(
+            starHistoryCard(isShareCapture: true)
+                .environment(\.starHistoryShareCapture, true)
+                .environment(\.locale, locale)
+                .environment(\.colorScheme, colorScheme)
+                .environment(\.starcatInterfaceScale, interfaceScale)
+                .appLocaleEnvironment(),
+            size: starHistoryCardSize,
+            colorScheme: colorScheme
         )
     }
 
@@ -914,12 +949,15 @@ struct RepositoryInsightsView: View {
     }
 
     /// 第一行固定图例靠左、覆盖信息靠右；限制链接保留第二行并独立右对齐。
-    /// 每一行内容都不换行，悬停也只更新图内浮层。
-    private var starFooter: some View {
-        let showsRestriction = StarHistoryRestrictionNoticePolicy.shouldShow(
-            points: displayedStarPoints,
-            phase: starHistoryViewModel.phase,
-            isPrivateRepository: repo.isPrivate
+    /// 每一行内容都不换行，悬停也只更新图内浮层。导出图不带帮助链接。
+    private func starFooter(isShareCapture: Bool) -> some View {
+        let showsRestriction = StarHistoryShareCaptureChrome.showsRestrictionLink(
+            isShareCapture,
+            allowedByPolicy: StarHistoryRestrictionNoticePolicy.shouldShow(
+                points: displayedStarPoints,
+                phase: starHistoryViewModel.phase,
+                isPrivateRepository: repo.isPrivate
+            )
         )
         return VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 8) {
@@ -957,9 +995,14 @@ struct RepositoryInsightsView: View {
         value: String,
         label: LocalizedStringKey,
         motifID: String,
-        motifSeed: Int
+        motifSeed: Int,
+        semantic: StatSemanticColor
     ) -> some View {
-        let tint = Color.yellow
+        // 不用系统 `.yellow.opacity(0.08)`：浅色主题下三张卡会糊成一片奶油底。
+        // StatSemanticColor 已按 light/dark 成对校过对比度，和详情页 Stars chip 同源。
+        let tint = semantic.resolved(colorScheme: colorScheme)
+        let fill = semantic.background(colorScheme: colorScheme, hovered: false)
+        let strokeOpacity = colorScheme == .dark ? 0.40 : 0.30
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         return VStack(alignment: .leading, spacing: 3) {
             Text(label)
@@ -977,7 +1020,7 @@ struct RepositoryInsightsView: View {
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .background {
             ZStack(alignment: .bottomTrailing) {
-                shape.fill(tint.opacity(0.08))
+                shape.fill(fill)
                 // Star 趋势三卡比我的洞察 KPI 更矮，用 compact 口袋避免压住数字。
                 InsightsMetricMotifCorner(
                     metricID: motifID,
@@ -989,11 +1032,54 @@ struct RepositoryInsightsView: View {
             .clipShape(shape)
         }
         .overlay {
-            shape.stroke(tint.opacity(0.22), lineWidth: 1)
+            shape.stroke(tint.opacity(strokeOpacity), lineWidth: 1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
         .accessibilityValue(Text(verbatim: value))
+    }
+
+    /// 导出图里才出现：屏幕上的卡片已经在仓库详情上下文中。
+    private var starHistoryExportIdentity: some View {
+        HStack(spacing: 8) {
+            starHistoryExportAvatar
+            Text(verbatim: repo.fullName)
+                .font(interfaceScale.font(.bodyEmphasis))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: repo.fullName))
+    }
+
+    /// 屏外截图不能挂 KFImage：28pt 的 cache key 对不上 hero / 列表已缓存的尺寸。
+    @ViewBuilder
+    private var starHistoryExportAvatar: some View {
+        let size: CGFloat = 28
+        Group {
+            if let image = SnapshotAvatarImage.cachedNSImage(
+                owner: repo.owner,
+                ownerAvatar: repo.ownerAvatar,
+                displayDiameter: size
+            ) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                // 故意弱化：截图时缓存未命中的 logo 占位，非可读正文。
+                Image(systemName: "shippingbox.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.tertiary)
+                    .padding(2)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay {
+            Circle().stroke(.secondary.opacity(0.18), lineWidth: 0.5)
+        }
     }
 
     private func starVelocityMetric(
@@ -1040,19 +1126,22 @@ struct RepositoryInsightsView: View {
                         ?? String.l10n("insights.repo.state.noData"),
                     label: "insights.repo.star.current",
                     motifID: "starCurrent",
-                    motifSeed: starHistoryViewModel.currentStars ?? 0
+                    motifSeed: starHistoryViewModel.currentStars ?? 0,
+                    semantic: .star
                 )
                 starMetric(
                     value: signed(starHistoryViewModel.growth30Days),
                     label: "insights.repo.star.growth30Days",
                     motifID: "starGrowth30",
-                    motifSeed: starHistoryViewModel.growth30Days ?? 0
+                    motifSeed: starHistoryViewModel.growth30Days ?? 0,
+                    semantic: .language
                 )
                 starMetric(
                     value: signed(starHistoryViewModel.growthOneYear),
                     label: "insights.repo.star.growthOneYear",
                     motifID: "starGrowthYear",
-                    motifSeed: starHistoryViewModel.growthOneYear ?? 0
+                    motifSeed: starHistoryViewModel.growthOneYear ?? 0,
+                    semantic: .watchers
                 )
             }
 
@@ -1084,7 +1173,7 @@ struct RepositoryInsightsView: View {
         return formatted
     }
 
-    private var starControls: some View {
+    private func starControls(isShareCapture: Bool) -> some View {
         HStack(spacing: 8) {
             PillSegmentedControl(
                 items: Array(StarHistoryRange.allCases),
@@ -1094,7 +1183,9 @@ struct RepositoryInsightsView: View {
             )
             .accessibilityLabel(Text("insights.repo.star.range.label"))
 
-            starRefreshButton
+            if StarHistoryShareCaptureChrome.showsActionButtons(isShareCapture) {
+                starRefreshButton
+            }
         }
     }
 
@@ -1290,8 +1381,9 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    private var starChart: some View {
+    private func starChart(isShareCapture: Bool) -> some View {
         let yUpper = starYAxisUpperBound
+        let showsSelection = StarHistoryShareCaptureChrome.showsChartSelection(isShareCapture)
         return Chart {
             ForEach(displayedStarPoints) { point in
                 AreaMark(
@@ -1375,10 +1467,11 @@ struct RepositoryInsightsView: View {
         }
         // 锁 Y 域：悬停浮层不进 marks，避免图内 RuleMark/annotation 挤占绘图区把曲线「截断」。
         .chartYScale(domain: 0...yUpper)
-        .chartXSelection(value: $selectedStarDate)
+        .chartXSelection(value: showsSelection ? $selectedStarDate : .constant(nil))
         .chartOverlay { proxy in
             GeometryReader { geometry in
-                if let point = selectedStarPoint,
+                if showsSelection,
+                   let point = selectedStarPoint,
                    let plotAnchor = proxy.plotFrame {
                     let plot = geometry[plotAnchor]
                     if let xInPlot = proxy.position(forX: point.date) {
@@ -3268,5 +3361,17 @@ private struct InsightsContentHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// Star 趋势卡实测尺寸。屏外克隆必须跟屏幕上同一 frame，不能让 Charts 自己猜。
+private struct StarHistoryCardSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next.width >= value.width, next.height >= value.height {
+            value = next
+        }
     }
 }
