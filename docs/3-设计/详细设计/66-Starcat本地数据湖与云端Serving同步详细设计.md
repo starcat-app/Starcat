@@ -20,7 +20,7 @@ Starcat 数据平台采用“本地轻量 Lakehouse + 云端只读 Serving”架
 
 该方案中的“增量”分为两类：History 是事实行的日级增量；Recommend 是不可变模型版本的文件级增量。不得把不同推荐模型的行直接混写成一个无法追踪的线上版本。
 
-截至 2026-08-30，WatchEvent Raw 已在原目录连续追加至 `2026-08-26`，共 `3,891` 个分区；History 完整 Snapshot 已在生产激活，并以同一份 Raw 成功生成、发布和幂等重放首个真实每日 Delta。Snapshot 完整 `quick_check` 由 Builder 一次完成并写入 attestation，云端在流式解压时同步计算 checksum，避免部署时重复扫描数 GB 文件。Phase 1 的长期存储迁移、Phase 3 的推荐发布治理和 Phase 4 的多机运营仍按本设计继续推进，不能把 History 单链路完成误写为整个数据平台全部完成。
+截至 2026-08-30，WatchEvent Raw 已在原目录连续追加至 `2026-08-26`，共 `3,891` 个分区；History 完整 Snapshot 已在生产激活，并以同一份 Raw 成功生成、发布和幂等重放首个真实每日 Delta。Snapshot 完整 `quick_check` 由 Builder 一次完成并写入 attestation，云端在流式解压时同步计算 checksum，并在解压完成后立即释放 ZIP，避免部署时重复扫描数 GB 文件或额外占用一份压缩包空间。Phase 1 的长期存储迁移、Phase 3 的推荐发布治理和 Phase 4 的多机运营仍按本设计继续推进，不能把 History 单链路完成误写为整个数据平台全部完成。
 
 ## 2. 边界与非目标
 

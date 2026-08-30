@@ -299,7 +299,7 @@ Authorization: Bearer <HISTORY_PUBLISH_KEY>
 Content-Type: application/zip
 ```
 
-完整 Snapshot 的完整 `PRAGMA quick_check` 只在正式 Builder 生成阶段执行一次，结果与数据库字节数写入 manifest v2。服务端在单次流式解压中同步计算 checksum，再校验 Builder attestation、文件大小、必需表、manifest 统计与水位线，避免对数 GB 文件重复全盘扫描；legacy v1 Snapshot 仍兼容。验证通过后先安装到不可变 Registry，再原子切换 active Snapshot；失败不影响当前线上 DB。
+完整 Snapshot 的完整 `PRAGMA quick_check` 只在正式 Builder 生成阶段执行一次，结果与数据库字节数写入 manifest v2。服务端在单次流式解压中同步计算 checksum，解压完成后立即释放 ZIP，再校验 Builder attestation、文件大小、必需表、manifest 统计与水位线，避免对数 GB 文件重复全盘扫描或在 runtime 安装阶段额外保留压缩包；legacy v1 Snapshot 仍兼容。验证通过后先安装到不可变 Registry，再原子切换 active Snapshot；失败不影响当前线上 DB。
 
 Publish Key 与公共 `API_KEYS` 分离，内部发布 endpoint 不向第三方开放。
 
