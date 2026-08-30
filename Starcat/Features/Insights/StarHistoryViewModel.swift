@@ -40,6 +40,7 @@ final class StarHistoryViewModel {
     private(set) var range: StarHistoryRange = .oneYear
     private(set) var phase: StarHistoryViewPhase = .idle
     private(set) var snapshot: StarHistorySnapshot?
+    private(set) var chartRenderModel: StarHistoryChartRenderModel = .empty
     private(set) var isRefreshing = false
 
     init(
@@ -106,6 +107,7 @@ final class StarHistoryViewModel {
         activeRepoID = repo.id
         if !preserveVisibleSnapshot {
             snapshot = nil
+            chartRenderModel = .empty
         }
         phase = .loading
         // 切范围也驱动 Sync 转圈，与手动刷新、其它 SyncIconButton 统一。
@@ -121,7 +123,7 @@ final class StarHistoryViewModel {
             guard owns(requestedGeneration, repoID: repo.id) else { return }
             // 目标范围没有缓存时继续展示原曲线；空缓存不是一份值得覆盖 UI 的新数据。
             if !preserveVisibleSnapshot || !cached.points.isEmpty || snapshot == nil {
-                snapshot = cached
+                applySnapshot(cached, repo: repo)
                 apply(cached.remoteState)
             }
         } catch is CancellationError {
@@ -192,7 +194,7 @@ final class StarHistoryViewModel {
             }
             guard owns(requestedGeneration, repoID: repo.id) else { return }
 
-            snapshot = refreshed
+            applySnapshot(refreshed, repo: repo)
             apply(refreshed.remoteState)
             guard case .building(let retryAfter) = refreshed.remoteState,
                   automaticPolls < Self.maximumAutomaticPolls
@@ -224,6 +226,16 @@ final class StarHistoryViewModel {
         case .unavailable:
             phase = .unavailable
         }
+    }
+
+    /// 图表抽稀和分组只跟 Snapshot 生命周期一起更新；洞察页滚动不再重复处理完整日级序列。
+    private func applySnapshot(_ newSnapshot: StarHistorySnapshot, repo: Repo) {
+        snapshot = newSnapshot
+        chartRenderModel = StarHistoryChartRenderModel(
+            points: newSnapshot.points,
+            range: newSnapshot.range,
+            repositoryCreatedAt: repo.createdAt.flatMap(ISO8601DateFormatter.githubDate(from:))
+        )
     }
 
     private func owns(_ requestedGeneration: UInt64, repoID: Int64) -> Bool {

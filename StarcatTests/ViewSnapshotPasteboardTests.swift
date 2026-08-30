@@ -51,7 +51,17 @@ struct ViewSnapshotPasteboardTests {
     @Test @MainActor
     func copyImageWritesPNGAndTIFF() {
         let pasteboard = NSPasteboard.general
-        let previous = pasteboard.pasteboardItems ?? []
+        // NSPasteboardItem 一旦写入某个 pasteboard 就不能再次写入。测试必须复制其数据，
+        // 否则 macOS 26.6 在 defer 恢复现场时会抛 NSInvalidArgumentException。
+        let previous = (pasteboard.pasteboardItems ?? []).map { item in
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
         defer {
             pasteboard.clearContents()
             if !previous.isEmpty {

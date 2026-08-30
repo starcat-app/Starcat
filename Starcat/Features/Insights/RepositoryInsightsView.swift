@@ -30,11 +30,12 @@ struct StarHistoryChartBridge: Equatable, Identifiable, Sendable {
 }
 
 enum StarHistoryChartSeriesBuilder {
-    /// “全部”视图只承担趋势浏览，不需要把数千个日级事件逐个交给 Swift Charts。
-    /// 120 个点在常见详情页宽度下已经高于肉眼可分辨的折线拐点数量。
-    static let allRangePointLimit = 120
+    /// 每个范围都限制 Swift Charts Mark 数量；近期范围同样可能包含数百个日级点。
+    static let threeMonthsPointLimit = 60
+    static let oneYearPointLimit = 80
+    static let allRangePointLimit = 90
 
-    /// 为图表准备最终渲染点：全部范围补创建日零基线，并用 LTTB 保留主要视觉拐点。
+    /// 为图表准备最终渲染点：全部范围补创建日零基线，各范围都用 LTTB 保留主要视觉拐点。
     ///
     /// 原始日级事件仍完整保留在 ViewModel 中，统计值和缓存不会因图表抽稀而丢失；
     /// 这里只减少 Swift Charts 的 Mark 数量。精度切换两侧会强制保留，避免抽稀后
@@ -43,7 +44,7 @@ enum StarHistoryChartSeriesBuilder {
         _ points: [StarHistoryPoint],
         range: StarHistoryRange,
         repositoryCreatedAt: Date?,
-        maximumAllRangePointCount: Int = allRangePointLimit
+        maximumPointCount: Int? = nil
     ) -> [StarHistoryPoint] {
         let sorted = points.sorted { $0.date < $1.date }
         let anchored = addingCreationBaseline(
@@ -51,15 +52,23 @@ enum StarHistoryChartSeriesBuilder {
             range: range,
             repositoryCreatedAt: repositoryCreatedAt
         )
-        guard range == .all,
-              anchored.count > maximumAllRangePointCount
+        let pointLimit = maximumPointCount ?? pointLimit(for: range)
+        guard anchored.count > pointLimit
         else {
             return anchored
         }
         return largestTriangleThreeBuckets(
             anchored,
-            maximumPointCount: maximumAllRangePointCount
+            maximumPointCount: pointLimit
         )
+    }
+
+    private static func pointLimit(for range: StarHistoryRange) -> Int {
+        switch range {
+        case .threeMonths: threeMonthsPointLimit
+        case .oneYear: oneYearPointLimit
+        case .all: allRangePointLimit
+        }
     }
 
     /// 只显示创建点、精度交接点和最新点，避免点阵遮住趋势线。
@@ -382,7 +391,6 @@ struct RepositoryInsightsView: View {
     /// Star 历史由独立 ViewModel 刷新，完成后单独通知共享 XML Coordinator。
     let onStarHistoryChanged: @MainActor @Sendable (Repo) async -> Void
 
-    @State private var selectedStarDate: Date?
     /// Commit 柱图悬停选中的周序号（分类轴 index），与柱一一对应。
     @State private var selectedCommitWeekIndex: Int?
     /// 时间线悬停行，用于光标聚焦高亮。
@@ -1040,6 +1048,10 @@ struct RepositoryInsightsView: View {
                 }
             }
             .onPreferenceChange(StarHistoryCardSizeKey.self) { size in
+                // 滚动和材质刷新可能重复上报相同尺寸；无变化时不写 @State，避免整页重算。
+                guard abs(size.width - starHistoryCardSize.width) > Self.contentHeightTolerance
+                    || abs(size.height - starHistoryCardSize.height) > Self.contentHeightTolerance
+                else { return }
                 starHistoryCardSize = size
             }
     }
@@ -1516,19 +1528,6 @@ struct RepositoryInsightsView: View {
         .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: Capsule())
     }
 
-    private func starSelectionAnnotation(_ point: StarHistoryPoint) -> some View {
-        HStack(spacing: 5) {
-            Text(verbatim: fullDate(point.date))
-            Text("·")
-            Text(point.count.formatted(.number.locale(locale)))
-                .monospacedDigit()
-        }
-        .font(interfaceScale.font(.captionSmall, weight: .medium))
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-    }
-
     private var displayedStarPoints: [StarHistoryPoint] {
         starHistoryViewModel.points
     }
@@ -1541,8 +1540,6 @@ struct RepositoryInsightsView: View {
         return value >= 0 ? "+\(formatted)" : formatted
     }
 
-    /// 图表读数必须显式使用应用内 Locale；否则用户切换 Starcat 语言后，
-    /// 日期仍可能跟随 macOS 系统 Locale，形成同屏混排。
     private func fullDate(_ date: Date) -> String {
         date.formatted(
             Date.FormatStyle()
@@ -1564,7 +1561,6 @@ struct RepositoryInsightsView: View {
         Binding(
             get: { starHistoryViewModel.range },
             set: { newRange in
-                selectedStarDate = nil
                 Task {
                     await starHistoryViewModel.selectRange(newRange, repo: repo)
                 }
@@ -1620,309 +1616,11 @@ struct RepositoryInsightsView: View {
     }
 
     private func starChart(isShareCapture: Bool) -> some View {
-        let xDomain = starChartXDomain
-        let yDomain = starChartYDomain
-        let showsSelection = StarHistoryShareCaptureChrome.showsChartSelection(isShareCapture)
-        // 抽稀只发生在图表渲染层；统计卡、缓存和原始日级事件继续使用完整 points。
-        let renderedPoints = StarHistoryChartSeriesBuilder.renderedPoints(
-            displayedStarPoints,
-            range: starHistoryViewModel.range,
-            repositoryCreatedAt: repositoryCreatedDate
-        )
-        let estimatedPoints = renderedPoints.filter { $0.precision == .estimated }
-        let reconstructedPoints = renderedPoints.filter { $0.precision == .reconstructed }
-        let precisePoints = renderedPoints.filter { $0.precision == .snapshot }
-        let bridges = StarHistoryChartSeriesBuilder.bridges(in: renderedPoints)
-        let landmarks = StarHistoryChartSeriesBuilder.landmarkPoints(in: renderedPoints)
-        let selectedPoint = StarHistoryDisplayPolicy.selectedPoint(
-            in: renderedPoints,
-            selectedDate: selectedStarDate
-        )
-        return Chart {
-            starAreaMarks(points: renderedPoints, yBaseline: yDomain.lowerBound)
-            starEstimatedMarks(points: estimatedPoints)
-            starReconstructedMarks(points: reconstructedPoints)
-
-            ForEach(bridges) { bridge in
-                starBridgeMarks(bridge)
-            }
-
-            starPreciseMarks(points: precisePoints)
-            starLandmarkMarks(points: landmarks)
-            if showsSelection, let selectedPoint {
-                starSelectionMarks(selectedPoint)
-            }
-        }
-        .chartXAxis {
-            AxisMarks(values: starXAxisDates) { value in
-                AxisValueLabel {
-                    if let date = value.as(Date.self) {
-                        Text(verbatim: starAxisLabel(date))
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                AxisTick(stroke: StrokeStyle(lineWidth: 1))
-                    .foregroundStyle(Color.secondary.opacity(0.25))
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisValueLabel()
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                AxisGridLine().foregroundStyle(Color.secondary.opacity(0.1))
-            }
-        }
-        // 全部范围保留零基线；近期范围缩放到真实变化附近，且 annotation 不参与轴域计算。
-        .chartYScale(domain: yDomain)
-        .chartXScale(
-            domain: xDomain,
-            range: .plotDimension(startPadding: 10, endPadding: 10)
-        )
-        .chartXSelection(value: showsSelection ? $selectedStarDate : .constant(nil))
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                if showsSelection,
-                   let point = selectedPoint,
-                   let plotAnchor = proxy.plotFrame {
-                    let plot = geometry[plotAnchor]
-                    if let xInPlot = proxy.position(forX: point.date) {
-                        let lineX = plot.origin.x + xInPlot
-                        Path { path in
-                            path.move(to: CGPoint(x: lineX, y: plot.minY))
-                            path.addLine(to: CGPoint(x: lineX, y: plot.maxY))
-                        }
-                        .stroke(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-
-                        let tooltipWidth: CGFloat = 210
-                        let clampedX = min(
-                            max(lineX, plot.minX + tooltipWidth / 2),
-                            plot.maxX - tooltipWidth / 2
-                        )
-                        starSelectionAnnotation(point)
-                            .position(x: clampedX, y: plot.minY + 24)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
-        }
-        .frame(height: Self.chartPlotHeight)
-        .padding(10)
-        .background(
-            Color(nsColor: .textBackgroundColor).opacity(0.35),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("insights.repo.section.stars"))
-        .accessibilityValue(Text(starChartAccessibilityValue))
-    }
-
-    @ChartContentBuilder
-    private func starAreaMarks(
-        points: [StarHistoryPoint],
-        yBaseline: Double
-    ) -> some ChartContent {
-        ForEach(points) { point in
-            AreaMark(
-                x: .value("Date", point.date),
-                yStart: .value("Baseline", yBaseline),
-                yEnd: .value("Stars", Double(point.count))
-            )
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [Color.blue.opacity(0.14), Color.blue.opacity(0.015)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .interpolationMethod(.linear)
-        }
-    }
-
-    @ChartContentBuilder
-    private func starEstimatedMarks(points: [StarHistoryPoint]) -> some ChartContent {
-        ForEach(points) { point in
-            LineMark(
-                x: .value("Date", point.date),
-                y: .value("Stars", point.count),
-                series: .value("Source", "Estimated")
-            )
-            .foregroundStyle(Color.blue.opacity(0.68))
-            .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [6, 4]))
-            .interpolationMethod(.linear)
-        }
-    }
-
-    @ChartContentBuilder
-    private func starReconstructedMarks(points: [StarHistoryPoint]) -> some ChartContent {
-        ForEach(points) { point in
-            LineMark(
-                x: .value("Date", point.date),
-                y: .value("Stars", point.count),
-                series: .value("Source", "GitHub Stargazers")
-            )
-            .foregroundStyle(Color.blue.opacity(0.78))
-            // 虚线提示这是按当前 Stargazers 重建的曲线，不等同完整历史事件流。
-            .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [7, 4]))
-            .interpolationMethod(.linear)
-        }
-    }
-
-    @ChartContentBuilder
-    private func starPreciseMarks(points: [StarHistoryPoint]) -> some ChartContent {
-        ForEach(points) { point in
-            LineMark(
-                x: .value("Date", point.date),
-                y: .value("Stars", point.count),
-                series: .value("Source", "Snapshot")
-            )
-            .foregroundStyle(Color.blue)
-            .lineStyle(StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
-            .interpolationMethod(.linear)
-        }
-    }
-
-    /// 仅用少量锚点表达创建、精度交接和最新状态；不再给每个日级事件画圆点。
-    @ChartContentBuilder
-    private func starLandmarkMarks(points: [StarHistoryPoint]) -> some ChartContent {
-        ForEach(points) { point in
-            PointMark(
-                x: .value("Date", point.date),
-                y: .value("Stars", point.count)
-            )
-            .foregroundStyle(Color.blue)
-            .symbolSize(28)
-        }
-    }
-
-    /// Hover 点使用双层圆标记，在浅色和深色背景下都能与折线区分。
-    @ChartContentBuilder
-    private func starSelectionMarks(_ point: StarHistoryPoint) -> some ChartContent {
-        PointMark(
-            x: .value("Date", point.date),
-            y: .value("Stars", point.count)
-        )
-        .foregroundStyle(Color(nsColor: .windowBackgroundColor))
-        .symbolSize(70)
-
-        PointMark(
-            x: .value("Date", point.date),
-            y: .value("Stars", point.count)
-        )
-        .foregroundStyle(Color.blue)
-        .symbolSize(30)
-    }
-
-    /// 桥接段沿用前一组折线的样式：估算 / 重建继续虚线，精确快照保持实线。
-    ///
-    /// 使用线性插值是为了只表达两个观测点之间的连接，不在长时间空档里制造
-    /// Catmull-Rom 曲线的额外波动。
-    @ChartContentBuilder
-    private func starBridgeMarks(_ bridge: StarHistoryChartBridge) -> some ChartContent {
-        let color: Color = switch bridge.inheritedPrecision {
-        case .estimated:
-            Color.blue.opacity(0.72)
-        case .reconstructed:
-            Color.blue.opacity(0.8)
-        case .snapshot:
-            Color.blue
-        }
-        let strokeStyle: StrokeStyle = switch bridge.inheritedPrecision {
-        case .estimated:
-            StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4])
-        case .reconstructed:
-            StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 3])
-        case .snapshot:
-            StrokeStyle(lineWidth: 2.5, lineCap: .round)
-        }
-
-        LineMark(
-            x: .value("Date", bridge.start.date),
-            y: .value("Stars", bridge.start.count),
-            series: .value("Source", bridge.id)
-        )
-        .foregroundStyle(color)
-        .lineStyle(strokeStyle)
-        .interpolationMethod(.linear)
-
-        LineMark(
-            x: .value("Date", bridge.end.date),
-            y: .value("Stars", bridge.end.count),
-            series: .value("Source", bridge.id)
-        )
-        .foregroundStyle(color)
-        .lineStyle(strokeStyle)
-        .interpolationMethod(.linear)
-    }
-
-    /// 固定刻度仍按范围选择日期精度，确保相邻标签不会显示成相同月份。
-    private func starAxisLabel(_ date: Date) -> String {
-        switch starHistoryViewModel.range {
-        case .threeMonths:
-            return date.formatted(
-                Date.FormatStyle()
-                    .month(.abbreviated)
-                    .day()
-                    .locale(locale)
-            )
-        case .oneYear:
-            return date.formatted(
-                Date.FormatStyle()
-                    .year()
-                    .month(.abbreviated)
-                    .locale(locale)
-            )
-        case .all:
-            if StarHistoryChartLayoutPolicy.usesDayAxisLabels(domain: starChartXDomain) {
-                return date.formatted(
-                    Date.FormatStyle()
-                        .month(.abbreviated)
-                        .day()
-                        .locale(locale)
-                )
-            }
-            if !StarHistoryChartLayoutPolicy.usesYearOnlyAxisLabels(
-                domain: starChartXDomain
-            ) {
-                return date.formatted(
-                    Date.FormatStyle()
-                        .year()
-                        .month(.abbreviated)
-                        .locale(locale)
-                )
-            }
-            return date.formatted(
-                Date.FormatStyle()
-                    .year()
-                    .locale(locale)
-            )
-        }
-    }
-
-    private var repositoryCreatedDate: Date? {
-        ISO8601DateFormatter.githubDate(from: repo.createdAt)
-    }
-
-    private var starChartXDomain: ClosedRange<Date> {
-        StarHistoryChartLayoutPolicy.xDomain(
-            range: starHistoryViewModel.range,
-            repositoryCreatedAt: repositoryCreatedDate,
-            points: displayedStarPoints
-        )
-    }
-
-    private var starChartYDomain: ClosedRange<Double> {
-        StarHistoryChartLayoutPolicy.yDomain(
-            range: starHistoryViewModel.range,
-            points: displayedStarPoints
-        )
-    }
-
-    private var starXAxisDates: [Date] {
-        StarHistoryChartLayoutPolicy.xAxisDates(
-            domain: starChartXDomain,
-            range: starHistoryViewModel.range
+        StarHistoryChartView(
+            model: starHistoryViewModel.chartRenderModel,
+            interactionEnabled: StarHistoryShareCaptureChrome.showsChartSelection(isShareCapture),
+            accessibilityValue: starChartAccessibilityValue,
+            height: Self.chartPlotHeight
         )
     }
 

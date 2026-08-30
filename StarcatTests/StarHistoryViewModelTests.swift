@@ -69,6 +69,7 @@ struct StarHistoryViewModelTests {
         #expect(viewModel.growthOneYear == -30)
         #expect(viewModel.averageDailyGrowth30Days == -0.5)
         #expect(viewModel.averageMonthlyGrowthOneYear == -2.5)
+        #expect(viewModel.chartRenderModel.renderedPoints == points)
         #expect(viewModel.phase == StarHistoryViewPhase.content)
     }
 
@@ -117,6 +118,7 @@ struct StarHistoryViewModelTests {
         await viewModel.selectRange(.all, repo: repo)
 
         #expect(viewModel.range == .all)
+        #expect(viewModel.chartRenderModel.range == .all)
         #expect(await repository.requestedRanges() == [.oneYear, .all])
     }
 
@@ -459,7 +461,7 @@ struct StarHistoryChartSeriesBuilderTests {
             points,
             range: .all,
             repositoryCreatedAt: nil,
-            maximumAllRangePointCount: 40
+            maximumPointCount: 40
         )
 
         #expect(rendered.count <= 40)
@@ -467,6 +469,29 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(rendered.last == points.last)
         #expect(rendered.contains(points[399]))
         #expect(rendered.contains(points[400]))
+    }
+
+    @Test("近期范围也必须限制图表渲染点数量")
+    func recentRangesAlsoDownsample() throws {
+        let start = try #require(StarHistoryDateCodec.date(from: "2026-01-01"))
+        let points = (0..<365).map { index in
+            StarHistoryPoint(
+                date: start.addingTimeInterval(Double(index) * 86_400),
+                count: index,
+                source: .ghArchive,
+                precision: .estimated
+            )
+        }
+
+        let rendered = StarHistoryChartSeriesBuilder.renderedPoints(
+            points,
+            range: .oneYear,
+            repositoryCreatedAt: nil
+        )
+
+        #expect(rendered.count <= StarHistoryChartSeriesBuilder.oneYearPointLimit)
+        #expect(rendered.first == points.first)
+        #expect(rendered.last == points.last)
     }
 
     @Test("图表只标记首尾与精度交接点")
