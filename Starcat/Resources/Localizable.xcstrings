@@ -439869,6 +439869,38 @@
         }
       }
     },
+    "tagManagement.mergeSheetSubtitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose which tag to keep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择要保留的目标标签"
+          }
+        }
+      }
+    },
+    "tagManagement.mergeSheetTitle" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge Tags"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "合并标签"
+          }
+        }
+      }
+    },
     "tagManagement.mergeSheetHint" : {
       "localizations" : {
         "en" : {
@@ -439881,6 +439913,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择要保留的目标标签；其余选中标签将并入该标签，此操作不可撤销。"
+          }
+        }
+      }
+    },
+    "tagManagement.newTagNamePlaceholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name this tag"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为标签命名"
           }
         }
       }
