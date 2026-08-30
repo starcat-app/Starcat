@@ -1,5 +1,5 @@
 # starcat-api 的 Docker 构建上下文必须是 supports/，因为聚合镜像会 COPY
-# 七个并列 Go 仓库。默认先排除全部内容，再只开放实际参与编译的仓库。
+# 并列 Go 仓库。默认先排除全部内容，再只开放实际参与编译的仓库。
 **
 
 !starcat-api/
@@ -18,6 +18,8 @@
 !starcat-weekly-api/**
 !starcat-discovery-api/
 !starcat-discovery-api/**
+!starcat-history-api/
+!starcat-history-api/**
 
 # 即使位于白名单仓库内，以下本机状态也绝不能进入远程构建上下文。
 **/.git
