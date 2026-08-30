@@ -15,20 +15,6 @@ import AppKit
 import Charts
 import SwiftUI
 
-/// 不同精度折线之间的显式连接段。
-///
-/// Swift Charts 会把不同 `series` 当成互不相连的折线；当后一组只有一个 snapshot
-/// 点时，它只能画出圆点。桥接段保留前一组的视觉语义，让曲线连续但不伪造数据来源。
-struct StarHistoryChartBridge: Equatable, Identifiable, Sendable {
-    let start: StarHistoryPoint
-    let end: StarHistoryPoint
-    let inheritedPrecision: StarHistoryPrecision
-
-    var id: String {
-        "\(start.id)->\(end.id)"
-    }
-}
-
 enum StarHistoryChartSeriesBuilder {
     /// 每个范围都限制 Swift Charts Mark 数量；近期范围同样可能包含数百个日级点。
     static let threeMonthsPointLimit = 60
@@ -38,8 +24,7 @@ enum StarHistoryChartSeriesBuilder {
     /// 为图表准备最终渲染点：全部范围补创建日零基线，各范围都用 LTTB 保留主要视觉拐点。
     ///
     /// 原始日级事件仍完整保留在 ViewModel 中，统计值和缓存不会因图表抽稀而丢失；
-    /// 这里只减少 Swift Charts 的 Mark 数量。精度切换两侧会强制保留，避免抽稀后
-    /// 估算线和本机精确快照无法正确交接。
+    /// 这里只减少 Swift Charts 的 Mark 数量；数据来源与精度仍完整保留在原始数据中。
     static func renderedPoints(
         _ points: [StarHistoryPoint],
         range: StarHistoryRange,
@@ -71,27 +56,11 @@ enum StarHistoryChartSeriesBuilder {
         }
     }
 
-    /// 只显示创建点、精度交接点和最新点，避免点阵遮住趋势线。
+    /// 只显示创建点和最新点，避免来源交接点形成点阵并遮住趋势线。
     static func landmarkPoints(in points: [StarHistoryPoint]) -> [StarHistoryPoint] {
-        guard !points.isEmpty else { return [] }
-        var indices: Set<Int> = [0, points.count - 1]
-        for index in 1..<points.count where points[index - 1].precision != points[index].precision {
-            indices.insert(index)
-        }
-        return indices.sorted().map { points[$0] }
-    }
-
-    /// 输入点必须按日期升序；只在精度切换处生成相邻两点桥接。
-    static func bridges(in points: [StarHistoryPoint]) -> [StarHistoryChartBridge] {
-        guard points.count >= 2 else { return [] }
-        return zip(points, points.dropFirst()).compactMap { start, end in
-            guard start.precision != end.precision else { return nil }
-            return StarHistoryChartBridge(
-                start: start,
-                end: end,
-                inheritedPrecision: start.precision
-            )
-        }
+        guard let first = points.first else { return [] }
+        guard let last = points.last, last.id != first.id else { return [first] }
+        return [first, last]
     }
 
     private static func addingCreationBaseline(
@@ -107,8 +76,8 @@ enum StarHistoryChartSeriesBuilder {
             return points
         }
 
-        // 仓库创建时 Star 必然为 0；沿用首个观测点的 source / precision 仅用于让
-        // Swift Charts 把两点画在同一条 series 上，该点不会写回缓存或数据库。
+        // 仓库创建时 Star 必然为 0；沿用首个观测点的 source / precision，避免引入
+        // 仅为图表展示而存在的新数据语义。该点不会写回缓存或数据库。
         let baseline = StarHistoryPoint(
             date: repositoryCreatedAt,
             count: 0,
@@ -131,20 +100,8 @@ enum StarHistoryChartSeriesBuilder {
             return points
         }
 
-        var mandatoryIndices: Set<Int> = [0, points.count - 1]
-        for index in 1..<points.count where points[index - 1].precision != points[index].precision {
-            mandatoryIndices.insert(index - 1)
-            mandatoryIndices.insert(index)
-        }
-        guard mandatoryIndices.count < maximumPointCount else {
-            return mandatoryIndices.sorted().map { points[$0] }
-        }
-
-        // LTTB 自身一定包含首尾点；预留精度边界后再计算其采样预算，最终不会超过上限。
-        let samplingCount = min(
-            points.count,
-            max(3, maximumPointCount - mandatoryIndices.count + 2)
-        )
+        // LTTB 自身一定包含首尾点；统一实线后无需额外保留来源边界。
+        let samplingCount = min(points.count, maximumPointCount)
         let bucketWidth = Double(points.count - 2) / Double(samplingCount - 2)
         var sampledIndices: Set<Int> = [0, points.count - 1]
         var previousSelectedIndex = 0
@@ -191,7 +148,6 @@ enum StarHistoryChartSeriesBuilder {
             previousSelectedIndex = selectedIndex
         }
 
-        sampledIndices.formUnion(mandatoryIndices)
         return sampledIndices.sorted().map { points[$0] }
     }
 
@@ -346,19 +302,6 @@ enum ReleaseCadenceAssetsDisplayPolicy {
 }
 
 enum StarHistoryDisplayPolicy {
-    /// Starcat 本机快照是所有仓库的共同基线，因此即使暂时没有数据也要常驻在首位。
-    /// 其余图例只按当前实际出现的精度追加，避免暗示尚未获取到的远端历史。
-    static func legendPrecisions(points: [StarHistoryPoint]) -> [StarHistoryPrecision] {
-        var precisions: [StarHistoryPrecision] = [.snapshot]
-        if points.contains(where: { $0.precision == .reconstructed }) {
-            precisions.append(.reconstructed)
-        }
-        if points.contains(where: { $0.precision == .estimated }) {
-            precisions.append(.estimated)
-        }
-        return precisions
-    }
-
     /// 图表选中日期后返回最近点，供图内 RuleMark 和浮层使用。
     static func selectedPoint(
         in points: [StarHistoryPoint],
@@ -1221,8 +1164,7 @@ struct RepositoryInsightsView: View {
         ).format(coverageStart..<coverageEnd)
     }
 
-    /// 第一行固定图例靠左、覆盖信息靠右；限制链接保留第二行并独立右对齐。
-    /// 每一行内容都不换行，悬停也只更新图内浮层。导出图不带帮助链接。
+    /// 覆盖信息靠右；限制链接保留第二行并独立右对齐。导出图不带帮助链接。
     private func starFooter(isShareCapture: Bool) -> some View {
         let showsRestriction = StarHistoryShareCaptureChrome.showsRestrictionLink(
             isShareCapture,
@@ -1233,12 +1175,9 @@ struct RepositoryInsightsView: View {
             )
         )
         return VStack(alignment: .trailing, spacing: 4) {
-            HStack(spacing: 8) {
-                starSources
-                Spacer(minLength: 12)
-                starCoverageSummary
-                    .lineLimit(1)
-            }
+            starCoverageSummary
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             if showsRestriction {
                 starHistoryRestrictionLink
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -1476,58 +1415,6 @@ struct RepositoryInsightsView: View {
         }
     }
 
-    private var starSources: some View {
-        // 顺序是产品语义：本机精确快照是共同基线，项目仓库再追加 GitHub 重建历史。
-        HStack(spacing: 8) {
-            ForEach(
-                StarHistoryDisplayPolicy.legendPrecisions(points: displayedStarPoints),
-                id: \.rawValue
-            ) { precision in
-                switch precision {
-                case .snapshot:
-                    starSourceChip(
-                        title: "insights.repo.star.source.snapshot",
-                        systemImage: "internaldrive.fill",
-                        dashed: false
-                    )
-                case .reconstructed:
-                    starSourceChip(
-                        title: "insights.repo.star.source.name.githubStargazers",
-                        systemImage: "person.2.fill",
-                        dashed: true
-                    )
-                case .estimated:
-                    starSourceChip(
-                        title: "insights.repo.star.source.estimated",
-                        systemImage: "waveform.path.ecg",
-                        dashed: true
-                    )
-                }
-            }
-        }
-    }
-
-    private func starSourceChip(
-        title: LocalizedStringKey,
-        systemImage: String,
-        dashed: Bool
-    ) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: systemImage)
-            Text(title)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-            Rectangle()
-                .fill(Color.blue.opacity(dashed ? 0.65 : 1))
-                .frame(width: 18, height: dashed ? 1 : 2)
-        }
-        .font(interfaceScale.font(.captionSmall, weight: .medium))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.55), in: Capsule())
-    }
-
     private var displayedStarPoints: [StarHistoryPoint] {
         starHistoryViewModel.points
     }
@@ -1603,15 +1490,8 @@ struct RepositoryInsightsView: View {
         case .unavailable where displayedStarPoints.isEmpty:
             return ("star.slash", "insights.repo.star.state.unavailable")
         default:
-            // 正常有点：项目重建历史优先展示专属来源，其次公共估算，最后本机快照。
-            guard !displayedStarPoints.isEmpty else { return nil }
-            if displayedStarPoints.contains(where: { $0.source == .githubStargazers }) {
-                return ("person.2.fill", "insights.repo.star.source.githubStargazers")
-            }
-            if displayedStarPoints.contains(where: { $0.precision == .estimated }) {
-                return ("icloud", "insights.repo.star.source.estimated")
-            }
-            return ("internaldrive.fill", "insights.repo.star.source.snapshot")
+            // 正常曲线不再暴露来源差异；只保留需要用户感知的状态反馈。
+            return nil
         }
     }
 

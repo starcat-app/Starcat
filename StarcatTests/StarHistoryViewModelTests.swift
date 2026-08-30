@@ -354,48 +354,6 @@ struct StarHistoryStatisticsBuilderTests {
 
 @Suite("Star History Chart Series")
 struct StarHistoryChartSeriesBuilderTests {
-
-    @Test("重建历史切换到单个本机快照时应生成桥接段")
-    func reconstructedHistoryConnectsToSnapshot() throws {
-        let reconstructed = try point(
-            "2023-10-22",
-            15,
-            source: .githubStargazers,
-            precision: .reconstructed
-        )
-        let snapshot = try point(
-            "2026-07-29",
-            15,
-            source: .localSnapshot,
-            precision: .snapshot
-        )
-
-        let bridges = StarHistoryChartSeriesBuilder.bridges(in: [reconstructed, snapshot])
-
-        #expect(bridges.count == 1)
-        #expect(bridges.first?.start == reconstructed)
-        #expect(bridges.first?.end == snapshot)
-        #expect(bridges.first?.inheritedPrecision == .reconstructed)
-    }
-
-    @Test("同一精度的连续点不得重复生成桥接段")
-    func samePrecisionDoesNotCreateBridge() throws {
-        let first = try point(
-            "2023-10-21",
-            14,
-            source: .githubStargazers,
-            precision: .reconstructed
-        )
-        let second = try point(
-            "2023-10-22",
-            15,
-            source: .githubStargazers,
-            precision: .reconstructed
-        )
-
-        #expect(StarHistoryChartSeriesBuilder.bridges(in: [first, second]).isEmpty)
-    }
-
     @Test("全部范围横轴应从仓库创建时间开始")
     func allRangeStartsAtRepositoryCreation() throws {
         let createdAt = try #require(StarHistoryDateCodec.date(from: "2016-01-10"))
@@ -440,8 +398,8 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(rendered.last == firstSnapshot)
     }
 
-    @Test("全部范围抽稀不得超过上限且必须保留精度交接")
-    func allRangeDownsamplesAndKeepsPrecisionBoundary() throws {
+    @Test("全部范围抽稀不得超过上限且必须保留首尾")
+    func allRangeDownsamplesAndKeepsEndpoints() throws {
         let start = try #require(StarHistoryDateCodec.date(from: "2024-01-01"))
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -467,8 +425,6 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(rendered.count <= 40)
         #expect(rendered.first == points.first)
         #expect(rendered.last == points.last)
-        #expect(rendered.contains(points[399]))
-        #expect(rendered.contains(points[400]))
     }
 
     @Test("近期范围也必须限制图表渲染点数量")
@@ -494,7 +450,7 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(rendered.last == points.last)
     }
 
-    @Test("图表只标记首尾与精度交接点")
+    @Test("图表只标记首尾点")
     func landmarksStaySparse() throws {
         let estimatedStart = try point(
             "2026-08-01",
@@ -525,7 +481,7 @@ struct StarHistoryChartSeriesBuilderTests {
             in: [estimatedStart, estimatedEnd, snapshotStart, snapshotEnd]
         )
 
-        #expect(landmarks == [estimatedStart, snapshotStart, snapshotEnd])
+        #expect(landmarks == [estimatedStart, snapshotEnd])
     }
 
     @Test("近期范围不得早于仓库创建时间")
@@ -704,44 +660,6 @@ struct StarHistoryRestrictionNoticePolicyTests {
 
 @Suite("Star History Display Policy")
 struct StarHistoryDisplayPolicyTests {
-
-    @Test("空数据仍显示 Starcat 精确快照图例")
-    func emptyPointsKeepSnapshotLegend() {
-        #expect(
-            StarHistoryDisplayPolicy.legendPrecisions(points: []).map(\.rawValue)
-                == [StarHistoryPrecision.snapshot.rawValue]
-        )
-    }
-
-    @Test("普通仓库只显示 Starcat 精确快照图例")
-    func localSnapshotUsesSnapshotLegend() {
-        let points = [
-            point("2026-07-28", source: .localSnapshot, precision: .snapshot),
-            point("2026-07-29", source: .localSnapshot, precision: .snapshot)
-        ]
-
-        #expect(
-            StarHistoryDisplayPolicy.legendPrecisions(points: points).map(\.rawValue)
-                == [StarHistoryPrecision.snapshot.rawValue]
-        )
-    }
-
-    @Test("我的项目先显示 Starcat 精确快照再显示 GitHub 图例")
-    func projectLegendKeepsSnapshotFirst() {
-        let points = [
-            point("2023-10-22", source: .githubStargazers, precision: .reconstructed),
-            point("2026-07-29", source: .localSnapshot, precision: .snapshot)
-        ]
-
-        #expect(
-            StarHistoryDisplayPolicy.legendPrecisions(points: points).map(\.rawValue)
-                == [
-                    StarHistoryPrecision.snapshot.rawValue,
-                    StarHistoryPrecision.reconstructed.rawValue
-                ]
-        )
-    }
-
     @Test("未选中图表日期时不产生选中点")
     func noSelectionReturnsNoPoint() {
         let points = [point("2026-07-29", source: .localSnapshot, precision: .snapshot)]

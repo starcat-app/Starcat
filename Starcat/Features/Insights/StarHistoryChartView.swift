@@ -5,7 +5,7 @@
 //  Star 历史曲线的独立渲染视图与不可变渲染模型。
 //
 //  关键约束：
-//  - 原始历史只在 Snapshot 更新或范围切换时完成抽稀和分组，滚动重绘不重复做 O(n) 处理。
+//  - 原始历史只在 Snapshot 更新或范围切换时完成抽稀和渲染建模，滚动重绘不重复做 O(n) 处理。
 //  - Hover 只在跨越最近数据点时写状态，不把鼠标每个像素都写进 SwiftUI 状态树。
 //  - 导出图片复用相同渲染模型，但完全不注册 Hover，避免截入瞬时浮层或触发额外布局。
 //
@@ -17,10 +17,6 @@ import SwiftUI
 struct StarHistoryChartRenderModel: Equatable, Sendable {
     let range: StarHistoryRange
     let renderedPoints: [StarHistoryPoint]
-    let estimatedPoints: [StarHistoryPoint]
-    let reconstructedPoints: [StarHistoryPoint]
-    let precisePoints: [StarHistoryPoint]
-    let bridges: [StarHistoryChartBridge]
     let landmarks: [StarHistoryPoint]
     let xDomain: ClosedRange<Date>
     let yDomain: ClosedRange<Double>
@@ -31,10 +27,6 @@ struct StarHistoryChartRenderModel: Equatable, Sendable {
         return StarHistoryChartRenderModel(
             range: .oneYear,
             renderedPoints: [],
-            estimatedPoints: [],
-            reconstructedPoints: [],
-            precisePoints: [],
-            bridges: [],
             landmarks: [],
             xDomain: start...start.addingTimeInterval(86_400),
             yDomain: 0...1,
@@ -62,10 +54,6 @@ struct StarHistoryChartRenderModel: Equatable, Sendable {
 
         self.range = range
         self.renderedPoints = renderedPoints
-        estimatedPoints = renderedPoints.filter { $0.precision == .estimated }
-        reconstructedPoints = renderedPoints.filter { $0.precision == .reconstructed }
-        precisePoints = renderedPoints.filter { $0.precision == .snapshot }
-        bridges = StarHistoryChartSeriesBuilder.bridges(in: renderedPoints)
         landmarks = StarHistoryChartSeriesBuilder.landmarkPoints(in: renderedPoints)
         self.xDomain = xDomain
         yDomain = StarHistoryChartLayoutPolicy.yDomain(range: range, points: points)
@@ -75,10 +63,6 @@ struct StarHistoryChartRenderModel: Equatable, Sendable {
     private init(
         range: StarHistoryRange,
         renderedPoints: [StarHistoryPoint],
-        estimatedPoints: [StarHistoryPoint],
-        reconstructedPoints: [StarHistoryPoint],
-        precisePoints: [StarHistoryPoint],
-        bridges: [StarHistoryChartBridge],
         landmarks: [StarHistoryPoint],
         xDomain: ClosedRange<Date>,
         yDomain: ClosedRange<Double>,
@@ -86,10 +70,6 @@ struct StarHistoryChartRenderModel: Equatable, Sendable {
     ) {
         self.range = range
         self.renderedPoints = renderedPoints
-        self.estimatedPoints = estimatedPoints
-        self.reconstructedPoints = reconstructedPoints
-        self.precisePoints = precisePoints
-        self.bridges = bridges
         self.landmarks = landmarks
         self.xDomain = xDomain
         self.yDomain = yDomain
@@ -115,14 +95,7 @@ struct StarHistoryChartView: View {
 
     var body: some View {
         Chart {
-            estimatedMarks
-            reconstructedMarks
-
-            ForEach(model.bridges) { bridge in
-                bridgeMarks(bridge)
-            }
-
-            preciseMarks
+            historyMarks
             landmarkMarks
             if let selectedPoint {
                 selectionMarks(selectedPoint)
@@ -253,38 +226,14 @@ struct StarHistoryChartView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
     }
 
-    private var estimatedMarks: some ChartContent {
-        ForEach(model.estimatedPoints) { point in
+    /// 数据来源与精度仍保留在模型中供统计和诊断使用，但趋势本身只表达 Stars 数量变化。
+    /// 使用单一 series 和统一实线后，Swift Charts 会自然连接全部抽稀点，不再需要桥接 Mark。
+    private var historyMarks: some ChartContent {
+        ForEach(model.renderedPoints) { point in
             LineMark(
                 x: .value("Date", point.date),
                 y: .value("Stars", point.count),
-                series: .value("Source", "Estimated")
-            )
-            .foregroundStyle(Color.blue.opacity(0.68))
-            .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [6, 4]))
-            .interpolationMethod(.linear)
-        }
-    }
-
-    private var reconstructedMarks: some ChartContent {
-        ForEach(model.reconstructedPoints) { point in
-            LineMark(
-                x: .value("Date", point.date),
-                y: .value("Stars", point.count),
-                series: .value("Source", "GitHub Stargazers")
-            )
-            .foregroundStyle(Color.blue.opacity(0.78))
-            .lineStyle(StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: [7, 4]))
-            .interpolationMethod(.linear)
-        }
-    }
-
-    private var preciseMarks: some ChartContent {
-        ForEach(model.precisePoints) { point in
-            LineMark(
-                x: .value("Date", point.date),
-                y: .value("Stars", point.count),
-                series: .value("Source", "Snapshot")
+                series: .value("Series", "Star History")
             )
             .foregroundStyle(Color.blue)
             .lineStyle(StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
@@ -318,38 +267,6 @@ struct StarHistoryChartView: View {
         )
         .foregroundStyle(Color.blue)
         .symbolSize(30)
-    }
-
-    @ChartContentBuilder
-    private func bridgeMarks(_ bridge: StarHistoryChartBridge) -> some ChartContent {
-        let color: Color = switch bridge.inheritedPrecision {
-        case .estimated: Color.blue.opacity(0.72)
-        case .reconstructed: Color.blue.opacity(0.8)
-        case .snapshot: Color.blue
-        }
-        let strokeStyle: StrokeStyle = switch bridge.inheritedPrecision {
-        case .estimated: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 4])
-        case .reconstructed: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 3])
-        case .snapshot: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-        }
-
-        LineMark(
-            x: .value("Date", bridge.start.date),
-            y: .value("Stars", bridge.start.count),
-            series: .value("Source", bridge.id)
-        )
-        .foregroundStyle(color)
-        .lineStyle(strokeStyle)
-        .interpolationMethod(.linear)
-
-        LineMark(
-            x: .value("Date", bridge.end.date),
-            y: .value("Stars", bridge.end.count),
-            series: .value("Source", bridge.id)
-        )
-        .foregroundStyle(color)
-        .lineStyle(strokeStyle)
-        .interpolationMethod(.linear)
     }
 
     private func axisLabel(_ date: Date) -> String {
