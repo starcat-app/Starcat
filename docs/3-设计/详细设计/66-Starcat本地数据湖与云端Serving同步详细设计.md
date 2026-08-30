@@ -260,13 +260,13 @@ source=gh_archive
 precision=estimated
 ```
 
-为了兼容现有 UI 的绝对 Star 数，服务按当前 GitHub `stargazers_count` 对累计 WatchEvent 形状做单一当前锚点校准：
+为了兼容现有 UI 的绝对 Star 数，Starcat 使用本机已缓存的公开 `stars_count` 对累计 WatchEvent 形状做单一当前锚点校准；第三方兼容接口没有本机锚点时才由服务读取公开 GitHub metadata：
 
 ```text
 stars(day) = round(current_stars * cumulative_events(day) / cumulative_events(anchor_date))
 ```
 
-这是“不还原 Unstar”的估算模型，不做多锚点插值、群体校准或 Unstar 重算；输出单调钳制并让覆盖末点等于当前公开 Star 数。当前锚点不可用时返回可解释的 building/unavailable，不把纯事件累计伪装为权威 Star 总数。
+这是“不还原 Unstar”的估算模型，不做多锚点插值、群体校准或 Unstar 重算；输出单调钳制并让覆盖末点等于当前公开 Star 数。`/star-history/events` 只返回原始日事件，由 Starcat 本地完成校准、范围筛选和降采样；当前锚点不可用时返回 unavailable，不把纯事件累计伪装为权威 Star 总数。
 
 ### 7.2 每日流程
 
@@ -598,7 +598,7 @@ worker_lease_total{state,worker}
 1. 采用 Parquet + DuckDB + PostgreSQL Catalog 的轻量 Lakehouse，不在第一阶段引入重型分布式分析栈。
 2. BigQuery Raw 只在本地保留一份，云端和各业务服务均不复制。
 3. History 使用日级 SQLite Delta 和月度完整 Snapshot，不每日上传完整增长型 DB。
-4. History 不处理 Unstar，统一以 `gh_archive + estimated` 表达 WatchEvent 累积曲线。
+4. History 不处理 Unstar；Starcat 在本机、第三方兼容接口在服务端使用同一公式，并统一以 `gh_archive + estimated` 表达 WatchEvent 累积曲线。
 5. Recommend 首期继续发布完整 ServingBundle；规模达到实际门槛后改为内容寻址分片。
 6. 推荐的增量是文件传输优化，线上仍按完整 model version 原子切换。
 7. 本地只能主动 Push 到云端，不开放家庭网络入站端口。

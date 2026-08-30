@@ -1,8 +1,8 @@
 # Starcat 自研星标历史服务详细设计
 
 > 日期: 2026-08-26
-> 状态: 简化方案已确认，待独立服务实施
-> 版本: v1.1
+> 状态: 本地全量基线完成，生产增量与迁移收口中
+> 版本: v1.2
 > 范围: `starcat-history-api`、本地 WatchEvent 聚合、History Delta 发布、公共查询与客户端迁移
 > 本地数据与发布契约: [Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)
 > 当前实现基线: [仓库星标历史整体落地方案](50-仓库星标历史整体落地方案.md)
@@ -12,9 +12,10 @@
 Star History 最终从 `starcat-discovery-api` 迁出，建设独立的 `supports/starcat-history-api`。服务职责收敛为：
 
 - 查询本地离线任务发布的公开 repo 日级 WatchEvent 聚合结果；
-- 使用公开 GitHub 当前 `stargazers_count` 形成单一当前锚点；
-- 按“不处理 Unstar”的固定口径生成估算 Star 历史；
-- 提供兼容现有 Starcat 客户端的公共查询 API、ETag、缓存和稳定错误；
+- 为 Starcat 提供原始 repo/day WatchEvent 接口，由客户端使用本机已有的公开 `stars_count` 形成单一当前锚点；
+- 为第三方提供由服务端公开 GitHub metadata 校准的兼容查询接口；
+- 两条查询路径均按“不处理 Unstar”的固定口径生成或标记估算 Star 历史；
+- 提供 ETag、缓存和稳定错误；
 - 接收本地数据平台生成的 History Delta 和完整 Snapshot，并支持幂等应用、恢复和回滚；
 - 迁移完成后删除 Discovery 中的临时 History 路径和按请求查询 BigQuery 的 Provider。
 
@@ -47,9 +48,9 @@ precision=estimated
 - Starcat 已有 `StarHistoryAPI`、`GRDBRepoStarHistoryRepository`、`StarHistoryViewModel` 和项目洞察曲线。
 - Starcat 已按日保存本地 `stars_count` 快照，并在 Repository 层合并不同来源。
 - 有权限的“我的项目”可直连 GitHub `/stargazers` 并仅在本机聚合。
-- 普通公开仓库当前由 `starcat-discovery-api` 提供 History 路径。
-- Discovery 已有 BigQuery Provider、缓存、异步构建、ETag 和错误契约，但按请求扫描 BigQuery 不再是目标架构。
-- 2016-01-01 至 2026-08-25 的 GH Archive WatchEvent 正按 UTC 日分区下载到本地唯一 Raw Dataset。
+- 普通公开仓库已切换到独立 History 设置槽和 `/star-history/events`，客户端在本地校准并继续复用 Repository/UI。
+- 独立服务已实现 Snapshot/Delta 发布、压缩序列查询、ETag、指标和稳定错误；Discovery 旧路径只作为迁移期回退。
+- 2016-01-01 至 2026-08-25 的 `3,890` 个 Raw 分区已生成 `260,066,701` 个 repo-day，覆盖 `43,868,648` 个仓库和 `510,104,947` 条 WatchEvent。
 
 ### 3.2 目标状态
 
@@ -62,9 +63,9 @@ History Delta SQLite / 月度 Snapshot
         ↓ HTTPS Push
 starcat-history-api Serving DB
         ↓
-GET /api/v1/repos/{owner}/{repo}/star-history
+GET /api/v1/repos/{owner}/{repo}/star-history/events
         ↓
-Starcat StarHistoryAPI
+Starcat StarHistoryAPI + 本机 stars_count 单锚点校准
         ↓
 RepoStarHistoryRepository 合并本机点
         ↓
@@ -101,7 +102,7 @@ anchorDate = 当前 GitHub metadata 获取日期
 anchorStars = anchorDate 的 stargazers_count
 ```
 
-在明确“不处理 Unstar”的前提下：
+在明确“不处理 Unstar”的前提下，Starcat 客户端与第三方兼容接口使用同一公式：
 
 ```text
 estimatedStars(d) = round(anchorStars * cumulative(d) / cumulative(anchorDate))
@@ -112,7 +113,9 @@ estimatedStars(d) = round(anchorStars * cumulative(d) / cumulative(anchorDate))
 - 比例校准只用于把覆盖期内 WatchEvent 累计形状映射到 UI 需要的绝对 Star 数，不还原具体 Unstar。
 - 输出按日期单调不减并钳制到 `anchorStars`，最后一个覆盖点固定等于当前公开 Star 数。
 - 2016 年以前创建的仓库只声明覆盖从 2016-01-01 开始，不能展示为完整生命周期。
-- 当前锚点不存在或已过期时，任务进入 building/unavailable，不把纯事件数伪装成绝对 Star 数。
+- Starcat 的锚点来自本机已缓存的公开 `Repo.starsCount`，不为每次曲线查询再次调用 GitHub。
+- 第三方兼容接口没有客户端锚点时，才使用服务端公开 GitHub metadata 缓存。
+- 当前锚点不存在时返回 unavailable，不把纯事件数伪装成绝对 Star 数。
 - 新锚点只影响下一次重建结果，不回写或伪造 Raw WatchEvent。
 - 算法变化必须提升 `model_version`，不能静默改变同一版本的历史结果。
 
@@ -299,9 +302,39 @@ Content-Type: application/zip
 
 Publish Key 与公共 `API_KEYS` 分离，内部发布 endpoint 不向第三方开放。
 
-## 10. 公共查询 API
+## 10. 查询 API
 
-兼容现有 Starcat 客户端：
+### 10.1 Starcat 原始日事件接口
+
+```http
+GET /api/v1/repos/{owner}/{repo}/star-history/events
+    ?repo_id={github_repository_id}
+```
+
+成功响应只返回日级 WatchEvent 计数、覆盖范围、模型版本和 active watermark。它不返回 actor、payload、当前私有 metadata 或校准后的绝对 Star 数：
+
+```json
+{
+  "schema_version": 1,
+  "data": {
+    "repo_id": 41881900,
+    "full_name": "microsoft/vscode",
+    "coverage_start": "2016-01-01",
+    "coverage_end": "2026-08-25",
+    "event_total": 168742,
+    "generated_at": "2026-08-26T00:00:00Z",
+    "model_version": "watch-events-no-unstar-v1",
+    "active_watermark": "2026-08-25",
+    "events": [{"date": "2026-08-25", "count": 25}]
+  }
+}
+```
+
+Starcat 使用本机 `starsCount` 完成校准，再按 `3m/1y/all` 选择范围和降采样。`owner/repo` 用于客户端响应一致性，不是服务端权限依据；服务端的事实主键是 `repo_id`。该接口只暴露曾进入公开 GH Archive 的聚合事件，且必须使用 `API_KEYS` 鉴权。
+
+### 10.2 第三方兼容查询接口
+
+第三方没有 Starcat 本机锚点时可使用：
 
 ```http
 GET /api/v1/repos/{owner}/{repo}/star-history
@@ -338,9 +371,9 @@ GET /api/v1/repos/{owner}/{repo}/star-history
 }
 ```
 
-响应必须保持现有 Starcat v1 DTO 所需的 `current_stars`、`coverage_start`、`generated_at` 和 `points[].count` 字段；`model_version`、`active_watermark` 等只能作为可忽略的新增字段。`source/precision/points` 语义保持，切换 endpoint 不要求重做 UI。
+兼容接口继续返回 `current_stars`、`coverage_start`、`generated_at` 和 `points[].count`，并固定标记 `source=gh_archive`、`precision=estimated`。
 
-### 10.1 Building
+### 10.3 Building
 
 repo metadata 或绝对值曲线尚未准备好时：
 
@@ -362,17 +395,17 @@ Retry-After: 3
 
 客户端延续三次有界轮询；已有 stale 曲线时可以先返回 200 + `cache_status=stale` 并后台刷新锚点。
 
-### 10.2 缓存和错误
+### 10.4 缓存和错误
 
-- `ETag` 基于 repo ID、range、model version、active watermark、anchor 和 series hash。
+- `/events` 的 `ETag` 基于 repo ID、model version、active watermark 和 series hash；兼容接口再包含 range 与 anchor。
 - `If-None-Match` 命中返回 304。
 - ready TTL 24 小时；building 短缓存不超过 30 秒。
-- 400 参数错误；404 repo 不存在或覆盖期内无 WatchEvent；409 ID/name 不一致；422 非公开；429 限流；503 store/provider 不可用。
+- 400 参数错误；404 覆盖期内无 WatchEvent；兼容接口继续使用 409 ID/name 不一致、422 非公开、429 限流和 503 provider 不可用。
 - 错误 code 稳定，message 可以调整。
 
 ## 11. 降采样
 
-存储层保留有 WatchEvent 的日级点，API 按 range 输出：
+存储层保留有 WatchEvent 的日级点。Starcat 在客户端按 range 输出，第三方兼容接口在服务端使用相同策略：
 
 | Range | 输出策略 |
 |---|---|
@@ -384,11 +417,12 @@ Retry-After: 3
 
 ## 12. 私有仓库与权限
 
-- 公共 History 服务只处理公开 repo。
-- 客户端在请求前以 `Repo.isPrivate` 阻断；服务端仍重新验证 visibility。
+- 公共 History 服务只保存曾进入公开 GH Archive 的 repo/day 聚合，不接收 Starcat 私有数据。
+- Starcat 在请求 `/events` 前以 `Repo.isPrivate` 阻断，Private/Internal 的名称、ID 和当前 Star 数均不离开设备。
+- 第三方兼容接口继续通过公开 GitHub metadata 重新验证 visibility。
 - “我的项目”中的 Private/Internal 只使用用户本机授权路径。
 - Private/Internal 名称、ID、Star 数、历史点和错误不得发往公共 History 服务。
-- Public 转 Private 后停止公共查询，并在下一次 Serving 构建或 metadata 清理时移除。
+- Public 转 Private 后 Starcat 停止发起 `/events` 请求；第三方兼容查询由 metadata 校验拒绝。历史 GH Archive 聚合可在后续 Snapshot 清理，但不包含当前私有 metadata。
 
 ## 13. 可观测性
 
@@ -407,29 +441,29 @@ history_store_bytes
 
 ## 14. 迁移方案
 
-### Phase 0：冻结契约
+### Phase 0：冻结契约（已完成）
 
 - 以现有 `StarHistoryAPI` DTO、Repository 合并语义和错误 code 为兼容基线。
 - 建立本地数据平台的 History Silver、Delta 和 Snapshot 契约。
 - 独立 History 服务不接真实客户端流量。
 
-### Phase 1：本地回填
+### Phase 1：本地回填（已完成）
 
 - 使用共享 WatchEvent Raw 生成 2016 至当前水位线的日级聚合。
 - 生成首个完整 Snapshot，并与固定 repo 样本和当前 Discovery 曲线比较。
 - 校验 row count、event total、末值、覆盖范围和 checksum。
 
-### Phase 2：增量发布
+### Phase 2：增量发布（进行中）
 
 - 连续运行每日 Delta。
 - 验证幂等重放、日期缺口、失败不推进、Snapshot 恢复和回滚。
 - 不让每个线上 cache miss 再触发 BigQuery 查询。
 
-### Phase 3：查询切换
+### Phase 3：查询切换（客户端完成，生产待部署）
 
 - `starcat-history-api` shadow 对比 Discovery。
 - 1% → 10% → 50% → 100% 灰度。
-- 客户端只切换 endpoint，Repository/UI 保持不变。
+- 客户端切换到 `/events` 并在网络层本地校准，Repository/UI 保持不变。
 
 ### Phase 4：收口
 
@@ -457,9 +491,10 @@ history_store_bytes
 ### 15.3 API
 
 - 200/202/304/400/404/409/422/429/503。
-- `3m/1y/all`、ETag、stale、三次有界轮询。
+- `/events` 原始日计数、ETag/304、模型版本和 active watermark。
+- 客户端 `3m/1y/all`、本地校准、stale 与三次有界轮询。
 - source 固定为 `gh_archive`，precision 固定为 `estimated`。
-- Private/Internal 在客户端和服务端双重阻断。
+- Private/Internal 在 Starcat 客户端阻断；第三方兼容接口由服务端再次验证。
 - active watermark 不变时结果可复现。
 
 ### 15.4 人工
@@ -499,9 +534,9 @@ history_store_bytes
 
 1. Star History 独立于 Discovery、Collection、Trainer 和 Recommend API。
 2. History 与 Trainer 共享本地唯一 WatchEvent Raw Dataset，但各自生成独立派生产物。
-3. 公共曲线不处理 Unstar，采用单一当前锚点和 WatchEvent 累积估算。
+3. 公共曲线不处理 Unstar；Starcat 在本机、第三方兼容接口在服务端使用同一单锚点公式。
 4. 当前阶段不建设 History 用户贡献、群体快照、多锚点或参与者删除重算。
 5. 云端只接收 repo-day 聚合 Delta 和按 repo 压缩的完整 Snapshot，不接收原始事件或 actor。
 6. 每日同步 Delta、每月生成 Snapshot；失败不推进 active watermark。
-7. 现有 Starcat API DTO、Repository 合并和 UI 保持兼容，仅迁移 endpoint。
+7. Starcat 网络层改读原始日事件并本地校准；Repository 合并、source/precision 和 UI 保持兼容。
 8. Discovery History 是迁移期实现，稳定后必须删除。
