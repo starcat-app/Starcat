@@ -319,6 +319,84 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(StarHistoryChartSeriesBuilder.bridges(in: [first, second]).isEmpty)
     }
 
+    @Test("全部范围横轴应从仓库创建时间开始")
+    func allRangeStartsAtRepositoryCreation() throws {
+        let createdAt = try #require(StarHistoryDateCodec.date(from: "2016-01-10"))
+        let firstEvent = try point(
+            "2017-03-01",
+            10,
+            source: .ghArchive,
+            precision: .estimated
+        )
+        let now = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+
+        let domain = StarHistoryChartLayoutPolicy.xDomain(
+            range: .all,
+            repositoryCreatedAt: createdAt,
+            points: [firstEvent],
+            now: now
+        )
+
+        #expect(domain.lowerBound == createdAt)
+        #expect(domain.upperBound == now)
+    }
+
+    @Test("近期范围不得早于仓库创建时间")
+    func recentRangeDoesNotPredateRepository() throws {
+        let createdAt = try #require(StarHistoryDateCodec.date(from: "2026-08-01"))
+        let now = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+
+        let domain = StarHistoryChartLayoutPolicy.xDomain(
+            range: .threeMonths,
+            repositoryCreatedAt: createdAt,
+            points: [],
+            now: now
+        )
+
+        #expect(domain.lowerBound == createdAt)
+    }
+
+    @Test("全部范围保留零基线而近期范围聚焦实际变化")
+    func yDomainDependsOnSelectedRange() throws {
+        let first = try point(
+            "2026-08-01",
+            9_000,
+            source: .ghArchive,
+            precision: .estimated
+        )
+        let latest = try point(
+            "2026-08-30",
+            10_000,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+
+        let all = StarHistoryChartLayoutPolicy.yDomain(range: .all, points: [first, latest])
+        let recent = StarHistoryChartLayoutPolicy.yDomain(
+            range: .threeMonths,
+            points: [first, latest]
+        )
+
+        #expect(all.lowerBound == 0)
+        #expect(recent.lowerBound > 0)
+        #expect(recent.upperBound > 10_000)
+    }
+
+    @Test("横轴刻度应包含完整时间域两端")
+    func xAxisDatesIncludeBothDomainEdges() throws {
+        let start = try #require(StarHistoryDateCodec.date(from: "2016-01-01"))
+        let end = try #require(StarHistoryDateCodec.date(from: "2026-01-01"))
+
+        let values = StarHistoryChartLayoutPolicy.xAxisDates(
+            domain: start...end,
+            range: .all
+        )
+
+        #expect(values.count == 6)
+        #expect(values.first == start)
+        #expect(values.last == end)
+    }
+
     private func point(
         _ day: String,
         _ count: Int,
