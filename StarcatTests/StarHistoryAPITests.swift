@@ -47,7 +47,8 @@ struct StarHistoryAPITests {
 
         let result = try await api.fetch(
             request: request(currentStars: 100),
-            range: .all,
+            // events 接口与显示范围无关，即使请求 3m 也必须返回完整日级序列。
+            range: .threeMonths,
             ifNoneMatch: "\"history-events-v0\""
         )
         let received = try #require(URLProtocolStub.receivedRequests.first)
@@ -206,6 +207,111 @@ struct StarHistoryAPITests {
             name: "history",
             isPrivate: false,
             currentStars: currentStars
+        )
+    }
+}
+
+@Suite("Star History Curve Builder")
+struct StarHistoryCurveBuilderTests {
+
+    @Test("全部范围应保留同月内每一个事件日")
+    func allRangePreservesEveryEventDay() throws {
+        let points = [
+            point("2026-08-01", 10),
+            point("2026-08-02", 12),
+            point("2026-08-25", 30)
+        ]
+
+        let selected = StarHistoryCurveBuilder.selectRange(
+            points,
+            range: .all,
+            now: try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+        )
+
+        #expect(selected == points)
+    }
+
+    @Test("一年范围只压缩远端周点并保留全部精确快照")
+    func oneYearKeepsPreciseSnapshots() throws {
+        let remoteFirst = point("2026-08-03", 10)
+        let remoteLast = point("2026-08-07", 15)
+        let snapshotFirst = point(
+            "2026-08-08",
+            14,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+        let snapshotLast = point(
+            "2026-08-09",
+            16,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+
+        let selected = StarHistoryCurveBuilder.selectRange(
+            [remoteFirst, remoteLast, snapshotFirst, snapshotLast],
+            range: .oneYear,
+            now: try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+        )
+
+        #expect(selected == [remoteLast, snapshotFirst, snapshotLast])
+    }
+
+    @Test("估算历史应在第一个精确快照处校准并停止")
+    func estimatedHistoryStopsAtFirstPreciseSnapshot() throws {
+        let fetchedAt = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+        let points = [
+            point("2026-01-01", 100, fetchedAt: fetchedAt),
+            point("2026-02-01", 200, fetchedAt: fetchedAt),
+            point("2026-03-01", 240, fetchedAt: fetchedAt),
+            point(
+                "2026-02-15",
+                180,
+                source: .localSnapshot,
+                precision: .snapshot,
+                fetchedAt: fetchedAt
+            ),
+            point(
+                "2026-03-15",
+                190,
+                source: .localSnapshot,
+                precision: .snapshot,
+                fetchedAt: fetchedAt
+            )
+        ]
+
+        let stitched = StarHistoryCurveBuilder.stitchToPreciseSnapshots(points)
+
+        #expect(stitched.map(\.count) == [90, 180, 180, 190])
+        #expect(stitched.map { StarHistoryDateCodec.dayString(from: $0.date) } == [
+            "2026-01-01", "2026-02-01", "2026-02-15", "2026-03-15"
+        ])
+        #expect(stitched.map(\.precision) == [
+            .estimated, .estimated, .snapshot, .snapshot
+        ])
+    }
+
+    @Test("没有精确快照时不得改写远端历史")
+    func remoteHistoryWithoutSnapshotsIsUnchanged() throws {
+        let points = [point("2026-01-01", 10), point("2026-02-01", 20)]
+
+        #expect(StarHistoryCurveBuilder.stitchToPreciseSnapshots(points) == points)
+    }
+
+    private func point(
+        _ day: String,
+        _ count: Int,
+        source: StarHistorySource = .ghArchive,
+        precision: StarHistoryPrecision = .estimated,
+        fetchedAt: Date? = nil
+    ) -> StarHistoryPoint {
+        let date = StarHistoryDateCodec.date(from: day)!
+        return StarHistoryPoint(
+            date: date,
+            count: count,
+            source: source,
+            precision: precision,
+            fetchedAt: fetchedAt ?? date
         )
     }
 }

@@ -13,8 +13,6 @@
 import Foundation
 
 enum StarHistoryCurveBuilder {
-    static let defaultMaximumPoints = 400
-
     struct DailyEvent: Equatable, Sendable {
         let date: Date
         let count: Int
@@ -79,14 +77,55 @@ enum StarHistoryCurveBuilder {
         return points
     }
 
-    /// 与服务端 SelectRange 对齐：3m 按日、1y 按 ISO 周、all 按月；超上限等距抽稀。
+    /// 把远端重建历史与本机精确快照收敛成一次性精度交接。
+    ///
+    /// 远端曲线使用“当前 Star 数”校准，如果继续让它穿过更早写入的本机快照，
+    /// 两条时间序列会在同一日期范围反复交叉，形成不存在的下降虚线和尖峰。
+    /// 因此这里使用第一个精确快照作为锚点：
+    /// - 锚点之前保留远端形状，并按锚点值等比例重新校准；
+    /// - 锚点开始只保留精确快照；
+    /// - 没有精确快照时保持原远端序列。
+    static func stitchToPreciseSnapshots(_ points: [StarHistoryPoint]) -> [StarHistoryPoint] {
+        let sorted = points.sorted { $0.date < $1.date }
+        let precise = sorted.filter { $0.precision == .snapshot }
+        guard let anchor = precise.first else { return sorted }
+
+        let historical = sorted.filter {
+            $0.precision != .snapshot && $0.date < anchor.date
+        }
+        guard let historicalAnchor = historical.last else { return precise }
+
+        let adjustedHistorical: [StarHistoryPoint]
+        if historicalAnchor.count == 0 {
+            // 远端锚点和精确锚点都为零时保留零值历史；否则没有可解释的比例可用。
+            adjustedHistorical = anchor.count == 0 ? historical : []
+        } else {
+            adjustedHistorical = historical.map { point in
+                let scaled = Int(
+                    (Double(anchor.count) * Double(point.count) / Double(historicalAnchor.count))
+                        .rounded()
+                )
+                return StarHistoryPoint(
+                    date: point.date,
+                    count: min(max(0, scaled), anchor.count),
+                    source: point.source,
+                    precision: point.precision,
+                    fetchedAt: point.fetchedAt
+                )
+            }
+        }
+        return adjustedHistorical + precise
+    }
+
+    /// 3m 保留日级点；1y 只压缩远端估算点并保留全部精确快照；all 保留全部日级点。
+    ///
+    /// `/events` 最多每天一个点，当前十年覆盖约 3,900 点。`all` 不再按月丢点，
+    /// 让“存在 WatchEvent 的日期就有图表点”成为稳定的数据契约。
     static func selectRange(
         _ points: [StarHistoryPoint],
         range: StarHistoryRange,
-        now: Date = Date(),
-        maximum: Int = defaultMaximumPoints
+        now: Date = Date()
     ) -> [StarHistoryPoint] {
-        let limit = maximum > 0 ? maximum : defaultMaximumPoints
         let sorted = points.sorted { $0.date < $1.date }
         guard !sorted.isEmpty else { return [] }
 
@@ -94,50 +133,39 @@ enum StarHistoryCurveBuilder {
         var utcCalendar = calendar
         utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
 
-        let cutoff: Date?
-        let bucket: (Date) -> String
         switch range {
         case .threeMonths:
-            cutoff = utcCalendar.date(byAdding: .month, value: -3, to: startOfUTCDay(now, calendar: utcCalendar))
-            bucket = { StarHistoryDateCodec.dayString(from: $0) }
+            guard let cutoff = utcCalendar.date(
+                byAdding: .month,
+                value: -3,
+                to: startOfUTCDay(now, calendar: utcCalendar)
+            ) else { return sorted }
+            return sorted.filter { $0.date >= cutoff }
         case .oneYear:
-            cutoff = utcCalendar.date(byAdding: .year, value: -1, to: startOfUTCDay(now, calendar: utcCalendar))
-            bucket = { date in
-                let week = utcCalendar.component(.weekOfYear, from: date)
-                let year = utcCalendar.component(.yearForWeekOfYear, from: date)
-                return String(format: "%04d-W%02d", year, week)
+            guard let cutoff = utcCalendar.date(
+                byAdding: .year,
+                value: -1,
+                to: startOfUTCDay(now, calendar: utcCalendar)
+            ) else { return sorted }
+            let filtered = sorted.filter { $0.date >= cutoff }
+            guard !filtered.isEmpty else { return [] }
+
+            var lastRemoteByWeek: [String: StarHistoryPoint] = [:]
+            var precise: [StarHistoryPoint] = []
+            for point in filtered {
+                if point.precision == .snapshot {
+                    precise.append(point)
+                    continue
+                }
+                let week = utcCalendar.component(.weekOfYear, from: point.date)
+                let year = utcCalendar.component(.yearForWeekOfYear, from: point.date)
+                lastRemoteByWeek[String(format: "%04d-W%02d", year, week)] = point
             }
+            return (Array(lastRemoteByWeek.values) + precise)
+                .sorted { $0.date < $1.date }
         case .all:
-            cutoff = nil
-            bucket = { date in
-                let comps = utcCalendar.dateComponents([.year, .month], from: date)
-                return String(format: "%04d-%02d", comps.year ?? 0, comps.month ?? 0)
-            }
+            return sorted
         }
-
-        var grouped: [StarHistoryPoint] = []
-        var lastBucket = ""
-        for point in sorted {
-            if let cutoff, point.date < cutoff {
-                continue
-            }
-            let key = bucket(point.date)
-            if key == lastBucket, !grouped.isEmpty {
-                grouped[grouped.count - 1] = point
-            } else {
-                grouped.append(point)
-                lastBucket = key
-            }
-        }
-
-        guard grouped.count > limit else { return grouped }
-        var result: [StarHistoryPoint] = []
-        result.reserveCapacity(limit)
-        for index in 0..<limit {
-            let sourceIndex = index * (grouped.count - 1) / (limit - 1)
-            result.append(grouped[sourceIndex])
-        }
-        return result
     }
 
     private static func startOfUTCDay(_ date: Date, calendar: Calendar) -> Date {

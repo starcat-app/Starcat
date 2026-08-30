@@ -331,7 +331,9 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         guard repo.id > 0, repo.cachedAt != nil, let api else {
             return snapshot(range: range, rawPoints: cachedPoints, remoteState: .unavailable)
         }
-        if !forceRefresh, hasCoverage(for: range, in: cachedPoints, repoID: repo.id) {
+        // events 接口返回完整日级序列。每次进程生命周期首次打开该仓库都刷新一次，
+        // 之后所有范围共享同一份 canonical cache，不再用旧范围点猜测“已经完整”。
+        if !forceRefresh, fullyLoadedRepoIDs.contains(repo.id) {
             return snapshot(range: range, rawPoints: cachedPoints, remoteState: .cached)
         }
 
@@ -358,9 +360,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                 if let etag {
                     etags[cacheKey] = etag
                 }
-                if range == .all {
-                    fullyLoadedRepoIDs.insert(repo.id)
-                }
+                fullyLoadedRepoIDs.insert(repo.id)
                 let refreshedPoints = try await points(repoId: repo.id)
                 return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
 
@@ -554,7 +554,8 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         remoteState: StarHistoryRemoteState
     ) -> StarHistorySnapshot {
         let merged = Self.mergeByObservedDay(rawPoints)
-        let filtered = Self.points(merged, in: range, now: now())
+        let stitched = StarHistoryCurveBuilder.stitchToPreciseSnapshots(merged)
+        let filtered = StarHistoryCurveBuilder.selectRange(stitched, range: range, now: now())
         return StarHistorySnapshot(
             range: range,
             points: filtered,
@@ -595,38 +596,6 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         }
     }
 
-    private static func points(
-        _ points: [StarHistoryPoint],
-        in range: StarHistoryRange,
-        now: Date
-    ) -> [StarHistoryPoint] {
-        let cutoff: Date?
-        switch range {
-        case .threeMonths:
-            cutoff = now.addingTimeInterval(-92 * 86_400)
-        case .oneYear:
-            cutoff = now.addingTimeInterval(-366 * 86_400)
-        case .all:
-            cutoff = nil
-        }
-        guard let cutoff else { return points }
-        return points.filter { $0.date >= cutoff }
-    }
-
-    private func hasCoverage(
-        for range: StarHistoryRange,
-        in points: [StarHistoryPoint],
-        repoID: Int64
-    ) -> Bool {
-        if range == .all {
-            return fullyLoadedRepoIDs.contains(repoID)
-        }
-        let remoteDates = points.lazy.filter { $0.source.isRemote }.map(\.date)
-        guard let earliest = remoteDates.min() else { return false }
-        let requiredDays: TimeInterval = range == .threeMonths ? 92 : 366
-        // 服务端 1y 使用 ISO 周降采样，允许首点相对范围边界晚一周。
-        return earliest <= now().addingTimeInterval(-(requiredDays - 7) * 86_400)
-    }
 }
 
 enum StarHistoryDateCodec {

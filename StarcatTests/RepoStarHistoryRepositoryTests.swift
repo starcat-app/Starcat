@@ -278,7 +278,8 @@ struct RepoStarHistoryRepositoryTests {
         let githubPoints = snapshot.points.filter { $0.source == .githubStargazers }
 
         #expect(snapshot.remoteState == .fresh)
-        #expect(githubPoints.map(\.count) == [2, 3])
+        // 一年视图按 ISO 周压缩远端重建点，同一周只保留最后一个累计值。
+        #expect(githubPoints.map(\.count) == [3])
         #expect(githubPoints.allSatisfy { $0.precision == .reconstructed })
         #expect(await oauthAPI.requestedPages() == [1, 2])
         #expect(await githubAppAPI.requestedPages().isEmpty)
@@ -518,7 +519,8 @@ struct RepoStarHistoryRepositoryTests {
         let requests = await api.requests()
 
         #expect(stale.remoteState == .stale(.providerUnavailable))
-        #expect(stale.points.map(\.count) == [10, 20])
+        // 远端估算点与本机当日精确快照重合时，精确快照必须获胜。
+        #expect(stale.points.map(\.count) == [20, 20])
         #expect(requests.count == 2)
         #expect(requests.last?.ifNoneMatch == "\"stale-v1\"")
     }

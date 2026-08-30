@@ -267,7 +267,6 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
             currentStars: request.currentStars,
             fetchedAt: generatedAt
         )
-        let points = StarHistoryCurveBuilder.selectRange(normalized, range: range)
         let coverageStart = dto.coverageStart.flatMap(StarHistoryDateCodec.date(from:))
             ?? normalized.first?.date
 
@@ -279,7 +278,9 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
                 range: range,
                 coverageStart: coverageStart,
                 generatedAt: generatedAt,
-                points: points
+                // `/events` 与 range 无关，始终持久化完整日级序列；范围筛选只在 Repository
+                // 的读模型中执行，避免用户按不同顺序切换范围得到不同密度的曲线。
+                points: normalized
             ),
             etag: response.value(forHTTPHeaderField: "ETag")
         )
