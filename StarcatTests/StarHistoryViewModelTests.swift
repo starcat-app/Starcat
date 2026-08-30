@@ -341,6 +341,93 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(domain.upperBound == now)
     }
 
+    @Test("全部范围应在仓库创建日补零值基线")
+    func allRangeAddsZeroCreationBaseline() throws {
+        let createdAt = try #require(StarHistoryDateCodec.date(from: "2026-08-03"))
+        let firstSnapshot = try point(
+            "2026-08-19",
+            5,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+
+        let rendered = StarHistoryChartSeriesBuilder.renderedPoints(
+            [firstSnapshot],
+            range: .all,
+            repositoryCreatedAt: createdAt
+        )
+
+        #expect(rendered.count == 2)
+        #expect(rendered.first?.date == createdAt)
+        #expect(rendered.first?.count == 0)
+        #expect(rendered.last == firstSnapshot)
+    }
+
+    @Test("全部范围抽稀不得超过上限且必须保留精度交接")
+    func allRangeDownsamplesAndKeepsPrecisionBoundary() throws {
+        let start = try #require(StarHistoryDateCodec.date(from: "2024-01-01"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let points = try (0..<500).map { index in
+            let date = try #require(calendar.date(byAdding: .day, value: index, to: start))
+            let isSnapshot = index >= 400
+            return StarHistoryPoint(
+                date: date,
+                count: index * index,
+                source: isSnapshot ? .localSnapshot : .ghArchive,
+                precision: isSnapshot ? .snapshot : .estimated,
+                fetchedAt: date
+            )
+        }
+
+        let rendered = StarHistoryChartSeriesBuilder.renderedPoints(
+            points,
+            range: .all,
+            repositoryCreatedAt: nil,
+            maximumAllRangePointCount: 40
+        )
+
+        #expect(rendered.count <= 40)
+        #expect(rendered.first == points.first)
+        #expect(rendered.last == points.last)
+        #expect(rendered.contains(points[399]))
+        #expect(rendered.contains(points[400]))
+    }
+
+    @Test("图表只标记首尾与精度交接点")
+    func landmarksStaySparse() throws {
+        let estimatedStart = try point(
+            "2026-08-01",
+            0,
+            source: .ghArchive,
+            precision: .estimated
+        )
+        let estimatedEnd = try point(
+            "2026-08-10",
+            10,
+            source: .ghArchive,
+            precision: .estimated
+        )
+        let snapshotStart = try point(
+            "2026-08-11",
+            11,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+        let snapshotEnd = try point(
+            "2026-08-30",
+            30,
+            source: .localSnapshot,
+            precision: .snapshot
+        )
+
+        let landmarks = StarHistoryChartSeriesBuilder.landmarkPoints(
+            in: [estimatedStart, estimatedEnd, snapshotStart, snapshotEnd]
+        )
+
+        #expect(landmarks == [estimatedStart, snapshotStart, snapshotEnd])
+    }
+
     @Test("近期范围不得早于仓库创建时间")
     func recentRangeDoesNotPredateRepository() throws {
         let createdAt = try #require(StarHistoryDateCodec.date(from: "2026-08-01"))
@@ -409,6 +496,16 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(StarHistoryChartLayoutPolicy.usesYearOnlyAxisLabels(
             domain: start...tenYearsLater
         ))
+    }
+
+    @Test("半年内的全部范围应显示日级横轴标签")
+    func shortAllRangeUsesDayAxisLabels() throws {
+        let start = try #require(StarHistoryDateCodec.date(from: "2026-08-03"))
+        let shortEnd = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+        let longEnd = try #require(StarHistoryDateCodec.date(from: "2027-08-30"))
+
+        #expect(StarHistoryChartLayoutPolicy.usesDayAxisLabels(domain: start...shortEnd))
+        #expect(!StarHistoryChartLayoutPolicy.usesDayAxisLabels(domain: start...longEnd))
     }
 
     private func point(
