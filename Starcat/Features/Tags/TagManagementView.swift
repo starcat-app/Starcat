@@ -21,7 +21,7 @@
 //  - 左 List 默认单选；按住 Cmd 多选 → 启用"合并"按钮（选 ≥2 个）
 //  - 右编辑面板单选时显示；多选 / 未选时显示空态
 //  - 新建：弹小 sheet 输入名字 + 默认配色 → 自动选中
-//  - 合并：选 ≥2 → 弹 alert 选 target
+//  - 合并：选 ≥2 → 弹 sheet 让用户选保留哪个 target（默认列表顺序第一个）
 //  - 删除：单选 / 多选都支持，确认 alert 提示"标签关联的 repo 不会被删除"
 //
 //  设计约束：
@@ -49,10 +49,8 @@ struct TagManagementView: View {
     @State private var didApplyOpenNewTagIntent: Bool = false
     /// 删除确认 alert 显示状态。
     @State private var showDeleteAlert: Bool = false
-    /// 合并 alert 显示状态。
-    @State private var showMergeAlert: Bool = false
-    /// 合并时用户选的 target id。
-    @State private var mergeTargetId: String? = nil
+    /// 合并目标选择 sheet 显示状态。
+    @State private var showMergeSheet: Bool = false
 
     // MARK: - Body
 
@@ -96,6 +94,9 @@ struct TagManagementView: View {
             }
             .appLocaleEnvironment()
         }
+        .sheet(isPresented: $showMergeSheet) {
+            mergeSheetContent
+        }
         .sheet(item: tagPaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
@@ -108,17 +109,23 @@ struct TagManagementView: View {
             let n = viewModel.selection.count
             Text(String(format: String.l10n("tagManagement.deleteMessageFormat"), n))
         }
-        .alert("tagManagement.mergeTitle", isPresented: $showMergeAlert, presenting: mergeTargetId) { targetId in
-            Button("action.merge", role: .destructive) {
-                Task {
+    }
+
+    /// 合并 sheet：候选按主列表顺序；默认 target = 第一个。
+    @ViewBuilder
+    private var mergeSheetContent: some View {
+        let candidates = viewModel.tags.filter { viewModel.selection.contains($0.id) }
+        if let initialTargetId = candidates.first?.id {
+            MergeTagsSheet(
+                candidates: candidates,
+                counts: viewModel.counts,
+                initialTargetId: initialTargetId,
+                onConfirm: { targetId in
                     await viewModel.merge(sources: viewModel.selection, into: targetId)
+                    showMergeSheet = false
                 }
-            }
-            Button("general.cancel", role: .cancel) {}
-        } message: { targetId in
-            let targetName = viewModel.tags.first { $0.id == targetId }?.name ?? "?"
-            let others = viewModel.selection.count - 1
-            Text(String(format: String.l10n("tagManagement.mergeMessageFormat"), others, targetName))
+            )
+            .appLocaleEnvironment()
         }
     }
 
@@ -236,9 +243,8 @@ struct TagManagementView: View {
                 }
 
                 Button {
-                    // 默认 target = 选中里第一个（按 fetchAll 排序顺序）
-                    mergeTargetId = pickDefaultMergeTarget()
-                    showMergeAlert = (mergeTargetId != nil)
+                    // 至少 2 个才有默认 target；sheet 内仍可改选保留哪个。
+                    showMergeSheet = (pickDefaultMergeTarget() != nil)
                 } label: {
                     Label("action.merge", systemImage: "arrow.triangle.merge")
                 }
@@ -271,12 +277,127 @@ struct TagManagementView: View {
     }
 
     /// 选 ≥2 时合并的默认 target：按现有 tags 顺序中最靠前的一个。
-    /// MVP 简化：不让用户从 sheet 里选 target，直接默认 + alert 文案显示是哪个。
-    /// 用户若想换 target，可以在 List 里调整选择顺序（先单选 target，再 Cmd 加选 others）。
     private func pickDefaultMergeTarget() -> String? {
         let selected = viewModel.selection
         guard selected.count >= 2 else { return nil }
         return viewModel.tags.first { selected.contains($0.id) }?.id
+    }
+}
+
+// MARK: - 合并目标选择 sheet
+
+/// 多选合并时让用户显式选择保留哪个标签；默认预选列表顺序第一个。
+private struct MergeTagsSheet: View {
+
+    let candidates: [Tag]
+    let counts: [String: Int]
+    let onConfirm: (String) async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var targetId: String
+    @State private var submitting: Bool = false
+
+    init(
+        candidates: [Tag],
+        counts: [String: Int],
+        initialTargetId: String,
+        onConfirm: @escaping (String) async -> Void
+    ) {
+        self.candidates = candidates
+        self.counts = counts
+        self.onConfirm = onConfirm
+        _targetId = State(initialValue: initialTargetId)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("tagManagement.mergeTitle")
+                    .font(.headline)
+                Spacer()
+                SheetCloseButton(
+                    action: { dismiss() },
+                    iconFont: .system(size: 16, weight: .medium),
+                    helpKey: "action.close"
+                )
+                .keyboardShortcut(.cancelAction)
+            }
+
+            Text("tagManagement.mergeSheetHint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 2) {
+                ForEach(candidates) { tag in
+                    Button {
+                        targetId = tag.id
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: targetId == tag.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(targetId == tag.id ? Color.accentColor : .secondary)
+                                .font(.system(size: 14))
+
+                            Circle()
+                                .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
+                                .frame(width: 10, height: 10)
+
+                            if let icon = tag.icon {
+                                Image(systemName: icon)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14)
+                            }
+
+                            Text(verbatim: tag.name)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            Spacer()
+
+                            Text((counts[tag.id] ?? 0).formatted())
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(targetId == tag.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
+                }
+            }
+
+            if let targetName = candidates.first(where: { $0.id == targetId })?.name {
+                Text(String(format: String.l10n("tagManagement.mergeMessageFormat"), candidates.count - 1, targetName))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack {
+                Spacer()
+                Button("general.cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("action.merge") {
+                    submitting = true
+                    Task {
+                        await onConfirm(targetId)
+                        submitting = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return)
+                .disabled(submitting || !candidates.contains(where: { $0.id == targetId }))
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 

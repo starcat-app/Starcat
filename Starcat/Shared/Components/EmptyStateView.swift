@@ -42,9 +42,10 @@
 //  - frame 不在组件里强加。13 处调用方对 frame 需求不同（部分要 maxWidth
 //    + maxHeight infinity，部分只要 maxWidth infinity，部分要 minHeight
 //    280），全部由调用方包一层 `.frame(...)` 控制。
-//  - subtitle 同时支持 `LocalizedStringKey`（走 String Catalog）和已经
+//  - title / subtitle 同时支持 `LocalizedStringKey`（走 String Catalog）和已经
 //    格式化好的 `String`（用 `Text(verbatim:)`，避免 SwiftUI 把里面的
-//    特殊字符当成本地化键解析）。两个参数互斥，外部按场景挑一个传。
+//    特殊字符当成本地化键解析）。`title`↔`titleText`、`subtitle`↔`subtitleText`
+//    各自互斥，外部按场景挑一个传。
 //  - `accessory` 是 trailing `@ViewBuilder`，默认 `EmptyView()`。WeeklyContentView
 //    错误态需要在描述下方追加"重试"按钮，就用它放进来；不需要按钮的调
 //    用方完全可以忽略。
@@ -79,7 +80,12 @@ import SwiftUI
 struct EmptyStateView<Accessory: View>: View {
 
     let systemImage: String
-    let title: LocalizedStringKey
+
+    /// 本地化标题键。与 `titleText` 互斥，二选一传。
+    let title: LocalizedStringKey?
+
+    /// 已格式化的标题（如「已选 N 个标签」）。与 `title` 互斥。
+    let titleText: String?
 
     /// 本地化描述键。与 `subtitleText` 互斥，二选一传。
     let subtitle: LocalizedStringKey?
@@ -119,6 +125,33 @@ struct EmptyStateView<Accessory: View>: View {
     ) {
         self.systemImage = systemImage
         self.title = title
+        self.titleText = nil
+        self.subtitle = subtitle
+        self.subtitleText = subtitleText
+        self.iconSize = iconSize
+        self.spacing = spacing
+        self.subtitleHorizontalPadding = subtitleHorizontalPadding
+        self.titleFont = titleFont
+        self.subtitleFont = subtitleFont
+        self.accessory = accessory()
+    }
+
+    /// 标题已由调用方 `String(format:)` 格式化好时使用（避免 Catalog 占位符无法插值）。
+    init(
+        systemImage: String,
+        titleText: String,
+        subtitle: LocalizedStringKey? = nil,
+        subtitleText: String? = nil,
+        iconSize: CGFloat = 36,
+        spacing: CGFloat = 10,
+        subtitleHorizontalPadding: CGFloat = 0,
+        titleFont: Font = .headline,
+        subtitleFont: Font = .caption,
+        @ViewBuilder accessory: () -> Accessory = { EmptyView() }
+    ) {
+        self.systemImage = systemImage
+        self.title = nil
+        self.titleText = titleText
         self.subtitle = subtitle
         self.subtitleText = subtitleText
         self.iconSize = iconSize
@@ -135,13 +168,25 @@ struct EmptyStateView<Accessory: View>: View {
                 .font(.system(size: iconSize))
                 .foregroundStyle(.secondary)
 
-            Text(title)
-                .font(titleFont)
-                .foregroundStyle(.secondary)
+            titleView
 
             subtitleView
 
             accessory
+        }
+    }
+
+    /// 标题行：title / titleText 二选一。
+    @ViewBuilder
+    private var titleView: some View {
+        if let titleText {
+            Text(verbatim: titleText)
+                .font(titleFont)
+                .foregroundStyle(.secondary)
+        } else if let title {
+            Text(title)
+                .font(titleFont)
+                .foregroundStyle(.secondary)
         }
     }
 

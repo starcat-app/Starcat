@@ -44,11 +44,15 @@ struct TagEditorView: View {
             if let tag {
                 editor(for: tag)
             } else if selectionCount > 1 {
-                emptyState(
-                    icon: "checklist",
-                    titleKey: "tagEditor.selectedMultiple",
-                    detailKey: "tagEditor.multiSelectHint"
+                // Catalog 用 %d；必须 format 后再以 titleText 显示，否则会原样露出占位符。
+                EmptyStateView(
+                    systemImage: "checklist",
+                    titleText: String(format: String.l10n("tagEditor.selectedMultiple"), selectionCount),
+                    subtitle: "tagEditor.multiSelectHint",
+                    iconSize: 32,
+                    subtitleHorizontalPadding: 24
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 emptyState(
                     icon: "tag",

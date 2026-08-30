@@ -438069,109 +438069,109 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} وسوم محددة"
+            "value" : "%d وسوم محددة"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} Tags ausgewählt"
+            "value" : "%d Tags ausgewählt"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tags selected"
+            "value" : "%d tags selected"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} etiquetas seleccionadas"
+            "value" : "%d etiquetas seleccionadas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tags sélectionnés"
+            "value" : "%d tags sélectionnés"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tag dipilih"
+            "value" : "%d tag dipilih"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tag selezionati"
+            "value" : "%d tag selezionati"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count}個のタグを選択中"
+            "value" : "%d個のタグを選択中"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count}개 태그 선택됨"
+            "value" : "%d개 태그 선택됨"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tags geselecteerd"
+            "value" : "%d tags geselecteerd"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wybrano %{count} tagów"
+            "value" : "Wybrano %d tagów"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} tags selecionadas"
+            "value" : "%d tags selecionadas"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Выбрано тегов: %{count}"
+            "value" : "Выбрано тегов: %d"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} etiket seçildi"
+            "value" : "%d etiket seçildi"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Вибрано %{count} тегів"
+            "value" : "Вибрано %d тегів"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%{count} thẻ đã chọn"
+            "value" : "%d thẻ đã chọn"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已选 %{count} 个标签"
+            "value" : "已选 %d 个标签"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已選 %{count} 個標籤"
+            "value" : "已選 %d 個標籤"
           }
         }
       }
@@ -439865,6 +439865,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "合併標籤？"
+          }
+        }
+      }
+    },
+    "tagManagement.mergeSheetHint" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose which tag to keep. The other selected tags will be merged into it. This cannot be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择要保留的目标标签；其余选中标签将并入该标签，此操作不可撤销。"
           }
         }
       }
