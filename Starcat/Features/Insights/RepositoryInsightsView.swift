@@ -119,6 +119,12 @@ enum StarHistoryChartLayoutPolicy {
             )
         }
     }
+
+    /// 只有相邻刻度至少跨一年时才只显示年份，否则 2～5 年范围会出现重复年份标签。
+    static func usesYearOnlyAxisLabels(domain: ClosedRange<Date>) -> Bool {
+        let intervalDuration = domain.upperBound.timeIntervalSince(domain.lowerBound) / 5
+        return intervalDuration >= 365 * 24 * 3600
+    }
 }
 
 enum StarHistoryRestrictionNoticePolicy {
@@ -1695,10 +1701,9 @@ struct RepositoryInsightsView: View {
                     .locale(locale)
             )
         case .all:
-            let duration = starChartXDomain.upperBound.timeIntervalSince(
-                starChartXDomain.lowerBound
-            )
-            if duration < 2 * 365 * 24 * 3600 {
+            if !StarHistoryChartLayoutPolicy.usesYearOnlyAxisLabels(
+                domain: starChartXDomain
+            ) {
                 return date.formatted(
                     Date.FormatStyle()
                         .year()

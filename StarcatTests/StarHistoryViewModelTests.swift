@@ -397,6 +397,20 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(values.last == end)
     }
 
+    @Test("年份刻度只应用于相邻刻度至少跨一年的时间域")
+    func yearOnlyLabelsRequireYearSizedIntervals() throws {
+        let start = try #require(StarHistoryDateCodec.date(from: "2020-01-01"))
+        let threeYearsLater = try #require(StarHistoryDateCodec.date(from: "2023-01-01"))
+        let tenYearsLater = try #require(StarHistoryDateCodec.date(from: "2030-01-01"))
+
+        #expect(!StarHistoryChartLayoutPolicy.usesYearOnlyAxisLabels(
+            domain: start...threeYearsLater
+        ))
+        #expect(StarHistoryChartLayoutPolicy.usesYearOnlyAxisLabels(
+            domain: start...tenYearsLater
+        ))
+    }
+
     private func point(
         _ day: String,
         _ count: Int,

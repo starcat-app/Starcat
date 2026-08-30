@@ -6,8 +6,8 @@
 //
 //  为什么放在客户端：
 //  - Starcat 本地已有 Repo.starsCount（详情页 hero 同源），不必再让服务端打 GitHub；
-//  - 算法与 starcat-history-api/internal/series.Normalize + SelectRange 对齐，
-//    保证第三方走旧接口、Starcat 走 events 接口时口径一致。
+//  - 校准公式与 starcat-history-api/internal/series.Normalize 对齐；范围选择由
+//    Starcat 的完整日级 canonical cache 独立负责，不受第三方兼容接口点数上限影响。
 //
 
 import Foundation
