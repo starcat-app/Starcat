@@ -123,6 +123,23 @@ struct StarHistorySnapshot: Equatable, Sendable {
     let remoteState: StarHistoryRemoteState
     let coverageStart: Date?
     let updatedAt: Date?
+    let statistics: StarHistoryStatistics
+
+    init(
+        range: StarHistoryRange,
+        points: [StarHistoryPoint],
+        remoteState: StarHistoryRemoteState,
+        coverageStart: Date?,
+        updatedAt: Date?,
+        statistics: StarHistoryStatistics = .empty
+    ) {
+        self.range = range
+        self.points = points
+        self.remoteState = remoteState
+        self.coverageStart = coverageStart
+        self.updatedAt = updatedAt
+        self.statistics = statistics
+    }
 }
 
 actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
@@ -177,6 +194,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         let cachedPoints = try await points(repoId: repo.id)
         let hasGitHubHistory = cachedPoints.contains { $0.source == .githubStargazers }
         return snapshot(
+            repo: repo,
             range: range,
             rawPoints: cachedPoints,
             remoteState: repo.isPrivate && !hasGitHubHistory ? .privateOnly : .cached
@@ -270,16 +288,16 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         if let project = try await projectRepository?.fetchProject(repoID: repo.id) {
             guard project.canReadStargazers else {
                 let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
-                return snapshot(range: range, rawPoints: cachedPoints, remoteState: state)
+                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: state)
             }
             let candidates = stargazersAPICandidates(for: project, repo: repo)
             guard !candidates.isEmpty else {
                 let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
-                return snapshot(range: range, rawPoints: cachedPoints, remoteState: state)
+                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: state)
             }
 
             if !forceRefresh, loadedGitHubStargazerRepoIDs.contains(repo.id) {
-                return snapshot(range: range, rawPoints: cachedPoints, remoteState: .cached)
+                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .cached)
             }
 
             var lastError: Error?
@@ -292,7 +310,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                     try await replaceRemotePoints(repoId: repo.id, points: githubPoints)
                     loadedGitHubStargazerRepoIDs.insert(repo.id)
                     let refreshedPoints = try await points(repoId: repo.id)
-                    return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+                    return snapshot(repo: repo, range: range, rawPoints: refreshedPoints, remoteState: .fresh)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -310,12 +328,14 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             if repo.isPrivate,
                !cachedPoints.contains(where: { $0.source == .githubStargazers }) {
                 return snapshot(
+                    repo: repo,
                     range: range,
                     rawPoints: cachedPoints,
                     remoteState: .privateOnly
                 )
             }
             return snapshot(
+                repo: repo,
                 range: range,
                 rawPoints: cachedPoints,
                 remoteState: .stale(
@@ -326,15 +346,15 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
 
         // 没有“我的项目”关系的私有仓库绝不调用公共 Discovery。
         guard !repo.isPrivate else {
-            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .privateOnly)
+            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .privateOnly)
         }
         guard repo.id > 0, repo.cachedAt != nil, let api else {
-            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .unavailable)
+            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .unavailable)
         }
         // events 接口返回完整日级序列。每次进程生命周期首次打开该仓库都刷新一次，
         // 之后所有范围共享同一份 canonical cache，不再用旧范围点猜测“已经完整”。
         if !forceRefresh, fullyLoadedRepoIDs.contains(repo.id) {
-            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .cached)
+            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .cached)
         }
 
         let cacheKey = RemoteCacheKey(repoID: repo.id, range: range)
@@ -351,6 +371,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                       series.range == range
                 else {
                     return snapshot(
+                        repo: repo,
                         range: range,
                         rawPoints: cachedPoints,
                         remoteState: .stale(.repositoryIDMismatch)
@@ -362,16 +383,17 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                 }
                 fullyLoadedRepoIDs.insert(repo.id)
                 let refreshedPoints = try await points(repoId: repo.id)
-                return snapshot(range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+                return snapshot(repo: repo, range: range, rawPoints: refreshedPoints, remoteState: .fresh)
 
             case .notModified(let etag):
                 if let etag {
                     etags[cacheKey] = etag
                 }
-                return snapshot(range: range, rawPoints: cachedPoints, remoteState: .notModified)
+                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .notModified)
 
             case .building(let retryAfter):
                 return snapshot(
+                    repo: repo,
                     range: range,
                     rawPoints: cachedPoints,
                     remoteState: .building(retryAfter: retryAfter)
@@ -381,9 +403,10 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             throw CancellationError()
         } catch let error as StarHistoryAPIError {
             // 远端错误不清空上次成功缓存；ViewModel 可以用 stale 状态显示非阻塞提示。
-            return snapshot(range: range, rawPoints: cachedPoints, remoteState: .stale(error))
+            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .stale(error))
         } catch {
             return snapshot(
+                repo: repo,
                 range: range,
                 rawPoints: cachedPoints,
                 remoteState: .stale(.transport(error.localizedDescription))
@@ -549,6 +572,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     }
 
     private func snapshot(
+        repo: Repo,
         range: StarHistoryRange,
         rawPoints: [StarHistoryPoint],
         remoteState: StarHistoryRemoteState
@@ -561,7 +585,11 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             points: filtered,
             remoteState: remoteState,
             coverageStart: merged.first?.date,
-            updatedAt: merged.compactMap(\.fetchedAt).max()
+            updatedAt: merged.compactMap(\.fetchedAt).max(),
+            statistics: StarHistoryStatisticsBuilder.build(
+                points: stitched,
+                repositoryCreatedAt: repo.createdAt.flatMap(ISO8601DateFormatter.githubDate(from:))
+            )
         )
     }
 

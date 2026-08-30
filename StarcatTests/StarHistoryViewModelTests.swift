@@ -35,8 +35,8 @@ struct StarHistoryViewModelTests {
         #expect(viewModel.isRefreshing == false)
     }
 
-    @Test("30 天与一年增长允许负数并按最近基准点派生")
-    func growthUsesNearestBaselineAndAllowsDecrease() async {
+    @Test("30 天与一年增长直接读取完整历史统计且允许负数")
+    func growthUsesSnapshotStatisticsAndAllowsDecrease() async {
         let latest = StarHistoryDateCodec.date(from: "2026-07-27")!
         let points = [
             Self.point(latest.addingTimeInterval(-365 * 86_400), 130),
@@ -48,7 +48,15 @@ struct StarHistoryViewModelTests {
                 Self.snapshot(range: range, state: .cached)
             },
             refreshHandler: { _, range, _ in
-                Self.snapshot(range: range, points: points, state: .fresh)
+                Self.snapshot(
+                    range: range,
+                    points: points,
+                    state: .fresh,
+                    statistics: StarHistoryStatisticsBuilder.build(
+                        points: points,
+                        repositoryCreatedAt: nil
+                    )
+                )
             }
         )
         let viewModel = StarHistoryViewModel(repository: repository)
@@ -226,14 +234,16 @@ struct StarHistoryViewModelTests {
     private nonisolated static func snapshot(
         range: StarHistoryRange,
         points: [StarHistoryPoint] = [],
-        state: StarHistoryRemoteState
+        state: StarHistoryRemoteState,
+        statistics: StarHistoryStatistics = .empty
     ) -> StarHistorySnapshot {
         StarHistorySnapshot(
             range: range,
             points: points,
             remoteState: state,
             coverageStart: points.first?.date,
-            updatedAt: points.last?.fetchedAt
+            updatedAt: points.last?.fetchedAt,
+            statistics: statistics
         )
     }
 
@@ -260,6 +270,71 @@ struct StarHistoryViewModelTests {
     }
 
     private nonisolated static func point(
+        _ date: Date,
+        _ count: Int,
+        source: StarHistorySource = .ghArchive,
+        precision: StarHistoryPrecision = .estimated
+    ) -> StarHistoryPoint {
+        StarHistoryPoint(
+            date: date,
+            count: count,
+            source: source,
+            precision: precision,
+            fetchedAt: date
+        )
+    }
+}
+
+@Suite("Star History Statistics")
+struct StarHistoryStatisticsBuilderTests {
+
+    @Test("稀疏历史应向前填充目标日累计值")
+    func sparseHistoryCarriesBaselineForward() throws {
+        let latest = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+        let points = [
+            point(latest.addingTimeInterval(-45 * 86_400), 100),
+            point(latest.addingTimeInterval(-10 * 86_400), 120),
+            point(latest, 130, source: .localSnapshot, precision: .snapshot)
+        ]
+
+        let statistics = StarHistoryStatisticsBuilder.build(
+            points: points,
+            repositoryCreatedAt: nil
+        )
+
+        #expect(statistics.growth30Days == 30)
+        #expect(statistics.averageDailyGrowth30Days == 1)
+    }
+
+    @Test("年轻仓库应以创建日零值计算实际窗口")
+    func youngRepositoryUsesCreationZeroBaseline() throws {
+        let createdAt = try #require(StarHistoryDateCodec.date(from: "2026-08-18"))
+        let latest = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+        let points = [point(latest, 24)]
+
+        let statistics = StarHistoryStatisticsBuilder.build(
+            points: points,
+            repositoryCreatedAt: createdAt
+        )
+
+        #expect(statistics.growth30Days == 24)
+        #expect(statistics.averageDailyGrowth30Days == 2)
+    }
+
+    @Test("只有本机快照时不得伪造增长")
+    func localSnapshotOnlyProducesNoStatistics() throws {
+        let createdAt = try #require(StarHistoryDateCodec.date(from: "2026-08-18"))
+        let latest = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
+
+        let statistics = StarHistoryStatisticsBuilder.build(
+            points: [point(latest, 24, source: .localSnapshot, precision: .snapshot)],
+            repositoryCreatedAt: createdAt
+        )
+
+        #expect(statistics == .empty)
+    }
+
+    private func point(
         _ date: Date,
         _ count: Int,
         source: StarHistorySource = .ghArchive,

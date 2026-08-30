@@ -68,21 +68,21 @@ final class StarHistoryViewModel {
     }
 
     var growth30Days: Int? {
-        growth(sinceDays: 30, toleranceDays: 10)
+        snapshot?.statistics.growth30Days
     }
 
     var growthOneYear: Int? {
-        growth(sinceDays: 365, toleranceDays: 14)
+        snapshot?.statistics.growthOneYear
     }
 
-    /// 使用实际命中的基准点间隔计算，避免历史覆盖不足时仍机械除以 30 天。
+    /// Repository 已按完整历史和实际有效窗口统一计算，范围切换不会改变指标。
     var averageDailyGrowth30Days: Double? {
-        growthRate(sinceDays: 30, toleranceDays: 10, unitDays: 1)
+        snapshot?.statistics.averageDailyGrowth30Days
     }
 
     /// 把一年窗口折算为平均月增量，用于比较不同量级仓库的增长速度。
     var averageMonthlyGrowthOneYear: Double? {
-        growthRate(sinceDays: 365, toleranceDays: 14, unitDays: 365.0 / 12.0)
+        snapshot?.statistics.averageMonthlyGrowthOneYear
     }
 
     var coverageStart: Date? {
@@ -224,47 +224,6 @@ final class StarHistoryViewModel {
         case .unavailable:
             phase = .unavailable
         }
-    }
-
-    private func growth(sinceDays days: Int, toleranceDays: Int) -> Int? {
-        growthWindow(sinceDays: days, toleranceDays: toleranceDays)?.change
-    }
-
-    private func growthRate(
-        sinceDays days: Int,
-        toleranceDays: Int,
-        unitDays: Double
-    ) -> Double? {
-        guard let window = growthWindow(sinceDays: days, toleranceDays: toleranceDays),
-              window.elapsedDays > 0
-        else {
-            return nil
-        }
-        return Double(window.change) / window.elapsedDays * unitDays
-    }
-
-    /// 增长量与速度必须共享同一基准点，否则两组指标会对同一窗口给出互相矛盾的结论。
-    private func growthWindow(
-        sinceDays days: Int,
-        toleranceDays: Int
-    ) -> (change: Int, elapsedDays: Double)? {
-        guard let points = snapshot?.points,
-              let latest = points.last
-        else {
-            return nil
-        }
-        let target = latest.date.addingTimeInterval(-TimeInterval(days) * 86_400)
-        let tolerance = TimeInterval(toleranceDays) * 86_400
-        guard let baseline = points.min(by: {
-            abs($0.date.timeIntervalSince(target)) < abs($1.date.timeIntervalSince(target))
-        }), abs(baseline.date.timeIntervalSince(target)) <= tolerance
-        else {
-            return nil
-        }
-        return (
-            latest.count - baseline.count,
-            latest.date.timeIntervalSince(baseline.date) / 86_400
-        )
     }
 
     private func owns(_ requestedGeneration: UInt64, repoID: Int64) -> Bool {
