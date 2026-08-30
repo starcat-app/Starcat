@@ -142,10 +142,16 @@ struct StarHistoryChartView: View {
             }
         }
         .chartYAxis {
-            AxisMarks(position: .leading) { _ in
-                AxisValueLabel()
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
+            AxisMarks(position: .leading) { axisValue in
+                AxisValueLabel {
+                    if let value = axisValue.as(Int.self).map(Double.init)
+                        ?? axisValue.as(Double.self) {
+                        Text(verbatim: StarHistoryAxisValueFormatter.string(from: value, locale: locale))
+                            .font(interfaceScale.font(.captionSmall))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 AxisGridLine().foregroundStyle(Color.secondary.opacity(0.1))
             }
         }
