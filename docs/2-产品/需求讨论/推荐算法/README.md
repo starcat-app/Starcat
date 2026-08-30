@@ -15,7 +15,7 @@
 
 三条业务链路共用一套本地数据基础设施：BigQuery Raw 只在本地保存一份，History 和 Trainer 通过 Artifact URI 只读复用；云端只接收派生 History DB 和 Recommendation ServingBundle。
 
-当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，已新增 `/api/v2` 读取自研 ServingBundle。当前普通公开仓库 Star History 仍由 `starcat-discovery-api` 提供。
+当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，已新增 `/api/v2` 读取自研 ServingBundle。普通公开仓库 Star History 已迁到聚合生产入口中的 `starcat-history-api`，Discovery 旧路径默认关闭，仅在一个稳定发布窗口内保留代码级回退能力。
 
 2026-08-24 本机真实数据全链路结果见 [公开 Star 自研推荐全链路最终测试报告](公开Star自研推荐全链路最终测试报告.md)，交付收口见 [公开 Star 自研推荐全链路需求完成结果报告](公开Star自研推荐全链路需求完成结果报告.md)。需要在当前 `dev` 重新执行真实数据验证时，按 [本地推荐全链路验证指南](本地推荐全链路验证指南.md) 操作。
 
@@ -41,8 +41,8 @@ flowchart TB
         A[Starcat 推荐 UI] --> B[starcat-recommend-api]
         B --> C[SimRepo]
         D[Starcat Star History UI] --> E[本地快照]
-        D --> F[starcat-discovery-api]
-        F --> G[GH Archive / BigQuery Provider]
+        D --> F[starcat-history-api]
+        F --> G[History Serving DB]
     end
 
     subgraph Target[目标架构]
@@ -64,7 +64,7 @@ flowchart TB
 说明：
 
 - 当前推荐链路已落地，SimRepo 作者授权已经取得。
-- Discovery Star History 路径当前客户端已经使用；目标改为本地批量处理 GH Archive，再把派生 DB 发布到独立 History 服务。
+- Starcat 与生产聚合入口已使用独立 History 服务；Discovery 的按请求 BigQuery History 路径默认关闭，并在稳定发布窗口后删除。
 - `starcat-collection-api`、静默贡献开关和 Collection Pull Connector 已进入第一阶段实施，尚未生产部署。
 - 当前不实现 History 用户贡献、贡献状态展示和服务端删除；Collection 失败必须与 Starcat 主功能完全隔离。
 

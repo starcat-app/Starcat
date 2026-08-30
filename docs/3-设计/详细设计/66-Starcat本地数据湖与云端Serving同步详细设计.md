@@ -1,8 +1,8 @@
 # Starcat 本地数据湖与云端 Serving 同步详细设计
 
 > 日期: 2026-08-26
-> 状态: 方案已确认，待实施
-> 版本: v1.0
+> 状态: 第一阶段实施中，History 生产增量链路已完成
+> 版本: v1.1
 > 范围: BigQuery 本地长期存储、离线分析、History 日增量、Recommend 模型发布与云端同步
 > 关联设计: [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md)、[Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)、[Starcat 数据平台 Web 运维控制台详细设计](67-Starcat数据平台Web运维控制台详细设计.md)
 
@@ -19,6 +19,8 @@ Starcat 数据平台采用“本地轻量 Lakehouse + 云端只读 Serving”架
 - 本地到云端只允许主动 HTTPS Push，不为家庭网络开放入站端口；发布失败不得改变线上 active 版本。
 
 该方案中的“增量”分为两类：History 是事实行的日级增量；Recommend 是不可变模型版本的文件级增量。不得把不同推荐模型的行直接混写成一个无法追踪的线上版本。
+
+截至 2026-08-30，WatchEvent Raw 已在原目录连续追加至 `2026-08-26`，共 `3,891` 个分区；History 完整 Snapshot 已在生产激活，并以同一份 Raw 成功生成、发布和幂等重放首个真实每日 Delta。Snapshot 完整 `quick_check` 由 Builder 一次完成并写入 attestation，云端在流式解压时同步计算 checksum，避免部署时重复扫描数 GB 文件。Phase 1 的长期存储迁移、Phase 3 的推荐发布治理和 Phase 4 的多机运营仍按本设计继续推进，不能把 History 单链路完成误写为整个数据平台全部完成。
 
 ## 2. 边界与非目标
 
@@ -526,19 +528,18 @@ worker_lease_total{state,worker}
 
 ## 15. 实施阶段
 
-### Phase 1：本地目录和 Catalog
+### Phase 1：本地目录和 Catalog（进行中）
 
 - 保持当前 WatchEvent 下载目录不动。
 - 登记已有分区、checksum、row count、SQL hash 和水位线。
 - 建立 PostgreSQL Control Plane 和容量统计。
 - 把现有 `download-state.json` 纳入 Catalog 导入，不破坏现有断点续传。
 
-### Phase 2：History 日增量
+### Phase 2：History 日增量（已完成生产首轮闭环）
 
-- 建立 `repo_id + event_date + event_count` Silver 数据集。
-- 生成并校验 History Delta SQLite。
-- 实现云端幂等应用、月 Snapshot、恢复和回滚。
-- `starcat-history-api` 达到门槛后迁移现有 Discovery History 查询。
+- 已建立 `repo_id + event_date + event_count` Silver 数据集，并由同一 Raw Artifact 生成校验后的 Delta SQLite。
+- 已完成生产 Snapshot 激活、真实每日 Delta 应用、相同内容幂等重放、进程重启恢复和查询验证；月度 Snapshot 继续按相同 Builder/Registry 契约执行例行运维。
+- Starcat 与聚合生产查询已迁到 `starcat-history-api`；Discovery 生产 History job 已停用，旧代码在一个稳定发布窗口后删除。
 
 ### Phase 3：Recommend 发布治理
 

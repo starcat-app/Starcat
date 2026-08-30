@@ -1,8 +1,8 @@
 # Starcat 自研星标历史服务详细设计
 
 > 日期: 2026-08-26
-> 状态: 本地全量基线完成，生产增量与迁移收口中
-> 版本: v1.2
+> 状态: 生产全量与每日增量已跑通，Discovery 稳定窗口收口中
+> 版本: v1.3
 > 范围: `starcat-history-api`、本地 WatchEvent 聚合、History Delta 发布、公共查询与客户端迁移
 > 本地数据与发布契约: [Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)
 > 当前实现基线: [仓库星标历史整体落地方案](50-仓库星标历史整体落地方案.md)
@@ -49,8 +49,9 @@ precision=estimated
 - Starcat 已按日保存本地 `stars_count` 快照，并在 Repository 层合并不同来源。
 - 有权限的“我的项目”可直连 GitHub `/stargazers` 并仅在本机聚合。
 - 普通公开仓库已切换到独立 History 设置槽和 `/star-history/events`，客户端在本地校准并继续复用 Repository/UI。
-- 独立服务已实现 Snapshot/Delta 发布、压缩序列查询、ETag、指标和稳定错误；Discovery 旧路径只作为迁移期回退。
-- 2016-01-01 至 2026-08-25 的 `3,890` 个 Raw 分区已生成 `260,066,701` 个 repo-day，覆盖 `43,868,648` 个仓库和 `510,104,947` 条 WatchEvent。
+- 独立服务已实现 Snapshot/Delta 发布、压缩序列查询、ETag、常量时间统计和稳定错误；生产查询已由聚合 `starcat-api` 分流到 History，Discovery 旧路径默认关闭，仅作为稳定窗口内的迁移回退。
+- 2016-01-01 至 2026-08-26 的 `3,891` 个 Raw 分区已形成生产数据：`260,068,094` 个 repo-day、`43,869,033` 个仓库和 `510,106,622` 条 WatchEvent。
+- 生产已激活 `watch-history-20260825-v1`，随后幂等应用 `watch-delta-20260826-v1`，active watermark 为 `2026-08-26`；同一 Delta 重放返回 `already_applied`。
 
 ### 3.2 目标状态
 
@@ -288,7 +289,7 @@ manifest.json
 checksums.json
 ```
 
-服务端校验文件白名单、路径安全、manifest 版本、checksum、SQLite `quick_check`、必需表、日期连续性和 source watermark。验证通过后在一个事务内解码、追加并重新编码受影响的 `repo_history_series`，登记 Delta 后再推进 active watermark。
+服务端校验文件白名单、路径安全、manifest 版本、checksum、SQLite `quick_check`、必需表、日期连续性和 source watermark。Delta 体积小，服务端仍执行完整 `quick_check`；验证通过后在一个事务内解码、追加并重新编码受影响的 `repo_history_series`，登记 Delta 后再推进 active watermark。
 
 ### 9.2 Full Snapshot
 
@@ -298,7 +299,7 @@ Authorization: Bearer <HISTORY_PUBLISH_KEY>
 Content-Type: application/zip
 ```
 
-完整 Snapshot 先安装到不可变 Registry，再执行抽样查询和行数校验。只有验证通过才原子切换 active Snapshot；失败不影响当前线上 DB。
+完整 Snapshot 的完整 `PRAGMA quick_check` 只在正式 Builder 生成阶段执行一次，结果与数据库字节数写入 manifest v2。服务端在单次流式解压中同步计算 checksum，再校验 Builder attestation、文件大小、必需表、manifest 统计与水位线，避免对数 GB 文件重复全盘扫描；legacy v1 Snapshot 仍兼容。验证通过后先安装到不可变 Registry，再原子切换 active Snapshot；失败不影响当前线上 DB。
 
 Publish Key 与公共 `API_KEYS` 分离，内部发布 endpoint 不向第三方开放。
 
@@ -453,22 +454,22 @@ history_store_bytes
 - 生成首个完整 Snapshot，并与固定 repo 样本和当前 Discovery 曲线比较。
 - 校验 row count、event total、末值、覆盖范围和 checksum。
 
-### Phase 2：增量发布（进行中）
+### Phase 2：增量发布（已完成）
 
-- 连续运行每日 Delta。
-- 验证幂等重放、日期缺口、失败不推进、Snapshot 恢复和回滚。
-- 不让每个线上 cache miss 再触发 BigQuery 查询。
+- 已用真实 `2026-08-26` Raw 分区完成 Silver、Delta、聚合网关发布和云端事务应用，水位从 `2026-08-25` 推进到 `2026-08-26`。
+- 已验证相同 Delta 重放 no-op、日期缺口拒绝、失败不推进、进程重启恢复和已安装 Snapshot 回切逻辑；生产不执行破坏当前水位的人工回切。
+- 查询只读 active Serving DB；Discovery 生产配置不再开启按请求 BigQuery History job。
 
-### Phase 3：查询切换（客户端完成，生产待部署）
+### Phase 3：查询切换（客户端与生产已完成）
 
-- `starcat-history-api` shadow 对比 Discovery。
-- 1% → 10% → 50% → 100% 灰度。
-- 客户端切换到 `/events` 并在网络层本地校准，Repository/UI 保持不变。
+- Starcat 默认 History base URL 已切到聚合 `https://starcat-api.fly.dev`，请求携带 `X-SC-Svc: history`。
+- 客户端使用 `/events` 并在网络层本地校准，Repository/UI 保持不变；生产 Snapshot、Delta、200/304 查询和聚合统计均已验证。
+- Discovery 的旧 History 开关保持默认关闭，不再承担生产查询或创建 BigQuery job。
 
-### Phase 4：收口
+### Phase 4：稳定窗口与代码删除（时间门禁）
 
-- 停止 Discovery 新建 History job。
-- 一个稳定发布窗口后删除 Discovery History route、BigQuery Provider、配置和旧缓存。
+- 已停止 Discovery 生产新建 History job；迁移期代码只在显式 `STAR_HISTORY_ENABLED=true` 时可启用。
+- 一个稳定发布窗口后删除 Discovery History route、BigQuery Provider、配置和旧缓存。该删除必须在窗口结束时单独实施，不能为了本次交付提前破坏回退能力。
 - 已发布数据库清理必须追加 migration，禁止改历史 migration 或要求删库。
 
 ## 15. 测试矩阵
@@ -528,7 +529,8 @@ history_store_bytes
 - `starcat-history-api` 完成发布、查询、缓存、恢复和回滚闭环。
 - 公共 API 不接触 actor、participant、Raw 或家庭网络。
 - 客户端保持 local-first，Private/Internal 保持本机处理。
-- Discovery History 完成迁移并删除，不留下永久双轨。
+- 当前交付以 Discovery 生产路径停用、Starcat 与聚合生产查询切换、真实每日 Delta 成功为完成；迁移期代码不得重新成为默认路径。
+- 一个稳定发布窗口结束后删除 Discovery History route、BigQuery Provider、配置和旧缓存，最终不留下永久双轨。
 
 ## 18. 已采用决策
 
