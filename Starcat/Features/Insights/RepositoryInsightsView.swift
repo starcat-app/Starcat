@@ -1517,18 +1517,11 @@ struct RepositoryInsightsView: View {
     }
 
     private func starSelectionAnnotation(_ point: StarHistoryPoint) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 5) {
-                Text(verbatim: fullDate(point.date))
-                Text("·")
-                Text(point.count.formatted(.number.locale(locale)))
-                    .monospacedDigit()
-            }
-            // 创建日的 0 是图表语义基线，并非来自远端或本机快照，不显示错误来源。
-            if !isRepositoryCreationBaseline(point) {
-                Text(starPointSourceTitle(point))
-                    .foregroundStyle(.secondary)
-            }
+        HStack(spacing: 5) {
+            Text(verbatim: fullDate(point.date))
+            Text("·")
+            Text(point.count.formatted(.number.locale(locale)))
+                .monospacedDigit()
         }
         .font(interfaceScale.font(.captionSmall, weight: .medium))
         .padding(.horizontal, 7)
@@ -1538,24 +1531,6 @@ struct RepositoryInsightsView: View {
 
     private var displayedStarPoints: [StarHistoryPoint] {
         starHistoryViewModel.points
-    }
-
-    private func starPointSourceTitle(_ point: StarHistoryPoint) -> LocalizedStringKey {
-        switch point.precision {
-        case .snapshot: return "insights.repo.star.source.snapshot"
-        case .reconstructed: return "insights.repo.star.source.name.githubStargazers"
-        case .estimated: return "insights.repo.star.source.estimated"
-        }
-    }
-
-    private func isRepositoryCreationBaseline(_ point: StarHistoryPoint) -> Bool {
-        guard starHistoryViewModel.range == .all,
-              point.count == 0,
-              let repositoryCreatedDate
-        else {
-            return false
-        }
-        return point.date == repositoryCreatedDate
     }
 
     private func signed(_ value: Int?) -> String {
