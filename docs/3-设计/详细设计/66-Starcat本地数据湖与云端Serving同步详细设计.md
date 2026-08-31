@@ -1,10 +1,11 @@
 # Starcat 本地数据湖与云端 Serving 同步详细设计
 
-> 日期: 2026-08-26
-> 状态: 第一阶段实施中，History 生产增量链路已完成
-> 版本: v1.1
+> 日期: 2026-08-31
+> 状态: 第一阶段实施中，History 生产每日增量链路已完成并自动化
+> 版本: v1.2
 > 范围: BigQuery 本地长期存储、离线分析、History 日增量、Recommend 模型发布与云端同步
 > 关联设计: [Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md)、[Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)、[Starcat 数据平台 Web 运维控制台详细设计](67-Starcat数据平台Web运维控制台详细设计.md)
+> 每日运维入口: [WatchEvent 与 Star History 每日增量运维指南](../../2-产品/需求讨论/推荐算法/WatchEvent与Star-History每日增量运维指南.md)
 
 ## 1. 结论
 
@@ -20,7 +21,7 @@ Starcat 数据平台采用“本地轻量 Lakehouse + 云端只读 Serving”架
 
 该方案中的“增量”分为两类：History 是事实行的日级增量；Recommend 是不可变模型版本的文件级增量。不得把不同推荐模型的行直接混写成一个无法追踪的线上版本。
 
-截至 2026-08-30，WatchEvent Raw 已在原目录连续追加至 `2026-08-26`，共 `3,891` 个分区；History 完整 Snapshot 已在生产激活，并以同一份 Raw 成功生成、发布和幂等重放首个真实每日 Delta。Snapshot 完整 `quick_check` 由 Builder 一次完成并写入 attestation，云端在流式解压时同步计算 checksum，并在解压完成后立即释放 ZIP，避免部署时重复扫描数 GB 文件或额外占用一份压缩包空间。Phase 1 的长期存储迁移、Phase 3 的推荐发布治理和 Phase 4 的多机运营仍按本设计继续推进，不能把 History 单链路完成误写为整个数据平台全部完成。
+截至 2026-08-31，WatchEvent Raw 已在原目录连续追加至 `2026-08-30`，共 `3,895` 个分区；History 完整 Snapshot 已在生产激活，并以同一份 Raw 连续生成和发布 `2026-08-26` 至 `2026-08-30` 的真实每日 Delta，生产 active watermark 已到 `2026-08-30`。Snapshot 完整 `quick_check` 由 Builder 一次完成并写入 attestation，云端在流式解压时同步计算 checksum，并在解压完成后立即释放 ZIP，避免部署时重复扫描数 GB 文件或额外占用一份压缩包空间。每日链路已通过 LaunchAgent 自动执行和真实后台权限验收；Phase 1 的长期存储迁移、Phase 3 的推荐发布治理和 Phase 4 的多机运营仍按本设计继续推进，不能把 History 单链路完成误写为整个数据平台全部完成。
 
 ## 2. 边界与非目标
 
@@ -285,6 +286,21 @@ D-1 Raw Partition ready
 
 如果 D-1 分区失败，任务继续重试同一日期；不能跳过缺口发布 D。History API 在此期间继续读取上一水位线数据。
 
+每日运行的四层水位必须分别记录，不能用一个日期覆盖不同阶段：
+
+```text
+Raw completed partition
+  -> Silver source_watermark
+  -> Delta (from_watermark, to_watermark]
+  -> Production active_watermark
+```
+
+- Raw 以 `download-state.json.completed_partitions` 为准，`.scope.end_date` 只表示计划终点。
+- Silver/Delta 以各自不可变 manifest 和 checksum 为准。
+- 生产以 `/internal/v1/history-active` 为唯一事实；本地文件存在不代表已经发布。
+- Delta 事务成功后查询立即读取新 active DB，不需要重启服务；失败时仍服务上一水位。
+- `supports/scripts/run-history-daily-sync.sh` 负责从 Raw 到生产的串联、T0 写探针、Keychain 密钥读取和互斥执行；详细复现与恢复命令见本文顶部每日运维入口。
+
 ### 7.3 Delta Bundle
 
 ```text
@@ -542,6 +558,7 @@ worker_lease_total{state,worker}
 - Starcat 与聚合生产查询已迁到 `starcat-history-api`；Discovery 生产 History job 已停用，旧代码在一个稳定发布窗口后删除。
 - 每日运维由 `supports/scripts/run-history-daily-sync.sh` 串联 Trainer Raw 追赶与 History
   Delta 追赶；LaunchAgent 每天 10:00 触发，只处理最新完整 UTC 日，失败时不跨日推进。
+- 已连续补齐并发布至 `2026-08-30`，完成 Raw/Silver/Delta/生产四层水位核对、幂等重跑和真实后台 `kickstart` 验收；换机、权限和故障恢复步骤以统一每日运维指南为准。
 
 ### Phase 3：Recommend 发布治理
 
@@ -609,6 +626,7 @@ worker_lease_total{state,worker}
 
 ## 19. 参考资料
 
+- [WatchEvent 与 Star History 每日增量运维指南](../../2-产品/需求讨论/推荐算法/WatchEvent与Star-History每日增量运维指南.md)
 - DuckDB Hive Partitioning: <https://duckdb.org/docs/current/data/partitioning/hive_partitioning>
 - DuckDB File Formats: <https://duckdb.org/docs/current/guides/performance/file_formats>
 - Fly Volumes: <https://fly.io/docs/volumes/overview/>

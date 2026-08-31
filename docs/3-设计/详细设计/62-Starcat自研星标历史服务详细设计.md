@@ -1,11 +1,12 @@
 # Starcat 自研星标历史服务详细设计
 
-> 日期: 2026-08-26
+> 日期: 2026-08-31
 > 状态: 生产全量与每日增量已跑通，Discovery 稳定窗口收口中
-> 版本: v1.3
+> 版本: v1.4
 > 范围: `starcat-history-api`、本地 WatchEvent 聚合、History Delta 发布、公共查询与客户端迁移
 > 本地数据与发布契约: [Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)
 > 当前实现基线: [仓库星标历史整体落地方案](50-仓库星标历史整体落地方案.md)
+> 每日运维入口: [WatchEvent 与 Star History 每日增量运维指南](../../2-产品/需求讨论/推荐算法/WatchEvent与Star-History每日增量运维指南.md)
 
 ## 1. 结论
 
@@ -50,8 +51,9 @@ precision=estimated
 - 有权限的“我的项目”可直连 GitHub `/stargazers` 并仅在本机聚合。
 - 普通公开仓库已切换到独立 History 设置槽和 `/star-history/events`，客户端在本地校准并继续复用 Repository/UI。
 - 独立服务已实现 Snapshot/Delta 发布、压缩序列查询、ETag、常量时间统计和稳定错误；生产查询已由聚合 `starcat-api` 分流到 History，Discovery 旧路径默认关闭，仅作为稳定窗口内的迁移回退。
-- 2016-01-01 至 2026-08-26 的 `3,891` 个 Raw 分区已形成生产数据：`260,068,094` 个 repo-day、`43,869,033` 个仓库和 `510,106,622` 条 WatchEvent。
-- 生产已激活 `watch-history-20260825-v1`，随后幂等应用 `watch-delta-20260826-v1`，active watermark 为 `2026-08-26`；同一 Delta 重放返回 `already_applied`。
+- 2016-01-01 至 2026-08-30 的 `3,895` 个连续 Raw 分区已完成；2016-01-01 至 2026-08-26 的全量基线包含 `260,068,094` 个 repo-day、`43,869,033` 个仓库和 `510,106,622` 条 WatchEvent，后续日期通过日增量追加。
+- 生产已激活 `watch-history-20260825-v1`，并连续应用 `watch-delta-20260826-v1` 至 `watch-delta-20260830-v1`，active watermark 为 `2026-08-30`；相同内容重放保持幂等。
+- `supports/scripts/run-history-daily-sync.sh` 已串联 Raw 追赶与 History 发布；LaunchAgent 每天本地时间 10:00 处理 UTC 昨日，真实后台 `kickstart` 已验证退出码为 0。
 
 ### 3.2 目标状态
 
@@ -202,6 +204,17 @@ D-1 Raw ready
 
 同一日期已成功生成且 source checksum 未改变时直接复用。日期缺口不得跳过；失败任务保留稳定错误并从同一水位线重试。
 
+实际运行必须同时区分四层事实：
+
+| 层级 | 事实来源 | 推进条件 |
+|---|---|---|
+| Raw 下载 | `download-state.json.completed_partitions` | Parquet 已下载并通过下载器校验 |
+| Silver | `watch-silver-YYYYMMDD-v1/manifest.json` | source watermark、日期范围和聚合统计一致 |
+| Delta | `watch-delta-YYYYMMDD-v1/manifest.json` | `(from_watermark, to_watermark]` 相邻且 checksum 完整 |
+| 生产 | `/internal/v1/history-active` | Delta 在云端事务内成功应用 |
+
+Raw 的 `.scope.end_date` 只是任务计划终点，不能代替最后完成分区。统一运维脚本先完成 Raw，再以生产 active watermark 为追赶起点；任何日期失败都不会跨日推进。完整命令、产物检查和恢复步骤见本文顶部的每日运维入口。
+
 ### 7.3 月度 Snapshot
 
 - 每月从 History Silver 重新生成完整 Snapshot。
@@ -290,6 +303,8 @@ checksums.json
 ```
 
 服务端校验文件白名单、路径安全、manifest 版本、checksum、SQLite `quick_check`、必需表、日期连续性和 source watermark。Delta 体积小，服务端仍执行完整 `quick_check`；验证通过后在一个事务内解码、追加并重新编码受影响的 `repo_history_series`，登记 Delta 后再推进 active watermark。
+
+发布成功响应意味着新 active watermark 已经可被查询进程读取。`/events` 和第三方兼容查询随后立即使用新序列，不需要重启 `starcat-api`、独立 History API 或 Starcat；失败事务仍继续服务上一 active watermark。
 
 ### 9.2 Full Snapshot
 
@@ -458,8 +473,9 @@ history_store_bytes
 
 ### Phase 2：增量发布（已完成）
 
-- 已用真实 `2026-08-26` Raw 分区完成 Silver、Delta、聚合网关发布和云端事务应用，水位从 `2026-08-25` 推进到 `2026-08-26`。
+- 已用真实 `2026-08-26` 至 `2026-08-30` Raw 分区完成 Silver、Delta、聚合网关发布和云端事务应用，水位从 `2026-08-25` 连续推进到 `2026-08-30`。
 - 已验证相同 Delta 重放 no-op、日期缺口拒绝、失败不推进、进程重启恢复和已安装 Snapshot 回切逻辑；生产不执行破坏当前水位的人工回切。
+- 已安装每日 10:00 的 LaunchAgent，统一脚本完成 T0 写探针、Keychain 取密钥、互斥锁、Raw 追赶和 History 追赶；手工与真实后台执行均已通过。
 - 查询只读 active Serving DB；Discovery 生产配置不再开启按请求 BigQuery History job。
 
 ### Phase 3：查询切换（客户端与生产已完成）
