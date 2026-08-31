@@ -37,7 +37,8 @@ supports/scripts/install-history-daily-launch-agent.sh status
 ```
 
 选择 10:00 是为了给 UTC 昨日 GH Archive 日表留出完成时间。任务不会处理 UTC 当天。
-LaunchAgent 直接执行脚本的 Bash shebang，并由脚本补齐 Homebrew PATH；不依赖登录 shell 配置。
+LaunchAgent 显式使用 `/bin/bash` 执行编排脚本，并由脚本补齐运行 PATH；这既不依赖登录
+shell 配置，也能让 macOS 将 T0 后台访问正确归因到已经授权的 Bash。
 
 ## 手工补齐与验证
 
@@ -118,5 +119,5 @@ supports/scripts/install-history-daily-launch-agent.sh uninstall
 - 生产 History：`model_version=watch-history-20260825-v1`，`active_watermark=2026-08-30`。
 - 幂等重跑：Raw 返回无待下载日期，History 返回 `published_days=0`。
 - BigQuery 本月计费：720,630,710,272 字节，占 1 TiB 免费层约 65.54%，低于 80% 警告线。
-- LaunchAgent：脚本、Keychain 和最小 PATH 已验证；当前 T0 后台写权限探针仍被 macOS 拒绝，
-  完成“完全磁盘访问权限”授权后必须重新 `kickstart`，以退出码 0 作为最终定时验收。
+- LaunchAgent：脚本、Keychain、最小 PATH 和 T0 后台写权限均通过真实 `kickstart` 验证；
+  任务幂等完成并以退出码 0 结束。
