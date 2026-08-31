@@ -38,19 +38,17 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
-//    `v20-agent-runtime-trace` / `v21-github-issue-labels` /
-//    `v22-awesome-discovery` / `v22-data-contribution` /
-//    `v23-awesome-source-metadata` / `v24-awesome-cache-freshness` /
-//    `v25-awesome-source-stars-refresh` / `v26-awesome-repository-metadata` /
-//    `v27-ai-usage-estimated-cost` / `v28-awesome-source-description`
-//    `v29-awesome-source-card-metadata` / `v30-awesome-entry-updated-at` /
-//    `v31-awesome-custom-source-parsing` / `v32-github-star-list-ai-rules` /
-//    `v33-awesome-resource-entries` / `v34-github-star-list-ai-auto-ignored`
+//    `v20-release-1.5.0`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
 //  正式 v19 使用 GRDB merging migration，既让 v18 正式用户一次升级，也让已执行部分或全部
 //  开发期迁移的本机数据库原子收口到同一个正式标识。
+//
+//  **1.5.0 开发期迁移（已由正式 v20 合并接管）**：
+//  `v20-agent-runtime-trace` 至 `v34-github-star-list-ai-auto-ignored` 共 16 个唯一标识
+//  仅在开发构建中出现过。正式 v20 继续使用 GRDB merging migration，保证 v19 正式用户
+//  一次升级，并让停在任意开发期中间状态的本机数据库收敛到同一个正式标识。
 //
 
 import Foundation
@@ -72,6 +70,25 @@ enum DatabaseMigrations {
         "v24-user-repo-activity",
         "v25-user-repo-activity-actor",
         "v26-github-timeline-conversations",
+    ]
+    private static let releaseV20Identifier = "v20-release-1.5.0"
+    private static let releaseV20DevelopmentIdentifiers: Set<String> = [
+        "v20-agent-runtime-trace",
+        "v21-github-issue-labels",
+        "v22-awesome-discovery",
+        "v22-data-contribution",
+        "v23-awesome-source-metadata",
+        "v24-awesome-cache-freshness",
+        "v25-awesome-source-stars-refresh",
+        "v26-awesome-repository-metadata",
+        "v27-ai-usage-estimated-cost",
+        "v28-awesome-source-description",
+        "v29-awesome-source-card-metadata",
+        "v30-awesome-entry-updated-at",
+        "v31-awesome-custom-source-parsing",
+        "v32-github-star-list-ai-rules",
+        "v33-awesome-resource-entries",
+        "v34-github-star-list-ai-auto-ignored",
     ]
 
     /// 将所有版本的迁移注册到 migrator。
@@ -99,32 +116,102 @@ enum DatabaseMigrations {
         registerV18(into: &migrator)
         registerV19(into: &migrator)
         registerV20(into: &migrator)
-        registerV21(into: &migrator)
-        // Awesome 与数据贡献曾在两个并行专项分支中各自以 v22 进入开发库。
-        // 保留两个已经落地的唯一 identifier，避免任一开发库因改名重复建表；
-        // GRDB 会按 identifier 跳过已执行的一支，并补跑另一支。
-        registerV22AwesomeDiscovery(into: &migrator)
-        registerV22DataContribution(into: &migrator)
-        registerV23AwesomeSourceMetadata(into: &migrator)
-        registerV24AwesomeCacheFreshness(into: &migrator)
-        registerV25AwesomeSourceStarsRefresh(into: &migrator)
-        registerV26AwesomeRepositoryMetadata(into: &migrator)
-        registerV27AIUsageEstimatedCost(into: &migrator)
-        registerV28AwesomeSourceDescription(into: &migrator)
-        registerV29AwesomeSourceCardMetadata(into: &migrator)
-        registerV30AwesomeEntryUpdatedAt(into: &migrator)
-        registerV31AwesomeCustomSourceParsing(into: &migrator)
-        registerV32GitHubStarListAIRules(into: &migrator)
-        registerV33AwesomeResourceEntries(into: &migrator)
-        registerV34GitHubStarListAIAutoIgnored(into: &migrator)
     }
+
+    // MARK: - v20-release-1.5.0：1.5.0 正式版 schema 收口（2026-08-31）
+
+    /// 1.5.0 开发期的 16 个迁移覆盖 Runtime、GitHub、Awesome 与数据贡献等并行能力。
+    /// 正式发布时，v19 线上用户必须只看到一次原子升级；开发机则可能停在任意中间标识。
+    /// merging migration 会跳过已执行步骤、补齐缺失步骤，并将迁移账本收敛为唯一正式标识。
+    /// 禁止手工改写 `grdb_migrations`，否则 schema 与迁移账本可能失配。
+    private static func registerV20(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration(
+            releaseV20Identifier,
+            merging: releaseV20DevelopmentIdentifiers
+        ) { db, appliedIdentifiers in
+            if !appliedIdentifiers.contains("v20-agent-runtime-trace") {
+                try applyAgentRuntimeTraceV20(db)
+            }
+            if !appliedIdentifiers.contains("v21-github-issue-labels") {
+                try applyGitHubIssueLabelsV20(db)
+            }
+            if !appliedIdentifiers.contains("v22-awesome-discovery") {
+                try applyAwesomeDiscoveryV20(db)
+            }
+            if !appliedIdentifiers.contains("v22-data-contribution") {
+                try applyDataContributionV20(db)
+            }
+            if !appliedIdentifiers.contains("v23-awesome-source-metadata") {
+                try applyAwesomeSourceMetadataV20(db)
+            }
+            if !appliedIdentifiers.contains("v24-awesome-cache-freshness") {
+                try applyAwesomeCacheFreshnessV20(db)
+            }
+            if !appliedIdentifiers.contains("v25-awesome-source-stars-refresh") {
+                try applyAwesomeSourceStarsRefreshV20(db)
+            }
+            if !appliedIdentifiers.contains("v26-awesome-repository-metadata") {
+                try applyAwesomeRepositoryMetadataV20(db)
+            }
+            if !appliedIdentifiers.contains("v27-ai-usage-estimated-cost") {
+                try applyAIUsageEstimatedCostV20(db)
+            }
+            if !appliedIdentifiers.contains("v28-awesome-source-description") {
+                try applyAwesomeSourceDescriptionV20(db)
+            }
+            if !appliedIdentifiers.contains("v29-awesome-source-card-metadata") {
+                try applyAwesomeSourceCardMetadataV20(db)
+            }
+            if !appliedIdentifiers.contains("v30-awesome-entry-updated-at") {
+                try applyAwesomeEntryUpdatedAtV20(db)
+            }
+            if !appliedIdentifiers.contains("v31-awesome-custom-source-parsing") {
+                try applyAwesomeCustomSourceParsingV20(db)
+            }
+            if !appliedIdentifiers.contains("v32-github-star-list-ai-rules") {
+                try applyGitHubStarListAIRulesV20(db)
+            }
+            if !appliedIdentifiers.contains("v33-awesome-resource-entries") {
+                try applyAwesomeResourceEntriesV20(db)
+            }
+            if !appliedIdentifiers.contains("v34-github-star-list-ai-auto-ignored") {
+                try applyGitHubStarListAIAutoIgnoredV20(db)
+            }
+        }
+    }
+
+#if DEBUG
+    /// 只供迁移测试重建 1.5.0 开发期数据库状态，生产启动路径始终只注册正式 v20。
+    static func registerRelease150DevelopmentMigrationsForTesting(
+        into migrator: inout DatabaseMigrator
+    ) {
+        migrator.registerMigration("v20-agent-runtime-trace", migrate: applyAgentRuntimeTraceV20)
+        migrator.registerMigration("v21-github-issue-labels", migrate: applyGitHubIssueLabelsV20)
+        migrator.registerMigration("v22-awesome-discovery", migrate: applyAwesomeDiscoveryV20)
+        migrator.registerMigration("v22-data-contribution", migrate: applyDataContributionV20)
+        migrator.registerMigration("v23-awesome-source-metadata", migrate: applyAwesomeSourceMetadataV20)
+        migrator.registerMigration("v24-awesome-cache-freshness", migrate: applyAwesomeCacheFreshnessV20)
+        migrator.registerMigration("v25-awesome-source-stars-refresh", migrate: applyAwesomeSourceStarsRefreshV20)
+        migrator.registerMigration("v26-awesome-repository-metadata", migrate: applyAwesomeRepositoryMetadataV20)
+        migrator.registerMigration("v27-ai-usage-estimated-cost", migrate: applyAIUsageEstimatedCostV20)
+        migrator.registerMigration("v28-awesome-source-description", migrate: applyAwesomeSourceDescriptionV20)
+        migrator.registerMigration("v29-awesome-source-card-metadata", migrate: applyAwesomeSourceCardMetadataV20)
+        migrator.registerMigration("v30-awesome-entry-updated-at", migrate: applyAwesomeEntryUpdatedAtV20)
+        migrator.registerMigration("v31-awesome-custom-source-parsing", migrate: applyAwesomeCustomSourceParsingV20)
+        migrator.registerMigration("v32-github-star-list-ai-rules", migrate: applyGitHubStarListAIRulesV20)
+        migrator.registerMigration("v33-awesome-resource-entries", migrate: applyAwesomeResourceEntriesV20)
+        migrator.registerMigration(
+            "v34-github-star-list-ai-auto-ignored",
+            migrate: applyGitHubStarListAIAutoIgnoredV20
+        )
+    }
+#endif
 
     // MARK: - v34-github-star-list-ai-auto-ignored：AI 分组自动忽略（2026-08-29）
 
     /// 组织 OAuth 限制是仓库级确定性失败，跨轮次保存后可避免持续消耗 AI 与 GitHub 请求。
     /// 标记依附当前账号数据库中的 repo；仓库删除时级联清理，手动重试时由业务层主动移除。
-    private static func registerV34GitHubStarListAIAutoIgnored(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v34-github-star-list-ai-auto-ignored") { db in
+    private static func applyGitHubStarListAIAutoIgnoredV20(_ db: Database) throws {
             guard try db.tableExists("repos") else { return }
             try db.create(table: "github_star_list_ai_auto_ignored_repos", ifNotExists: true) { table in
                 table.column("repo_id", .integer)
@@ -133,15 +220,13 @@ enum DatabaseMigrations {
                 table.column("reason", .text).notNull()
                 table.column("updated_at", .text).notNull()
             }
-        }
     }
 
     // MARK: - v33-awesome-resource-entries：Awesome 非仓库资源（2026-08-28）
 
     /// 外部目录与来源仓库内文件没有 GitHub repo ID，必须独立保存，不能用 0 作为伪主键。
     /// 迁移仅新增可重建缓存表和计数字段，并失效 managed ETag 触发下一次刷新回填。
-    private static func registerV33AwesomeResourceEntries(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v33-awesome-resource-entries") { db in
+    private static func applyAwesomeResourceEntriesV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources") else { return }
             let sourceColumns = Set(try db.columns(in: "awesome_sources").map(\.name))
             if !sourceColumns.contains("resource_entry_count") {
@@ -172,13 +257,11 @@ enum DatabaseMigrations {
             try db.execute(
                 sql: "UPDATE awesome_sources SET entries_etag = NULL, entries_checked_at = NULL WHERE kind = 'managed'"
             )
-        }
     }
 
     /// AI 分组规则是 Starcat 用户数据，必须与 GitHub 远端 description 分表保存。
     /// 外键级联保证用户删除 GitHub List 后，本地私有规则不会成为孤儿。
-    private static func registerV32GitHubStarListAIRules(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v32-github-star-list-ai-rules") { db in
+    private static func applyGitHubStarListAIRulesV20(_ db: Database) throws {
             guard try db.tableExists("github_star_lists") else { return }
             try db.create(table: "github_star_list_ai_rules", ifNotExists: true) { table in
                 table.column("list_id", .text)
@@ -188,15 +271,13 @@ enum DatabaseMigrations {
                 table.column("auto_apply_enabled", .boolean).notNull().defaults(to: false)
                 table.column("updated_at", .text).notNull()
             }
-        }
     }
 
     // MARK: - v31-awesome-custom-source-parsing：自定义来源后台解析状态（2026-08-25）
 
     /// 自定义来源提交后先落库、再后台解析 README。独立状态表让进度可跨重启恢复，且通过
     /// 外键级联删除绑定来源生命周期；表不存在的中间开发库继续 no-op，避免阻断迁移。
-    private static func registerV31AwesomeCustomSourceParsing(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v31-awesome-custom-source-parsing") { db in
+    private static func applyAwesomeCustomSourceParsingV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources") else { return }
             try db.create(table: "awesome_custom_source_parse_states", ifNotExists: true) { table in
                 table.column("source_id", .text)
@@ -208,7 +289,6 @@ enum DatabaseMigrations {
                 table.column("error_message", .text)
                 table.column("updated_at", .text).notNull()
             }
-        }
     }
 
     // MARK: - v30-awesome-entry-updated-at：Awesome 仓库更新时间修复（2026-08-24）
@@ -216,8 +296,7 @@ enum DatabaseMigrations {
     /// 早期开发库先执行了尚未包含 `repo_updated_at` 的 v22 草稿，而 v26 只补了其它事实列。
     /// 追加迁移补齐真实列，并仅失效 managed 条目条件请求状态；保留旧条目供离线展示，
     /// 下一次成功刷新会通过现有事务回填 GitHub `updated_at` 与 `created_at`。
-    private static func registerV30AwesomeEntryUpdatedAt(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v30-awesome-entry-updated-at") { db in
+    private static func applyAwesomeEntryUpdatedAtV20(_ db: Database) throws {
             guard try db.tableExists("awesome_entries") else { return }
             let columns = Set(try db.columns(in: "awesome_entries").map(\.name))
             if !columns.contains("repo_updated_at") {
@@ -230,15 +309,13 @@ enum DatabaseMigrations {
                     sql: "UPDATE awesome_sources SET entries_etag = NULL, entries_checked_at = NULL WHERE kind = 'managed'"
                 )
             }
-        }
     }
 
     // MARK: - v29-awesome-source-card-metadata：来源卡片 GitHub 元数据（2026-08-24）
 
     /// 来源卡片的事实字段和语言字节分布来自 GitHub API。这里只缓存 Discovery 目录快照，
     /// 不把自定义来源上传远端；清除目录 ETag 使已有用户在下次进入时获得新契约。
-    private static func registerV29AwesomeSourceCardMetadata(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v29-awesome-source-card-metadata") { db in
+    private static func applyAwesomeSourceCardMetadataV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources") else { return }
             let columns = Set(try db.columns(in: "awesome_sources").map(\.name))
             try db.alter(table: "awesome_sources") { table in
@@ -262,15 +339,13 @@ enum DatabaseMigrations {
             if try db.tableExists("awesome_state") {
                 try db.execute(sql: "UPDATE awesome_state SET catalog_etag = NULL, catalog_checked_at = NULL")
             }
-        }
     }
 
     // MARK: - v28-awesome-source-description：来源仓库真实描述（2026-08-24）
 
     /// 内容管理精选说明与 GitHub Repository Description 语义不同。追加独立缓存列，并使
     /// 已缓存 managed 目录立即重新请求新契约；自定义来源仍只写当前账户数据库。
-    private static func registerV28AwesomeSourceDescription(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v28-awesome-source-description") { db in
+    private static func applyAwesomeSourceDescriptionV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources") else { return }
             let columns = Set(try db.columns(in: "awesome_sources").map(\.name))
             if !columns.contains("repo_description") {
@@ -281,15 +356,13 @@ enum DatabaseMigrations {
             if try db.tableExists("awesome_state") {
                 try db.execute(sql: "UPDATE awesome_state SET catalog_etag = NULL, catalog_checked_at = NULL")
             }
-        }
     }
 
     // MARK: - v27-ai-usage-estimated-cost：AI 用量预估费用（2026-08-24）
 
     /// 定价字段追加到已发布的 v14 表。单次调用保存费用快照而不是查询时动态重算，
     /// 否则 LiteLLM 调价会让历史统计随时间漂移，用户无法复核当时的估算口径。
-    private static func registerV27AIUsageEstimatedCost(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v27-ai-usage-estimated-cost") { db in
+    private static func applyAIUsageEstimatedCostV20(_ db: Database) throws {
             guard try db.tableExists("ai_usage_events") else { return }
             let columns = Set(try db.columns(in: "ai_usage_events").map(\.name))
             try db.alter(table: "ai_usage_events") { table in
@@ -303,15 +376,13 @@ enum DatabaseMigrations {
                 if !columns.contains("pricing_model") { table.add(column: "pricing_model", .text) }
                 if !columns.contains("pricing_revision") { table.add(column: "pricing_revision", .text) }
             }
-        }
     }
 
     // MARK: - v26-awesome-repository-metadata：Awesome 仓库完整元数据（2026-08-24）
 
     /// 为已发布的本地库追加 GitHub 仓库事实列，并让 managed 来源下一次进入时重新验证
     /// entries 契约。保留旧条目用于离线兜底，刷新成功后再由现有事务整体替换。
-    private static func registerV26AwesomeRepositoryMetadata(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v26-awesome-repository-metadata") { db in
+    private static func applyAwesomeRepositoryMetadataV20(_ db: Database) throws {
             guard try db.tableExists("awesome_entries") else { return }
             let existingColumns = Set(try db.columns(in: "awesome_entries").map(\.name))
             try db.alter(table: "awesome_entries") { table in
@@ -332,7 +403,6 @@ enum DatabaseMigrations {
                     sql: "UPDATE awesome_sources SET entries_etag = NULL, entries_checked_at = NULL WHERE kind = 'managed'"
                 )
             }
-        }
     }
 
     // MARK: - v25-awesome-source-stars-refresh：旧来源 Stars 缓存失效（2026-08-24）
@@ -340,8 +410,7 @@ enum DatabaseMigrations {
     /// v23 为已存在的开发库补列时只能把历史行初始化为 0；随后 v24 的 freshness 会把
     /// 这批不完整目录当作新鲜缓存。只要存在这种 managed 行，就清除目录条件请求状态，
     /// 让下一次进入 Awesome 获取包含必返 `source_stars` 的完整目录，不动订阅和条目。
-    private static func registerV25AwesomeSourceStarsRefresh(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v25-awesome-source-stars-refresh") { db in
+    private static func applyAwesomeSourceStarsRefreshV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources"),
                   try db.tableExists("awesome_state"),
                   try db.columns(in: "awesome_sources").map(\.name).contains("source_stars")
@@ -352,36 +421,31 @@ enum DatabaseMigrations {
             ) ?? false
             guard hasIncompleteManagedSource else { return }
             try db.execute(sql: "UPDATE awesome_state SET catalog_etag = NULL, catalog_checked_at = NULL")
-        }
     }
 
     // MARK: - v23-awesome-source-metadata：Awesome 来源仓库元数据（2026-08-24）
 
     /// v22 已在开发构建中执行过，因此用追加迁移为现有本机库补齐来源 Stars。
     /// 表不存在时 no-op，避免中间开发库缺少 v22 草稿表而阻断后续迁移。
-    private static func registerV23AwesomeSourceMetadata(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v23-awesome-source-metadata") { db in
+    private static func applyAwesomeSourceMetadataV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources") else { return }
             let columns = try db.columns(in: "awesome_sources").map(\.name)
             guard !columns.contains("source_stars") else { return }
             try db.alter(table: "awesome_sources") { table in
                 table.add(column: "source_stars", .integer).notNull().defaults(to: 0)
             }
-        }
     }
 
     // MARK: - v24-awesome-cache-freshness：Awesome 缓存新鲜度（2026-08-24）
 
     /// 已发布开发库必须通过追加迁移记录条目校验时间；表不存在时允许其它并行专项库安全 no-op。
-    private static func registerV24AwesomeCacheFreshness(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v24-awesome-cache-freshness") { db in
+    private static func applyAwesomeCacheFreshnessV20(_ db: Database) throws {
             guard try db.tableExists("awesome_sources") else { return }
             let columns = try db.columns(in: "awesome_sources").map(\.name)
             guard !columns.contains("entries_checked_at") else { return }
             try db.alter(table: "awesome_sources") { table in
                 table.add(column: "entries_checked_at", .text)
             }
-        }
     }
 
     // MARK: - v22-data-contribution：公开 Star 数据贡献（2026-08-23）
@@ -389,8 +453,7 @@ enum DatabaseMigrations {
     /// 数据贡献是完全旁路能力：设置和待上传任务都跟随当前用户数据库隔离，
     /// 不复用 AppSettings，避免切换 GitHub 账号时把一个账号的授权带给另一个账号。
     /// `participant_id` 在关闭开关时保留；未发送的 Outbox 会由 Repository 同事务清空。
-    private static func registerV22DataContribution(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v22-data-contribution") { db in
+    private static func applyDataContributionV20(_ db: Database) throws {
             try db.create(table: "data_contribution_preferences") { table in
                 table.column("account_id", .text).primaryKey()
                 table.column("is_enabled", .boolean).notNull().defaults(to: false)
@@ -416,15 +479,13 @@ enum DatabaseMigrations {
                 on: "data_contribution_outbox",
                 columns: ["state", "next_attempt_at"]
             )
-        }
     }
 
     // MARK: - v22-awesome-discovery：Awesome 来源、订阅与条目（2026-08-24）
 
     /// Awesome 同时包含可重建公共快照和账户本地配置。四张独立表避免污染 starred repos，
     /// 并让删除/重建精选缓存时不会误删用户自定义来源或首次设置状态。
-    private static func registerV22AwesomeDiscovery(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v22-awesome-discovery") { db in
+    private static func applyAwesomeDiscoveryV20(_ db: Database) throws {
             try db.create(table: "awesome_sources") { table in
                 table.column("source_id", .text).primaryKey()
                 table.column("kind", .text).notNull()
@@ -495,15 +556,13 @@ enum DatabaseMigrations {
                 sql: "INSERT INTO awesome_state (id, has_completed_source_setup) VALUES (?, 0)",
                 arguments: [AwesomeStateRecord.singletonID]
             )
-        }
     }
 
     // MARK: - v21-github-issue-labels：Issue / PR 标签缓存（2026-08-22）
 
     /// 详情开帖卡要展示多个 GitHub 标签。列表 API 没有这列，hydrate / 组织 Issue 写入 `labels_json`。
     /// 表不存在则 no-op。
-    private static func registerV21(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v21-github-issue-labels") { db in
+    private static func applyGitHubIssueLabelsV20(_ db: Database) throws {
             guard try db.tableExists("github_notification_threads") else { return }
             let columns = try db.columns(in: "github_notification_threads").map(\.name)
             if !columns.contains("labels_json") {
@@ -511,15 +570,13 @@ enum DatabaseMigrations {
                     t.add(column: "labels_json", .text)
                 }
             }
-        }
     }
 
     // MARK: - v20-agent-runtime-trace：Runtime 原生执行过程（2026-08-22）
 
     /// 对话消息无法表达 Codex item lifecycle、重试和 Provider warning。单独保存经过
     /// Adapter 清洗的产品投影，不保存 JSON-RPC 原始帧、环境变量或隐藏思维链。
-    private static func registerV20(into migrator: inout DatabaseMigrator) {
-        migrator.registerMigration("v20-agent-runtime-trace") { db in
+    private static func applyAgentRuntimeTraceV20(_ db: Database) throws {
             try db.create(table: "agent_trace_events") { table in
                 table.column("id", .text).primaryKey()
                 table.column("run_id", .text).notNull()
@@ -535,7 +592,6 @@ enum DatabaseMigrations {
                 on: "agent_trace_events",
                 columns: ["run_id", "sequence"]
             )
-        }
     }
 
     // MARK: - v19-release-1.4.0：1.4.0 正式版 schema 收口（2026-08-21）

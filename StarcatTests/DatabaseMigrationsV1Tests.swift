@@ -13,10 +13,46 @@ import GRDB
 @Suite("Database Migration v1")
 struct DatabaseMigrationsV1Tests {
 
+    private let release150DevelopmentIdentifiers: Set<String> = [
+        "v20-agent-runtime-trace",
+        "v21-github-issue-labels",
+        "v22-awesome-discovery",
+        "v22-data-contribution",
+        "v23-awesome-source-metadata",
+        "v24-awesome-cache-freshness",
+        "v25-awesome-source-stars-refresh",
+        "v26-awesome-repository-metadata",
+        "v27-ai-usage-estimated-cost",
+        "v28-awesome-source-description",
+        "v29-awesome-source-card-metadata",
+        "v30-awesome-entry-updated-at",
+        "v31-awesome-custom-source-parsing",
+        "v32-github-star-list-ai-rules",
+        "v33-awesome-resource-entries",
+        "v34-github-star-list-ai-auto-ignored",
+    ]
+
     /// 创建一个全新的内存数据库，已应用 v1。
     private func makeDB() throws -> any DatabaseWriter {
         let mgr = try InMemoryDatabaseManager()
         return mgr.writer
+    }
+
+    /// 复现 1.5.0 封版前的迁移账本，供每个开发期步骤的行为测试使用。
+    private func makeRelease150DevelopmentDB(
+        upTo boundary: String
+    ) throws -> (DatabaseQueue, DatabaseMigrator) {
+        let queue = try DatabaseQueue()
+        var releaseMigrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &releaseMigrator)
+        try releaseMigrator.migrate(queue, upTo: "v19-release-1.4.0")
+
+        var developmentMigrator = DatabaseMigrator()
+        DatabaseMigrations.registerRelease150DevelopmentMigrationsForTesting(
+            into: &developmentMigrator
+        )
+        try developmentMigrator.migrate(queue, upTo: boundary)
+        return (queue, developmentMigrator)
     }
 
     @Test("全量迁移应建出所有 P0 表与知识库 RAG 表")
@@ -51,7 +87,8 @@ struct DatabaseMigrationsV1Tests {
             var migrator = DatabaseMigrator()
             DatabaseMigrations.registerAll(into: &migrator)
             let applied = try migrator.appliedIdentifiers(db)
-            #expect(applied.contains("v32-github-star-list-ai-rules"))
+            #expect(applied.contains("v20-release-1.5.0"))
+            #expect(applied.isDisjoint(with: release150DevelopmentIdentifiers))
             #expect(try db.tableExists("github_star_list_ai_rules"))
             #expect(try db.columns(in: "github_star_list_ai_rules").map(\.name) == [
                 "list_id", "instruction", "auto_apply_enabled", "updated_at"
@@ -61,10 +98,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v34 应追加 GitHub List AI 自动忽略表")
     func githubStarListAIAutoIgnoredMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v33-awesome-resource-entries")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v33-awesome-resource-entries"
+        )
 
         try writer.read { db in
             let tableExists = try db.tableExists("github_star_list_ai_auto_ignored_repos")
@@ -143,7 +179,8 @@ struct DatabaseMigrationsV1Tests {
             var migrator = DatabaseMigrator()
             DatabaseMigrations.registerAll(into: &migrator)
             let applied = try migrator.appliedIdentifiers(db)
-            #expect(applied.contains("v20-agent-runtime-trace"))
+            #expect(applied.contains("v20-release-1.5.0"))
+            #expect(applied.isDisjoint(with: release150DevelopmentIdentifiers))
             #expect(try db.tableExists("agent_trace_events"))
             let columns = try db.columns(in: "agent_trace_events").map(\.name)
             #expect(columns == ["id", "run_id", "sequence", "event_json", "created_at", "updated_at"])
@@ -157,7 +194,7 @@ struct DatabaseMigrationsV1Tests {
             var migrator = DatabaseMigrator()
             DatabaseMigrations.registerAll(into: &migrator)
             let applied = try migrator.appliedIdentifiers(db)
-            #expect(applied.contains("v21-github-issue-labels"))
+            #expect(applied.contains("v20-release-1.5.0"))
             let columns = try db.columns(in: "github_notification_threads").map(\.name)
             #expect(columns.contains("labels_json"))
         }
@@ -170,7 +207,7 @@ struct DatabaseMigrationsV1Tests {
             var migrator = DatabaseMigrator()
             DatabaseMigrations.registerAll(into: &migrator)
             let applied = try migrator.appliedIdentifiers(db)
-            #expect(applied.contains("v22-data-contribution"))
+            #expect(applied.contains("v20-release-1.5.0"))
             #expect(try db.tableExists("data_contribution_preferences"))
             #expect(try db.tableExists("data_contribution_outbox"))
 
@@ -193,15 +230,8 @@ struct DatabaseMigrationsV1Tests {
             var migrator = DatabaseMigrator()
             DatabaseMigrations.registerAll(into: &migrator)
             let applied = try migrator.appliedIdentifiers(db)
-            #expect(applied.contains("v22-awesome-discovery"))
-            #expect(applied.contains("v23-awesome-source-metadata"))
-            #expect(applied.contains("v24-awesome-cache-freshness"))
-            #expect(applied.contains("v25-awesome-source-stars-refresh"))
-            #expect(applied.contains("v26-awesome-repository-metadata"))
-            #expect(applied.contains("v28-awesome-source-description"))
-            #expect(applied.contains("v29-awesome-source-card-metadata"))
-            #expect(applied.contains("v30-awesome-entry-updated-at"))
-            #expect(applied.contains("v33-awesome-resource-entries"))
+            #expect(applied.contains("v20-release-1.5.0"))
+            #expect(applied.isDisjoint(with: release150DevelopmentIdentifiers))
             #expect(try db.tableExists("awesome_sources"))
             #expect(try db.tableExists("awesome_source_subscriptions"))
             #expect(try db.tableExists("awesome_entries"))
@@ -220,10 +250,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v25 让来源 Stars 为零的旧目录缓存立即过期")
     func awesomeSourceStarsRefreshMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v24-awesome-cache-freshness")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v24-awesome-cache-freshness"
+        )
         try writer.write { db in
             try db.execute(
                 sql: """
@@ -256,10 +285,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v26 追加 Awesome 仓库事实列并让 managed 条目缓存过期")
     func awesomeRepositoryMetadataMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v25-awesome-source-stars-refresh")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v25-awesome-source-stars-refresh"
+        )
         try writer.write { db in
             try db.execute(
                 sql: """
@@ -293,10 +321,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v28 追加来源仓库真实描述并让目录缓存过期")
     func awesomeSourceDescriptionMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v27-ai-usage-estimated-cost")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v27-ai-usage-estimated-cost"
+        )
         try writer.write { db in
             try db.execute(
                 sql: "UPDATE awesome_state SET catalog_etag = ?, catalog_checked_at = ?",
@@ -317,10 +344,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v29 追加来源卡片元数据并让目录缓存过期")
     func awesomeSourceCardMetadataMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v28-awesome-source-description")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v28-awesome-source-description"
+        )
         try writer.write { db in
             try db.execute(
                 sql: "UPDATE awesome_state SET catalog_etag = ?, catalog_checked_at = ?",
@@ -345,10 +371,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v30 补齐 Awesome 更新时间并让 managed 条目缓存过期")
     func awesomeEntryUpdatedAtMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v29-awesome-source-card-metadata")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v29-awesome-source-card-metadata"
+        )
         try writer.write { db in
             // 模拟执行过早期 v22 草稿、但缺少 repo_updated_at 的真实开发库。
             try db.execute(sql: "ALTER TABLE awesome_entries DROP COLUMN repo_updated_at")
@@ -380,10 +405,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v31 建立自定义 Awesome 解析状态并随来源级联删除")
     func awesomeCustomSourceParsingMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v30-awesome-entry-updated-at")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v30-awesome-entry-updated-at"
+        )
         try migrator.migrate(writer)
 
         try writer.write { db in
@@ -418,10 +442,9 @@ struct DatabaseMigrationsV1Tests {
 
     @Test("v33 独立存储非仓库资源并失效 managed 条目缓存")
     func awesomeResourceEntriesMigration() throws {
-        let writer = try DatabaseQueue()
-        var migrator = DatabaseMigrator()
-        DatabaseMigrations.registerAll(into: &migrator)
-        try migrator.migrate(writer, upTo: "v32-github-star-list-ai-rules")
+        let (writer, migrator) = try makeRelease150DevelopmentDB(
+            upTo: "v32-github-star-list-ai-rules"
+        )
         try writer.write { db in
             try db.execute(
                 sql: """
@@ -493,6 +516,152 @@ struct DatabaseMigrationsV1Tests {
                     try db.tableExists("github_organization_issue_sync_state"),
                     "boundary=\(boundary)"
                 )
+            }
+        }
+    }
+
+    @Test("1.5.0 正式迁移应只保留单个 v20 标识")
+    func release150MigrationUsesSingleFormalIdentifier() throws {
+        let writer = try makeDB()
+        try writer.read { db in
+            var migrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &migrator)
+            let applied = try migrator.appliedIdentifiers(db)
+
+            #expect(applied.contains("v20-release-1.5.0"))
+            #expect(applied.isDisjoint(with: release150DevelopmentIdentifiers))
+        }
+    }
+
+    @Test("1.4.0 升级 1.5.0 应保留 Repo、标签、笔记与 Agent 产物")
+    func release150MigrationPreservesRelease140Data() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v19-release-1.4.0")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url, is_starred)
+                VALUES (150, 'starcat', 'release-check', 'starcat/release-check',
+                        'https://github.com/starcat/release-check', 1)
+                """)
+            try db.execute(sql: """
+                INSERT INTO tags (id, name, created_at, updated_at)
+                VALUES ('release-150', 'Release 1.5.0', '2026-08-31T00:00:00Z', '2026-08-31T00:00:00Z')
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_tags (repo_id, tag_id, created_at)
+                VALUES (150, 'release-150', '2026-08-31T00:00:00Z')
+                """)
+            try db.execute(sql: """
+                INSERT INTO repo_notes (repo_id, content, status, library_state, is_ai_generated)
+                VALUES (150, 'keep release data', 'using', 'in_library', 0)
+                """)
+            try db.execute(sql: """
+                INSERT INTO agent_runs (
+                    id, agent_id, title, user_prompt, context_source, status,
+                    assistant_output, created_at, updated_at, context_json
+                ) VALUES (
+                    'release-150-run', 'github-weekly-report', 'Release Check',
+                    'keep prompt', 'release migration test', 'completed',
+                    'keep output', '2026-08-31T00:00:00Z', '2026-08-31T00:01:00Z', '{}'
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO agent_artifacts (
+                    id, run_id, sequence, type, title, content, created_at
+                ) VALUES (
+                    'release-150-artifact', 'release-150-run', 0, 'markdown',
+                    'Release Check', '# keep artifact', '2026-08-31T00:01:00Z'
+                )
+                """)
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            #expect(try String.fetchOne(
+                db,
+                sql: "SELECT content FROM repo_notes WHERE repo_id = 150"
+            ) == "keep release data")
+            #expect(try String.fetchOne(
+                db,
+                sql: "SELECT tag_id FROM repo_tags WHERE repo_id = 150"
+            ) == "release-150")
+            #expect(try String.fetchOne(
+                db,
+                sql: "SELECT content FROM agent_artifacts WHERE id = 'release-150-artifact'"
+            ) == "# keep artifact")
+            #expect(try db.tableExists("agent_trace_events"))
+            #expect(try db.tableExists("awesome_resource_entries"))
+
+            let applied = try migrator.appliedIdentifiers(db)
+            #expect(applied.contains("v20-release-1.5.0"))
+            #expect(applied.isDisjoint(with: release150DevelopmentIdentifiers))
+        }
+    }
+
+    @Test("1.5.0 正式迁移应接管早期、中期与完整开发库")
+    func release150MigrationConvergesDevelopmentDatabases() throws {
+        let developmentBoundaries = [
+            "v20-agent-runtime-trace",
+            "v27-ai-usage-estimated-cost",
+            "v34-github-star-list-ai-auto-ignored",
+        ]
+
+        for (index, boundary) in developmentBoundaries.enumerated() {
+            let queue = try DatabaseQueue()
+            var releaseMigrator = DatabaseMigrator()
+            DatabaseMigrations.registerAll(into: &releaseMigrator)
+            try releaseMigrator.migrate(queue, upTo: "v19-release-1.4.0")
+
+            let repoID = 1_500 + index
+            try queue.write { db in
+                try db.execute(
+                    sql: """
+                        INSERT INTO repos (id, owner, name, full_name, html_url)
+                        VALUES (?, 'starcat', ?, ?, ?)
+                        """,
+                    arguments: [
+                        repoID,
+                        "boundary-\(index)",
+                        "starcat/boundary-\(index)",
+                        "https://github.com/starcat/boundary-\(index)",
+                    ]
+                )
+                try db.execute(
+                    sql: "INSERT INTO repo_notes (repo_id, content) VALUES (?, ?)",
+                    arguments: [repoID, "keep-\(boundary)"]
+                )
+            }
+
+            var developmentMigrator = DatabaseMigrator()
+            DatabaseMigrations.registerRelease150DevelopmentMigrationsForTesting(
+                into: &developmentMigrator
+            )
+            try developmentMigrator.migrate(queue, upTo: boundary)
+            try releaseMigrator.migrate(queue)
+
+            try queue.read { db in
+                let applied = try releaseMigrator.appliedIdentifiers(db)
+                #expect(applied.contains("v20-release-1.5.0"), "boundary=\(boundary)")
+                #expect(
+                    applied.isDisjoint(with: release150DevelopmentIdentifiers),
+                    "boundary=\(boundary)"
+                )
+                #expect(try db.tableExists("agent_trace_events"), "boundary=\(boundary)")
+                #expect(try db.tableExists("data_contribution_outbox"), "boundary=\(boundary)")
+                #expect(try db.tableExists("awesome_resource_entries"), "boundary=\(boundary)")
+                #expect(
+                    try db.columns(in: "github_notification_threads").map(\.name).contains("labels_json"),
+                    "boundary=\(boundary)"
+                )
+                #expect(try String.fetchOne(
+                    db,
+                    sql: "SELECT content FROM repo_notes WHERE repo_id = ?",
+                    arguments: [repoID]
+                ) == "keep-\(boundary)")
             }
         }
     }
