@@ -65,6 +65,7 @@ go run ./cmd/server
 在 Starcat 根目录执行：
 
 ```bash
+STARCAT_RUN_COLLECTION_INTEGRATION=1 \
 xcodebuild -scheme Starcat \
   -destination 'platform=macOS,arch=arm64' \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- CODE_SIGN_ENTITLEMENTS= \
@@ -73,8 +74,9 @@ xcodebuild -scheme Starcat \
   -only-testing:StarcatTests/CollectionAPILiveIntegrationTests test
 ```
 
-该显式测试生成 repo 1～4 的 Swift schema v1 完整快照并提交。常规测试没有上述构建设置时
-不会访问网络。
+该显式测试生成 repo 1～4 的 Swift schema v1 完整快照并提交。常规测试没有
+`STARCAT_RUN_COLLECTION_INTEGRATION=1` 时不会访问网络；显式开启后缺少 Collection
+API Key 则直接失败，避免将 E2E 配置错误误判为通过。
 
 ### 3.3 Collection Pull → 完整训练 → Bundle
 
