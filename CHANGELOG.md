@@ -30,6 +30,7 @@ Starcat 1.5.0 expands how you discover, organize, and revisit GitHub repositorie
   ![20260829182919_ACzqn6YW](https://cdn.dong4j.site/source/image/20260829182919_ACzqn6YW.webp)
 - Public Star contribution: An optional, off-by-default privacy setting can anonymously contribute public repository IDs and available Star dates to improve recommendations without blocking normal sync.
 - Sharing and open-source links: Copy share text from repository health, repository insights, and library statistics. Share cards and exports identify Starcat, while Help and About link to the source repository.
+- Star trend image sharing: Copy the Star trend card from Repository Insights as an image, preserving repository identity and avatar for saving or sharing.
 
 ### Improvements
 
@@ -40,6 +41,8 @@ Starcat 1.5.0 expands how you discover, organize, and revisit GitHub repositorie
 - AI usage statistics: The usage dashboard adds estimated cost, pricing coverage, and persisted snapshots for comparing model and task consumption.
 - Desktop widgets: Focus, Repository Rediscovery, Collection Trend, and Release Watch have clearer hierarchy and heatmap layouts. Sparse large-size variants have been removed.
 - Local Issue state: Comments, event history, and unsent drafts are cached per thread and survive thread changes or app restarts; each cache can be cleared in Settings.
+- Release asset downloads: See live progress in each download row, then use the completion toast to find or open the saved file.
+- Tag and list editing: Choose tag-merge targets in a sheet with predictable ordering and default selection, with consistent headers across tag and GitHub List editors.
 - Interface details: Shortcut modifiers and primary keys use separate keycaps, the empty Activity detail guides selection, and suggested tags use clearer rows and hover feedback.
 
 ### Fixes
