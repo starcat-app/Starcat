@@ -8,7 +8,7 @@
 //  - name / description / private 写 GitHub；颜色和 AI 分组规则只写 Starcat 本地缓存。
 //  - 新建时用户不选颜色则传 nil，保存成功后由 `list.id` 稳定 hash 生成默认色。
 //  - 删除 list 是远端 destructive mutation，必须二次确认。
-//  - 顶部用分组名预览身份，图标与侧栏编辑 / 新建入口同一套 square 符号，不用颜色圆点。
+//  - Header 对齐新建标签：单行标题（新增分组 / 编辑分组）+ 左上角分组语义图标（rectangle.3.group），不要二级标题。
 //  - GitHub / Starcat 分成两段，避免创建时把 AI 规则当成必填项。
 //
 
@@ -89,28 +89,17 @@ struct GitHubStarListEditorSheet: View {
         }
     }
 
+    /// 对齐新建标签：单行标题、不要二级标题；左上角用分组语义图标（rectangle.3.group）。
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: isEditing ? "slider.horizontal.2.square" : "plus.square")
+            Image(systemName: "rectangle.3.group")
                 .font(interfaceScale.font(.iconMedium, weight: .medium))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
 
-            VStack(alignment: .leading, spacing: 1) {
-                if trimmedName.isEmpty {
-                    Text("githubStarLists.editor.name.placeholder")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(verbatim: trimmedName)
-                        .font(.headline)
-                        .lineLimit(1)
-                }
-                Text(isEditing ? "githubStarLists.editor.title.edit" : "githubStarLists.editor.title.create")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(isEditing ? "githubStarLists.editor.title.edit" : "githubStarLists.editor.title.create")
+                .font(.headline)
 
             Spacer(minLength: 8)
 

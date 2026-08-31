@@ -143,20 +143,12 @@ struct TagManagementView: View {
     }
 
     private var titleBar: some View {
-        // 与新建标签 / 合并标签 / GitHubStarListEditorSheet 同一套 header 语言：
-        // hierarchical 图标 + 主标题 + 关闭；不用 tint 实心色块以免和内容区抢层级。
-        HStack(spacing: 10) {
-            Image(systemName: "tag")
-                .font(.system(size: 15, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-
+        HStack {
+            Image(systemName: "tag.fill")
+                .foregroundStyle(.tint)
             Text("tagManagement.title")
                 .font(.headline)
-
-            Spacer(minLength: 8)
-
+            Spacer()
             SheetCloseButton(
                 action: { dismiss() },
                 iconFont: .system(size: 16, weight: .medium),
@@ -318,71 +310,79 @@ private struct MergeTagsSheet: View {
     }
 
     var body: some View {
-        // Header 对齐 GitHubStarListEditorSheet / 新建标签：图标 + 主副标题 + 关闭。
-        VStack(spacing: 0) {
-            header
-            Divider()
-            VStack(alignment: .leading, spacing: 14) {
-                Text("tagManagement.mergeSheetHint")
+        // 对齐新建标签：单行标题，不要二级标题；图标用合并，不用新增分组的 plus.square。
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.merge")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("tagManagement.mergeSheetTitle")
+                    .font(.headline)
+                Spacer()
+                SheetCloseButton(
+                    action: { dismiss() },
+                    iconFont: .system(size: 16, weight: .medium),
+                    helpKey: "action.close"
+                )
+                .keyboardShortcut(.cancelAction)
+            }
+
+            Text("tagManagement.mergeSheetHint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 2) {
+                ForEach(candidates) { tag in
+                    Button {
+                        targetId = tag.id
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: targetId == tag.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(targetId == tag.id ? Color.accentColor : .secondary)
+                                .font(.system(size: 14))
+
+                            Circle()
+                                .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
+                                .frame(width: 10, height: 10)
+
+                            if let icon = tag.icon {
+                                Image(systemName: icon)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14)
+                            }
+
+                            Text(verbatim: tag.name)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            Spacer()
+
+                            Text((counts[tag.id] ?? 0).formatted())
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(targetId == tag.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
+                }
+            }
+
+            if let targetName = candidates.first(where: { $0.id == targetId })?.name {
+                Text(String(format: String.l10n("tagManagement.mergeMessageFormat"), candidates.count - 1, targetName))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                VStack(spacing: 2) {
-                    ForEach(candidates) { tag in
-                        Button {
-                            targetId = tag.id
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: targetId == tag.id ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(targetId == tag.id ? Color.accentColor : .secondary)
-                                    .font(.system(size: 14))
-
-                                Circle()
-                                    .fill(Color(hex: tag.color ?? TagColorPalette.defaultHex) ?? .accentColor)
-                                    .frame(width: 10, height: 10)
-
-                                if let icon = tag.icon {
-                                    Image(systemName: icon)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 14)
-                                }
-
-                                Text(verbatim: tag.name)
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-
-                                Spacer()
-
-                                Text((counts[tag.id] ?? 0).formatted())
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(targetId == tag.id ? Color.accentColor.opacity(0.12) : Color.clear)
-                        )
-                    }
-                }
-
-                if let targetName = candidates.first(where: { $0.id == targetId })?.name {
-                    Text(String(format: String.l10n("tagManagement.mergeMessageFormat"), candidates.count - 1, targetName))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
-            .padding(20)
-
-            Divider()
 
             HStack {
                 Spacer()
@@ -399,40 +399,9 @@ private struct MergeTagsSheet: View {
                 .keyboardShortcut(.return)
                 .disabled(submitting || !candidates.contains(where: { $0.id == targetId }))
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
         }
+        .padding(20)
         .frame(width: 420)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "arrow.triangle.merge")
-                .font(.system(size: 15, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("tagManagement.mergeSheetTitle")
-                    .font(.headline)
-                    .lineLimit(1)
-                Text("tagManagement.mergeSheetSubtitle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            SheetCloseButton(
-                action: { dismiss() },
-                iconFont: .system(size: 16, weight: .medium),
-                helpKey: "action.close"
-            )
-            .keyboardShortcut(.cancelAction)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
     }
 }
 
@@ -450,55 +419,46 @@ private struct NewTagSheet: View {
     @State private var icon: String? = SFSymbolPreset.defaultIcon
     @State private var submitting: Bool = false
 
-    private var trimmedName: String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     var body: some View {
-        // 与 GitHubStarListEditorSheet / MergeTagsSheet 同一套 header：图标 + 主副标题 + 关闭。
-        VStack(spacing: 0) {
-            header
-            Divider()
-            VStack(alignment: .leading, spacing: 14) {
-                TextField("tagManagement.tagName", text: $name)
-                    .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("tagManagement.newTag")
+                .font(.headline)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("tagManagement.color")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 6) {
-                        ForEach(TagColorPalette.presets, id: \.hex) { preset in
-                            Button {
-                                color = preset.hex
-                            } label: {
-                                Circle()
-                                    .fill(Color(hex: preset.hex) ?? .gray)
-                                    .frame(width: 22, height: 22)
-                                    .overlay(
-                                        Circle().strokeBorder(
-                                            color.lowercased() == preset.hex.lowercased() ? Color.primary : Color.clear,
-                                            lineWidth: 2
-                                        )
+            TextField("tagManagement.tagName", text: $name)
+                .textFieldStyle(.roundedBorder)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("tagManagement.color")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ForEach(TagColorPalette.presets, id: \.hex) { preset in
+                        Button {
+                            color = preset.hex
+                        } label: {
+                            Circle()
+                                .fill(Color(hex: preset.hex) ?? .gray)
+                                .frame(width: 22, height: 22)
+                                .overlay(
+                                    Circle().strokeBorder(
+                                        color.lowercased() == preset.hex.lowercased() ? Color.primary : Color.clear,
+                                        lineWidth: 2
                                     )
-                            }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
-                            .help(Text(LocalizedStringKey(preset.name)))
+                                )
                         }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .help(Text(LocalizedStringKey(preset.name)))
                     }
                 }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("tagManagement.icon")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    SFSymbolGridPicker(selection: $icon, columns: 8)
-                }
             }
-            .padding(20)
 
-            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text("tagManagement.icon")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                SFSymbolGridPicker(selection: $icon, columns: 8)
+            }
 
             HStack {
                 Spacer()
@@ -513,47 +473,10 @@ private struct NewTagSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return)
-                .disabled(trimmedName.isEmpty || submitting)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || submitting)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
         }
+        .padding(20)
         .frame(width: 380)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "plus.square")
-                .font(.system(size: 15, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-
-            VStack(alignment: .leading, spacing: 1) {
-                if trimmedName.isEmpty {
-                    Text("tagManagement.newTagNamePlaceholder")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(verbatim: trimmedName)
-                        .font(.headline)
-                        .lineLimit(1)
-                }
-                Text("tagManagement.newTag")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            SheetCloseButton(
-                action: { dismiss() },
-                iconFont: .system(size: 16, weight: .medium),
-                helpKey: "action.close"
-            )
-            .keyboardShortcut(.cancelAction)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
     }
 }
