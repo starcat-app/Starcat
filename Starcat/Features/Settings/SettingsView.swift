@@ -185,8 +185,9 @@ struct SettingsView: View {
         }
     }
 
-    /// 普通 Window 允许用户自由缩放；这里只声明保证 Sidebar 与表单可用的下限。
-    private static let minimumContentSize = CGSize(width: 920, height: 600)
+    /// 设置窗口固定使用当前验收尺寸；Scene 同时声明 `.contentSize`，让 AppKit
+    /// 禁用边缘缩放和绿色缩放按钮，而不是只给一个仍可继续放大的最小值。
+    private static let contentSize = CGSize(width: 920, height: 600)
 
     var body: some View {
         // NavigationSplitView + sidebar List 使用 macOS 原生选中态、材质和分隔线。
@@ -196,12 +197,15 @@ struct SettingsView: View {
         } detail: {
             settingsPage(selectedTab)
                 .contentMargins(.top, 8, for: .scrollContent)
-                .navigationTitle(selectedTab.titleKey)
+                // `navigationTitle(LocalizedStringKey)` 由系统 toolbar 单独解析，曾绕过
+                // App 内 LocaleStore，导致侧栏已是英文而这里仍显示中文。先通过
+                // LocalizedBundle 解析成当前应用语言的 String，toolbar 就不会回退系统语言。
+                .navigationTitle(String.l10n(selectedTab.titleKeyString))
         }
         .navigationSplitViewStyle(.balanced)
         .frame(
-            minWidth: Self.minimumContentSize.width,
-            minHeight: Self.minimumContentSize.height
+            width: Self.contentSize.width,
+            height: Self.contentSize.height
         )
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -227,12 +231,19 @@ struct SettingsView: View {
             // SettingsView 把自己发出的通知再次写进历史形成循环。
             guard !isRedispatchingSettingsJump else { return }
             guard let target = note.object as? String else { return }
+            defer { AppDelegate.acknowledgeSettingsTarget(target) }
             if let location = settingsLocation(for: target) {
                 navigate(to: location)
             }
         }
         .onAppear {
             dependencies.telemetryManager.track(.settingsOpened)
+            // 第一次打开 Window 时通知可能早于 View 安装订阅；消费 AppDelegate
+            // 暂存的目标，保证独立窗口入口首次也能准确定位到目标页/区块。
+            if let target = AppDelegate.consumePendingSettingsTarget(),
+               let location = settingsLocation(for: target) {
+                navigate(to: location)
+            }
         }
         .task(id: dependencies.databaseScopeRevision) {
             await dependencies.dataContributionSettings.reload(

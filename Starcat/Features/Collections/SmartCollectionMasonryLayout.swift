@@ -5,9 +5,12 @@
 //  智能集合右栏瀑布流：多列 LazyVStack + 按序轮转分列。
 //
 //  为什么不用自定义 `Layout` 最短列算法：
-//  - 卡片内含 `GeometryReader`（topic chip 行）时，`sizeThatFits(height: nil)` 会
-//    在 ScrollView 内触发布局反馈环，实测导致主界面卡死；
-//  - `HStack + LazyVStack` 由系统 lazy 管线处理变高卡片，稳定且支持分页 onAppear。
+//  - `sizeThatFits(height: nil)` 与变高卡片组合时容易触发布局反馈环；
+//  - `HStack + LazyVStack` 由系统 lazy 管线处理变高卡片，支持分页 onAppear。
+//
+//  关键约束：卡片内部禁止用 `GeometryReader` 反向读取列宽。可用宽度必须由
+//  `SmartCollectionDetailPanel` 根据容器宽度和列数一次算出后向下传递，否则滚动
+//  预取会反复污染 AttributeGraph，最终让主线程持续满载。
 //
 //  分列策略：index % columnCount（左→右轮转）。高度参差时视觉仍是瀑布流，
 //  且 LazyVStack 只渲染可见卡片，滚动 + 分页更省。

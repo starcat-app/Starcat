@@ -186,8 +186,10 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
             onPinnedChange: { [weak window] isPinned in
                 window?.level = isPinned ? .floating : .normal
             },
-            onSettings: { [chromeState] in
-                chromeState.isSettingsPresented = true
+            onSettings: {
+                // 配置使用 App 级 SwiftUI Window Scene；这里不再把自绘 sheet 状态
+                // 塞进工作台 chrome，重复点击也只会激活同一个原生设置窗口。
+                AppDelegate.openRAGWorkspaceSettingsWindow()
             }
         ))
         // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。

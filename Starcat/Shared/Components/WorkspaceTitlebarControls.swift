@@ -8,7 +8,7 @@
 //  - 左栏折叠 / 展开
 //  - 右栏折叠 / 展开
 //  - 窗口置顶 / 取消置顶
-//  - RAG 专用：打开配置 Sheet（提示词 + 检索）
+//  - RAG 专用：打开独立配置窗口（推理 + 提示词 + 检索）
 //
 
 import SwiftUI
@@ -22,8 +22,6 @@ final class WorkspaceChromeState {
     var isLeftColumnCollapsed: Bool = false
     var isRightColumnCollapsed: Bool = false
     var isPinned: Bool = false
-    /// RAG 工作台专用：titlebar 齿轮打开配置 Sheet（提示词 + 检索）；Agent 不用。
-    var isSettingsPresented: Bool = false
 }
 
 /// 放在 `NSTitlebarAccessoryViewController` 内的窗口级图标按钮组。

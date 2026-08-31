@@ -54,6 +54,9 @@ struct SmartCollectionDetailPanel: View {
     private static let cardSpacing: CGFloat = 12
     private static let minCardWidth: CGFloat = 280
     private static let masonryOuterPadding: CGFloat = 16
+    /// 对应 `RepoRowSurface` 的左右 10pt content padding；选中态还会额外增加 5pt leading。
+    private static let cardContentHorizontalPadding: CGFloat = 20
+    private static let selectedCardLeadingPadding: CGFloat = 5
 
     private var repos: [Repo] {
         viewModel.filteredSorted
@@ -138,7 +141,10 @@ struct SmartCollectionDetailPanel: View {
                 columns: masonryColumns,
                 spacing: Self.cardSpacing
             ) { item in
-                SmartCollectionRepoCard(item: item)
+                SmartCollectionRepoCard(
+                    item: item,
+                    chipAvailableWidth: chipAvailableWidth(isSelected: item.isSelected)
+                )
                     .contentShape(Rectangle())
                     .onTapGesture {
                         viewModel.selectedRepoID = item.id
@@ -267,6 +273,19 @@ struct SmartCollectionDetailPanel: View {
         return max(1, Int((available + Self.cardSpacing) / (Self.minCardWidth + Self.cardSpacing)))
     }
 
+    /// 从 panel 的稳定宽度单向推导卡片内容宽度，避免 lazy cell 再用 GeometryReader 反向测量。
+    private func chipAvailableWidth(isSelected: Bool) -> CGFloat {
+        let count = columnCount(for: contentWidth)
+        let availableWidth = max(0, contentWidth - Self.masonryOuterPadding * 2)
+        let totalSpacing = Self.cardSpacing * CGFloat(max(0, count - 1))
+        let columnWidth = (availableWidth - totalSpacing) / CGFloat(count)
+        let selectedInset = isSelected ? Self.selectedCardLeadingPadding : 0
+        return max(
+            0,
+            columnWidth - Self.cardContentHorizontalPadding - selectedInset
+        )
+    }
+
     /// 一次性组装卡片快照 + 分列 bucket；仅在 width / 可见集 / 选中 / health 变化时调用。
     private func refreshMasonryLayout() {
         let visible = visibleRepos
@@ -380,6 +399,8 @@ private struct SmartCollectionRepoCard: View {
     private static let chipRowSpacing: CGFloat = 4
 
     let item: SmartCollectionCardItem
+    /// 由 panel 按列宽一次算出；卡片不得再用 GeometryReader 反向读取自身宽度。
+    let chipAvailableWidth: CGFloat
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
@@ -497,11 +518,15 @@ private struct SmartCollectionRepoCard: View {
                                 systemImage: "number",
                                 tint: .secondary
                             )
-                        }
+                        },
+                        availableWidth: chipAvailableWidth
                     )
                 }
                 if !tagChips.isEmpty {
-                    SmartCollectionMeasuredChipRow(chips: tagChips)
+                    SmartCollectionMeasuredChipRow(
+                        chips: tagChips,
+                        availableWidth: chipAvailableWidth
+                    )
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
@@ -679,75 +704,43 @@ private struct SmartCollectionMeasuredChipRow: View {
     private static let overflowText = "..."
 
     let chips: [SmartCollectionInfoChip]
+    /// 由外层 panel 单向传入，避免每个 lazy cell 都参与宽度测量并形成布局反馈环。
+    let availableWidth: CGFloat
 
     var body: some View {
-        GeometryReader { proxy in
-            let visibleChips = Self.visibleChips(
-                chips: chips,
-                availableWidth: proxy.size.width
-            )
-
-            HStack(spacing: Self.chipSpacing) {
-                ForEach(visibleChips) { chip in
-                    SmartCollectionCompactInfoChip(
-                        systemImage: chip.systemImage,
-                        text: chip.text,
-                        helpText: chip.helpText,
-                        tint: chip.tint
-                    )
-                }
-                Spacer(minLength: 0)
+        HStack(spacing: Self.chipSpacing) {
+            ForEach(visibleChips) { chip in
+                SmartCollectionCompactInfoChip(
+                    systemImage: chip.systemImage,
+                    text: chip.text,
+                    helpText: chip.helpText,
+                    tint: chip.tint
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: Self.rowHeight)
         .clipped()
     }
 
     /// 从左到右贪心填充 chip，并为未展示的剩余 chip 预留一个 `...` chip。
-    private static func visibleChips(chips: [SmartCollectionInfoChip], availableWidth: CGFloat) -> [SmartCollectionInfoChip] {
-        guard availableWidth > 0 else { return [] }
+    private var visibleChips: [SmartCollectionInfoChip] {
+        let decision = SmartCollectionChipLayoutPolicy.resolve(
+            chipWidths: chips.map { Self.chipWidth(text: $0.text) },
+            availableWidth: availableWidth,
+            spacing: Self.chipSpacing,
+            overflowWidth: Self.chipWidth(text: Self.overflowText)
+        )
+        var visible = Array(chips.prefix(decision.visibleChipCount))
+        guard decision.showsOverflow else { return visible }
 
-        var visible: [SmartCollectionInfoChip] = []
-        var usedWidth: CGFloat = 0
-        let overflowWidth = chipWidth(text: overflowText)
-
-        for index in chips.indices {
-            let chip = chips[index]
-            let currentWidth = chipWidth(text: chip.text)
-            let leadingSpacing = visible.isEmpty ? 0 : chipSpacing
-            let hasRemainingChips = index < chips.index(before: chips.endIndex)
-            let overflowReserve = hasRemainingChips ? chipSpacing + overflowWidth : 0
-
-            if usedWidth + leadingSpacing + currentWidth + overflowReserve <= availableWidth {
-                usedWidth += leadingSpacing + currentWidth
-                visible.append(chip)
-            } else {
-                let omittedText = chips[index...].map(\.helpText).joined(separator: ", ")
-                appendOverflowChipIfPossible(
-                    to: &visible,
-                    usedWidth: usedWidth,
-                    availableWidth: availableWidth,
-                    overflowWidth: overflowWidth,
-                    helpText: omittedText
-                )
-                break
-            }
-        }
-
+        let omittedText = chips
+            .dropFirst(decision.visibleChipCount)
+            .map(\.helpText)
+            .joined(separator: ", ")
+        visible.append(Self.overflowChip(helpText: omittedText))
         return visible
-    }
-
-    private static func appendOverflowChipIfPossible(
-        to chips: inout [SmartCollectionInfoChip],
-        usedWidth: CGFloat,
-        availableWidth: CGFloat,
-        overflowWidth: CGFloat,
-        helpText: String
-    ) {
-        let leadingSpacing = chips.isEmpty ? 0 : chipSpacing
-        guard usedWidth + leadingSpacing + overflowWidth <= availableWidth else { return }
-        chips.append(overflowChip(helpText: helpText))
     }
 
     private static func overflowChip(helpText: String) -> SmartCollectionInfoChip {

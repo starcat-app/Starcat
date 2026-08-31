@@ -1,8 +1,8 @@
 //
-//  RAGWorkspaceSettingsSheet.swift
+//  RAGWorkspaceSettingsView.swift
 //  Starcat
 //
-//  RAG 工作台配置 Sheet：推理后端、提示词与检索策略共用一个入口。
+//  RAG 工作台独立设置窗口：推理后端、提示词与检索策略共用一个入口。
 //  提示词写入 `AppSettings.ragPromptSettings`；检索写入
 //  `AppSettings.ragRetrievalSettings`（UserDefaults JSON），下一轮问答由
 //  `makeKnowledgeRAGService` 读入生效。
@@ -14,10 +14,19 @@
 //  - 2026-07-14：一行 4 段 segmented（问答 / 规划 / 压缩 / 标题）。
 //  - 2026-07-14：增加提示词 / 检索一级分段。
 //  - 2026-07-14：检索页对齐「侧栏 + 内容卡片」；预设切换静默写字段；保存持久化。
-//  - 2026-07-14：由 PromptSettingsSheet 重命名为 SettingsSheet。
+//  - 2026-09-01：由工作台内 Sheet 改为 App 级原生设置窗口。
 //
 
 import SwiftUI
+
+/// App 级单例窗口标识与固定内容尺寸。
+///
+/// RAG 工作台本身由 AppKit `NSWindowController` 承载，但设置窗口必须交给 SwiftUI
+/// `Window` Scene，才能与主设置一致地获得标准交通灯、Toolbar、Sidebar 与单例语义。
+enum RAGWorkspaceSettingsWindow {
+    static let id = "rag-workspace-settings"
+    static let contentSize = CGSize(width: 920, height: 600)
+}
 
 private enum RAGSettingsSection: String, CaseIterable, Identifiable {
     case inference
@@ -26,11 +35,22 @@ private enum RAGSettingsSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var titleKey: LocalizedStringKey {
+    var titleKeyString: String {
         switch self {
         case .inference: return "rag.workspace.settings.section.inference"
         case .prompts: return "rag.workspace.settings.section.prompts"
         case .retrieval: return "rag.workspace.settings.section.retrieval"
+        }
+    }
+
+    var titleKey: LocalizedStringKey { LocalizedStringKey(titleKeyString) }
+
+    /// 只有三个一级分类，搜索只做稳定的分类过滤，不引入第二套深链模型。
+    var searchKeywords: [String] {
+        switch self {
+        case .inference: return ["inference", "backend", "cli", "codex", "claude", "推理", "后端"]
+        case .prompts: return ["prompt", "system", "user", "template", "提示词", "模板"]
+        case .retrieval: return ["retrieval", "rerank", "evidence", "vector", "检索", "重排", "证据"]
         }
     }
 
@@ -80,11 +100,8 @@ private enum RAGRetrievalPreset: String, CaseIterable, Identifiable {
     }
 }
 
-/// Sheet 外框：参考系统设置式侧栏布局，宽度吃提示词编辑、高度吃检索卡片。
-private enum RAGSettingsSheetMetrics {
-    static let width: CGFloat = 680
-    static let height: CGFloat = 620
-    static let sidebarWidth: CGFloat = 168
+/// 设置内容的局部布局常量；窗口尺寸由 `RAGWorkspaceSettingsWindow` 单一管理。
+private enum RAGSettingsLayoutMetrics {
     /// macOS overlay 滚动条会盖住右缘控件；内容尾部预留 gutter。
     static let scrollTrailerGutter: CGFloat = 14
 }
@@ -163,13 +180,16 @@ private struct RAGPromptPlaceholderItem: Identifiable {
     var id: String { token }
 }
 
-struct RAGWorkspaceSettingsSheet: View {
-    @Environment(\.dismiss) private var dismiss
+struct RAGWorkspaceSettingsView: View {
+    @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
     @Bindable var settings: AppSettings
     @State private var section: RAGSettingsSection = .inference
+    @State private var backwardHistory: [RAGSettingsSection] = []
+    @State private var forwardHistory: [RAGSettingsSection] = []
+    @State private var settingsSearchText = ""
     @State private var tab: RAGPromptEditorTab = .generator
     @State private var draft: RAGPromptSettings
     /// CLI 只在 Direct 版可选；App Store 即使从旧偏好读到 CLI，也先归一成 API 草稿。
@@ -179,7 +199,7 @@ struct RAGWorkspaceSettingsSheet: View {
     @State private var isInspectingCLIRuntimes = false
     @State private var isPlaceholderPopoverPresented = false
     @State private var isDefaultPromptPopoverPresented = false
-    /// Sheet 内草稿；点「保存」才写入 `AppSettings.ragRetrievalSettings`。
+    /// 窗口内草稿；点「保存」才写入 `AppSettings.ragRetrievalSettings`。
     @State private var retrievalPreset: RAGRetrievalPreset
     @State private var minimumVectorSimilarity: Double
     @State private var finalEvidenceChunkLimit: String
@@ -231,7 +251,7 @@ struct RAGWorkspaceSettingsSheet: View {
         _rerankCandidateLimit = State(initialValue: String(rerank.candidateLimit))
     }
 
-    /// 直接订阅设置档位，避免 sheet 只缩放外框、字体仍停在 standard。
+    /// 直接订阅设置档位，避免独立窗口只缩放外框、字体仍停在 standard。
     private var interfaceScale: InterfaceScale { settings.interfaceScale }
 
     private var availableInferenceBackends: [RAGInferenceBackend] {
@@ -239,88 +259,103 @@ struct RAGWorkspaceSettingsSheet: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             settingsSidebar
-            Divider()
+        } detail: {
             settingsDetail
+                // 与主设置相同：先按 App 内 LocaleStore 解析成 String，避免 toolbar
+                // 的 navigationTitle 绕过自定义语言、回退到 macOS 系统语言。
+                .navigationTitle(String.l10n(section.titleKeyString))
         }
-        .background(StarcatSurface.panel(colorScheme: colorScheme))
-        .presentationBackground(StarcatSurface.panel(colorScheme: colorScheme))
+        .navigationSplitViewStyle(.balanced)
         .frame(
-            width: RAGSettingsSheetMetrics.width * interfaceScale.multiplier,
-            height: RAGSettingsSheetMetrics.height * interfaceScale.multiplier
+            width: RAGWorkspaceSettingsWindow.contentSize.width,
+            height: RAGWorkspaceSettingsWindow.contentSize.height
         )
-        // sheet 独立环境树：显式挂档位，系统控件与自定义字体同步缩放。
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ControlGroup {
+                    Button(action: goBack) {
+                        Label("settings.navigation.back", systemImage: "chevron.left")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(backwardHistory.isEmpty)
+
+                    Button(action: goForward) {
+                        Label("settings.navigation.forward", systemImage: "chevron.right")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(forwardHistory.isEmpty)
+                }
+                .controlGroupStyle(.navigation)
+            }
+
+            // 草稿语义仍需显式保存/取消，但操作放进标准 Toolbar，避免设置内容
+            // 底部再出现一条自绘 action bar，与主设置窗口保持同一视觉结构。
+            ToolbarItemGroup(placement: .primaryAction) {
+                if section == .prompts {
+                    placeholderHelpButton
+                    defaultPromptReferenceButton
+                }
+                Button("common.cancel") { closeWindow() }
+                Button("rag.workspace.prompt.save") { saveAndClose() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        // 独立 Scene 环境树：显式挂档位，系统控件与自定义字体同步缩放。
         .environment(\.starcatInterfaceScale, interfaceScale)
         .dynamicTypeSize(interfaceScale.dynamicTypeSize)
         .appLocaleEnvironment()
     }
 
-    /// 左栏只负责稳定导航；后续增加联网、模型等配置时不必重做布局。
+    /// 原生 Sidebar List 提供系统选中态、材质、键盘导航与搜索框。
     private var settingsSidebar: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
-            sidebarHeader
-                .padding(.bottom, interfaceScale.scaled(4))
-
-            ForEach(RAGSettingsSection.allCases) { item in
-                Button {
-                    section = item
-                } label: {
-                    HStack(spacing: interfaceScale.scaled(9)) {
-                        Image(systemName: item.systemImage)
-                            .font(interfaceScale.font(size: 14, weight: .medium))
-                            .frame(width: interfaceScale.scaled(18))
-                        Text(item.titleKey)
-                            .font(ragFont(.body, scale: interfaceScale, weight: .medium))
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(section == item ? .primary : .secondary)
-                    .padding(.horizontal, interfaceScale.scaled(10))
-                    .padding(.vertical, interfaceScale.scaled(8))
-                    .background(
-                        section == item ? Color.accentColor.opacity(0.14) : .clear,
-                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    )
-                    .contentShape(Rectangle())
+        List(selection: sectionSelection) {
+            Section("rag.workspace.settings.title") {
+                ForEach(filteredSettingsSections) { item in
+                    Label(item.titleKey, systemImage: item.systemImage)
+                        .tag(item)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
             }
-
-            Spacer()
         }
-        .padding(interfaceScale.scaled(14))
-        .frame(width: interfaceScale.scaled(RAGSettingsSheetMetrics.sidebarWidth), alignment: .leading)
-        .background(StarcatSurface.sidebar(colorScheme: colorScheme))
+        .listStyle(.sidebar)
+        .toolbar(removing: .sidebarToggle)
+        .frame(minWidth: 220, idealWidth: 240, maxWidth: 240)
+        // RAG 内容里有较宽的卡片，单参数 idealWidth 会被 SplitView 自动压到约 148pt，
+        // 搜索框和分类标题随之截断。给出与主设置一致的稳定下限，仍保留系统 divider。
+        .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 240)
+        .searchable(
+            text: $settingsSearchText,
+            placement: .sidebar,
+            prompt: Text("settings.sidebar.search.placeholder")
+        )
     }
 
-    /// Sheet 功能身份固定在左上角；右侧标题继续只描述当前选中的配置分类。
-    private var sidebarHeader: some View {
-        HStack(spacing: interfaceScale.scaled(10)) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.tint.opacity(0.12))
-                Image(systemName: "gearshape.2")
-                    .font(interfaceScale.font(size: 15, weight: .semibold))
-                    .foregroundStyle(.tint)
-            }
-            .frame(
-                width: interfaceScale.scaled(30),
-                height: interfaceScale.scaled(30)
-            )
-            .accessibilityHidden(true)
+    private var sectionSelection: Binding<RAGSettingsSection> {
+        Binding(
+            get: { section },
+            set: { navigate(to: $0) }
+        )
+    }
 
-            Text("rag.workspace.settings.title")
-                .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
-                .lineLimit(1)
+    private var filteredSettingsSections: [RAGSettingsSection] {
+        let query = settingsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return Array(RAGSettingsSection.allCases) }
+        let normalizedQuery = query.folding(
+            options: [.caseInsensitive, .diacriticInsensitive],
+            locale: .current
+        )
+        return RAGSettingsSection.allCases.filter { item in
+            let haystack = ([String.l10n(item.titleKeyString)] + item.searchKeywords)
+                .joined(separator: " ")
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return haystack.contains(normalizedQuery)
         }
-        .foregroundStyle(.primary)
     }
 
     private var settingsDetail: some View {
         VStack(spacing: 0) {
-            detailHeader
-
             Group {
                 switch section {
                 case .inference: inferenceSettingsContent
@@ -331,80 +366,51 @@ struct RAGWorkspaceSettingsSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.horizontal, interfaceScale.scaled(20))
             .padding(.bottom, interfaceScale.scaled(12))
-
-            Divider()
-            actionBar
         }
-        // 切到检索页时底栏入口消失，主动关掉以免 popover 残留。
+        // 切离提示词页时 Toolbar 入口消失，主动关掉以免 popover 残留。
         .onChange(of: section) { _, _ in
             isPlaceholderPopoverPresented = false
             isDefaultPromptPopoverPresented = false
         }
     }
 
-    /// 右侧只展示当前分类标题，避免在左栏和内容区重复铺大标题。
-    private var detailHeader: some View {
-        HStack(alignment: .center, spacing: interfaceScale.scaled(10)) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.tint.opacity(0.12))
-                Image(systemName: section.systemImage)
-                    .font(interfaceScale.font(size: 15, weight: .semibold))
-                    .foregroundStyle(.tint)
-            }
-            .frame(
-                width: interfaceScale.scaled(30),
-                height: interfaceScale.scaled(30)
-            )
-            .accessibilityHidden(true)
-
-            Text(section.titleKey)
-                .font(ragFont(.headline, scale: interfaceScale, weight: .semibold))
-
-            Spacer(minLength: 8)
-
-            SheetCloseButton(
-                action: { dismiss() },
-                iconFont: interfaceScale.font(size: 18, weight: .medium),
-                frameSize: interfaceScale.scaled(24)
-            )
-        }
-        .padding(.horizontal, interfaceScale.scaled(20))
-        .padding(.vertical, interfaceScale.scaled(14))
+    private func saveAndClose() {
+        // 三个分区共用同一草稿生命周期：无论停在哪一栏，保存都一并写入。
+        // 未启用 Rerank 时不碰 Keychain，避免仅保存提示词/检索草稿时意外覆盖已有 Token。
+        guard !rerankEnabled || saveRerankAPIKey() else { return }
+        settings.ragPromptSettings = draft
+        settings.ragRetrievalSettings = buildRetrievalSettings()
+        settings.ragRerankConfiguration = buildRerankConfiguration()
+        settings.ragInferenceBackend = inferenceBackend
+        closeWindow()
     }
 
-    private var actionBar: some View {
-        HStack(spacing: interfaceScale.scaled(8)) {
-            if section == .prompts {
-                placeholderHelpButton
-                defaultPromptReferenceButton
-            }
-            Spacer()
-            // 恢复默认已放到各页 segmented 右侧的 ResetIconButton，底栏不再重复。
-            Button("common.cancel") { dismiss() }
-                .font(ragFont(.body, scale: interfaceScale))
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-            Button("rag.workspace.prompt.save") {
-                // 两个分区共用同一草稿生命周期：无论停在哪一栏，保存都一并写入。
-                // 未启用 Rerank 时不碰 Keychain，避免仅保存提示词/检索草稿时意外覆盖已有 Token。
-                guard !rerankEnabled || saveRerankAPIKey() else { return }
-                settings.ragPromptSettings = draft
-                settings.ragRetrievalSettings = buildRetrievalSettings()
-                settings.ragRerankConfiguration = buildRerankConfiguration()
-                settings.ragInferenceBackend = inferenceBackend
-                dismiss()
-            }
-            .font(ragFont(.body, scale: interfaceScale))
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-            .keyboardShortcut(.defaultAction)
+    private func navigate(to destination: RAGSettingsSection, recordHistory: Bool = true) {
+        guard destination != section else { return }
+        if recordHistory {
+            backwardHistory.append(section)
+            forwardHistory.removeAll()
         }
-        .padding(.horizontal, interfaceScale.scaled(20))
-        .padding(.vertical, interfaceScale.scaled(12))
+        section = destination
     }
 
-    /// 底部入口：点开看 token + 含义，避免一行塞满无说明的占位符列表。
+    private func goBack() {
+        guard let destination = backwardHistory.popLast() else { return }
+        forwardHistory.append(section)
+        navigate(to: destination, recordHistory: false)
+    }
+
+    private func goForward() {
+        guard let destination = forwardHistory.popLast() else { return }
+        backwardHistory.append(section)
+        navigate(to: destination, recordHistory: false)
+    }
+
+    private func closeWindow() {
+        dismissWindow(id: RAGWorkspaceSettingsWindow.id)
+    }
+
+    /// Toolbar 入口：点开看 token + 含义，避免一行塞满无说明的占位符列表。
     private var placeholderHelpButton: some View {
         Button {
             isDefaultPromptPopoverPresented = false
@@ -511,7 +517,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, interfaceScale.scaled(RAGSettingsSheetMetrics.scrollTrailerGutter))
+            .padding(.trailing, interfaceScale.scaled(RAGSettingsLayoutMetrics.scrollTrailerGutter))
             .padding(.bottom, interfaceScale.scaled(8))
         }
         .scrollIndicators(.automatic)
@@ -589,7 +595,7 @@ struct RAGWorkspaceSettingsSheet: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, interfaceScale.scaled(RAGSettingsSheetMetrics.scrollTrailerGutter))
+            .padding(.trailing, interfaceScale.scaled(RAGSettingsLayoutMetrics.scrollTrailerGutter))
             .padding(.bottom, interfaceScale.scaled(8))
         }
         .scrollIndicators(.automatic)
@@ -673,7 +679,7 @@ struct RAGWorkspaceSettingsSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // overlay 滚动条盖住右缘控件；尾部 gutter 让数字框 / picker 仍可点。
-            .padding(.trailing, interfaceScale.scaled(RAGSettingsSheetMetrics.scrollTrailerGutter))
+            .padding(.trailing, interfaceScale.scaled(RAGSettingsLayoutMetrics.scrollTrailerGutter))
             .padding(.bottom, interfaceScale.scaled(8))
         }
         .scrollIndicators(.automatic)
