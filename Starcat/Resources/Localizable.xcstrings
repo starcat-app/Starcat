@@ -24072,6 +24072,28 @@
         }
       }
     },
+    "agent.workspace.badge.beta" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beta"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beta"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beta"
+          }
+        }
+      }
+    },
     "agent.workspace.badge.preview" : {
       "localizations" : {
         "ar" : {
@@ -340781,19 +340803,19 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analyze starred repositories after app launch and Stars sync, then add only high-confidence matches to permitted groups."
+            "value" : "Analyze ungrouped starred repositories in the background and add only high-confidence matches to permitted groups."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在应用启动和 Stars 同步完成后分析仓库，仅将高置信度结果添加到已授权的分组。"
+            "value" : "在后台分析未分组的仓库，仅将高置信度结果添加到已授权的分组。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在應用啟動和 Stars 同步完成後分析倉庫，僅將高置信度結果加入已授權的分組。"
+            "value" : "在背景分析未分組的倉庫，僅將高置信度結果加入已授權的分組。"
           }
         }
       }
@@ -340838,6 +340860,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每個分組還需要在分組編輯器中允許背景自動分組，AI 才能向其中加入倉庫。"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.range.maxPerRun.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum number of ungrouped repositories to process per run (5–500)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每轮最多处理的未分组仓库数量，范围 5–500。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每輪最多處理的未分組倉庫數量，範圍 5–500。"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.range.sortOrder.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose whether each run prefers recently starred, earliest starred, or random repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "决定每轮优先处理最近、最早或随机选择的仓库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "決定每輪優先處理最近、最早或隨機選擇的倉庫。"
           }
         }
       }
@@ -340904,6 +340970,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最低置信度"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.trigger.onLaunch.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After the app launches, wait 60 seconds and group one batch of ungrouped starred repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用启动 60 秒后，自动整理一轮未分组的仓库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "應用啟動 60 秒後，自動整理一輪未分組的倉庫。"
+          }
+        }
+      }
+    },
+    "settings.githubListGrouping.trigger.onSync.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After Stars sync finishes, group currently ungrouped starred repositories."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars 同步完成后，自动整理当前未分组的仓库。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stars 同步完成後，自動整理當前未分組的倉庫。"
           }
         }
       }

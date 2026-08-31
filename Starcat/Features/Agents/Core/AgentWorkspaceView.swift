@@ -594,6 +594,16 @@ struct AgentWorkspaceView: View {
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
     }
 
+    /// 工作台胶囊标识（Beta / Preview 等），与左侧 Agent 列表行内 Preview 标识同构。
+    private func agentWorkspaceBadge(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(agentFont(.caption2, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+    }
+
     private var railHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -603,8 +613,11 @@ struct AgentWorkspaceView: View {
                     .frame(width: 28, height: 28)
                     .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("agent.workspace.title")
-                        .font(agentFont(.headline))
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("agent.workspace.title")
+                            .font(agentFont(.headline))
+                        agentWorkspaceBadge("agent.workspace.badge.beta")
+                    }
                     Text("agent.workspace.subtitle")
                         .font(agentFont(.caption))
                         .foregroundStyle(.secondary)
@@ -648,12 +661,7 @@ struct AgentWorkspaceView: View {
                             .lineLimit(1)
                         Spacer(minLength: 6)
                         if !agent.isEnabled {
-                            Text("agent.workspace.badge.preview")
-                                .font(agentFont(.caption2, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+                            agentWorkspaceBadge("agent.workspace.badge.preview")
                         }
                     }
 
