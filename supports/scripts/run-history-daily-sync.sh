@@ -22,7 +22,18 @@ source "${environment_file}"
 set +a
 
 if [[ -z "${HISTORY_PUBLISH_KEY:-}" ]]; then
-  echo "HISTORY_PUBLISH_KEY 未配置" >&2
+  keychain_service="${STARCAT_HISTORY_KEYCHAIN_SERVICE:-com.starcat.history-publish-key}"
+  keychain_account="${STARCAT_HISTORY_KEYCHAIN_ACCOUNT:-$(id -un)}"
+  HISTORY_PUBLISH_KEY="$(
+    /usr/bin/security find-generic-password \
+      -a "${keychain_account}" \
+      -s "${keychain_service}" \
+      -w 2>/dev/null
+  )" || true
+  export HISTORY_PUBLISH_KEY
+fi
+if [[ -z "${HISTORY_PUBLISH_KEY:-}" ]]; then
+  echo "History Publish Key 未配置到环境文件或 macOS Keychain" >&2
   exit 2
 fi
 if [[ ! -x "${trainer_root}/scripts/download-watch-events.sh" ]]; then

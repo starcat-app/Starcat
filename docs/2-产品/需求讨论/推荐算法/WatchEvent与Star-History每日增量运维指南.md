@@ -25,8 +25,9 @@ cp supports/scripts/history-daily.env.example ~/.config/starcat/history-daily.en
 chmod 600 ~/.config/starcat/history-daily.env
 ```
 
-编辑环境文件，填入生产 `HISTORY_PUBLISH_KEY`。密钥文件位于仓库外，不提交 Git，也不会写入
-LaunchAgent plist。默认数据根目录为 `/Volumes/T0/Starcat`。
+生产 `HISTORY_PUBLISH_KEY` 默认保存在 macOS Keychain 的
+`com.starcat.history-publish-key` 项目中，不写入环境文件、Git 或 LaunchAgent plist。环境文件
+只保存服务地址和非敏感运行参数，默认数据根目录为 `/Volumes/T0/Starcat`。
 
 安装每天 10:00 执行的 LaunchAgent：
 
@@ -64,12 +65,14 @@ jq -r '.scope.end_date' \
   /Volumes/T0/Starcat/bigquery/watch-events-2016-2026/raw/gh_archive/download-state.json
 ```
 
-检查生产水位时必须使用仓库外环境文件中的 Publish Key，不要把密钥直接写入 shell history：
+检查生产水位时从 Keychain 读取 Publish Key，不要把密钥直接写入 shell history：
 
 ```bash
 set -a
 source ~/.config/starcat/history-daily.env
 set +a
+HISTORY_PUBLISH_KEY="$(security find-generic-password \
+  -a "$(id -un)" -s "${STARCAT_HISTORY_KEYCHAIN_SERVICE}" -w)"
 curl -fsS \
   -H "Authorization: Bearer ${HISTORY_PUBLISH_KEY}" \
   -H "X-SC-Svc: ${HISTORY_GATEWAY_SERVICE}" \
