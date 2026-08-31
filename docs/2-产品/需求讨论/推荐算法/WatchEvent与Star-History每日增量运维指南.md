@@ -37,6 +37,7 @@ supports/scripts/install-history-daily-launch-agent.sh status
 ```
 
 选择 10:00 是为了给 UTC 昨日 GH Archive 日表留出完成时间。任务不会处理 UTC 当天。
+LaunchAgent 直接执行脚本的 Bash shebang，并由脚本补齐 Homebrew PATH；不依赖登录 shell 配置。
 
 ## 手工补齐与验证
 

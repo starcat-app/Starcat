@@ -30,7 +30,6 @@ render_plist() {
   <string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/zsh</string>
     <string>${escaped_runner}</string>
   </array>
   <key>EnvironmentVariables</key>
