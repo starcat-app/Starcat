@@ -53,6 +53,14 @@ struct HomeViewModelTagFilterTests {
     @Test("我的项目按当前用户加载 Sidebar 计数与未 Star 仓库")
     func myProjectsLoadsForActiveUser() async throws {
         let (vm, _, _, db) = try makeAll()
+        // 使用相对日期，避免固定夹具随着自然时间推进而整体滑出 30 天统计窗口。
+        let referenceDate = Date()
+        let historyBaselineDay = StarHistoryDateCodec.dayString(
+            from: referenceDate.addingTimeInterval(-31 * 86_400)
+        )
+        let historyLatestDay = StarHistoryDateCodec.dayString(
+            from: referenceDate.addingTimeInterval(-1 * 86_400)
+        )
         try await db.insertRepoFixture(id: 101, owner: "me", name: "private-project")
         try await db.insertRepoFixture(id: 102, owner: "other", name: "other-project")
         try await db.insertRepoFixture(id: 103, owner: "acme", name: "org-tool")
@@ -83,9 +91,15 @@ struct HomeViewModelTagFilterTests {
                     INSERT INTO repo_star_history_points (
                         repo_id, observed_on, stars_count, source, precision, fetched_at
                     ) VALUES
-                        (101, '2026-06-20', 10, 'local_snapshot', 'snapshot', '2026-06-20T00:00:00Z'),
-                        (101, '2026-07-28', 15, 'local_snapshot', 'snapshot', '2026-07-28T00:00:00Z')
-                    """
+                        (101, ?, 10, 'local_snapshot', 'snapshot', ?),
+                        (101, ?, 15, 'local_snapshot', 'snapshot', ?)
+                    """,
+                arguments: [
+                    historyBaselineDay,
+                    "\(historyBaselineDay)T00:00:00Z",
+                    historyLatestDay,
+                    "\(historyLatestDay)T00:00:00Z",
+                ]
             )
         }
 

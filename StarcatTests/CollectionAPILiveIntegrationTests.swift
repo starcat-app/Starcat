@@ -4,7 +4,7 @@
 //
 //  Starcat Swift DTO → 本机 starcat-collection-api 的显式 live E2E 入口。
 //
-//  默认测试运行不访问网络；只有显式提供 PUBLIC_KEY 构建设置时才执行真实上传。
+//  默认测试运行不访问网络；只有显式开启 Live Integration 并提供 PUBLIC_KEY 时才真实上传。
 //  固定 repo 1～4 与 trainer 的公开 metadata fixture 对齐；上传两个匿名主体是为了
 //  让 E2E 实际训练 SVD，而不是触发单主体冷启动下的显式 skipped 降级。
 //
@@ -13,14 +13,18 @@ import Foundation
 import Testing
 @testable import Starcat
 
-@Suite("Collection API Live Integration")
+private let shouldRunCollectionIntegration =
+    ProcessInfo.processInfo.environment["STARCAT_RUN_COLLECTION_INTEGRATION"] == "1"
+
+@Suite(
+    "Collection API Live Integration",
+    .enabled(if: shouldRunCollectionIntegration)
+)
 struct CollectionAPILiveIntegrationTests {
     @Test("Swift 快照应通过本机 Collection 三阶段提交并满足训练最小样本")
     func uploadsSwiftSnapshotToLiveCollection() async throws {
-        guard let publicKey = CollectionAPIConfiguration.apiKey else {
-            // 常规单测必须完全离线；E2E 由使用说明中的显式构建设置开启。
-            return
-        }
+        // 显式开启 E2E 后缺少 Key 应立即失败，避免把配置错误误报成跳过或通过。
+        let publicKey = try #require(CollectionAPIConfiguration.apiKey)
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
