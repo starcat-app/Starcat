@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: Starcat version or commit
-      placeholder: 1.4.0, or a git commit SHA
+      placeholder: 1.x.y, or a git commit SHA
     validations:
       required: true
   - type: dropdown

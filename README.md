@@ -10,7 +10,7 @@
 <a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-en.png" alt="Download on the Mac App Store" height="40"/></a>
 <br/>
 <sub>
-<b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg">current Direct build (1.4.0)</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
+<b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink">Direct build</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
 Previous versions and release notes: <a href="./CHANGELOG.md">Changelog</a> · <a href="https://starcat.ink/changelog.html">Website changelog</a><br>
 Public issue tracker: <a href="https://github.com/starcat-app/starcat-pro/issues">Report a bug or request a feature</a><br>
 User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store: <a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
@@ -23,7 +23,7 @@ User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · M
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
 <a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
-<a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
+<a href="https://starcat.ink"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 <a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
@@ -44,8 +44,6 @@ A public Star is still an endorsement. Repositories you plan to learn, use, or k
 <div align="center">
 <img width="900" src="./main.webp" alt="Starcat main window"/>
 </div>
-
-The current public version is **Starcat 1.4.0**.
 
 ### Why Starcat is open source
 

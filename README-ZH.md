@@ -10,7 +10,7 @@
 <a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="./screenshots/mac-app-store-zh.png" alt="在 Mac App Store 下载" height="40"/></a>
 <br/>
 <sub>
-<b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以下载面向 Apple Silicon Mac 的 <a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg">当前 Direct 版本（1.4.0）</a>，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
+<b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以从 <a href="https://starcat.ink">官网</a> 下载面向 Apple Silicon Mac 的 Direct 版本，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
 历史版本与发布说明：<a href="./CHANGELOG-ZH.md">更新日志</a> · <a href="https://starcat.ink/changelog-zh.html">官网更新记录</a><br>
 公开问题反馈：<a href="https://github.com/starcat-app/starcat-pro/issues">反馈 bug 或提出功能建议</a><br>
 用户文档：<a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store：<a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
@@ -23,7 +23,7 @@ English: <a href="./README.md">README.md</a>
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
 <a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
-<a href="https://starcat.ink/downloads/Starcat-1.4.0-arm64.dmg"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
+<a href="https://starcat.ink"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 <a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
@@ -44,8 +44,6 @@ Star 本身还是公开的认同。真正准备学习、使用或长期保留的
 <div align="center">
 <img width="900" src="./main.webp" alt="Starcat 主窗口"/>
 </div>
-
-当前公开版本为 **Starcat 1.4.0**。
 
 ### 为什么开源 Starcat
 
