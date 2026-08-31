@@ -25,8 +25,6 @@ struct SidebarHeaderView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var viewModel
-    /// 用于打开 macOS 原生设置窗口（SettingsLink 的 programmatic 等效方式）
-    @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关，开启时把"渐变流动"退化为静态版（仍保留四周淡出 + 颜色切换补间）。
     @Environment(\.starcatReduceMotion) private var reduceMotion
     /// Sheet 转场期间让装饰性渐变切到静态帧，避免宿主窗口仍在前台时继续跑 TimelineView。
@@ -395,7 +393,7 @@ struct SidebarHeaderView: View {
     private func accountMenu() -> some View {
         Menu {
             Button {
-                openSettings()
+                AppDelegate.openSettingsWindow()
             } label: {
                 Label("settings.general.title", systemImage: "gearshape")
             }

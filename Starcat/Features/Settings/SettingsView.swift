@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  Starcat
 //
-//  macOS 标准设置窗口（Cmd+,）。
+//  macOS 系统设置风格的独立窗口（Cmd+,）。
 //
 //  Week 3 范围：
 //  - General 标签：列表密度
@@ -13,11 +13,10 @@
 //  - About 标签：版本、许可、致谢
 //
 //  设计约束：
-//  - 用 macOS 原生 TabView + Form，配 .formStyle(.grouped) 自动获得分组卡片样式
+//  - 用原生 NavigationSplitView + Sidebar List + Form 组成系统设置式左右布局
 //  - 控件直接绑定到 AppSettings 的 @Observable 属性，写入即落盘
 //
 
-import AppKit
 import SwiftUI
 
 // MARK: - 跨 Tab 跳转事件
@@ -69,6 +68,11 @@ struct SettingsView: View {
     @State private var localeStore = LocaleStore.shared
 
     @State private var selectedTab: SettingsTab = .general
+    @State private var currentLocation = SettingsLocation(tab: .general)
+    @State private var backwardHistory: [SettingsLocation] = []
+    @State private var forwardHistory: [SettingsLocation] = []
+    @State private var settingsSearchText = ""
+    @State private var isRedispatchingSettingsJump = false
     /// 快捷键录制失败时只在 General 页就地提示，不修改已保存配置。
     @State private var shortcutValidationError: KeyboardShortcutConfiguration.ValidationError?
 
@@ -100,16 +104,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Settings 各 Tab 的内容尺寸。
-    ///
-    /// HOM-68 follow-up v12 (dong4j 反馈 2026-06-06 00:32)：
-    /// AI 页早期内容铺满（任务模型 4 行 + 模型参数 6 行 + 双 Prompt 编辑区），
-    /// 一度需要单独放大到 760×760。v7–v9 把"模型配置 / 已发现模型 / Prompt"
-    /// 都改成 DisclosureGroup 默认折叠 + 把"模型参数"迁到 popover 后，AI 页
-    /// 折叠态高度已经收回到与通用 / 存储相当，没必要再单独占一档尺寸。统一回
-    /// 520×360，与 macOS 设置窗口惯例一致；折叠组展开后 Form 自带垂直滚动，
-    /// 不会被裁切。
-    private enum SettingsTab: Hashable {
+    private enum SettingsTab: String, CaseIterable, Hashable, Identifiable {
         case general
         case pro
         case ai
@@ -120,95 +115,120 @@ struct SettingsView: View {
         case integrations
         case storage
         case diagnostics
+
+        var id: String { rawValue }
+
+        var titleKeyString: String {
+            switch self {
+            case .general:      return "settings.general.title"
+            case .pro:          return "Pro"
+            case .ai:           return "settings.ai.title"
+            case .mcp:          return "settings.mcp.title"
+            case .services:     return "settings.services.title"
+            case .integrations: return "settings.integrations.title"
+            case .storage:      return "settings.storage.title"
+            case .diagnostics:  return "settings.diagnostics.title"
+            }
+        }
+
+        var titleKey: LocalizedStringKey {
+            LocalizedStringKey(titleKeyString)
+        }
+
+        var systemImage: String {
+            switch self {
+            case .general:      return "gearshape"
+            case .pro:          return "crown.fill"
+            case .ai:           return "sparkles"
+            case .mcp:          return "point.3.connected.trianglepath.dotted"
+            case .services:     return "network"
+            case .integrations: return "puzzlepiece.extension"
+            case .storage:      return "internaldrive"
+            case .diagnostics:  return "stethoscope"
+            }
+        }
+
     }
 
-    /// 统一的内容尺寸——所有 Tab 共用，避免切 Tab 时窗口尺寸跳变。
-    /// 2026-06-08 调整：Services Tab 含 3 个服务卡片（每张约 130pt），加 intro 段后
-    /// 360pt 已经放不下，提到 460；其它 Tab 在 460 高度下 Form 仍正常显示。
-    private static let contentSize = CGSize(width: 540, height: 460)
+    /// 历史记录保存“分类 + 目标区块”，让搜索结果与跨模块入口也能正常后退 / 前进。
+    private struct SettingsLocation: Equatable {
+        let tab: SettingsTab
+        var target: String?
+
+        init(tab: SettingsTab, target: String? = nil) {
+            self.tab = tab
+            self.target = target
+        }
+    }
+
+    /// 搜索条目只保存已有本地化 key；关键词补充用户常用的中英文技术术语。
+    /// 有既有深链的条目会定位到具体区块，其余条目至少准确进入对应设置页。
+    private struct SettingsSearchItem: Identifiable {
+        let id: String
+        let titleKey: String
+        let tab: SettingsTab
+        let target: String?
+        let keywords: [String]
+
+        init(
+            _ id: String,
+            titleKey: String,
+            tab: SettingsTab,
+            target: String? = nil,
+            keywords: [String] = []
+        ) {
+            self.id = id
+            self.titleKey = titleKey
+            self.tab = tab
+            self.target = target
+            self.keywords = keywords
+        }
+    }
+
+    /// 普通 Window 允许用户自由缩放；这里只声明保证 Sidebar 与表单可用的下限。
+    private static let minimumContentSize = CGSize(width: 920, height: 600)
 
     var body: some View {
-        // 2026-06-19：Tab 顺序按"用户决策优先、底层维护靠后"重排。
-        // Pro 是订阅 / 权益入口，会影响 AI、搜索增强、Release 等多处功能的可用性，
-        // 因此紧跟通用设置；AI / 服务 / 集成属于能力配置；存储是低频维护项，放末尾。
-        TabView(selection: $selectedTab) {
-            generalTab
-                .tabItem {
-                    Label("settings.general.title", systemImage: "gearshape")
-                }
-                .tag(SettingsTab.general)
-            ProSettingsTab()
-                .tabItem {
-                    Label("Pro", systemImage: "crown.fill")
-                }
-                .tag(SettingsTab.pro)
-            AISettingsTab()
-                .tabItem {
-                    Label("settings.ai.title", systemImage: "sparkles")
-                }
-                .tag(SettingsTab.ai)
-            MCPSettingsTab()
-                .tabItem {
-                    Label("settings.mcp.title", systemImage: "point.3.connected.trianglepath.dotted")
-                }
-                .tag(SettingsTab.mcp)
-            ServicesSettingsTab()
-                .tabItem {
-                    Label("settings.services.title", systemImage: "network")
-                }
-                .tag(SettingsTab.services)
-            IntegrationSettingsTab()
-                .tabItem {
-                    Label("settings.integrations.title", systemImage: "puzzlepiece.extension")
-                }
-                .tag(SettingsTab.integrations)
-            StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
-                .tabItem {
-                    Label("settings.storage.title", systemImage: "internaldrive")
-                }
-                .tag(SettingsTab.storage)
-            DiagnosticsSettingsTab()
-                .tabItem {
-                    Label("settings.diagnostics.title", systemImage: "stethoscope")
-                }
-                .tag(SettingsTab.diagnostics)
+        // NavigationSplitView + sidebar List 使用 macOS 原生选中态、材质和分隔线。
+        // 固定 columnVisibility 可避免设置分类被误折叠，也不会再出现自绘窗口留下的底栏。
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+            settingsSidebar
+        } detail: {
+            settingsPage(selectedTab)
+                .contentMargins(.top, 8, for: .scrollContent)
+                .navigationTitle(selectedTab.titleKey)
         }
-        .frame(width: Self.contentSize.width, height: Self.contentSize.height)
-        .scenePadding()
+        .navigationSplitViewStyle(.balanced)
+        .frame(
+            minWidth: Self.minimumContentSize.width,
+            minHeight: Self.minimumContentSize.height
+        )
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ControlGroup {
+                    Button(action: goBack) {
+                        Label("settings.navigation.back", systemImage: "chevron.left")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(backwardHistory.isEmpty)
+
+                    Button(action: goForward) {
+                        Label("settings.navigation.forward", systemImage: "chevron.right")
+                            .labelStyle(.iconOnly)
+                    }
+                    .disabled(forwardHistory.isEmpty)
+                }
+                .controlGroupStyle(.navigation)
+            }
+
+        }
         .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToSettingsTab)) { note in
+            // 搜索结果和历史导航需要复用既有 Integration 深链通知；同步标记可避免
+            // SettingsView 把自己发出的通知再次写进历史形成循环。
+            guard !isRedispatchingSettingsJump else { return }
             guard let target = note.object as? String else { return }
-            switch target {
-            case "general":      selectedTab = .general
-            case "pro":          selectedTab = .pro
-            case "ai":
-                selectedTab = .ai
-            case "ai.chat":
-                selectedTab = .ai
-                // 第一次打开 Settings 时 AISettingsView 尚未进入视图树，延后一轮再定位。
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .starcatJumpToAIChatModelSection, object: nil)
-                }
-            case "ai.embedding":
-                selectedTab = .ai
-                // 与 RepoContext 跳转相同，延后一轮等待 AISettingsView 安装监听。
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .starcatJumpToAIEmbeddingSection, object: nil)
-                }
-            case "ai.repoContext":
-                selectedTab = .ai
-                // 第一次打开 Settings 时 AISettingsView 尚未进入视图树，不能让它和
-                // SettingsView 同时消费原通知；延后一轮发 section 事件可避免丢失定位。
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: .starcatJumpToAIRepoContextSection, object: nil)
-                }
-            case "mcp":          selectedTab = .mcp
-            case "services":     selectedTab = .services
-            case "integrations", "integrations.agentRuntime", "integrations.localAPIKey", "integrations.browserPlugin",
-                 "integrations.externalSearch", "integrations.codebaseMemory":
-                selectedTab = .integrations
-            case "storage":      selectedTab = .storage
-            case "diagnostics":  selectedTab = .diagnostics
-            default: break
+            if let location = settingsLocation(for: target) {
+                navigate(to: location)
             }
         }
         .onAppear {
@@ -219,6 +239,236 @@ struct SettingsView: View {
                 accountID: dependencies.database.currentUserId
             )
         }
+    }
+
+    /// 把系统 Sidebar List 的选择写入历史，而不是另做一套选中态。
+    private var settingsTabSelection: Binding<SettingsTab> {
+        Binding(
+            get: { selectedTab },
+            set: { navigate(to: SettingsLocation(tab: $0)) }
+        )
+    }
+
+    private var settingsSidebar: some View {
+        List(selection: settingsTabSelection) {
+            Section("settings.sidebar.group.basic") {
+                settingsSidebarRow(.general)
+                settingsSidebarRow(.pro)
+            }
+
+            Section("settings.sidebar.group.intelligence") {
+                settingsSidebarRow(.ai)
+                settingsSidebarRow(.mcp)
+                settingsSidebarRow(.services)
+                settingsSidebarRow(.integrations)
+            }
+
+            Section("settings.sidebar.group.maintenance") {
+                settingsSidebarRow(.storage)
+                settingsSidebarRow(.diagnostics)
+            }
+        }
+        .listStyle(.sidebar)
+        // Apple 要求把默认项移除声明挂在产生它的 Sidebar column 上；挂在 SplitView
+        // 根部时 macOS 26 仍可能在窗口重建 Toolbar 后重新注入折叠按钮。
+        .toolbar(removing: .sidebarToggle)
+        // 系统设置采用稳定的分类栏宽度；固定值也能覆盖旧窗口保存的过窄 divider 位置。
+        .navigationSplitViewColumnWidth(240)
+        .searchable(
+            text: $settingsSearchText,
+            placement: .sidebar,
+            prompt: Text("settings.sidebar.search.placeholder")
+        )
+        .searchSuggestions {
+            ForEach(filteredSearchItems) { item in
+                Button {
+                    settingsSearchText = ""
+                    navigate(to: SettingsLocation(tab: item.tab, target: item.target))
+                } label: {
+                    Label(LocalizedStringKey(item.titleKey), systemImage: item.tab.systemImage)
+                }
+            }
+        }
+    }
+
+    private func settingsSidebarRow(_ tab: SettingsTab) -> some View {
+        Label(tab.titleKey, systemImage: tab.systemImage)
+            .tag(tab)
+    }
+
+    /// 只构造当前页，避免旧版 ZStack 让所有访问过的重型 Form 一直参与布局与刷新。
+    @ViewBuilder
+    private func settingsPage(_ tab: SettingsTab) -> some View {
+        switch tab {
+        case .general:
+            generalTab
+        case .pro:
+            ProSettingsTab()
+        case .ai:
+            AISettingsTab()
+        case .mcp:
+            MCPSettingsTab()
+        case .services:
+            ServicesSettingsTab()
+        case .integrations:
+            IntegrationSettingsTab()
+        case .storage:
+            StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
+        case .diagnostics:
+            DiagnosticsSettingsTab()
+        }
+    }
+
+    private var settingsSearchItems: [SettingsSearchItem] {
+        [
+            SettingsSearchItem("general", titleKey: "settings.general.title", tab: .general,
+                               keywords: ["通用", "general", "偏好", "preferences"]),
+            SettingsSearchItem("general.appearance", titleKey: "settings.general.appearance", tab: .general,
+                               keywords: ["主题", "浅色", "深色", "theme", "appearance", "font", "字号"]),
+            SettingsSearchItem("general.language", titleKey: "settings.general.language", tab: .general,
+                               keywords: ["语言", "locale", "language"]),
+            SettingsSearchItem("general.shortcuts", titleKey: "settings.general.shortcuts", tab: .general,
+                               keywords: ["快捷键", "keyboard", "shortcut"]),
+            SettingsSearchItem("general.notifications", titleKey: "settings.notifications.title", tab: .general,
+                               keywords: ["通知", "notification", "提醒"]),
+            SettingsSearchItem("general.accessibility", titleKey: "settings.general.accessibility", tab: .general,
+                               keywords: ["动画", "无障碍", "accessibility", "motion"]),
+            SettingsSearchItem("pro", titleKey: "Pro", tab: .pro,
+                               keywords: ["订阅", "授权", "激活", "license", "subscription", "purchase"]),
+            SettingsSearchItem("ai", titleKey: "settings.ai.title", tab: .ai,
+                               keywords: ["人工智能", "模型", "provider", "model", "api key"]),
+            SettingsSearchItem("ai.provider", titleKey: "settings.ai.provider.sectionTitle", tab: .ai,
+                               keywords: ["服务商", "provider", "api key"]),
+            SettingsSearchItem("ai.chat", titleKey: "settings.ai.taskModels.title", tab: .ai, target: "ai.chat",
+                               keywords: ["对话", "任务模型", "chat", "model"]),
+            SettingsSearchItem("ai.prompt", titleKey: "settings.ai.prompt.title", tab: .ai,
+                               keywords: ["提示词", "prompt", "system", "user"]),
+            SettingsSearchItem("ai.embedding", titleKey: "settings.aiIndex.section", tab: .ai, target: "ai.embedding",
+                               keywords: ["向量", "向量化", "索引", "embedding", "vector"]),
+            SettingsSearchItem("ai.repoContext", titleKey: "ai.context.settings.title", tab: .ai, target: "ai.repoContext",
+                               keywords: ["代码上下文", "仓库上下文", "context", "token"]),
+            SettingsSearchItem("mcp", titleKey: "settings.mcp.title", tab: .mcp,
+                               keywords: ["model context protocol", "server", "端口", "隐私"]),
+            SettingsSearchItem("services", titleKey: "settings.services.title", tab: .services,
+                               keywords: ["服务地址", "trending", "weekly", "api", "endpoint", "状态"]),
+            SettingsSearchItem("integrations", titleKey: "settings.integrations.title", tab: .integrations,
+                               keywords: ["集成", "integration", "工具"]),
+            SettingsSearchItem("integrations.agentRuntime", titleKey: "settings.integration.agentRuntime.title",
+                               tab: .integrations, target: "integrations.agentRuntime",
+                               keywords: ["agent runtime", "codex", "deepseek"]),
+            SettingsSearchItem("integrations.localAPIKey", titleKey: "settings.integration.localAPIKey.title",
+                               tab: .integrations, target: "integrations.localAPIKey",
+                               keywords: ["本地 api key", "local api key", "鉴权"]),
+            SettingsSearchItem("integrations.browserPlugin", titleKey: "settings.integration.browserPlugin.title",
+                               tab: .integrations, target: "integrations.browserPlugin",
+                               keywords: ["浏览器", "chrome", "safari", "extension", "plugin"]),
+            SettingsSearchItem("integrations.externalSearch", titleKey: "settings.externalSearch.section",
+                               tab: .integrations, target: "integrations.externalSearch",
+                               keywords: ["外部搜索", "anysearch", "search api"]),
+            SettingsSearchItem("integrations.codebaseMemory", titleKey: "settings.integrations.title",
+                               tab: .integrations, target: "integrations.codebaseMemory",
+                               keywords: ["codebase memory", "codebasememory", "代码索引"]),
+            SettingsSearchItem("storage", titleKey: "settings.storage.title", tab: .storage,
+                               keywords: ["存储", "缓存", "数据库", "清理", "导出", "storage", "cache", "database"]),
+            SettingsSearchItem("diagnostics", titleKey: "settings.diagnostics.title", tab: .diagnostics,
+                               keywords: ["诊断", "日志", "遥测", "网络", "diagnostics", "logs", "telemetry"]),
+        ]
+    }
+
+    private var filteredSearchItems: [SettingsSearchItem] {
+        let tokens = normalizedSearchText(settingsSearchText)
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+        guard !tokens.isEmpty else { return [] }
+
+        return settingsSearchItems.filter { item in
+            let title = String.l10n(item.titleKey)
+            let tabTitle = String.l10n(item.tab.titleKeyString)
+            let haystack = normalizedSearchText(
+                ([title, tabTitle] + item.keywords).joined(separator: " ")
+            )
+            return tokens.allSatisfy(haystack.contains)
+        }
+    }
+
+    private func normalizedSearchText(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
+    private func settingsLocation(for target: String) -> SettingsLocation? {
+        switch target {
+        case "general":
+            return SettingsLocation(tab: .general)
+        case "pro":
+            return SettingsLocation(tab: .pro)
+        case "ai", "ai.chat", "ai.embedding", "ai.repoContext":
+            return SettingsLocation(tab: .ai, target: target == "ai" ? nil : target)
+        case "mcp":
+            return SettingsLocation(tab: .mcp)
+        case "services":
+            return SettingsLocation(tab: .services)
+        case "integrations", "integrations.agentRuntime", "integrations.localAPIKey",
+             "integrations.browserPlugin", "integrations.externalSearch", "integrations.codebaseMemory":
+            return SettingsLocation(tab: .integrations, target: target == "integrations" ? nil : target)
+        case "storage":
+            return SettingsLocation(tab: .storage)
+        case "diagnostics":
+            return SettingsLocation(tab: .diagnostics)
+        default:
+            return nil
+        }
+    }
+
+    private func navigate(to location: SettingsLocation, recordHistory: Bool = true) {
+        if location != currentLocation {
+            if recordHistory {
+                backwardHistory.append(currentLocation)
+                forwardHistory.removeAll()
+            }
+            currentLocation = location
+            selectedTab = location.tab
+        }
+
+        reveal(location)
+    }
+
+    private func reveal(_ location: SettingsLocation) {
+        guard let target = location.target else { return }
+
+        // 新页面要先进入视图树并安装 onReceive，再发送区块定位事件。
+        DispatchQueue.main.async {
+            switch target {
+            case "ai.chat":
+                NotificationCenter.default.post(name: .starcatJumpToAIChatModelSection, object: nil)
+            case "ai.embedding":
+                NotificationCenter.default.post(name: .starcatJumpToAIEmbeddingSection, object: nil)
+            case "ai.repoContext":
+                NotificationCenter.default.post(name: .starcatJumpToAIRepoContextSection, object: nil)
+            case "integrations.agentRuntime", "integrations.localAPIKey", "integrations.browserPlugin",
+                 "integrations.externalSearch", "integrations.codebaseMemory":
+                isRedispatchingSettingsJump = true
+                NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: target)
+                isRedispatchingSettingsJump = false
+            default:
+                break
+            }
+        }
+    }
+
+    private func goBack() {
+        guard let destination = backwardHistory.popLast() else { return }
+        forwardHistory.append(currentLocation)
+        currentLocation = destination
+        selectedTab = destination.tab
+        reveal(destination)
+    }
+
+    private func goForward() {
+        guard let destination = forwardHistory.popLast() else { return }
+        backwardHistory.append(currentLocation)
+        currentLocation = destination
+        selectedTab = destination.tab
+        reveal(destination)
     }
 
     private var generalTab: some View {

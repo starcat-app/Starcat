@@ -16,7 +16,7 @@
 
 import SwiftUI
 
-/// AppKit 自建的 RAG 窗口无法自行取得主 SwiftUI Scene 的 `OpenSettingsAction`，
+/// AppKit 自建的 RAG 窗口无法自行取得主 SwiftUI Scene 的 `OpenWindowAction`，
 /// 因此由创建窗口的入口注入一个窄化后的设置导航动作。
 struct RAGSettingsNavigationAction {
     private let handler: @MainActor (String) -> Void

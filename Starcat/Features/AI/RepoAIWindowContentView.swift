@@ -63,12 +63,9 @@ enum AIPanelMode: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-/// AppKit 独立 AI 窗口拿不到主 Scene 的 `OpenSettingsAction`，由
-/// `RepoAIWindowController.show` 注入；详情页内联浮层不注入，走
-/// `@Environment(\.openSettings)`（与 `AppStatusToolbarButton` 同款）。
-///
-/// 刻意不用 `NSApp.sendAction(showSettingsWindow:)`：在自建 NSPanel / 内联浮层
-/// 里该 selector 经常找不到 responder，表现为「前往设置」点击无反应。
+/// AppKit 独立 AI 窗口通过本动作注入具体设置目标；详情页内联浮层则直接走
+/// `AppDelegate.openSettingsWindow(target:)`。两条路径最终都由 SwiftUI
+/// `openWindow(id:)` 打开同一个设置窗口。
 struct AISettingsNavigationAction {
     private let handler: (@MainActor (String) -> Void)?
 
@@ -139,8 +136,6 @@ struct RepoAIWindowContentView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    /// 主 Scene 内联浮层走这条；独立 AI 窗口走 `aiSettingsNavigation`。
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.aiSettingsNavigation) private var aiSettingsNavigation
 
     @State private var insightVM: RepoAIInsightViewModel?
@@ -709,8 +704,8 @@ struct RepoAIWindowContentView: View {
 
     /// 打开「设置 → AI → 项目上下文」。
     ///
-    /// - 内联浮层：用主 Scene 的 `OpenSettingsAction`（可靠）。
-    /// - 独立 NSPanel：用 `show` 时注入的 `aiSettingsNavigation`（同样基于 OpenSettingsAction）。
+    /// - 内联浮层：直接调用统一设置窗口入口。
+    /// - 独立 NSPanel：用 `show` 时注入的 `aiSettingsNavigation`。
     /// Settings Scene 首次创建后才有 Tab 监听，因此定位通知延后一轮，与
     /// `AppStatusToolbarButton` / RAG 工作台同款。
     private func openCodeContextSettings() {
@@ -718,13 +713,7 @@ struct RepoAIWindowContentView: View {
             aiSettingsNavigation("ai.repoContext")
             return
         }
-        openSettings()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: .starcatJumpToSettingsTab,
-                object: "ai.repoContext"
-            )
-        }
+        AppDelegate.openSettingsWindow(target: "ai.repoContext")
     }
 
     /// W4：prep 步骤 chip 行 —— 3 个 step 横排，每段带 SF Symbol 状态指示。

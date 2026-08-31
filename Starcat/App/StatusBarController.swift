@@ -245,8 +245,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: self)
+        AppDelegate.openSettingsWindow()
     }
 
     @objc private func togglePluginService() {

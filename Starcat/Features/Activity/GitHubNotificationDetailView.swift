@@ -19,7 +19,6 @@ struct GitHubNotificationDetailView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    @Environment(\.openSettings) private var openSettings
 
     @Binding var selectedItem: ActivityItem?
     @State private var isComposerExpanded = false
@@ -215,14 +214,8 @@ struct GitHubNotificationDetailView: View {
 
     private var aiErrorToastOnAction: (() -> Void)? {
         guard aiErrorToastNeedsSettings else { return nil }
-        return { [openSettings] in
-            openSettings()
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .starcatJumpToSettingsTab,
-                    object: "ai"
-                )
-            }
+        return {
+            AppDelegate.openSettingsWindow(target: "ai")
         }
     }
 
@@ -3174,4 +3167,3 @@ private func notificationAIErrorNeedsSettings(_ error: Error) -> Bool {
     }
     return false
 }
-

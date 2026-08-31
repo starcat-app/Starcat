@@ -14,7 +14,6 @@ import SwiftUI
 
 struct CodebaseMemoryPanel: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openSettings) private var openSettings
     @Environment(AppDependencies.self) private var dependencies
     @State private var viewModel: CodebaseMemoryViewModel
     @State private var showsDetails: Bool
@@ -106,15 +105,9 @@ struct CodebaseMemoryPanel: View {
         }
     }
 
-    /// 先打开 Settings scene，再延后一轮切 Tab 并滚动到 CodebaseMemory。
+    /// 打开唯一的设置窗口并定位到 CodebaseMemory 配置。
     private func openExecutableSettings() {
-        openSettings()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: .starcatJumpToSettingsTab,
-                object: "integrations.codebaseMemory"
-            )
-        }
+        AppDelegate.openSettingsWindow(target: "integrations.codebaseMemory")
     }
 
     // MARK: - Header

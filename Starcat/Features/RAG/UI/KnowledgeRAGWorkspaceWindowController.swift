@@ -96,8 +96,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
     @MainActor
     static func show(
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel,
-        openSettings: OpenSettingsAction
+        homeViewModel: HomeViewModel
     ) {
         guard AIWorkspaceEntryGate.authorizeOpening(
             dependencies: dependencies,
@@ -115,8 +114,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         } else {
             controller = KnowledgeRAGWorkspaceWindowController(
                 dependencies: dependencies,
-                homeViewModel: homeViewModel,
-                openSettings: openSettings
+                homeViewModel: homeViewModel
             )
             shared = controller
             shouldCenter = true
@@ -148,8 +146,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
 
     private init(
         dependencies: AppDependencies,
-        homeViewModel: HomeViewModel,
-        openSettings: OpenSettingsAction
+        homeViewModel: HomeViewModel
     ) {
         let chromeState = WorkspaceChromeState()
         let viewModel = KnowledgeRAGWorkspaceViewModel(
@@ -160,11 +157,7 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         self.viewModel = viewModel
 
         let settingsNavigation = RAGSettingsNavigationAction { target in
-            openSettings()
-            // Settings Scene 首次创建后才会安装 Tab / Section 监听；延后一轮再发送定位目标。
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: target)
-            }
+            AppDelegate.openSettingsWindow(target: target)
         }
         let content = KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
             .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
@@ -1402,7 +1395,7 @@ private struct KnowledgeRAGBrowserView: View {
                         || presentedError.kind == .embeddingRequest {
                         settingsNavigation("ai.embedding")
                     } else {
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                        AppDelegate.openSettingsWindow(target: "ai")
                     }
                 }
                 viewModel.dismissError()
@@ -1484,7 +1477,7 @@ private struct KnowledgeRAGBrowserView: View {
         ) {
             Button("common.cancel", role: .cancel) {}
             Button("rag.browser.repoContext.settings.action") {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                AppDelegate.openSettingsWindow(target: "ai.repoContext")
             }
         } message: {
             Text("rag.browser.repoContext.settings.message")

@@ -61,8 +61,6 @@ struct HomeView: View {
     /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
     /// 与系统「减少动态效果」OR 合并(`AnimationOverrideModifier`)。
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    /// RAG 独立 AppKit 窗口无法自行取得 Settings Scene action，创建窗口时显式向下传递。
-    @Environment(\.openSettings) private var openSettings
     /// HOM-47：拿到 ReleasePoller 启动后台调度。
     @Environment(AppDependencies.self) private var dependencies
     /// 主窗口向菜单和 Settings Scene 发布当前可执行的快捷键动作。
@@ -850,13 +848,9 @@ struct HomeView: View {
         )
     }
 
-    /// 使用 Settings scene 的环境动作打开设置，再精确定位到「模型配置 → 对话」。
-    /// 延后一轮发送导航事件，确保 SettingsView 首次创建时已安装通知监听。
+    /// 打开唯一的设置窗口并精确定位到「模型配置 → 对话」。
     private func openChatModelSettings() {
-        openSettings()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai.chat")
-        }
+        AppDelegate.openSettingsWindow(target: "ai.chat")
     }
 
     /// 开始使用清单既要响应用户动作，也要吸收当前 App 状态。
@@ -1108,8 +1102,7 @@ struct HomeView: View {
         NotificationCenter.default.post(name: .gettingStartedDidOpenRAGWorkspace, object: nil)
         KnowledgeRAGWorkspaceWindowController.show(
             dependencies: dependencies,
-            homeViewModel: viewModel,
-            openSettings: openSettings
+            homeViewModel: viewModel
         )
     }
 

@@ -303,7 +303,6 @@ struct ReadmeStateView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    @Environment(\.openSettings) private var openSettings
 
     /// 相对时间 helper 需要显式 `\.locale`，否则 formatter 会回到系统语言。
     /// 已挂 `appLocaleEnvironment()` 的子树自动拿到正确值。
@@ -556,13 +555,8 @@ struct ReadmeStateView: View {
         guard translationControl?.translationVM.translationErrorKind == .aiConfiguration else {
             return nil
         }
-        return { [openSettings] in
-            openSettings()
-            DispatchQueue.main.async {
-                NotificationCenter.default.post(
-                    name: .starcatJumpToSettingsTab, object: "ai"
-                )
-            }
+        return {
+            AppDelegate.openSettingsWindow(target: "ai")
         }
     }
 

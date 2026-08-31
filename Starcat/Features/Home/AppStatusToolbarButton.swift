@@ -19,7 +19,6 @@ struct AppStatusToolbarButton: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
     @Environment(SyncManager.self) private var syncManager
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
@@ -211,10 +210,7 @@ struct AppStatusToolbarButton: View {
     }
 
     private func openSettings(tab: String) {
-        openSettings()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: tab)
-        }
+        AppDelegate.openSettingsWindow(target: tab)
     }
 }
 

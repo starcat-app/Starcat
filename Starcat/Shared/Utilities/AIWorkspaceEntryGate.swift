@@ -77,8 +77,7 @@ enum AIWorkspaceEntryGate {
             return false
         case .requiresChatModel:
             // 门禁只报告“为什么不能打开”，由主窗口用 SwiftUI Alert 承接交互。
-            // 不能在这里发送旧的 AppKit `showSettingsWindow:` action：App Store 构建会明确
-            // 要求 Settings scene 使用 SettingsLink / OpenSettingsAction，并产生运行时错误日志。
+            // 门禁不直接创建窗口；主窗口收到事件后走统一的 SwiftUI Window 入口。
             NotificationCenter.default.post(name: .starcatWorkspaceRequiresChatModel, object: workspace)
             return false
         }

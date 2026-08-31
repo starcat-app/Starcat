@@ -47,7 +47,6 @@ struct RepoAIFloatingOverlay: View {
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var presentation: Presentation = .collapsed
@@ -231,8 +230,7 @@ struct RepoAIFloatingOverlay: View {
             RepoAIWindowController.show(
                 repo: detachedRepo,
                 dependencies: dependencies,
-                homeViewModel: homeViewModel,
-                openSettings: openSettings
+                homeViewModel: homeViewModel
             )
         }
     }

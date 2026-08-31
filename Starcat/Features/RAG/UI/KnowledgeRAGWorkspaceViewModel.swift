@@ -1652,7 +1652,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             dismissError()
             send()
         case .openAISettings:
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            AppDelegate.openSettingsWindow(target: "ai")
             dismissError()
         case .removeAttachments:
             attachments = []

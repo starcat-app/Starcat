@@ -170,6 +170,8 @@ struct StarcatApp: App {
                 }
             }
 
+            SettingsWindowCommands()
+
             StarcatAppCommands(
                 dependencies: dependencies,
                 commandRouter: commandRouter,
@@ -192,9 +194,17 @@ struct StarcatApp: App {
         .defaultSize(width: 1_080, height: 720)
         .defaultLaunchBehavior(.suppressed)
 
-        // macOS 原生 Settings 窗口（Cmd+,）
-        Settings {
+        // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window。
+        // 后者会强制固定内容尺寸并禁用最小化/缩放，不符合 macOS 系统设置的窗口行为。
+        Window("Starcat", id: "settings") {
             settingsSceneRoot
+        }
+        .defaultSize(width: 920, height: 600)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+        .windowResizability(.contentMinSize)
+        .commands {
+            SettingsWindowCommands()
         }
     }
 
@@ -476,6 +486,17 @@ private struct MainWindowOpenFallbackRegistrar: ViewModifier {
                 AppDelegate.openMainWindowFallback = {
                     openWindow(id: "main")
                 }
+                AppDelegate.openSettingsWindowFallback = { target in
+                    openWindow(id: "settings")
+                    guard let target else { return }
+                    // 先创建/激活 Window，再在下一轮让 SettingsView 消费定位事件。
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(
+                            name: .starcatJumpToSettingsTab,
+                            object: target
+                        )
+                    }
+                }
                 AppLog.general.info("Main window scene appeared; reopen fallback registered")
             }
     }
@@ -488,6 +509,19 @@ private extension View {
 }
 
 // MARK: - App 菜单命令
+
+/// 用普通 `Window` 承接设置页后，显式恢复 macOS 标准的「设置…」菜单与 Cmd+,。
+/// 重复触发 `openWindow(id:)` 只会激活同一个设置窗口，不会创建多个实例。
+private struct SettingsWindowCommands: Commands {
+    var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("menubar.openSettings") {
+                AppDelegate.openSettingsWindow()
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        }
+    }
+}
 
 /// Starcat 顶部菜单命令。
 ///

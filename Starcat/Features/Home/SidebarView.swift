@@ -54,7 +54,6 @@ struct SidebarView: View {
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    @Environment(\.openSettings) private var openSettings
     /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
     /// / `SmartSearchField` 等动画路径处理方式一致。
@@ -822,10 +821,7 @@ struct SidebarView: View {
     }
 
     private func openAISettings() {
-        openSettings()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai")
-        }
+        AppDelegate.openSettingsWindow(target: "ai")
     }
 
     /// Sidebar 固定顶部区：用户卡 + 贡献草坪 + 一级入口。

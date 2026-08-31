@@ -48,6 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let incomingURLNotification = Notification.Name("starcat.incomingURL")
     static var openMainWindowFallback: (() -> Void)?
+    /// AppKit 菜单栏与独立窗口无法直接读取 SwiftUI `OpenWindowAction`，因此由主
+    /// Scene 在出现时注册一个很薄的桥接。目标 Tab 仍由 Settings feature 自己路由。
+    static var openSettingsWindowFallback: ((String?) -> Void)?
     private static weak var dependencies: AppDependencies?
 
     static func configure(dependencies: AppDependencies) {
@@ -216,6 +219,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
+    }
+
+    /// 打开唯一的设置窗口，并可选定位到指定设置页或区块。
+    ///
+    /// 这里不自行创建 `NSWindow`：窗口生命周期仍由 SwiftUI `Window` scene 管理，
+    /// 才能保留系统交通灯、工具栏、状态恢复与 `openWindow(id:)` 的单例语义。
+    static func openSettingsWindow(target: String? = nil) {
+        NSApp.activate(ignoringOtherApps: true)
+        openSettingsWindowFallback?(target)
     }
 
     private static func mainWindowCandidate() -> NSWindow? {

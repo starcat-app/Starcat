@@ -9,8 +9,6 @@ import SwiftUI
 
 /// 在需要下载完整仓库源码的功能入口常驻展示限制，避免用户只在失败后才知道阈值来源。
 struct RepositoryArchiveLimitNotice: View {
-    @Environment(\.openSettings) private var openSettings
-
     let maximumArchiveMB: Int
 
     var body: some View {
@@ -42,14 +40,8 @@ struct RepositoryArchiveLimitNotice: View {
         )
     }
 
-    /// 先打开 Settings scene，再延后一轮切 Tab/展开分组，避免首次创建窗口时通知丢失。
+    /// 打开唯一的设置窗口并展开仓库上下文配置。
     private func openRepoContextSettings() {
-        openSettings()
-        DispatchQueue.main.async {
-            NotificationCenter.default.post(
-                name: .starcatJumpToSettingsTab,
-                object: "ai.repoContext"
-            )
-        }
+        AppDelegate.openSettingsWindow(target: "ai.repoContext")
     }
 }
