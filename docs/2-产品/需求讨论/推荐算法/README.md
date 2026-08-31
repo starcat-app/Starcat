@@ -1,6 +1,6 @@
 # Starcat 推荐、数据贡献与 Star History 文档导航
 
-> 日期: 2026-08-26
+> 日期: 2026-08-31
 > 状态: 当前需求统一入口
 > 适用范围: Starcat macOS 客户端、本地数据平台、推荐训练服务、推荐查询服务、Star History 服务
 > 用途: 为后续开发者和 AI Agent 提供文档优先级、阅读顺序、代码入口与实施边界
@@ -92,6 +92,7 @@ flowchart TB
 | 21 | [自研相似仓库推荐算法草案](21-自研相似仓库推荐算法-设计方案.md) | 早期多路召回总体草案，固定权重和服务边界已被 61 修订 | 回顾备选算法、表结构和演进背景时 |
 | 22 | [全量 WatchEvent 推荐训练扩容实施方案](22-全量WatchEvent推荐训练扩容实施方案.md) | 记录当前实测规模、PushEvent 前置门禁、全量 Silver 构建、单机资源保护和下一模型验收 | PushEvent 下载完成后实施全量训练扩容时 |
 | 指南 | [本地推荐全链路验证指南](本地推荐全链路验证指南.md) | 使用真实 Star 主库复现 Collection、Trainer、Recommend v2 和 Direct UI 全链路 | 在 `dev` 本地重跑完整链路、排查跨服务问题时 |
+| 指南 | [WatchEvent 与 Star History 每日增量运维指南](WatchEvent与Star-History每日增量运维指南.md) | 记录 UTC 昨日补数、History Delta 追赶、LaunchAgent 调度和失败恢复 | 补齐历史缺口或维护每日增量链路时 |
 
 ### 4.1 不能直接照搬的历史内容
 

@@ -540,6 +540,8 @@ worker_lease_total{state,worker}
 - 已建立 `repo_id + event_date + event_count` Silver 数据集，并由同一 Raw Artifact 生成校验后的 Delta SQLite。
 - 已完成生产 Snapshot 激活、真实每日 Delta 应用、相同内容幂等重放、进程重启恢复和查询验证；月度 Snapshot 继续按相同 Builder/Registry 契约执行例行运维。
 - Starcat 与聚合生产查询已迁到 `starcat-history-api`；Discovery 生产 History job 已停用，旧代码在一个稳定发布窗口后删除。
+- 每日运维由 `supports/scripts/run-history-daily-sync.sh` 串联 Trainer Raw 追赶与 History
+  Delta 追赶；LaunchAgent 每天 10:00 触发，只处理最新完整 UTC 日，失败时不跨日推进。
 
 ### Phase 3：Recommend 发布治理
 
