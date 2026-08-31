@@ -53,11 +53,19 @@ supports/scripts/run-history-daily-sync.sh 2026-08-30
 supports/scripts/run-history-daily-sync.sh
 ```
 
-日志默认写入：
+LaunchAgent 和 WatchEvent 每日任务日志默认写入用户日志目录，避免把标准输出绑定到尚未挂载的
+T0：
 
 ```text
-/Volumes/T0/Starcat/logs/history-daily-sync.log
+~/Library/Logs/Starcat/history-daily-sync.log
+~/Library/Logs/Starcat/watch-events-daily.log
 ```
+
+macOS 会单独限制后台进程访问可移动卷。安装后必须通过一次 `kickstart` 验证 LaunchAgent 能读取
+和写入 `/Volumes/T0`；如果日志出现 `Operation not permitted`，需在“系统设置 → 隐私与安全性 →
+完全磁盘访问权限”中授权实际执行脚本的 `/bin/bash`，随后重新登录并再次验证。手工在 Terminal
+执行成功不能替代这项后台权限验收。编排器在访问 BigQuery 前会创建并立即删除一个 Raw 写权限
+探针；探针失败时不会产生查询或推进任何水位。
 
 检查 Raw 水位：
 
@@ -94,3 +102,21 @@ curl -fsS \
 ```bash
 supports/scripts/install-history-daily-launch-agent.sh uninstall
 ```
+
+## 2026-08-31 首次补齐验证
+
+本次从 `2026-08-26` 连续补齐到最新完整 UTC 日 `2026-08-30`：
+
+| 日期 | Raw WatchEvent | History repo-day | 发布结果 |
+|---|---:|---:|---|
+| 2026-08-27 | 2,525 | 2,023 | 已应用 |
+| 2026-08-28 | 2,305 | 1,846 | 已应用 |
+| 2026-08-29 | 3,417 | 2,689 | 已应用 |
+| 2026-08-30 | 3,176 | 2,496 | 已应用 |
+
+- Raw checkpoint：3,895 个连续分区，`end_date=2026-08-30`。
+- 生产 History：`model_version=watch-history-20260825-v1`，`active_watermark=2026-08-30`。
+- 幂等重跑：Raw 返回无待下载日期，History 返回 `published_days=0`。
+- BigQuery 本月计费：720,630,710,272 字节，占 1 TiB 免费层约 65.54%，低于 80% 警告线。
+- LaunchAgent：脚本、Keychain 和最小 PATH 已验证；当前 T0 后台写权限探针仍被 macOS 拒绝，
+  完成“完全磁盘访问权限”授权后必须重新 `kickstart`，以退出码 0 作为最终定时验收。

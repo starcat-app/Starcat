@@ -14,7 +14,11 @@ history_root="${fixture_root}/history"
 record_file="${fixture_root}/calls.log"
 environment_file="${fixture_root}/history-daily.env"
 lock_dir="${fixture_root}/daily.lock"
-/bin/mkdir -p "${trainer_root}/scripts" "${history_root}/scripts"
+watch_workspace="${fixture_root}/watch"
+/bin/mkdir -p \
+  "${trainer_root}/scripts" \
+  "${history_root}/scripts" \
+  "${watch_workspace}/raw/gh_archive"
 
 cat >"${environment_file}" <<'EOF'
 HISTORY_PUBLISH_KEY=test-only-key
@@ -38,6 +42,7 @@ STARCAT_TRAINER_ROOT="${trainer_root}" \
 STARCAT_HISTORY_API_ROOT="${history_root}" \
 STARCAT_HISTORY_DAILY_ENV_FILE="${environment_file}" \
 STARCAT_HISTORY_DAILY_LOCK_DIR="${lock_dir}" \
+STARCAT_WATCH_WORKSPACE="${watch_workspace}" \
   "${script_dir}/run-history-daily-sync.sh" 2026-08-30 >/dev/null
 
 expected=$'watch:catch-up:2026-08-30\nhistory:2026-08-30'

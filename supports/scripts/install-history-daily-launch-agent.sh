@@ -7,7 +7,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 runner="${script_dir}/run-history-daily-sync.sh"
 plist="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 environment_file="${STARCAT_HISTORY_DAILY_ENV_FILE:-${HOME}/.config/starcat/history-daily.env}"
-log_file="${STARCAT_HISTORY_DAILY_LOG_FILE:-/Volumes/T0/Starcat/logs/history-daily-sync.log}"
+log_file="${STARCAT_HISTORY_DAILY_LOG_FILE:-${HOME}/Library/Logs/Starcat/history-daily-sync.log}"
 domain="gui/$(id -u)"
 
 xml_escape() {

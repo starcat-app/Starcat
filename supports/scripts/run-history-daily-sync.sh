@@ -48,6 +48,16 @@ if [[ ! -x "${history_api_root}/scripts/run-daily-catch-up.sh" ]]; then
   exit 2
 fi
 
+watch_volume_root="${STARCAT_WATCH_VOLUME_ROOT:-/Volumes/T0}"
+watch_workspace="${STARCAT_WATCH_WORKSPACE:-${watch_volume_root}/Starcat/bigquery/watch-events-2016-2026}"
+probe_directory="${watch_workspace}/raw/gh_archive"
+probe_file="${probe_directory}/.starcat-daily-write-probe.$$"
+if [[ ! -d "${probe_directory}" ]] || ! /usr/bin/touch "${probe_file}" 2>/dev/null; then
+  echo "后台任务无法写入 WatchEvent Raw，请检查 T0 挂载与 macOS 完全磁盘访问权限" >&2
+  exit 2
+fi
+/bin/rm "${probe_file}"
+
 if ! /bin/mkdir "${lock_dir}" 2>/dev/null; then
   echo "每日增量任务已在运行，跳过本次触发。"
   exit 0
