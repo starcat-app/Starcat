@@ -2,6 +2,9 @@
 # 串联 WatchEvent Raw 追赶与 History Delta 发布，供人工执行和 launchd 共用。
 set -euo pipefail
 
+# launchd 默认 PATH 不包含 Homebrew；同时保留 Apple Silicon 与 Intel 的标准安装位置。
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 supports_root="$(cd "${script_dir}/.." && pwd)"
 trainer_root="${STARCAT_TRAINER_ROOT:-${supports_root}/starcat-recsys-trainer}"
