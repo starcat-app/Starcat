@@ -80,7 +80,33 @@ verify_formal_xcode() {
   log "Xcode 正式版门禁通过: Xcode ${xcode_version} (${xcode_build})"
 }
 
+# Archive 会把主仓库 Changelog 原样签进 App；必须在删除旧产物和开始构建前
+# 阻断仍处于“待发布”的标题，否则事后无法在不破坏签名的前提下修正。
+verify_release_changelogs() {
+  local tag
+  local version
+  local changelog
+
+  tag="$(git -C "$PROJECT_ROOT" describe --tags --abbrev=0 2>/dev/null || true)"
+  version="${tag#v}"
+  version="${version#V}"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+    fail "无法从最新 git tag 解析 App Store 发布版本；当前 tag: ${tag:-missing}"
+
+  for changelog in "$PROJECT_ROOT/CHANGELOG.md" "$PROJECT_ROOT/CHANGELOG-ZH.md"; do
+    [ -f "$changelog" ] || fail "缺少 App Store Changelog: $changelog"
+    if grep -Fqx "## ${version}-待发布" "$changelog"; then
+      fail "App Store ${version} Changelog 仍标记为待发布: $changelog"
+    fi
+    grep -Fqx "## ${version}" "$changelog" || \
+      fail "App Store ${version} Changelog 缺少正式版本标题: $changelog"
+  done
+
+  log "Changelog 正式版本门禁通过: ${version}"
+}
+
 verify_formal_xcode
+verify_release_changelogs
 
 cd "$PROJECT_ROOT"
 mkdir -p "$DIST_DIR"

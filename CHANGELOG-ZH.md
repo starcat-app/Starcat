@@ -2,7 +2,7 @@
 
 这里记录 Starcat Mac App Store 版本的重要变化。
 
-## 1.5.0-待发布
+## 1.5.0
 
 Starcat 1.5.0 围绕发现、整理和回顾 GitHub 仓库进行了全面扩展：新增 Awesome 发现、Spotlight 系统搜索、GitHub Lists 与批量 AI 整理、GitHub 贡献小组件，并继续完善活动会话、README 阅读和仓库洞察体验。
 

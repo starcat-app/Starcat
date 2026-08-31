@@ -73,6 +73,24 @@ DEFAULT_DIRECT_SIGN_IDENTITY="Developer ID Application: liwen gong (8WCUMGCWMB)"
 log() { printf '[direct] %s\n' "$1"; }
 fail() { printf '[direct] ERROR: %s\n' "$1" >&2; exit 1; }
 
+# Direct App 会把 starcat-pro Changelog 签入 bundle；公开包只能接受与目标版本
+# 完全一致的正式标题，避免发布后才发现“待发布”仍显示在 App 内。
+verify_release_changelogs() {
+  local changelog
+  local changelog_root="${PROJECT_ROOT}/supports/starcat-pro"
+
+  for changelog in "$changelog_root/CHANGELOG.md" "$changelog_root/CHANGELOG-ZH.md"; do
+    [ -f "$changelog" ] || fail "缺少 Direct Changelog: $changelog"
+    if grep -Fqx "## ${VERSION}-待发布" "$changelog"; then
+      fail "Direct ${VERSION} Changelog 仍标记为待发布: $changelog"
+    fi
+    grep -Fqx "## ${VERSION}" "$changelog" || \
+      fail "Direct ${VERSION} Changelog 缺少正式版本标题: $changelog"
+  done
+
+  log "Changelog 正式版本门禁通过: ${VERSION}"
+}
+
 command -v xcodegen >/dev/null 2>&1 || fail "xcodegen 未安装"
 command -v xcodebuild >/dev/null 2>&1 || fail "xcodebuild 不在 PATH"
 case "$DMG_TOOL" in
@@ -89,6 +107,7 @@ case "$DMG_TOOL" in
 esac
 
 cd "$PROJECT_ROOT"
+verify_release_changelogs
 mkdir -p "$DIST_DIR" "$DOWNLOADS_DIR"
 rm -rf "$DERIVED_DIR" "$STAGING_DIR" "$APPCAST_INPUT_DIR"
 rm -f "$DMG_PATH" "$SHA_PATH" "$CURRENT_APPCAST_PATH" "$NOTARY_SUBMISSION_PATH" "$NOTARY_OUTPUT_PATH"
