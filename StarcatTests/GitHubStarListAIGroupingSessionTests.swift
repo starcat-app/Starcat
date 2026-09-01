@@ -279,7 +279,7 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(environment.session.existingListIDsByRepo[1] == ["list-1"])
         #expect(environment.session.existingListIDsByRepo[2, default: []].isEmpty)
         #expect(environment.session.selectedListIDsByRepo[1] == [])
-        #expect(environment.session.selectedListIDsByRepo[2] == [])
+        #expect(environment.session.selectedListIDsByRepo[2] == ["list-1"])
         #expect(environment.session.jobs.first(where: { $0.id == 1 })?.applyState == .applied(["list-1"]))
         #expect(environment.session.jobs.first(where: { $0.id == 2 })?.applyState == .idle)
 

@@ -1235,6 +1235,11 @@ final class GitHubStarListAIGroupingSession {
                     selectedListIDsByRepo[repo.id] = Set(approved.map(\.listId))
                     if !approved.isEmpty {
                         await applyOne(repo: repo, allowAutomaticRetry: true)
+                    } else if mode == .manual,
+                              let closestToThreshold = suggestions.max(by: { $0.confidence < $1.confidence }) {
+                        // 人工窗口开启自动确认时，全部建议低于阈值不能变成“零选择”。预选最接近
+                        // 阈值的一项，用户可逐仓调整，也可直接使用底栏批量应用。
+                        selectedListIDsByRepo[repo.id] = [closestToThreshold.listId]
                     } else if mode == .automatic,
                               automaticConfigurationFingerprint != nil {
                         // 无匹配或低于阈值都已完成本规则下的判断；继续保持未分组，但不要
