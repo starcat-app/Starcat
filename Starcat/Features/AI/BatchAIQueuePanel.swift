@@ -26,6 +26,7 @@ struct BatchAIQueuePanel: View {
     @State private var expandedRepoID: Int64?
     @State private var presentation = BatchAIQueuePresentationStore()
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,7 +121,8 @@ struct BatchAIQueuePanel: View {
     }
 
     private func filterLabel(_ key: LocalizedStringKey, count: Int) -> some View {
-        Text(key) + Text(verbatim: " \(count)")
+        (Text(key) + Text(verbatim: " \(count.formatted(.number.locale(locale)))"))
+            .monospacedDigit()
     }
 
     private var jobList: some View {
