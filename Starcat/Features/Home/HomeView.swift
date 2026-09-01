@@ -2051,6 +2051,12 @@ struct HomeView: View {
         await viewModel.reloadItems(reason: .search)
         await Task.yield()
         applyManageDetailSelectionPolicy()
+        // 搜索会重排并缩小中栏数据源；即使 selectedRepoID 没变，旧滚动位置也可能仍停在
+        // 搜索前的深页。重新发出独立滚动请求，让当前详情对应的仓库行定位到可视区域。
+        if let selectedRepoID = viewModel.selectedRepoID,
+           viewModel.items.contains(where: { $0.id == selectedRepoID }) {
+            viewModel.requestSelectedRepoScroll()
+        }
     }
 
     private func syncSmartSearchModeToSettings() {
