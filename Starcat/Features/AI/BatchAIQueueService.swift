@@ -85,6 +85,10 @@ final class BatchAIQueueService {
     /// 批次级全库标签词表快照；每轮只查询一次，避免逐仓重复扫描标签表和使用次数。
     private var sharedTagLibrary: [String]?
 
+    /// 同一批次的多个 Worker 可能同时遇到同一个新标签。按 canonical key 共享创建任务，
+    /// 保证只创建一次，其余 Worker 复用同一结果，避免并发 UNIQUE 冲突和同义写法重复建标。
+    private var pendingTagCreationsByCanonicalKey: [String: Task<Tag, Error>] = [:]
+
     /// 可重试失败的最早再次执行时刻，避免 429 / 5xx 立即空转轰炸 Provider。
     private var retryNotBeforeByRepoID: [Int64: Date] = [:]
 
@@ -314,6 +318,7 @@ final class BatchAIQueueService {
         self.startedAt = Date()
         self.processingJobIDs = []
         self.sharedTagLibrary = nil
+        self.pendingTagCreationsByCanonicalKey = [:]
         self.retryNotBeforeByRepoID = [:]
         self.rateLimitCooldownUntil = nil
         AppLog.ai.notice("[batch-ai] start: count=\(repos.count, privacy: .public), autoApplyTags=\(options.autoApplyTags, privacy: .public), threshold=\(options.confidenceThreshold, privacy: .public), silent=\(silent, privacy: .public)")
@@ -421,6 +426,7 @@ final class BatchAIQueueService {
         silent = false
         hasPendingTagsChangedNotification = false
         sharedTagLibrary = nil
+        pendingTagCreationsByCanonicalKey = [:]
         retryNotBeforeByRepoID = [:]
         rateLimitCooldownUntil = nil
         repoCache = [:]
@@ -896,7 +902,11 @@ final class BatchAIQueueService {
 
             var autoApplyOutcome = TagAutoApplyOutcome()
             if !aboveThreshold.isEmpty {
-                autoApplyOutcome = await applyTagsToRepo(repoId: jobId, suggestions: aboveThreshold)
+                autoApplyOutcome = await applyTagsToRepo(
+                    repoId: jobId,
+                    suggestions: aboveThreshold,
+                    autoCreateMissingTags: options.autoCreateMissingTags
+                )
                 guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
                 jobs[currentIndex].appliedTagNames = autoApplyOutcome.appliedNames
                 if !autoApplyOutcome.appliedNames.isEmpty {
@@ -967,7 +977,11 @@ final class BatchAIQueueService {
     /// 批量自动应用没有逐项人工确认，不能因为模型自报高置信度就静默扩张标签库；真正的
     /// 新标签会返回给当前批量窗口继续确认。这里使用宽松 canonical key，让
     /// `Open-Source` / `open source` 等形式差异复用已有记录。
-    private func applyTagsToRepo(repoId: Int64, suggestions: [AITagSuggestion]) async -> TagAutoApplyOutcome {
+    private func applyTagsToRepo(
+        repoId: Int64,
+        suggestions: [AITagSuggestion],
+        autoCreateMissingTags: Bool
+    ) async -> TagAutoApplyOutcome {
         let existingTags: [Tag]
         do {
             existingTags = try await tagRepository.fetchAll()
@@ -989,9 +1003,24 @@ final class BatchAIQueueService {
         for suggestion in suggestions {
             let normalized = AITagSuggestionPolicy.normalizedDisplayName(suggestion.name)
             let key = AITagSuggestionPolicy.canonicalKey(normalized)
-            guard !normalized.isEmpty,
-                  let tag = existingTagByName[normalized] ?? existingTagByKey[key]
-            else {
+            guard !normalized.isEmpty, !key.isEmpty else {
+                outcome.unresolvedSuggestions.append(suggestion)
+                continue
+            }
+
+            var tag = existingTagByName[normalized] ?? existingTagByKey[key]
+            if tag == nil, autoCreateMissingTags {
+                do {
+                    let created = try await findOrCreateAutoTag(named: normalized, canonicalKey: key)
+                    tag = created
+                    existingTagByName[created.name] = created
+                    existingTagByKey[key] = created
+                } catch {
+                    AppLog.ai.error("[batch-ai] auto-create tag failed: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
+                }
+            }
+
+            guard let tag else {
                 AppLog.ai.notice("[batch-ai] skip new tag during auto-apply: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public)")
                 outcome.unresolvedSuggestions.append(suggestion)
                 continue
@@ -1005,6 +1034,36 @@ final class BatchAIQueueService {
             }
         }
         return outcome
+    }
+
+    /// 创建或复用自动应用所需的新标签。
+    ///
+    /// 创建任务先登记再 await，MainActor 重入期间后来者会复用同一 Task；数据库唯一约束仍是
+    /// 最终防线，若其他入口抢先创建同名标签，则在 create 失败后重新查询并复用该记录。
+    private func findOrCreateAutoTag(named name: String, canonicalKey: String) async throws -> Tag {
+        if let pending = pendingTagCreationsByCanonicalKey[canonicalKey] {
+            return try await pending.value
+        }
+
+        let candidate = makeUserConfirmedTag(named: name)
+        let repository = tagRepository
+        let task = Task<Tag, Error> {
+            if let existing = try await repository.findByName(name) {
+                return existing
+            }
+            do {
+                try await repository.create(candidate)
+                return candidate
+            } catch {
+                if let existing = try await repository.findByName(name) {
+                    return existing
+                }
+                throw error
+            }
+        }
+        pendingTagCreationsByCanonicalKey[canonicalKey] = task
+        defer { pendingTagCreationsByCanonicalKey[canonicalKey] = nil }
+        return try await task.value
     }
 
     /// 处理单个 job 的失败：分流"重试" vs "终态失败"。

@@ -175,6 +175,39 @@ struct BatchAIQueueServiceTests {
         #expect(service.selectedRepoIDsForTagApplication == [repo.id])
     }
 
+    @Test("自动创建开启时并发仓库复用同一个新标签")
+    func autoCreateMissingTagsCreatesOnceAndAppliesToEveryRepository() async throws {
+        let suggestion = AITagSuggestion(name: "New Tag", confidence: 0.95, reason: "高置信度建议")
+        let provider = ImmediateBatchAIInsightProvider(suggestions: [suggestion])
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let repoTagRepository = GRDBRepoTagRepository(database: database)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        var first = Repo.makeMinimal(owner: "acme", name: "auto-create-first")
+        first.id = 509
+        var second = Repo.makeMinimal(owner: "acme", name: "auto-create-second")
+        second.id = 510
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.autoApplyTags = true
+        options.autoCreateMissingTags = true
+        options.confidenceThreshold = 0.90
+
+        #expect(service.start(repos: [first, second], options: options))
+        await waitUntilStopped(service)
+
+        #expect(try await tagRepository.fetchAll().map(\.name) == ["New Tag"])
+        #expect(try await repoTagRepository.fetchTags(forRepo: first.id).map(\.name) == ["New Tag"])
+        #expect(try await repoTagRepository.fetchTags(forRepo: second.id).map(\.name) == ["New Tag"])
+        #expect(service.jobs.allSatisfy { $0.appliedTagNames == ["New Tag"] })
+        #expect(service.pendingTagReviewCount == 0)
+    }
+
     @Test("静默自动整理没有审核入口时仍忽略全部低于阈值的标签")
     func silentAutoApplyKeepsBelowThresholdResultIgnored() async throws {
         let suggestions = [AITagSuggestion(name: "Swift", confidence: 0.70, reason: "主要开发语言")]

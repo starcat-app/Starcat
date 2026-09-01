@@ -206,6 +206,37 @@ struct BatchAIOptionsSheet: View {
             .focusEffectDisabled()
             .font(interfaceScale.font(.caption))
 
+            Toggle(isOn: $options.autoCreateMissingTags) {
+                HStack(spacing: 8) {
+                    Text("batchAI.options.autoCreateMissingTags")
+
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(options.autoCreateMissingTags ? Color.accentColor : Color.secondary.opacity(0.36))
+
+                        Circle()
+                            .fill(.white)
+                            .overlay {
+                                Circle()
+                                    .stroke(.black.opacity(0.08), lineWidth: 0.5)
+                            }
+                            .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
+                            .padding(2)
+                            .offset(x: options.autoCreateMissingTags ? 20 : 0)
+                    }
+                    .frame(width: 44, height: 24)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: options.autoCreateMissingTags)
+                    .accessibilityHidden(true)
+                }
+                .contentShape(Rectangle())
+            }
+            .toggleStyle(.button)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .font(interfaceScale.font(.caption))
+            .padding(.leading, 16)
+            .disabled(!options.autoApplyTags)
+
             // 阈值始终可见，关闭自动应用时只禁用 Slider，避免开关导致卡片内容跳动。
             thresholdSlider
 

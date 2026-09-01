@@ -78310,6 +78310,22 @@
         }
       }
     },
+    "batchAI.options.autoCreateMissingTags" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatically create missing tags"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动创建不存在的标签"
+          }
+        }
+      }
+    },
     "batchAI.options.autoApply" : {
       "extractionState" : "stale",
       "localizations" : {

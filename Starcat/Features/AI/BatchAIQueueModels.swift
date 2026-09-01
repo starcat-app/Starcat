@@ -249,6 +249,11 @@ struct BatchAIQueueOptions: Equatable, Sendable {
     /// 用户首次大批量整理时主动开启，平时小批量保持手动确认更安全。
     var autoApplyTags: Bool = false
 
+    /// 自动应用时，是否同时创建标签库中尚不存在的标签。
+    ///
+    /// 默认关闭，且只在 `autoApplyTags == true` 时生效；关闭时，新标签继续进入当前窗口待确认。
+    var autoCreateMissingTags: Bool = false
+
     /// 本次摘要生成是否启用代码上下文。
     ///
     /// nil 表示沿用调用方原有策略；手动批量入口会在每次打开 Sheet 时从全局设置生成快照，
