@@ -18,18 +18,42 @@
 import SwiftUI
 import AppKit
 
-/// 右栏卡片渲染快照：在 panel 层一次性组装，供 Equatable 卡片做 diff。
-private struct SmartCollectionCardItem: Identifiable, Equatable {
+/// 右栏卡片渲染模型。使用 Observation 引用类型，让 Health / 选中态只刷新命中卡片，
+/// 避免值类型数组在单卡变化时复制并重新发布整套瀑布流。
+@Observable
+private final class SmartCollectionCardItem: Identifiable {
     var id: Int64 { repo.id }
     let repo: Repo
+    /// topics JSON 只在快照创建时解析一次，避免卡片 body 重算时重复解码。
+    let topics: [String]
     /// 在筛选结果中的原始索引；瀑布流分列后仍用它判断是否进入统一预取窗口。
     let paginationIndex: Int
     let status: RepoStatus
     let userTags: [Tag]
-    let health: RepoHealthSnapshot?
-    let isSelected: Bool
+    var health: RepoHealthSnapshot?
+    var isSelected: Bool
     /// 当前浏览的系统集合；用于「维护停滞」等集合专属的 stats 行标识。
     let collectionKind: SmartCollectionKind?
+
+    init(
+        repo: Repo,
+        topics: [String],
+        paginationIndex: Int,
+        status: RepoStatus,
+        userTags: [Tag],
+        health: RepoHealthSnapshot?,
+        isSelected: Bool,
+        collectionKind: SmartCollectionKind?
+    ) {
+        self.repo = repo
+        self.topics = topics
+        self.paginationIndex = paginationIndex
+        self.status = status
+        self.userTags = userTags
+        self.health = health
+        self.isSelected = isSelected
+        self.collectionKind = collectionKind
+    }
 }
 
 struct SmartCollectionDetailPanel: View {
@@ -41,20 +65,26 @@ struct SmartCollectionDetailPanel: View {
     @State private var healthResolvedRepoIDs: Set<Int64> = []
     @State private var pendingHealthRepoIDs: Set<Int64> = []
     @State private var healthLoadInFlightIDs: Set<Int64> = []
+    /// 当前实际在视口附近的卡片。快速滚动时只收集 ID，停止后再查询 Health。
+    @State private var visibleHealthRepoIDs: Set<Int64> = []
     @State private var isLoadingHealth = false
+    @State private var isScrollActive = false
     @State private var isRuleExpanded = false
     /// ScrollView 可用宽度；用 background GeometryReader 读取，避免外层 GeometryReader 包裹整棵 scroll 树。
     @State private var contentWidth: CGFloat = 720
     @State private var masonryColumns: [[SmartCollectionCardItem]] = []
+    /// 直接保存卡片引用，单卡状态更新无需复制或重新发布二维 columns 数组。
+    @State private var masonryItemsByID: [Int64: SmartCollectionCardItem] = [:]
+    @State private var masonryItemCount = 0
+    @State private var masonryColumnCount = 0
     @State private var loadHealthTask: Task<Void, Never>?
 
-    private static let healthLoadDebounceNs: UInt64 = 80_000_000
+    private static let healthLoadDebounce: Duration = .milliseconds(80)
     private static let cardSpacing: CGFloat = 12
     private static let minCardWidth: CGFloat = 280
     private static let masonryOuterPadding: CGFloat = 16
-    /// 对应 `RepoRowSurface` 的左右 10pt content padding；选中态还会额外增加 5pt leading。
+    /// 对应 `RepoRowSurface` 的左右 10pt content padding；选中态额外 inset 在卡片内部扣除。
     private static let cardContentHorizontalPadding: CGFloat = 20
-    private static let selectedCardLeadingPadding: CGFloat = 5
 
     private var repos: [Repo] {
         viewModel.items
@@ -89,6 +119,9 @@ struct SmartCollectionDetailPanel: View {
                     .padding(.bottom, Self.masonryOuterPadding)
             }
             .detailScrollViewStyle()
+            .onScrollPhaseChange { _, newPhase in
+                updateScrollPhase(newPhase)
+            }
         }
         // 与 Manage `RepoDetailScaffold` 同构：标题进 navigation chrome，避免 ScrollView 顶穿透明 toolbar。
         .navigationTitle(title)
@@ -106,15 +139,15 @@ struct SmartCollectionDetailPanel: View {
             resetHealthCache()
             refreshMasonryLayout()
         }
-        // 本地分片 append 故意不 bump itemsRevision；直接观察当前页 ID，保证新页进入瀑布流。
-        .onChange(of: viewModel.items.map(\.id)) { _, _ in
-            refreshMasonryLayout()
+        // append 只处理新页；完整结果替换由 itemsRevision 上面的 task 负责重建。
+        .onChange(of: viewModel.items.count) { oldCount, newCount in
+            updateMasonryItems(oldCount: oldCount, newCount: newCount)
         }
-        .onChange(of: contentWidth) { _, _ in
-            refreshMasonryLayout()
+        .onChange(of: contentWidth) { oldWidth, newWidth in
+            updateMasonryWidth(oldWidth: oldWidth, newWidth: newWidth)
         }
-        .onChange(of: viewModel.selectedRepoID) { _, _ in
-            refreshMasonryLayout()
+        .onChange(of: viewModel.selectedRepoID) { oldID, newID in
+            updateMasonrySelection(oldID: oldID, newID: newID)
         }
         .onChange(of: viewModel.selection) { _, _ in
             isRuleExpanded = false
@@ -145,7 +178,7 @@ struct SmartCollectionDetailPanel: View {
             ) { item in
                 SmartCollectionRepoCard(
                     item: item,
-                    chipAvailableWidth: chipAvailableWidth(isSelected: item.isSelected)
+                    chipAvailableWidth: chipAvailableWidth
                 )
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -153,6 +186,9 @@ struct SmartCollectionDetailPanel: View {
                     }
                     .onAppear {
                         requestHealthLoad(for: item.id)
+                    }
+                    .onDisappear {
+                        markHealthCardInvisible(item.id)
                     }
                     // 卡片索引与数量都来自 HomeViewModel 当前页，避免瀑布流快速滚动跨过预取边界。
                     .automaticListPagination(
@@ -283,22 +319,25 @@ struct SmartCollectionDetailPanel: View {
     }
 
     /// 从 panel 的稳定宽度单向推导卡片内容宽度，避免 lazy cell 再用 GeometryReader 反向测量。
-    private func chipAvailableWidth(isSelected: Bool) -> CGFloat {
+    private var chipAvailableWidth: CGFloat {
         let count = columnCount(for: contentWidth)
         let availableWidth = max(0, contentWidth - Self.masonryOuterPadding * 2)
         let totalSpacing = Self.cardSpacing * CGFloat(max(0, count - 1))
         let columnWidth = (availableWidth - totalSpacing) / CGFloat(count)
-        let selectedInset = isSelected ? Self.selectedCardLeadingPadding : 0
         return max(
             0,
-            columnWidth - Self.cardContentHorizontalPadding - selectedInset
+            columnWidth - Self.cardContentHorizontalPadding
         )
     }
 
-    /// 一次性组装卡片快照 + 分列 bucket；仅在 width / 可见集 / 选中 / health 变化时调用。
+    /// 完整结果身份变化时重建卡片快照。分页 append、Health 和选中态走下方局部更新路径，
+    /// 避免滚动越深时每次状态变化都重新扫描全部已加载卡片。
     private func refreshMasonryLayout() {
         guard !repos.isEmpty else {
             masonryColumns = []
+            masonryItemsByID = [:]
+            masonryItemCount = 0
+            masonryColumnCount = columnCount(for: contentWidth)
             return
         }
 
@@ -306,19 +345,101 @@ struct SmartCollectionDetailPanel: View {
         let selectedID = viewModel.selectedRepoID
         let collectionKind = activeSystemCollectionKind
         let items = repos.enumerated().map { index, repo in
-            SmartCollectionCardItem(
+            makeCardItem(
                 repo: repo,
-                paginationIndex: index,
-                status: viewModel.readStatus(for: repo.id),
-                userTags: tagsByRepoID[repo.id] ?? [],
-                health: healthSnapshots[repo.id],
-                isSelected: selectedID == repo.id,
+                index: index,
+                tags: tagsByRepoID[repo.id] ?? [],
+                selectedID: selectedID,
                 collectionKind: collectionKind
             )
         }
-        masonryColumns = SmartCollectionMasonryDistribution.distribute(
+        let count = columnCount(for: contentWidth)
+        let columns = SmartCollectionMasonryDistribution.distribute(
             items,
-            columnCount: columnCount(for: contentWidth)
+            columnCount: count
+        )
+        masonryColumns = columns
+        masonryItemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        masonryItemCount = items.count
+        masonryColumnCount = count
+    }
+
+    /// HomeViewModel 每页追加 40 条时只创建新增卡片；旧卡片及其 SwiftUI 身份保持不变。
+    private func updateMasonryItems(oldCount: Int, newCount: Int) {
+        guard newCount > oldCount,
+              oldCount == masonryItemCount,
+              masonryColumnCount == columnCount(for: contentWidth),
+              masonryColumns.count == masonryColumnCount else {
+            refreshMasonryLayout()
+            return
+        }
+
+        let newRepos = Array(repos.dropFirst(oldCount))
+        guard !newRepos.isEmpty else { return }
+        let tagsByRepoID = Self.tagsByRepoID(for: newRepos, viewModel: viewModel)
+        let selectedID = viewModel.selectedRepoID
+        let collectionKind = activeSystemCollectionKind
+        let newItems = newRepos.enumerated().map { offset, repo in
+            makeCardItem(
+                repo: repo,
+                index: oldCount + offset,
+                tags: tagsByRepoID[repo.id] ?? [],
+                selectedID: selectedID,
+                collectionKind: collectionKind
+            )
+        }
+
+        var columns = masonryColumns
+        SmartCollectionMasonryDistribution.append(
+            newItems,
+            startingAt: oldCount,
+            to: &columns
+        )
+        masonryColumns = columns
+        for item in newItems {
+            masonryItemsByID[item.id] = item
+        }
+        masonryItemCount = newCount
+    }
+
+    /// 连续 resize 时仅在列数真的变化后重新分列；同列数下只让卡片接收新的可用宽度。
+    private func updateMasonryWidth(oldWidth: CGFloat, newWidth: CGFloat) {
+        let oldCount = columnCount(for: oldWidth)
+        let newCount = columnCount(for: newWidth)
+        guard oldCount != newCount || masonryColumnCount != newCount else { return }
+
+        let items = masonryColumns.flatMap { $0 }.sorted { $0.paginationIndex < $1.paginationIndex }
+        let columns = SmartCollectionMasonryDistribution.distribute(items, columnCount: newCount)
+        masonryColumns = columns
+        masonryColumnCount = newCount
+    }
+
+    /// 选中态只会影响旧选中卡片和新选中卡片，不能因为一次点击重建几百张卡片。
+    private func updateMasonrySelection(oldID: Int64?, newID: Int64?) {
+        if let oldID {
+            masonryItemsByID[oldID]?.isSelected = false
+        }
+        if let newID {
+            masonryItemsByID[newID]?.isSelected = true
+        }
+    }
+
+    private func makeCardItem(
+        repo: Repo,
+        index: Int,
+        tags: [Tag],
+        selectedID: Int64?,
+        collectionKind: SmartCollectionKind?
+    ) -> SmartCollectionCardItem {
+        SmartCollectionCardItem(
+            repo: repo,
+            topics: repo.topicsArray,
+            paginationIndex: index,
+            status: viewModel.readStatus(for: repo.id),
+            userTags: tags,
+            health: healthSnapshots[repo.id],
+            isSelected: selectedID == repo.id,
+            collectionKind: collectionKind
         )
     }
 
@@ -332,31 +453,61 @@ struct SmartCollectionDetailPanel: View {
         healthResolvedRepoIDs = []
         pendingHealthRepoIDs = []
         healthLoadInFlightIDs = []
+        visibleHealthRepoIDs = []
         loadHealthTask?.cancel()
         loadHealthTask = nil
     }
 
-    /// 卡片进入 LazyVStack 视口时登记 health 需求；短 debounce 合并同帧多条 onAppear。
+    /// 卡片进入视口时登记 Health 需求。滚动期间不访问 GRDB，也不写 SwiftUI 列表状态；
+    /// 停止后只为仍在视口附近的卡片批量查询，避免快速滚动触发连续全树 diff。
     private func requestHealthLoad(for repoID: Int64) {
+        visibleHealthRepoIDs.insert(repoID)
         guard healthSnapshots[repoID] == nil,
               !healthResolvedRepoIDs.contains(repoID),
               !healthLoadInFlightIDs.contains(repoID) else { return }
         pendingHealthRepoIDs.insert(repoID)
+        guard !isScrollActive else { return }
+        scheduleHealthLoad()
+    }
+
+    private func markHealthCardInvisible(_ repoID: Int64) {
+        visibleHealthRepoIDs.remove(repoID)
+        pendingHealthRepoIDs.remove(repoID)
+    }
+
+    private func updateScrollPhase(_ phase: ScrollPhase) {
+        let isActive = phase != .idle
+        guard isActive != isScrollActive else { return }
+        isScrollActive = isActive
+
+        if isActive {
+            loadHealthTask?.cancel()
+            loadHealthTask = nil
+            return
+        }
+
+        pendingHealthRepoIDs.formUnion(visibleHealthRepoIDs.filter { repoID in
+            healthSnapshots[repoID] == nil
+                && !healthResolvedRepoIDs.contains(repoID)
+                && !healthLoadInFlightIDs.contains(repoID)
+        })
         scheduleHealthLoad()
     }
 
     private func scheduleHealthLoad() {
+        guard !isScrollActive, !pendingHealthRepoIDs.isEmpty else { return }
         loadHealthTask?.cancel()
         loadHealthTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Self.healthLoadDebounceNs)
+            try? await Task.sleep(for: Self.healthLoadDebounce)
             guard !Task.isCancelled else { return }
             await flushPendingHealthLoads()
         }
     }
 
     private func flushPendingHealthLoads() async {
-        let ids = Array(pendingHealthRepoIDs)
-        pendingHealthRepoIDs.removeAll()
+        guard !isScrollActive else { return }
+        let ids = Array(pendingHealthRepoIDs.intersection(visibleHealthRepoIDs))
+        pendingHealthRepoIDs.subtract(ids)
         await loadHealthSnapshots(for: ids)
     }
 
@@ -378,11 +529,19 @@ struct SmartCollectionDetailPanel: View {
 
         do {
             let loaded = try await dependencies.repoHealthRepository.snapshots(for: missing)
+            guard !Task.isCancelled else { return }
             healthSnapshots.merge(loaded) { _, new in new }
             healthResolvedRepoIDs.formUnion(missing)
-            refreshMasonryLayout()
+            applyHealthSnapshots(loaded)
         } catch {
             AppLog.database.warning("Smart Collection detail health load failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Health 回填只修改命中的卡片快照。没有记录的 ID 仍进入 resolved 集合，避免反复查询。
+    private func applyHealthSnapshots(_ loaded: [Int64: RepoHealthSnapshot]) {
+        for (repoID, snapshot) in loaded {
+            masonryItemsByID[repoID]?.health = snapshot
         }
     }
 
@@ -391,6 +550,7 @@ struct SmartCollectionDetailPanel: View {
 private struct SmartCollectionRepoCard: View {
     private static let sectionSpacing: CGFloat = 6
     private static let chipRowSpacing: CGFloat = 4
+    private static let selectedLeadingInset: CGFloat = 5
 
     let item: SmartCollectionCardItem
     /// 由 panel 按列宽一次算出；卡片不得再用 GeometryReader 反向读取自身宽度。
@@ -402,11 +562,16 @@ private struct SmartCollectionRepoCard: View {
     @State private var isAddingToLibrary = false
 
     private var repo: Repo { item.repo }
+    private var topics: [String] { item.topics }
     private var status: RepoStatus { item.status }
     private var userTags: [Tag] { item.userTags }
     private var health: RepoHealthSnapshot? { item.health }
     private var isSelected: Bool { item.isSelected }
     private var collectionKind: SmartCollectionKind? { item.collectionKind }
+    /// 选中态的额外 leading inset 属于单卡状态，放在卡片内部计算，避免 panel 观察所有卡片的选中态。
+    private var resolvedChipAvailableWidth: CGFloat {
+        max(0, chipAvailableWidth - (isSelected ? Self.selectedLeadingInset : 0))
+    }
 
     private var accentColor: Color {
         if let language = repo.language, !language.isEmpty {
@@ -501,11 +666,11 @@ private struct SmartCollectionRepoCard: View {
             )
         }
 
-        if !repo.topicsArray.isEmpty || !tagChips.isEmpty {
+        if !topics.isEmpty || !tagChips.isEmpty {
             VStack(alignment: .leading, spacing: Self.chipRowSpacing) {
-                if !repo.topicsArray.isEmpty {
+                if !topics.isEmpty {
                     SmartCollectionMeasuredChipRow(
-                        chips: repo.topicsArray.map { topic in
+                        chips: topics.map { topic in
                             SmartCollectionInfoChip(
                                 text: topic,
                                 helpText: topic,
@@ -513,13 +678,13 @@ private struct SmartCollectionRepoCard: View {
                                 tint: .secondary
                             )
                         },
-                        availableWidth: chipAvailableWidth
+                        availableWidth: resolvedChipAvailableWidth
                     )
                 }
                 if !tagChips.isEmpty {
                     SmartCollectionMeasuredChipRow(
                         chips: tagChips,
-                        availableWidth: chipAvailableWidth
+                        availableWidth: resolvedChipAvailableWidth
                     )
                 }
             }
@@ -612,7 +777,12 @@ private struct SmartCollectionRepoCard: View {
 
     @ViewBuilder
     private var footer: some View {
-        if showsFooter {
+        let pushedAtText = relativeDate(repo.pushedAt)
+        let showsHealth = health.map { $0.fetchStatus != .failed } == true
+        if showsHealth
+            || (repo.isArchived && collectionKind != .unmaintained)
+            || repo.isFork
+            || pushedAtText != nil {
             HStack(alignment: .center, spacing: 8) {
                 if let health, health.fetchStatus != .failed {
                     healthDimensionStrip(health)
@@ -625,7 +795,7 @@ private struct SmartCollectionRepoCard: View {
 
                 Spacer(minLength: 8)
 
-                if let pushedAt = relativeDate(repo.pushedAt) {
+                if let pushedAt = pushedAtText {
                     Label(pushedAt, systemImage: "clock")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -633,13 +803,6 @@ private struct SmartCollectionRepoCard: View {
                 }
             }
         }
-    }
-
-    private var showsFooter: Bool {
-        (health.map { $0.fetchStatus != .failed } == true)
-            || (repo.isArchived && collectionKind != .unmaintained)
-            || repo.isFork
-            || relativeDate(repo.pushedAt) != nil
     }
 
     @ViewBuilder
@@ -696,6 +859,13 @@ private struct SmartCollectionMeasuredChipRow: View {
     private static let chipTextSpacing: CGFloat = 3
     private static let chipHorizontalPadding: CGFloat = 14
     private static let overflowText = "..."
+    /// topic/tag 文本在整个进程内高度复用。NSCache 用空间换主线程字符串测量时间，
+    /// countLimit 防止长期运行时被无限制的远端 topic 文本撑大。
+    private static let widthCache: NSCache<NSString, NSNumber> = {
+        let cache = NSCache<NSString, NSNumber>()
+        cache.countLimit = 4096
+        return cache
+    }()
 
     let chips: [SmartCollectionInfoChip]
     /// 由外层 panel 单向传入，避免每个 lazy cell 都参与宽度测量并形成布局反馈环。
@@ -742,9 +912,15 @@ private struct SmartCollectionMeasuredChipRow: View {
     }
 
     private static func chipWidth(text: String) -> CGFloat {
+        let key = text as NSString
+        if let cached = widthCache.object(forKey: key) {
+            return CGFloat(cached.doubleValue)
+        }
         let font = NSFont.systemFont(ofSize: 11, weight: .medium)
         let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
-        return chipIconWidth + chipTextSpacing + textWidth + chipHorizontalPadding
+        let width = chipIconWidth + chipTextSpacing + textWidth + chipHorizontalPadding
+        widthCache.setObject(NSNumber(value: Double(width)), forKey: key)
+        return width
     }
 }
 

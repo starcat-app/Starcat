@@ -70,6 +70,29 @@ struct ListPaginationPolicyTests {
         })
     }
 
+    @Test("瀑布流追加新页不重排历史卡片")
+    func appendsMasonryPageWithoutRebuildingPrefix() {
+        var columns = SmartCollectionMasonryDistribution.distribute(
+            Array(0..<40),
+            columnCount: 3
+        )
+        let prefixColumns = columns
+
+        SmartCollectionMasonryDistribution.append(
+            Array(40..<80),
+            startingAt: 40,
+            to: &columns
+        )
+
+        #expect(columns == SmartCollectionMasonryDistribution.distribute(
+            Array(0..<80),
+            columnCount: 3
+        ))
+        #expect(zip(prefixColumns, columns).allSatisfy { prefix, appended in
+            Array(appended.prefix(prefix.count)) == prefix
+        })
+    }
+
     @Test("宽屏瀑布流按纵向行数判断首屏补页")
     func countsMasonryRowsForVisibleWindowFill() {
         #expect(SmartCollectionMasonryDistribution.rowCount(itemCount: 0, columnCount: 7) == 0)

@@ -39,6 +39,19 @@ enum SmartCollectionMasonryDistribution {
         }
         return buckets
     }
+
+    /// 把新页直接追加到既有 bucket，保持 `index % columnCount` 的稳定顺序。
+    /// 调用方必须传底层结果中的起始索引；这样追加一页只做 O(pageSize)，不会重新分发历史卡片。
+    static func append<Item>(
+        _ items: [Item],
+        startingAt startIndex: Int,
+        to columns: inout [[Item]]
+    ) {
+        guard !columns.isEmpty else { return }
+        for (offset, item) in items.enumerated() {
+            columns[(startIndex + offset) % columns.count].append(item)
+        }
+    }
 }
 
 /// 多列瀑布流容器（仅 Smart Collection 右栏使用）。
