@@ -81378,6 +81378,18 @@
         }
       }
     },
+    "batchAI.panel.review.clearRepositorySelection" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Deselect all" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消选中" } }
+      }
+    },
+    "batchAI.panel.review.selectAllRepositories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select all" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选中全部" } }
+      }
+    },
     "batchAI.panel.review.clear" : {
       "extractionState" : "manual",
       "localizations" : {

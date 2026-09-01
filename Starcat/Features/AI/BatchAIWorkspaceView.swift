@@ -187,6 +187,11 @@ struct BatchAIWorkspaceView: View {
                     canApply: service.selectedTagReviewRepositoryCount > 0,
                     isApplying: service.isApplyingSuggestedTags,
                     showsApplyActions: reviewFilter != .completed,
+                    showsSelectionControls: true,
+                    canSelectAll: service.selectedTagReviewRepositoryCount < service.pendingTagReviewCount,
+                    canClearSelection: service.selectedTagReviewRepositoryCount > 0,
+                    onSelectAll: service.selectAllTagReviewRepositories,
+                    onClearSelection: service.clearTagReviewRepositorySelection,
                     onDiscard: { showDiscardConfirmation = true },
                     onApply: {
                         Task { await service.applySelectedTagReviewRepositories() }

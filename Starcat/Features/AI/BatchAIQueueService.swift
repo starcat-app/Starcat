@@ -531,6 +531,25 @@ final class BatchAIQueueService {
         selectedRepoIDsForTagApplication.contains(repoId)
     }
 
+    /// 选中当前会话内所有仍可应用、且至少选择了一个候选标签的仓库。
+    /// 这里操作的是仓库层复选状态，不改动每一行内部的候选标签选择。
+    func selectAllTagReviewRepositories() {
+        selectedRepoIDsForTagApplication = Set(jobs.compactMap { job in
+            guard !job.selectedSuggestedTagIDs.isEmpty else { return nil }
+            switch job.tagReviewState {
+            case .pending, .failed:
+                return job.repoId
+            case .notRequired, .applying, .applied, .ignored:
+                return nil
+            }
+        })
+    }
+
+    /// 清空仓库层复选状态，保留每行已选择的候选标签，方便用户稍后重新批量勾选。
+    func clearTagReviewRepositorySelection() {
+        selectedRepoIDsForTagApplication = []
+    }
+
     /// 切换单个候选标签的选中状态。
     func toggleSuggestedTag(repoId: Int64, suggestionID: String) {
         guard let index = jobs.firstIndex(where: { $0.repoId == repoId }),

@@ -75,6 +75,11 @@ struct AIOrganizationReviewFooter: View {
     let canApply: Bool
     let isApplying: Bool
     var showsApplyActions = true
+    var showsSelectionControls = false
+    var canSelectAll = false
+    var canClearSelection = false
+    var onSelectAll: () -> Void = {}
+    var onClearSelection: () -> Void = {}
     let onDiscard: () -> Void
     let onApply: () -> Void
 
@@ -84,6 +89,13 @@ struct AIOrganizationReviewFooter: View {
         HStack(spacing: 10) {
             if canDiscard {
                 Button(discardTitle, role: .destructive, action: onDiscard)
+            }
+
+            if showsApplyActions, showsSelectionControls {
+                Button("batchAI.panel.review.selectAllRepositories", action: onSelectAll)
+                    .disabled(!canSelectAll || isApplying)
+                Button("batchAI.panel.review.clearRepositorySelection", action: onClearSelection)
+                    .disabled(!canClearSelection || isApplying)
             }
 
             Spacer()

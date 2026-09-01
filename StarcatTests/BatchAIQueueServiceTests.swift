@@ -256,6 +256,12 @@ struct BatchAIQueueServiceTests {
         await waitUntilStopped(service)
         #expect(service.selectedRepoIDsForTagApplication == [first.id, second.id])
 
+        service.clearTagReviewRepositorySelection()
+        #expect(service.selectedRepoIDsForTagApplication.isEmpty)
+        #expect(service.jobs.allSatisfy { !$0.selectedSuggestedTagIDs.isEmpty })
+        service.selectAllTagReviewRepositories()
+        #expect(service.selectedRepoIDsForTagApplication == [first.id, second.id])
+
         service.toggleRepoForTagApplication(repoId: second.id)
         #expect(service.effectiveSelectedRepoIDsForTagApplication == [first.id])
         await service.applySelectedTagReviewRepositories()
