@@ -106,7 +106,7 @@ struct SmartSearchField: View {
     @State private var isExpanded = false
     @State private var isCollapsedByExternalRequest = false
     @State private var isHistoryPanelPresented = false
-    @FocusState private var isTextFieldFocused: Bool
+    @State private var isTextFieldFocused = false
     @FocusState private var isCollapsedIconFocused: Bool
 
     private let collapsedWidth: CGFloat = 42
@@ -274,15 +274,18 @@ struct SmartSearchField: View {
                 semanticScopeMenu
             }
 
-            TextField(promptKey, text: $draftText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.primary)
-                .focused($isTextFieldFocused)
-                .submitLabel(.search)
-                .onSubmit {
-                    commitSearch()
-                }
+            SingleLineTextField(
+                text: $draftText,
+                prompt: promptText,
+                onSubmit: commitSearch,
+                usesPlainStyle: true,
+                fontSize: 14,
+                fontWeight: .semibold,
+                focus: Binding(
+                    get: { isTextFieldFocused },
+                    set: { isTextFieldFocused = $0 }
+                )
+            )
                 .disabled(isDisabled)
 
             if isSemantic {
@@ -578,8 +581,8 @@ struct SmartSearchField: View {
         .help("search.clear")
     }
 
-    private var promptKey: LocalizedStringKey {
-        isSemantic ? "search.semantic.placeholder" : "search.repoPlaceholder"
+    private var promptText: String {
+        String.l10n(isSemantic ? "search.semantic.placeholder" : "search.repoPlaceholder")
     }
 
     private var searchBackground: some View {

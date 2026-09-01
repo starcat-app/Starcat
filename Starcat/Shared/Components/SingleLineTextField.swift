@@ -23,19 +23,24 @@ struct SingleLineTextField: NSViewRepresentable {
     /// 占位符；调用方传 `String.l10n(...)` 或固定英文。
     var prompt: String?
     var onSubmit: (() -> Void)?
+    var usesPlainStyle = false
+    var fontSize = NSFont.systemFontSize
+    var fontWeight: NSFont.Weight = .regular
+    var focus: Binding<Bool>?
 
     func makeNSView(context: Context) -> NSTextField {
         let textField: NSTextField = isSecure ? NSSecureTextField() : NSTextField()
         textField.delegate = context.coordinator
-        textField.isBordered = true
-        textField.isBezeled = true
+        textField.isBordered = !usesPlainStyle
+        textField.isBezeled = !usesPlainStyle
         textField.bezelStyle = .roundedBezel
-        textField.drawsBackground = true
+        textField.drawsBackground = !usesPlainStyle
+        textField.focusRingType = usesPlainStyle ? .none : .default
         textField.usesSingleLineMode = true
         textField.lineBreakMode = .byClipping
         textField.cell?.wraps = false
         textField.cell?.isScrollable = true
-        textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textField.font = .systemFont(ofSize: fontSize, weight: fontWeight)
         textField.controlSize = .regular
         textField.stringValue = text
         textField.placeholderString = prompt
@@ -47,11 +52,18 @@ struct SingleLineTextField: NSViewRepresentable {
 
     func updateNSView(_ textField: NSTextField, context: Context) {
         context.coordinator.onSubmit = onSubmit
+        context.coordinator.focus = focus
         if textField.stringValue != text {
             textField.stringValue = text
         }
         if textField.placeholderString != prompt {
             textField.placeholderString = prompt
+        }
+        let shouldFocus = focus?.wrappedValue == true
+        if shouldFocus, textField.window?.firstResponder !== textField.currentEditor() {
+            DispatchQueue.main.async { textField.window?.makeFirstResponder(textField) }
+        } else if !shouldFocus, textField.window?.firstResponder === textField.currentEditor() {
+            textField.window?.makeFirstResponder(nil)
         }
     }
 
@@ -62,6 +74,7 @@ struct SingleLineTextField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding private var text: String
         var onSubmit: (() -> Void)?
+        var focus: Binding<Bool>?
 
         init(text: Binding<String>, onSubmit: (() -> Void)?) {
             _text = text
@@ -73,8 +86,23 @@ struct SingleLineTextField: NSViewRepresentable {
             text = textField.stringValue
         }
 
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            focus?.wrappedValue = true
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            focus?.wrappedValue = false
+        }
+
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                // 中文输入法按 Return 时，`stringValue` 可能仍停在拼音草稿。先显式提交 marked text，
+                // 再同步最终字符串并触发搜索，保证一次 Return 同时完成选词和提交。
+                textView.unmarkText()
+                text = textView.string
+                if let textField = control as? NSTextField {
+                    textField.stringValue = textView.string
+                }
                 onSubmit?()
                 return true
             }
