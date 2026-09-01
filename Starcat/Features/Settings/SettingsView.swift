@@ -113,6 +113,10 @@ struct SettingsView: View {
         case services
         /// 直接嵌入 Starcat 的第三方工具，与后端服务配置分开管理。
         case integrations
+        /// 原 RAG 独立窗口的三个分类直接提升为主设置一级侧栏条目。
+        case ragInference
+        case ragPrompts
+        case ragRetrieval
         case storage
         case diagnostics
 
@@ -126,6 +130,9 @@ struct SettingsView: View {
             case .mcp:          return "settings.mcp.title"
             case .services:     return "settings.services.title"
             case .integrations: return "settings.integrations.title"
+            case .ragInference: return "rag.workspace.settings.section.inference"
+            case .ragPrompts:   return "rag.workspace.settings.section.prompts"
+            case .ragRetrieval: return "rag.workspace.settings.section.retrieval"
             case .storage:      return "settings.storage.title"
             case .diagnostics:  return "settings.diagnostics.title"
             }
@@ -143,8 +150,22 @@ struct SettingsView: View {
             case .mcp:          return "point.3.connected.trianglepath.dotted"
             case .services:     return "network"
             case .integrations: return "puzzlepiece.extension"
+            case .ragInference: return RAGSettingsSection.inference.systemImage
+            case .ragPrompts:   return RAGSettingsSection.prompts.systemImage
+            case .ragRetrieval: return RAGSettingsSection.retrieval.systemImage
             case .storage:      return "internaldrive"
             case .diagnostics:  return "stethoscope"
+            }
+        }
+
+        /// 仅供三个 RAG 主侧栏条目把 selection 传给共用的设置内容。
+        var ragSettingsSection: RAGSettingsSection {
+            switch self {
+            case .ragInference: return .inference
+            case .ragPrompts:   return .prompts
+            case .ragRetrieval: return .retrieval
+            default:
+                preconditionFailure("Only RAG settings tabs have a RAG section")
             }
         }
 
@@ -274,6 +295,14 @@ struct SettingsView: View {
                 settingsSidebarRow(.integrations)
             }
 
+            // 原独立窗口的三项导航直接并入主设置 Sidebar；RAG 是与「基础」
+            // 等并列的分组标题，不再额外增加「RAG 工作台」占位条目或二级侧栏。
+            Section("RAG") {
+                settingsSidebarRow(.ragInference)
+                settingsSidebarRow(.ragPrompts)
+                settingsSidebarRow(.ragRetrieval)
+            }
+
             Section("settings.sidebar.group.maintenance") {
                 settingsSidebarRow(.storage)
                 settingsSidebarRow(.diagnostics)
@@ -323,6 +352,11 @@ struct SettingsView: View {
             ServicesSettingsTab()
         case .integrations:
             IntegrationSettingsTab()
+        case .ragInference, .ragPrompts, .ragRetrieval:
+            RAGWorkspaceSettingsView(
+                settings: settings,
+                presentation: .embeddedInMainSettings(section: tab.ragSettingsSection)
+            )
         case .storage:
             StorageSettingsTab(readmeRepository: dependencies.readmeRepository)
         case .diagnostics:
@@ -379,6 +413,12 @@ struct SettingsView: View {
             SettingsSearchItem("integrations.codebaseMemory", titleKey: "settings.integrations.title",
                                tab: .integrations, target: "integrations.codebaseMemory",
                                keywords: ["codebase memory", "codebasememory", "代码索引"]),
+            SettingsSearchItem("rag.inference", titleKey: "rag.workspace.settings.section.inference", tab: .ragInference,
+                               keywords: ["推理", "后端", "inference", "backend", "codex", "claude"]),
+            SettingsSearchItem("rag.prompts", titleKey: "rag.workspace.settings.section.prompts", tab: .ragPrompts,
+                               keywords: ["提示词", "模板", "prompt", "system", "user"]),
+            SettingsSearchItem("rag.retrieval", titleKey: "rag.workspace.settings.section.retrieval", tab: .ragRetrieval,
+                               keywords: ["检索", "重排", "向量", "retrieval", "rerank", "vector"]),
             SettingsSearchItem("storage", titleKey: "settings.storage.title", tab: .storage,
                                keywords: ["存储", "缓存", "数据库", "清理", "导出", "storage", "cache", "database"]),
             SettingsSearchItem("diagnostics", titleKey: "settings.diagnostics.title", tab: .diagnostics,
@@ -421,6 +461,12 @@ struct SettingsView: View {
         case "integrations", "integrations.agentRuntime", "integrations.localAPIKey",
              "integrations.browserPlugin", "integrations.externalSearch", "integrations.codebaseMemory":
             return SettingsLocation(tab: .integrations, target: target == "integrations" ? nil : target)
+        case "rag", "rag.inference":
+            return SettingsLocation(tab: .ragInference)
+        case "rag.prompts":
+            return SettingsLocation(tab: .ragPrompts)
+        case "rag.retrieval":
+            return SettingsLocation(tab: .ragRetrieval)
         case "storage":
             return SettingsLocation(tab: .storage)
         case "diagnostics":

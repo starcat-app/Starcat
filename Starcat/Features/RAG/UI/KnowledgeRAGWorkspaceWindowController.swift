@@ -187,9 +187,9 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
                 window?.level = isPinned ? .floating : .normal
             },
             onSettings: {
-                // 配置使用 App 级 SwiftUI Window Scene；这里不再把自绘 sheet 状态
-                // 塞进工作台 chrome，重复点击也只会激活同一个原生设置窗口。
-                AppDelegate.openRAGWorkspaceSettingsWindow()
+                // 正常入口统一进入主设置「RAG」分组下的「推理」，避免同一 App
+                // 长期维护两个入口。旧独立窗口 Scene 在验收前仍保留作对照与回退。
+                AppDelegate.openSettingsWindow(target: "rag.inference")
             }
         ))
         // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。
