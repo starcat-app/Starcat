@@ -9,6 +9,10 @@ Release notes for the Mac App Store edition of Starcat.
 - Native Settings experience: Uses a macOS-style sidebar, search, and back/forward navigation in a fixed-size Settings window.
 - Unified RAG configuration: Inference, prompt, and retrieval controls now live in the main Settings window, save automatically, and present prompt helpers and retrieval options without extra nested navigation.
 
+### Fixes
+
+- Library smart collection paging: Continues loading repositories in full-screen layouts and after fast scrolling to the bottom instead of getting stuck on the current page.
+
 ## 1.5.0
 
 Starcat 1.5.0 expands how you discover, organize, and revisit GitHub repositories with Awesome discovery, Spotlight search, GitHub Lists and batch AI organization, GitHub contribution widgets, and richer Activity conversations, README reading, and repository insights.
