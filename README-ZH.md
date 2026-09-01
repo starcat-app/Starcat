@@ -414,6 +414,10 @@ Starcat 自己的 CLI、插件和 API 已写在「相关项目」，这里不重
 
 第三方声明：[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
 
+## 社区
+
+本项目已链接并认可 [LINUX DO 社区](https://linux.do/)。
+
 ## Star 历史
 
 <div align="center">

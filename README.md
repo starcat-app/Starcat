@@ -414,6 +414,10 @@ The vendored CodeFlow page also loads these libraries:
 
 Third-party notices: [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)
 
+## Community
+
+This project has been linked and endorsed by [LINUX DO Community](https://linux.do/).
+
 ## Star History
 
 <div align="center">
