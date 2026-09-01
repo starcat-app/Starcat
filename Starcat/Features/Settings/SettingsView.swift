@@ -638,6 +638,38 @@ struct SettingsView: View {
                 )
             }
 
+            Section {
+                Text("settings.general.oauthScopes.summary")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(AppConstants.githubOAuthScopes, id: \.self) { scope in
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        Text(scope)
+                            .font(.body.monospaced())
+
+                        Spacer(minLength: 16)
+
+                        Text(githubOAuthScopeDescriptionKey(for: scope))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+
+                Text("settings.general.oauthScopes.organizationHelp")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                SettingsSectionHeader(
+                    "settings.general.oauthScopes.section",
+                    systemImage: "lock.shield.fill",
+                    style: .prominent
+                )
+            }
+
             // 数据贡献严格默认关闭且按 GitHub 账号隔离。这里只展示一个授权开关；
             // 上传数量、时间、失败和重试均属于后台旁路状态，不进入用户界面。
             Section {
@@ -1006,6 +1038,22 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// 权限说明直接映射登录流程使用的 scope 常量，避免设置页与真实授权请求漂移。
+    private func githubOAuthScopeDescriptionKey(for scope: String) -> LocalizedStringKey {
+        switch scope {
+        case "read:user":
+            "settings.general.oauthScopes.readUser"
+        case "public_repo":
+            "settings.general.oauthScopes.publicRepo"
+        case "user":
+            "settings.general.oauthScopes.user"
+        case "notifications":
+            "settings.general.oauthScopes.notifications"
+        default:
+            "settings.general.oauthScopes.unknown"
+        }
     }
 
     /// Direct 版 Sparkle 更新偏好。仅在 `DistributionChannel.current.isDirect` 为真时挂入通用设置。

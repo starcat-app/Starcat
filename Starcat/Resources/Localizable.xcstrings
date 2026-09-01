@@ -329435,6 +329435,134 @@
         }
       }
     },
+    "settings.general.oauthScopes.notifications" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read and manage GitHub notifications."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取和管理 GitHub 通知。"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.organizationHelp" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organization owners may restrict third-party OAuth app access. These scopes do not bypass an organization authorization policy."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "组织所有者可能限制第三方 OAuth App 访问；这些权限无法绕过组织授权策略。"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.publicRepo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read and manage public repository data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取和管理公开仓库数据。"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.readUser" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read GitHub profile data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取 GitHub 个人资料。"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.section" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub OAuth Permissions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub OAuth 权限"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.summary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat requests the following OAuth scopes during GitHub sign-in."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 登录 GitHub 时会申请以下 OAuth 权限。"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.unknown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requested by the current app version."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由当前 App 版本申请。"
+          }
+        }
+      }
+    },
+    "settings.general.oauthScopes.user" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read and update GitHub user account data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取和更新 GitHub 用户账户数据。"
+          }
+        }
+      }
+    },
     "settings.general.openFirstDetailOnCategoryChange.help" : {
       "localizations" : {
         "ar" : {
