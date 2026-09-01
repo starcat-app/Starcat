@@ -918,12 +918,17 @@ final class BatchAIQueueService {
             jobs[currentIndex].belowThresholdTags = belowThreshold.map { ($0.name, $0.confidence) }
             let pendingSuggestions = autoApplyOutcome.unresolvedSuggestions + belowThreshold
             if !silent, !pendingSuggestions.isEmpty {
-                // 阈值只决定能否自动应用，不能替用户丢弃有效建议；低置信度项默认不勾选，
-                // 未创建的高置信度标签也必须留在当前窗口确认，不能跳过后误报为成功。
+                // 阈值只决定能否自动应用，不能替用户丢弃有效建议；低置信度项预选最接近
+                // 阈值的一项，用户既能逐仓调整，也能直接批量应用。未创建的高置信度标签
+                // 同样留在当前窗口确认，不能跳过后误报为成功。
                 jobs[currentIndex].suggestedTags = pendingSuggestions
-                jobs[currentIndex].selectedSuggestedTagIDs = Set(autoApplyOutcome.unresolvedSuggestions.map(\.id))
+                var selectedIDs = Set(autoApplyOutcome.unresolvedSuggestions.map(\.id))
+                if let closestBelowThreshold = belowThreshold.max(by: { $0.confidence < $1.confidence }) {
+                    selectedIDs.insert(closestBelowThreshold.id)
+                }
+                jobs[currentIndex].selectedSuggestedTagIDs = selectedIDs
                 jobs[currentIndex].tagReviewState = .pending
-                if !jobs[currentIndex].selectedSuggestedTagIDs.isEmpty {
+                if !selectedIDs.isEmpty {
                     selectedRepoIDsForTagApplication.insert(jobId)
                 }
             } else if autoApplyOutcome.appliedNames.isEmpty, !suggestions.isEmpty {

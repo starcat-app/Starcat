@@ -121,7 +121,7 @@ struct BatchAIQueueServiceTests {
         #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
     }
 
-    @Test("自动应用时低于阈值的标签进入待确认且默认不勾选")
+    @Test("自动应用时低于阈值的标签进入待确认并预选最高置信度项")
     func autoApplyKeepsBelowThresholdSuggestionsForManualReview() async throws {
         let suggestions = [
             AITagSuggestion(name: "Swift", confidence: 0.80, reason: "主要开发语言"),
@@ -142,12 +142,13 @@ struct BatchAIQueueServiceTests {
         let job = try #require(service.jobs.first)
         #expect(job.status == .completed)
         #expect(job.suggestedTags == suggestions)
-        #expect(job.selectedSuggestedTagIDs.isEmpty)
+        #expect(job.selectedSuggestedTagIDs == [suggestions[0].id])
         #expect(job.tagReviewState == .pending)
         #expect(job.belowThresholdTags.map(\.name) == ["Swift", "CLI"])
         #expect(BatchAIQueuePresentationStore.primaryState(for: job) == .pendingReview)
         #expect(service.pendingTagReviewCount == 1)
         #expect(service.ignoredCount == 0)
+        #expect(service.selectedRepoIDsForTagApplication == [repo.id])
     }
 
     @Test("自动应用不会把尚未创建的高置信度标签误报为成功")
