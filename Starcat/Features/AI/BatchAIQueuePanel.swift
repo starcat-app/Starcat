@@ -22,6 +22,7 @@ import SwiftUI
 struct BatchAIQueuePanel: View {
 
     @Bindable var service: BatchAIQueueService
+    let onFilterChange: (BatchAIResultFilter) -> Void
     @State private var expandedRepoID: Int64?
     @State private var presentation = BatchAIQueuePresentationStore()
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -40,6 +41,9 @@ struct BatchAIQueuePanel: View {
         }
         .onChange(of: service.presentationRevision) { _, _ in
             presentation.scheduleSynchronize(from: service)
+        }
+        .onChange(of: presentation.filter) { _, newValue in
+            onFilterChange(newValue)
         }
     }
 

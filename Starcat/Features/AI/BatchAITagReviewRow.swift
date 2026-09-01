@@ -398,7 +398,7 @@ struct BatchAITagReviewRow: View {
             if !job.appliedTagNames.isEmpty { return appliedTagsText }
             return job.didGenerateSummary
                 ? String.l10n("batchAI.panel.row.summaryOnly")
-                : String.l10n("batchAI.panel.row.completedNoTags")
+                : String.l10n("batchAI.panel.finished")
         }
     }
 

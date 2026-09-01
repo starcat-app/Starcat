@@ -74,6 +74,7 @@ struct AIOrganizationReviewFooter: View {
     let selectionSummary: String
     let canApply: Bool
     let isApplying: Bool
+    var showsApplyActions = true
     let onDiscard: () -> Void
     let onApply: () -> Void
 
@@ -87,14 +88,16 @@ struct AIOrganizationReviewFooter: View {
 
             Spacer()
 
-            Text(verbatim: selectionSummary)
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+            if showsApplyActions {
+                Text(verbatim: selectionSummary)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
 
-            Button("githubStarLists.aiGrouping.applySelected", action: onApply)
-                .buttonStyle(.borderedProminent)
-                .disabled(!canApply || isApplying)
+                Button("githubStarLists.aiGrouping.applySelected", action: onApply)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canApply || isApplying)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)

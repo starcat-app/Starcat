@@ -34,6 +34,7 @@ struct BatchAIWorkspaceView: View {
     @State private var mode: BatchAIWorkspaceInitialMode
     @State private var isStarting = false
     @State private var showDiscardConfirmation = false
+    @State private var reviewFilter: BatchAIResultFilter = .actionable
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     init(
@@ -130,7 +131,7 @@ struct BatchAIWorkspaceView: View {
                 hasUsableExternalSearchProvider: hasUsableExternalSearchProvider
             )
         case .review:
-            BatchAIQueuePanel(service: service)
+            BatchAIQueuePanel(service: service) { reviewFilter = $0 }
         }
     }
 
@@ -185,6 +186,7 @@ struct BatchAIWorkspaceView: View {
                     selectionSummary: tagSelectionSummary,
                     canApply: service.selectedTagReviewRepositoryCount > 0,
                     isApplying: service.isApplyingSuggestedTags,
+                    showsApplyActions: reviewFilter != .completed,
                     onDiscard: { showDiscardConfirmation = true },
                     onApply: {
                         Task { await service.applySelectedTagReviewRepositories() }

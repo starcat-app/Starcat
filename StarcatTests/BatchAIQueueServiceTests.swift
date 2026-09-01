@@ -150,6 +150,31 @@ struct BatchAIQueueServiceTests {
         #expect(service.ignoredCount == 0)
     }
 
+    @Test("自动应用不会把尚未创建的高置信度标签误报为成功")
+    func autoApplyKeepsMissingAboveThresholdTagForInlineReview() async throws {
+        let suggestion = AITagSuggestion(name: "New Tag", confidence: 0.95, reason: "高置信度建议")
+        let provider = ImmediateBatchAIInsightProvider(suggestions: [suggestion])
+        let service = try makeService(insightProvider: provider)
+        var repo = Repo.makeMinimal(owner: "acme", name: "missing-tag")
+        repo.id = 508
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.autoApplyTags = true
+        options.confidenceThreshold = 0.90
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.appliedTagNames.isEmpty)
+        #expect(job.suggestedTags == [suggestion])
+        #expect(job.selectedSuggestedTagIDs == [suggestion.id])
+        #expect(job.tagReviewState == .pending)
+        #expect(BatchAIQueuePresentationStore.primaryState(for: job) == .pendingReview)
+        #expect(service.completedCount == 0)
+        #expect(service.selectedRepoIDsForTagApplication == [repo.id])
+    }
+
     @Test("静默自动整理没有审核入口时仍忽略全部低于阈值的标签")
     func silentAutoApplyKeepsBelowThresholdResultIgnored() async throws {
         let suggestions = [AITagSuggestion(name: "Swift", confidence: 0.70, reason: "主要开发语言")]

@@ -894,24 +894,29 @@ final class BatchAIQueueService {
             let belowThreshold = suggestions.filter { $0.confidence < options.confidenceThreshold }
             let aboveThreshold = suggestions.filter { $0.confidence >= options.confidenceThreshold }
 
+            var autoApplyOutcome = TagAutoApplyOutcome()
             if !aboveThreshold.isEmpty {
-                let appliedNames = await applyTagsToRepo(repoId: jobId, suggestions: aboveThreshold)
+                autoApplyOutcome = await applyTagsToRepo(repoId: jobId, suggestions: aboveThreshold)
                 guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
-                jobs[currentIndex].appliedTagNames = appliedNames
-                if !appliedNames.isEmpty {
+                jobs[currentIndex].appliedTagNames = autoApplyOutcome.appliedNames
+                if !autoApplyOutcome.appliedNames.isEmpty {
                     hasPendingTagsChangedNotification = true
                 }
             }
 
             guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
             jobs[currentIndex].belowThresholdTags = belowThreshold.map { ($0.name, $0.confidence) }
-            if !silent, !belowThreshold.isEmpty {
+            let pendingSuggestions = autoApplyOutcome.unresolvedSuggestions + belowThreshold
+            if !silent, !pendingSuggestions.isEmpty {
                 // 阈值只决定能否自动应用，不能替用户丢弃有效建议；低置信度项默认不勾选，
-                // 必须由用户在“待确认”中明确选择后再写入本地标签。
-                jobs[currentIndex].suggestedTags = belowThreshold
-                jobs[currentIndex].selectedSuggestedTagIDs = []
+                // 未创建的高置信度标签也必须留在当前窗口确认，不能跳过后误报为成功。
+                jobs[currentIndex].suggestedTags = pendingSuggestions
+                jobs[currentIndex].selectedSuggestedTagIDs = Set(autoApplyOutcome.unresolvedSuggestions.map(\.id))
                 jobs[currentIndex].tagReviewState = .pending
-            } else if aboveThreshold.isEmpty, !suggestions.isEmpty {
+                if !jobs[currentIndex].selectedSuggestedTagIDs.isEmpty {
+                    selectedRepoIDsForTagApplication.insert(jobId)
+                }
+            } else if autoApplyOutcome.appliedNames.isEmpty, !suggestions.isEmpty {
                 shouldMarkIgnored = true
             }
         }
@@ -948,18 +953,27 @@ final class BatchAIQueueService {
         onTagsChanged?()
     }
 
+    /// 自动应用的结果必须同时返回“已落库”和“仍需确认”两部分。
+    ///
+    /// 不能只返回已应用名称：达到阈值但标签不存在、或绑定失败的建议如果被静默丢弃，
+    /// 展示层会把仓库误归到“成功”，用户也无法在当前窗口补做确认。
+    private struct TagAutoApplyOutcome {
+        var appliedNames: [String] = []
+        var unresolvedSuggestions: [AITagSuggestion] = []
+    }
+
     /// 把通过阈值过滤的建议落库为 repo_tags 关联，但只允许复用已有标签。
     ///
     /// 批量自动应用没有逐项人工确认，不能因为模型自报高置信度就静默扩张标签库；真正的
-    /// 新标签仍保留在 AI 建议里，用户可回到详情页手动确认。这里使用宽松 canonical key，
-    /// 让 `Open-Source` / `open source` 等形式差异复用已有记录。
-    private func applyTagsToRepo(repoId: Int64, suggestions: [AITagSuggestion]) async -> [String] {
+    /// 新标签会返回给当前批量窗口继续确认。这里使用宽松 canonical key，让
+    /// `Open-Source` / `open source` 等形式差异复用已有记录。
+    private func applyTagsToRepo(repoId: Int64, suggestions: [AITagSuggestion]) async -> TagAutoApplyOutcome {
         let existingTags: [Tag]
         do {
             existingTags = try await tagRepository.fetchAll()
         } catch {
             AppLog.ai.error("[batch-ai] load existing tags failed: repo=\(repoId, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
-            return []
+            return TagAutoApplyOutcome(unresolvedSuggestions: suggestions)
         }
 
         var existingTagByName: [String: Tag] = [:]
@@ -971,7 +985,7 @@ final class BatchAIQueueService {
             existingTagByKey[key] = tag
         }
 
-        var applied: [String] = []
+        var outcome = TagAutoApplyOutcome()
         for suggestion in suggestions {
             let normalized = AITagSuggestionPolicy.normalizedDisplayName(suggestion.name)
             let key = AITagSuggestionPolicy.canonicalKey(normalized)
@@ -979,16 +993,18 @@ final class BatchAIQueueService {
                   let tag = existingTagByName[normalized] ?? existingTagByKey[key]
             else {
                 AppLog.ai.notice("[batch-ai] skip new tag during auto-apply: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public)")
+                outcome.unresolvedSuggestions.append(suggestion)
                 continue
             }
             do {
                 try await repoTagRepository.addTag(repoId: repoId, tagId: tag.id)
-                applied.append(tag.name)
+                outcome.appliedNames.append(tag.name)
             } catch {
                 AppLog.ai.error("[batch-ai] apply tag failed: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
+                outcome.unresolvedSuggestions.append(suggestion)
             }
         }
-        return applied
+        return outcome
     }
 
     /// 处理单个 job 的失败：分流"重试" vs "终态失败"。
