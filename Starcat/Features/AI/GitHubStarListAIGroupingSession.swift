@@ -223,6 +223,10 @@ final class GitHubStarListAIGroupingSession {
     private(set) var selectedListIDsByRepo: [Int64: Set<String>] = [:] {
         didSet { presentationRevision &+= 1 }
     }
+    /// 底栏批量应用使用独立的仓库层复选状态；不能再用“是否选择了候选分组”冒充仓库勾选。
+    private(set) var selectedRepoIDsForBulkApply: Set<Int64> = [] {
+        didSet { presentationRevision &+= 1 }
+    }
     /// “已应用”行展开后的最终 membership 草稿；与待确认建议的新增集合分开保存。
     private(set) var editedListIDsByRepo: [Int64: Set<String>] = [:] {
         didSet { presentationRevision &+= 1 }
@@ -755,6 +759,7 @@ final class GitHubStarListAIGroupingSession {
         isPaused = false
         jobs = []
         selectedListIDsByRepo = [:]
+        selectedRepoIDsForBulkApply = []
         editedListIDsByRepo = [:]
         ignoredRepoIDs = []
         preparedRepos = []
@@ -812,6 +817,9 @@ final class GitHubStarListAIGroupingSession {
             selected.insert(listID)
         }
         selectedListIDsByRepo[repoID] = selected
+        if selected.isEmpty {
+            selectedRepoIDsForBulkApply.remove(repoID)
+        }
         ignoredRepoIDs.remove(repoID)
         resetApplyStateForNewReview(repoID: repoID)
     }
@@ -820,6 +828,9 @@ final class GitHubStarListAIGroupingSession {
         guard let job = jobs.first(where: { $0.id == repoID }) else { return }
         let current = existingListIDsByRepo[repoID] ?? []
         selectedListIDsByRepo[repoID] = Set(job.suggestions.map(\.listId)).subtracting(current)
+        if !(selectedListIDsByRepo[repoID] ?? []).isEmpty {
+            selectedRepoIDsForBulkApply.insert(repoID)
+        }
         ignoredRepoIDs.remove(repoID)
         resetApplyStateForNewReview(repoID: repoID)
     }
@@ -831,11 +842,13 @@ final class GitHubStarListAIGroupingSession {
             return
         }
         selectedListIDsByRepo[repoID] = []
+        selectedRepoIDsForBulkApply.remove(repoID)
         resetApplyStateForNewReview(repoID: repoID)
     }
 
     func ignore(repoID: Int64) {
         selectedListIDsByRepo[repoID] = []
+        selectedRepoIDsForBulkApply.remove(repoID)
         ignoredRepoIDs.insert(repoID)
         resetApplyStateForNewReview(repoID: repoID)
     }
@@ -910,8 +923,9 @@ final class GitHubStarListAIGroupingSession {
 
     func applySelected(repoIDs: Set<Int64>? = nil) {
         guard mode == .manual, !isApplying else { return }
+        let targetRepoIDs = repoIDs ?? selectedRepoIDsForBulkApply
         let selectedRepos = jobs.compactMap { job -> Repo? in
-            guard repoIDs == nil || repoIDs?.contains(job.id) == true,
+            guard targetRepoIDs.contains(job.id),
                   !(selectedListIDsByRepo[job.id] ?? []).isEmpty
             else { return nil }
             return job.repo
@@ -928,6 +942,50 @@ final class GitHubStarListAIGroupingSession {
             }
             self.isApplying = false
             self.applyTask = nil
+        }
+    }
+
+    func toggleRepoForBulkApply(repoID: Int64) {
+        guard isRepoSelectableForBulkApply(repoID: repoID) else { return }
+        if selectedRepoIDsForBulkApply.contains(repoID) {
+            selectedRepoIDsForBulkApply.remove(repoID)
+        } else {
+            selectedRepoIDsForBulkApply.insert(repoID)
+        }
+    }
+
+    func selectAllReposForBulkApply() {
+        selectedRepoIDsForBulkApply = Set(jobs.compactMap { job in
+            isRepoSelectableForBulkApply(repoID: job.id) ? job.id : nil
+        })
+    }
+
+    func clearRepoSelectionForBulkApply() {
+        selectedRepoIDsForBulkApply = []
+    }
+
+    var selectableRepoCountForBulkApply: Int {
+        jobs.count { isRepoSelectableForBulkApply(repoID: $0.id) }
+    }
+
+    var selectedListCountForBulkApply: Int {
+        selectedRepoIDsForBulkApply.reduce(into: Set<String>()) { result, repoID in
+            result.formUnion(selectedListIDsByRepo[repoID] ?? [])
+        }.count
+    }
+
+    private func isRepoSelectableForBulkApply(repoID: Int64) -> Bool {
+        guard mode == .manual,
+              !ignoredRepoIDs.contains(repoID),
+              let job = jobs.first(where: { $0.id == repoID }),
+              job.status == .completed,
+              !(selectedListIDsByRepo[repoID] ?? []).isEmpty
+        else { return false }
+        switch job.applyState {
+        case .idle, .failed:
+            return true
+        case .applying, .applied, .ignored:
+            return false
         }
     }
 
@@ -1051,6 +1109,7 @@ final class GitHubStarListAIGroupingSession {
                 )
             }
             selectedListIDsByRepo = [:]
+            selectedRepoIDsForBulkApply = []
             editedListIDsByRepo = [:]
             ignoredRepoIDs = []
         } else {
@@ -1240,6 +1299,7 @@ final class GitHubStarListAIGroupingSession {
                         // 人工窗口开启自动确认时，全部建议低于阈值不能变成“零选择”。预选最接近
                         // 阈值的一项，用户可逐仓调整，也可直接使用底栏批量应用。
                         selectedListIDsByRepo[repo.id] = [closestToThreshold.listId]
+                        selectedRepoIDsForBulkApply.insert(repo.id)
                     } else if mode == .automatic,
                               automaticConfigurationFingerprint != nil {
                         // 无匹配或低于阈值都已完成本规则下的判断；继续保持未分组，但不要
@@ -1250,6 +1310,9 @@ final class GitHubStarListAIGroupingSession {
                     // 每次都从当前 membership 派生默认选择，关闭再开不会把已应用关系重新选中。
                     let current = existingListIDsByRepo[repo.id] ?? []
                     selectedListIDsByRepo[repo.id] = Set(suggestions.map(\.listId)).subtracting(current)
+                    if !(selectedListIDsByRepo[repo.id] ?? []).isEmpty {
+                        selectedRepoIDsForBulkApply.insert(repo.id)
+                    }
                 }
             }
         case .failure(let repos, let failure):
@@ -1279,6 +1342,7 @@ final class GitHubStarListAIGroupingSession {
         let requested = selected.subtracting(current)
         guard !requested.isEmpty else {
             selectedListIDsByRepo[repo.id] = []
+            selectedRepoIDsForBulkApply.remove(repo.id)
             // 应用前刷新可能发现目标已经由同步、上一次超时请求或用户手动操作完成。
             // 这是成功的幂等收敛，不应继续保留“应用失败”，否则用户会无限重试。
             let alreadyApplied = selected.intersection(current)
@@ -1300,6 +1364,7 @@ final class GitHubStarListAIGroupingSession {
                 let confirmed = added.isEmpty ? requested : added
                 existingListIDsByRepo[repo.id] = current.union(confirmed)
                 selectedListIDsByRepo[repo.id] = []
+                selectedRepoIDsForBulkApply.remove(repo.id)
                 await clearPersistedAutoIgnore(repoID: repo.id)
                 if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
                     jobs[latestIndex].applyState = .applied(confirmed)
@@ -1312,6 +1377,7 @@ final class GitHubStarListAIGroupingSession {
                     // 组织限制作用于整个仓库，不区分目标 List。清空该仓库的全部选择并记录终态，
                     // 让批处理继续，同时保留原因供“全部”筛选审计。
                     selectedListIDsByRepo[repo.id] = []
+                    selectedRepoIDsForBulkApply.remove(repo.id)
                     await persistAutoIgnore(repoID: repo.id)
                     if let latestIndex = jobs.firstIndex(where: { $0.id == repo.id }) {
                         jobs[latestIndex].applyState = .ignored(failure)
@@ -1412,6 +1478,7 @@ final class GitHubStarListAIGroupingSession {
     private func resetToIdle() {
         jobs = []
         selectedListIDsByRepo = [:]
+        selectedRepoIDsForBulkApply = []
         editedListIDsByRepo = [:]
         ignoredRepoIDs = []
         preparedRepos = []

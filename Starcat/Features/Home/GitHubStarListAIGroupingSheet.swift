@@ -92,8 +92,8 @@ struct GitHubStarListAIGroupingSheet: View {
         } message: {
             Text(String(
                 format: String.l10n("githubStarLists.aiGrouping.applyConfirm.messageFormat"),
-                presentation.snapshot.selectedRepositoryCount,
-                presentation.snapshot.selectedListCount
+                session.selectedRepoIDsForBulkApply.count,
+                session.selectedListCountForBulkApply
             ))
         }
         .confirmationDialog(
@@ -194,6 +194,10 @@ struct GitHubStarListAIGroupingSheet: View {
                 hasMore: presentation.canLoadMore,
                 canRetryAnalysis: !session.isRunning && !session.isApplying,
                 canRetryAutomaticallyIgnored: !session.isRunning && !session.isApplying,
+                selectedRepoIDsForBulkApply: session.selectedRepoIDsForBulkApply,
+                onToggleRepositorySelection: { repoID in
+                    performReviewUpdate { session.toggleRepoForBulkApply(repoID: repoID) }
+                },
                 onToggleList: { repoID, listID in
                     performReviewUpdate { session.toggleSelection(repoID: repoID, listID: listID) }
                 },
@@ -376,11 +380,20 @@ struct GitHubStarListAIGroupingSheet: View {
                 selectionSummary: String(
                     format: String.l10n("githubStarLists.aiGrouping.selectionSummaryFormat"),
                     locale: locale,
-                    presentation.snapshot.selectedRepositoryCount,
-                    presentation.snapshot.selectedListCount
+                    session.selectedRepoIDsForBulkApply.count,
+                    session.selectedListCountForBulkApply
                 ),
-                canApply: presentation.snapshot.selectedRepositoryCount > 0,
+                canApply: !session.selectedRepoIDsForBulkApply.isEmpty,
                 isApplying: session.isApplying,
+                showsSelectionControls: true,
+                canSelectAll: session.selectedRepoIDsForBulkApply.count < session.selectableRepoCountForBulkApply,
+                canClearSelection: !session.selectedRepoIDsForBulkApply.isEmpty,
+                onSelectAll: {
+                    performReviewUpdate { session.selectAllReposForBulkApply() }
+                },
+                onClearSelection: {
+                    performReviewUpdate { session.clearRepoSelectionForBulkApply() }
+                },
                 onDiscard: { showDiscardConfirmation = true },
                 onApply: { showApplyConfirmation = true }
             )

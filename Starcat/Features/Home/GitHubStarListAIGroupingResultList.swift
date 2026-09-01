@@ -18,6 +18,8 @@ struct GitHubStarListAIGroupingResultList: View {
     let hasMore: Bool
     let canRetryAnalysis: Bool
     let canRetryAutomaticallyIgnored: Bool
+    let selectedRepoIDsForBulkApply: Set<Int64>
+    let onToggleRepositorySelection: (Int64) -> Void
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
     let onClearSelection: (Int64) -> Void
@@ -57,7 +59,9 @@ struct GitHubStarListAIGroupingResultList: View {
                             isExpanded: expandedRepoID == item.id,
                             canRetryAnalysis: canRetryAnalysis,
                             canRetryAutomaticallyIgnored: canRetryAutomaticallyIgnored,
+                            isRepositorySelected: selectedRepoIDsForBulkApply.contains(item.id),
                             onToggleExpansion: { toggleExpansion(for: item) },
+                            onToggleRepositorySelection: { onToggleRepositorySelection(item.id) },
                             onToggleList: { onToggleList(item.id, $0) },
                             onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
                             onClearSelection: { onClearSelection(item.id) },
@@ -123,7 +127,9 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     let isExpanded: Bool
     let canRetryAnalysis: Bool
     let canRetryAutomaticallyIgnored: Bool
+    let isRepositorySelected: Bool
     let onToggleExpansion: () -> Void
+    let onToggleRepositorySelection: () -> Void
     let onToggleList: (String) -> Void
     let onSelectAllSuggestions: () -> Void
     let onClearSelection: () -> Void
@@ -148,6 +154,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
             && lhs.isExpanded == rhs.isExpanded
             && lhs.canRetryAnalysis == rhs.canRetryAnalysis
             && lhs.canRetryAutomaticallyIgnored == rhs.canRetryAutomaticallyIgnored
+            && lhs.isRepositorySelected == rhs.isRepositorySelected
     }
 
     var body: some View {
@@ -173,18 +180,19 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     private var selectionButton: some View {
         // 左侧只留勾选列，状态图标跟在仓库名后面，logo 和名称才能跨行对齐。
         if item.canReviewSuggestions {
-            if item.hasSelection {
-                Button("githubStarLists.aiGrouping.selection.clearRepo", systemImage: "checkmark.square.fill", action: onClearSelection)
+            if isRepositorySelected {
+                Button("githubStarLists.aiGrouping.selection.clearRepo", systemImage: "checkmark.square.fill", action: onToggleRepositorySelection)
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.tint)
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
             } else {
-                Button("githubStarLists.aiGrouping.action.acceptAll", systemImage: "square", action: onSelectAllSuggestions)
+                Button("githubStarLists.aiGrouping.action.acceptAll", systemImage: "square", action: onToggleRepositorySelection)
                     .labelStyle(.iconOnly)
                     .foregroundStyle(.secondary)
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .disabled(!item.hasSelection)
             }
         } else {
             Color.clear
