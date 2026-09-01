@@ -22,6 +22,14 @@ import SwiftUI
 
 /// 瀑布流分列工具（非 View，避免泛型推断歧义）。
 enum SmartCollectionMasonryDistribution {
+    /// 把卡片数量换算成纵向行数。分页填充必须按行判断，否则宽屏多列会把 40 张卡片
+    /// 误判为 40 行，首屏实际只有数行且无法滚动时也不会继续取下一页。
+    static func rowCount(itemCount: Int, columnCount: Int) -> Int {
+        guard itemCount > 0 else { return 0 }
+        let count = max(1, columnCount)
+        return (itemCount + count - 1) / count
+    }
+
     /// 按 index % columnCount 轮转分列；与旧 `itemsForColumn` 语义一致。
     static func distribute<Item>(_ items: [Item], columnCount: Int) -> [[Item]] {
         let count = max(1, columnCount)

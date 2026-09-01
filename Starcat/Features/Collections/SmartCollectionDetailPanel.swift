@@ -7,12 +7,12 @@
 //  设计约束：
 //  - 中栏保持 Smart Collections 卡片总览；右栏承载具体集合的浏览视图。
 //  - 卡片容器复用 `RepoRowSurface`，保证背景 / hover / selected 视觉与中栏 repo row 同源。
-//  - 右栏自己分页增量渲染，避免大集合一次性创建大量卡片造成明显卡顿。
+//  - 右栏直接消费 `HomeViewModel.items` 的当前分页快照；分页入口与 Manage 列表保持一致。
 //  - 仓库卡片用 Masonry 瀑布流（`SmartCollectionMasonryLayout`），高度随内容伸缩。
 //
 //  - 右栏顶区与 Manage `manageFilterBar` 同构：`.navigationTitle` / `.navigationSubtitle` +
 //    规则行 + Divider + ScrollView（卡片区），不靠黑色 safeArea 遮挡。
-//  - Footer / 头图健康徽章：卡片 `onAppear` 才批量查 GRDB，避免首屏 16 条全量 health 查询。
+//  - Footer / 头图健康徽章：卡片 `onAppear` 才批量查 GRDB，避免为视口外卡片提前查询 health。
 //
 
 import SwiftUI
@@ -22,6 +22,8 @@ import AppKit
 private struct SmartCollectionCardItem: Identifiable, Equatable {
     var id: Int64 { repo.id }
     let repo: Repo
+    /// 在筛选结果中的原始索引；瀑布流分列后仍用它判断是否进入统一预取窗口。
+    let paginationIndex: Int
     let status: RepoStatus
     let userTags: [Tag]
     let health: RepoHealthSnapshot?
@@ -40,16 +42,12 @@ struct SmartCollectionDetailPanel: View {
     @State private var pendingHealthRepoIDs: Set<Int64> = []
     @State private var healthLoadInFlightIDs: Set<Int64> = []
     @State private var isLoadingHealth = false
-    @State private var visibleCount = pageSize
     @State private var isRuleExpanded = false
     /// ScrollView 可用宽度；用 background GeometryReader 读取，避免外层 GeometryReader 包裹整棵 scroll 树。
     @State private var contentWidth: CGFloat = 720
     @State private var masonryColumns: [[SmartCollectionCardItem]] = []
-    @State private var loadNextPageTask: Task<Void, Never>?
     @State private var loadHealthTask: Task<Void, Never>?
 
-    private static let pageSize = 16
-    private static let pageLoadDebounceNs: UInt64 = 300_000_000
     private static let healthLoadDebounceNs: UInt64 = 80_000_000
     private static let cardSpacing: CGFloat = 12
     private static let minCardWidth: CGFloat = 280
@@ -59,15 +57,19 @@ struct SmartCollectionDetailPanel: View {
     private static let selectedCardLeadingPadding: CGFloat = 5
 
     private var repos: [Repo] {
-        viewModel.filteredSorted
+        viewModel.items
     }
 
-    private var visibleRepos: [Repo] {
-        Array(repos.prefix(visibleCount))
+    private var paginationIdentity: String {
+        "smart-collection-\(String(describing: viewModel.selection))-\(viewModel.itemsRevision)"
     }
 
-    private var lastVisibleRepoID: Int64? {
-        visibleRepos.last?.id
+    /// Fill 兜底按纵向行数判断；宽屏多列下一页仍以底层卡片数量更新 `loadedItemCount`。
+    private var visibleMasonryRowCount: Int {
+        SmartCollectionMasonryDistribution.rowCount(
+            itemCount: repos.count,
+            columnCount: columnCount(for: contentWidth)
+        )
     }
 
     var body: some View {
@@ -101,14 +103,14 @@ struct SmartCollectionDetailPanel: View {
             }
         }
         .task(id: viewModel.itemsRevision) {
-            visibleCount = Self.pageSize
             resetHealthCache()
             refreshMasonryLayout()
         }
-        .onChange(of: contentWidth) { _, _ in
+        // 本地分片 append 故意不 bump itemsRevision；直接观察当前页 ID，保证新页进入瀑布流。
+        .onChange(of: viewModel.items.map(\.id)) { _, _ in
             refreshMasonryLayout()
         }
-        .onChange(of: visibleCount) { _, _ in
+        .onChange(of: contentWidth) { _, _ in
             refreshMasonryLayout()
         }
         .onChange(of: viewModel.selectedRepoID) { _, _ in
@@ -151,21 +153,28 @@ struct SmartCollectionDetailPanel: View {
                     }
                     .onAppear {
                         requestHealthLoad(for: item.id)
-                        if item.id == lastVisibleRepoID {
-                            scheduleLoadNextPage()
-                        }
+                    }
+                    // 卡片索引与数量都来自 HomeViewModel 当前页，避免瀑布流快速滚动跨过预取边界。
+                    .automaticListPagination(
+                        appearingIndex: item.paginationIndex,
+                        visibleItemCount: repos.count,
+                        loadedItemCount: viewModel.items.count,
+                        hasMore: viewModel.hasMore,
+                        isLoading: viewModel.isAutomaticPaginationLoading,
+                        identity: paginationIdentity
+                    ) {
+                        viewModel.loadMoreIfNeeded()
                     }
             }
-
-            if visibleCount < repos.count {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .controlSize(.small)
-                        .onAppear(perform: scheduleLoadNextPage)
-                    Spacer()
-                }
-                .padding(.vertical, 10)
+            // 数据库首屏不足可见窗口时主动补页；满屏与快速到底仍汇入同一 ViewModel 防重入入口。
+            .automaticListPaginationFill(
+                visibleItemCount: visibleMasonryRowCount,
+                loadedItemCount: viewModel.items.count,
+                hasMore: viewModel.hasMore,
+                isLoading: viewModel.isAutomaticPaginationLoading,
+                identity: paginationIdentity
+            ) {
+                viewModel.loadMoreIfNeeded()
             }
         }
     }
@@ -288,18 +297,18 @@ struct SmartCollectionDetailPanel: View {
 
     /// 一次性组装卡片快照 + 分列 bucket；仅在 width / 可见集 / 选中 / health 变化时调用。
     private func refreshMasonryLayout() {
-        let visible = visibleRepos
-        guard !visible.isEmpty else {
+        guard !repos.isEmpty else {
             masonryColumns = []
             return
         }
 
-        let tagsByRepoID = Self.tagsByRepoID(for: visible, viewModel: viewModel)
+        let tagsByRepoID = Self.tagsByRepoID(for: repos, viewModel: viewModel)
         let selectedID = viewModel.selectedRepoID
         let collectionKind = activeSystemCollectionKind
-        let items = visible.map { repo in
+        let items = repos.enumerated().map { index, repo in
             SmartCollectionCardItem(
                 repo: repo,
+                paginationIndex: index,
                 status: viewModel.readStatus(for: repo.id),
                 userTags: tagsByRepoID[repo.id] ?? [],
                 health: healthSnapshots[repo.id],
@@ -316,21 +325,6 @@ struct SmartCollectionDetailPanel: View {
     /// 批量预取 tags，避免在 SwiftUI body 里对每张卡重复 filter 全量 tags 数组。
     private static func tagsByRepoID(for repos: [Repo], viewModel: HomeViewModel) -> [Int64: [Tag]] {
         Dictionary(uniqueKeysWithValues: repos.map { ($0.id, viewModel.tags(for: $0.id)) })
-    }
-
-    private func scheduleLoadNextPage() {
-        guard visibleCount < repos.count else { return }
-        loadNextPageTask?.cancel()
-        loadNextPageTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Self.pageLoadDebounceNs)
-            guard !Task.isCancelled else { return }
-            loadNextPage()
-        }
-    }
-
-    private func loadNextPage() {
-        guard visibleCount < repos.count else { return }
-        visibleCount = min(visibleCount + Self.pageSize, repos.count)
     }
 
     private func resetHealthCache() {
