@@ -217,6 +217,7 @@ private final class CountingMockClient: GitHubAPIClientProtocol, @unchecked Send
     func isFollowing(login: String) async throws -> Bool { fatalError("not used") }
     func follow(login: String) async throws { /* noop */ }
     func unfollow(login: String) async throws { /* noop */ }
+    func contributionCalendar(login: String) async throws -> ContributionCalendarPayload { fatalError("not used") }
     func readmeHTML(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?, requestTimeout: TimeInterval?) async throws -> BytesResponse {
         fatalError("not used")
     }

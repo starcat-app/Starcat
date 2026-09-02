@@ -81475,6 +81475,23 @@
         }
       }
     },
+    "batchAI.panel.review.pendingNewTag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New tags · Pending review"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "含新增标签 · 待确认"
+          }
+        }
+      }
+    },
     "batchAI.panel.review.tagOrigin.created" : {
       "extractionState" : "manual",
       "localizations" : {

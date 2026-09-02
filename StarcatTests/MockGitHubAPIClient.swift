@@ -63,6 +63,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var isFollowingHandler: ((_ login: String) async throws -> Bool)?
     var followHandler: ((_ login: String) async throws -> Void)?
     var unfollowHandler: ((_ login: String) async throws -> Void)?
+    var contributionCalendarHandler: ((_ login: String) async throws -> ContributionCalendarPayload)?
     var readmeHTMLHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
     /// 2026-06-12 向量索引改进：README 原始 Markdown 端点 handler。
     var readmeMarkdownHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
@@ -217,6 +218,13 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.unfollowHandler 未设置")
         }
         try await handler(login)
+    }
+
+    func contributionCalendar(login: String) async throws -> ContributionCalendarPayload {
+        guard let handler = contributionCalendarHandler else {
+            fatalError("MockGitHubAPIClient.contributionCalendarHandler 未设置")
+        }
+        return try await handler(login)
     }
 
     func readmeHTML(

@@ -62,6 +62,12 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// 取消关注用户（`DELETE /user/following/{login}`）。
     func unfollow(login: String) async throws
 
+    /// 获取指定用户的贡献草坪（近 1 年，GraphQL `user(login:)`）。
+    ///
+    /// 支持任意公开用户（`login` 可传当前用户或任意 owner）。GraphQL 返回公开贡献，
+    /// 私有贡献仅本人可见。
+    func contributionCalendar(login: String) async throws -> ContributionCalendarPayload
+
     // MARK: - Repo
 
     /// 获取单个仓库完整元数据（2026-06-08 引入，Weekly 详情页本地缓存未命中时回源用）。

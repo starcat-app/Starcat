@@ -396,6 +396,15 @@ struct BatchAITagReviewRow: View {
     private var completedDetailText: String {
         switch job.tagReviewState {
         case .pending:
+            // 待确认原因有两类：新增标签（用户关掉自动创建导致）或低于阈值。
+            // 优先提示新增——它是更根本的原因（关掉自动创建后，新增标签无论置信度高低都需确认），
+            // 且芯片已展示置信度百分比，无需在提示里重复「低于阈值」。
+            let hasNewTag = job.suggestedTags.contains { suggestion in
+                job.suggestedTagAvailability[suggestion.id] == .missing
+            }
+            if hasNewTag {
+                return String.l10n("batchAI.panel.review.pendingNewTag")
+            }
             if !job.belowThresholdTags.isEmpty {
                 return String.l10n("githubStarLists.aiGrouping.status.suggested")
             }

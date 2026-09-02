@@ -9,9 +9,10 @@
 //  - 查询 / 变更「当前用户是否已关注该 owner」。
 //
 //  设计取舍：
-//  - **只缓存 profile，不缓存 follow 状态**：profile 是公开数据，与「谁登录」无关，跨账号
-//    安全；follow 状态是「我」与 owner 的关系，切账号会串，因此每次实时查（一个 204/404 的
-//    GET 很轻，authenticated 用户 rate limit 5000/h 绰绰有余），换取零串号 + 零 reset 接线。
+//  - **缓存 profile 与 contribution，不缓存 follow 状态**：profile / 贡献草坪是公开数据，
+//    与「谁登录」无关，跨账号安全（profile 永久内存、草坪 12h TTL）；follow 状态是「我」
+//    与 owner 的关系，切账号会串，因此每次实时查（一个 204/404 的 GET 很轻，authenticated
+//    用户 rate limit 5000/h 绰绰有余），换取零串号 + 零 reset 接线。
 //  - 未登录守卫在 UI 层做（OwnerCardSheet 读 `AuthSession.state.isAuthenticated`），
 //    service 保持无状态、不反向依赖 AuthSession，与 `StarActionService` 的「未登录抛错」不同——
 //    这里直接把登录引导留在 View，避免 service 引入 AuthSession 双向引用。
@@ -31,6 +32,14 @@ final class OwnerFollowService {
 
     /// owner login → 公开 profile 的内存缓存。公开数据跨账号安全，App 生命周期内有效。
     private var profileCache: [String: GitHubUserDTO] = [:]
+
+    /// owner login → (贡献草坪, 拉取时间) 的内存缓存。贡献数据有约 3h 服务端更新延迟，
+    /// 用 12h TTL 在「新鲜度」与「不打重复 GraphQL」之间取平衡。
+    private var contributionCache: [String: (payload: ContributionCalendarPayload, fetchedAt: Date)] = [:]
+
+    /// 贡献草坪缓存 TTL：12 小时（dong4j 2026-09-02 拍板，比 GitHub 更新粒度更长，
+    /// 减少 GraphQL 消耗；owner 草坪是临时展示，过期后重拉即可）。
+    private let contributionTTL: TimeInterval = 12 * 60 * 60
 
     init(apiClient: any GitHubAPIClientProtocol) {
         self.apiClient = apiClient
@@ -68,5 +77,22 @@ final class OwnerFollowService {
         } else {
             try await apiClient.unfollow(login: login)
         }
+    }
+
+    // MARK: - Contribution
+
+    /// 拉取 owner 近一年的贡献草坪（公开数据，GraphQL `user(login:)`）。
+    ///
+    /// 与 `ContributionService`（当前用户 + 内存/磁盘缓存）刻意分开：owner 草坪走独立的
+    /// 内存缓存 + 12h TTL，按 login 分桶；只缓存公开数据、不落磁盘（避免累积无关用户数据），
+    /// 也不污染 sidebar 的当前用户草坪状态。
+    func contribution(login: String) async throws -> ContributionCalendarPayload {
+        if let cached = contributionCache[login],
+           Date().timeIntervalSince(cached.fetchedAt) < contributionTTL {
+            return cached.payload
+        }
+        let payload = try await apiClient.contributionCalendar(login: login)
+        contributionCache[login] = (payload, Date())
+        return payload
     }
 }
