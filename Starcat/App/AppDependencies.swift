@@ -448,6 +448,12 @@ final class AppDependencies {
     /// star / unstar 唯一权威服务（写入 registry 的唯一路径）。
     let starActionService: StarActionService
 
+    /// owner 卡片（详情页 hero owner 名入口弹出）的数据与关注动作服务。
+    ///
+    /// 只缓存公开 profile、follow 状态实时查（详见 `OwnerFollowService.swift` 文件头），
+    /// 因此不需要接 AuthSession 的登出 reset 接线。
+    let ownerFollowService: OwnerFollowService
+
     /// StarredRegistry 启动 / 同步完成后的全量重建 helper。
     let starredRegistryBootstrapper: StarredRegistryBootstrapper
 
@@ -1648,6 +1654,9 @@ final class AppDependencies {
             activityRepository: self.userRepoActivityRepository
         )
         self.starActionService = starActionSvc
+
+        // owner 卡片服务：公开 profile 缓存 + 关注动作。无需 AuthSession 双向引用。
+        self.ownerFollowService = OwnerFollowService(apiClient: api)
 
         let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
         self.starredRegistryBootstrapper = bootstrapper

@@ -59,6 +59,10 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var unstarHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var starHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var getCurrentUserHandler: (() async throws -> GitHubUserDTO)?
+    var getUserHandler: ((_ login: String) async throws -> GitHubUserDTO)?
+    var isFollowingHandler: ((_ login: String) async throws -> Bool)?
+    var followHandler: ((_ login: String) async throws -> Void)?
+    var unfollowHandler: ((_ login: String) async throws -> Void)?
     var readmeHTMLHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
     /// 2026-06-12 向量索引改进：README 原始 Markdown 端点 handler。
     var readmeMarkdownHandler: ((_ owner: String, _ repo: String, _ ifNoneMatch: String?, _ ifModifiedSince: String?) async throws -> BytesResponse)?
@@ -185,6 +189,34 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.getCurrentUserHandler 未设置")
         }
         return try await handler()
+    }
+
+    func getUser(login: String) async throws -> GitHubUserDTO {
+        guard let handler = getUserHandler else {
+            fatalError("MockGitHubAPIClient.getUserHandler 未设置")
+        }
+        return try await handler(login)
+    }
+
+    func isFollowing(login: String) async throws -> Bool {
+        guard let handler = isFollowingHandler else {
+            fatalError("MockGitHubAPIClient.isFollowingHandler 未设置")
+        }
+        return try await handler(login)
+    }
+
+    func follow(login: String) async throws {
+        guard let handler = followHandler else {
+            fatalError("MockGitHubAPIClient.followHandler 未设置")
+        }
+        try await handler(login)
+    }
+
+    func unfollow(login: String) async throws {
+        guard let handler = unfollowHandler else {
+            fatalError("MockGitHubAPIClient.unfollowHandler 未设置")
+        }
+        try await handler(login)
     }
 
     func readmeHTML(

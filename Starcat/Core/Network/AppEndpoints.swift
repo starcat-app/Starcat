@@ -406,6 +406,14 @@ enum AppEndpoints {
             static func starRepo(owner: String, repo: String) -> String {
                 "/user/starred/\(owner)/\(repo)"
             }
+            /// `GET /users/{login}` —— 任意用户公开 profile（owner 卡片用）。
+            static func userProfile(login: String) -> String {
+                "/users/\(login)"
+            }
+            /// `GET/PUT/DELETE /user/following/{login}` —— 是否已关注 / 关注 / 取关。
+            static func userFollowing(login: String) -> String {
+                "/user/following/\(login)"
+            }
 
             // —— 仓库 ——
             /// `GET /repos/{owner}/{repo}` —— 单仓库完整元数据（含 description / language /

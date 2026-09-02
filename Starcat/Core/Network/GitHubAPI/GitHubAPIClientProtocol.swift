@@ -45,6 +45,23 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// 获取当前授权用户信息（同时充当 token 健康检查 — 401 即代表 token 失效）。
     func getCurrentUser() async throws -> GitHubUserDTO
 
+    /// 获取任意用户公开 profile（`GET /users/{login}`）。
+    ///
+    /// 与 `getCurrentUser` 不同：这是「别人」的资料，公开端点无需鉴权，也不含 `status`
+    /// （status 是当前登录用户经 GraphQL `viewer.status` 补充的字段）。
+    func getUser(login: String) async throws -> GitHubUserDTO
+
+    /// 当前用户是否已关注 `login`（`GET /user/following/{login}`）。
+    /// 204 = 已关注，404 = 未关注。
+    func isFollowing(login: String) async throws -> Bool
+
+    /// 关注用户（`PUT /user/following/{login}`）。
+    /// 需要 `user:follow` scope；本项目 `user` 父 scope 已覆盖，无需额外授权。
+    func follow(login: String) async throws
+
+    /// 取消关注用户（`DELETE /user/following/{login}`）。
+    func unfollow(login: String) async throws
+
     // MARK: - Repo
 
     /// 获取单个仓库完整元数据（2026-06-08 引入，Weekly 详情页本地缓存未命中时回源用）。

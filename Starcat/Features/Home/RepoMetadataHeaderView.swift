@@ -124,7 +124,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 8) {
-                    RepoFullNameCopyButton(fullName: repo.fullName)
+                    RepoFullNameCopyButton(repo: repo)
 
                     OpenSSFInlineBadge(repo: repo) {
                         showOpenSSFScoreSheet = true
@@ -412,23 +412,39 @@ private struct RepoDetailHeaderSourceBadgeView: View {
     }
 }
 
-/// 详情 hero 的 `owner/repo` 标题：点击把全名写入剪贴板。
+/// 详情 hero 的 `owner/repo` 标题：拆成 owner + repo 两段，视觉拼接成一个完整名称。
 ///
-/// 为什么做成按钮而不是 `.textSelection(.enabled)`：整段点击复制和划选互斥，
-/// dong4j 2026-08-26 确认拿掉划选。绿勾始终占 14pt、未复制时透明，避免 1.5s
-/// 反馈把同行 OpenSSF / Health 徽章挤开。hover 复用 logo 同款 `.pressableHover()`。
+/// - owner 段（`RepoOwnerSegment`）：点击弹 owner 卡片，并带关注胶囊；
+/// - repo 段：点击把整个 fullName 写入剪贴板（保留旧「点全名复制」行为）。
+///
+/// 为什么拆分：dong4j 2026-09-02 要求 owner 名单独可点、弹 owner 卡片，同时 repo 名
+/// 仍保留复制语义。绿勾始终占 14pt、未复制时透明，避免 1.5s 反馈把同行徽章挤开。
 private struct RepoFullNameCopyButton: View {
-    let fullName: String
+    let repo: Repo
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
+        HStack(spacing: 0) {
+            RepoOwnerSegment(owner: repo.owner)
+
+            Text(verbatim: "/")
+                .font(interfaceScale.font(.workspaceTitle))
+                .foregroundStyle(.secondary)
+
+            repoCopySegment
+        }
+        .frame(minWidth: 0, alignment: .leading)
+    }
+
+    /// repo 名段：点击复制整个 fullName，绿勾在行末。
+    private var repoCopySegment: some View {
         CopyFeedbackButton(
-            providesContent: { fullName },
+            providesContent: { repo.fullName },
             tooltip: "repo.hero.copyName"
         ) { didCopy in
             HStack(spacing: 6) {
-                Text(verbatim: fullName)
+                Text(verbatim: repo.name)
                     .font(interfaceScale.font(.workspaceTitle))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -445,10 +461,97 @@ private struct RepoFullNameCopyButton: View {
                     .accessibilityHidden(!didCopy)
             }
         }
-        .pressableHover()
+        .pressableHover(scale: 1.0)
         .frame(minWidth: 0, alignment: .leading)
         .accessibilityLabel(Text("repo.hero.copyName"))
-        .accessibilityValue(Text(verbatim: fullName))
+        .accessibilityValue(Text(verbatim: repo.fullName))
+    }
+}
+
+/// hero `owner/repo` 的 owner 段：owner 名 + 关注胶囊，点击弹 owner 卡片。
+///
+/// 关注胶囊是纯状态展示（不可点击，关注操作在 `OwnerCardSheet` 内）：已关注显示绿色
+/// 「已关注」、未关注显示淡色「关注」、未登录不显示（无法判断关注状态）。isFollowing
+/// 在挂载时按需查询（登录态才查；公开 owner 的 profile 无需登录）。
+private struct RepoOwnerSegment: View {
+    let owner: String
+
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    @State private var showOwnerCard = false
+    @State private var isFollowing: Bool?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button {
+                showOwnerCard = true
+            } label: {
+                Text(verbatim: owner)
+                    .font(interfaceScale.font(.workspaceTitle))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(.primary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover(scale: 1.0)
+            .help("repo.owner.card.help")
+
+            if let isFollowing {
+                if isFollowing {
+                    // 已关注：纯状态展示，不可点击（取消关注在 owner 卡片内操作）。
+                    followingBadge(true)
+                } else {
+                    // 未关注：「关注」胶囊是可点击入口，点击弹 owner 卡片完成关注。
+                    Button {
+                        showOwnerCard = true
+                    } label: {
+                        followingBadge(false)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pressableHover(scale: 1.0)
+                    .help("repo.owner.card.help")
+                }
+            }
+        }
+        .sheet(isPresented: $showOwnerCard) {
+            OwnerCardSheet(ownerLogin: owner)
+                .appSheetRootEnvironment(dependencies)
+        }
+        .task(id: owner) {
+            await loadFollowing()
+        }
+    }
+
+    @ViewBuilder
+    private func followingBadge(_ following: Bool) -> some View {
+        HStack(spacing: 3) {
+            if following {
+                Image(systemName: "checkmark.circle.fill")
+                Text("repo.owner.followingBadge")
+            } else {
+                Image(systemName: "person.badge.plus")
+                Text("repo.owner.follow")
+            }
+        }
+        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+        .foregroundStyle(following ? Color.green : Color.secondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background {
+            Capsule(style: .continuous)
+                .fill((following ? Color.green : Color.secondary).opacity(0.12))
+        }
+    }
+
+    private func loadFollowing() async {
+        guard authSession.state.isAuthenticated else { return }
+        if let following = try? await dependencies.ownerFollowService.isFollowing(login: owner) {
+            isFollowing = following
+        }
     }
 }
 

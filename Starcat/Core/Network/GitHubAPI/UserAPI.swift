@@ -45,6 +45,44 @@ extension GitHubAPIClient {
         )
         return payload.viewer.status
     }
+
+    // MARK: - 关注（follow）
+
+    /// 获取任意用户公开 profile。
+    func getUser(login: String) async throws -> GitHubUserDTO {
+        let response: APIResponse<GitHubUserDTO> = try await get(
+            path: AppEndpoints.GitHubREST.Paths.userProfile(login: login)
+        )
+        return response.value
+    }
+
+    /// 当前用户是否已关注 `login`。
+    ///
+    /// GitHub `GET /user/following/{login}` 语义：204 = 已关注，404 = 未关注。
+    /// 用 `getBytes`（`performBytes`）而非 `get<T>` 是因为 204 无响应 body，
+    /// 走 JSON 解码会误抛 decoding error；`performBytes` 对 404 抛 `NetworkError.notFound`，
+    /// 在这里 catch 转成 `false`，其它错误原样上抛。
+    func isFollowing(login: String) async throws -> Bool {
+        do {
+            _ = try await getBytes(
+                path: AppEndpoints.GitHubREST.Paths.userFollowing(login: login),
+                accept: "application/vnd.github+json"
+            )
+            return true
+        } catch NetworkError.notFound {
+            return false
+        }
+    }
+
+    /// 关注用户。`put(path:)` 走 `performNoBody`，GitHub 204 No Content 即成功。
+    func follow(login: String) async throws {
+        try await put(path: AppEndpoints.GitHubREST.Paths.userFollowing(login: login))
+    }
+
+    /// 取消关注用户。`delete(path:)` 走 `performNoBody`，204 No Content 即成功。
+    func unfollow(login: String) async throws {
+        try await delete(path: AppEndpoints.GitHubREST.Paths.userFollowing(login: login))
+    }
 }
 
 private struct CurrentUserStatusPayload: Decodable {
