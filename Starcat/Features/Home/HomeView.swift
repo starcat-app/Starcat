@@ -958,19 +958,23 @@ struct HomeView: View {
 
     /// Search Center、Browser Plugin 和侧栏后台任务共用的本地仓库跳转入口。
     /// Browser Plugin 的 “Open in Starcat” 只对本地已 starred repo 开放。
-    /// 这里统一切到 Manage / All Stars，清空搜索，
-    /// 强制 reload 后选中目标 repo，让中栏滚动和右栏详情都由 HomeViewModel 单一维护。
+    /// 这里统一切到 Manage / All Stars，清空搜索，强制 reload 后选中目标 repo，
+    /// 让中栏定位和右栏详情都由 HomeViewModel 单一维护：
+    /// - 目标已在已加载列表内 → 滚动定位到对应行；
+    /// - 目标尚未加载（数据量大时）→ 不加载前缀，临时置顶到列表顶部；
+    /// - `pinInList == false` 的非本地项目（transient repo）→ 只选中，不进列表。
     ///
     /// 侧栏后台摘要任务也会走这里。关键点：
     /// 1. 立刻写 `externalSelectedRepo`，避免切到 All Stars 后「自动打开第一条」
     ///    抢选中，导致详情停在别的仓、开面板通知被丢弃。
-    /// 2. reload + `ensureRepoVisible` 后再发开面板通知，并略微延迟，等
+    /// 2. reload + 定位完成后再发开面板通知，并略微延迟，等
     ///    `RepoAIFloatingOverlay` 按新 `repo.id` 挂载完成。
     private func openCompanionRepository(
         _ repo: Repo,
         generateSummary: Bool = false,
         openSummaryPanel: Bool = false,
-        aiPanelSource: String? = nil
+        aiPanelSource: String? = nil,
+        pinInList: Bool = true
     ) {
         selectedSidebarPage = .manage
         viewModel.selection = .allStars
@@ -985,9 +989,24 @@ struct HomeView: View {
 
         Task {
             await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
-            await viewModel.ensureRepoLoadedForExternalNavigation(repoId: repo.id)
-            viewModel.selectedRepoID = repo.id
-            viewModel.requestSelectedRepoScroll()
+            if pinInList, viewModel.items.contains(where: { $0.id == repo.id }) {
+                // 目标已在已加载列表内：滚动定位到对应行（数据量小，scrollTo 可靠）。
+                viewModel.selectedRepoID = repo.id
+                viewModel.requestSelectedRepoScroll()
+            } else if pinInList {
+                // 目标尚未加载（数据量大时常见）：不再把目标页之前的前缀全量加载，
+                // 直接把该 repo 临时置顶到列表顶部定位。
+                viewModel.pinTemporaryRepo(repo)
+                viewModel.selectedRepoID = repo.id
+                // 置顶后详情数据源改由 temporaryPinnedRepo 提供；清掉 external 避免它
+                // 长期霸占 selectedRepo（否则用户再点列表其他卡片，详情仍停留在置顶仓）。
+                viewModel.externalSelectedRepo = nil
+                // 置顶卡片位于列表最顶部：发出滚动请求，让列表滚回顶部显示它。
+                viewModel.requestSelectedRepoScroll()
+            } else {
+                // 非本地项目（如 Universal Link 未命中的 transient repo）：只选中，不进列表。
+                viewModel.selectedRepoID = repo.id
+            }
             // 列表已能解析该 id 时，交还给 filteredSorted 真源，避免外部选中残留。
             if viewModel.filteredSorted.contains(where: { $0.id == repo.id }) {
                 viewModel.externalSelectedRepo = nil
@@ -1790,7 +1809,7 @@ struct HomeView: View {
                 cachedAt: ISO8601DateFormatter.shared.string(from: Date()),
                 isStarred: false
             )
-            openCompanionRepository(transientRepo)
+            openCompanionRepository(transientRepo, pinInList: false)
         } catch {
             AppLog.ui.error(
                 "Repository deep link failed for \(target.owner, privacy: .public)/\(target.name, privacy: .public): \(error.localizedDescription, privacy: .public)"

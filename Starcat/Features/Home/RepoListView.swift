@@ -2083,6 +2083,30 @@ struct RepoListView: View {
         // 全局唯一，不会与 trending / weekly / activity 的 id 域冲突。
         return ScrollViewReader { proxy in
             List {
+                if let pinned = viewModel.temporaryPinnedRepo,
+                   !viewModel.items.contains(where: { $0.id == pinned.id }) {
+                    // 搜索 / 外部定位的临时置顶卡片：只做定位跳转，不参与多选 toggle，
+                    // 也不参与分页计数（它是独立于 items 的临时行）。
+                    // 一旦该 repo 后续被滚动加载进 items，就交给 ForEach 渲染，避免重复 id。
+                    Button {
+                        selection.wrappedValue = pinned.id
+                    } label: {
+                        ManageRepoRowContent(
+                            repo: pinned,
+                            viewModel: viewModel,
+                            aiSummaryAvailability: aiSummaryAvailability,
+                            isSelected: selection.wrappedValue == pinned.id
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .id(pinned.id)
+                    .contextMenu {
+                        repoContextMenu(for: pinned)
+                    }
+                }
                 ForEach(indexedItems) { item in
                     let repo = item.repo
                     Button {
@@ -2095,6 +2119,8 @@ struct RepoListView: View {
                             ))
                         } else {
                             selection.wrappedValue = repo.id
+                            // 点选普通列表卡片 = 离开「置顶定位」状态，清除临时置顶。
+                            viewModel.clearTemporaryPinnedRepo()
                         }
                     } label: {
                         // 行级状态 / badge 由独立子 View 观察，避免任意 Health/OpenSSF 快照更新
@@ -2197,7 +2223,9 @@ struct RepoListView: View {
             .task(id: viewModel.repoListScrollRequestRevision) {
                 guard viewModel.repoListScrollRequestRevision > 0 else { return }
                 guard let id = selection.wrappedValue else { return }
-                guard viewModel.items.contains(where: { $0.id == id }) else { return }
+                // 目标可能是「已加载行」或「置顶卡片」；置顶卡片不在 items 里，也要能定位。
+                guard viewModel.items.contains(where: { $0.id == id })
+                        || viewModel.temporaryPinnedRepo?.id == id else { return }
                 await Task.yield()
                 if reduceMotion {
                     proxy.scrollTo(id, anchor: .center)

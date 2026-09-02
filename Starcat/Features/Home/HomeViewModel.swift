@@ -154,6 +154,8 @@ final class HomeViewModel {
 
             if selectedRepoID != nil { selectedRepoID = nil }
             if !searchQuery.isEmpty { searchQuery = "" }
+            // 切换分类时清除临时置顶卡片：置顶语义只对「定位时所在分类」的列表有意义。
+            temporaryPinnedRepo = nil
         }
     }
 
@@ -294,6 +296,14 @@ final class HomeViewModel {
     /// 设置后 `selectedRepo` 优先返回此值。
     var externalSelectedRepo: Repo?
 
+    /// 从外部入口（SearchCenter / Universal Link / Spotlight / 侧栏摘要任务等）跳转到
+    /// 某个「当前列表尚未加载」的本地 repo 时，临时置顶在列表最顶部的卡片。
+    ///
+    /// 只用于「定位」：不参与分页计数、排序或数据库查询；置顶的 repo 一定不在 `items`
+    /// 里（调用方先判 `items.contains`），避免与分页行重复渲染同一 id。
+    /// 切换分类或开始搜索时清除；再次外部定位时直接覆盖。
+    private(set) var temporaryPinnedRepo: Repo?
+
     /// 外部导航要求中栏定位到当前 repo 时递增。
     ///
     /// 不能只监听 `selectedRepoID`：重复打开同一个 repo 时 ID 不变，SwiftUI 不会触发
@@ -316,6 +326,9 @@ final class HomeViewModel {
     /// 由 `ensureRepoVisible(repoId:)` 负责把 currentPage 推到对应页。
     var selectedRepo: Repo? {
         if let external = externalSelectedRepo { return external }
+        // 临时置顶优先于列表选中：置顶仓即使 selectedRepoID 被 reload / 筛选清理，
+        // 详情也保持指向它，避免 applyManageDetailSelectionPolicy 抢选列表第一条。
+        if let pinned = temporaryPinnedRepo { return pinned }
         guard let id = selectedRepoID else { return nil }
         return filteredSorted.first { $0.id == id }
     }
@@ -1476,6 +1489,10 @@ final class HomeViewModel {
         searchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         semanticHitMap = [:]
         searchSubmissionID += 1
+        // 用户主动输入搜索词时，列表进入搜索结果视图，临时置顶卡片不再有意义；清空搜索词则保留。
+        if !searchQuery.isEmpty {
+            temporaryPinnedRepo = nil
+        }
     }
 
     /// 测试专用：等待当前列表查询完成。
@@ -3572,6 +3589,20 @@ final class HomeViewModel {
     func requestSelectedRepoScroll() {
         guard selectedRepoID != nil else { return }
         repoListScrollRequestRevision &+= 1
+    }
+
+    /// 把目标 repo 临时置顶到 Manage 列表顶部（外部定位入口用）。
+    ///
+    /// 仅当 repo 不在当前已加载 `items` 里时才调用；若已在 items 内，调用方应走
+    /// `requestSelectedRepoScroll()` 滚动定位。置顶会直接覆盖上一次置顶。
+    func pinTemporaryRepo(_ repo: Repo) {
+        temporaryPinnedRepo = repo
+    }
+
+    /// 清除临时置顶卡片。用户点选普通列表卡片时调用，表示「离开置顶定位状态」；
+    /// 切换分类 / 开始搜索已由各自路径（selection.didSet / submitSearch）直接清。
+    func clearTemporaryPinnedRepo() {
+        temporaryPinnedRepo = nil
     }
 
     /// R-07：外部跳转（SearchCenter / 详情页"上一篇/下一篇" / unhandled 跳转）
