@@ -7,7 +7,7 @@
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/Install%20with-Homebrew-FBBF24?style=for-the-badge&logo=homebrew&logoColor=white" width="220" alt="Install with Homebrew"/></a>
 <a href="https://github.com/starcat-app/Starcat"><img src="https://img.shields.io/github/stars/starcat-app/Starcat?style=for-the-badge&logo=github&label=Star%20Starcat&color=24292f" alt="在 GitHub Star Starcat"/></a>
 <br/>
-<a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83" alt="Download on the Mac App Store" height="54"/></a>
+<a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-mac-app-store/black/en-us?size=250x83" alt="Download on the Mac App Store" width="211" height="54"/></a>
 &nbsp;
 <a href="https://www.producthunt.com/products/starcat-2?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-starcat-for-github" target="_blank" rel="noopener noreferrer"><img alt="Starcat For GitHub - Ask your GitHub Stars — local RAG on native macOS | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1237127&amp;theme=light&amp;t=1788352412007"></a>
 <br/>
