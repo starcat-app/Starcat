@@ -325746,6 +325746,23 @@
         }
       }
     },
+    "settings.externalSearch.firecrawl.fullText" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fetch full-page markdown"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "获取全文 markdown"
+          }
+        }
+      }
+    },
     "settings.externalSearch.includeWebInAll" : {
       "extractionState" : "manual",
       "localizations" : {
