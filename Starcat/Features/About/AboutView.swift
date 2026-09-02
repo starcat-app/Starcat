@@ -951,6 +951,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2023 Sumbit Labs Ltd.",
             url: URL(string: "https://github.com/aptabase/aptabase-swift")
         ),
+        AboutDependency(
+            name: "BorderBeamKit",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 Jakub Antalik",
+            url: URL(string: "https://github.com/Jakubantalik/Libraries")
+        ),
     ]
 
     // MARK: Direct-only 依赖

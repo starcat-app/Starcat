@@ -81,6 +81,10 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.4"
+  # BorderBeamKit：上游 SPM 尚未在仓库根发布 Package.swift，本地 Vendor 验证
+  # line 搜索条效果。来源见 ThirdParty/BorderBeamKit/VENDOR.md。
+  BorderBeamKit:
+    path: ThirdParty/BorderBeamKit
 
 targets:
   Starcat:
@@ -170,6 +174,7 @@ targets:
       - package: MCPSwiftSDK
         product: MCP
       - package: Aptabase
+      - package: BorderBeamKit
       - target: StarcatWidgets
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
@@ -298,6 +303,7 @@ targets:
         product: MCP
       - package: Aptabase
       - package: Sparkle
+      - package: BorderBeamKit
       - target: StarcatDirectWidgets
     postBuildScripts:
       - name: "Copy Changelog Resource"
