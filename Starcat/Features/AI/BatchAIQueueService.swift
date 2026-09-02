@@ -85,6 +85,10 @@ final class BatchAIQueueService {
     /// 批次级全库标签词表快照；每轮只查询一次，避免逐仓重复扫描标签表和使用次数。
     private var sharedTagLibrary: [String]?
 
+    /// 批次启动时标签库的完整 canonical key 快照，用于给审核 Chip 标注“已有 / 新标签”。
+    /// 与给模型的 `sharedTagLibrary` 分开保存：后者受字符预算截断，不能作为来源判断依据。
+    private var initialTagCanonicalKeys: Set<String>?
+
     /// 同一批次的多个 Worker 可能同时遇到同一个新标签。按 canonical key 共享创建任务，
     /// 保证只创建一次，其余 Worker 复用同一结果，避免并发 UNIQUE 冲突和同义写法重复建标。
     private var pendingTagCreationsByCanonicalKey: [String: Task<Tag, Error>] = [:]
@@ -318,6 +322,7 @@ final class BatchAIQueueService {
         self.startedAt = Date()
         self.processingJobIDs = []
         self.sharedTagLibrary = nil
+        self.initialTagCanonicalKeys = nil
         self.pendingTagCreationsByCanonicalKey = [:]
         self.retryNotBeforeByRepoID = [:]
         self.rateLimitCooldownUntil = nil
@@ -426,6 +431,7 @@ final class BatchAIQueueService {
         silent = false
         hasPendingTagsChangedNotification = false
         sharedTagLibrary = nil
+        initialTagCanonicalKeys = nil
         pendingTagCreationsByCanonicalKey = [:]
         retryNotBeforeByRepoID = [:]
         rateLimitCooldownUntil = nil
@@ -657,6 +663,9 @@ final class BatchAIQueueService {
                 if let latestIndex = jobs.firstIndex(where: { $0.repoId == repoId }) {
                     jobs[latestIndex].selectedSuggestedTagIDs.remove(suggestion.id)
                     jobs[latestIndex].appliedTagNames = appliedNames.sorted()
+                    if jobs[latestIndex].suggestedTagAvailability[suggestion.id] == .missing {
+                        jobs[latestIndex].suggestedTagAvailability[suggestion.id] = .created
+                    }
                 }
             }
 
@@ -712,11 +721,25 @@ final class BatchAIQueueService {
     private func runLoop() async {
         guard let options else { return }
 
-        if options.actions.contains(.tags), sharedTagLibrary == nil {
-            sharedTagLibrary = await RepoAIInsightService.makeSharedTagLibrary(
-                repoTagRepository: repoTagRepository,
-                tagRepository: tagRepository
-            )
+        if options.actions.contains(.tags) {
+            if initialTagCanonicalKeys == nil {
+                do {
+                    let tags = try await tagRepository.fetchAll()
+                    initialTagCanonicalKeys = Set(tags.compactMap { tag in
+                        let key = AITagSuggestionPolicy.canonicalKey(tag.name)
+                        return key.isEmpty ? nil : key
+                    })
+                } catch {
+                    // 来源标识是辅助信息；读取失败时继续生成建议，但不能把未知状态误标成新标签。
+                    AppLog.ai.error("[batch-ai] load initial tag availability failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            if sharedTagLibrary == nil {
+                sharedTagLibrary = await RepoAIInsightService.makeSharedTagLibrary(
+                    repoTagRepository: repoTagRepository,
+                    tagRepository: tagRepository
+                )
+            }
         }
 
         await withTaskGroup(of: Void.self) { group in
@@ -899,6 +922,17 @@ final class BatchAIQueueService {
 
         if didTags {
             jobs[idx].suggestedTags = suggestions
+            if let initialTagCanonicalKeys {
+                jobs[idx].suggestedTagAvailability = Dictionary(
+                    uniqueKeysWithValues: suggestions.map { suggestion in
+                        let key = AITagSuggestionPolicy.canonicalKey(suggestion.name)
+                        let availability: BatchAITagSuggestionAvailability = initialTagCanonicalKeys.contains(key)
+                            ? .existing
+                            : .missing
+                        return (suggestion.id, availability)
+                    }
+                )
+            }
             // 只有用户主动打开的批量窗口承载人工审核。静默自动整理仍沿用原有后台语义，
             // 不能在 Sidebar 留下一批用户没有主动创建、也无法感知来源的待确认任务。
             if !silent, !options.autoApplyTags, !suggestions.isEmpty {
@@ -928,6 +962,11 @@ final class BatchAIQueueService {
                 )
                 guard let currentIndex = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
                 jobs[currentIndex].appliedTagNames = autoApplyOutcome.appliedNames
+                for suggestionID in autoApplyOutcome.appliedSuggestionIDs {
+                    if jobs[currentIndex].suggestedTagAvailability[suggestionID] == .missing {
+                        jobs[currentIndex].suggestedTagAvailability[suggestionID] = .created
+                    }
+                }
                 if !autoApplyOutcome.appliedNames.isEmpty {
                     hasPendingTagsChangedNotification = true
                 }
@@ -993,6 +1032,7 @@ final class BatchAIQueueService {
     /// 展示层会把仓库误归到“成功”，用户也无法在当前窗口补做确认。
     private struct TagAutoApplyOutcome {
         var appliedNames: [String] = []
+        var appliedSuggestionIDs: Set<String> = []
         var unresolvedSuggestions: [AITagSuggestion] = []
     }
 
@@ -1052,6 +1092,7 @@ final class BatchAIQueueService {
             do {
                 try await repoTagRepository.addTag(repoId: repoId, tagId: tag.id)
                 outcome.appliedNames.append(tag.name)
+                outcome.appliedSuggestionIDs.insert(suggestion.id)
             } catch {
                 AppLog.ai.error("[batch-ai] apply tag failed: repo=\(repoId, privacy: .public), tag=\(normalized, privacy: .public), error=\(error.localizedDescription, privacy: .public)")
                 outcome.unresolvedSuggestions.append(suggestion)

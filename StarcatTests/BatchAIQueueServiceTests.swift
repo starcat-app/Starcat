@@ -121,6 +121,35 @@ struct BatchAIQueueServiceTests {
         #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
     }
 
+    @Test("待确认建议区分已有标签和需要新建的标签")
+    func pendingSuggestionsExposeTagAvailability() async throws {
+        let suggestions = [
+            AITagSuggestion(name: "Swift", confidence: 0.96, reason: "已有标签"),
+            AITagSuggestion(name: "New Tag", confidence: 0.94, reason: "新标签")
+        ]
+        let provider = ImmediateBatchAIInsightProvider(suggestions: suggestions)
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: tagRepository,
+            repoTagRepository: GRDBRepoTagRepository(database: database)
+        )
+        try await tagRepository.create(.fixture(id: "swift", name: "Swift"))
+        var repo = Repo.makeMinimal(owner: "acme", name: "availability")
+        repo.id = 511
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.suggestedTagAvailability[suggestions[0].id] == .existing)
+        #expect(job.suggestedTagAvailability[suggestions[1].id] == .missing)
+    }
+
     @Test("自动应用时低于阈值的标签进入待确认并预选最高置信度项")
     func autoApplyKeepsBelowThresholdSuggestionsForManualReview() async throws {
         let suggestions = [
@@ -193,6 +222,8 @@ struct BatchAIQueueServiceTests {
         first.id = 509
         var second = Repo.makeMinimal(owner: "acme", name: "auto-create-second")
         second.id = 510
+        try await database.insertRepoFixture(id: first.id, owner: "acme", name: "auto-create-first")
+        try await database.insertRepoFixture(id: second.id, owner: "acme", name: "auto-create-second")
         var options = BatchAIQueueOptions()
         options.actions = [.tags]
         options.autoApplyTags = true
@@ -206,6 +237,7 @@ struct BatchAIQueueServiceTests {
         #expect(try await repoTagRepository.fetchTags(forRepo: first.id).map(\.name) == ["New Tag"])
         #expect(try await repoTagRepository.fetchTags(forRepo: second.id).map(\.name) == ["New Tag"])
         #expect(service.jobs.allSatisfy { $0.appliedTagNames == ["New Tag"] })
+        #expect(service.jobs.allSatisfy { $0.suggestedTagAvailability[suggestion.id] == .created })
         #expect(service.pendingTagReviewCount == 0)
     }
 
@@ -479,6 +511,7 @@ struct BatchAIQueueServiceTests {
         #expect(tags.map(\.name) == ["Swift"])
         #expect(try await tagRepository.fetchAll().map(\.name) == ["Swift"])
         #expect(service.jobs.first?.tagReviewState == .applied)
+        #expect(service.jobs.first?.suggestedTagAvailability[Self.sampleSuggestions[0].id] == .created)
         #expect(service.pendingTagReviewCount == 0)
     }
 

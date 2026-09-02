@@ -81475,6 +81475,57 @@
         }
       }
     },
+    "batchAI.panel.review.tagOrigin.created" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本次新建"
+          }
+        }
+      }
+    },
+    "batchAI.panel.review.tagOrigin.existing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Existing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有"
+          }
+        }
+      }
+    },
+    "batchAI.panel.review.tagOrigin.missing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需新建"
+          }
+        }
+      }
+    },
     "batchAI.panel.review.selectAll" : {
       "extractionState" : "manual",
       "localizations" : {
