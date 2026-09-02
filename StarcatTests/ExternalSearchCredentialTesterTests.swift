@@ -18,7 +18,7 @@ struct ExternalSearchCredentialTesterTests {
         let recorder = CredentialTestRecorder()
         let tester = ExternalSearchCredentialTester(
             settings: settings,
-            providerFactory: { providerID, _ in
+            providerFactory: { providerID, _, _ in
                 StubCredentialProvider(providerID: providerID, recorder: recorder)
             }
         )
@@ -43,7 +43,7 @@ struct ExternalSearchCredentialTesterTests {
         settings.markExternalSearchCredentialVerified(for: .tavily)
         let tester = ExternalSearchCredentialTester(
             settings: settings,
-            providerFactory: { providerID, _ in
+            providerFactory: { providerID, _, _ in
                 StubCredentialProvider(
                     providerID: providerID,
                     error: ExternalSearchError.invalidCredential(

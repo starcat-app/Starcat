@@ -260,6 +260,131 @@ struct ExternalSearchProviderClientTests {
             _ = try await bearer.search(ExternalSearchRequest(query: "any", purpose: .globalSearch))
         }
     }
+
+    @Test("Firecrawl 使用 Bearer header + camelCase body 并映射 web results")
+    func firecrawlHeaderBodyAndDecode() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.url?.absoluteString == "https://api.test.invalid/v2/search")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fc-key")
+            let body = try #require(request.httpBodyJSON)
+            #expect(body["query"] as? String == "who is dong4j")
+            #expect(body["limit"] as? Int == 2)
+            // Firecrawl body 用 camelCase，与 Tavily 的 snake_case 不同。
+            #expect(body["includeDomains"] as? [String] == ["example.com"])
+            #expect(body["excludeDomains"] as? [String] == ["bad.com"])
+            let scrapeOptions = try #require(body["scrapeOptions"] as? [String: Any])
+            #expect(scrapeOptions["formats"] as? [String] == ["markdown"])
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data("""
+                {
+                  "success": true,
+                  "data": {
+                    "web": [
+                      {
+                        "url": "https://example.com/dong4j",
+                        "title": "Dong4j",
+                        "description": "snippet",
+                        "markdown": "# full markdown"
+                      }
+                    ]
+                  }
+                }
+                """.utf8)
+            )
+        }
+
+        let provider = FirecrawlSearchProvider(
+            apiKey: "fc-key",
+            isEnabled: true,
+            fetchFullText: true,
+            baseURL: URL(string: "https://api.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        let response = try await provider.search(ExternalSearchRequest(
+            query: "who is dong4j",
+            purpose: .credentialTest,
+            maxResults: 2,
+            includeDomains: ["example.com"],
+            excludeDomains: ["bad.com"]
+        ))
+
+        #expect(response.metadata.provider == .firecrawl)
+        #expect(response.metadata.totalResults == 1)
+        #expect(response.hits.first?.title == "Dong4j")
+        #expect(response.hits.first?.snippet == "snippet")
+        #expect(response.hits.first?.extractedText == "# full markdown")
+    }
+
+    @Test("Firecrawl missing key 不发网络")
+    func firecrawlMissingKeyFailsBeforeNetwork() async throws {
+        URLProtocolStub.reset()
+        let missing = FirecrawlSearchProvider(apiKey: nil, isEnabled: true, session: URLProtocolStub.ephemeralSession())
+        await #expect(throws: ExternalSearchError.missingAPIKey(provider: .firecrawl)) {
+            _ = try await missing.search(ExternalSearchRequest(query: "x", purpose: .globalSearch))
+        }
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
+    }
+
+    @Test("Firecrawl 默认不请求全文 markdown")
+    func firecrawlOmitsScrapeOptionsByDefault() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let body = try #require(request.httpBodyJSON)
+            #expect(body["scrapeOptions"] == nil)
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(#"{"success":true,"data":{"web":[]}}"#.utf8)
+            )
+        }
+
+        let provider = FirecrawlSearchProvider(
+            apiKey: "fc-key",
+            isEnabled: true,
+            baseURL: URL(string: "https://api.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        _ = try await provider.search(ExternalSearchRequest(query: "x", purpose: .globalSearch))
+    }
+
+    @Test("Registry 为 .firecrawl 返回 FirecrawlSearchProvider 及能力")
+    func registryWiresFirecrawl() {
+        let registry = ExternalSearchRegistry(
+            settingsSnapshot: ExternalSearchRegistry.SettingsSnapshot(
+                providerSettings: [.firecrawl: ExternalSearchProviderSettings(isEnabled: true)],
+                apiKeys: [.firecrawl: "fc-key"]
+            )
+        )
+        let provider = registry.provider(for: .firecrawl)
+        #expect(provider.id == .firecrawl)
+        #expect(provider.capabilities.supportsAnonymous == true)
+        #expect(provider.capabilities.supportsDomainFilters == true)
+        #expect(provider.capabilities.supportsExtractedText == true)
+    }
+
+    @Test("Firecrawl 匿名模式不要求 API Key、不传 Authorization")
+    func firecrawlAnonymousRequiresNoKey() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data(#"{"success":true,"data":{"web":[]}}"#.utf8)
+            )
+        }
+
+        let anonymous = FirecrawlSearchProvider(
+            apiKey: nil,
+            isEnabled: true,
+            anonymous: true,
+            baseURL: URL(string: "https://api.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        let response = try await anonymous.search(ExternalSearchRequest(query: "x", purpose: .globalSearch))
+        #expect(response.metadata.provider == .firecrawl)
+        #expect(response.hits.isEmpty)
+    }
 }
 
 private struct StubAnySearchClient: AnySearchClientProtocol {

@@ -26,7 +26,7 @@ enum ExternalSearchCredentialTestOutcome: Equatable, Sendable {
 
 @MainActor
 final class ExternalSearchCredentialTester {
-    typealias ProviderFactory = @MainActor @Sendable (ExternalSearchProviderID, String) -> any ExternalSearchProvider
+    typealias ProviderFactory = @MainActor @Sendable (ExternalSearchProviderID, String, Bool) -> any ExternalSearchProvider
 
     nonisolated static let testQuery = "who is dong4j"
     nonisolated static let testMaxResults = 1
@@ -42,9 +42,14 @@ final class ExternalSearchCredentialTester {
         self.providerFactory = providerFactory
     }
 
-    func test(provider providerID: ExternalSearchProviderID, candidateKey: String) async -> ExternalSearchCredentialTestOutcome {
+    func test(
+        provider providerID: ExternalSearchProviderID,
+        candidateKey: String,
+        anonymous: Bool = false
+    ) async -> ExternalSearchCredentialTestOutcome {
         let trimmedKey = candidateKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
+        // 匿名（keyless）模式无需 key 即可测试；认证模式要求 key。
+        guard anonymous || !trimmedKey.isEmpty else {
             return .failed(ExternalSearchCredentialTestFailure(
                 friendlyMessage: ExternalSearchError.missingAPIKey(provider: providerID).friendlyMessage,
                 technicalDetails: ExternalSearchError.missingAPIKey(provider: providerID).technicalDetails
@@ -52,12 +57,21 @@ final class ExternalSearchCredentialTester {
         }
 
         do {
-            let provider = providerFactory(providerID, trimmedKey)
+            let provider = providerFactory(providerID, trimmedKey, anonymous)
             _ = try await provider.search(ExternalSearchRequest(
                 query: Self.testQuery,
                 purpose: .credentialTest,
                 maxResults: Self.testMaxResults
             ))
+            if anonymous {
+                // 匿名测试成功：不保存 key、也不标记 credential verified（没有 credential），
+                // 只启用 provider，让用户在 keyless 模式下使用。
+                var providerSettings = settings.externalSearchSettings(for: providerID)
+                providerSettings.isEnabled = true
+                settings.setExternalSearchSettings(providerSettings, for: providerID)
+                return .succeeded
+            }
+            // 认证模式：保存 key + 标记 verified + 启用。
             settings.setExternalSearchAPIKey(trimmedKey, for: providerID)
             settings.markExternalSearchCredentialVerified(for: providerID)
             var providerSettings = settings.externalSearchSettings(for: providerID)
@@ -84,17 +98,20 @@ final class ExternalSearchCredentialTester {
 
     private static func defaultProviderFactory(
         providerID: ExternalSearchProviderID,
-        apiKey: String
+        apiKey: String,
+        anonymous: Bool
     ) -> any ExternalSearchProvider {
         switch providerID {
         case .anySearch:
-            return AnySearchExternalSearchProvider(apiKey: apiKey, anonymous: false, isEnabled: true)
+            return AnySearchExternalSearchProvider(apiKey: apiKey, anonymous: anonymous, isEnabled: true)
         case .tavily:
             return TavilySearchProvider(apiKey: apiKey, isEnabled: true)
         case .exa:
             return ExaSearchProvider(apiKey: apiKey, isEnabled: true)
         case .braveLLMContext:
             return BraveLLMContextSearchProvider(apiKey: apiKey, isEnabled: true)
+        case .firecrawl:
+            return FirecrawlSearchProvider(apiKey: apiKey, isEnabled: true, anonymous: anonymous)
         }
     }
 }

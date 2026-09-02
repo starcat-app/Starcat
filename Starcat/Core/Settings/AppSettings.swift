@@ -2374,6 +2374,16 @@ final class AppSettings {
         for provider in ExternalSearchProviderID.allCases where settings[provider] == nil {
             settings[provider] = ExternalSearchProviderSettings.defaultSettings(for: provider)
         }
+        // 迁移：Firecrawl 首版集成时默认 anonymousMode=false（当时尚未支持 keyless 免密），
+        // 后来默认改为 true。这里把「从未配置过」的 firecrawl（未启用、未验证、匿名关）
+        // 迁移到新默认，避免旧缓存让启用开关置灰、用户陷入「无法启用也无法开匿名」的死锁。
+        if var firecrawl = settings[.firecrawl],
+           !firecrawl.isEnabled,
+           !firecrawl.anonymousMode,
+           firecrawl.credentialVerifiedAt == nil {
+            firecrawl.anonymousMode = true
+            settings[.firecrawl] = firecrawl
+        }
         return settings
     }
 

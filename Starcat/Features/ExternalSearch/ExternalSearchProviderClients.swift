@@ -323,6 +323,56 @@ struct BraveLLMContextSearchProvider: ExternalSearchProvider {
     }
 }
 
+/// Firecrawl Search Provider。
+///
+/// Firecrawl 的 `/v2/search` 支持 `includeDomains` / `excludeDomains` 过滤，并通过
+/// `scrapeOptions.formats = ["markdown"]` 让每个结果附带全文 markdown——这是它的核心
+/// 卖点（search 结果直接带全文，供 AI 外部上下文使用）。
+struct FirecrawlSearchProvider: ExternalSearchProvider {
+    let id: ExternalSearchProviderID = .firecrawl
+    let capabilities = ExternalSearchCapabilities.capabilities(for: .firecrawl)
+
+    private let apiKey: String?
+    private let anonymous: Bool
+    private let isEnabled: Bool
+    /// 是否请求全文 markdown（`scrapeOptions.formats=["markdown"]`）。默认 false。
+    private let fetchFullText: Bool
+    private let baseURL: URL
+    private let http: ExternalSearchHTTPClient
+
+    init(
+        apiKey: String?,
+        isEnabled: Bool,
+        anonymous: Bool = false,
+        fetchFullText: Bool = false,
+        baseURL: URL = URL(string: "https://api.firecrawl.dev")!,
+        session: URLSession? = nil
+    ) {
+        self.apiKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isEnabled = isEnabled
+        self.anonymous = anonymous
+        self.fetchFullText = fetchFullText
+        self.baseURL = baseURL
+        self.http = ExternalSearchHTTPClient(session: session)
+    }
+
+    func search(_ request: ExternalSearchRequest) async throws -> ExternalSearchResponse {
+        guard isEnabled else { throw ExternalSearchError.disabled(provider: id) }
+        // Firecrawl keyless tier：匿名模式无需 Key（不传 Authorization）；有 Key 时用 Bearer。
+        guard anonymous || apiKey?.isEmpty == false else { throw ExternalSearchError.missingAPIKey(provider: id) }
+        var urlRequest = URLRequest(url: baseURL.appendingPathComponent("v2/search"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        if !anonymous, let apiKey, !apiKey.isEmpty {
+            urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        urlRequest.httpBody = try JSONEncoder.firecrawl.encode(FirecrawlRequest(from: request, fetchFullText: fetchFullText))
+        let response: FirecrawlResponse = try await http.perform(urlRequest, provider: id)
+        return response.externalSearchResponse(provider: id)
+    }
+}
+
 // MARK: - Tavily DTO
 
 private struct TavilyRequest: Encodable {
@@ -532,11 +582,73 @@ private struct BraveLLMContextResponse: Decodable {
     }
 }
 
+// MARK: - Firecrawl DTO
+
+private struct FirecrawlRequest: Encodable {
+    struct ScrapeOptions: Encodable {
+        let formats: [String]
+    }
+
+    let query: String
+    let limit: Int
+    let includeDomains: [String]?
+    let excludeDomains: [String]?
+    let scrapeOptions: ScrapeOptions?
+
+    init(from request: ExternalSearchRequest, fetchFullText: Bool) {
+        self.query = request.query
+        self.limit = request.maxResults
+        self.includeDomains = request.includeDomains.isEmpty ? nil : request.includeDomains
+        self.excludeDomains = request.excludeDomains.isEmpty ? nil : request.excludeDomains
+        // 仅当用户开启「带全文」时才请求 markdown；否则只拿 url/title/description，快且省 credits。
+        self.scrapeOptions = fetchFullText ? ScrapeOptions(formats: ["markdown"]) : nil
+    }
+}
+
+private struct FirecrawlResponse: Decodable {
+    struct WebResult: Decodable {
+        let url: String?
+        let title: String?
+        let description: String?
+        let markdown: String?
+    }
+
+    struct DataNode: Decodable {
+        let web: [WebResult]?
+    }
+
+    let success: Bool?
+    let data: DataNode?
+
+    func externalSearchResponse(provider: ExternalSearchProviderID) -> ExternalSearchResponse {
+        let hits = (data?.web ?? []).compactMap { result -> ExternalSearchHit? in
+            guard let urlString = result.url, let url = URL(string: urlString) else { return nil }
+            return ExternalSearchHit(
+                title: result.title ?? url.host ?? url.absoluteString,
+                url: url,
+                snippet: result.description,
+                extractedText: result.markdown
+            )
+        }
+        return ExternalSearchResponse(
+            hits: hits,
+            metadata: ExternalSearchMetadata(provider: provider, totalResults: hits.count)
+        )
+    }
+}
+
 private extension JSONEncoder {
     static let externalSearch: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+
+    /// Firecrawl REST body 使用 camelCase 字段（`includeDomains` / `excludeDomains` /
+    /// `scrapeOptions`），与 `.externalSearch` 的 snake_case 策略不同，单独建 encoder。
+    static let firecrawl: JSONEncoder = {
+        let encoder = JSONEncoder()
         return encoder
     }()
 }

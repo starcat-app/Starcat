@@ -44,6 +44,14 @@ struct ExternalSearchRegistry: Sendable {
             return ExaSearchProvider(apiKey: apiKey, isEnabled: providerSettings.isEnabled, session: session)
         case .braveLLMContext:
             return BraveLLMContextSearchProvider(apiKey: apiKey, isEnabled: providerSettings.isEnabled, session: session)
+        case .firecrawl:
+            return FirecrawlSearchProvider(
+                apiKey: apiKey,
+                isEnabled: providerSettings.isEnabled,
+                anonymous: providerSettings.anonymousMode,
+                fetchFullText: providerSettings.fetchFullText,
+                session: session
+            )
         }
     }
 
@@ -52,7 +60,7 @@ struct ExternalSearchRegistry: Sendable {
             let providerSettings = settingsSnapshot.providerSettings[id]
                 ?? ExternalSearchProviderSettings.defaultSettings(for: id)
             guard providerSettings.isEnabled else { return false }
-            if id == .anySearch, providerSettings.anonymousMode { return true }
+            if (id == .anySearch || id == .firecrawl), providerSettings.anonymousMode { return true }
             if includeUnverified { return settingsSnapshot.apiKeys[id]?.isEmpty == false }
             return settingsSnapshot.apiKeys[id]?.isEmpty == false && providerSettings.hasVerifiedCredential
         }

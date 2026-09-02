@@ -751,8 +751,13 @@ struct IntegrationSettingsTab: View {
                 }
                 .disabled(!canToggleProviderOn(provider))
 
-                if provider == .anySearch {
+                if provider == .anySearch || provider == .firecrawl {
                     Toggle("settings.externalSearch.anonymous", isOn: providerAnonymousBinding(provider))
+                        .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
+                }
+
+                if provider == .firecrawl {
+                    Toggle("settings.externalSearch.firecrawl.fullText", isOn: providerFetchFullTextBinding(provider))
                         .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
                 }
 
@@ -815,7 +820,7 @@ struct IntegrationSettingsTab: View {
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
                     .fixedSize()
-                    .disabled(apiKeyDraft(for: provider).isEmpty || externalSearchAPIKeyTestStates[provider] == .testing)
+                    .disabled(!canTestExternalSearchKey(provider))
                 }
             }
         }
@@ -880,6 +885,17 @@ struct IntegrationSettingsTab: View {
         )
     }
 
+    private func providerFetchFullTextBinding(_ provider: ExternalSearchProviderID) -> Binding<Bool> {
+        Binding(
+            get: { settings.externalSearchSettings(for: provider).fetchFullText },
+            set: { newValue in
+                var providerSettings = settings.externalSearchSettings(for: provider)
+                providerSettings.fetchFullText = newValue
+                settings.setExternalSearchSettings(providerSettings, for: provider)
+            }
+        )
+    }
+
     private func apiKeyBinding(_ provider: ExternalSearchProviderID) -> Binding<String> {
         Binding(
             get: { externalSearchAPIKeys[provider] ?? "" },
@@ -897,7 +913,7 @@ struct IntegrationSettingsTab: View {
 
     private func canToggleProviderOn(_ provider: ExternalSearchProviderID) -> Bool {
         let providerSettings = settings.externalSearchSettings(for: provider)
-        if provider == .anySearch, providerSettings.anonymousMode { return true }
+        if (provider == .anySearch || provider == .firecrawl), providerSettings.anonymousMode { return true }
         return providerSettings.hasVerifiedCredential && settings.externalSearchAPIKey(for: provider)?.isEmpty == false
     }
 
@@ -919,6 +935,8 @@ struct IntegrationSettingsTab: View {
             return URL(string: "https://dashboard.exa.ai/api-keys")!
         case .braveLLMContext:
             return URL(string: "https://api-dashboard.search.brave.com")!
+        case .firecrawl:
+            return URL(string: "https://www.firecrawl.dev/app/api-keys")!
         }
     }
 
@@ -936,16 +954,29 @@ struct IntegrationSettingsTab: View {
         })
     }
 
+    /// 测试按钮是否可点：匿名（keyless）模式无需 key；认证模式要求已输入 key。
+    private func canTestExternalSearchKey(_ provider: ExternalSearchProviderID) -> Bool {
+        if externalSearchAPIKeyTestStates[provider] == .testing { return false }
+        let providerSettings = settings.externalSearchSettings(for: provider)
+        if (provider == .anySearch || provider == .firecrawl), providerSettings.anonymousMode {
+            return true
+        }
+        return !apiKeyDraft(for: provider).isEmpty
+    }
+
     /// 使用输入框中的未保存 Key 发起真实 credential test。探测成功后才持久化；
     /// 失败时不保存候选 Key，也不自动启用 Provider。
     private func testExternalSearchAPIKey(_ provider: ExternalSearchProviderID) {
         let candidate = apiKeyDraft(for: provider)
-        guard !candidate.isEmpty else { return }
+        let providerSettings = settings.externalSearchSettings(for: provider)
+        let anonymous = (provider == .anySearch || provider == .firecrawl) && providerSettings.anonymousMode
+        // 匿名（keyless）模式允许空 key；认证模式要求 key。
+        guard anonymous || !candidate.isEmpty else { return }
 
         externalSearchAPIKeyTestStates[provider] = .testing
         Task {
             let tester = ExternalSearchCredentialTester(settings: settings)
-            switch await tester.test(provider: provider, candidateKey: candidate) {
+            switch await tester.test(provider: provider, candidateKey: candidate, anonymous: anonymous) {
             case .succeeded:
                 externalSearchAPIKeys[provider] = candidate
                 externalSearchAPIKeyTestStates[provider] = .succeeded

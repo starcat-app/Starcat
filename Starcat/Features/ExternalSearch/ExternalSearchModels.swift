@@ -14,6 +14,7 @@ import Foundation
 /// Starcat 支持的外部搜索 Provider。
 enum ExternalSearchProviderID: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case anySearch = "anysearch"
+    case firecrawl
     case tavily
     case exa
     case braveLLMContext = "brave-llm-context"
@@ -31,6 +32,8 @@ enum ExternalSearchProviderID: String, CaseIterable, Identifiable, Codable, Hash
             return "Exa"
         case .braveLLMContext:
             return "Brave LLM Context"
+        case .firecrawl:
+            return "Firecrawl"
         }
     }
 
@@ -47,7 +50,8 @@ enum ExternalSearchProviderID: String, CaseIterable, Identifiable, Codable, Hash
         .exa,
         .tavily,
         .braveLLMContext,
-        .anySearch
+        .anySearch,
+        .firecrawl
     ]
 }
 
@@ -68,6 +72,7 @@ enum ExternalContextProviderSelection: String, Codable, Hashable, Sendable {
     case tavily
     case exa
     case braveLLMContext = "brave-llm-context"
+    case firecrawl
 
     var explicitProviderID: ExternalSearchProviderID? {
         switch self {
@@ -81,6 +86,8 @@ enum ExternalContextProviderSelection: String, Codable, Hashable, Sendable {
             return .exa
         case .braveLLMContext:
             return .braveLLMContext
+        case .firecrawl:
+            return .firecrawl
         }
     }
 
@@ -94,6 +101,8 @@ enum ExternalContextProviderSelection: String, Codable, Hashable, Sendable {
             return .exa
         case .braveLLMContext:
             return .braveLLMContext
+        case .firecrawl:
+            return .firecrawl
         }
     }
 }
@@ -107,17 +116,40 @@ struct ExternalSearchProviderSettings: Codable, Equatable, Sendable {
     var anonymousMode: Bool
     var defaultMaxResults: Int
     var credentialVerifiedAt: Date?
+    /// 是否请求全文内容。目前仅 Firecrawl 使用：控制 `scrapeOptions.formats=["markdown"]`。
+    /// 默认关闭——全文会触发每个结果的 scrape，显著变慢并消耗 credits。
+    var fetchFullText: Bool
 
     init(
         isEnabled: Bool = false,
         anonymousMode: Bool = false,
         defaultMaxResults: Int = 10,
-        credentialVerifiedAt: Date? = nil
+        credentialVerifiedAt: Date? = nil,
+        fetchFullText: Bool = false
     ) {
         self.isEnabled = isEnabled
         self.anonymousMode = anonymousMode
         self.defaultMaxResults = Self.clampMaxResults(defaultMaxResults)
         self.credentialVerifiedAt = credentialVerifiedAt
+        self.fetchFullText = fetchFullText
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isEnabled
+        case anonymousMode
+        case defaultMaxResults
+        case credentialVerifiedAt
+        case fetchFullText
+    }
+
+    /// 向后兼容：旧缓存没有 `fetchFullText`，decode 时缺省 false，不丢其它字段。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        self.anonymousMode = try container.decode(Bool.self, forKey: .anonymousMode)
+        self.defaultMaxResults = Self.clampMaxResults(try container.decode(Int.self, forKey: .defaultMaxResults))
+        self.credentialVerifiedAt = try container.decodeIfPresent(Date.self, forKey: .credentialVerifiedAt)
+        self.fetchFullText = try container.decodeIfPresent(Bool.self, forKey: .fetchFullText) ?? false
     }
 
     var hasVerifiedCredential: Bool {
@@ -126,7 +158,7 @@ struct ExternalSearchProviderSettings: Codable, Equatable, Sendable {
 
     static func defaultSettings(for provider: ExternalSearchProviderID) -> ExternalSearchProviderSettings {
         switch provider {
-        case .anySearch:
+        case .anySearch, .firecrawl:
             return ExternalSearchProviderSettings(isEnabled: false, anonymousMode: true, defaultMaxResults: 10)
         case .tavily, .exa, .braveLLMContext:
             return ExternalSearchProviderSettings(isEnabled: false, anonymousMode: false, defaultMaxResults: 10)
@@ -179,6 +211,13 @@ struct ExternalSearchCapabilities: Equatable, Sendable {
                 supportsAnonymous: false,
                 supportsFreshness: true,
                 supportsDomainFilters: false,
+                supportsExtractedText: true
+            )
+        case .firecrawl:
+            return ExternalSearchCapabilities(
+                supportsAnonymous: true,
+                supportsFreshness: false,
+                supportsDomainFilters: true,
                 supportsExtractedText: true
             )
         }
