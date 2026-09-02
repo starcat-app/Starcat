@@ -751,7 +751,7 @@ struct IntegrationSettingsTab: View {
                 }
                 .disabled(!canToggleProviderOn(provider))
 
-                if provider == .anySearch || provider == .firecrawl {
+                if provider.supportsAnonymous {
                     Toggle("settings.externalSearch.anonymous", isOn: providerAnonymousBinding(provider))
                         .disabled(!settings.externalSearchSettings(for: provider).isEnabled)
                 }
@@ -913,7 +913,7 @@ struct IntegrationSettingsTab: View {
 
     private func canToggleProviderOn(_ provider: ExternalSearchProviderID) -> Bool {
         let providerSettings = settings.externalSearchSettings(for: provider)
-        if (provider == .anySearch || provider == .firecrawl), providerSettings.anonymousMode { return true }
+        if provider.supportsAnonymous, providerSettings.anonymousMode { return true }
         return providerSettings.hasVerifiedCredential && settings.externalSearchAPIKey(for: provider)?.isEmpty == false
     }
 
@@ -958,7 +958,7 @@ struct IntegrationSettingsTab: View {
     private func canTestExternalSearchKey(_ provider: ExternalSearchProviderID) -> Bool {
         if externalSearchAPIKeyTestStates[provider] == .testing { return false }
         let providerSettings = settings.externalSearchSettings(for: provider)
-        if (provider == .anySearch || provider == .firecrawl), providerSettings.anonymousMode {
+        if provider.supportsAnonymous, providerSettings.anonymousMode {
             return true
         }
         return !apiKeyDraft(for: provider).isEmpty
@@ -969,7 +969,7 @@ struct IntegrationSettingsTab: View {
     private func testExternalSearchAPIKey(_ provider: ExternalSearchProviderID) {
         let candidate = apiKeyDraft(for: provider)
         let providerSettings = settings.externalSearchSettings(for: provider)
-        let anonymous = (provider == .anySearch || provider == .firecrawl) && providerSettings.anonymousMode
+        let anonymous = provider.supportsAnonymous && providerSettings.anonymousMode
         // 匿名（keyless）模式允许空 key；认证模式要求 key。
         guard anonymous || !candidate.isEmpty else { return }
 

@@ -45,6 +45,15 @@ enum ExternalSearchProviderID: String, CaseIterable, Identifiable, Codable, Hash
         "external-search.\(rawValue)"
     }
 
+    /// 是否支持匿名（keyless）访问。
+    ///
+    /// 统一从 `ExternalSearchCapabilities.capabilities(for:)` 派生，避免各处硬编码
+    /// `provider == .anySearch || provider == .firecrawl`——新增支持匿名的 provider 时
+    /// 只需在 capabilities 里声明 `supportsAnonymous: true`，无需逐个改 UI / Registry 判断。
+    var supportsAnonymous: Bool {
+        ExternalSearchCapabilities.capabilities(for: self).supportsAnonymous
+    }
+
     /// Automatic External Context 的第一版固定优先级。
     static let automaticContextPriority: [ExternalSearchProviderID] = [
         .exa,
@@ -157,12 +166,12 @@ struct ExternalSearchProviderSettings: Codable, Equatable, Sendable {
     }
 
     static func defaultSettings(for provider: ExternalSearchProviderID) -> ExternalSearchProviderSettings {
-        switch provider {
-        case .anySearch, .firecrawl:
-            return ExternalSearchProviderSettings(isEnabled: false, anonymousMode: true, defaultMaxResults: 10)
-        case .tavily, .exa, .braveLLMContext:
-            return ExternalSearchProviderSettings(isEnabled: false, anonymousMode: false, defaultMaxResults: 10)
-        }
+        // 匿名能力由 capabilities 决定默认值：支持 keyless 的 provider 默认匿名开启。
+        ExternalSearchProviderSettings(
+            isEnabled: false,
+            anonymousMode: provider.supportsAnonymous,
+            defaultMaxResults: 10
+        )
     }
 
     static func defaultsByProvider() -> [ExternalSearchProviderID: ExternalSearchProviderSettings] {

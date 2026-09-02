@@ -101,7 +101,7 @@ struct ExternalSearchWebProvider: SearchProvider {
         let settings = snapshot.providerSettings[provider]
             ?? ExternalSearchProviderSettings.defaultSettings(for: provider)
         guard settings.isEnabled else { return .disabled(provider: provider) }
-        if provider == .anySearch, settings.anonymousMode { return .disabled(provider: provider) }
+        if provider.supportsAnonymous, settings.anonymousMode { return .disabled(provider: provider) }
         guard snapshot.apiKeys[provider]?.isEmpty == false else {
             return .missingAPIKey(provider: provider)
         }

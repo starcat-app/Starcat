@@ -60,7 +60,7 @@ struct ExternalSearchRegistry: Sendable {
             let providerSettings = settingsSnapshot.providerSettings[id]
                 ?? ExternalSearchProviderSettings.defaultSettings(for: id)
             guard providerSettings.isEnabled else { return false }
-            if (id == .anySearch || id == .firecrawl), providerSettings.anonymousMode { return true }
+            if id.supportsAnonymous, providerSettings.anonymousMode { return true }
             if includeUnverified { return settingsSnapshot.apiKeys[id]?.isEmpty == false }
             return settingsSnapshot.apiKeys[id]?.isEmpty == false && providerSettings.hasVerifiedCredential
         }

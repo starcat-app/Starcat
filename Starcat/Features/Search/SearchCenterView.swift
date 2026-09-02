@@ -501,7 +501,7 @@ struct SearchCenterView: View {
     private func isExternalSearchProviderUsable(_ provider: ExternalSearchProviderID) -> Bool {
         let providerSettings = AppSettings.shared.externalSearchSettings(for: provider)
         guard providerSettings.isEnabled else { return false }
-        if provider == .anySearch, providerSettings.anonymousMode { return true }
+        if provider.supportsAnonymous, providerSettings.anonymousMode { return true }
         return providerSettings.hasVerifiedCredential && AppSettings.shared.externalSearchAPIKey(for: provider)?.isEmpty == false
     }
 
@@ -525,12 +525,12 @@ struct SearchCenterView: View {
             } description: {
                 Text("search.web.provider.requiresConfigurationDescription")
             } actions: {
-                if viewModel.webSearchProvider == .anySearch,
-                   AppSettings.shared.externalSearchSettings(for: .anySearch).anonymousMode {
+                if viewModel.webSearchProvider.supportsAnonymous,
+                   AppSettings.shared.externalSearchSettings(for: viewModel.webSearchProvider).anonymousMode {
                     Button("search.empty.anySearchDisabled.action") {
-                        var providerSettings = AppSettings.shared.externalSearchSettings(for: .anySearch)
+                        var providerSettings = AppSettings.shared.externalSearchSettings(for: viewModel.webSearchProvider)
                         providerSettings.isEnabled = true
-                        AppSettings.shared.setExternalSearchSettings(providerSettings, for: .anySearch)
+                        AppSettings.shared.setExternalSearchSettings(providerSettings, for: viewModel.webSearchProvider)
                         Task { await viewModel.submit() }
                     }
                     .buttonStyle(.borderedProminent)
