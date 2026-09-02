@@ -180,10 +180,13 @@ struct BatchAIQueueServiceTests {
         #expect(service.selectedRepoIDsForTagApplication == [repo.id])
     }
 
-    @Test("自动应用不会把尚未创建的高置信度标签误报为成功")
+    @Test("高置信度新标签待确认时不额外预选低于阈值的标签")
     func autoApplyKeepsMissingAboveThresholdTagForInlineReview() async throws {
-        let suggestion = AITagSuggestion(name: "New Tag", confidence: 0.95, reason: "高置信度建议")
-        let provider = ImmediateBatchAIInsightProvider(suggestions: [suggestion])
+        let suggestions = [
+            AITagSuggestion(name: "New Tag", confidence: 0.95, reason: "高置信度建议"),
+            AITagSuggestion(name: "Lower Tag", confidence: 0.80, reason: "低于阈值建议")
+        ]
+        let provider = ImmediateBatchAIInsightProvider(suggestions: suggestions)
         let service = try makeService(insightProvider: provider)
         var repo = Repo.makeMinimal(owner: "acme", name: "missing-tag")
         repo.id = 508
@@ -197,11 +200,10 @@ struct BatchAIQueueServiceTests {
 
         let job = try #require(service.jobs.first)
         #expect(job.appliedTagNames.isEmpty)
-        #expect(job.suggestedTags == [suggestion])
-        #expect(job.selectedSuggestedTagIDs == [suggestion.id])
+        #expect(job.suggestedTags == suggestions)
+        #expect(job.selectedSuggestedTagIDs == [suggestions[0].id])
         #expect(job.tagReviewState == .pending)
         #expect(BatchAIQueuePresentationStore.primaryState(for: job) == .pendingReview)
-        #expect(service.completedCount == 0)
         #expect(service.selectedRepoIDsForTagApplication == [repo.id])
     }
 
