@@ -178,10 +178,10 @@ struct BatchAIOptionsSheet: View {
                 title: "batchAI.options.autoApply",
                 isOn: $options.autoApplyTags
             )
+            // 与「自动应用推荐标签」左对齐；依赖关系只靠禁用态表达，不再嵌套缩进。
             CompactSettingsToggleRow(
                 title: "batchAI.options.autoCreateMissingTags",
                 isOn: $options.autoCreateMissingTags,
-                isNested: true,
                 isDisabled: !options.autoApplyTags
             )
 
