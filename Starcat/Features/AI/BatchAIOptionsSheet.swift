@@ -38,8 +38,6 @@ struct BatchAIOptionsSheet: View {
     /// 实际进度估算由 BatchAIQueueService.estimatedTimeRemaining 接管。
     private static let avgSecondsPerRepo: Double = 8.0
 
-    /// 紧凑开关的状态动画在「关闭应用内动画」时跳过。
-    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
@@ -175,67 +173,17 @@ struct BatchAIOptionsSheet: View {
 
             Divider()
 
-            // 自动应用是结果处理策略，不是 AI 要执行的任务；放在本次整理摘要中，
-            // 与仓库分组预检页保持相同的信息层级和紧凑开关样式。
-            Toggle(isOn: $options.autoApplyTags) {
-                HStack(spacing: 8) {
-                    Text("batchAI.options.autoApply")
-
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(options.autoApplyTags ? Color.accentColor : Color.secondary.opacity(0.36))
-
-                        Circle()
-                            .fill(.white)
-                            .overlay {
-                                Circle()
-                                    .stroke(.black.opacity(0.08), lineWidth: 0.5)
-                            }
-                            .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
-                            .padding(2)
-                            .offset(x: options.autoApplyTags ? 20 : 0)
-                    }
-                    .frame(width: 44, height: 24)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: options.autoApplyTags)
-                    .accessibilityHidden(true)
-                }
-                .contentShape(Rectangle())
-            }
-            .toggleStyle(.button)
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .font(interfaceScale.font(.caption))
-
-            Toggle(isOn: $options.autoCreateMissingTags) {
-                HStack(spacing: 8) {
-                    Text("batchAI.options.autoCreateMissingTags")
-
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(options.autoCreateMissingTags ? Color.accentColor : Color.secondary.opacity(0.36))
-
-                        Circle()
-                            .fill(.white)
-                            .overlay {
-                                Circle()
-                                    .stroke(.black.opacity(0.08), lineWidth: 0.5)
-                            }
-                            .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
-                            .padding(2)
-                            .offset(x: options.autoCreateMissingTags ? 20 : 0)
-                    }
-                    .frame(width: 44, height: 24)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: options.autoCreateMissingTags)
-                    .accessibilityHidden(true)
-                }
-                .contentShape(Rectangle())
-            }
-            .toggleStyle(.button)
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .font(interfaceScale.font(.caption))
-            .padding(.leading, 16)
-            .disabled(!options.autoApplyTags)
+            // 自动应用是结果处理策略，不是 AI 要执行的任务；右对齐 Settings 行与 sessionFact 一致。
+            CompactSettingsToggleRow(
+                title: "batchAI.options.autoApply",
+                isOn: $options.autoApplyTags
+            )
+            CompactSettingsToggleRow(
+                title: "batchAI.options.autoCreateMissingTags",
+                isOn: $options.autoCreateMissingTags,
+                isNested: true,
+                isDisabled: !options.autoApplyTags
+            )
 
             // 阈值始终可见，关闭自动应用时只禁用 Slider，避免开关导致卡片内容跳动。
             thresholdSlider

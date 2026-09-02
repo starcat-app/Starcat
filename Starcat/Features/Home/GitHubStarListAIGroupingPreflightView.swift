@@ -262,19 +262,10 @@ struct GitHubStarListAIGroupingPreflightView: View {
 
             Divider()
 
-            // macOS 26 的系统 Switch 在固定 AppKit hosting sheet 中会出现 thumb 消失或拉伸。
-            // 继续使用 Toggle 持有语义和 Binding，只把轨道绘制收敛为稳定的紧凑样式。
-            Toggle(isOn: $autoConfirmEnabled) {
-                HStack(spacing: 8) {
-                    Text("githubStarLists.aiGrouping.preflight.autoConfirm")
-                    GitHubStarListAIGroupingSwitchIndicator(isOn: autoConfirmEnabled)
-                }
-                .contentShape(Rectangle())
-            }
-            .toggleStyle(.button)
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .font(interfaceScale.font(.caption))
+            CompactSettingsToggleRow(
+                title: "githubStarLists.aiGrouping.preflight.autoConfirm",
+                isOn: $autoConfirmEnabled
+            )
 
             // 阈值始终展开；关闭自动确认时只禁用 Slider，保留当前数值和说明。
             VStack(alignment: .leading, spacing: 4) {
@@ -376,33 +367,6 @@ struct GitHubStarListAIGroupingPreflightView: View {
                 settings.githubStarListAutoGroupingSettings = grouping
             }
         )
-    }
-}
-
-/// 仅用于 AI 分组预检页的稳定 Switch 轨道；thumb 位置同时提供非颜色状态区分。
-private struct GitHubStarListAIGroupingSwitchIndicator: View {
-    let isOn: Bool
-
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            Capsule()
-                .fill(isOn ? Color.accentColor : Color.secondary.opacity(0.36))
-
-            Circle()
-                .fill(.white)
-                .overlay {
-                    Circle()
-                        .stroke(.black.opacity(0.08), lineWidth: 0.5)
-                }
-                .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
-                .padding(2)
-                .offset(x: isOn ? 20 : 0)
-        }
-        .frame(width: 44, height: 24)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isOn)
-        .accessibilityHidden(true)
     }
 }
 

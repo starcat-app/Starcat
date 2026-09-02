@@ -78315,13 +78315,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Automatically create missing tags"
+            "value" : "Create new tags"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自动创建不存在的标签"
+            "value" : "允许新增标签"
           }
         }
       }
@@ -78344,7 +78344,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auto-apply recommended tags"
+            "value" : "Auto-apply"
           }
         },
         "es" : {
