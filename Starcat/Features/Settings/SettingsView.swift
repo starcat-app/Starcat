@@ -1889,6 +1889,8 @@ private struct StorageSettingsTab: View {
             }
 
             Section {
+                StorageCacheUsageOverviewCard(snapshot: cacheUsageOverviewSnapshot)
+
                 usageRow(
                     titleKey: "settings.storage.readme",
                     usageText: readmeUsageText,
@@ -2474,6 +2476,27 @@ private struct StorageSettingsTab: View {
     }
 
     // MARK: - 用量文案
+
+    /// Cache Usage 顶部总览：把十几种明细合并成 4 大类占比。
+    private var cacheUsageOverviewSnapshot: StorageCacheUsageOverviewSnapshot {
+        .make(
+            readmeBytes: stats.readmeBytes,
+            imageBytes: Int64(stats.imageDiskBytes),
+            archiveBytes: stats.archiveBytes,
+            translationBytes: translationCache.totalBytes,
+            externalSearchBytes: externalSearchCache.totalBytes,
+            wikiBytes: wikiCache.totalBytes,
+            issueTimelineBytes: issueTimelineCache.totalBytes,
+            issueCommentDraftBytes: issueCommentDraftCache.totalBytes,
+            recommendationBytes: recommendationCache.totalBytes,
+            chatHistoryBytes: chatHistoryStore.totalBytes,
+            ragIndexBytes: ragIndexBytes,
+            ragHistoryBytes: ragConversationStats.totalBytes,
+            aiContextBytes: aiContextStorage.totalBytes,
+            codeFlowBytes: codeFlowStorage.totalBytes,
+            codebaseMemoryBytes: codebaseMemoryStorage.totalBytes
+        )
+    }
 
     private var readmeUsageText: String {
         String(

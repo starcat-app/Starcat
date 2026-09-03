@@ -146,7 +146,13 @@ struct UnifiedRepoRow: View {
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
     let trailingReservedWidth: CGFloat
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(AppDependencies.self) private var dependencies
+
+    /// 列表次要统计 chip（Forks 等）用偏红淡色，与 Smart Collection 卡片同源。
+    private var listMetaTint: Color {
+        StatSemanticColor.listMeta.resolved(colorScheme: colorScheme)
+    }
 
     /// 探索/活动列表行拿的是接口快照；star/unstar 后读 Registry 会话星标数。
     private var displayedStarsCount: Int {
@@ -205,7 +211,7 @@ struct UnifiedRepoRow: View {
                         }
 
                         if card.isFork {
-                            MetaBadge(systemImage: "tuningfork", text: "Fork", tint: .secondary)
+                            MetaBadge(systemImage: "tuningfork", text: "Fork", tint: listMetaTint)
                         }
 
                         if !card.weeklySources.isEmpty {
@@ -348,7 +354,7 @@ struct UnifiedRepoRow: View {
             }
             StarsBadge(count: displayedStarsCount, style: .full)
             if includeForks {
-                MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: .secondary)
+                MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: listMetaTint)
             }
             if hasAISummary {
                 // 与 RAG 仓库选择器复用同一 `sparkles` 语义；只显示图标，完整含义通过

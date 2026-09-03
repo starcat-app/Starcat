@@ -380381,6 +380381,134 @@
         }
       }
     },
+    "settings.storage.cacheOverview.empty" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No cache yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These caches can be rebuilt. Clearing them does not delete your stars, tags, or notes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这些缓存可重新生成。清理不会删除你的 Stars、标签或笔记。"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.group.ai" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI & Knowledge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 与知识库"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.group.code" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code tools"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码工具"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.group.content" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Content"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内容缓存"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.group.discovery" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search & Wiki"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索与 Wiki"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缓存用量"
+          }
+        }
+      }
+    },
+    "settings.storage.cacheOverview.totalFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ total"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共 %@"
+          }
+        }
+      }
+    },
     "settings.storage.chatHistory" : {
       "extractionState" : "manual",
       "localizations" : {

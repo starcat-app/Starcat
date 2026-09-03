@@ -32,6 +32,12 @@ enum StatSemanticColor {
     case fork
     case watchers
     case issues
+    /// 列表 / Smart Collection 卡片上 Forks・Watchers・Issues 共用的偏红淡色。
+    ///
+    /// 与详情页语义色刻意分开：详情 Fork 仍是蓝、Watchers 仍是紫、Issues 仍是高对比红；
+    /// 列表 chip 需要三者彼此一致、又比 `.secondary` 灰更能识别，因此用降饱和玫瑰红，
+    /// 避免三颗灰胶囊叠在一起，也不抢 Stars 黄与 Language 色点。
+    case listMeta
     case branch
     case language
     case wikiDeepWiki
@@ -50,6 +56,8 @@ enum StatSemanticColor {
         case .fork: return 0x2563EB
         case .watchers: return 0x7C3AED
         case .issues: return 0xDC2626
+        // 比 .issues 更灰一档的玫瑰红，亮底下仍可读、不刺眼。
+        case .listMeta: return 0xB56B72
         case .branch: return 0x7C3AED
         case .language: return 0x059669
         case .wikiDeepWiki: return 0x4F46E5
@@ -68,6 +76,8 @@ enum StatSemanticColor {
         case .fork: return 0x60A5FA
         case .watchers: return 0xA78BFA
         case .issues: return 0xF87171
+        // 暗色底略提亮，仍压饱和，避免和 .issues / .actionLibrary 撞成「报警红」。
+        case .listMeta: return 0xD4A0A6
         case .branch: return 0xA78BFA
         case .language: return 0x34D399
         case .wikiDeepWiki: return 0x818CF8
