@@ -9,7 +9,7 @@
 //    （`Repo` / `TrendingRepo` / `WeeklyFeedItem` / `ActivityItem.repo`），但
 //    它们派发到 toolbar 的「在 GitHub 打开」「复制 clone URL」菜单时**所需字段相同**——
 //    只要 owner / name / htmlUrl + 可选 clone URL / homepage 就够。
-//  - 把这层提取为 `ToolbarRepoSelection` 后，`ExternalLinksMenu` / `CloneMenu` 不再
+//  - 把这层提取为 `ToolbarRepoSelection` 后，`ExternalLinksMenu` 不再
 //    需要环境注入 `HomeViewModel`，纯粹靠入参渲染，单测/Preview 也更容易构造。
 //
 //  关键约束：

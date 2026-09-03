@@ -1500,12 +1500,12 @@ struct RepoListView: View {
             codeFlowRepo: codeFlowRepo,
             codebaseMemoryRepo: codeFlowRepo,
             onOpenCodeFlow: openCodeFlow(for:),
-            onOpenCodebaseMemory: openCodebaseMemory(for:)
+            onOpenCodebaseMemory: openCodebaseMemory(for:),
+            onCloneCopied: { toastKey in
+                RepoDetailToastRequest.post(repoID: shareRepo.id, messageKey: toastKey)
+            }
         )
         .id(actionIdentity)
-        CloneMenu(selection: selection) { toastKey in
-            RepoDetailToastRequest.post(repoID: shareRepo.id, messageKey: toastKey)
-        }
         if !shareRepo.isPrivate,
            let deepLink = RepositoryDeepLink(fullName: shareRepo.fullName, repositoryID: shareRepo.id) {
             let canCreateAIShare = authSession.state.isAuthenticated && isShareAvailable
