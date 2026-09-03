@@ -562,9 +562,17 @@ private struct SmartCollectionRepoCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isAddingToLibrary = false
 
-    /// 与中栏 `UnifiedRepoRow` Forks chip 同源：偏红淡色，不抢 Stars 黄。
-    private var listMetaTint: Color {
-        StatSemanticColor.listMeta.resolved(colorScheme: colorScheme)
+    private var forkTint: Color {
+        StatSemanticColor.fork.resolved(colorScheme: colorScheme)
+    }
+
+    private var watchersTint: Color {
+        StatSemanticColor.watchers.resolved(colorScheme: colorScheme)
+    }
+
+    /// Issues 沿用语义红，但略降饱和，列表胶囊不抢眼。
+    private var issuesTint: Color {
+        StatSemanticColor.issues.resolved(colorScheme: colorScheme)
     }
 
     private var repo: Repo { item.repo }
@@ -708,12 +716,12 @@ private struct SmartCollectionRepoCard: View {
                 ),
                 style: .full
             )
-            MetaBadge(systemImage: "tuningfork", text: repo.forksCount.formattedShort, tint: listMetaTint)
-            MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: listMetaTint)
+            MetaBadge(systemImage: "tuningfork", text: repo.forksCount.formattedShort, tint: forkTint)
+            MetaBadge(systemImage: "eye", text: repo.watchersCount.formattedShort, tint: watchersTint)
             MetaBadge(
                 systemImage: "exclamationmark.circle",
                 text: (repo.openIssuesCount ?? 0).formattedShort,
-                tint: listMetaTint
+                tint: issuesTint
             )
             if let accessIndicator {
                 MetaBadge(
@@ -796,7 +804,7 @@ private struct SmartCollectionRepoCard: View {
                     // 维护停滞：归档标识已上移到 stats 行红色徽章，footer 不再重复。
                     ArchivedBadge(iconOnly: true)
                 } else if repo.isFork {
-                    MetaBadge(systemImage: "tuningfork", text: "Fork", tint: listMetaTint)
+                    MetaBadge(systemImage: "tuningfork", text: "Fork", tint: forkTint)
                 }
 
                 Spacer(minLength: 8)

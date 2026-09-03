@@ -2504,6 +2504,8 @@ struct RepoListView: View {
             break
         case .uncategorized:
             selectedLanguageTitles.append(String.l10n("trending.language.uncategorized"))
+        case .other:
+            selectedLanguageTitles.append(String.l10n("sidebar.languages.other"))
         case .language(let language):
             selectedLanguageTitles.append(LanguageDisplayName.shortened(for: language))
         }
@@ -2770,12 +2772,8 @@ struct RepoListView: View {
     private func globalLanguageBinding(for language: String) -> Binding<Bool> {
         Binding(
             get: {
-                let filters = viewModel.effectiveGlobalFilterState
-                if case .language(let selectedLanguage) = filters.repoLanguageFilter,
-                   selectedLanguage.caseInsensitiveCompare(language) == .orderedSame {
-                    return true
-                }
-                return filters.globalFilterLanguages.contains {
+                // 全局筛选语言只看自己的多选字段，不再读左侧单选的 repoLanguageFilter。
+                return viewModel.effectiveGlobalFilterState.globalFilterLanguages.contains {
                     $0.caseInsensitiveCompare(language) == .orderedSame
                 }
             },
@@ -2875,8 +2873,7 @@ struct RepoListView: View {
                 }
             }
 
-            if viewModel.effectiveGlobalFilterState.repoLanguageFilter != .all
-                || !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
+            if !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
                 Button {
                     viewModel.clearLanguageFiltersFromUser()
                 } label: {

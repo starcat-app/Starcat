@@ -105,12 +105,18 @@ enum RepoLanguageFilter: Equatable, Hashable, Codable, Sendable {
     case all
     case uncategorized
     case language(String)
+    /// 「其他」：语言非空、且不在用户「感兴趣的语言」集合里。
+    /// 真正的排除集合不塞进枚举（否则无法稳定持久化），而是在过滤时从
+    /// `RepoListFilters.excludedLanguages` 注入；这里只存稳定哨兵。
+    case other
 
     private static let uncategorizedRawValue = "__starcat_uncategorized__"
+    private static let otherRawValue = "__starcat_other__"
 
     static func parse(_ raw: String?) -> RepoLanguageFilter {
         guard let raw, !raw.isEmpty else { return .all }
         if raw == uncategorizedRawValue { return .uncategorized }
+        if raw == otherRawValue { return .other }
         return .language(raw)
     }
 
@@ -118,15 +124,8 @@ enum RepoLanguageFilter: Equatable, Hashable, Codable, Sendable {
         switch self {
         case .all: return ""
         case .uncategorized: return Self.uncategorizedRawValue
+        case .other: return Self.otherRawValue
         case .language(let language): return language
-        }
-    }
-
-    var queryLanguage: String?? {
-        switch self {
-        case .all: return nil
-        case .uncategorized: return .some(nil)
-        case .language(let language): return .some(language)
         }
     }
 }
@@ -176,6 +175,10 @@ struct RepoListFilters: Equatable, Sendable {
     var library: RepoLibraryFilter
     var language: RepoLanguageFilter
     var selectedLanguages: Set<String>
+    /// `.language == .other` 时生效：要排除的语言集合（即「感兴趣的语言」全集）。
+    /// 单独建字段而不复用 selectedLanguages，因两者语义相反：selectedLanguages 是
+    /// 「全局筛选选中、要保留」的语言，excludedLanguages 是「其他分类要排除」的语言。
+    var excludedLanguages: Set<String>
     var wikiAvailability: RepoSignalAvailabilityFilter
     var healthAvailability: RepoSignalAvailabilityFilter
     var openSSFAvailability: RepoSignalAvailabilityFilter
@@ -198,6 +201,7 @@ struct RepoListFilters: Equatable, Sendable {
         library: RepoLibraryFilter = .all,
         language: RepoLanguageFilter = .all,
         selectedLanguages: Set<String> = [],
+        excludedLanguages: Set<String> = [],
         wikiAvailability: RepoSignalAvailabilityFilter = .unknown,
         healthAvailability: RepoSignalAvailabilityFilter = .unknown,
         openSSFAvailability: RepoSignalAvailabilityFilter = .unknown,
@@ -217,6 +221,7 @@ struct RepoListFilters: Equatable, Sendable {
         self.library = library
         self.language = language
         self.selectedLanguages = selectedLanguages
+        self.excludedLanguages = excludedLanguages
         self.wikiAvailability = wikiAvailability
         self.healthAvailability = healthAvailability
         self.openSSFAvailability = openSSFAvailability
@@ -238,6 +243,7 @@ struct RepoListFilters: Equatable, Sendable {
         library: .all,
         language: .all,
         selectedLanguages: [],
+        excludedLanguages: [],
         wikiAvailability: .unknown,
         healthAvailability: .unknown,
         openSSFAvailability: .unknown,

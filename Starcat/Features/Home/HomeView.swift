@@ -710,6 +710,12 @@ struct HomeView: View {
                 viewModel.semanticScoreThreshold = newValue
             }
         }
+        // 感兴趣语言变化 → 左侧语言分类重分组 + `.other` 过滤结果刷新（viewModel.didSet 处理）。
+        .onChange(of: settings.interestedLanguages) { _, newValue in
+            if viewModel.interestedLanguages != newValue {
+                viewModel.interestedLanguages = newValue
+            }
+        }
         // Manage ↔ Trending 切换时，记住各自的上次选择，切换回来时恢复
         .onChange(of: selectedSidebarPage) { oldPage, newPage in
             commandRouter.activate(.list)
@@ -1607,7 +1613,7 @@ struct HomeView: View {
             return
         case .allLanguages:
             viewModel.selection = .allStars
-            viewModel.clearLanguageFiltersFromUser()
+            viewModel.clearSidebarLanguageFilter()
             return
         default:
             break
@@ -2029,6 +2035,9 @@ struct HomeView: View {
         }
         if viewModel.globalFilterLanguages != settings.globalFilterLanguages {
             viewModel.globalFilterLanguages = settings.globalFilterLanguages
+        }
+        if viewModel.interestedLanguages != settings.interestedLanguages {
+            viewModel.interestedLanguages = settings.interestedLanguages
         }
         if viewModel.wikiAvailabilityFilter != settings.wikiAvailabilityFilter {
             viewModel.wikiAvailabilityFilter = settings.wikiAvailabilityFilter

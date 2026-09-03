@@ -1056,8 +1056,8 @@ struct SidebarView: View {
                     allLanguagesRow
 
                     if languagesExpanded {
-                        ForEach(viewModel.languageStats) { stat in
-                            languageRow(stat)
+                        ForEach(viewModel.sidebarLanguageRows) { row in
+                            languageRow(row)
                                 .transition(Self.disclosureRowTransition)
                         }
                     }
@@ -1585,7 +1585,7 @@ struct SidebarView: View {
 
                 Spacer(minLength: 8)
 
-                Text(viewModel.languageStats.count.formatted())
+                Text(viewModel.sidebarLanguageRows.count.formatted())
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -2398,24 +2398,23 @@ struct SidebarView: View {
     /// 语言是当前基础仓库范围上的附加条件，不能再通过 `.tag(.language(...))`
     /// 写入 `List(selection:)`，否则会把“未分类 / 知识库”等主导航选择覆盖掉。
     @ViewBuilder
-    private func languageRow(_ stat: LanguageStat) -> some View {
-        let language = stat.languageOrNil
-        let isSelected = isManageLanguageFilterSelected(language)
+    private func languageRow(_ row: HomeViewModel.SidebarLanguageRow) -> some View {
+        let isSelected = isManageLanguageFilterSelected(row.filter)
 
         Button {
-            viewModel.toggleLanguageFilterFromUser(language)
+            viewModel.toggleLanguageFilterFromUser(row.filter)
         } label: {
             Label {
                 // Sidebar count bugfix v4：trailing 容器整体 fixed width 锁死，
                 // 避免选中筛选后计数位数变化导致标题横向跳动。
                 HStack {
-                    Text(verbatim: LanguageDisplayName.shortened(for: stat.displayName))
+                    Text(verbatim: row.title)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(stat.count.formatted())
+                        Text(row.count.formatted())
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -2424,10 +2423,18 @@ struct SidebarView: View {
                     .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
             } icon: {
-                if let language, !language.isEmpty {
-                    LanguageIconView(language: language, size: 14)
-                } else {
+                switch row {
+                case .uncategorized:
                     UncategorizedLanguageIcon(size: 14)
+                case .other:
+                    // 「其他」没有专属语言 logo，用网格图标表示"其余杂项集合"，
+                    // 沿用 SidebarSemanticIconStyle 以便选中时反白。
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .secondary))
+                        .frame(width: 14, height: 14)
+                case .language(let name, _):
+                    LanguageIconView(language: name, size: 14)
                 }
             }
             .contentShape(Rectangle())
@@ -2441,7 +2448,7 @@ struct SidebarView: View {
     /// “全部语言”只清空语言条件，不改变当前基础仓库范围。
     private var allLanguagesRow: some View {
         Button {
-            viewModel.clearLanguageFiltersFromUser()
+            viewModel.clearSidebarLanguageFilter()
         } label: {
             Label {
                 HStack(spacing: 4) {
@@ -2470,21 +2477,8 @@ struct SidebarView: View {
         .focusEffectDisabled()
     }
 
-    /// Sidebar 的语言高亮读取真实有效筛选，确保 Toolbar 修改后这里同步反馈。
-    private func isManageLanguageFilterSelected(_ language: String?) -> Bool {
-        let filters = viewModel.effectiveGlobalFilterState
-        guard let language, !language.isEmpty else {
-            return filters.repoLanguageFilter == .uncategorized
-        }
-
-        let matchesSingleLanguage: Bool
-        if case .language(let selectedLanguage) = filters.repoLanguageFilter {
-            matchesSingleLanguage = selectedLanguage.caseInsensitiveCompare(language) == .orderedSame
-        } else {
-            matchesSingleLanguage = false
-        }
-        return matchesSingleLanguage || filters.globalFilterLanguages.contains {
-            $0.caseInsensitiveCompare(language) == .orderedSame
-        }
+    /// Sidebar 的语言高亮只读左侧单选 `repoLanguageFilter`，不再与全局筛选多选联动。
+    private func isManageLanguageFilterSelected(_ filter: RepoLanguageFilter) -> Bool {
+        viewModel.effectiveGlobalFilterState.repoLanguageFilter == filter
     }
 }

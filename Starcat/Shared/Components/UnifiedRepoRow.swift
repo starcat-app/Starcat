@@ -149,9 +149,9 @@ struct UnifiedRepoRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppDependencies.self) private var dependencies
 
-    /// 列表次要统计 chip（Forks 等）用偏红淡色，与 Smart Collection 卡片同源。
-    private var listMetaTint: Color {
-        StatSemanticColor.listMeta.resolved(colorScheme: colorScheme)
+    /// 中栏 Forks 与详情 / Smart Collection 同源：语义蓝。
+    private var forkTint: Color {
+        StatSemanticColor.fork.resolved(colorScheme: colorScheme)
     }
 
     /// 探索/活动列表行拿的是接口快照；star/unstar 后读 Registry 会话星标数。
@@ -211,7 +211,7 @@ struct UnifiedRepoRow: View {
                         }
 
                         if card.isFork {
-                            MetaBadge(systemImage: "tuningfork", text: "Fork", tint: listMetaTint)
+                            MetaBadge(systemImage: "tuningfork", text: "Fork", tint: forkTint)
                         }
 
                         if !card.weeklySources.isEmpty {
@@ -354,7 +354,7 @@ struct UnifiedRepoRow: View {
             }
             StarsBadge(count: displayedStarsCount, style: .full)
             if includeForks {
-                MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: listMetaTint)
+                MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: forkTint)
             }
             if hasAISummary {
                 // 与 RAG 仓库选择器复用同一 `sparkles` 语义；只显示图标，完整含义通过

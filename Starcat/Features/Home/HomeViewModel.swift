@@ -383,6 +383,7 @@ final class HomeViewModel {
         let library: String
         let language: String
         let selectedLanguages: Set<String>
+        let excludedLanguages: Set<String>
         let healthAvailability: String
         let openSSFAvailability: String
         let tagAvailability: String
@@ -522,6 +523,77 @@ final class HomeViewModel {
     /// Sidebar 的 `languageStats` 必须继续保持 GitHub starred 口径；这里单独维护
     /// `library_state = in_library` 范围，避免未 star 但已入库的 repo 语言在筛选菜单里消失。
     private(set) var knowledgeLanguageStats: [LanguageStat] = []
+
+    /// 左侧语言分类的一行（不含「全部」，全部走独立 allLanguagesRow）。
+    /// 固定顺序：未分类 → 其他 → 感兴趣语言；每行映射一个 `RepoLanguageFilter` 单选目标。
+    enum SidebarLanguageRow: Identifiable, Equatable {
+        case uncategorized(count: Int)
+        case other(count: Int)
+        case language(name: String, count: Int)
+
+        var id: String {
+            switch self {
+            case .uncategorized: return "__uncategorized__"
+            case .other: return "__other__"
+            case .language(let name, _): return name
+            }
+        }
+
+        /// 点击该行要写入的左侧单选语言筛选。
+        var filter: RepoLanguageFilter {
+            switch self {
+            case .uncategorized: return .uncategorized
+            case .other: return .other
+            case .language(let name, _): return .language(name)
+            }
+        }
+
+        var count: Int {
+            switch self {
+            case .uncategorized(let count), .other(let count), .language(_, let count):
+                return count
+            }
+        }
+
+        /// 渲染标题：未分类沿用英文原词（与 LanguageStat 一致），其他走 i18n，语言走短名。
+        var title: String {
+            switch self {
+            case .uncategorized: return "Uncategorized"
+            case .other: return String.l10n("sidebar.languages.other")
+            case .language(let name, _): return LanguageDisplayName.shortened(for: name)
+            }
+        }
+    }
+
+    /// 左侧语言分类行（不含「全部」）。基于 `languageStats`（DB 聚合）与
+    /// `interestedLanguages`（设置页）在内存重分组，不新增 SQL。
+    /// count = 0 的感兴趣语言也保留，避免用户误以为设置被丢。
+    var sidebarLanguageRows: [SidebarLanguageRow] {
+        let interestedSet = Set(interestedLanguages.map { $0.lowercased() })
+        var uncategorizedCount = 0
+        var otherCount = 0
+        var interestedCountByLowercased: [String: Int] = [:]
+
+        for stat in languageStats {
+            let name = stat.language
+            if name.isEmpty {
+                uncategorizedCount = stat.count
+            } else if interestedSet.contains(name.lowercased()) {
+                interestedCountByLowercased[name.lowercased()] = stat.count
+            } else {
+                otherCount += stat.count
+            }
+        }
+
+        var rows: [SidebarLanguageRow] = []
+        rows.append(.uncategorized(count: uncategorizedCount))
+        rows.append(.other(count: otherCount))
+        for language in interestedLanguages {
+            let count = interestedCountByLowercased[language.lowercased()] ?? 0
+            rows.append(.language(name: language, count: count))
+        }
+        return rows
+    }
 
     /// W4 A6：用户自定义标签列表（Sidebar Tags 组）。
     private(set) var tags: [Tag] = []
@@ -719,6 +791,18 @@ final class HomeViewModel {
         didSet {
             guard oldValue != globalFilterLanguages else { return }
             guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+
+    /// 设置页「感兴趣的语言」镜像。左侧语言分类与 `.other` 过滤都依赖它；
+    /// 由 HomeView 从 AppSettings 单向同步（启动 + onChange），ViewModel 本身不持有 settings。
+    /// 变化时只有左侧语言筛选是 `.other` 才 refilter——排除集合变了，列表结果才可能变。
+    var interestedLanguages: [String] = [] {
+        didSet {
+            guard oldValue != interestedLanguages else { return }
+            guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
+            guard repoLanguageFilter == .other else { return }
             reloadOrApplyCurrentManageView()
         }
     }
@@ -1074,72 +1158,52 @@ final class HomeViewModel {
         applyPersistentGlobalFilterState(filters)
     }
 
-    /// Sidebar 与 Toolbar 共用同一份“已选语言”状态。
-    ///
-    /// 分类语言使用 `globalFilterLanguages` 支持多选；无主语言仍由
-    /// `repoLanguageFilter.uncategorized` 表达，因为 SQLite 中它对应 `NULL`，
-    /// 不能伪装成普通字符串塞进 `IN (...)`。
-    func toggleLanguageFilterFromUser(_ language: String?) {
+    /// 左侧语言分类单选 toggle。只操作 `repoLanguageFilter`（单选），
+    /// 与全局筛选的多选 `globalFilterLanguages` 完全解耦；再点一次已选中项 = 取消回「全部」。
+    func toggleLanguageFilterFromUser(_ filter: RepoLanguageFilter) {
         var filters = persistentGlobalFilterState
-        let normalizedLanguage = language?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let normalizedLanguage, !normalizedLanguage.isEmpty {
-            let matchesSingleLanguage: Bool
-            if case .language(let selectedLanguage) = filters.repoLanguageFilter {
-                matchesSingleLanguage = selectedLanguage.caseInsensitiveCompare(normalizedLanguage) == .orderedSame
-            } else {
-                matchesSingleLanguage = false
-            }
-            let matchesMultiLanguage = filters.globalFilterLanguages.contains {
-                $0.caseInsensitiveCompare(normalizedLanguage) == .orderedSame
-            }
+        if filters.repoLanguageFilter == filter {
             filters.repoLanguageFilter = .all
-            let nextLanguages = matchesSingleLanguage || matchesMultiLanguage
-                ? filters.globalFilterLanguages.filter {
-                    $0.caseInsensitiveCompare(normalizedLanguage) != .orderedSame
-                }
-                : filters.globalFilterLanguages + [normalizedLanguage]
-            filters.globalFilterLanguages = AppSettings.normalizedLanguageList(nextLanguages)
         } else {
-            let wasUncategorized = filters.repoLanguageFilter == .uncategorized
-            filters.repoLanguageFilter = wasUncategorized ? .all : .uncategorized
-            filters.globalFilterLanguages = []
+            filters.repoLanguageFilter = filter
         }
-
         applyPersistentGlobalFilterState(filters)
     }
 
-    /// 旧版 `.language(...)` 导航恢复时，把它一次性归一化为“全部仓库 + 语言筛选”。
+    /// 旧版 `.language(...)` 导航恢复：直接落到左侧单选语言筛选，不碰全局多选。
     func selectSingleLanguageFilterFromUser(_ language: String?) {
         var filters = persistentGlobalFilterState
         let normalizedLanguage = language?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let normalizedLanguage, !normalizedLanguage.isEmpty {
-            filters.repoLanguageFilter = .all
-            filters.globalFilterLanguages = [normalizedLanguage]
+            filters.repoLanguageFilter = .language(normalizedLanguage)
         } else {
             filters.repoLanguageFilter = .uncategorized
-            filters.globalFilterLanguages = []
         }
 
         applyPersistentGlobalFilterState(filters)
     }
 
-    /// Toolbar 多选语言接管时清掉旧的单语言/无主语言条件，避免两套语言条件做 AND 后误变空集。
+    /// 全局筛选多选语言。只写 `globalFilterLanguages`，保留左侧单选 `repoLanguageFilter`；
+    /// 两层 AND 叠加（用户选 A），互不清理。
     func setCategorizedLanguageFiltersFromUser(_ languages: [String]) {
         var filters = persistentGlobalFilterState
-        filters.repoLanguageFilter = .all
         filters.globalFilterLanguages = AppSettings.normalizedLanguageList(languages)
         applyPersistentGlobalFilterState(filters)
     }
 
-    /// “全部语言”只重置语言维度，不影响 Star、知识库状态等其它全局筛选。
+    /// 全局筛选「清除语言选择」：只清多选，不动左侧单选。
     func clearLanguageFiltersFromUser() {
         var filters = persistentGlobalFilterState
-        filters.repoLanguageFilter = .all
         filters.globalFilterLanguages = []
+        applyPersistentGlobalFilterState(filters)
+    }
+
+    /// 左侧「全部语言」：只清左侧单选，不动全局筛选语言。
+    func clearSidebarLanguageFilter() {
+        var filters = persistentGlobalFilterState
+        filters.repoLanguageFilter = .all
         applyPersistentGlobalFilterState(filters)
     }
 
@@ -2004,6 +2068,10 @@ final class HomeViewModel {
             }
             filters.projectSearchText = searchQuery
         }
+        // `.other` 的排除集合来自设置页「感兴趣的语言」；SQL 层需要它才能下推 NOT IN。
+        if filters.language == .other {
+            filters.excludedLanguages = Set(interestedLanguages)
+        }
         return filters
     }
 
@@ -2019,6 +2087,7 @@ final class HomeViewModel {
             library: filters.library.rawValue,
             language: filters.language.persistedRawValue,
             selectedLanguages: filters.selectedLanguages,
+            excludedLanguages: filters.excludedLanguages,
             healthAvailability: filters.healthAvailability.rawValue,
             openSSFAvailability: filters.openSSFAvailability.rawValue,
             tagAvailability: filters.tagAvailability.rawValue,
@@ -3239,11 +3308,20 @@ final class HomeViewModel {
                     return actual != status
                 }
             }
-            if let language = filters.repoLanguageFilter.queryLanguage {
-                if let language {
-                    view.removeAll { $0.language != language }
-                } else {
-                    view.removeAll { $0.language != nil }
+            switch filters.repoLanguageFilter {
+            case .all:
+                break
+            case .uncategorized:
+                view.removeAll { $0.language != nil }
+            case .language(let language):
+                view.removeAll { $0.language != language }
+            case .other:
+                // 「其他」= 语言非空且不在「感兴趣的语言」里。用 Set 保证 O(1) contains，
+                // 避免 repo 数 × 语言数退化成 O(n·m)。
+                let excluded = Set(interestedLanguages)
+                view.removeAll { repo in
+                    guard let language = repo.language else { return true }
+                    return excluded.contains(language)
                 }
             }
             switch filters.libraryFilter {

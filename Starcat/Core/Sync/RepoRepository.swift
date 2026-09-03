@@ -810,12 +810,23 @@ struct GRDBRepoRepository {
         if filters.hideForks {
             whereClauses.append("r.is_fork = 0")
         }
-        if let language = filters.language.queryLanguage {
-            if let language {
-                whereClauses.append("r.language = ?")
-                args.append(language)
-            } else {
-                whereClauses.append("r.language IS NULL")
+        switch filters.language {
+        case .all:
+            break
+        case .uncategorized:
+            whereClauses.append("r.language IS NULL")
+        case .language(let language):
+            whereClauses.append("r.language = ?")
+            args.append(language)
+        case .other:
+            // 「其他」= 语言非空且不在「感兴趣的语言」里。IS NOT NULL 必须先判：
+            // 既把 NULL（未分类）排除在外，也避免 NOT IN 对 NULL 行的三值逻辑坑。
+            whereClauses.append("r.language IS NOT NULL")
+            if !filters.excludedLanguages.isEmpty {
+                let placeholders = Array(repeating: "?", count: filters.excludedLanguages.count)
+                    .joined(separator: ", ")
+                whereClauses.append("r.language NOT IN (\(placeholders))")
+                args.append(contentsOf: filters.excludedLanguages.sorted())
             }
         }
         if !filters.selectedLanguages.isEmpty {
