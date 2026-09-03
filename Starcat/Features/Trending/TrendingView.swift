@@ -123,6 +123,7 @@ struct TrendingView: View {
                 await libraryLoad
             }
             await viewModel.updateLanguagePreferences(from: homeViewModel.languageStats)
+            viewModel.interestedLanguages = settings.interestedLanguages
             await viewModel.updateGlobalFilter(trendingFilterSnapshot)
             // 切换语言或页面时先清详情，避免新列表加载完成前右栏残留旧 repo。
             clearTrendingDetailSelection()
@@ -154,6 +155,9 @@ struct TrendingView: View {
                 await viewModel.updateLanguagePreferences(from: stats)
             }
         }
+        .onChange(of: settings.interestedLanguages) { _, languages in
+            viewModel.interestedLanguages = languages
+        }
         .onChange(of: trendingFilterSnapshot) { _, filter in
             Task {
                 await viewModel.updateGlobalFilter(filter)
@@ -181,7 +185,8 @@ struct TrendingView: View {
         // 选中 repo 变化时，同步更新 selectedTrendingRepo 供右侧详情页使用
         .onChange(of: selectedRepoID) { _, newID in
             if let id = newID {
-                selectedTrendingRepo = viewModel.displayedRepos.first { $0.id == id }
+                let matchingRepo: TrendingRepo? = viewModel.displayedRepos.first { $0.id == id }
+                selectedTrendingRepo = matchingRepo
             } else {
                 selectedTrendingRepo = nil
             }

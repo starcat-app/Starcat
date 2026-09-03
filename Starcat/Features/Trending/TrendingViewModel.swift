@@ -228,6 +228,17 @@ final class TrendingViewModel {
     /// 当前语言筛选。只能通过 `selectLanguage` 修改，避免 didSet 与 View.task 双触发。
     private(set) var selectedLanguage: TrendingLanguage = .all
 
+    /// 设置页「感兴趣语言」镜像。Trending 全量化后「其他」分类的本地过滤依赖它；
+    /// 由 TrendingView 从 AppSettings 单向同步（onChange）。
+    var interestedLanguages: [String] = [] {
+        didSet {
+            guard oldValue != interestedLanguages else { return }
+            guard selectedLanguage.isOther else { return }
+            // 「其他」的排除集合变了，本地重新派生。
+            Task { await republishLocalSnapshot() }
+        }
+    }
+
     /// 当前中栏排序方式。默认保留 trending-api 返回顺序,即官方趋势榜原始排名。
     private(set) var selectedSort: TrendingSortOption = .recommended
 
@@ -285,7 +296,7 @@ final class TrendingViewModel {
     private static let pageSize = 20
 
     private var currentQueryIdentity: TrendingQueryIdentity {
-        TrendingQueryIdentity(period: selectedPeriod, language: selectedLanguage)
+        TrendingQueryIdentity(period: selectedPeriod)
     }
 
     // MARK: - Initialization
@@ -317,19 +328,24 @@ final class TrendingViewModel {
         await reload(cachePolicy: .respectTTL, revealsRows: true)
     }
 
-    /// 切换语言。返回已访问桶时优先恢复会话内快照，不再重读 SQLite。
+    /// 切换语言。全量化后语言是本地过滤维度，切语言只重新派生展示快照，零网络。
     func selectLanguage(_ language: TrendingLanguage) async {
         guard selectedLanguage != language else { return }
         selectedLanguage = language
-        await reload(cachePolicy: .respectTTL, revealsRows: true)
+        await republishLocalSnapshot()
     }
 
     /// 本地切换排序；排序和评分在 `TrendingListPipeline` actor 内完成。
     func selectSort(_ sort: TrendingSortOption) async {
         guard selectedSort != sort else { return }
         selectedSort = sort
-        skipListRowReveal = true
+        await republishLocalSnapshot()
+    }
 
+    /// 排序 / 语言 / 感兴趣语言变化时，用最新派生输入重新派生并发布当前查询桶快照，
+    /// 不触发网络。所有本地派生入口统一走这里，避免重复写同一套 snapshot 读取逻辑。
+    private func republishLocalSnapshot() async {
+        skipListRowReveal = true
         let identity = currentQueryIdentity
         let snapshot = await preparedMemorySnapshot(for: identity)
         guard identity == currentQueryIdentity, let snapshot else { return }
@@ -450,13 +466,13 @@ final class TrendingViewModel {
                 // ② 首次访问该桶才读取持久化缓存；数据库 actor 不占用 MainActor。
                 let refreshedAt = await self.repository.lastRefreshedAt(
                     since: identity.period,
-                    language: identity.language
+                    language: .all
                 )
                 guard self.isCurrentReload(generation, identity: identity) else { return }
 
                 let cached = await self.repository.cachedTrending(
                     since: identity.period,
-                    language: identity.language
+                    language: .all
                 )
                 guard self.isCurrentReload(generation, identity: identity) else { return }
 
@@ -493,7 +509,7 @@ final class TrendingViewModel {
             do {
                 let fetchResult = try await self.repository.fetchTrending(
                     since: identity.period,
-                    language: identity.language
+                    language: .all
                 )
                 guard self.isCurrentReload(generation, identity: identity) else { return }
 
@@ -603,7 +619,9 @@ final class TrendingViewModel {
         TrendingDerivationContext(
             sort: selectedSort,
             filter: globalFilter,
-            languagePreferences: userLanguagePreferences
+            languagePreferences: userLanguagePreferences,
+            selectedLanguage: selectedLanguage,
+            interestedLanguages: Set(interestedLanguages.map { $0.lowercased() })
         )
     }
 

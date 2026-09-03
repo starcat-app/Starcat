@@ -2498,23 +2498,23 @@ struct RepoListView: View {
 
     private var manageNavigationPresentation: ManageNavigationPresentation {
         let filters = viewModel.effectiveGlobalFilterState
+        // 面包屑优先展示 toolbar 全局筛选语言；全局为空时回退展示左侧语言分类（单选），
+        // 避免两套语言筛选同时塞进标题造成混淆。
         var selectedLanguageTitles: [String] = []
-        switch filters.repoLanguageFilter {
-        case .all:
-            break
-        case .uncategorized:
-            selectedLanguageTitles.append(String.l10n("trending.language.uncategorized"))
-        case .other:
-            selectedLanguageTitles.append(String.l10n("sidebar.languages.other"))
-        case .language(let language):
-            selectedLanguageTitles.append(LanguageDisplayName.shortened(for: language))
-        }
-        for language in filters.globalFilterLanguages {
-            let title = LanguageDisplayName.shortened(for: language)
-            if !selectedLanguageTitles.contains(where: {
-                $0.caseInsensitiveCompare(title) == .orderedSame
-            }) {
-                selectedLanguageTitles.append(title)
+        if !filters.globalFilterLanguages.isEmpty {
+            selectedLanguageTitles = filters.globalFilterLanguages.map {
+                LanguageDisplayName.shortened(for: $0)
+            }
+        } else {
+            switch filters.repoLanguageFilter {
+            case .all:
+                break
+            case .uncategorized:
+                selectedLanguageTitles.append(String.l10n("trending.language.uncategorized"))
+            case .other:
+                selectedLanguageTitles.append(String.l10n("sidebar.languages.other"))
+            case .language(let language):
+                selectedLanguageTitles.append(LanguageDisplayName.shortened(for: language))
             }
         }
         let selectedTagTitles = viewModel.tags
@@ -2547,13 +2547,21 @@ struct RepoListView: View {
             topics: dependencies.exploreCatalogStore.displayTopics,
             platforms: dependencies.exploreCatalogStore.displayPlatforms
         )
+        // toolbar 全局筛选语言追加到标题尾部，与左侧语言导航区分。
+        var thirdLevelTitle = presentation.thirdLevelTitle
+        let globalLanguageTitles = settings.globalFilterLanguages.map {
+            LanguageDisplayName.shortened(for: $0)
+        }
+        if !globalLanguageTitles.isEmpty {
+            thirdLevelTitle = ([thirdLevelTitle] + globalLanguageTitles).joined(separator: " · ")
+        }
         let prefix = [
             String.l10n("nav.trending"),
             selectedExploreMode.localizedTitle
         ].joined(separator: Self.navigationBreadcrumbSeparator)
         return highlightedNavigationTitle(
             prefix: prefix,
-            thirdLevelTitle: presentation.thirdLevelTitle
+            thirdLevelTitle: thirdLevelTitle
         )
     }
 

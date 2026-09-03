@@ -80,6 +80,9 @@ actor TrendingRepository: TrendingRepositoryProtocol {
     private let api: TrendingAPI
     private let database: any DatabaseManaging
 
+    /// 全量化拉取「某周期全部语言」时使用的 limit，与后端 `HandleReposV1` 上限对齐。
+    private static let fullLanguageLimit = 5000
+
     // MARK: - Initialization
 
     /// - Parameters:
@@ -145,7 +148,9 @@ actor TrendingRepository: TrendingRepositoryProtocol {
         let repos: [TrendingRepo]
         do {
             AppLog.network.info("Fetching trending: \(period)/\(langFilter)")
-            repos = try await api.fetchTrending(since: since, language: language)
+            // 全量化：language 为空（全部语言）时传大 limit 拉全量，与后端 5000 上限对齐。
+            let limit = language.rawValue.isEmpty ? Self.fullLanguageLimit : 100
+            repos = try await api.fetchTrending(since: since, language: language, limit: limit)
         } catch {
             // 网络失败 → 离线兜底：返回缓存（非空），并标记 source 供 UI 提示。
             let cached = await cachedTrending(since: since, language: language)

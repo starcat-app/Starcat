@@ -12,14 +12,13 @@ import Foundation
 
 /// 唯一标识一个 Trending 数据桶。
 ///
-/// 排序不属于远端查询条件，因此不进入 identity；同一桶切换排序只重新派生展示快照，
-/// 不会重复读取 SQLite 或发起网络请求。
+/// 全量化后语言从「远端查询维度」降级为「本地过滤维度」，因此 identity 只保留周期；
+/// 排序与语言切换都只重新派生展示快照，不会重复读取 SQLite 或发起网络请求。
 struct TrendingQueryIdentity: Hashable, Sendable {
     let period: TrendingPeriod
-    let language: TrendingLanguage
 
     var logValue: String {
-        "\(period.rawValue):\(language.rawValue.isEmpty ? "all" : language.rawValue)"
+        period.rawValue
     }
 }
 
@@ -137,11 +136,17 @@ struct TrendingDerivationContext: Hashable, Sendable {
     let sort: TrendingSortOption
     let filter: TrendingListFilter
     let languagePreferences: [String: Double]
+    /// 当前选中的语言导航（本地过滤维度）；「其他」需要排除集合。
+    let selectedLanguage: TrendingLanguage
+    /// 「感兴趣语言」排除集合（仅 selectedLanguage == .other 时参与过滤）。
+    let interestedLanguages: Set<String>
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(sort.rawValue)
         hasher.combine(filter)
         hasher.combine(languagePreferences)
+        hasher.combine(selectedLanguage.rawValue)
+        hasher.combine(interestedLanguages)
     }
 }
 
@@ -239,7 +244,8 @@ actor TrendingListPipeline {
     ) -> TrendingPreparedSnapshot {
         derivationCount &+= 1
         let sorted = sortedRepos(repos, by: context.sort)
-        let filtered = sorted.filter(context.filter.matches)
+        let languageScoped = filterByLanguage(sorted, context: context)
+        let filtered = languageScoped.filter(context.filter.matches)
         let scores = Dictionary(uniqueKeysWithValues: repos.map { repo in
             (repo.fullName, Self.calculateScore(for: repo))
         })
@@ -254,6 +260,31 @@ actor TrendingListPipeline {
                 languagePreferences: context.languagePreferences
             )
         )
+    }
+
+    /// 按选中语言在本地过滤。全量化后语言不再是后端查询维度，切语言零网络。
+    private func filterByLanguage(
+        _ repos: [TrendingRepo],
+        context: TrendingDerivationContext
+    ) -> [TrendingRepo] {
+        let language = context.selectedLanguage
+        if language.rawValue.isEmpty {
+            // .all：不过滤。
+            return repos
+        }
+        if language.isUncategorized {
+            return repos.filter { ($0.language ?? "").isEmpty }
+        }
+        if language.isOther {
+            // 「其他」= 语言非空且不在「感兴趣语言」里。用 Set 保证 O(1) contains。
+            let excluded = context.interestedLanguages
+            return repos.filter { repo in
+                guard let lang = repo.language, !lang.isEmpty else { return false }
+                return !excluded.contains(lang.lowercased())
+            }
+        }
+        // 具体语言：大小写不敏感匹配。
+        return repos.filter { $0.language?.caseInsensitiveCompare(language.rawValue) == .orderedSame }
     }
 
     /// 推荐排序与主列表派生共用同一份评分缓存，避免在 MainActor 再做第二次全量排序。

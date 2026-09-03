@@ -587,11 +587,11 @@ final class HomeViewModel {
 
         var rows: [SidebarLanguageRow] = []
         rows.append(.uncategorized(count: uncategorizedCount))
-        rows.append(.other(count: otherCount))
         for language in interestedLanguages {
             let count = interestedCountByLowercased[language.lowercased()] ?? 0
             rows.append(.language(name: language, count: count))
         }
+        rows.append(.other(count: otherCount))
         return rows
     }
 

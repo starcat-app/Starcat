@@ -1216,15 +1216,98 @@ struct SidebarView: View {
         }
     }
 
+    /// 探索栏目语言分类的一行（不含「全部」）。后端语言聚合按「感兴趣语言」重分组后的结果。
+    private enum ExploreLanguageRowItem: Identifiable, Equatable {
+        case uncategorized(count: Int)
+        case other(count: Int)
+        case language(name: String, count: Int)
+
+        var id: String { key }
+
+        var count: Int {
+            switch self {
+            case .uncategorized(let c), .other(let c), .language(_, let c): return c
+            }
+        }
+
+        /// Weekly / Discover 的选中 key。
+        var key: String {
+            switch self {
+            case .uncategorized: return TrendingLanguage.uncategorizedKey
+            case .other: return TrendingLanguage.otherRawValue
+            case .language(let name, _): return name
+            }
+        }
+
+        /// Trending 的选中值。
+        var trendingLanguage: TrendingLanguage {
+            switch self {
+            case .uncategorized: return .uncategorized
+            case .other: return .other
+            case .language(let name, _): return TrendingLanguage(name)
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .uncategorized: return "Uncategorized"
+            case .other: return String.l10n("sidebar.languages.other")
+            case .language(let name, _): return name
+            }
+        }
+    }
+
+    /// 把后端语言聚合（key + count）按「感兴趣语言」重分组为：未分类 → 其他 → 感兴趣语言。
+    /// count=0 的感兴趣语言也保留（与星标模块口径一致）。
+    private func exploreLanguageRowItems(
+        keysWithCounts: [(key: String, count: Int)],
+        interestedLanguages: [String]
+    ) -> [ExploreLanguageRowItem] {
+        let interestedSet = Set(interestedLanguages.map { $0.lowercased() })
+        var uncategorizedCount: Int?
+        var otherCount = 0
+        var interestedCountByLowercased: [String: Int] = [:]
+
+        for item in keysWithCounts {
+            let key = item.key
+            if key == TrendingLanguage.uncategorizedKey {
+                uncategorizedCount = item.count
+            } else if interestedSet.contains(key.lowercased()) {
+                interestedCountByLowercased[key.lowercased()] = item.count
+            } else {
+                otherCount += item.count
+            }
+        }
+
+        var items: [ExploreLanguageRowItem] = []
+        if let uncategorizedCount {
+            items.append(.uncategorized(count: uncategorizedCount))
+        }
+        for language in interestedLanguages {
+            let count = interestedCountByLowercased[language.lowercased()] ?? 0
+            items.append(.language(name: language, count: count))
+        }
+        if otherCount > 0 {
+            items.append(.other(count: otherCount))
+        }
+        return items
+    }
+
     @ViewBuilder
     private var exploreLanguageSidebarContent: some View {
         Section {
             exploreLanguageRow(nil)
 
             if trendingLanguagesExpanded {
-                ForEach(dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode)) { language in
-                    exploreLanguageRow(language)
-                        .transition(Self.disclosureRowTransition)
+                let items = exploreLanguageRowItems(
+                    keysWithCounts: dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode).map { ($0.key, $0.count) },
+                    interestedLanguages: viewModel.interestedLanguages
+                )
+                ForEach(items) { item in
+                    exploreLanguageRow(
+                        DiscoveryLanguageDTO(key: item.key, label: item.label, count: item.count)
+                    )
+                    .transition(Self.disclosureRowTransition)
                 }
             }
         } header: {
@@ -1238,13 +1321,13 @@ struct SidebarView: View {
             trendingLanguageRow(.all, count: exploreModeCount(.trending))
 
             if trendingLanguagesExpanded {
-                // 2026-06-11 改造：列表数据从后端 `/api/v1/languages` 聚合而来（含 __uncategorized__）。
-                // 后端返空 / 不可达时 store 内部自动退化到 fallbackList，所以这里 displayList 永远非空。
-                // disclosureRowTransition：每行折叠/展开时从顶部滑入 + 淡入,与 chevron 旋转 spring 同步。
-                ForEach(dependencies.trendingLanguageStore.displayList, id: \.key) { agg in
-                    let language = agg.asTrendingLanguage
-                    // count = 0 时不展示数字（fallback 列表 / 后端尚未返回时）；> 0 才展示
-                    trendingLanguageRow(language, count: agg.count > 0 ? agg.count : nil)
+                // 2026-09-03：语言列表按「感兴趣语言」重分组为 未分类 / 其他 / 感兴趣语言。
+                let items = exploreLanguageRowItems(
+                    keysWithCounts: dependencies.trendingLanguageStore.displayList.map { ($0.key, $0.count) },
+                    interestedLanguages: viewModel.interestedLanguages
+                )
+                ForEach(items) { item in
+                    trendingLanguageRow(item.trendingLanguage, count: item.count)
                         .transition(Self.disclosureRowTransition)
                 }
             }
@@ -1259,9 +1342,15 @@ struct SidebarView: View {
             weeklyLanguageRow(nil)
 
             if trendingLanguagesExpanded {
-                ForEach(dependencies.weeklyLanguageStore.displayList, id: \.key) { aggregate in
-                    weeklyLanguageRow(aggregate)
-                        .transition(Self.disclosureRowTransition)
+                let items = exploreLanguageRowItems(
+                    keysWithCounts: dependencies.weeklyLanguageStore.displayList.map { ($0.key, $0.count) },
+                    interestedLanguages: viewModel.interestedLanguages
+                )
+                ForEach(items) { item in
+                    weeklyLanguageRow(
+                        TrendingLanguageAggregateDTO(key: item.key, label: item.label, count: item.count)
+                    )
+                    .transition(Self.disclosureRowTransition)
                 }
             }
         } header: {
@@ -1888,11 +1977,14 @@ struct SidebarView: View {
 
     private func exploreLanguageRow(_ language: DiscoveryLanguageDTO?) -> some View {
         let key = language?.key
+        // 「其他」/感兴趣语言由客户端聚合而来，count 优先用 DTO 自带值；
+        // 「全部」回退到 catalog total。
+        let count: Int? = language?.count ?? dependencies.exploreCatalogStore.total(for: selectedExploreMode)
         // 语言 logo 不是 SF Symbol，不能塞进 systemImage 字符串；仍走 Label icon 槽，
         // 与趋势/周刊语言行、星标主导航同一套 sidebar 图标列对齐。
         return exploreSelectableRow(
             selection: .language(key),
-            count: dependencies.exploreCatalogStore.languageCount(for: key, mode: selectedExploreMode)
+            count: count
         ) {
             if let language {
                 exploreLanguageIcon(language)
@@ -1954,6 +2046,11 @@ struct SidebarView: View {
     private func exploreLanguageIcon(_ language: DiscoveryLanguageDTO) -> some View {
         if language.key == TrendingLanguage.uncategorizedKey {
             UncategorizedLanguageIcon(size: 14)
+        } else if language.key == TrendingLanguage.otherRawValue {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .secondary))
+                .frame(width: 14, height: 14)
         } else {
             LanguageIconView(language: language.key, size: 14)
         }
@@ -1962,6 +2059,9 @@ struct SidebarView: View {
     private func exploreLanguageTitle(_ language: DiscoveryLanguageDTO) -> String {
         if language.key == TrendingLanguage.uncategorizedKey {
             return String.l10n("trending.language.uncategorized")
+        }
+        if language.key == TrendingLanguage.otherRawValue {
+            return String.l10n("sidebar.languages.other")
         }
         return LanguageDisplayName.shortened(for: language.key)
     }
@@ -1976,7 +2076,7 @@ struct SidebarView: View {
 
                 Spacer(minLength: 4)
 
-                if let count, count > 0 {
+                if let count {
                     Text(count.formatted())
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
@@ -2005,7 +2105,7 @@ struct SidebarView: View {
 
                 Spacer(minLength: 4)
 
-                if let aggregate, aggregate.count > 0 {
+                if let aggregate {
                     Text(aggregate.count.formatted())
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
@@ -2028,6 +2128,11 @@ struct SidebarView: View {
         if let aggregate {
             if aggregate.key == TrendingLanguage.uncategorizedKey {
                 UncategorizedLanguageIcon(size: 14)
+            } else if aggregate.key == TrendingLanguage.otherRawValue {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .secondary))
+                    .frame(width: 14, height: 14)
             } else {
                 LanguageIconView(language: aggregate.key, size: 14)
             }
@@ -2042,6 +2147,12 @@ struct SidebarView: View {
             AllLanguagesIcon(size: 14)
         } else if language.isUncategorized {
             UncategorizedLanguageIcon(size: 14)
+        } else if language.isOther {
+            // 「其他」没有专属语言 logo，用网格图标表示"其余杂项集合"。
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .secondary))
+                .frame(width: 14, height: 14)
         } else {
             LanguageIconView(language: language.rawValue, size: 14)
         }
@@ -2053,6 +2164,8 @@ struct SidebarView: View {
             Text("trending.allLanguages")
         } else if language.isUncategorized {
             Text("trending.language.uncategorized")
+        } else if language.isOther {
+            Text("sidebar.languages.other")
         } else {
             // Trending 语言 picker label：同样走短名（详见 LanguageDisplayName）。
             Text(verbatim: LanguageDisplayName.shortened(for: language.rawValue))

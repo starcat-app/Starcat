@@ -346,8 +346,12 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
     /// 是否为「未分类」哨兵。UI 行 / 详情页判断专用。
     var isUncategorized: Bool { rawValue == Self.uncategorizedKey }
 
+    /// 是否为「其他」哨兵。纯客户端本地过滤语义——全量化后语言筛选都在本地完成，
+    /// 该哨兵不发 lang 参数给后端。
+    var isOther: Bool { rawValue == Self.otherRawValue }
+
     /// 语言名称来自 API / 本地聚合，非空值原样显示；
-    /// 「全部」/「未分类」走本地化（i18n 决定文案，独立于后端 label）。
+    /// 「全部」/「未分类」/「其他」走本地化（i18n 决定文案，独立于后端 label）。
     var localizedDisplayName: String {
         if rawValue.isEmpty {
             return String.l10n("trending.allLanguages")
@@ -355,10 +359,14 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
         if isUncategorized {
             return String.l10n("trending.language.uncategorized")
         }
+        if isOther {
+            return String.l10n("sidebar.languages.other")
+        }
         return rawValue
     }
 
     /// API 参数值（空字符串表示全部；uncategorized 直接发哨兵值给后端）。
+    /// 全量化后语言筛选本地完成，正常导航只发 `.all` 的空串。
     var apiValue: String { rawValue }
 
     // MARK: - 哨兵值（必须与后端 internal/model/trending.go 同名常量对齐）
@@ -367,8 +375,12 @@ struct TrendingLanguage: Hashable, Identifiable, Sendable {
     /// 后端对应：`internal/model.UncategorizedLanguageKey`。任何调整都必须前后端同步。
     static let uncategorizedKey = "__uncategorized__"
 
+    /// `__starcat_other__` 哨兵字符串（纯客户端，不发给后端）。
+    static let otherRawValue = "__starcat_other__"
+
     static let all = TrendingLanguage("")
     static let uncategorized = TrendingLanguage(uncategorizedKey)
+    static let other = TrendingLanguage(otherRawValue)
     static let swift = TrendingLanguage("Swift")
     static let python = TrendingLanguage("Python")
     static let typescript = TrendingLanguage("TypeScript")

@@ -46,6 +46,9 @@ final class ExploreDiscoveryViewModel {
 
     var sortOption: ExploreSortOption = .recommended
 
+    /// 设置页「感兴趣语言」镜像。「其他」分类的本地过滤依赖它，由 View onChange 同步。
+    var interestedLanguages: [String] = []
+
     private var bulkAllRepos: [DiscoveryRepoDTO] = []
     private var filteredLocalRepos: [DiscoveryRepoDTO] = []
     /// 已完成 filter / sort 的查询结果；命中时只发布首屏，不再扫描 bulk。
@@ -75,7 +78,8 @@ final class ExploreDiscoveryViewModel {
             language: language,
             topic: topic,
             platform: platform,
-            sort: sort
+            sort: sort,
+            interestedLanguages: Set(self.interestedLanguages.map { $0.lowercased() })
         )
         let requestID = UUID()
         inFlightRequestID = requestID
@@ -253,7 +257,8 @@ final class ExploreDiscoveryViewModel {
             language: language,
             topic: topic,
             platform: platform,
-            sort: sort
+            sort: sort,
+            interestedLanguages: Set(self.interestedLanguages.map { $0.lowercased() })
         )
         guard publishedQueryIdentity == queryIdentity else { return }
         guard let nextPage else { return }
@@ -286,11 +291,16 @@ final class ExploreDiscoveryViewModel {
         language: String?,
         topic: String?,
         platform: String?,
-        sort: ExploreSortOption
+        sort: ExploreSortOption,
+        interestedLanguages: Set<String> = []
     ) -> String {
-        [
+        // 「其他」分类的过滤结果依赖感兴趣语言，identity 必须纳入，避免命中脏快照。
+        let otherSuffix = (language == TrendingLanguage.otherRawValue)
+            ? ":other:" + interestedLanguages.sorted().joined(separator: ",")
+            : ""
+        return [
             mode.id,
-            mode == .discover ? "__language_unused__" : (language ?? "__all__"),
+            mode == .discover ? "__language_unused__" : (language ?? "__all__") + otherSuffix,
             mode == .discover ? (topic ?? "__all__") : "__topic_unused__",
             mode == .discover ? (platform ?? "__all__") : "__platform_unused__",
             sort.normalized(for: mode).id,
@@ -362,6 +372,7 @@ final class ExploreDiscoveryViewModel {
     ) async {
         // Task.detached 只接收 Sendable 值快照；筛选与排序期间不读取任何 Observable 状态。
         localDerivationCountForTesting &+= 1
+        let interested = Set(self.interestedLanguages.map { $0.lowercased() })
         let task = Task.detached(priority: .userInitiated) {
             Self.deriveLocalRepos(
                 sourceRepos: sourceRepos,
@@ -369,7 +380,8 @@ final class ExploreDiscoveryViewModel {
                 language: language,
                 topic: topic,
                 platform: platform,
-                sort: sort
+                sort: sort,
+                interestedLanguages: interested
             )
         }
         let filtered = await PerformanceTracer.shared.trace(.discoveryLocalFilter, task: task)
@@ -380,7 +392,8 @@ final class ExploreDiscoveryViewModel {
             language: language,
             topic: topic,
             platform: platform,
-            sort: sort
+            sort: sort,
+            interestedLanguages: Set(self.interestedLanguages.map { $0.lowercased() })
         )
         let prepared = PreparedSnapshot(filteredRepos: filtered)
         storePreparedSnapshot(prepared, for: identity)
@@ -429,7 +442,8 @@ final class ExploreDiscoveryViewModel {
         language: String?,
         topic: String?,
         platform: String?,
-        sort: ExploreSortOption
+        sort: ExploreSortOption,
+        interestedLanguages: Set<String>
     ) -> [DiscoveryRepoDTO] {
         var filtered = sourceRepos
 
@@ -447,6 +461,11 @@ final class ExploreDiscoveryViewModel {
                 filtered = filtered.filter { repo in
                     if language == TrendingLanguage.uncategorizedKey {
                         return (repo.language ?? "").isEmpty
+                    }
+                    if language == TrendingLanguage.otherRawValue {
+                        // 「其他」= 语言非空且不在「感兴趣语言」里。
+                        guard let lang = repo.language, !lang.isEmpty else { return false }
+                        return !interestedLanguages.contains(lang.lowercased())
                     }
                     return repo.language?.caseInsensitiveCompare(language) == .orderedSame
                 }

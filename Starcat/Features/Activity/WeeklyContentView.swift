@@ -124,6 +124,7 @@ struct WeeklyContentView: View {
                 .animation(contentAnimation, value: contentStateID(for: viewModel))
         }
         .task {
+            viewModel.interestedLanguages = settings.interestedLanguages
             await viewModel.loadLanguagesIfNeeded()
             syncBindingLanguage(from: viewModel)
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
@@ -134,6 +135,9 @@ struct WeeklyContentView: View {
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled else { return }
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
+        }
+        .onChange(of: settings.interestedLanguages) { _, languages in
+            viewModel.interestedLanguages = languages
         }
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.items)
@@ -887,6 +891,15 @@ final class WeeklyContentViewModel {
     /// 排序当前值；setter 由 `changeSort(to:)` 控制以保证副作用统一。
     private(set) var selectedSort: WeeklyFeedSort = .defaultOrder
     private(set) var selectedLanguage: String = ""
+    /// 设置页「感兴趣语言」镜像。「其他」分类的本地过滤依赖它，由 View onChange 同步。
+    var interestedLanguages: [String] = [] {
+        didSet {
+            guard oldValue != interestedLanguages else { return }
+            // 只有「其他」分类的过滤结果依赖感兴趣语言，变化时才重新筛选。
+            guard selectedLanguage == TrendingLanguage.otherRawValue else { return }
+            reapplyFilters()
+        }
+    }
     /// bulk v2 返回并持久化的固定来源目录；UI 筛选不再枚举硬编码渠道。
     private(set) var sourceDescriptors: [WeeklySourceDescriptor] = []
 
@@ -943,6 +956,7 @@ final class WeeklyContentViewModel {
     private var validLanguageKeys: Set<String> {
         var set = Set<String>(languageStore.displayList.map(\.key))
         set.insert("")  // 「全部」哨兵
+        set.insert(TrendingLanguage.otherRawValue)  // 「其他」哨兵（本地过滤，非后端语言）
         return set
     }
 
@@ -992,6 +1006,8 @@ final class WeeklyContentViewModel {
         let language: String
         let sort: String
         let sourceRevision: Int
+        /// 「其他」分类的排除集合（排序拼接）；非「其他」时为空串。
+        let interestedLanguages: String
     }
 
     init(
@@ -1446,6 +1462,7 @@ final class WeeklyContentViewModel {
         let starsFilter = selectedStarsFilter
         let pushedRecency = selectedPushedRecency
         let language = selectedLanguage
+        let interestedLanguages = Set(self.interestedLanguages.map { $0.lowercased() })
         let sort = selectedSort
         let now = Date()
         localDerivationCountForTesting &+= 1
@@ -1459,6 +1476,7 @@ final class WeeklyContentViewModel {
                 starsFilter: starsFilter,
                 pushedRecency: pushedRecency,
                 language: language,
+                interestedLanguages: interestedLanguages,
                 sort: sort,
                 now: now
             )
@@ -1500,6 +1518,10 @@ final class WeeklyContentViewModel {
         let recencyDay = selectedPushedRecency == .all
             ? 0
             : Int(now.timeIntervalSince1970 / 86_400)
+        // 「其他」分类的过滤结果依赖感兴趣语言，快照 key 必须纳入，否则改设置后命中脏快照。
+        let interestedKey = selectedLanguage == TrendingLanguage.otherRawValue
+            ? interestedLanguages.map { $0.lowercased() }.sorted().joined(separator: ",")
+            : ""
         return WeeklyPreparedSnapshotKey(
             source: selectedSource.rawValue,
             coverage: selectedCoverage.rawValue,
@@ -1510,7 +1532,8 @@ final class WeeklyContentViewModel {
             recencyDay: recencyDay,
             language: selectedLanguage.lowercased(),
             sort: selectedSort.rawValue,
-            sourceRevision: bulkSourceRevision
+            sourceRevision: bulkSourceRevision,
+            interestedLanguages: interestedKey
         )
     }
 
@@ -1550,6 +1573,7 @@ final class WeeklyContentViewModel {
         starsFilter: WeeklyStarsFilter,
         pushedRecency: WeeklyPushedRecencyFilter,
         language: String,
+        interestedLanguages: Set<String>,
         sort: WeeklyFeedSort,
         now: Date
     ) -> [WeeklyFeedItem] {
@@ -1565,6 +1589,10 @@ final class WeeklyContentViewModel {
             if !language.isEmpty {
                 if language == TrendingLanguage.uncategorizedKey {
                     guard (item.language ?? "").isEmpty else { continue }
+                } else if language == TrendingLanguage.otherRawValue {
+                    // 「其他」= 语言非空且不在「感兴趣语言」里。
+                    guard let lang = item.language, !lang.isEmpty,
+                          !interestedLanguages.contains(lang.lowercased()) else { continue }
                 } else {
                     guard item.language?.caseInsensitiveCompare(language) == .orderedSame else { continue }
                 }

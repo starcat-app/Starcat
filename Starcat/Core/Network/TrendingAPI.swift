@@ -120,9 +120,10 @@ actor TrendingAPI {
     /// - Returns: Trending 仓库数组（已从 DTO 转换为 UI 模型）
     func fetchTrending(
         since: TrendingPeriod,
-        language: TrendingLanguage = .all
+        language: TrendingLanguage = .all,
+        limit: Int = 100
     ) async throws -> [TrendingRepo] {
-        let url = try buildURL(since: since, language: language)
+        let url = try buildURL(since: since, language: language, limit: limit)
         let (data, response) = try await performRequestWithResponse(url: url)
 
         // envelope 解码 + schema_version warning + 401 / 4xx / 5xx 错误识别
@@ -180,12 +181,14 @@ actor TrendingAPI {
 
     // MARK: - Private
 
-    private func buildURL(since: TrendingPeriod, language: TrendingLanguage) throws -> URL {
+    private func buildURL(since: TrendingPeriod, language: TrendingLanguage, limit: Int) throws -> URL {
         let endpoint = AppEndpoints.appendPath(AppEndpoints.Trending.Paths.repos, to: baseURL)
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         var queryItems: [URLQueryItem] = []
 
         queryItems.append(URLQueryItem(name: "since", value: since.apiValue))
+        // 全量化后客户端会传大 limit 拉「某周期全部语言」；后端上限已对齐到 5000。
+        queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
 
         if !language.apiValue.isEmpty {
             // 注意：`.uncategorized` 的 apiValue 是 `__uncategorized__`，会原样发出去；

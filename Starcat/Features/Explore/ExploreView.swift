@@ -201,6 +201,7 @@ private struct ExploreDiscoveryListView: View {
                 await libraryLoad
             }
             viewModel.sortOption = currentSort
+            viewModel.interestedLanguages = settings.interestedLanguages
             await viewModel.reload(
                 repository: dependencies.discoveryRepository,
                 mode: mode,
@@ -243,6 +244,9 @@ private struct ExploreDiscoveryListView: View {
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled else { return }
             applySelectionPolicy()
+        }
+        .onChange(of: settings.interestedLanguages) { _, languages in
+            viewModel.interestedLanguages = languages
         }
         .starcatRefreshCommand(
             pane: .list,
@@ -690,7 +694,8 @@ private struct ExploreDiscoveryListView: View {
             language: mode == .discover ? nil : selectedLanguage,
             topic: mode == .discover ? selectedTopic : nil,
             platform: mode == .discover ? selectedPlatform : nil,
-            sort: currentSort
+            sort: currentSort,
+            interestedLanguages: Set(settings.interestedLanguages.map { $0.lowercased() })
         )
     }
 
