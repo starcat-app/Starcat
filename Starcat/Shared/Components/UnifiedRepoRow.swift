@@ -122,8 +122,8 @@ struct UnifiedRepoRow: View {
     /// 是否在 row 上显示「已 star ✓」标记(v1.8 修订, 2026-06-10)。
     ///
     /// **默认 false** —— 调用方必须显式按场景决定:
-    /// - Manage:不传(默认 false),Manage 本就是已 star 列表,挂 ✓ 视觉冗余;
-    /// - Trending / Weekly:传 `true`,让用户在列表里一眼认出哪些已 star;
+    /// - Manage 多数分类:不传(默认 false),本就是已 star 列表,挂 ✓ 视觉冗余;
+    /// - 知识库 / 我的项目 / Trending / Weekly / Explore:传 `true`,区分已/未 Star;
     /// - 后续新场景:必须显式决定,避免「全显 ✓」式实现疏忽。
     ///
     /// 渲染条件是 `showStarredCheckmark && card.isStarred` 双条件 AND——

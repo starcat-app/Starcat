@@ -3075,6 +3075,8 @@ private struct ManageRepoRowContent: View {
     var body: some View {
         let project = viewModel.projectRelation(for: repo.id)
         let growth = viewModel.localStarGrowth30Days(for: repo.id)
+        // 知识库整栏都是已入库项，红心冗余；绿勾与探索一致，区分已/未 Star。
+        let isKnowledgeLibraryList = Self.isKnowledgeLibrarySelection(viewModel.selection)
         UnifiedRepoRow(
             card: repo.asCardData(
                 inlineMetadata: project.map(projectMetadata),
@@ -3087,9 +3089,20 @@ private struct ManageRepoRowContent: View {
             isSelected: isSelected,
             isPinned: viewModel.isRepoPinned(repo.id),
             semanticHit: viewModel.semanticHit(for: repo.id),
-            showStarredCheckmark: viewModel.selection == .myProjects,
+            showStarredCheckmark: viewModel.selection == .myProjects || isKnowledgeLibraryList,
+            showLibraryBadge: !isKnowledgeLibraryList,
             hasAISummary: aiSummaryAvailability.contains(repo.id)
         )
+    }
+
+    /// 与 `HomeViewModel.isKnowledgeLibrarySelection` 对齐：侧栏「知识库」+ 系统集合 library。
+    private static func isKnowledgeLibrarySelection(_ item: SidebarItem) -> Bool {
+        switch item {
+        case .library, .smartCollection(.library):
+            return true
+        default:
+            return false
+        }
     }
 
     /// 在 fullName 同行压成一个稳定徽章，避免为项目场景复制整张 Repo 卡片。
