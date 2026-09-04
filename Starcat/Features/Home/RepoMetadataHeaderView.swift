@@ -118,7 +118,9 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
-        .padding(.bottom, 14)
+        // Manage 已有语言横条作为视觉分割线，只保留下方标签区自己的 12pt 顶距；
+        // 其它详情没有这条线，继续沿用原来的 14pt Hero 收尾留白。
+        .padding(.bottom, onLanguageTapped == nil ? 14 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         // hero tint 由 `RepoDetailScaffold` 根节点 `DetailHeroTintBackground` 统一绘制。
         .sheet(isPresented: $showOpenSSFScoreSheet) {
