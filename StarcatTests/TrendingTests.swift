@@ -363,7 +363,7 @@ struct TrendingTests {
         let vm = TrendingViewModel(repository: stub, githubAPIClient: MockGitHubAPIClient())
 
         await vm.reload(cachePolicy: .respectTTL)
-        vm.loadMoreIfNeeded(currentIndex: 16, totalAvailable: cachedRepos.count)
+        await vm.loadMoreIfNeeded()
         let firstReads = await stub.storageReadCounts()
         let firstRevision = vm.reposRevision
 
@@ -391,12 +391,15 @@ struct TrendingTests {
 
         await vm.reload(cachePolicy: .respectTTL)
 
-        #expect(vm.repos.count == 45)
+        #expect(vm.totalCount == 45)
+        #expect(vm.repos.count == 20)
         #expect(vm.visibleLimit == 20)
-        vm.loadMoreIfNeeded(currentIndex: 16, totalAvailable: 45)
+        await vm.loadMoreIfNeeded()
         #expect(vm.visibleLimit == 40)
-        vm.loadMoreIfNeeded(currentIndex: 36, totalAvailable: 45)
+        #expect(vm.repos.count == 40)
+        await vm.loadMoreIfNeeded()
         #expect(vm.visibleLimit == 45)
+        #expect(vm.repos.count == 45)
     }
 
     @MainActor

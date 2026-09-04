@@ -191,7 +191,7 @@ struct TrendingView: View {
                 selectedTrendingRepo = nil
             }
         }
-        .onChange(of: viewModel.repos.count) { _, _ in
+        .onChange(of: viewModel.totalCount) { _, _ in
             reportRepoCount()
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
@@ -213,7 +213,7 @@ struct TrendingView: View {
     }
 
     private func reportRepoCount() {
-        onRepoCountChange(viewModel.displayedRepos.count)
+        onRepoCountChange(viewModel.totalCount)
     }
 
     /// 把 MainActor-only 的 Observable store 投影成可 Sendable 的值快照。
@@ -543,10 +543,8 @@ struct TrendingView: View {
     /// SwiftUI 会重新调用 `repo.asCardData(registry:)` 让 row 同步刷新。
     private var contentView: some View {
         let filteredRepos = viewModel.displayedRepos
-        let visibleRepos = filteredRepos
-            .prefix(viewModel.visibleLimit)
-            .enumerated()
-            .map { IndexedTrendingRepo(index: $0.offset, repo: $0.element) }
+        // 分页切片已由 ViewModel 维护（对齐 Weekly），View 不再 prefix。
+        let visibleRepos = Array(filteredRepos.enumerated())
 
         return List {
             // "为你推荐"卡片暂时隐藏（dong4j 2026-06-01）：当前推荐质量还不稳定，先关掉。
@@ -566,8 +564,7 @@ struct TrendingView: View {
             // 现在让 SwiftUI 走 ForEach + Identifiable 的天然 diff：
             // - 同 fullName 的 row 留在原地，stars 数等字段 in-place 更新（无动画）
             // - 新增/删除/换序的 row 才有动画（由 row reveal 处理）
-            ForEach(visibleRepos) { item in
-                let repo = item.repo
+            ForEach(visibleRepos, id: \.element.id) { index, repo in
                 // W12 PR-4：多选模式下点击行 toggle 选中，否则进入详情页。
                 // 多选 store 由 AppDependencies 注入；isActive 由 toolbar 多选按钮控制。
                 let store = dependencies.trendingMultiSelectionStore
@@ -597,17 +594,21 @@ struct TrendingView: View {
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
                 .listRowReveal(
-                    index: item.index,
+                    index: index,
                     snapshotID: viewModel.reposRevision,
                     skipAnimation: viewModel.skipListRowReveal
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-                .onAppear {
-                    viewModel.loadMoreIfNeeded(
-                        currentIndex: item.index,
-                        totalAvailable: filteredRepos.count
-                    )
+                .automaticListPagination(
+                    appearingIndex: index,
+                    visibleItemCount: visibleRepos.count,
+                    loadedItemCount: viewModel.visibleLimit,
+                    hasMore: viewModel.hasMore,
+                    isLoading: viewModel.isLoading,
+                    identity: "trending-\(viewModel.reposRevision)"
+                ) {
+                    await viewModel.loadMoreIfNeeded()
                 }
                 // HOM-201 P1-1（2026-06-14）：hover 500ms 后预拉 trending README，
                 // softTtl 短路在 API 层做（命中 6h 内 trending 缓存不打 GitHub；
@@ -619,25 +620,45 @@ struct TrendingView: View {
         }
         .listStyle(.inset)
         .alternatingRowBackgrounds()
+        .automaticListPaginationFill(
+            visibleItemCount: visibleRepos.count,
+            loadedItemCount: viewModel.visibleLimit,
+            hasMore: viewModel.hasMore,
+            isLoading: viewModel.isLoading,
+            identity: "trending-\(viewModel.reposRevision)"
+        ) {
+            await viewModel.loadMoreIfNeeded()
+        }
         .refreshable {
             // Pull-to-refresh = 用户主动要新数据，绕过当前周期 TTL（R-06.1）
             await viewModel.reload(cachePolicy: .forceNetwork)
             reportRepoCount()
         }
-        .task(id: "\(viewModel.reposRevision):\(viewModel.visibleLimit)") {
-            // 先让首屏 row 提交一帧，再加载当前页 badge；不可见页随滚动分页补齐。
+        .task(id: viewModel.reposRevision) {
+            // 先让首屏 row 提交一帧，再加载当前页 badge。
+            // 关键：task id 只随数据身份（reposRevision）触发，**不再挂 visibleLimit**——
+            // 否则每次滚动翻页都会重建本 task，全量补载信号，导致滚动卡顿（对齐 Weekly）。
             await Task.yield()
             // 可用性筛选可能让展示列表暂时为空；信号补载必须基于未筛选候选，
             // 否则“仅可用”会因没有 row 而永远没有机会加载缓存，形成自锁。
-            let candidateRepoIDs = viewModel.filterCandidateRepos.map(\.ghRepoId)
-            let visibleRepoIDs = visibleRepos.map { $0.repo.ghRepoId }
+            // 默认「未知」筛选只补可见行；「有/无」筛选才需要全量候选，避免每次翻页全量扫描。
+            let visibleRepoIDs = visibleRepos.map { $0.element.ghRepoId }
+            let needsFullCandidate = settings.openSSFAvailabilityFilter != .unknown
+                || settings.healthAvailabilityFilter != .unknown
+                || settings.wikiAvailabilityFilter != .unknown
+            let candidateRepoIDs = needsFullCandidate
+                ? viewModel.filterCandidateRepos.map(\.ghRepoId)
+                : []
             let openSSFRepoIDs = settings.openSSFAvailabilityFilter == .unknown
                 ? visibleRepoIDs
                 : candidateRepoIDs
             let healthRepoIDs = settings.healthAvailabilityFilter == .unknown
                 ? visibleRepoIDs
                 : candidateRepoIDs
-            async let wiki: Void = reloadWikiAvailabilityMap(for: viewModel.filterCandidateRepos)
+            let wikiRepos = settings.wikiAvailabilityFilter == .unknown
+                ? visibleRepos.map(\.element)
+                : viewModel.filterCandidateRepos
+            async let wiki: Void = reloadWikiAvailabilityMap(for: wikiRepos)
             async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: openSSFRepoIDs)
             async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: healthRepoIDs)
             _ = await (openSSF, health, wiki)
@@ -732,17 +753,6 @@ struct TrendingView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-}
-
-/// 带可见顺序的 Trending repo 包装。
-///
-/// `id` 仍使用 repo.id，确保 `List(selection:)` 与 `.tag(repo.id)` 继续匹配；
-/// index 只参与渐进式入场 delay 计算，不改变业务身份。
-private struct IndexedTrendingRepo: Identifiable {
-    let index: Int
-    let repo: TrendingRepo
-
-    var id: String { repo.id }
 }
 
 // MARK: - TrendingRepoCard 已删除（R-01 v1.2 Phase B2，2026-06-10）

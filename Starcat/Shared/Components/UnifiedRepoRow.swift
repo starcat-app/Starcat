@@ -257,20 +257,17 @@ struct UnifiedRepoRow: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    // chip 行：宽栏完整展示；窄栏 ViewThatFits 只对左簇降级
-                    // （依次丢掉 Forks → footer 仅图标），避免 fixedSize chip 撑破卡片。
-                    // Spacer / SemanticScoreBadge 放在 ViewThatFits 外，否则 Spacer 会干扰 ideal 测宽。
+                    // chip 行（固定布局，2026-09-04 优化）：
+                    // 原 ViewThatFits 会对 3 个变体各做一次布局测量，macOS List 滚动时每个新 row
+                    // 都重测，累积成滚动卡顿（Trending 尤甚）。改为固定渲染完整 chip，
+                    // 窄栏时靠 .clipped() 尾部裁剪，不再做「降级」测量。
                     //
                     // 布局分区（v2.1，2026-06-13 dong4j 反馈）：
                     // - **左簇**：Language / Stars / Forks / Archived / sceneBadge / RepoStatusChip
                     // - `Spacer(minLength: 8)` 分隔
                     // - **右簇**：SemanticScoreBadge
                     HStack(spacing: 8) {
-                        ViewThatFits(in: .horizontal) {
-                            metadataChipCluster(includeForks: true, footerIconOnly: false)
-                            metadataChipCluster(includeForks: false, footerIconOnly: false)
-                            metadataChipCluster(includeForks: false, footerIconOnly: true)
-                        }
+                        metadataChipCluster(includeForks: true, footerIconOnly: false)
                         Spacer(minLength: 8)
                         if let semanticHit {
                             SemanticScoreBadge(
@@ -279,6 +276,7 @@ struct UnifiedRepoRow: View {
                             )
                         }
                     }
+                    .clipped()
                 }
                 // minWidth: 0 允许 HStack 内文字区压缩到可用宽度；否则 chip 固有宽度会撑破卡片。
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)

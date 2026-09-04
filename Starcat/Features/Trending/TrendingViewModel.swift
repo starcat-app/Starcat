@@ -147,11 +147,15 @@ final class TrendingViewModel {
 
     // MARK: - 数据状态
 
-    /// 当前 Trending 列表。
+    /// 当前 Trending 列表（**分页切片**，不是全量）。
     ///
-    /// 数据在 `TrendingListPipeline` 完成排序与评分后一次性发布；这里不再保存需要由
-    /// SwiftUI body 临时排序的原始数组，从而把主线程工作限制为小范围状态赋值与 diff。
+    /// 对齐 Weekly：全量数据放 `allRepos`（private、非 @Observable），对外只暴露分页切片
+    /// `repos`，避免滚动分页时因全量数组在 View 层反复 `prefix` 导致重算/卡顿。
+    /// 数据在 `TrendingListPipeline` 完成排序与评分后一次性发布，切片只在分页时推进。
     private(set) var repos: [TrendingRepo] = []
+
+    /// 全量 repo（已排序已筛选）。仅 ViewModel 内部用于切片与 `hasMore` 判断，不对外暴露。
+    private var allRepos: [TrendingRepo] = []
 
     /// 已排序但尚未应用全局筛选的候选列表。
     ///
@@ -161,6 +165,12 @@ final class TrendingViewModel {
 
     /// 当前允许 SwiftUI 构造的 row 数量。首屏固定 20，滚动接近底部再按页增长。
     private(set) var visibleLimit: Int = TrendingViewModel.pageSize
+
+    /// 是否还有更多分页可加载（对齐 Weekly 的 hasMore）。
+    var hasMore: Bool { visibleLimit < allRepos.count }
+
+    /// 全量 repo 数（供 Sidebar / subtitle 计数，与分页切片 `repos.count` 区分）。
+    var totalCount: Int { allRepos.count }
 
     /// 分类切换时跳过 row reveal，避免几十个 row 动画与列表 diff 同时争抢主线程。
     private(set) var skipListRowReveal: Bool = false
@@ -366,15 +376,13 @@ final class TrendingViewModel {
     }
 
     /// 滚动接近当前页尾时追加一页 row，避免首屏一次构造整个榜单。
-    func loadMoreIfNeeded(currentIndex: Int, totalAvailable: Int) {
+    /// 滚动分页入口：由 `automaticListPagination` 触发（对齐 Weekly），
+    /// 预取判定由 modifier 内部完成，这里推进可见窗口并切片。
+    func loadMoreIfNeeded() async {
+        let totalAvailable = allRepos.count
         guard totalAvailable > visibleLimit else { return }
-        let currentPageCount = min(visibleLimit, totalAvailable)
-        guard ListPaginationPolicy.shouldPrefetch(
-            appearingIndex: currentIndex,
-            itemCount: currentPageCount,
-            hasMore: true
-        ) else { return }
         visibleLimit = min(visibleLimit + Self.pageSize, totalAvailable)
+        repos = Array(allRepos.prefix(visibleLimit))
     }
 
     /// 刷新 Trending 列表（R-06.1 TTL 升级版，2026-06-15 改造）。
@@ -638,7 +646,7 @@ final class TrendingViewModel {
             let identityChanged = queryChanged || oldIDs != newIDs
 
             filterCandidateRepos = snapshot.allRepos
-            repos = snapshot.repos
+            allRepos = snapshot.repos
             publishedRepoIdentityIDs = snapshot.identityIDs
             scoreCache = snapshot.scores
             recommendedRepos = snapshot.recommendedRepos
@@ -649,6 +657,7 @@ final class TrendingViewModel {
             if resetVisiblePage || identityChanged {
                 visibleLimit = Self.pageSize
             }
+            repos = Array(allRepos.prefix(visibleLimit))
             if identityChanged {
                 reposRevision += 1
                 AppLog.network.debug(
