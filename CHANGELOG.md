@@ -8,10 +8,12 @@ Release notes for the Mac App Store edition of Starcat.
 
 - Native Settings experience: Uses a macOS-style sidebar, search, and back/forward navigation in a fixed-size Settings window.
 - Unified RAG configuration: Inference, prompt, and retrieval controls now live in the main Settings window, save automatically, and present prompt helpers and retrieval options without extra nested navigation.
+- Language categories: Star and Explore language lists now follow your interested languages and add "Other" and "Uncategorized" groups to reduce clutter.
 
 ### Fixes
 
 - Library smart collection paging: Continues loading repositories in full-screen layouts and after fast scrolling to the bottom instead of getting stuck on the current page.
+- Trending scrolling: Fixes laggy scrolling for a smoother browse.
 
 ## 1.5.0
 
