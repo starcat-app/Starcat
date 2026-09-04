@@ -1198,6 +1198,22 @@ struct AppSettingsTests {
         #expect(s2.aiEmbeddingTask.modelID == "text-embedding-3-small")
     }
 
+    @Test("AI: OrcaRouter 一等 Provider 默认值与持久化契约")
+    func orcaRouterProviderPreset() throws {
+        let provider = AIServiceProvider.orcaRouter
+        #expect(provider.displayName == "OrcaRouter")
+        #expect(provider.defaultProfileName == "OrcaRouter")
+        #expect(provider.defaultBaseURL == "https://api.orcarouter.ai/v1")
+        #expect(provider.defaultChatModel == "openai/gpt-4o-mini")
+        #expect(provider.defaultEmbeddingModel.isEmpty)
+        #expect(!provider.supportsEmbeddingEndpoint)
+        #expect(!provider.allowsEmptyAPIKey)
+        #expect(provider.fallbackSystemImageName == "point.3.connected.trianglepath.dotted")
+
+        let encoded = try JSONEncoder().encode(provider)
+        #expect(try JSONDecoder().decode(AIServiceProvider.self, from: encoded) == provider)
+    }
+
     @Test("AI: provider 只有测试成功且启用后才算正式配置")
     func aiProviderProfileVerifiedState() {
         let draft = AIProviderProfile(
@@ -1325,6 +1341,37 @@ struct AppSettingsTests {
             _ = try settings.resolveEmbeddingSelection()
         }
         #expect(settings.embeddingConfigurationIssue == .missingProvider)
+        #expect(settings.configuredEmbeddingModelName == nil)
+    }
+
+    @Test("AI: OrcaRouter 即使填写自定义模型也不能用于向量化")
+    func orcaRouterEmbeddingSelectionIsRejected() {
+        let settings = AppSettings(defaults: makeIsolatedDefaults())
+        let profileID = "orcarouter-provider"
+        settings.aiProviderProfiles = [
+            AIProviderProfile(
+                id: profileID,
+                provider: .orcaRouter,
+                models: [
+                    AIModelDescriptor(
+                        providerID: profileID,
+                        name: "openai/gpt-4o-mini",
+                        capability: .chat
+                    )
+                ],
+                lastTestStatus: .success(modelCount: 1)
+            )
+        ]
+
+        var task = settings.aiEmbeddingTask
+        task.providerID = profileID
+        task.useCustomModel = true
+        task.customModelName = "text-embedding-3-small"
+        settings.aiEmbeddingTask = task
+
+        #expect(throws: AIEmbeddingError.incompatibleModel("text-embedding-3-small")) {
+            _ = try settings.resolveEmbeddingSelection()
+        }
         #expect(settings.configuredEmbeddingModelName == nil)
     }
 

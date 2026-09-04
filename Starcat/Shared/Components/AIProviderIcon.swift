@@ -6,14 +6,14 @@
 //
 //  模块职责：
 //  - 把 `AIServiceProvider.iconAssetName` 映射成实际的 SwiftUI `Image`；
-//  - 资源缺失时 fallback 到 SF Symbol `sparkles`，颜色用 `.secondary`，
+//  - 资源缺失时 fallback 到 Provider 指定的中性 SF Symbol，颜色用 `.secondary`，
 //    保证 UI 不会因为某个 imageset 名字写错而留下空白；
 //  - 提供单一尺寸 + 圆角裁切默认值，避免每个调用点重复 `.resizable().frame(...)`
 //    样板代码。
 //
 //  关键约束：
-//  - 图标资源全部位于 `Resources/Assets.xcassets/AIProviders/<stem>.imageset`，
-//    SVG 矢量图，新增 provider 时同步在该目录创建 imageset 即可，无需改本文件。
+//  - 品牌图标优先位于 `Resources/Assets.xcassets/AIProviders/<stem>.imageset`；上游未
+//    提供可再分发矢量资源时，Provider 必须声明中性 SF Symbol fallback。
 //  - macOS 15+ 的 `UIImage(named:)` / `NSImage(named:)` 在测试 host 下行为可能不稳定，
 //    所以这里直接用 `Bundle.main.image(forResource:)` 探测资源是否存在再决定要不要走
 //    SF Symbol fallback；这种探测在主进程 + Asset Catalog 编译后零成本。
@@ -62,7 +62,7 @@ struct AIProviderIconView: View {
                         .frame(width: size, height: size)
                         .foregroundStyle(.primary)
                 } else {
-                    // 彩色 / 渐变 logo（占 23 个里的 18 个）保留品牌原色。
+                    // 彩色 / 渐变 logo 保留品牌原色。
                     Image(nsImage: nsImage)
                         .resizable()
                         .interpolation(.high)
@@ -71,8 +71,9 @@ struct AIProviderIconView: View {
                         .clipShape(RoundedRectangle(cornerRadius: max(2, size * 0.18), style: .continuous))
                 }
             } else {
-                // Fallback：UI 不留空白；SF Symbol 与字体节奏一致。
-                Image(systemName: "sparkles")
+                // Fallback：UI 不留空白；SF Symbol 与字体节奏一致。OrcaRouter 暂用
+                // 路由拓扑符号，避免把网页位图当成可再分发的品牌资源带进 App。
+                Image(systemName: provider.fallbackSystemImageName)
                     .resizable()
                     .scaledToFit()
                     .symbolRenderingMode(.hierarchical)
@@ -120,7 +121,7 @@ struct AIProviderIconView: View {
     }
 }
 
-#Preview("Logo 长廊（验证全部 23 个 imageset）") {
+#Preview("Provider 图标长廊（24 个）") {
     ScrollView {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], spacing: 8) {
             ForEach(AIServiceProvider.allCases) { provider in

@@ -626,12 +626,13 @@ struct AISettingsTab: View {
             providerID: currentProviderID,
             capability: task.requiredCapability
         )
+        let availableProfiles = eligibleVerifiedProfiles(for: task)
 
         return VStack(alignment: .leading, spacing: 0) {
             taskModelTrailingRow(label: "settings.ai.task.providerLabel") {
                 // HOM-AIPROVIDERS-2026-06-06：挂 provider logo，自定义 profile 名时仍能辨认服务商。
                 Picker("settings.ai.task.providerLabel", selection: taskProviderBinding(task)) {
-                    ForEach(verifiedProfiles) { profile in
+                    ForEach(availableProfiles) { profile in
                         Label {
                             Text(profile.displayName)
                         } icon: {
@@ -2992,6 +2993,16 @@ struct AISettingsTab: View {
         settings.aiProviderProfiles.filter(\.isVerifiedConfiguration)
     }
 
+    /// 任务下拉只显示具备对应协议端点的已验证 Provider。
+    ///
+    /// 模型 capability 来自名称推断或用户标注，不能替代 Provider 端点能力；尤其
+    /// OrcaRouter 的 `/v1/models` 会返回 Chat/多媒体模型，但没有 `/v1/embeddings`。
+    private func eligibleVerifiedProfiles(for task: AIModelTask) -> [AIProviderProfile] {
+        verifiedProfiles.filter { profile in
+            task.requiredCapability != .embedding || profile.provider.supportsEmbeddingEndpoint
+        }
+    }
+
     private var activeProfile: AIProviderProfile? {
         draftProfile ?? selectedProfile
     }
@@ -3059,6 +3070,7 @@ struct AISettingsTab: View {
     // 同时选中的视觉 bug。
     private func enabledModels(providerID: String, capability: AIModelCapability) -> [AIModelDescriptor] {
         guard let profile = profile(providerID), profile.isVerifiedConfiguration else { return [] }
+        guard capability != .embedding || profile.provider.supportsEmbeddingEndpoint else { return [] }
         return profile.models.filter {
             $0.isEnabled && ($0.capability == capability || $0.capability == .unknown)
         }
@@ -3068,9 +3080,10 @@ struct AISettingsTab: View {
         for task in AIModelTask.allCases {
             let config = taskConfig(task)
             let models = enabledModels(providerID: config.providerID, capability: task.requiredCapability)
-            let currentProfile = profile(config.providerID)
-            if currentProfile?.isVerifiedConfiguration != true || (!config.useCustomModel && models.allSatisfy { $0.name != config.modelID }) {
-                let fallbackProfile = verifiedProfiles.first
+            let eligibleProfiles = eligibleVerifiedProfiles(for: task)
+            let currentProfileIsEligible = eligibleProfiles.contains { $0.id == config.providerID }
+            if !currentProfileIsEligible || (!config.useCustomModel && models.allSatisfy { $0.name != config.modelID }) {
+                let fallbackProfile = eligibleProfiles.first
                 updateTask(task) { updated in
                     updated.providerID = fallbackProfile?.id ?? ""
                     if let first = fallbackProfile.flatMap({ enabledModels(providerID: $0.id, capability: task.requiredCapability).first }) {

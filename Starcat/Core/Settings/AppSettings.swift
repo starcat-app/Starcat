@@ -254,11 +254,13 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 ///   + 自填 URL 接入任何 OpenAI 兼容服务。
 /// - 提供商清单与图标资源同步自 zeka-idea-plugin `AIProviderType.java`（2026-06-06
 ///   一次性导入），新增任何 case 必须同时：
-///   1) 在 `Resources/Assets.xcassets/AIProviders` 新建对应 imageset（与 `iconAssetName`
-///      返回值同名）；
+///   1) 优先在 `Resources/Assets.xcassets/AIProviders` 新建对应 imageset（与
+///      `iconAssetName` 返回值同名）；若上游没有可再分发的矢量品牌资源，则必须提供
+///      明确的 `fallbackSystemImageName`，不能复制来源不明的网页位图；
 ///   2) 同步更新 `displayName` / `defaultBaseURL` / `defaultChatModel` /
-///      `defaultEmbeddingModel` / `allowsEmptyAPIKey` / `iconAssetName`；
-///   3) `AIProviderIconView` 自动按 `iconAssetName` 渲染，无需额外注册。
+///      `defaultEmbeddingModel` / `supportsEmbeddingEndpoint` / `allowsEmptyAPIKey` /
+///      `iconAssetName` / `fallbackSystemImageName`；
+///   3) `AIProviderIconView` 自动按 `iconAssetName` 渲染，缺失时改用 Provider fallback。
 ///
 /// 已有用户偏好兼容性：早期版本仅有 5 个 case（`openAICompatible` / `deepSeek` /
 /// `openRouter` / `ollama` / `lmStudio`），新增枚举值都追加在后面，原 rawValue 不动，
@@ -291,6 +293,10 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     case zhipu
     case zai
 
+    // MARK: - 2026-09-05 新增（OpenAI Chat Completions 兼容）
+    // 继续追加在尾部，避免改动已有 rawValue 的持久化语义。
+    case orcaRouter
+
     var id: String { rawValue }
 
     /// 设置页 picker 显示的服务商名（i18n key 复用 LocalizedStringKey 自动解析）。
@@ -319,6 +325,7 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .modelscope:       return "ModelScope"
         case .zhipu:            return "ai.provider.zhipu"
         case .zai:              return "Z.AI"
+        case .orcaRouter:       return "OrcaRouter"
         }
     }
 
@@ -352,6 +359,20 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .modelscope:       return "modelscope"
         case .zhipu:            return "chatglm"
         case .zai:              return "zai"
+        case .orcaRouter:       return "orcarouter"
+        }
+    }
+
+    /// 品牌 imageset 不可用时采用的中性 SF Symbol。
+    ///
+    /// OrcaRouter 官方文档当前只公开网页位图，没有可确认再分发的矢量品牌资源；先用
+    /// 路由拓扑符号表达其网关定位，未来补官方矢量资源时无需改调用方。
+    var fallbackSystemImageName: String {
+        switch self {
+        case .orcaRouter:
+            return "point.3.connected.trianglepath.dotted"
+        default:
+            return "sparkles"
         }
     }
 
@@ -401,6 +422,7 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .modelscope:       return "https://api-inference.modelscope.cn/v1"
         case .zhipu:            return "https://open.bigmodel.cn/api/paas/v4"
         case .zai:              return "https://api.z.ai/api/coding/paas/v4"
+        case .orcaRouter:       return "https://api.orcarouter.ai/v1"
         }
     }
 
@@ -430,6 +452,7 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
         case .modelscope:       return "ZhipuAI/GLM-4.6"
         case .zhipu:            return "glm-4.6"
         case .zai:              return "glm-4.6"
+        case .orcaRouter:       return "openai/gpt-4o-mini"
         }
     }
 
@@ -478,6 +501,23 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
             return "embedding-3"
         case .zai:
             return "embedding-3"
+        case .orcaRouter:
+            // OrcaRouter 2026-09-05 官方 OpenAPI 未定义 `/v1/embeddings`。
+            // 空值只用于构造“模型列表测试”客户端；Embedding 任务由下方能力门禁拦截。
+            return ""
+        }
+    }
+
+    /// Provider 是否公开 OpenAI-compatible `/embeddings` 端点。
+    ///
+    /// 这是请求前硬门禁，不依赖模型名推断；否则用户填写自定义模型时会绕过 descriptor
+    /// capability 校验，把 OrcaRouter 误用于当前并不存在的 Embedding API。
+    var supportsEmbeddingEndpoint: Bool {
+        switch self {
+        case .orcaRouter:
+            return false
+        default:
+            return true
         }
     }
 }

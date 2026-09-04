@@ -346,10 +346,15 @@ extension AppSettings {
         guard profile.isVerifiedConfiguration else {
             throw AIEmbeddingError.providerUnavailable
         }
-
         let modelName = task.resolvedModelName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !modelName.isEmpty else {
             throw AIEmbeddingError.missingModel
+        }
+
+        // 模型名或用户自定义开关都不能证明服务商存在 `/embeddings`。OrcaRouter 当前只
+        // 兼容 Chat/Responses；在统一解析入口拦截，保证 RAG、语义搜索和设置页口径一致。
+        guard profile.provider.supportsEmbeddingEndpoint else {
+            throw AIEmbeddingError.incompatibleModel(modelName)
         }
 
         if !task.useCustomModel {
@@ -1274,6 +1279,7 @@ extension AIServiceProvider {
         case .modelscope:       return "ModelScope"
         case .zhipu:            return String.l10n("ai.provider.zhipu.name")
         case .zai:              return "Z.AI"
+        case .orcaRouter:       return "OrcaRouter"
         }
     }
 
