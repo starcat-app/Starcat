@@ -131,13 +131,13 @@ private struct RAGCompositorSkeletonPalette {
         switch scheme {
         case .dark:
             return Self(
-                base: NSColor.white.withAlphaComponent(0.16),
-                highlight: NSColor.white.withAlphaComponent(0.34)
+                base: NSColor.white.withAlphaComponent(0.09),
+                highlight: NSColor.white.withAlphaComponent(0.20)
             )
         case .light:
             return Self(
-                base: NSColor(calibratedWhite: 0.85, alpha: 1),
-                highlight: NSColor.white.withAlphaComponent(0.88)
+                base: NSColor(calibratedWhite: 0.91, alpha: 1),
+                highlight: NSColor.white.withAlphaComponent(0.94)
             )
         @unknown default:
             return Self(

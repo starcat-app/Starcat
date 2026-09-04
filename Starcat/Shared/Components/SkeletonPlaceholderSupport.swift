@@ -20,14 +20,14 @@ struct SkeletonPalette {
         switch scheme {
         case .dark:
             return SkeletonPalette(
-                base: Color.white.opacity(0.16),
-                highlight: Color.white.opacity(0.34),
+                base: Color.white.opacity(0.09),
+                highlight: Color.white.opacity(0.20),
                 shimmerBlendMode: .plusLighter
             )
         case .light:
             return SkeletonPalette(
-                base: Color(white: 0.85),
-                highlight: Color.white.opacity(0.88),
+                base: Color(white: 0.91),
+                highlight: Color.white.opacity(0.94),
                 shimmerBlendMode: .overlay
             )
         @unknown default:
