@@ -227,23 +227,13 @@ struct StarcatApp: App {
         Window("Starcat", id: "settings") {
             settingsSceneRoot
         }
-        .defaultSize(width: 920, height: 600)
+        .defaultSize(width: 800, height: 600)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .windowResizability(.contentSize)
         .commands {
             SettingsWindowCommands()
         }
-
-        // RAG 配置与主设置使用同一种 SwiftUI Window Scene，而不再作为工作台自绘 sheet。
-        // 固定 id 保证重复点击齿轮只激活同一个标准窗口；`.contentSize` 禁止用户缩放。
-        Window("rag.workspace.settings.title", id: RAGWorkspaceSettingsWindow.id) {
-            ragWorkspaceSettingsSceneRoot
-        }
-        .defaultSize(width: 920, height: 600)
-        .defaultLaunchBehavior(.suppressed)
-        .restorationBehavior(.disabled)
-        .windowResizability(.contentSize)
     }
 
     // MARK: - 内容根视图
@@ -333,27 +323,6 @@ struct StarcatApp: App {
                 .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
         } else {
             StartupFailureView(error: startupError ?? UserFacingError.map(DatabaseError.applicationSupportNotFound, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat"))
-        }
-    }
-
-    /// RAG 配置是独立 Scene，不能继承主窗口或 Settings Scene 的 environment。
-    /// 只注入它实际使用的设置、语言与动画环境，避免把工作台 ViewModel 生命周期带进来。
-    @ViewBuilder
-    private var ragWorkspaceSettingsSceneRoot: some View {
-        if let dependencies {
-            RAGWorkspaceSettingsView(settings: dependencies.settings)
-                .starcatAnimationOverride()
-                .environment(dependencies.settings)
-                .environment(\.locale, localeStore.selection.effectiveLocale)
-                .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
-                .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
-                .id(localeStore.selection.rawValue)
-        } else {
-            StartupFailureView(error: startupError ?? UserFacingError.map(
-                DatabaseError.applicationSupportNotFound,
-                operation: String.l10n("diagnostics.operation.startup"),
-                service: "Starcat"
-            ))
         }
     }
 
@@ -548,9 +517,6 @@ private struct MainWindowOpenFallbackRegistrar: ViewModifier {
                 }
                 AppDelegate.openSettingsWindowFallback = {
                     openWindow(id: "settings")
-                }
-                AppDelegate.openRAGWorkspaceSettingsWindowFallback = {
-                    openWindow(id: RAGWorkspaceSettingsWindow.id)
                 }
                 AIWorkspaceSceneCoordinator.shared.registerWindowActions(
                     openAgent: {

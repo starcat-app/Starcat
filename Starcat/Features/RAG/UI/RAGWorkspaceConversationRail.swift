@@ -186,7 +186,6 @@ struct RAGWorkspaceConversationRail: View {
                 .padding(.bottom, 12)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
         .onChange(of: viewModel.conversationGroups.map(\.id)) { _, ids in expandedGroupIDs.formUnion(ids) }
         .onDisappear {
             dropSettleTask?.cancel()

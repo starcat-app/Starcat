@@ -51,8 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// AppKit 菜单栏与独立窗口无法直接读取 SwiftUI `OpenWindowAction`，因此由主
     /// Scene 在出现时注册一个很薄的桥接。目标 Tab 仍由 Settings feature 自己路由。
     static var openSettingsWindowFallback: (() -> Void)?
-    /// RAG 配置也由 SwiftUI 单例 Window 承载；工作台的 AppKit titlebar 只调用此桥接。
-    static var openRAGWorkspaceSettingsWindowFallback: (() -> Void)?
     /// 首次创建 Settings Window 时，跳转通知可能先于 View 的订阅安装。
     /// 暂存最后一个目标，SettingsView 在 onAppear 兜底消费，避免靠固定延迟碰运气。
     private static var pendingSettingsTarget: String?
@@ -257,12 +255,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static func acknowledgeSettingsTarget(_ target: String) {
         guard pendingSettingsTarget == target else { return }
         pendingSettingsTarget = nil
-    }
-
-    /// 打开唯一的 RAG 工作台设置窗口。
-    static func openRAGWorkspaceSettingsWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        openRAGWorkspaceSettingsWindowFallback?()
     }
 
     private static func mainWindowCandidate() -> NSWindow? {

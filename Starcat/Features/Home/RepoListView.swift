@@ -412,12 +412,6 @@ private struct TitlebarSubtitleAccessoryAttacher<Accessory: View>: NSViewReprese
     }
 }
 
-/// 规则编辑器 Sheet 载荷（`sheet(item:)` 避免首帧空白 sheet）。
-private struct SmartCollectionRuleEditorItem: Identifiable {
-    let id = UUID()
-    let mode: SmartCollectionRuleEditorSheet.Mode
-}
-
 /// CodeFlow / CodebaseMemory sheet 每次打开都需要独立 identity。
 ///
 /// macOS `.sheet(item:)` 可能复用旧 presentation host；如果直接用 `Repo` 做 item，
@@ -510,7 +504,6 @@ struct RepoListView: View {
     @State private var shareCompletionMessage: String?
     /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
     @State private var paywallContext: ProPaywallContext?
-    @State private var ruleEditorSheetItem: SmartCollectionRuleEditorItem?
     /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要结构化解释原因。
     @State private var gitHubStarListOAuthRestrictedRepo: Repo?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
@@ -586,18 +579,6 @@ struct RepoListView: View {
         }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
-        }
-        .sheet(item: $ruleEditorSheetItem) { item in
-            SmartCollectionRuleEditorSheet(
-                mode: item.mode,
-                onCancel: {
-                    ruleEditorSheetItem = nil
-                },
-                onSaved: {
-                    ruleEditorSheetItem = nil
-                }
-            )
-            .appLocaleEnvironment()
         }
         .sheet(item: $codeFlowSheetItem) { item in
             CodeFlowPanel(repo: item.repo)
@@ -1206,14 +1187,6 @@ struct RepoListView: View {
     private func makeManageToolbarSpec() -> PageToolbarSpec {
         let leading = AnyView(
             Group {
-                Button {
-                    openSmartCollectionEditor()
-                } label: {
-                    ToolbarIcon("gearshape.circle")
-                }
-                .disabled(!canOpenSmartCollectionEditor)
-                .help("smartCollections.editor.help")
-
                 globalFilterMenu(includesStatusFilter: true)
 
                 // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
@@ -1468,21 +1441,6 @@ struct RepoListView: View {
         }
     }
 
-    private var canOpenSmartCollectionEditor: Bool {
-        if case .userSmartCollection(let id) = viewModel.selection {
-            return viewModel.userSmartCollection(id: id) != nil
-        }
-        switch viewModel.selection {
-        case .allStars, .allLanguages, .untagged, .language, .tag:
-            return true
-        case .myProjects, .library, .trending, .smartCollectionsHome, .smartCollection,
-             .githubStarList, .githubStarListUngrouped:
-            return false
-        case .userSmartCollection:
-            return false
-        }
-    }
-
     /// 当前选中 repo 的 toolbar 操作组。
     ///
     /// Share 已从详情 hero 迁到 toolbar。公开仓库始终可复制基础 HTTPS 链接；只有
@@ -1597,24 +1555,6 @@ struct RepoListView: View {
                 try await dependencies.shareAPI.shareRepo(request: request)
             }
         )
-    }
-
-    private func openSmartCollectionEditor() {
-        let mode: SmartCollectionRuleEditorSheet.Mode
-        if case .userSmartCollection(let id) = viewModel.selection,
-           let collection = viewModel.userSmartCollection(id: id) {
-            mode = .edit(collection)
-        } else if let rule = viewModel.makeRuleFromCurrentManageFilters() {
-            mode = .create(defaultName: defaultSmartCollectionName, initialRule: rule)
-        } else {
-            return
-        }
-        ruleEditorSheetItem = SmartCollectionRuleEditorItem(mode: mode)
-    }
-
-    private var defaultSmartCollectionName: String {
-        // 创建时不用 sidebar 分类名（如「全部仓库」）当集合名，避免标题与侧边栏入口混淆。
-        String.l10n("smartCollections.new.defaultName")
     }
 
     /// 中栏主体内容。

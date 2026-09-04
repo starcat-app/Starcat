@@ -208,7 +208,7 @@ struct SettingsView: View {
 
     /// 设置窗口固定使用当前验收尺寸；Scene 同时声明 `.contentSize`，让 AppKit
     /// 禁用边缘缩放和绿色缩放按钮，而不是只给一个仍可继续放大的最小值。
-    private static let contentSize = CGSize(width: 920, height: 600)
+    private static let contentSize = CGSize(width: 800, height: 600)
 
     var body: some View {
         // NavigationSplitView + sidebar List 使用 macOS 原生选中态、材质和分隔线。

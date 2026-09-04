@@ -23,8 +23,9 @@ struct SmartCollectionsOverviewView: View {
     @State private var isLoadingUserCounts = false
     @State private var deleteError: String?
     @State private var editTarget: UserSmartCollection?
-    @State private var hoveredSystemCollection: SmartCollectionKind?
     @State private var createFromTemplateKind: SmartCollectionKind?
+    @State private var showCreateCollectionSheet = false
+    @State private var hoveredSystemCollection: SmartCollectionKind?
 
     var body: some View {
         ScrollView {
@@ -42,10 +43,7 @@ struct SmartCollectionsOverviewView: View {
                 }
                 .padding(.horizontal, 16)
 
-                Text("smartCollections.mine.title")
-                    .font(.headline)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
+                mineCollectionsHeader
 
                 if viewModel.userSmartCollections.isEmpty {
                     Text("smartCollections.mine.empty")
@@ -110,6 +108,22 @@ struct SmartCollectionsOverviewView: View {
             )
             .appLocaleEnvironment()
         }
+        // 「我的集合」标题行的 +：不带模板，从空规则基线新建。
+        // 编辑器保存后会自行 refreshSidebar + 处理付费墙，这里只负责刷新计数。
+        .sheet(isPresented: $showCreateCollectionSheet) {
+            SmartCollectionRuleEditorSheet(
+                mode: .create(
+                    defaultName: String.l10n("smartCollections.new.defaultName"),
+                    initialRule: .baseline
+                ),
+                onCancel: { showCreateCollectionSheet = false },
+                onSaved: {
+                    showCreateCollectionSheet = false
+                    Task { await reloadUserCounts() }
+                }
+            )
+            .appLocaleEnvironment()
+        }
     }
 
     /// 内置集合标题行。数量重算不再跟随 selection/repo list 重载，避免点击集合卡片时全量刷新 counts。
@@ -129,6 +143,34 @@ struct SmartCollectionsOverviewView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// 「我的集合」标题行 + 新建集合入口（dong4j 2026-09-04：入口从 Manage toolbar
+    /// 收紧到特定分类后，总览页需要 own 的新建按钮，否则智能集合首页无显式新建入口）。
+    /// 图标语言对齐 sidebar 分组 header：`plus.circle.fill` + hierarchical + .secondary。
+    private var mineCollectionsHeader: some View {
+        HStack(spacing: 8) {
+            Text("smartCollections.mine.title")
+                .font(.headline)
+
+            Spacer(minLength: 8)
+
+            Button {
+                showCreateCollectionSheet = true
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text("smartCollections.editor.help"))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
     }
 
     private func systemCollectionCard(_ kind: SmartCollectionKind) -> some View {
