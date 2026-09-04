@@ -305,6 +305,30 @@ struct HomeViewModelFilterSortTests {
         await vm.awaitPendingListReloadForTesting()
     }
 
+    @Test("详情语言点击只叠加当前分类临时筛选，再点一次或离开分类后恢复")
+    func detailLanguageFilterIsTemporaryAndScopedToSelection() async throws {
+        let (vm, _, _) = try makeSUT()
+        vm.hideArchived = true
+
+        vm.toggleTemporaryLanguageFilterFromDetail(" Swift ")
+
+        #expect(vm.persistentGlobalFilterState.hideArchived)
+        #expect(vm.persistentGlobalFilterState.repoLanguageFilter == .all)
+        #expect(vm.effectiveGlobalFilterState.hideArchived)
+        #expect(vm.effectiveGlobalFilterState.repoLanguageFilter == .language("Swift"))
+        #expect(vm.temporaryGlobalFilterSession?.anchorSelection == vm.selection)
+
+        vm.toggleTemporaryLanguageFilterFromDetail("Swift")
+        #expect(vm.temporaryGlobalFilterSession == nil)
+        #expect(vm.effectiveGlobalFilterState.repoLanguageFilter == .all)
+
+        vm.toggleTemporaryLanguageFilterFromDetail("Rust")
+        vm.clearTemporaryGlobalFiltersIfNeeded(for: .library)
+        #expect(vm.temporaryGlobalFilterSession == nil)
+        #expect(vm.effectiveGlobalFilterState.repoLanguageFilter == .all)
+        await vm.awaitPendingListReloadForTesting()
+    }
+
     @Test("PR-2: Manage 知识库筛选支持全部 / 已入库 / 未入库并可组合")
     func libraryFilterStacksWithManageFilters() async throws {
         let (vm, db, noteRepo) = try makeSUT()

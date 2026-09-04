@@ -84,6 +84,9 @@ protocol GitHubAPIClientProtocol: Sendable {
         perPage: Int
     ) async throws -> APIResponse<GitHubRepositorySearchDTO>
 
+    /// 拉取单个仓库按字节统计的语言分布（详情 Hero 进入后按需加载）。
+    func repositoryLanguages(owner: String, repo: String) async throws -> [String: Int]
+
     // MARK: - Readme
 
     /// 拉取 README（GitHub 服务端渲染的 HTML 片段）。
@@ -221,6 +224,14 @@ protocol GitHubAPIClientProtocol: Sendable {
 }
 
 extension GitHubAPIClientProtocol {
+    /// 旧 Mock 的兼容默认实现；调用语言端点时必须显式提供结果，不能伪造空分布。
+    func repositoryLanguages(owner: String, repo: String) async throws -> [String: Int] {
+        throw NetworkError.clientError(
+            statusCode: 501,
+            message: "Repository languages are not implemented by this client"
+        )
+    }
+
     /// 未指定超时的既有调用保持默认 URLSession 策略；RAG 构建会显式传入短超时。
     func readmeHTML(
         owner: String,

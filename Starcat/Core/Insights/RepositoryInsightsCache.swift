@@ -14,6 +14,7 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
     case recentActivity
     case commitActivity
     case contributors
+    case languages
     case communityProfile
     case releaseCadence
     case securityAdvisories
@@ -23,7 +24,7 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
         switch self {
         case .activityCounts, .recentActivity:
             return 15 * 60
-        case .commitActivity, .contributors:
+        case .commitActivity, .contributors, .languages:
             return 24 * 60 * 60
         case .communityProfile:
             return 3 * 24 * 60 * 60

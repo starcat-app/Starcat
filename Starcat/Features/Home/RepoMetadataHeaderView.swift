@@ -63,6 +63,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let starHelpKey: LocalizedStringKey
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
     let showsRepoHealthEntry: Bool
+    let onLanguageTapped: ((String) -> Void)?
     private let trailingActions: TrailingActions
 
     /// OpenSSF 与 Repo Health 都放在 `full_name` 同行。
@@ -82,6 +83,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         starHelpKey: LocalizedStringKey = "repo.unstar",
         headerSourceBadge: RepoDetailHeaderSourceBadge? = nil,
         showsRepoHealthEntry: Bool = false,
+        onLanguageTapped: ((String) -> Void)? = nil,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
@@ -90,6 +92,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         self.starHelpKey = starHelpKey
         self.headerSourceBadge = headerSourceBadge
         self.showsRepoHealthEntry = showsRepoHealthEntry
+        self.onLanguageTapped = onLanguageTapped
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
     }
@@ -98,7 +101,20 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             descriptionSection
-            statsSection
+            VStack(alignment: .leading, spacing: 8) {
+                statsSection
+                if let onLanguageTapped {
+                    RepositoryLanguageDistributionBar(
+                        repo: repo,
+                        service: RepositoryLanguageService(
+                            apiClient: dependencies.apiClient,
+                            cache: dependencies.repositoryInsightsCache
+                        ),
+                        onLanguageTapped: onLanguageTapped
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)

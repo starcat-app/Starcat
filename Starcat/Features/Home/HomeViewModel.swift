@@ -1148,6 +1148,30 @@ final class HomeViewModel {
         }
     }
 
+    /// 详情 Hero 点击语言后，在当前 Sidebar 分类上叠加一次临时主语言筛选。
+    ///
+    /// 这条入口不改用户持久偏好；重复点击同一语言只撤销本次临时条件，离开当前分类时
+    /// 仍由 `clearTemporaryGlobalFiltersIfNeeded(for:)` 自动恢复原筛选。
+    func toggleTemporaryLanguageFilterFromDetail(_ language: String) {
+        let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+
+        var filters = effectiveGlobalFilterState
+        let target = RepoLanguageFilter.language(normalized)
+        filters.repoLanguageFilter = filters.repoLanguageFilter == target ? .all : target
+
+        if filters == persistentGlobalFilterState {
+            clearTemporaryGlobalFilters()
+        } else {
+            applyTemporaryGlobalFilters(
+                filters,
+                requestID: UUID(),
+                anchorSelection: selection,
+                returnPage: temporaryGlobalFilterSession?.returnPage
+            )
+        }
+    }
+
     /// Toolbar 的任何主动选择都代表用户接管：先结束临时会话，再修改并持久化真实筛选。
     func setGlobalFilterFromUser<Value>(
         _ keyPath: WritableKeyPath<GlobalRepoFilterState, Value>,

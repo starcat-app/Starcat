@@ -113,6 +113,9 @@ struct RepoDetailView: View {
                     // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
                     starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
                     showsRepoHealthEntry: ProjectPrivacyPolicy.allowsPublicService(for: repo),
+                    onLanguageTapped: { language in
+                        viewModel.toggleTemporaryLanguageFilterFromDetail(language)
+                    },
                     onStarTapped: {
                         // §3.2.3 状态机：throws 让 StarStatChipButton 抖动 + 短暂红色（不弹 alert）
                         try await handleStarTapped(repo: repo)
