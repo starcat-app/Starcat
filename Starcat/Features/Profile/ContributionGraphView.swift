@@ -151,6 +151,9 @@ struct ContributionGraphView: View {
         .onChange(of: settings.snakeStyle) { _, _ in rebuildAnimator() }
         // payload 从 nil → 有数据时也要重建，让 greedy / foodChase / multiSnake 拿到真实 weeks
         .onChange(of: payload?.totalContributions) { _, _ in rebuildAnimator() }
+        // 明暗主题切换时也要重建：草坪是 CGContext 后台渲染成 CGImage 的，
+        // 配色在 configure 时按 colorScheme 固化，不随主题切换自动更新，否则明亮主题下仍显示暗色格子。
+        .onChange(of: colorScheme) { _, _ in rebuildAnimator() }
     }
 
     /// 根据当前 settings.snakeStyle + payload 重建 animator 并驱动后台渲染。
