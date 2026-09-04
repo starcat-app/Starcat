@@ -349,15 +349,12 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private var content: some View {
-        ZStack {
-            // 列表宿主始终保留；查询切换只在中栏叠加局部状态，不触发整棵 List 重建。
-            VStack(spacing: 0) {
-                cacheWarningBanner
-                repoList
-            }
-            .opacity(hasPublishedCurrentQuery && !viewModel.repos.isEmpty ? 1 : 0)
-            .allowsHitTesting(hasPublishedCurrentQuery && !viewModel.repos.isEmpty)
+        VStack(spacing: 0) {
+            cacheWarningBanner
 
+            // 与星标 / 周刊一致：用 if/else 按状态切换骨架 / 空态 / 错误 / 列表，而非 ZStack+opacity。
+            // ZStack 里列表宿主始终保留但 opacity=0，会让行 reveal 在隐藏期间播放、被 opacity 吞掉，
+            // 最终列表「直接全部显示」而非逐行淡入。改成 if/else 让列表在数据就位后新鲜创建，reveal 可见。
             if !hasPublishedCurrentQuery || (viewModel.isLoading && viewModel.repos.isEmpty) {
                 RepoSkeletonListView(rowCount: 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -373,6 +370,8 @@ private struct ExploreDiscoveryListView: View {
                     titleKey: "explore.empty.title",
                     subtitleKey: "explore.empty.subtitle"
                 )
+            } else {
+                repoList
             }
         }
     }
@@ -431,8 +430,7 @@ private struct ExploreDiscoveryListView: View {
                 .focusEffectDisabled()
                 .listRowReveal(
                     index: item.index,
-                    snapshotID: rowRevealRevision,
-                    replayAfterSnapshotCommit: true
+                    snapshotID: rowRevealRevision
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)

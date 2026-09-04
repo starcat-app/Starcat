@@ -264,8 +264,7 @@ struct ActivityView: View {
                 .focusEffectDisabled()
                 .listRowReveal(
                     index: index,
-                    snapshotID: viewModel.rowRevealRevision,
-                    replayAfterSnapshotCommit: true
+                    snapshotID: viewModel.rowRevealRevision
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)

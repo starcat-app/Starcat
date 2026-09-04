@@ -55,7 +55,6 @@ struct WeeklyContentView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(AppSettings.self) private var settings
-    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedLanguage: String?
 
@@ -119,9 +118,6 @@ struct WeeklyContentView: View {
             weeklyCacheWarningBanner(viewModel)
 
             weeklyContentBody(viewModel)
-                .id(contentStateID(for: viewModel))
-                .transition(contentTransition)
-                .animation(contentAnimation, value: contentStateID(for: viewModel))
         }
         .task {
             viewModel.interestedLanguages = settings.interestedLanguages
@@ -182,30 +178,6 @@ struct WeeklyContentView: View {
                 .padding(.vertical, 6)
                 .background(.bar)
         }
-    }
-
-    private func contentStateID(for viewModel: WeeklyContentViewModel) -> String {
-        if viewModel.isLoading && viewModel.items.isEmpty {
-            return "weekly-loading"
-        }
-        if let error = viewModel.loadError, viewModel.items.isEmpty {
-            return "weekly-error-\(error)"
-        }
-        if viewModel.items.isEmpty {
-            return "weekly-empty"
-        }
-        return "weekly-content"
-    }
-
-    private var contentAnimation: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.22)
-    }
-
-    private var contentTransition: AnyTransition {
-        reduceMotion ? .identity : .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity
-        )
     }
 
     // MARK: - Filter Bar
