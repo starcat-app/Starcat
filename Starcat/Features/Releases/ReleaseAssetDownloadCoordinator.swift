@@ -22,7 +22,7 @@ enum ReleaseAssetDownloadCoordinator {
         case failed(message: String)
     }
 
-    /// 弹保存面板 → 下载。默认不自动弹 Finder；由 Toast「打开」打开保存目录。
+    /// 弹保存面板 → 下载。默认不自动弹 Finder；由 Toast「打开」在 Finder 中定位文件。
     /// - Parameter onProgress: 字节进度 `0...1`，供行内圆形进度环使用。
     static func download(
         asset: ReleaseAsset,
@@ -87,7 +87,7 @@ enum ReleaseAssetDownloadCoordinator {
 
 // MARK: - Toast helpers
 
-/// 下载成功 Toast：文案含目录路径，「打开」只打开目录（不选中文件、不打开文件）。
+/// 下载成功 Toast：文案含目录路径，「打开」在 Finder 中定位到该文件（不打开文件本身）。
 enum ReleaseAssetDownloadToastSupport {
     /// 行回调结果，供父级组 Toast。
     enum Finish: Equatable {
@@ -100,70 +100,71 @@ enum ReleaseAssetDownloadToastSupport {
     /// 带路径与操作按钮，略延长可读时间。
     static let duration: TimeInterval = 4.0
 
-    static func successMessage(forFileURL fileURL: URL) -> (message: String, directoryURL: URL) {
-        let directoryURL = fileURL.deletingLastPathComponent()
-        let displayPath = (directoryURL.path as NSString).abbreviatingWithTildeInPath
+    static func successMessage(forFileURL fileURL: URL) -> (message: String, fileURL: URL) {
+        // 文案仍展示所在目录；「打开」按钮才定位到文件本身。
+        let displayPath = (fileURL.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
         let message = String(
             format: String.l10n("releases.download.savedToFormat"),
             displayPath
         )
-        return (message, directoryURL)
+        return (message, fileURL)
     }
 
-    static func openDirectory(_ url: URL) {
-        NSWorkspace.shared.open(url)
+    /// 在 Finder 中定位到文件本身；`NSWorkspace.open(directory)` 只会落到目录不选中文件。
+    static func revealInFinder(_ fileURL: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([fileURL])
     }
 
-    /// 父级把行回调转成 Toast 文案 + 可打开目录。
+    /// 父级把行回调转成 Toast 文案 + 可定位的文件 URL。
     static func apply(
         _ finish: Finish,
         message: inout String?,
-        directoryURL: inout URL?
+        fileURL: inout URL?
     ) {
         switch finish {
-        case .saved(let fileURL):
-            let payload = successMessage(forFileURL: fileURL)
-            directoryURL = payload.directoryURL
+        case .saved(let savedFileURL):
+            let payload = successMessage(forFileURL: savedFileURL)
+            fileURL = payload.fileURL
             message = payload.message
         case .failed:
-            directoryURL = nil
+            fileURL = nil
             message = String.l10n("releases.download.failed")
         }
     }
 }
 
 extension View {
-    /// 下载结果 Toast：成功含目录路径 +「打开」；失败仅文案。高度对齐知识库 Toast。
+    /// 下载结果 Toast：成功含目录路径 +「打开」（定位到文件）；失败仅文案。高度对齐知识库 Toast。
     func releaseAssetDownloadToast(
         message: Binding<String?>,
-        directoryURL: Binding<URL?>
+        fileURL: Binding<URL?>
     ) -> some View {
-        modifier(ReleaseAssetDownloadParentToastModifier(message: message, directoryURL: directoryURL))
+        modifier(ReleaseAssetDownloadParentToastModifier(message: message, fileURL: fileURL))
     }
 }
 
 private struct ReleaseAssetDownloadParentToastModifier: ViewModifier {
     @Binding var message: String?
-    @Binding var directoryURL: URL?
+    @Binding var fileURL: URL?
 
     func body(content: Content) -> some View {
         content
             .toast(
                 message: $message,
-                icon: directoryURL == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                icon: fileURL == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
                 duration: ReleaseAssetDownloadToastSupport.duration,
-                iconColor: directoryURL == nil ? Color.orange : Color.green,
+                iconColor: fileURL == nil ? Color.orange : Color.green,
                 bottomPadding: ReleaseAssetDownloadToastSupport.bottomPadding,
-                actionLabel: directoryURL == nil ? nil : "releases.download.openFolder",
+                actionLabel: fileURL == nil ? nil : "releases.download.openFolder",
                 onAction: {
-                    if let url = directoryURL {
-                        ReleaseAssetDownloadToastSupport.openDirectory(url)
+                    if let url = fileURL {
+                        ReleaseAssetDownloadToastSupport.revealInFinder(url)
                     }
                 }
             )
             .onChange(of: message) { _, newValue in
                 if newValue == nil {
-                    directoryURL = nil
+                    fileURL = nil
                 }
             }
     }

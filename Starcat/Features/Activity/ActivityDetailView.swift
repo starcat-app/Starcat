@@ -90,7 +90,7 @@ struct ActivityDetailView: View {
     @Environment(AppDependencies.self) private var dependencies
     /// 非 repo release 详情里的附件下载 toast（底部）。
     @State private var releaseAssetDownloadToast: String?
-    @State private var releaseAssetDownloadDirectory: URL?
+    @State private var releaseAssetDownloadFileURL: URL?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -126,7 +126,7 @@ struct ActivityDetailView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: item?.id ?? "activity-empty")
         .releaseAssetDownloadToast(
             message: $releaseAssetDownloadToast,
-            directoryURL: $releaseAssetDownloadDirectory
+            fileURL: $releaseAssetDownloadFileURL
         )
     }
 
@@ -427,7 +427,7 @@ struct ActivityDetailView: View {
                                     ReleaseAssetDownloadToastSupport.apply(
                                         finish,
                                         message: &releaseAssetDownloadToast,
-                                        directoryURL: &releaseAssetDownloadDirectory
+                                        fileURL: &releaseAssetDownloadFileURL
                                     )
                                 }
                             )

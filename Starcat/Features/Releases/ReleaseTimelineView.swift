@@ -36,7 +36,7 @@ struct ReleaseTimelineView: View {
     @State private var copyToast: String?
     /// 下载完成走系统 `.toast`（底部），与复制 toast 共用窗口底边，避免行内居中。
     @State private var downloadToast: String?
-    @State private var downloadToastDirectory: URL?
+    @State private var downloadToastFileURL: URL?
     /// 折叠/展开前锚定当前 release 行，避免 ScrollView 因高度突变乱跳。
     @State private var scrollAnchorReleaseID: Int64?
 
@@ -91,7 +91,7 @@ struct ReleaseTimelineView: View {
         }
         .releaseAssetDownloadToast(
             message: $downloadToast,
-            directoryURL: $downloadToastDirectory
+            fileURL: $downloadToastFileURL
         )
     }
 
@@ -194,7 +194,7 @@ struct ReleaseTimelineView: View {
                                     ReleaseAssetDownloadToastSupport.apply(
                                         finish,
                                         message: &downloadToast,
-                                        directoryURL: &downloadToastDirectory
+                                        fileURL: &downloadToastFileURL
                                     )
                                 }
                             )

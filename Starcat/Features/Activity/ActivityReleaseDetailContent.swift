@@ -36,7 +36,7 @@ struct ActivityReleaseDetailContent: View {
     @State private var isExpansionLayoutPass = false
     /// 附件下载结果挂在详情底部，避免行内 toast 居中。
     @State private var downloadToast: String?
-    @State private var downloadToastDirectory: URL?
+    @State private var downloadToastFileURL: URL?
 
     var body: some View {
         ScrollView {
@@ -61,7 +61,7 @@ struct ActivityReleaseDetailContent: View {
         .reportingMarkdownContainerWidth(horizontalInset: 24)
         .releaseAssetDownloadToast(
             message: $downloadToast,
-            directoryURL: $downloadToastDirectory
+            fileURL: $downloadToastFileURL
         )
         .onScrollGeometryChange(for: RepoDetailScrollReport.self) { geometry in
             let overflow = max(0, geometry.contentSize.height - geometry.containerSize.height)
@@ -232,7 +232,7 @@ struct ActivityReleaseDetailContent: View {
                                 ReleaseAssetDownloadToastSupport.apply(
                                     finish,
                                     message: &downloadToast,
-                                    directoryURL: &downloadToastDirectory
+                                    fileURL: &downloadToastFileURL
                                 )
                             }
                         )

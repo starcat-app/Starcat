@@ -49,7 +49,7 @@ struct ReleaseAssetRowView: View {
     @State private var successResetTask: Task<Void, Never>?
     /// 仅无父级回调时使用。
     @State private var inlineDownloadToast: String?
-    @State private var inlineDownloadDirectory: URL?
+    @State private var inlineDownloadFileURL: URL?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -97,7 +97,7 @@ struct ReleaseAssetRowView: View {
         }
         .modifier(ReleaseAssetDownloadToastModifier(
             message: $inlineDownloadToast,
-            directoryURL: $inlineDownloadDirectory,
+            fileURL: $inlineDownloadFileURL,
             enabled: onDownloadFinished == nil
         ))
     }
@@ -217,7 +217,7 @@ struct ReleaseAssetRowView: View {
             return
         }
         let payload = ReleaseAssetDownloadToastSupport.successMessage(forFileURL: fileURL)
-        inlineDownloadDirectory = payload.directoryURL
+        inlineDownloadFileURL = payload.fileURL
         inlineDownloadToast = payload.message
     }
 
@@ -226,7 +226,7 @@ struct ReleaseAssetRowView: View {
             onDownloadFinished(.failed)
             return
         }
-        inlineDownloadDirectory = nil
+        inlineDownloadFileURL = nil
         inlineDownloadToast = String.l10n("releases.download.failed")
     }
 
@@ -285,7 +285,7 @@ private struct ReleaseAssetDownloadProgressRing: View {
 /// 有父级 toast 回调时不挂行内 overlay，避免在列表中间「冒泡」。
 private struct ReleaseAssetDownloadToastModifier: ViewModifier {
     @Binding var message: String?
-    @Binding var directoryURL: URL?
+    @Binding var fileURL: URL?
     let enabled: Bool
 
     @ViewBuilder
@@ -294,20 +294,20 @@ private struct ReleaseAssetDownloadToastModifier: ViewModifier {
             content
                 .toast(
                     message: $message,
-                    icon: directoryURL == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                    icon: fileURL == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
                     duration: ReleaseAssetDownloadToastSupport.duration,
-                    iconColor: directoryURL == nil ? Color.orange : Color.green,
+                    iconColor: fileURL == nil ? Color.orange : Color.green,
                     bottomPadding: ReleaseAssetDownloadToastSupport.bottomPadding,
-                    actionLabel: directoryURL == nil ? nil : "releases.download.openFolder",
+                    actionLabel: fileURL == nil ? nil : "releases.download.openFolder",
                     onAction: {
-                        if let url = directoryURL {
-                            ReleaseAssetDownloadToastSupport.openDirectory(url)
+                        if let url = fileURL {
+                            ReleaseAssetDownloadToastSupport.revealInFinder(url)
                         }
                     }
                 )
                 .onChange(of: message) { _, newValue in
                     if newValue == nil {
-                        directoryURL = nil
+                        fileURL = nil
                     }
                 }
         } else {
