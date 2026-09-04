@@ -84,10 +84,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard flag else {
+            // 冷启动状态恢复可能报告“有持久化状态”，却没有真正恢复任何窗口。
+            // 此时主 Scene 尚未出现，openWindow fallback 也还未注册；返回 true
+            // 让 SwiftUI 按 `.defaultLaunchBehavior(.presented)` 创建唯一的 main Window，
+            // 避免 AppDelegate 与主窗口 onAppear 互相等待而陷入零窗口状态。
+            return true
+        }
+
         Self.activateMainWindowIfPossible()
         // 返回 false 表示 Dock reopen 已由 Starcat 自己接管；如果返回 true，
-        // AppKit/SwiftUI 会继续执行默认 WindowGroup reopen，和 openWindow fallback
-        // 叠加后会一次打开两个主窗口。
+        // AppKit/SwiftUI 会继续执行默认 reopen，和已有窗口激活叠加。
         return false
     }
 

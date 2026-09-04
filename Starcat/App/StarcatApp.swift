@@ -186,6 +186,34 @@ struct StarcatApp: App {
             #endif
         }
 
+        // 两个 AI 工作台必须和主窗口一样由 SwiftUI Window Scene 承载：只有这样
+        // NavigationSplitView 的原生 Sidebar 才能贯穿 toolbar 并包住交通灯。
+        Window("rag.workspace.window.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
+            KnowledgeRAGWorkspaceSceneHost(coordinator: AIWorkspaceSceneCoordinator.shared)
+        }
+        .defaultSize(
+            width: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.width,
+            height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
+        )
+        .defaultLaunchBehavior(.suppressed)
+
+        Window("agent.workspace.window.title", id: AgentWorkspaceWindowController.sceneID) {
+            if let dependencies {
+                AgentWorkspaceSceneRoot(dependencies: dependencies)
+            } else {
+                StartupFailureView(error: startupError ?? UserFacingError.map(
+                    DatabaseError.applicationSupportNotFound,
+                    operation: String.l10n("diagnostics.operation.startup"),
+                    service: "Starcat"
+                ))
+            }
+        }
+        .defaultSize(
+            width: AgentWorkspaceWindowMetrics.defaultContentSize.width,
+            height: AgentWorkspaceWindowMetrics.defaultContentSize.height
+        )
+        .defaultLaunchBehavior(.suppressed)
+
         // 运营工具使用真正的独立 Window 而不是 sheet：提交后可与主窗口并行工作，
         // Window id 保证重复点击入口只激活同一个实例。默认不随 App 启动自动展示。
         Window("curatedPublisher.window.title", id: CuratedPublisherWindow.id) {
@@ -510,6 +538,7 @@ struct StarcatApp: App {
 /// WindowGroup 重新创建窗口。这里保持桥接很薄，只注册固定 id 的主窗口打开动作。
 private struct MainWindowOpenFallbackRegistrar: ViewModifier {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     func body(content: Content) -> some View {
         content
@@ -523,6 +552,17 @@ private struct MainWindowOpenFallbackRegistrar: ViewModifier {
                 AppDelegate.openRAGWorkspaceSettingsWindowFallback = {
                     openWindow(id: RAGWorkspaceSettingsWindow.id)
                 }
+                AIWorkspaceSceneCoordinator.shared.registerWindowActions(
+                    openAgent: {
+                        openWindow(id: AgentWorkspaceWindowController.sceneID)
+                    },
+                    openKnowledgeRAG: {
+                        openWindow(id: KnowledgeRAGWorkspaceWindowController.sceneID)
+                    },
+                    dismissKnowledgeRAG: {
+                        dismissWindow(id: KnowledgeRAGWorkspaceWindowController.sceneID)
+                    }
+                )
                 AppLog.general.info("Main window scene appeared; reopen fallback registered")
             }
     }

@@ -28,8 +28,9 @@ enum AgentWorkspaceLayoutMetrics {
     static let rightIdealWidth: CGFloat = 420
     static let rightMaximumWidth: CGFloat = 520
 
-    static let leftWidthDefaultsKey = "AgentWorkspace.LeftColumnWidth"
-    static let rightWidthDefaultsKey = "AgentWorkspace.RightColumnWidth"
+    // Window Scene 与旧 AppKit 窗口的布局时序不同，不能复用迁移时被压到最小值的宽度记录。
+    static let leftWidthDefaultsKey = "AgentWorkspace.SceneV2.LeftColumnWidth"
+    static let rightWidthDefaultsKey = "AgentWorkspace.SceneV2.RightColumnWidth"
 
     static func clampedLeftWidth(_ width: Double) -> CGFloat {
         min(max(CGFloat(width), leftMinimumWidth), leftMaximumWidth)
@@ -58,14 +59,6 @@ struct AgentRuntimeKnowledgeConfigurationSnapshot: Equatable {
 }
 
 /// 只测量 `HSplitView` 最终分配的实际栏宽；默认值 0 代表该栏当前未挂载或已折叠。
-private struct AgentWorkspaceLeftWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 private struct AgentWorkspaceRightWidthPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -125,7 +118,7 @@ struct AgentWorkspaceView: View {
     /// 运行中的 Runtime 必须保持冻结；设置变更延后到当前 run 结束再装配。
     @State private var hasPendingKnowledgeConfigurationRefresh = false
     @FocusState private var isContextPickerSearchFocused: Bool
-    let chromeState: WorkspaceChromeState
+    @Bindable var chromeState: WorkspaceChromeState
 
     private var restoredLeftColumnWidth: CGFloat {
         AgentWorkspaceLayoutMetrics.clampedLeftWidth(persistedLeftColumnWidth)
@@ -140,49 +133,53 @@ struct AgentWorkspaceView: View {
     }
 
     var body: some View {
-        HSplitView {
-            if !chromeState.isLeftColumnCollapsed {
-                agentRail
-                    .frame(
-                        minWidth: AgentWorkspaceLayoutMetrics.leftMinimumWidth,
-                        idealWidth: restoredLeftColumnWidth,
-                        maxWidth: AgentWorkspaceLayoutMetrics.leftMaximumWidth
-                    )
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: AgentWorkspaceLeftWidthPreferenceKey.self,
-                                value: proxy.size.width
-                            )
-                        }
+        NavigationSplitView(columnVisibility: $chromeState.leftColumnVisibility) {
+            agentRail
+                .navigationSplitViewColumnWidth(
+                    min: AgentWorkspaceLayoutMetrics.leftMinimumWidth,
+                    ideal: restoredLeftColumnWidth,
+                    max: AgentWorkspaceLayoutMetrics.leftMaximumWidth
+                )
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onChange(of: proxy.size.width, initial: true) { _, width in
+                                scheduleLeftWidthPersistence(width)
+                            }
                     }
-            }
+                }
+                // NavigationSplitView 的 Sidebar 是独立 preference 边界，尺寸不能再向
+                // 根视图上传；在列内直接监听 GeometryReader，才能可靠写回 @AppStorage。
+        } detail: {
+            // 左栏必须由 NavigationSplitView 提供原生 Sidebar/Liquid Glass；中栏与
+            // Inspector 继续共用 HSplitView，避免改变右栏独立折叠和宽度恢复语义。
+            HSplitView {
+                runSurface
+                    .frame(minWidth: AgentWorkspaceLayoutMetrics.runMinimumWidth)
+                    .layoutPriority(1)
 
-            runSurface
-                .frame(minWidth: AgentWorkspaceLayoutMetrics.runMinimumWidth)
-                .layoutPriority(1)
-
-            if !chromeState.isRightColumnCollapsed {
-                artifactInspector
-                    .frame(
-                        minWidth: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
-                        idealWidth: restoredRightColumnWidth,
-                        maxWidth: AgentWorkspaceLayoutMetrics.rightMaximumWidth
-                    )
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: AgentWorkspaceRightWidthPreferenceKey.self,
-                                value: proxy.size.width
-                            )
+                if !chromeState.isRightColumnCollapsed {
+                    artifactInspector
+                        .frame(
+                            minWidth: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
+                            idealWidth: restoredRightColumnWidth,
+                            maxWidth: AgentWorkspaceLayoutMetrics.rightMaximumWidth
+                        )
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: AgentWorkspaceRightWidthPreferenceKey.self,
+                                    value: proxy.size.width
+                                )
+                            }
                         }
-                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 6)
-        .padding(.bottom, 6)
         .background(Color(nsColor: .windowBackgroundColor))
+        // 工作台已有右上角统一控制组；移除系统自动插入的第二个 Sidebar 按钮。
+        .toolbar(removing: .sidebarToggle)
         .defaultCursorShield()
         .task {
             viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
@@ -259,11 +256,7 @@ struct AgentWorkspaceView: View {
             hasPendingKnowledgeConfigurationRefresh = false
             configureAgentRuntime()
         }
-        .animation(.easeInOut(duration: 0.16), value: chromeState.isLeftColumnCollapsed)
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
-        .onPreferenceChange(AgentWorkspaceLeftWidthPreferenceKey.self) { width in
-            scheduleLeftWidthPersistence(width)
-        }
         .onPreferenceChange(AgentWorkspaceRightWidthPreferenceKey.self) { width in
             scheduleRightWidthPersistence(width)
         }
@@ -591,7 +584,6 @@ struct AgentWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.34))
     }
 
     /// 工作台胶囊标识（Beta / Preview 等），与左侧 Agent 列表行内 Preview 标识同构。
@@ -1914,7 +1906,7 @@ struct AgentWorkspaceView: View {
         interfaceScale.font(size: size, weight: weight)
     }
 
-    /// `HSplitView` 会在拖拽和窗口缩放时连续报告尺寸；静止 250ms 后才把最终值保存为下次窗口默认值。
+    /// 原生 Sidebar 与 `HSplitView` Inspector 都会连续报告尺寸；静止 250ms 后才保存最终值。
     private func scheduleLeftWidthPersistence(_ measuredWidth: CGFloat) {
         guard !chromeState.isLeftColumnCollapsed,
               measuredWidth >= AgentWorkspaceLayoutMetrics.leftMinimumWidth else { return }

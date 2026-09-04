@@ -2,34 +2,32 @@
 //  AgentWorkspaceWindowController.swift
 //  Starcat
 //
-//  Agent 工作台的独立 macOS 窗口外壳。
+//  Agent 工作台的 SwiftUI Window Scene 入口与根视图。
 //
-//  设计约束:
-//  - Agent 是长时间停留的工作区,需要系统 titlebar 的红黄绿按钮、拖拽和双击缩放。
-//  - 不再用主窗口 overlay 承载,避免覆盖 titlebar safe area 和底层 WebView cursor rect 竞争。
-//  - AppKit 自建窗口不会继承主 Window 的 SwiftUI environment,必须走 appHostEnvironment。
+//  关键约束：工作台必须与主窗口一样由 SwiftUI `Window(id:)` 承载。手工创建
+//  `NSWindow + NSHostingController` 会把 NavigationSplitView 降成标题栏下方的内容卡片，
+//  无法得到交通灯与 Sidebar 共用同一系统圆角表面的原生 macOS 结构。
 //
 
 import AppKit
 import SwiftUI
 
 /// Agent 工作台窗口尺寸策略。
-private enum AgentWorkspaceWindowMetrics {
+enum AgentWorkspaceWindowMetrics {
     static let defaultContentSize = NSSize(width: 1440, height: 820)
-    static let minimumContentSize = NSSize(width: 1180, height: 700)
-    static let autosaveName = "AgentWorkspaceWindow"
+    // 三栏展开态与主窗口面临相同的压缩边界；共用硬下限，避免 SwiftUI 在更小窗口中裁切 Sidebar。
+    static let minimumContentSize = MainWindowFrameDefaults.contentMinSize
 }
 
-/// 复用单个 Agent 工作台窗口;重复点击 toolbar 入口时把已有窗口带到前台。
-final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate {
+/// 保留既有调用面，只负责门禁和打开 SwiftUI Window Scene，不再拥有 AppKit 窗口。
+enum AgentWorkspaceWindowController {
 
-    private static var shared: AgentWorkspaceWindowController?
-    private let chromeState: WorkspaceChromeState
+    // v2 隔离本次 Window Scene 迁移前后的 restoration 记录，避免错误尺寸继续恢复。
+    static let sceneID = "agent-workspace-v2"
 
     /// 显示 Agent 工作台窗口。
     ///
-    /// - Returns: 入口门禁通过并实际展示窗口时返回 `true`。调用方据此决定是否记录完成事件，
-    ///   避免 Pro 或模型配置门禁拦截后仍误把新手引导标记为已完成。
+    /// - Returns: 入口门禁通过且 SwiftUI Scene 动作已注册时返回 `true`。
     @discardableResult
     @MainActor
     static func show(dependencies: AppDependencies) -> Bool {
@@ -39,69 +37,44 @@ final class AgentWorkspaceWindowController: NSWindowController, NSWindowDelegate
         ) else {
             return false
         }
-
-        let controller: AgentWorkspaceWindowController
-        let shouldCenter: Bool
-
-        if let shared {
-            controller = shared
-            shouldCenter = false
-        } else {
-            controller = AgentWorkspaceWindowController(dependencies: dependencies)
-            shared = controller
-            shouldCenter = true
-        }
-
-        controller.showWindow(nil)
-        if shouldCenter {
-            controller.window?.center()
-        }
-        controller.window?.makeKeyAndOrderFront(nil)
+        guard AIWorkspaceSceneCoordinator.shared.openAgentWindow() else { return false }
         NSApp.activate(ignoringOtherApps: true)
         return true
     }
+}
 
-    private init(dependencies: AppDependencies) {
-        let chromeState = WorkspaceChromeState()
-        self.chromeState = chromeState
+/// Agent Scene 的窗口级状态根节点；关闭窗口后由 SwiftUI 释放，重开时得到干净状态。
+struct AgentWorkspaceSceneRoot: View {
 
-        let content = AgentWorkspaceView(chromeState: chromeState)
-        .appHostEnvironment(dependencies)
+    let dependencies: AppDependencies
 
-        let hostingController = NSHostingController(rootView: content)
-        let window = NSWindow(contentViewController: hostingController)
+    @State private var chromeState = WorkspaceChromeState()
+    @State private var windowReference = WorkspaceSceneWindowReference()
 
-        window.title = String.l10n("agent.workspace.window.title")
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.setContentSize(AgentWorkspaceWindowMetrics.defaultContentSize)
-        window.contentMinSize = AgentWorkspaceWindowMetrics.minimumContentSize
-        window.minSize = AgentWorkspaceWindowMetrics.minimumContentSize
-        window.isReleasedWhenClosed = false
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.backgroundColor = .windowBackgroundColor
-        window.setFrameAutosaveName(AgentWorkspaceWindowMetrics.autosaveName)
-
-        let controls = NSTitlebarAccessoryViewController()
-        controls.layoutAttribute = .right
-        let controlsView = NSHostingView(rootView: WorkspaceTitlebarControls(chromeState: chromeState) { [weak window] isPinned in
-            window?.level = isPinned ? .floating : .normal
-        })
-        // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。
-        controlsView.frame = NSRect(x: 0, y: 0, width: 112, height: 32)
-        controls.view = controlsView
-        window.addTitlebarAccessoryViewController(controls)
-
-        super.init(window: window)
-        window.delegate = self
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("AgentWorkspaceWindowController does not support storyboard initialization")
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        window?.resignKey()
+    var body: some View {
+        AgentWorkspaceView(chromeState: chromeState)
+            .appHostEnvironment(dependencies)
+            .frame(
+                minWidth: AgentWorkspaceWindowMetrics.minimumContentSize.width,
+                minHeight: AgentWorkspaceWindowMetrics.minimumContentSize.height
+            )
+            .background {
+                WorkspaceSceneWindowReader(
+                    reference: windowReference,
+                    minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
+                )
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    WorkspaceTitlebarControls(
+                        chromeState: chromeState,
+                        onPinnedChange: { isPinned in
+                            windowReference.window?.level = isPinned ? .floating : .normal
+                        }
+                    )
+                }
+            }
+            // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
+            .toolbarBackground(.hidden, for: .windowToolbar)
     }
 }

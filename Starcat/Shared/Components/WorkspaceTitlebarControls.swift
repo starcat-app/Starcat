@@ -15,13 +15,20 @@ import SwiftUI
 
 /// 独立 workspace window 与其 SwiftUI 内容共享的 chrome 状态。
 ///
-/// 由窗口 titlebar 按钮修改,由内容视图读取后决定左右栏是否显示。
+/// 左栏交给 `NavigationSplitView` 管理，右栏仍由工作台内部的 `HSplitView` 管理。
+/// 这里保留窗口级单一状态，确保 titlebar 按钮与系统分栏始终读取同一份可见性。
 @MainActor
 @Observable
 final class WorkspaceChromeState {
-    var isLeftColumnCollapsed: Bool = false
+    /// 两栏导航外壳只使用 `.all` / `.detailOnly`：前者显示原生 Sidebar，后者折叠它。
+    var leftColumnVisibility: NavigationSplitViewVisibility = .all
     var isRightColumnCollapsed: Bool = false
     var isPinned: Bool = false
+
+    var isLeftColumnCollapsed: Bool {
+        get { leftColumnVisibility == .detailOnly }
+        set { leftColumnVisibility = newValue ? .detailOnly : .all }
+    }
 }
 
 /// 放在 `NSTitlebarAccessoryViewController` 内的窗口级图标按钮组。

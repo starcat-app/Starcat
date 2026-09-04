@@ -39,10 +39,10 @@ enum RAGMetadataWikiLinkParser {
 }
 
 /// 知识库 RAG 工作台窗口尺寸策略。
-private enum KnowledgeRAGWorkspaceWindowMetrics {
+enum KnowledgeRAGWorkspaceWindowMetrics {
     static let defaultContentSize = NSSize(width: 1440, height: 820)
-    static let minimumContentSize = NSSize(width: 1180, height: 700)
-    static let autosaveName = "KnowledgeRAGWorkspaceWindow"
+    // 三栏展开态与主窗口面临相同的压缩边界；共用硬下限，避免 SwiftUI 在更小窗口中裁切 Sidebar。
+    static let minimumContentSize = MainWindowFrameDefaults.contentMinSize
 }
 
 /// 知识库浏览器窗口尺寸策略。
@@ -82,18 +82,17 @@ private enum KnowledgeRAGWindowSizePolicy {
     }
 }
 
-/// 复用单个 RAG 工作台窗口;重复点击 toolbar 入口时把已有窗口带到前台。
-final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowDelegate {
+/// 保留既有调用面，只负责门禁和 SwiftUI Window Scene 生命周期桥接。
+@MainActor
+enum KnowledgeRAGWorkspaceWindowController {
 
-    private static var shared: KnowledgeRAGWorkspaceWindowController?
-    private let chromeState: WorkspaceChromeState
-    private let viewModel: KnowledgeRAGWorkspaceViewModel
+    // v2 隔离本次 Window Scene 迁移前后的 restoration 记录，避免错误尺寸继续恢复。
+    static let sceneID = "knowledge-rag-workspace-v2"
+    private static weak var activeViewModel: KnowledgeRAGWorkspaceViewModel?
 
     /// 显示知识库 RAG 工作台窗口。
     ///
-    /// `homeViewModel` 用于正文引用 / 本地 GitHub 链接打开独立详情窗，必须与主窗共享
-    /// 同一实例，才能同步 star 状态。
-    @MainActor
+    /// `homeViewModel` 必须与主窗共享，保证引用打开的独立 Repo 详情仍同步 star 状态。
     static func show(
         dependencies: AppDependencies,
         homeViewModel: HomeViewModel
@@ -104,128 +103,115 @@ final class KnowledgeRAGWorkspaceWindowController: NSWindowController, NSWindowD
         ) else {
             return
         }
-
-        let controller: KnowledgeRAGWorkspaceWindowController
-        let shouldCenter: Bool
-
-        if let shared {
-            controller = shared
-            shouldCenter = false
-        } else {
-            controller = KnowledgeRAGWorkspaceWindowController(
-                dependencies: dependencies,
-                homeViewModel: homeViewModel
-            )
-            shared = controller
-            shouldCenter = true
+        guard AIWorkspaceSceneCoordinator.shared.openKnowledgeRAGWindow(
+            dependencies: dependencies,
+            homeViewModel: homeViewModel
+        ) else {
+            return
         }
-
-        controller.showWindow(nil)
-        if let window = controller.window {
-            // `showWindow` 可能恢复历史 frame；前置前再校正一次，避免旧的小窗口闪现。
-            KnowledgeRAGWindowSizePolicy.enforce(
-                minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
-                on: window
-            )
-            if shouldCenter {
-                window.center()
-            }
-        }
-        controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// 用户数据库切换前销毁旧工作台，避免旧账户的内存历史继续显示，或在切库后把
-    /// 未完成回答写进新账户数据库。
-    @MainActor
+    /// 用户数据库切换前关闭旧 Scene，避免旧账户回答写进新账户数据库。
     static func closeForUserDatabaseChange() {
-        shared?.viewModel.cancelAllAnswers()
-        shared?.close()
-        shared = nil
+        activeViewModel?.persistCurrentComposerDraft()
+        activeViewModel?.cancelAllAnswers()
+        AIWorkspaceSceneCoordinator.shared.dismissKnowledgeRAGWindow()
     }
 
-    private init(
-        dependencies: AppDependencies,
-        homeViewModel: HomeViewModel
-    ) {
-        let chromeState = WorkspaceChromeState()
-        let viewModel = KnowledgeRAGWorkspaceViewModel(
-            dependencies: dependencies,
-            homeViewModel: homeViewModel
-        )
-        self.chromeState = chromeState
-        self.viewModel = viewModel
-
-        let settingsNavigation = RAGSettingsNavigationAction { target in
-            AppDelegate.openSettingsWindow(target: target)
-        }
-        let content = KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
-            .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
-            .environment(\.ragSettingsNavigation, settingsNavigation)
-
-        let hostingController = NSHostingController(rootView: content)
-        let window = NSWindow(contentViewController: hostingController)
-
-        window.title = String.l10n("rag.workspace.window.title")
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-        window.setContentSize(KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize)
-        window.isReleasedWhenClosed = false
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.backgroundColor = .windowBackgroundColor
-        window.setFrameAutosaveName(KnowledgeRAGWorkspaceWindowMetrics.autosaveName)
-        KnowledgeRAGWindowSizePolicy.enforce(
-            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
-            on: window
-        )
-
-        let controls = NSTitlebarAccessoryViewController()
-        controls.layoutAttribute = .right
-        let controlsView = NSHostingView(rootView: WorkspaceTitlebarControls(
-            chromeState: chromeState,
-            onPinnedChange: { [weak window] isPinned in
-                window?.level = isPinned ? .floating : .normal
-            },
-            onSettings: {
-                // 正常入口统一进入主设置「RAG」分组下的「推理」，避免同一 App
-                // 长期维护两个入口。旧独立窗口 Scene 在验收前仍保留作对照与回退。
-                AppDelegate.openSettingsWindow(target: "rag.inference")
-            }
-        ))
-        // 标题栏 accessory 由 AppKit 布局；显式 frame 能避免 SwiftUI hosting view 初始 intrinsic size 为 0。
-        // RAG 比 Agent 多一个齿轮（约 +34pt）。
-        controlsView.frame = NSRect(x: 0, y: 0, width: 146, height: 32)
-        controls.view = controlsView
-        window.addTitlebarAccessoryViewController(controls)
-
-        super.init(window: window)
-        window.delegate = self
+    static func registerActiveViewModel(_ viewModel: KnowledgeRAGWorkspaceViewModel) {
+        activeViewModel = viewModel
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("KnowledgeRAGWorkspaceWindowController does not support storyboard initialization")
-    }
-
-    func windowDidResize(_ notification: Notification) {
-        guard let resizedWindow = notification.object as? NSWindow else { return }
-        KnowledgeRAGWindowSizePolicy.enforce(
-            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
-            on: resizedWindow
-        )
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        viewModel.persistCurrentComposerDraft()
-        viewModel.cancelAllAnswers()
-        window?.resignKey()
-        Self.shared = nil
+    static func unregisterActiveViewModel(_ viewModel: KnowledgeRAGWorkspaceViewModel) {
+        guard activeViewModel === viewModel else { return }
+        activeViewModel = nil
     }
 
     /// 知识库浏览器的召回测试需要复用最近一轮问答计划；工作台未打开时为 nil。
-    @MainActor
     static var displayedQueryPlanForRetrievalTest: RAGQueryPlan? {
-        shared?.viewModel.displayedQueryPlan
+        activeViewModel?.displayedQueryPlan
+    }
+}
+
+/// 观察启动上下文；只有入口完成门禁并写入上下文后才构造昂贵的 RAG ViewModel。
+struct KnowledgeRAGWorkspaceSceneHost: View {
+
+    let coordinator: AIWorkspaceSceneCoordinator
+
+    var body: some View {
+        if let context = coordinator.knowledgeRAGContext {
+            KnowledgeRAGWorkspaceSceneRoot(context: context)
+                .id(context.id)
+        } else {
+            Color.clear
+                .frame(
+                    minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
+                    minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
+                )
+        }
+    }
+}
+
+/// RAG Scene 的窗口级状态根节点，统一承载 ViewModel、toolbar 和关闭收口。
+struct KnowledgeRAGWorkspaceSceneRoot: View {
+
+    let context: AIWorkspaceSceneCoordinator.KnowledgeRAGLaunchContext
+
+    @State private var chromeState: WorkspaceChromeState
+    @State private var viewModel: KnowledgeRAGWorkspaceViewModel
+    @State private var windowReference = WorkspaceSceneWindowReference()
+
+    init(context: AIWorkspaceSceneCoordinator.KnowledgeRAGLaunchContext) {
+        self.context = context
+        _chromeState = State(initialValue: WorkspaceChromeState())
+        _viewModel = State(initialValue: KnowledgeRAGWorkspaceViewModel(
+            dependencies: context.dependencies,
+            homeViewModel: context.homeViewModel
+        ))
+    }
+
+    var body: some View {
+        KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
+            .appHostEnvironment(context.dependencies, homeViewModel: context.homeViewModel)
+            .environment(\.ragSettingsNavigation, RAGSettingsNavigationAction { target in
+                AppDelegate.openSettingsWindow(target: target)
+            })
+            .frame(
+                minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
+                minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
+            )
+            .background {
+                WorkspaceSceneWindowReader(
+                    reference: windowReference,
+                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
+                )
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    WorkspaceTitlebarControls(
+                        chromeState: chromeState,
+                        onPinnedChange: { isPinned in
+                            windowReference.window?.level = isPinned ? .floating : .normal
+                        },
+                        onSettings: {
+                            AppDelegate.openSettingsWindow(target: "rag.inference")
+                        }
+                    )
+                }
+            }
+            // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
+            .toolbarBackground(.hidden, for: .windowToolbar)
+            .onAppear {
+                KnowledgeRAGWorkspaceWindowController.registerActiveViewModel(viewModel)
+            }
+            .onDisappear {
+                viewModel.persistCurrentComposerDraft()
+                viewModel.cancelAllAnswers()
+                windowReference.window?.level = .normal
+                KnowledgeRAGWorkspaceWindowController.unregisterActiveViewModel(viewModel)
+                AIWorkspaceSceneCoordinator.shared.knowledgeRAGWindowDidClose(contextID: context.id)
+            }
     }
 }
 
