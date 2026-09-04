@@ -624,6 +624,8 @@ struct RepoListView: View {
             // Browser Plugin 请求可能先于主窗口恢复到达；窗口重新挂载时需要补消费
             // 已保存的 pendingRequest，否则用户关闭主窗口后点击 Open in Starcat 无响应。
             handleCompanionActionRequest(dependencies.companionActionDispatcher.pendingRequest)
+            // 提前懒加载 Explore 子 ViewModel（空间换时间），减少首次切到 Explore 的二次重建。
+            ensurePersistentExploreViewModels()
         }
         .onChange(of: dependencies.companionActionDispatcher.pendingRequest) { _, request in
             handleCompanionActionRequest(request)
@@ -1679,6 +1681,27 @@ struct RepoListView: View {
         trendingViewModel = nil
         weeklyViewModel = nil
         activityViewModel = nil
+    }
+
+    /// 提前懒加载 Explore 子 ViewModel（空间换时间）：首次切到 Explore 时 ViewModel 已就位，
+    /// 避免先渲染骨架/空态再二次重建视图树。init 只是赋值依赖，代价极小。
+    private func ensurePersistentExploreViewModels() {
+        if trendingViewModel == nil,
+           let trendingRepository,
+           let githubAPIClient {
+            trendingViewModel = TrendingViewModel(
+                repository: trendingRepository,
+                githubAPIClient: githubAPIClient
+            )
+        }
+        if weeklyViewModel == nil {
+            weeklyViewModel = WeeklyContentViewModel(
+                api: dependencies.weeklyAPI,
+                selectionService: dependencies.weeklySelectionService,
+                languageStore: dependencies.weeklyLanguageStore,
+                bulkRepository: dependencies.weeklyBulkRepository
+            )
+        }
     }
 
     /// Manage 全部分类共用：列表顶栏 + 下方内容（横幅 / 列表 / 骨架 / 空态）。
