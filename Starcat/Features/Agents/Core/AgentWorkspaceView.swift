@@ -171,8 +171,6 @@ struct AgentWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
-        // 工作台已有右上角统一控制组；移除系统自动插入的第二个 Sidebar 按钮。
-        .toolbar(removing: .sidebarToggle)
         .defaultCursorShield()
         .task {
             viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)

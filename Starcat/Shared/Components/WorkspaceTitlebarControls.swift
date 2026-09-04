@@ -5,7 +5,6 @@
 //  Agent / RAG 工作台独立窗口的 titlebar 右侧控制区。
 //
 //  这些按钮是窗口级操作,不属于具体业务 header:
-//  - 左栏折叠 / 展开
 //  - 右栏折叠 / 展开
 //  - 窗口置顶 / 取消置顶
 //  - RAG 专用：打开独立配置窗口（推理 + 提示词 + 检索）
@@ -48,16 +47,6 @@ struct WorkspaceTitlebarControls: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            controlButton(
-                systemImage: "inset.filled.leftthird.rectangle",
-                isActive: chromeState.isLeftColumnCollapsed,
-                helpKey: chromeState.isLeftColumnCollapsed
-                    ? "workspace.chrome.showLeft"
-                    : "workspace.chrome.hideLeft"
-            ) {
-                chromeState.isLeftColumnCollapsed.toggle()
-            }
-
             controlButton(
                 systemImage: "inset.filled.rightthird.rectangle",
                 isActive: chromeState.isRightColumnCollapsed,

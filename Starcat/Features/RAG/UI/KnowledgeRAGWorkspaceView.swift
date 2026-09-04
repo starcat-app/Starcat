@@ -110,8 +110,6 @@ struct KnowledgeRAGWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
-        // 工作台已有右上角统一控制组；移除系统自动插入的第二个 Sidebar 按钮。
-        .toolbar(removing: .sidebarToggle)
         // RAG 是独立窗口，无底层 WKWebView cursor 穿透问题。
         // `defaultCursorShield` 会在 mouseMoved 里强制 NSCursor.arrow，盖掉
         // Markdown 链接与芯片的 pointing-hand，故此处不加。
