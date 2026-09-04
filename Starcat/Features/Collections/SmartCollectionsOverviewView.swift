@@ -15,6 +15,7 @@ import SwiftUI
 struct SmartCollectionsOverviewView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var systemCounts: [SmartCollectionKind: Int] = [:]
     @State private var userCounts: [String: Int] = [:]
@@ -22,6 +23,7 @@ struct SmartCollectionsOverviewView: View {
     @State private var isLoadingUserCounts = false
     @State private var deleteError: String?
     @State private var editTarget: UserSmartCollection?
+    @State private var hoveredSystemCollection: SmartCollectionKind?
     @State private var createFromTemplateKind: SmartCollectionKind?
 
     var body: some View {
@@ -131,9 +133,17 @@ struct SmartCollectionsOverviewView: View {
 
     private func systemCollectionCard(_ kind: SmartCollectionKind) -> some View {
         let isSelected = viewModel.selection == .smartCollection(kind)
+        let isHovered = hoveredSystemCollection == kind
+        let backgroundColor = isSelected
+            ? kind.tint.opacity(isHovered ? 0.22 : 0.18)
+            : (isHovered ? kind.tint.opacity(0.15) : kind.cardBackground)
+        let borderColor = isSelected
+            ? kind.tint.opacity(isHovered ? 0.56 : 0.42)
+            : (isHovered ? kind.tint.opacity(0.36) : kind.cardBorder)
+        let hoverAnimation: Animation? = reduceMotion ? nil : .easeOut(duration: 0.15)
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(kind.iconBadgeBackground)
@@ -142,6 +152,13 @@ struct SmartCollectionsOverviewView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(kind.tint)
                 }
+
+                Text(kind.titleKey)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
 
                 Spacer(minLength: 4)
 
@@ -161,22 +178,16 @@ struct SmartCollectionsOverviewView: View {
                 }
             }
 
-            Text(kind.titleKey)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-
             Text(kind.subtitleKey)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .truncationMode(.tail)
         }
-        .frame(maxWidth: .infinity, minHeight: 102, alignment: .topLeading)
-        .padding(12)
-        .background((isSelected ? kind.tint.opacity(0.18) : kind.cardBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(backgroundColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(kind.tint)
@@ -186,13 +197,30 @@ struct SmartCollectionsOverviewView: View {
         }
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(isSelected ? kind.tint.opacity(0.42) : kind.cardBorder, lineWidth: 1)
+                .stroke(borderColor, lineWidth: 1)
         }
+        .shadow(
+            color: .black.opacity(isHovered ? 0.16 : 0),
+            radius: isHovered ? 6 : 0,
+            x: 0,
+            y: isHovered ? 3 : 0
+        )
+        .offset(y: isHovered && !reduceMotion ? -1 : 0)
+        .zIndex(isHovered ? 1 : 0)
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {
             viewModel.selectSidebar(.smartCollection(kind))
         }
-        .pressableHover()
+        // `pressableHover` 的 1.06 放大与 0.7 透明度适合 hero / avatar；紧凑网格卡片改用
+        // 不改变布局尺寸的提亮与轻阴影，避免 hover 时压到相邻卡片。Reduce Motion 下仅保留颜色反馈。
+        .onHover { hovering in
+            if hovering {
+                hoveredSystemCollection = kind
+            } else if hoveredSystemCollection == kind {
+                hoveredSystemCollection = nil
+            }
+        }
+        .animation(hoverAnimation, value: isHovered)
     }
 
     @ViewBuilder
