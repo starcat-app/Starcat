@@ -79,7 +79,9 @@ struct OwnerCardView: View {
                 .overlay(alignment: .topTrailing) {
                     // GitHub 入口移入信息区，图片上只保留关闭动作，避免遮挡头像主体。
                     SheetCloseButton(action: onClose)
-                        .padding(10)
+                        // 头像区域相对卡片左右各内缩 8pt；右侧只补 2pt，最终与顶部同为 10pt。
+                        .padding(.top, 10)
+                        .padding(.trailing, 2)
                 }
 
             profileContent
