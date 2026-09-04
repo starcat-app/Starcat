@@ -27,7 +27,7 @@
 
 import Foundation
 
-final class FoodChaseSnakeAnimator: SnakeAnimator {
+final class FoodChaseSnakeAnimator: SnakeAnimator, Sendable {
 
     let stepDuration: TimeInterval = 0.08
     /// pause = 0：每局结束直接重启，"无缝循环"贴近游戏体验。

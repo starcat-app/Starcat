@@ -20,7 +20,7 @@
 
 import Foundation
 
-final class MultiSnakeAnimator: SnakeAnimator {
+final class MultiSnakeAnimator: SnakeAnimator, Sendable {
 
     private let leftAnimator: PathBasedSnakeAnimator
     private let rightAnimator: PathBasedSnakeAnimator

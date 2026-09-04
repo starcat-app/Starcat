@@ -31,7 +31,7 @@ import Foundation
 ///
 /// 用 struct 而非 tuple 是为了：① `Hashable` 自动合成可放 Set；
 /// ② 在 path 数组中比 `(Int, Int)` tuple 类型签名更清晰。
-struct GridPosition: Hashable, Equatable {
+struct GridPosition: Hashable, Equatable, Sendable {
     let col: Int
     let row: Int
 
@@ -60,7 +60,7 @@ struct GridPosition: Hashable, Equatable {
 ///   的玩法只在当前游戏内填充，新一轮开始时由 animator 自己返回空集。
 /// - `foodCells`: 当前的"食物"格子（仅 FoodChase 用，其他玩法返回空集）。
 ///   渲染层会画一个脉冲高亮，与普通绿格区分。
-struct AnimationFrame {
+struct AnimationFrame: Sendable {
     let snakes: [[GridPosition]]
     let eatenCells: Set<GridPosition>
     let foodCells: Set<GridPosition>
@@ -76,7 +76,7 @@ struct AnimationFrame {
 /// 1. `totalSteps > 0`；为 0 时调用方应直接走"静态草坪"路径（如 reduceMotion）。
 /// 2. `frame(at: step)` 对 `step ∈ [0, totalSteps)` 安全；越界由调用方负责截断。
 /// 3. 同一 step 多次调用返回相同 frame（idempotent，便于 TimelineView 重复重绘）。
-protocol SnakeAnimator: AnyObject {
+protocol SnakeAnimator: AnyObject, Sendable {
     /// 一轮动画总步数；决定 TimelineView 的循环周期 = `totalSteps × stepDuration + pauseDuration`。
     var totalSteps: Int { get }
 
@@ -121,7 +121,12 @@ extension SnakeAnimator {
 /// E 多蛇并发通过组合多个"独立路径"实现。
 ///
 /// 子类只需提供 `buildPath()` 返回路径数组即可。
-class PathBasedSnakeAnimator: SnakeAnimator {
+/// 路径型基类。
+///
+/// `@unchecked Sendable`：基类非 final（被 zigzag/hilbert/spiral/diagonal/greedy 继承），
+/// 但自身及所有子类 init 后全为 `let` 不可变状态，`frame(at:)` 是纯函数，后台调用线程安全。
+/// 用 `@unchecked` 是「我保证线程安全」的显式声明，绕过非 final 类不能 auto-Sendable 的限制。
+class PathBasedSnakeAnimator: SnakeAnimator, @unchecked Sendable {
 
     /// 蛇身长度。默认 5 节（与原 zigzag 同款）。
     let snakeLength: Int

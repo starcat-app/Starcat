@@ -16,7 +16,7 @@
 
 import Foundation
 
-final class MultiModeSnakeAnimator: SnakeAnimator {
+final class MultiModeSnakeAnimator: SnakeAnimator, Sendable {
 
     /// 子玩法序列。按数组顺序循环展示。
     private let subAnimators: [PathBasedSnakeAnimator]
