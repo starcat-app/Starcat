@@ -2,23 +2,15 @@
 //  OwnerCardSheet.swift
 //  Starcat
 //
-//  仓库详情页 hero 区点击 owner 名弹出的「owner 卡片」。
+//  仓库详情页 hero 区点击 owner 名弹出的真实资料卡容器。
 //
-//  视觉设计（2026-09-02 重做，参考 GitHub hover card + 现代 profile card）：
-//  - 顶部 accent 渐变 banner，向下淡出到透明；
-//  - 头像悬浮压在 banner 下缘，用 windowBackground 描边 + 轻阴影营造「浮出」层次；
-//  - followers / following 用垂直分隔线做对称分栏；
-//  - 关注按钮按状态切换：未关注 = accent 实心，已关注 = 浅底 + 主色文字。
-//
-//  内容：banner + 头像 + 显示名 + @login + bio/链接行（复用 `ProfileLinksRow`）+ 统计 + 关注按钮。
-//
-//  数据源：`OwnerFollowService`（`GET /users/{login}` 公开 profile + `GET/PUT/DELETE
-//  /user/following/{login}` 关注动作）。profile 是公开数据，未登录也能展示；关注按钮
-//  未登录时点击触发登录 sheet。
+//  本视图只负责加载 GitHub 公开资料、贡献数据与关注状态，再交给
+//  OwnerCardView 展示：明亮主题使用 A，黑暗主题使用 B。
+//  贡献数据对组织账号可能不可用，因此 nil 时不渲染，也不预留高度。
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct OwnerCardSheet: View {
 
@@ -28,227 +20,115 @@ struct OwnerCardSheet: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
 
     /// 拉取到的 owner 公开 profile；nil = 加载中或加载失败。
     @State private var profile: GitHubUserDTO?
 
-    /// 是否已关注；nil = 未登录或查询中（此时按钮禁用）。
+    /// 是否已关注；nil = 未登录或查询中。
     @State private var isFollowing: Bool?
 
     /// 关注 / 取关操作进行中。
     @State private var isFollowingInFlight = false
 
-    /// owner 近一年的贡献草坪；nil = 未加载 / 加载失败（不渲染草坪区）。
+    /// owner 近一年的贡献草坪；nil = 未加载或不可用，不渲染贡献区。
     @State private var contributionPayload: ContributionCalendarPayload?
 
     var body: some View {
-        VStack(spacing: 0) {
-            banner
-
-            avatar
-                // 头像上移一半，圆心压在 banner 下缘，形成悬浮效果。
-                .padding(.top, -40)
-
-            identity
-                .padding(.top, 8)
-                .padding(.horizontal, 20)
-
-            profileLinks
-                .padding(.top, 10)
-                .padding(.horizontal, 20)
-
-            statsRow
-                .padding(.top, 16)
-                .padding(.horizontal, 20)
-
-            contributionGraph
-                .padding(.top, 16)
-                .padding(.horizontal, 20)
-
-            followButton
-                .padding(.top, 16)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-        }
-        .frame(width: 340)
-        // sheet 闭包内根视图必须挂 .appLocaleEnvironment()，否则 Text("key") 卡在系统 locale。
+        OwnerCardView(
+            avatarURL: profile?.avatarUrl ?? RepoAvatarURL.from(owner: ownerLogin),
+            displayName: displayName,
+            login: ownerLogin,
+            bio: profile?.bio,
+            followers: profile?.followers,
+            following: profile?.following,
+            websiteURL: websiteURL,
+            emailAddress: normalizedEmail,
+            contributionPayload: contributionPayload,
+            isFollowing: isFollowing,
+            isFollowInFlight: isFollowingInFlight,
+            isFollowActionEnabled: followActionEnabled,
+            onOpenGitHub: openGitHubProfile,
+            onClose: { dismiss() },
+            onOpenWebsite: openWebsite,
+            onComposeEmail: composeEmail,
+            onOpenFollowers: openFollowers,
+            onOpenFollowing: openFollowing,
+            onToggleFollow: {
+                Task { await toggleFollow() }
+            }
+        )
+        // sheet 闭包内根视图必须注入应用 locale，否则 Text("key") 会停留在系统 locale。
         .appLocaleEnvironment()
         .task { await load() }
     }
 
-    // MARK: - Banner（accent 渐变 + 右上角关闭）
+    // MARK: - 展示数据
 
-    private var banner: some View {
-        ZStack(alignment: .topTrailing) {
-            LinearGradient(
-                colors: [
-                    Color.accentColor.opacity(0.85),
-                    Color.accentColor.opacity(0.28),
-                    Color.accentColor.opacity(0.03),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 68)
-
-            SheetCloseButton(action: { dismiss() })
-                .padding(.top, 8)
-                .padding(.trailing, 8)
-        }
-    }
-
-    // MARK: - 头像（悬浮）
-
-    private var avatar: some View {
-        RemoteAvatar(
-            urlString: profile?.avatarUrl ?? RepoAvatarURL.from(owner: ownerLogin),
-            size: 80
-        )
-        // windowBackground 描边让头像从 banner 上「浮」出来；轻阴影增强层次。
-        .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 3))
-        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
-    }
-
-    // MARK: - 名称 + login
-
-    private var identity: some View {
-        VStack(spacing: 3) {
-            Text(verbatim: displayName)
-                .font(.title2.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Text(verbatim: "@\(ownerLogin)")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    /// 显示名优先用 GitHub `name`（如 "Apple"），无则退回 login。
+    /// 显示名优先使用 GitHub name；空值退回稳定的 login。
     private var displayName: String {
-        if let name = profile?.name?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !name.isEmpty {
-            return name
+        guard let name = profile?.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else {
+            return ownerLogin
         }
-        return ownerLogin
+        return name
     }
 
-    // MARK: - bio + 链接行（复用 sidebar 的 ProfileLinksRow）
-
-    @ViewBuilder
-    private var profileLinks: some View {
-        if let profile {
-            ProfileLinksRow(user: profile)
+    /// GitHub 允许 blog 不带 scheme；统一补成可直接打开的 HTTPS URL。
+    private var websiteURL: URL? {
+        guard let raw = profile?.blog?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
         }
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
+            return URL(string: raw)
+        }
+        return URL(string: "https://\(raw)")
     }
 
-    // MARK: - followers / following 统计（对称分栏）
-
-    private var statsRow: some View {
-        HStack(spacing: 0) {
-            statLink(
-                value: profile?.followers,
-                label: "repo.owner.followers",
-                url: GitHubURLs.userFollowersTab(login: ownerLogin)
-            )
-            .frame(maxWidth: .infinity)
-
-            Divider()
-                .frame(height: 34)
-
-            statLink(
-                value: profile?.following,
-                label: "repo.owner.following",
-                url: GitHubURLs.userFollowingTab(login: ownerLogin)
-            )
-            .frame(maxWidth: .infinity)
+    private var normalizedEmail: String? {
+        guard let email = profile?.email?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !email.isEmpty else {
+            return nil
         }
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
-        )
+        return email
     }
 
-    /// 单个统计项：值 + 标签，整块点击跳 GitHub 对应 tab。
-    private func statLink(value: Int?, label: LocalizedStringKey, url: URL) -> some View {
-        Button {
-            NSWorkspace.shared.open(url)
-        } label: {
-            VStack(spacing: 3) {
-                Text(verbatim: value.map { String($0) } ?? "-")
-                    .font(.callout.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .help(String.l10n("repo.owner.stat.help"))
+    /// 未登录时必须允许点击以唤起登录；登录后的状态查询期才禁用。
+    private var followActionEnabled: Bool {
+        !authSession.state.isAuthenticated || isFollowing != nil
     }
 
-    // MARK: - 贡献草坪（复用 sidebar 的渲染组件）
+    // MARK: - 外部动作
 
-    @ViewBuilder
-    private var contributionGraph: some View {
-        if contributionPayload != nil {
-            ContributionGraphView(
-                payload: contributionPayload,
-                // owner 草坪不缓存、刚拉取，相对时间无意义；传 nil 让 header 只显示贡献总数。
-                lastFetchedAt: nil,
-                login: ownerLogin
-            )
-            // sheet 里不跑贪吃蛇：注入暂停让草坪走静态分支，省 display-link 预算。
-            .environment(\.starcatContinuousAnimationsPaused, true)
-        }
+    private func openGitHubProfile() {
+        NSWorkspace.shared.open(GitHubURLs.userProfile(login: ownerLogin))
     }
 
-    // MARK: - 关注按钮（按状态切换视觉）
-
-    private var followButton: some View {
-        Button {
-            Task { await toggleFollow() }
-        } label: {
-            Group {
-                if isFollowingInFlight {
-                    ProgressView()
-                        .controlSize(.small)
-                } else if isFollowing == true {
-                    Label("repo.owner.unfollow", systemImage: "person.badge.minus")
-                } else {
-                    Label("repo.owner.follow", systemImage: "person.badge.plus")
-                }
-            }
-            .font(.callout.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            // 未关注 = accent 实心；已关注 = 浅底 + 主色文字，形成「取消关注」的次级观感。
-            .foregroundStyle(isFollowing == true ? Color.primary : Color.white)
-            .background(
-                isFollowing == true
-                    ? Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08)
-                    : Color.accentColor,
-                in: Capsule()
-            )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        // 未登录 / 查询中 / 操作中时禁用，避免误触发。
-        .disabled(isFollowing == nil || isFollowingInFlight)
-        .pressableHover(scale: 1.0)
+    private func openWebsite() {
+        guard let websiteURL else { return }
+        NSWorkspace.shared.open(websiteURL)
     }
 
-    // MARK: - 数据加载与动作
+    private func composeEmail() {
+        guard let normalizedEmail,
+              let url = URL(string: "mailto:\(normalizedEmail)") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openFollowers() {
+        NSWorkspace.shared.open(GitHubURLs.userFollowersTab(login: ownerLogin))
+    }
+
+    private func openFollowing() {
+        NSWorkspace.shared.open(GitHubURLs.userFollowingTab(login: ownerLogin))
+    }
+
+    // MARK: - 数据加载与关注
 
     private func load() async {
-        // profile 与贡献草坪都是公开数据；串行拉取即可（sheet 打开后渐进填充）。
+        // profile 与贡献数据都是公开接口。贡献请求失败（常见于组织账号）时保持 nil。
         if let fetched = try? await dependencies.ownerFollowService.profile(login: ownerLogin) {
             profile = fetched
         }
@@ -256,7 +136,6 @@ struct OwnerCardSheet: View {
             contributionPayload = contribution
         }
 
-        // isFollowing 需要登录；未登录时保持 nil（按钮显示「关注」，点击触发登录 sheet）。
         guard authSession.state.isAuthenticated else { return }
         if let following = try? await dependencies.ownerFollowService.isFollowing(login: ownerLogin) {
             isFollowing = following
@@ -277,7 +156,7 @@ struct OwnerCardSheet: View {
             try await dependencies.ownerFollowService.setFollowing(!current, login: ownerLogin)
             isFollowing = !current
         } catch {
-            // 失败保留原状态；网络层错误已由 GitHubAPIClient 记日志，UI 不弹窗（与 star 同构）。
+            // 失败保留原状态；网络层已经记录错误，资料卡不额外打断用户。
         }
     }
 }

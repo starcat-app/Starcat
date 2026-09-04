@@ -37,12 +37,13 @@ final class SnakeRenderService {
     func configure(
         animator: SnakeAnimator?,
         payload: ContributionCalendarPayload?,
-        colorScheme: ColorScheme
+        colorScheme: ColorScheme,
+        style: ContributionGraphStyle = .standard
     ) {
         stop()
 
         guard let animator else {
-            renderStatic(payload: payload, colorScheme: colorScheme)
+            renderStatic(payload: payload, colorScheme: colorScheme, style: style)
             return
         }
 
@@ -62,7 +63,8 @@ final class SnakeRenderService {
                 let image = SnakeFrameRenderer.render(
                     payload: payload,
                     frame: frame,
-                    colorScheme: colorScheme
+                    colorScheme: colorScheme,
+                    style: style
                 )
                 DispatchQueue.main.async {
                     self.frameImage = image
@@ -78,11 +80,16 @@ final class SnakeRenderService {
     }
 
     /// 渲染一次静态草坪（无蛇、无食物）。只渲染一次（非逐帧），主线程 2-3ms 可接受。
-    private func renderStatic(payload: ContributionCalendarPayload?, colorScheme: ColorScheme) {
+    private func renderStatic(
+        payload: ContributionCalendarPayload?,
+        colorScheme: ColorScheme,
+        style: ContributionGraphStyle
+    ) {
         frameImage = SnakeFrameRenderer.render(
             payload: payload,
             frame: .empty,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            style: style
         )
     }
 }

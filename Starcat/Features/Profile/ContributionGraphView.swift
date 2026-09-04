@@ -60,6 +60,12 @@ import SwiftUI
 ///     login: user.login
 /// )
 /// ```
+/// 草坪局部视觉样式。默认值保持所有既有调用不变，Owner Dark 仅提高空格子的可辨识度。
+enum ContributionGraphStyle: Equatable, Sendable {
+    case standard
+    case ownerCardDark
+}
+
 struct ContributionGraphView: View {
 
     /// 贡献数据；nil 时显示占位（首次加载未完成）。
@@ -74,6 +80,9 @@ struct ContributionGraphView: View {
     /// 用户登录名，预留扩展用（如果未来需要 deep link 等）；当前不渲染跳转按钮，
     /// 因为头像已经承担"跳 GitHub 主页"的语义。
     var login: String?
+
+    /// 调色板只影响后台位图渲染，不改变草坪的动态固有高度。
+    var style: ContributionGraphStyle = .standard
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -154,6 +163,7 @@ struct ContributionGraphView: View {
         // 明暗主题切换时也要重建：草坪是 CGContext 后台渲染成 CGImage 的，
         // 配色在 configure 时按 colorScheme 固化，不随主题切换自动更新，否则明亮主题下仍显示暗色格子。
         .onChange(of: colorScheme) { _, _ in rebuildAnimator() }
+        .onChange(of: style) { _, _ in rebuildAnimator() }
     }
 
     /// 根据当前 settings.snakeStyle + payload 重建 animator 并驱动后台渲染。
@@ -167,7 +177,8 @@ struct ContributionGraphView: View {
         renderService.configure(
             animator: shouldAnimate ? animator : nil,
             payload: payload,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            style: style
         )
     }
 
@@ -247,10 +258,28 @@ struct ContributionGraphView: View {
 /// 拆成独立结构而非散落 hex 字符串：①便于单测；②未来用户自定义主题时只换这一处。
 struct ContributionPalette {
     let none: Color
+    let noneBorder: Color?
     let l1: Color
     let l2: Color
     let l3: Color
     let l4: Color
+
+    /// 既有分享卡主题无需边框；默认 nil 保持原渲染，仅 Owner Dark 显式传入描边色。
+    init(
+        none: Color,
+        noneBorder: Color? = nil,
+        l1: Color,
+        l2: Color,
+        l3: Color,
+        l4: Color
+    ) {
+        self.none = none
+        self.noneBorder = noneBorder
+        self.l1 = l1
+        self.l2 = l2
+        self.l3 = l3
+        self.l4 = l4
+    }
 
     func color(for level: ContributionLevel) -> Color {
         switch level {
@@ -264,6 +293,7 @@ struct ContributionPalette {
 
     static let light = ContributionPalette(
         none: Color(hex6: 0xebedf0),
+        noneBorder: nil,
         l1:   Color(hex6: 0x9be9a8),
         l2:   Color(hex6: 0x40c463),
         l3:   Color(hex6: 0x30a14e),
@@ -272,14 +302,31 @@ struct ContributionPalette {
 
     static let dark = ContributionPalette(
         none: Color(hex6: 0x161b22),
+        noneBorder: nil,
         l1:   Color(hex6: 0x0e4429),
         l2:   Color(hex6: 0x006d32),
         l3:   Color(hex6: 0x26a641),
         l4:   Color(hex6: 0x39d353)
     )
 
-    static func palette(for scheme: ColorScheme) -> ContributionPalette {
-        scheme == .dark ? .dark : .light
+    /// Owner Dark 的空格子比卡片底色亮一档，并带轻描边；绿色等级沿用 GitHub 深色调色板。
+    static let ownerCardDark = ContributionPalette(
+        none: Color(hex6: 0x2b3139),
+        noneBorder: Color(hex6: 0x3b4550),
+        l1: Color(hex6: 0x0e4429),
+        l2: Color(hex6: 0x006d32),
+        l3: Color(hex6: 0x26a641),
+        l4: Color(hex6: 0x39d353)
+    )
+
+    static func palette(
+        for scheme: ColorScheme,
+        style: ContributionGraphStyle = .standard
+    ) -> ContributionPalette {
+        if scheme == .dark, style == .ownerCardDark {
+            return .ownerCardDark
+        }
+        return scheme == .dark ? .dark : .light
     }
 }
 

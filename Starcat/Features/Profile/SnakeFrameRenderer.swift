@@ -46,6 +46,7 @@ enum SnakeFrameRenderer {
         payload: ContributionCalendarPayload?,
         frame: AnimationFrame,
         colorScheme: ColorScheme,
+        style: ContributionGraphStyle = .standard,
         layout: Layout = .standard,
         time: Date = Date()
     ) -> CGImage? {
@@ -68,7 +69,7 @@ enum SnakeFrameRenderer {
         ctx.translateBy(x: 0, y: size.height)
         ctx.scaleBy(x: 1, y: -1)
 
-        let palette = ContributionPalette.palette(for: colorScheme)
+        let palette = ContributionPalette.palette(for: colorScheme, style: style)
 
         drawGrid(ctx: ctx, payload: payload, frame: frame, palette: palette, layout: layout)
         drawSnakes(ctx: ctx, frame: frame, palette: palette, layout: layout)
@@ -100,7 +101,13 @@ enum SnakeFrameRenderer {
                 let rect = CGRect(x: x, y: y, width: layout.cellWidth, height: layout.cellHeight)
                 let pos = GridPosition(col: col, row: row)
                 let level = frame.eatenCells.contains(pos) ? ContributionLevel.none : day.contributionLevel
-                fillRoundedRect(ctx, rect, corner: layout.cellCornerRadius, color: palette.color(for: level).cg)
+                fillRoundedRect(
+                    ctx,
+                    rect,
+                    corner: layout.cellCornerRadius,
+                    color: palette.color(for: level).cg,
+                    strokeColor: level == .none ? palette.noneBorder?.cg : nil
+                )
             }
         }
     }
@@ -116,7 +123,13 @@ enum SnakeFrameRenderer {
                 let x = CGFloat(col) * (layout.cellWidth + layout.cellSpacing)
                 let y = CGFloat(row) * (layout.cellHeight + layout.cellSpacing)
                 let rect = CGRect(x: x, y: y, width: layout.cellWidth, height: layout.cellHeight)
-                fillRoundedRect(ctx, rect, corner: layout.cellCornerRadius, color: color)
+                fillRoundedRect(
+                    ctx,
+                    rect,
+                    corner: layout.cellCornerRadius,
+                    color: color,
+                    strokeColor: palette.noneBorder?.cg
+                )
             }
         }
     }
@@ -203,12 +216,27 @@ enum SnakeFrameRenderer {
         _ ctx: CGContext,
         _ rect: CGRect,
         corner: CGFloat,
-        color: CGColor
+        color: CGColor,
+        strokeColor: CGColor? = nil
     ) {
         let path = CGPath(roundedRect: rect, cornerWidth: corner, cornerHeight: corner, transform: nil)
         ctx.addPath(path)
         ctx.setFillColor(color)
         ctx.fillPath()
+
+        guard let strokeColor else { return }
+        let lineWidth: CGFloat = 0.8
+        let strokeRect = rect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+        let strokePath = CGPath(
+            roundedRect: strokeRect,
+            cornerWidth: max(0, corner - lineWidth / 2),
+            cornerHeight: max(0, corner - lineWidth / 2),
+            transform: nil
+        )
+        ctx.addPath(strokePath)
+        ctx.setStrokeColor(strokeColor)
+        ctx.setLineWidth(lineWidth)
+        ctx.strokePath()
     }
 }
 
