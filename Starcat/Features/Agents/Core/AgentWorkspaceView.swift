@@ -4,8 +4,8 @@
 //
 //  Agent 独立 Workspace Window 的三栏内容视图。
 //
-//  本视图是所有内置 Agent 的唯一工作台壳子。三栏结构对齐 RAG 工作台：`HSplitView`
-//  承载 Agent rail / Run Surface / Artifact Inspector，左右栏可拖拽并跨窗口重开恢复。
+//  本视图是所有内置 Agent 的唯一工作台壳子。三栏结构对齐 RAG 工作台：原生
+//  Sidebar / Run Surface / Inspector 组合，左右栏可拖拽并跨窗口重开恢复。
 //  Agent 只提供定义与运行事实，页面结构保持统一，避免 Weekly / Repo Insight 等
 //  能力各自长出一套不可复用的 UI。
 //
@@ -15,7 +15,7 @@ import SwiftUI
 
 /// Agent 工作台三栏尺寸约束与持久化键。
 ///
-/// 与 RAG 工作台共用同一套 `HSplitView` 口径：左右栏可拖拽，中栏保留稳定阅读空间。
+/// 与 RAG 工作台共用同一套原生 Sidebar / Inspector 口径：左右栏可拖拽，中栏保留稳定阅读空间。
 /// 持久化值读取时必须钳制，避免旧 defaults 或手工改键后恢复出挤掉 Run Surface 的布局。
 enum AgentWorkspaceLayoutMetrics {
     static let leftMinimumWidth: CGFloat = 250
@@ -25,12 +25,14 @@ enum AgentWorkspaceLayoutMetrics {
     static let runMinimumWidth: CGFloat = 480
 
     static let rightMinimumWidth: CGFloat = 320
-    static let rightIdealWidth: CGFloat = 420
+    // 首次打开保持紧凑；用户拖拽后的真实宽度由 Inspector 栏内测量写回并优先恢复。
+    static let rightDefaultWidth = rightMinimumWidth
     static let rightMaximumWidth: CGFloat = 520
 
-    // Window Scene 与旧 AppKit 窗口的布局时序不同，不能复用迁移时被压到最小值的宽度记录。
+    // Window Scene 与旧 AppKit 窗口的布局时序不同，左栏不能复用迁移前的宽度记录。
     static let leftWidthDefaultsKey = "AgentWorkspace.SceneV2.LeftColumnWidth"
-    static let rightWidthDefaultsKey = "AgentWorkspace.SceneV2.RightColumnWidth"
+    // v2 的 HSplitView 测量没有稳定落盘；v3 由原生 Inspector 在栏内直接写回真实宽度。
+    static let rightWidthDefaultsKey = "AgentWorkspace.SceneV3.RightColumnWidth"
 
     static func clampedLeftWidth(_ width: Double) -> CGFloat {
         min(max(CGFloat(width), leftMinimumWidth), leftMaximumWidth)
@@ -55,15 +57,6 @@ struct AgentRuntimeKnowledgeConfigurationSnapshot: Equatable {
         backendConfiguration = settings.ragBackendConfiguration
         retrievalSettings = settings.ragRetrievalSettings
         rerankConfiguration = settings.ragRerankConfiguration
-    }
-}
-
-/// 只测量 `HSplitView` 最终分配的实际栏宽；默认值 0 代表该栏当前未挂载或已折叠。
-private struct AgentWorkspaceRightWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
@@ -100,7 +93,7 @@ struct AgentWorkspaceView: View {
     @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
     @AppStorage(AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
-    private var persistedRightColumnWidth = Double(AgentWorkspaceLayoutMetrics.rightIdealWidth)
+    private var persistedRightColumnWidth = Double(AgentWorkspaceLayoutMetrics.rightDefaultWidth)
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var composerContentHeight: CGFloat = 0
     @State private var isComposerContextExpanded = false
@@ -151,30 +144,30 @@ struct AgentWorkspaceView: View {
                 // NavigationSplitView 的 Sidebar 是独立 preference 边界，尺寸不能再向
                 // 根视图上传；在列内直接监听 GeometryReader，才能可靠写回 @AppStorage。
         } detail: {
-            // 左栏必须由 NavigationSplitView 提供原生 Sidebar/Liquid Glass；中栏与
-            // Inspector 继续共用 HSplitView，避免改变右栏独立折叠和宽度恢复语义。
-            HSplitView {
-                runSurface
-                    .frame(minWidth: AgentWorkspaceLayoutMetrics.runMinimumWidth)
-                    .layoutPriority(1)
-
-                if !chromeState.isRightColumnCollapsed {
-                    artifactInspector
-                        .frame(
-                            minWidth: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
-                            idealWidth: restoredRightColumnWidth,
-                            maxWidth: AgentWorkspaceLayoutMetrics.rightMaximumWidth
-                        )
-                        .background {
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: AgentWorkspaceRightWidthPreferenceKey.self,
-                                    value: proxy.size.width
-                                )
+            runSurface
+                .frame(
+                    minWidth: AgentWorkspaceLayoutMetrics.runMinimumWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
+                )
+        }
+        // 任务检查器是语义明确的 trailing inspector。使用系统 Inspector 后，宽度
+        // 约束直接进入分栏控制器，不再依赖 HSplitView 对普通 idealWidth 的布局猜测。
+        .inspector(isPresented: $chromeState.isRightColumnPresented) {
+            artifactInspector
+                .inspectorColumnWidth(
+                    min: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
+                    ideal: restoredRightColumnWidth,
+                    max: AgentWorkspaceLayoutMetrics.rightMaximumWidth
+                )
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onChange(of: proxy.size.width, initial: true) { _, width in
+                                scheduleRightWidthPersistence(width)
                             }
-                        }
+                    }
                 }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -257,9 +250,6 @@ struct AgentWorkspaceView: View {
             configureAgentRuntime()
         }
         .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
-        .onPreferenceChange(AgentWorkspaceRightWidthPreferenceKey.self) { width in
-            scheduleRightWidthPersistence(width)
-        }
         .onDisappear {
             // 用户可能拖完立即关闭窗口；同步提交最后测量值，不能依赖 debounce 任务来得及执行。
             persistLastMeasuredWidths()
@@ -1906,7 +1896,7 @@ struct AgentWorkspaceView: View {
         interfaceScale.font(size: size, weight: weight)
     }
 
-    /// 原生 Sidebar 与 `HSplitView` Inspector 都会连续报告尺寸；静止 250ms 后才保存最终值。
+    /// 原生 Sidebar 与 Inspector 都会连续报告尺寸；静止 250ms 后才保存最终值。
     private func scheduleLeftWidthPersistence(_ measuredWidth: CGFloat) {
         guard !chromeState.isLeftColumnCollapsed,
               measuredWidth >= AgentWorkspaceLayoutMetrics.leftMinimumWidth else { return }

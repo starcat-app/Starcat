@@ -11,7 +11,7 @@
 
 import SwiftUI
 
-/// Inspector 标题与中栏 `runHeader` 同构，保证 `HSplitView` 下两栏分割线水平对齐。
+/// Inspector 标题与中栏 `runHeader` 同构，保证原生 Inspector 与中栏分割线水平对齐。
 struct AgentRunInspectorHeader: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 

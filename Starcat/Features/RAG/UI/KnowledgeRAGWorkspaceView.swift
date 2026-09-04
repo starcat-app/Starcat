@@ -19,12 +19,14 @@ enum RAGWorkspaceLayoutMetrics {
     static let answerMinimumWidth: CGFloat = 480
 
     static let rightMinimumWidth: CGFloat = 320
-    static let rightIdealWidth: CGFloat = 420
+    // 首次打开保持紧凑；用户拖拽后的真实宽度由 Inspector 栏内测量写回并优先恢复。
+    static let rightDefaultWidth = rightMinimumWidth
     static let rightMaximumWidth: CGFloat = 520
 
-    // Window Scene 与旧 AppKit 窗口的布局时序不同，不能复用迁移时被压到最小值的宽度记录。
+    // Window Scene 与旧 AppKit 窗口的布局时序不同，左栏不能复用迁移前的宽度记录。
     static let leftWidthDefaultsKey = "RAGWorkspace.SceneV2.LeftColumnWidth"
-    static let rightWidthDefaultsKey = "RAGWorkspace.SceneV2.RightColumnWidth"
+    // v2 的 HSplitView 测量没有稳定落盘；v3 由原生 Inspector 在栏内直接写回真实宽度。
+    static let rightWidthDefaultsKey = "RAGWorkspace.SceneV3.RightColumnWidth"
 
     static func clampedLeftWidth(_ width: Double) -> CGFloat {
         min(max(CGFloat(width), leftMinimumWidth), leftMaximumWidth)
@@ -32,15 +34,6 @@ enum RAGWorkspaceLayoutMetrics {
 
     static func clampedRightWidth(_ width: Double) -> CGFloat {
         min(max(CGFloat(width), rightMinimumWidth), rightMaximumWidth)
-    }
-}
-
-/// 只测量 `HSplitView` 最终分配的实际栏宽；默认值 0 代表该栏当前未挂载或已折叠。
-private struct RAGWorkspaceRightWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 
@@ -55,7 +48,7 @@ struct KnowledgeRAGWorkspaceView: View {
     @AppStorage(RAGWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(RAGWorkspaceLayoutMetrics.leftIdealWidth)
     @AppStorage(RAGWorkspaceLayoutMetrics.rightWidthDefaultsKey)
-    private var persistedRightColumnWidth = Double(RAGWorkspaceLayoutMetrics.rightIdealWidth)
+    private var persistedRightColumnWidth = Double(RAGWorkspaceLayoutMetrics.rightDefaultWidth)
 
     /// 拖动期间只更新布局测量值，停止变化后再落盘，避免每个 mouse-drag 事件都写 UserDefaults。
     @State private var lastMeasuredLeftColumnWidth: CGFloat?
@@ -90,30 +83,30 @@ struct KnowledgeRAGWorkspaceView: View {
                 // NavigationSplitView 的 Sidebar 是独立 preference 边界，尺寸不能再向
                 // 根视图上传；在列内直接监听 GeometryReader，才能可靠写回 @AppStorage。
         } detail: {
-            // Conversation rail 使用原生 Sidebar；Answer 与 Citation Inspector 仍保留
-            // 既有 HSplitView，避免牺牲右栏独立折叠、拖拽和宽度持久化能力。
-            HSplitView {
-                RAGWorkspaceAnswerSurface(viewModel: viewModel)
-                    .frame(minWidth: RAGWorkspaceLayoutMetrics.answerMinimumWidth)
-                    .layoutPriority(1)
-
-                if !chromeState.isRightColumnCollapsed {
-                    RAGWorkspaceInspector(viewModel: viewModel)
-                        .frame(
-                            minWidth: RAGWorkspaceLayoutMetrics.rightMinimumWidth,
-                            idealWidth: restoredRightColumnWidth,
-                            maxWidth: RAGWorkspaceLayoutMetrics.rightMaximumWidth
-                        )
-                        .background {
-                            GeometryReader { proxy in
-                                Color.clear.preference(
-                                    key: RAGWorkspaceRightWidthPreferenceKey.self,
-                                    value: proxy.size.width
-                                )
+            RAGWorkspaceAnswerSurface(viewModel: viewModel)
+                .frame(
+                    minWidth: RAGWorkspaceLayoutMetrics.answerMinimumWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
+                )
+        }
+        // Citation 是语义明确的 trailing inspector。使用系统 Inspector 后，宽度约束
+        // 会直接进入分栏控制器，不再依赖 HSplitView 对普通 idealWidth 的布局猜测。
+        .inspector(isPresented: $chromeState.isRightColumnPresented) {
+            RAGWorkspaceInspector(viewModel: viewModel)
+                .inspectorColumnWidth(
+                    min: RAGWorkspaceLayoutMetrics.rightMinimumWidth,
+                    ideal: restoredRightColumnWidth,
+                    max: RAGWorkspaceLayoutMetrics.rightMaximumWidth
+                )
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear
+                            .onChange(of: proxy.size.width, initial: true) { _, width in
+                                scheduleRightWidthPersistence(width)
                             }
-                        }
+                    }
                 }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -125,9 +118,6 @@ struct KnowledgeRAGWorkspaceView: View {
         .task { await viewModel.bootstrap() }
         .task { await viewModel.observeKnowledgeBoundaryChanges() }
         .task { await viewModel.observeIndexChanges() }
-        .onPreferenceChange(RAGWorkspaceRightWidthPreferenceKey.self) { width in
-            scheduleRightWidthPersistence(width)
-        }
         .onDisappear {
             // 用户可能拖完立即关闭窗口；同步提交最后测量值，不能依赖 debounce 任务来得及执行。
             persistLastMeasuredWidths()
@@ -184,7 +174,7 @@ struct KnowledgeRAGWorkspaceView: View {
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
     }
 
-    /// 原生 Sidebar 与 `HSplitView` Inspector 都会连续报告尺寸；静止 250ms 后才保存最终值。
+    /// 原生 Sidebar 与 Inspector 都会连续报告尺寸；静止 250ms 后才保存最终值。
     private func scheduleLeftWidthPersistence(_ measuredWidth: CGFloat) {
         guard !chromeState.isLeftColumnCollapsed,
               measuredWidth >= RAGWorkspaceLayoutMetrics.leftMinimumWidth else { return }

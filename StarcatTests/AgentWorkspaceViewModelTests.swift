@@ -1553,6 +1553,10 @@ struct AgentWorkspaceLayoutMetricsTests {
     @Test("Agent 三栏恢复宽度钳制在可拖拽范围内")
     func workspaceColumnWidthsClampToLayoutBounds() {
         #expect(
+            AgentWorkspaceLayoutMetrics.rightDefaultWidth
+                == AgentWorkspaceLayoutMetrics.rightMinimumWidth
+        )
+        #expect(
             AgentWorkspaceLayoutMetrics.clampedLeftWidth(100)
                 == AgentWorkspaceLayoutMetrics.leftMinimumWidth
         )
@@ -1571,6 +1575,19 @@ struct AgentWorkspaceLayoutMetricsTests {
                 == AgentWorkspaceLayoutMetrics.rightMaximumWidth
         )
         #expect(AgentWorkspaceLayoutMetrics.clampedRightWidth(420) == 420)
+    }
+
+    @MainActor
+    @Test("右栏折叠状态与原生 Inspector 展示状态保持互为反向")
+    func rightInspectorPresentationMirrorsCollapsedState() {
+        let chromeState = WorkspaceChromeState()
+
+        #expect(chromeState.isRightColumnPresented)
+        chromeState.isRightColumnPresented = false
+        #expect(chromeState.isRightColumnCollapsed)
+
+        chromeState.isRightColumnCollapsed = false
+        #expect(chromeState.isRightColumnPresented)
     }
 }
 

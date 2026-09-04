@@ -5165,6 +5165,10 @@ struct KnowledgeRAGCoreTests {
     @Test("RAG 三栏恢复宽度钳制在可拖拽范围内")
     func workspaceColumnWidthsClampToLayoutBounds() {
         #expect(
+            RAGWorkspaceLayoutMetrics.rightDefaultWidth
+                == RAGWorkspaceLayoutMetrics.rightMinimumWidth
+        )
+        #expect(
             RAGWorkspaceLayoutMetrics.clampedLeftWidth(100)
                 == RAGWorkspaceLayoutMetrics.leftMinimumWidth
         )
