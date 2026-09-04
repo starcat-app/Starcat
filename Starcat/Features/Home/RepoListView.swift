@@ -1625,7 +1625,7 @@ struct RepoListView: View {
     private var contentBody: some View {
         @Bindable var vm = viewModel
 
-        Group {
+        ZStack(alignment: .topLeading) {
             if selectedPage == .trending {
                 ExploreView(
                     trendingRepository: trendingRepository,
@@ -1645,6 +1645,7 @@ struct RepoListView: View {
                     selectedWeeklyLanguage: $selectedWeeklyLanguage,
                     onRepoCountChange: { navigationMetrics.applyTrendingRepoCount($0) }
                 )
+                .transition(.opacity)
             } else if selectedPage == .activity {
                 ActivityView(
                     viewModel: $activityViewModel,
@@ -1662,11 +1663,14 @@ struct RepoListView: View {
                         }
                     }
                 )
+                .transition(.opacity)
             } else {
                 // Manage：顶栏（排序 + 同步）始终可见，排序作用于当前侧边栏分类子集。
                 manageCategoryContent(vm)
+                    .transition(.opacity)
             }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: selectedPage)
     }
 
     /// 账号 / 用户数据库边界必须硬失效，禁止跨用户复用 Explore / Activity 快照。

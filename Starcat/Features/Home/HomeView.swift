@@ -1356,8 +1356,6 @@ struct HomeView: View {
                         selectSidebarRootPage(.insights)
                     }
                 )
-                .id(selectedSidebarPage)
-                .detailContentTransition()
             }
             .transition(insightsBoundaryTransition)
         }
@@ -1367,8 +1365,6 @@ struct HomeView: View {
     private var detailColumn: some View {
         ZStack(alignment: .topLeading) {
             detailColumnBody
-                .id(selectedSidebarPage)
-                .detailContentTransition()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)

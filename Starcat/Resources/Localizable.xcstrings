@@ -102818,7 +102818,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coming soon"
+            "value" : "Try again later"
           }
         },
         "es" : {
@@ -102902,13 +102902,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "功能开发中，敬请期待"
+            "value" : "请稍后重试"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "功能开发中，敬请期待"
+            "value" : "請稍後重試"
           }
         }
       }
@@ -102931,7 +102931,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trending data unavailable"
+            "value" : "No Trending data yet"
           }
         },
         "es" : {
@@ -103015,13 +103015,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trending 数据暂不可用"
+            "value" : "暂无 Trending 数据"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trending 数据暂不可用"
+            "value" : "暫無 Trending 數據"
           }
         }
       }
