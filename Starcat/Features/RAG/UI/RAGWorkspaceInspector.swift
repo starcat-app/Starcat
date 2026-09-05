@@ -73,26 +73,12 @@ struct RAGWorkspaceInspector: View {
     /// 清空会删除当前会话落盘的 Debug JSON，必须先让用户确认数据范围。
     @State private var isClearDebugTracesConfirmationPresented = false
     @State private var expandedIndexIssueKind: RAGIndexIssueKind?
-    @State private var hoveredIndexIssueKind: RAGIndexIssueKind?
-    /// 待处理 / 失败 / 过期共用同一套列表行 hover，ID 只在当前展开抽屉内生效。
-    @State private var hoveredIndexIssueChunkID: Int64?
-    @State private var hoveredIndexBuildStageID: String?
-    @State private var isKnowledgeRepositoryRowHovered = false
-    @State private var isKnowledgeMetadataRowHovered = false
-    @State private var hoveredDebugTraceID: UUID?
-    /// 光标悬停的 Debug stage；与父 trace 行共用轻量 accent hover 反馈。
-    @State private var hoveredDebugEventID: UUID?
-    /// 光标悬停的引用行；用于给列表加 hover 高亮，展开态优先级更高。
-    @State private var hoveredCitationID: UUID?
     /// 引用是证据 Inspector 的主内容，首次进入默认展开；正文引用跳转也会主动展开。
     @State private var isCitationsExpanded = true
-    @State private var isCitationsSectionHovered = false
     /// 网络证据通常只用于核验实时来源，默认收起，避免历史记录挤占引用列表。
     @State private var isNetworkExpanded = false
-    @State private var isNetworkSectionHovered = false
     /// 网络记录与引用卡片同为可展开证据行；ID 加 live/history 前缀避免两类来源碰撞。
     @State private var expandedNetworkItemID: String?
-    @State private var hoveredNetworkItemID: String?
     @State private var isRetrievalScoreExplanationPresented = false
     @State private var isCitationChunkPopoverPresented = false
     @State private var isRepoContextXMLPopoverPresented = false
@@ -286,12 +272,13 @@ struct RAGWorkspaceInspector: View {
                     .foregroundStyle(.secondary)
             } else {
                 // 与元数据同构：整行点击、右侧 chevron 和 hover 底色保持一致。
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        isCitationsExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
+                LocalHoverSurface(cornerRadius: 8) {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                            isCitationsExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
                         Image(systemName: "quote.bubble.fill")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -310,32 +297,33 @@ struct RAGWorkspaceInspector: View {
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isCitationsExpanded ? 90 : 0))
                     }
-                    .contentShape(Rectangle())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                    .background(
-                        isCitationsSectionHovered ? Color.accentColor.opacity(0.08) : .clear,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    )
+                        .contentShape(Rectangle())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pointerStyle(.link)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pointerStyle(.link)
-                .onHover { isCitationsSectionHovered = $0 }
-                .onDisappear { isCitationsSectionHovered = false }
-                .animation(
-                    reduceMotion ? nil : .easeOut(duration: 0.15),
-                    value: isCitationsSectionHovered
-                )
 
                 if isCitationsExpanded {
                     // 手风琴：引用列表在上，点一条在该行下方展开细节。
                     ForEach(allCitations) { citation in
                         let isExpanded = viewModel.selectedCitation?.id == citation.id
-                        VStack(alignment: .leading, spacing: 0) {
-                            Button {
-                                viewModel.toggleCitation(citation)
-                            } label: {
+                        LocalHoverSurface(
+                            normalBackground: isExpanded
+                                ? Color.accentColor.opacity(0.08)
+                                : Color(nsColor: .textBackgroundColor).opacity(0.55),
+                            hoveredBackground: isExpanded
+                                ? Color.accentColor.opacity(0.08)
+                                : Color.accentColor.opacity(0.045),
+                            hoveredBorder: isExpanded ? .clear : Color.accentColor.opacity(0.35),
+                            cornerRadius: 8
+                        ) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Button {
+                                    viewModel.toggleCitation(citation)
+                                } label: {
                                 HStack(alignment: .top, spacing: 8) {
                                     VStack(alignment: .leading, spacing: 3) {
                                         citationIdentityLabel(citation)
@@ -364,40 +352,13 @@ struct RAGWorkspaceInspector: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            .focusEffectDisabled()
+                                .buttonStyle(.plain)
+                                .focusEffectDisabled()
 
-                            if isExpanded {
-                                citationDetail(citation)
-                                    .padding(.horizontal, 10)
-                                    .padding(.bottom, 10)
-                            }
-                        }
-                        .background(
-                            // 展开态优先用 accent 底；未展开时光标悬停给一层浅 accent 反馈，其余保持默认底。
-                            isExpanded
-                                ? Color.accentColor.opacity(0.08)
-                                : (hoveredCitationID == citation.id
-                                    ? Color.accentColor.opacity(0.045)
-                                    : Color(nsColor: .textBackgroundColor).opacity(0.55)),
-                            in: RoundedRectangle(cornerRadius: 8)
-                        )
-                        .overlay(
-                            // 悬停时描一圈淡 accent 边，强化「可点击 + 当前聚焦」的视觉线索。
-                            RoundedRectangle(cornerRadius: 8)
-                                .strokeBorder(
-                                    hoveredCitationID == citation.id && !isExpanded
-                                        ? Color.accentColor.opacity(0.35)
-                                        : Color.clear,
-                                    lineWidth: 1
-                                )
-                        )
-                        .onHover { isHovering in
-                            if reduceMotion {
-                                hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
-                            } else {
-                                withAnimation(.easeInOut(duration: 0.12)) {
-                                    hoveredCitationID = isHovering ? citation.id : (hoveredCitationID == citation.id ? nil : hoveredCitationID)
+                                if isExpanded {
+                                    citationDetail(citation)
+                                        .padding(.horizontal, 10)
+                                        .padding(.bottom, 10)
                                 }
                             }
                         }
@@ -409,12 +370,13 @@ struct RAGWorkspaceInspector: View {
 
             if !viewModel.remoteBlocks.isEmpty || !viewModel.historicalRemoteContextAudits.isEmpty {
                 Divider().padding(.top, 4)
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        isNetworkExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
+                LocalHoverSurface(cornerRadius: 8) {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                            isNetworkExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
                         Image(systemName: "network")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -436,23 +398,14 @@ struct RAGWorkspaceInspector: View {
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isNetworkExpanded ? 90 : 0))
                     }
-                    .contentShape(Rectangle())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                    .background(
-                        isNetworkSectionHovered ? Color.accentColor.opacity(0.08) : .clear,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    )
+                        .contentShape(Rectangle())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pointerStyle(.link)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pointerStyle(.link)
-                .onHover { isNetworkSectionHovered = $0 }
-                .onDisappear { isNetworkSectionHovered = false }
-                .animation(
-                    reduceMotion ? nil : .easeOut(duration: 0.15),
-                    value: isNetworkSectionHovered
-                )
 
                 if isNetworkExpanded {
                     ForEach(Array(viewModel.remoteBlocks.enumerated()), id: \.element.id) { rowIndex, block in
@@ -501,13 +454,18 @@ struct RAGWorkspaceInspector: View {
         rowIndex: Int
     ) -> some View {
         let isExpanded = expandedNetworkItemID == id
-        let isHovered = hoveredNetworkItemID == id
-        return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                    expandedNetworkItemID = isExpanded ? nil : id
-                }
-            } label: {
+        let stripe = rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)
+        return LocalHoverSurface(
+            normalBackground: isExpanded ? Color.accentColor.opacity(0.08) : stripe,
+            hoveredBackground: isExpanded ? Color.accentColor.opacity(0.08) : Color.accentColor.opacity(0.045),
+            cornerRadius: 8
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                        expandedNetworkItemID = isExpanded ? nil : id
+                    }
+                } label: {
                 HStack(alignment: .top, spacing: 8) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
@@ -531,59 +489,35 @@ struct RAGWorkspaceInspector: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pointerStyle(.link)
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
 
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 9) {
-                    if let detail, !detail.isEmpty {
-                        Text(detail)
-                            .font(ragFont(.caption))
-                            .foregroundStyle(isError ? Color.orange : Color.secondary)
-                            .lineLimit(6)
-                            .textSelection(.enabled)
-                    }
-                    citationField("rag.workspace.inspector.fetchedAt", value: fetchedAt)
-                    if let sourceURL {
-                        Link(destination: sourceURL) {
-                            Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 9) {
+                        if let detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(ragFont(.caption))
+                                .foregroundStyle(isError ? Color.orange : Color.secondary)
+                                .lineLimit(6)
+                                .textSelection(.enabled)
                         }
-                        .font(ragFont(.caption, weight: .semibold))
+                        citationField("rag.workspace.inspector.fetchedAt", value: fetchedAt)
+                        if let sourceURL {
+                            Link(destination: sourceURL) {
+                                Label("rag.workspace.inspector.openGitHub", systemImage: "arrow.up.right.square")
+                            }
+                            .font(ragFont(.caption, weight: .semibold))
+                        }
                     }
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
-            }
-        }
-        .background(
-            Color(nsColor: .controlBackgroundColor).opacity(0.55),
-            in: RoundedRectangle(cornerRadius: 8)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(
-                    isExpanded
-                        ? Color.accentColor.opacity(0.08)
-                        : (isHovered
-                            ? Color.accentColor.opacity(0.045)
-                            : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)))
-                )
-                .allowsHitTesting(false)
-        }
-        .onHover { isHovering in
-            if reduceMotion {
-                hoveredNetworkItemID = isHovering ? id : (hoveredNetworkItemID == id ? nil : hoveredNetworkItemID)
-            } else {
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    hoveredNetworkItemID = isHovering ? id : (hoveredNetworkItemID == id ? nil : hoveredNetworkItemID)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
                 }
             }
-        }
-        .onDisappear {
-            if hoveredNetworkItemID == id {
-                hoveredNetworkItemID = nil
-            }
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.55),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
         }
     }
 
@@ -593,13 +527,14 @@ struct RAGWorkspaceInspector: View {
             VStack(alignment: .leading, spacing: 0) {
                 // 标题与下方「引用」同级左对齐：不放进卡片内缩进，避免图标比引用标题更靠右。
                 // 整行可点：chevron 只表达状态，不单独做触发区（见 UI-折叠展开-规范）。
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        isKnowledgeMetadataExpanded.toggle()
-                    }
-                } label: {
-                    // chevron 放右侧，与下方「引用」手风琴同构（chevron.right + 旋转），避免左右两套折叠习惯。
-                    HStack(spacing: 6) {
+                LocalHoverSurface(cornerRadius: 8) {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                            isKnowledgeMetadataExpanded.toggle()
+                        }
+                    } label: {
+                        // chevron 放右侧，与下方「引用」手风琴同构（chevron.right + 旋转），避免左右两套折叠习惯。
+                        HStack(spacing: 6) {
                         Image(systemName: "cylinder.split.1x2")
                             .font(iconFont(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -625,23 +560,14 @@ struct RAGWorkspaceInspector: View {
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isKnowledgeMetadataExpanded ? 90 : 0))
                     }
-                    .contentShape(Rectangle())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                    .background(
-                        isKnowledgeMetadataRowHovered ? Color.accentColor.opacity(0.08) : .clear,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    )
+                        .contentShape(Rectangle())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pointerStyle(.link)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pointerStyle(.link)
-                .onHover { isKnowledgeMetadataRowHovered = $0 }
-                .onDisappear { isKnowledgeMetadataRowHovered = false }
-                .animation(
-                    reduceMotion ? nil : .easeOut(duration: 0.15),
-                    value: isKnowledgeMetadataRowHovered
-                )
 
                 if isKnowledgeMetadataExpanded {
                     // 组间距压到接近贴合：分组靠标题图标区分，不再靠大空隙撑开。
@@ -2882,10 +2808,11 @@ struct RAGWorkspaceInspector: View {
                     let isExpanded = expandedDebugTraceIDs.contains(trace.id)
                     VStack(alignment: .leading, spacing: 8) {
                         // 整行可折叠；导出叠在 chevron 左侧独立点击，避免误触展开。
-                        Button {
-                            toggleDebugTraceExpansion(trace)
-                        } label: {
-                            HStack(spacing: 6) {
+                        LocalHoverSurface(cornerRadius: 8) {
+                            Button {
+                                toggleDebugTraceExpansion(trace)
+                            } label: {
+                                HStack(spacing: 6) {
                                 Image(systemName: debugTraceCategoryIcon(trace.category))
                                     .font(iconFont(size: 11, weight: .semibold))
                                     .foregroundStyle(.secondary)
@@ -2919,44 +2846,29 @@ struct RAGWorkspaceInspector: View {
                                     .foregroundStyle(.secondary)
                                     .frame(width: 12)
                             }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                        .overlay(alignment: .trailing) {
-                            Button {
-                                viewModel.exportDebugTrace(trace)
-                            } label: {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(iconFont(size: 11, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .focusEffectDisabled()
-                            .help("rag.workspace.debug.export")
-                            // 14 导出 + 6 间距，叠在 clear slot 上，chevron 仍最右。
-                            .padding(.trailing, 18)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.top, 10)
-                        .padding(.bottom, isExpanded ? 0 : 10)
-                        .background(
-                            hoveredDebugTraceID == trace.id ? Color.accentColor.opacity(0.08) : .clear,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
-                        .onHover { isHovering in
-                            hoveredDebugTraceID = isHovering ? trace.id : (hoveredDebugTraceID == trace.id ? nil : hoveredDebugTraceID)
-                        }
-                        .onDisappear {
-                            if hoveredDebugTraceID == trace.id {
-                                hoveredDebugTraceID = nil
+                            .overlay(alignment: .trailing) {
+                                Button {
+                                    viewModel.exportDebugTrace(trace)
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(iconFont(size: 11, weight: .medium))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 14, height: 14)
+                                }
+                                .buttonStyle(.plain)
+                                .focusEffectDisabled()
+                                .help("rag.workspace.debug.export")
+                                // 14 导出 + 6 间距，叠在 clear slot 上，chevron 仍最右。
+                                .padding(.trailing, 18)
                             }
+                            .padding(.horizontal, 10)
+                            .padding(.top, 10)
+                            .padding(.bottom, isExpanded ? 0 : 10)
                         }
-                        .animation(
-                            reduceMotion ? nil : .easeOut(duration: 0.15),
-                            value: hoveredDebugTraceID == trace.id
-                        )
 
                         if isExpanded {
                             // 子 stage 相对父行轻缩进即可，过大空白会浪费窄侧栏。
@@ -3017,11 +2929,17 @@ struct RAGWorkspaceInspector: View {
         // Rerank 在检索完成后才拿到远端耗时；其 Trace 行必须显示服务的真实耗时，不能显示
         // 同一批 Debug event 的累计时间差。
         let displayedDuration = event.rerankPayload?.diagnostics.elapsedSeconds ?? stepDurationSeconds
-        return VStack(alignment: .leading, spacing: 7) {
-            // 与父行一致：chevron 贴最右；复制叠在其左侧独立点击。
-            Button {
-                toggleDebugEventExpansion(event)
-            } label: {
+        let stripe = rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)
+        return LocalHoverSurface(
+            normalBackground: stripe,
+            hoveredBackground: Color.accentColor.opacity(0.08),
+            cornerRadius: 6
+        ) {
+            VStack(alignment: .leading, spacing: 7) {
+                // 与父行一致：chevron 贴最右；复制叠在其左侧独立点击。
+                Button {
+                    toggleDebugEventExpansion(event)
+                } label: {
                 HStack(spacing: 6) {
                     Image(systemName: debugStageIcon(event.stage))
                         .font(iconFont(size: 11, weight: .semibold))
@@ -3051,12 +2969,12 @@ struct RAGWorkspaceInspector: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            // Prompt / 返回等大段正文挂载前禁止再点，否则会 toggle 成「展开又立刻折叠」。
-            .disabled(isExpandPending)
-            .opacity(isExpandPending ? 0.72 : 1)
-            .overlay(alignment: .trailing) {
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                // Prompt / 返回等大段正文挂载前禁止再点，否则会 toggle 成「展开又立刻折叠」。
+                .disabled(isExpandPending)
+                .opacity(isExpandPending ? 0.72 : 1)
+                .overlay(alignment: .trailing) {
                 // 复制独立于折叠。字号必须明显小于 body 默认 Symbol：
                 // `doc.on.doc` 同字号也比标题行 `checkmark.circle.fill` 显大，
                 // 与 AI 气泡复制一致用 9pt + 10×10 锁死，避免 feedback 成功勾再次撑开。
@@ -3072,52 +2990,30 @@ struct RAGWorkspaceInspector: View {
                 }
                 // 10 复制位 + 6 间距，叠在 clear slot 上，chevron / 转圈仍最右。
                 .padding(.trailing, 18)
-            }
+                }
 
-            if isExpanded {
-                if let presentation = debugPayloadPresentation(for: event.id),
-                   let block = presentation.block(for: event.id) {
-                    debugPayloadChunks(for: event, block: block)
-                        .onAppear {
-                            finishPendingDebugEventExpand(event.id)
-                        }
-                } else {
-                    debugPayloadLoadingSkeleton()
-                        .onAppear {
-                            scheduleDebugPayloadPreparation(
-                                expansionID: event.id,
-                                events: [event]
-                            )
-                        }
+                if isExpanded {
+                    if let presentation = debugPayloadPresentation(for: event.id),
+                       let block = presentation.block(for: event.id) {
+                        debugPayloadChunks(for: event, block: block)
+                            .onAppear {
+                                finishPendingDebugEventExpand(event.id)
+                            }
+                    } else {
+                        debugPayloadLoadingSkeleton()
+                            .onAppear {
+                                scheduleDebugPayloadPreparation(
+                                    expansionID: event.id,
+                                    events: [event]
+                                )
+                            }
+                    }
                 }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        // hover 优先于斑马纹；颜色与父 trace 行一致，且不改变尺寸，避免列表抖动。
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    hoveredDebugEventID == event.id
-                        ? Color.accentColor.opacity(0.08)
-                        : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
-                )
-        )
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
-        .onHover { isHovering in
-            hoveredDebugEventID = isHovering
-                ? event.id
-                : (hoveredDebugEventID == event.id ? nil : hoveredDebugEventID)
-        }
-        .onDisappear {
-            if hoveredDebugEventID == event.id {
-                hoveredDebugEventID = nil
-            }
-        }
-        .animation(
-            reduceMotion ? nil : .easeOut(duration: 0.15),
-            value: hoveredDebugEventID == event.id
-        )
     }
 
     /// RepoContext 的请求、结果、窗口投影属于同一条上下文准备链路。外层只保留一套
@@ -3134,10 +3030,16 @@ struct RAGWorkspaceInspector: View {
             result + (stepDurations[event.id] ?? 0)
         }
 
-        return VStack(alignment: .leading, spacing: 7) {
-            Button {
-                toggleRepoContextDebugGroupExpansion(events)
-            } label: {
+        let stripe = rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)
+        return LocalHoverSurface(
+            normalBackground: stripe,
+            hoveredBackground: Color.accentColor.opacity(0.08),
+            cornerRadius: 6
+        ) {
+            VStack(alignment: .leading, spacing: 7) {
+                Button {
+                    toggleRepoContextDebugGroupExpansion(events)
+                } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "brain.head.profile")
                         .font(iconFont(size: 11, weight: .semibold))
@@ -3167,11 +3069,11 @@ struct RAGWorkspaceInspector: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .disabled(isExpandPending)
-            .opacity(isExpandPending ? 0.72 : 1)
-            .overlay(alignment: .trailing) {
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(isExpandPending)
+                .opacity(isExpandPending ? 0.72 : 1)
+                .overlay(alignment: .trailing) {
                 CopyFeedbackButton(
                     providesContent: {
                         events.map { event in
@@ -3188,62 +3090,40 @@ struct RAGWorkspaceInspector: View {
                         .fixedSize()
                 }
                 .padding(.trailing, 18)
-            }
+                }
 
-            if isExpanded, let groupID {
-                if let presentation = debugPayloadPresentation(for: groupID) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(events.enumerated()), id: \.element.id) { blockIndex, event in
-                            if blockIndex > 0 {
-                                Divider()
-                            }
-                            if let block = presentation.block(for: event.id) {
-                                debugRepoContextBlock(event, block: block)
+                if isExpanded, let groupID {
+                    if let presentation = debugPayloadPresentation(for: groupID) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(events.enumerated()), id: \.element.id) { blockIndex, event in
+                                if blockIndex > 0 {
+                                    Divider()
+                                }
+                                if let block = presentation.block(for: event.id) {
+                                    debugRepoContextBlock(event, block: block)
+                                }
                             }
                         }
-                    }
-                    .padding(.horizontal, 6)
-                    .onAppear {
-                        finishPendingDebugEventExpand(groupID)
-                    }
-                } else {
-                    debugPayloadLoadingSkeleton(lineCount: 5)
                         .padding(.horizontal, 6)
                         .onAppear {
-                            scheduleDebugPayloadPreparation(
-                                expansionID: groupID,
-                                events: events
-                            )
+                            finishPendingDebugEventExpand(groupID)
                         }
+                    } else {
+                        debugPayloadLoadingSkeleton(lineCount: 5)
+                            .padding(.horizontal, 6)
+                            .onAppear {
+                                scheduleDebugPayloadPreparation(
+                                    expansionID: groupID,
+                                    events: events
+                                )
+                            }
+                    }
                 }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(
-                    groupID == hoveredDebugEventID
-                        ? Color.accentColor.opacity(0.08)
-                        : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045))
-                )
-        )
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.55), in: RoundedRectangle(cornerRadius: 6))
-        .onHover { isHovering in
-            guard let groupID else { return }
-            hoveredDebugEventID = isHovering
-                ? groupID
-                : (hoveredDebugEventID == groupID ? nil : hoveredDebugEventID)
-        }
-        .onDisappear {
-            if hoveredDebugEventID == groupID {
-                hoveredDebugEventID = nil
-            }
-        }
-        .animation(
-            reduceMotion ? nil : .easeOut(duration: 0.15),
-            value: hoveredDebugEventID == groupID
-        )
     }
 
     /// 组内区块只承担阶段辨识与 payload 展示，不再重复复制、耗时和折叠控件。
@@ -3965,34 +3845,31 @@ struct RAGWorkspaceInspector: View {
     }
 
     var knowledgeRepositoryRow: some View {
-        Button {
-            viewModel.showKnowledgeBrowser(
-                presentingWindow: NSApp.keyWindow,
-                settingsNavigation: settingsNavigation
-            )
-        } label: {
-            HStack(spacing: 8) {
-                Text("rag.browser.overview.repositoryCoverage")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.primary)
-                Spacer()
-                indexRowValue("\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)")
-                indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
+        LocalHoverSurface(cornerRadius: 6) {
+            Button {
+                viewModel.showKnowledgeBrowser(
+                    presentingWindow: NSApp.keyWindow,
+                    settingsNavigation: settingsNavigation
+                )
+            } label: {
+                HStack(spacing: 8) {
+                    Text("rag.browser.overview.repositoryCoverage")
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    indexRowValue("\(viewModel.indexStatus.indexedRepoCount)/\(viewModel.indexStatus.knowledgeRepoCount)")
+                    indexRowTrailingAffordance(systemImage: "arrow.up.right.square")
+                }
+                .padding(.horizontal, Self.indexRowHorizontalPadding)
+                .padding(.vertical, Self.indexRowVerticalPadding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Self.indexRowHorizontalPadding)
-            .padding(.vertical, Self.indexRowVerticalPadding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(
-                isKnowledgeRepositoryRowHovered ? Color.accentColor.opacity(0.08) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-            )
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+            .help("rag.browser.open")
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pointerStyle(.link)
-        .help("rag.browser.open")
-        .onHover { isKnowledgeRepositoryRowHovered = $0 }
     }
 
     func indexIssueRow(
@@ -4003,37 +3880,35 @@ struct RAGWorkspaceInspector: View {
     ) -> some View {
         let isExpanded = expandedIndexIssueKind == kind
         return VStack(alignment: .leading, spacing: 7) {
-            Button {
-                if isExpanded {
-                    expandedIndexIssueKind = nil
-                } else {
-                    expandedIndexIssueKind = kind
-                    Task { await viewModel.loadIndexIssueChunks(kind) }
+            LocalHoverSurface(
+                normalBackground: rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045),
+                cornerRadius: 6
+            ) {
+                Button {
+                    if isExpanded {
+                        expandedIndexIssueKind = nil
+                    } else {
+                        expandedIndexIssueKind = kind
+                        Task { await viewModel.loadIndexIssueChunks(kind) }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(indexIssueTitle(kind))
+                            .font(ragFont(.caption))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        indexRowValue("\(count)", color: count > 0 ? color : .secondary)
+                        indexRowTrailingAffordance(systemImage: isExpanded ? "chevron.down" : "chevron.right")
+                    }
+                    .padding(.horizontal, Self.indexRowHorizontalPadding)
+                    .padding(.vertical, Self.indexRowVerticalPadding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Text(indexIssueTitle(kind))
-                        .font(ragFont(.caption))
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    indexRowValue("\(count)", color: count > 0 ? color : .secondary)
-                    indexRowTrailingAffordance(systemImage: isExpanded ? "chevron.down" : "chevron.right")
-                }
-                .padding(.horizontal, Self.indexRowHorizontalPadding)
-                .padding(.vertical, Self.indexRowVerticalPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .background(
-                    hoveredIndexIssueKind == kind
-                        ? Color.accentColor.opacity(0.08)
-                        : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
-                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                )
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pointerStyle(.link)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .pointerStyle(.link)
-            .onHover { hoveredIndexIssueKind = $0 ? kind : nil }
 
             if isExpanded {
                 indexIssueDrawer(kind, color: color)
@@ -4101,17 +3976,20 @@ struct RAGWorkspaceInspector: View {
         chunk: RAGChunk,
         rowIndex: Int
     ) -> some View {
-        let isHovered = chunk.id.map { hoveredIndexIssueChunkID == $0 } ?? false
         let section = chunk.sectionPath.isEmpty ? chunk.title : chunk.sectionPath
 
-        return Button {
-            viewModel.showKnowledgeBrowser(
-                presentingWindow: NSApp.keyWindow,
-                settingsNavigation: settingsNavigation,
-                revealingChunk: chunk
-            )
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
+        return LocalHoverSurface(
+            normalBackground: rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045),
+            cornerRadius: 5
+        ) {
+            Button {
+                viewModel.showKnowledgeBrowser(
+                    presentingWindow: NSApp.keyWindow,
+                    settingsNavigation: settingsNavigation,
+                    revealingChunk: chunk
+                )
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
                 Text(viewModel.knowledgeRepositoryName(for: chunk.repoId))
                     .font(ragFont(.caption, weight: .semibold))
                     .foregroundStyle(.primary)
@@ -4131,36 +4009,19 @@ struct RAGWorkspaceInspector: View {
                 .lineLimit(1)
                 .help(section)
 
-                indexIssueReason(kind, chunk: chunk)
-                    .font(ragFont(.caption2))
-                    .foregroundStyle(.secondary)
+                    indexIssueReason(kind, chunk: chunk)
+                        .font(ragFont(.caption2))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(
-                isHovered
-                    ? Color.accentColor.opacity(0.08)
-                    : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
-                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-            )
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pointerStyle(.link)
-        .help("rag.workspace.index.issues.openChunk")
-        .onHover { hovering in
-            if hovering {
-                hoveredIndexIssueChunkID = chunk.id
-            } else if hoveredIndexIssueChunkID == chunk.id {
-                hoveredIndexIssueChunkID = nil
-            }
-        }
-        .onDisappear {
-            if hoveredIndexIssueChunkID == chunk.id {
-                hoveredIndexIssueChunkID = nil
-            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pointerStyle(.link)
+            .help("rag.workspace.index.issues.openChunk")
         }
     }
 
@@ -4370,46 +4231,27 @@ struct RAGWorkspaceInspector: View {
             ? "checkmark.circle.fill"
             : (isActive ? "circle.dotted" : "circle")
 
-        return HStack(spacing: 7) {
-            Image(systemName: systemImage)
-                .font(iconFont(size: 11, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 13)
-                .accessibilityHidden(true)
-            Text(label)
-                .font(ragFont(.caption))
-                .foregroundStyle(.primary)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(ragFont(.caption, weight: .semibold, design: .monospaced))
-                .monospacedDigit()
-                .foregroundStyle(tint)
-        }
-        .padding(.horizontal, Self.indexRowHorizontalPadding)
-        .padding(.vertical, Self.indexRowVerticalPadding)
-        .background(
-            hoveredIndexBuildStageID == id
-                ? Color.accentColor.opacity(0.08)
-                : (rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)),
-            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-        )
-        .onHover { isHovered in
-            if reduceMotion {
-                hoveredIndexBuildStageID = isHovered
-                    ? id
-                    : (hoveredIndexBuildStageID == id ? nil : hoveredIndexBuildStageID)
-            } else {
-                withAnimation(.easeInOut(duration: 0.12)) {
-                    hoveredIndexBuildStageID = isHovered
-                        ? id
-                        : (hoveredIndexBuildStageID == id ? nil : hoveredIndexBuildStageID)
-                }
+        return LocalHoverSurface(
+            normalBackground: rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045),
+            cornerRadius: 6
+        ) {
+            HStack(spacing: 7) {
+                Image(systemName: systemImage)
+                    .font(iconFont(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 13)
+                    .accessibilityHidden(true)
+                Text(label)
+                    .font(ragFont(.caption))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                Text(value)
+                    .font(ragFont(.caption, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(tint)
             }
-        }
-        .onDisappear {
-            if hoveredIndexBuildStageID == id {
-                hoveredIndexBuildStageID = nil
-            }
+            .padding(.horizontal, Self.indexRowHorizontalPadding)
+            .padding(.vertical, Self.indexRowVerticalPadding)
         }
     }
 

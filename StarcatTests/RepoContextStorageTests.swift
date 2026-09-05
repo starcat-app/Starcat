@@ -96,6 +96,10 @@ struct RepoContextStorageTests {
         if case .repoContext = items[1] {} else {
             Issue.record("RepoContext XML 应位于洞察 XML 之后")
         }
+
+        let rows = KnowledgeRAGBrowserManagedRow.make(from: items)
+        #expect(rows.map(\.index) == [0, 1])
+        #expect(rows.map(\.id) == items.map(\.id))
     }
 
     @Test("XML 下载文件名稳定且写入当前草稿")
