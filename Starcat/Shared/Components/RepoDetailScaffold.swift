@@ -818,7 +818,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             // 位置：Wiki 菜单之后、剩余 actions（.ai 等）之前 —— 即 AI 按钮的左侧。
             // 显示条件：recommendationVM.hasItems（保持旧浮动按钮的「有就显示、没有就不显示」契约）。
             if recommendationVM.hasItems {
-                RepoRecommendButton(hasItems: true) {
+                RepoRecommendButton {
                     guard dependencies.authSession.state.isAuthenticated else {
                         dependencies.authSession.requestLoginSheet()
                         return
