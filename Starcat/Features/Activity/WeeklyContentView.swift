@@ -937,6 +937,9 @@ final class WeeklyContentViewModel {
     /// `.local` 模式下持有的当前 source + sort + lang 筛选结果**全量**（未分页切片前）。
     /// 切 source / sort / lang 时只需重排重过滤这个数组再切片，零网络。
     private var filteredLocalItems: [WeeklyFeedItem] = []
+    /// 当前可见列表的 repo ID 索引。远端/SQLite 分页只对新页做 O(pageSize) 去重，
+    /// 避免每次触底都从累计 items 重建 Set；这是有界内存换滚动时间。
+    private var visibleItemIDs: Set<Int64> = []
     /// bulk 缓存的"原始全量"——`filteredLocalItems` 是它的过滤+排序产物。
     private var bulkAllItems: [WeeklyFeedItem] = []
     /// bulk 事实源每次整体替换都会推进；旧派生结果不能跨 revision 命中。
@@ -1144,10 +1147,9 @@ final class WeeklyContentViewModel {
                 )
             )
             guard myGen == generation else { return }
-            // 同 id 项目可能因为后端排序变动并发出现重复，去一次重保险。
-            let existingIDs = Set(items.map(\.id))
-            let appended = result.items.filter { !existingIDs.contains($0.id) }
-            items.append(contentsOf: appended)
+            // 同 id 项目可能因为后端排序变动并发出现重复；复用增量索引去重，
+            // 不为每个远端页重新扫描完整历史前缀。
+            appendUniqueVisibleItems(result.items)
             page = result.page
             total = result.total
             hasMore = result.hasMore
@@ -1302,7 +1304,7 @@ final class WeeklyContentViewModel {
             )
             guard myGen == generation else { return }
             dataSource = .remote
-            items = result.items
+            replaceVisibleItems(with: result.items)
             total = result.total
             page = result.page
             hasMore = result.hasMore
@@ -1363,10 +1365,9 @@ final class WeeklyContentViewModel {
         total = snapshot.filteredTotal
         hasMore = page * Self.localPageSize < snapshot.filteredTotal
         if appending {
-            let existingIDs = Set(items.map(\.id))
-            items.append(contentsOf: snapshot.items.filter { !existingIDs.contains($0.id) })
+            appendUniqueVisibleItems(snapshot.items)
         } else {
-            items = snapshot.items
+            replaceVisibleItems(with: snapshot.items)
         }
         if bumpRevision {
             itemsRevision += 1
@@ -1421,7 +1422,7 @@ final class WeeklyContentViewModel {
 
         if showSkeletonOnMiss {
             isLoading = true
-            items = []
+            replaceVisibleItems(with: [])
             total = 0
             hasMore = false
         }
@@ -1475,7 +1476,7 @@ final class WeeklyContentViewModel {
         page = 1
         let pageSize = Self.localPageSize
         let slice = Array(filtered.prefix(pageSize))
-        items = slice
+        replaceVisibleItems(with: slice)
         hasMore = filtered.count > slice.count
         if bumpRevision {
             itemsRevision += 1
@@ -1580,9 +1581,31 @@ final class WeeklyContentViewModel {
         let nextPage = page + 1
         let pageSize = Self.localPageSize
         let upper = min(nextPage * pageSize, filteredLocalItems.count)
-        items = Array(filteredLocalItems.prefix(upper))
+        let previousCount = items.count
+        if upper > previousCount {
+            let nextItems = filteredLocalItems[previousCount..<upper]
+            items.append(contentsOf: nextItems)
+            visibleItemIDs.formUnion(nextItems.map(\.id))
+        }
         page = nextPage
         hasMore = upper < filteredLocalItems.count
+    }
+
+    /// 原子替换可见 rows 与 ID 索引；筛选、刷新和首屏发布统一走这里，防止索引漂移。
+    private func replaceVisibleItems(with newItems: [WeeklyFeedItem]) {
+        items = newItems
+        visibleItemIDs = Set(newItems.map(\.id))
+    }
+
+    /// 使用常驻 ID 索引仅追加当前页的非重复 rows。
+    private func appendUniqueVisibleItems(_ candidates: [WeeklyFeedItem]) {
+        var appended: [WeeklyFeedItem] = []
+        appended.reserveCapacity(candidates.count)
+        for candidate in candidates {
+            guard visibleItemIDs.insert(candidate.id).inserted else { continue }
+            appended.append(candidate)
+        }
+        items.append(contentsOf: appended)
     }
 
     private func makeCacheQuery(page: Int) -> WeeklyBulkCacheQuery {

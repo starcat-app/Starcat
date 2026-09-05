@@ -381,8 +381,11 @@ final class TrendingViewModel {
     func loadMoreIfNeeded() async {
         let totalAvailable = allRepos.count
         guard totalAvailable > visibleLimit else { return }
+        let previousLimit = visibleLimit
         visibleLimit = min(visibleLimit + Self.pageSize, totalAvailable)
-        repos = Array(allRepos.prefix(visibleLimit))
+        // 只复制新开放的一页，避免每次触底都重新分配并复制完整历史前缀。
+        // `repos` 的既有元素与顺序保持不变，SwiftUI 可以稳定复用已经显示的 row。
+        repos.append(contentsOf: allRepos[previousLimit..<visibleLimit])
     }
 
     /// 刷新 Trending 列表（R-06.1 TTL 升级版，2026-06-15 改造）。

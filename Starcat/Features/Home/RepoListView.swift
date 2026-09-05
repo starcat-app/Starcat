@@ -422,6 +422,13 @@ private struct CodeGraphSheetItem: Identifiable {
     let repo: Repo
 }
 
+/// 列表徽章缓存加载身份只保留稳定 revision 与数量，避免 SwiftUI 为 `.task(id:)`
+/// 在每次追加分页时重新创建并哈希完整 repo ID 数组。
+private struct RepoBadgeCacheLoadIdentity: Hashable {
+    let itemsRevision: Int
+    let itemCount: Int
+}
+
 struct RepoListView: View {
 
     private static let navigationBreadcrumbSeparator = " › "
@@ -512,6 +519,13 @@ struct RepoListView: View {
     @State private var navigationMetrics = RepoListNavigationMetrics()
     /// 摘要存在状态与导航计数同样局部观察，避免摘要生成后重算整个页面根视图。
     @State private var aiSummaryAvailability = RepoListAISummaryAvailability()
+    /// 已成功补齐徽章缓存的列表前缀。append 不 bump revision，因此可只加载新增页；
+    /// reset / filter / sort 导致 revision 变化时会从 0 重新核对新列表。
+    @State private var badgeCacheLoadedItemsRevision: Int?
+    @State private var badgeCacheLoadedItemCount = 0
+    /// 与已确认徽章前缀同步的可见 repo 集合。Health/OpenSSF 通知逐仓到达时用 O(1)
+    /// membership 判断，避免在数千行列表上为每条通知反复线性扫描。
+    @State private var badgeCacheVisibleRepoIDs: Set<Int64> = []
     /// Repo List 窗口会话级事实源。
     ///
     /// Explore / Activity 的 View 会随 `selectedPage` 条件分支创建和销毁；这里只持有
@@ -2159,7 +2173,10 @@ struct RepoListView: View {
                 await observeAISummaryChanges()
             }
             // 知识库状态观察已上移到 HomeView：空库 / Smart Collections 总览时这里没有 List。
-            .task(id: viewModel.items.map(\.id)) {
+            .task(id: RepoBadgeCacheLoadIdentity(
+                itemsRevision: viewModel.itemsRevision,
+                itemCount: viewModel.items.count
+            )) {
                 await reloadVisibleBadgeCaches(forceReload: false)
             }
             .task {
@@ -2238,9 +2255,36 @@ struct RepoListView: View {
 
     @MainActor
     private func reloadVisibleBadgeCaches(forceReload: Bool) async {
-        let repoIDs = viewModel.items.map(\.id)
+        let itemsRevision = viewModel.itemsRevision
+        let itemCount = viewModel.items.count
+        guard itemCount > 0 else {
+            badgeCacheLoadedItemsRevision = itemsRevision
+            badgeCacheLoadedItemCount = 0
+            badgeCacheVisibleRepoIDs.removeAll(keepingCapacity: true)
+            return
+        }
+
+        let startIndex: Int
+        if forceReload ||
+            badgeCacheLoadedItemsRevision != itemsRevision ||
+            badgeCacheLoadedItemCount > itemCount {
+            startIndex = 0
+        } else {
+            startIndex = badgeCacheLoadedItemCount
+        }
+        let repoIDs = viewModel.items.dropFirst(startIndex).map(\.id)
         guard !repoIDs.isEmpty else { return }
         await reloadBadgeCaches(for: repoIDs, forceReload: forceReload)
+        // `.task(id:)` 会在新页到来时取消旧任务。只有未取消的完整加载才能推进前缀，
+        // 否则下一任务必须从旧位置重试，避免首屏徽章因取消而永久缺失。
+        guard !Task.isCancelled else { return }
+        badgeCacheLoadedItemsRevision = itemsRevision
+        badgeCacheLoadedItemCount = itemCount
+        if startIndex == 0 {
+            badgeCacheVisibleRepoIDs = Set(repoIDs)
+        } else {
+            badgeCacheVisibleRepoIDs.formUnion(repoIDs)
+        }
     }
 
     @MainActor
@@ -2265,7 +2309,7 @@ struct RepoListView: View {
             guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
             // 即使更新行当前不可见，也可能改变某个已缓存分类的筛选成员关系或排序。
             viewModel.invalidateDatabaseSnapshotsForHealthSignalChange()
-            guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
+            guard badgeCacheVisibleRepoIDs.contains(repoID) else { continue }
             await dependencies.repoHealthStore.loadCachedSnapshots(for: [repoID], forceReload: true)
         }
     }
@@ -2277,7 +2321,7 @@ struct RepoListView: View {
             guard !Task.isCancelled else { break }
             guard let repoID = note.userInfo?["repoId"] as? Int64 else { continue }
             viewModel.invalidateDatabaseSnapshotsForOpenSSFSignalChange()
-            guard viewModel.items.contains(where: { $0.id == repoID }) else { continue }
+            guard badgeCacheVisibleRepoIDs.contains(repoID) else { continue }
             await dependencies.openSSFScoreStore.loadCachedScores(for: [repoID], forceReload: true)
         }
     }

@@ -65,7 +65,8 @@ struct HomeViewModelPaginationTests {
     }
 
     private func makeSUT(
-        beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)? = nil
+        beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)? = nil,
+        beforeDatabaseListCountFetchForTesting: (@Sendable () async -> Void)? = nil
     ) throws -> (HomeViewModel, any DatabaseManaging) {
         let db = try InMemoryDatabaseManager()
         let repo = GRDBRepoRepository(database: db)
@@ -77,7 +78,8 @@ struct HomeViewModelPaginationTests {
             tagRepository: tagRepo,
             repoTagRepository: rtRepo,
             repoNoteRepository: noteRepo,
-            beforeDatabasePageFetchForTesting: beforeDatabasePageFetchForTesting
+            beforeDatabasePageFetchForTesting: beforeDatabasePageFetchForTesting,
+            beforeDatabaseListCountFetchForTesting: beforeDatabaseListCountFetchForTesting
         )
         return (vm, db)
     }
@@ -279,6 +281,31 @@ struct HomeViewModelPaginationTests {
         #expect(vm.visibleRepoTotalCount == 100, "append 后标题总数仍应保持当前查询全量")
         #expect(vm.currentPage == 2)
         #expect(vm.hasMore == true, "100 > 已加载条数,后续仍有更多")
+    }
+
+    @Test("DB Paging: append 复用已发布总数且不重复 COUNT")
+    func loadMoreReusesPublishedTotalCount() async throws {
+        let pageFetchCounter = DatabaseFetchCounter()
+        let countFetchCounter = DatabaseFetchCounter()
+        let (vm, db) = try makeSUT(
+            beforeDatabasePageFetchForTesting: {
+                await pageFetchCounter.recordFetch()
+            },
+            beforeDatabaseListCountFetchForTesting: {
+                await countFetchCounter.recordFetch()
+            }
+        )
+        for i in 1...100 {
+            try await insertRepo(db, id: Int64(i), fullName: "o/r\(i)", starredAt: starredAt(forID: i))
+        }
+
+        await vm.reloadItems()
+        vm.loadMoreIfNeeded()
+        await vm.awaitPendingListReloadForTesting()
+
+        #expect(await pageFetchCounter.value() == 2, "首屏和 append 都必须查询各自 page")
+        #expect(await countFetchCounter.value() == 1, "append 应复用首屏总数，避免重复 COUNT(*)")
+        #expect(vm.visibleRepoTotalCount == 100)
     }
 
     @Test("R-07: loadMoreIfNeeded 在 hasMore = false 时幂等不动 currentPage")

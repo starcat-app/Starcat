@@ -48,21 +48,18 @@ enum SnakeFrameRenderer {
         colorScheme: ColorScheme,
         style: ContributionGraphStyle = .standard,
         layout: Layout = .standard,
+        baseGrid: CGImage? = nil,
         time: Date = Date()
     ) -> CGImage? {
+        guard let ctx = makeBitmapContext(layout: layout) else { return nil }
         let size = layout.size
-        let width = Int(size.width.rounded(.up))
-        let height = Int(size.height.rounded(.up))
-        guard width > 0, height > 0,
-              let ctx = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ) else { return nil }
+
+        // 草坪在一次 configure 生命周期内不会变化。优先复用预渲染底图，逐帧只合成
+        // 动态覆盖层；一张 634×110 RGBA 图约 0.28MB，以小量常驻内存换掉 371 格重绘。
+        if let baseGrid {
+            ctx.interpolationQuality = .none
+            ctx.draw(baseGrid, in: CGRect(origin: .zero, size: size))
+        }
 
         // 翻转 y 轴：CGContext 原点在左下、y 向上，而草坪 row 0 应显示在顶部。
         // 翻转后 row 0 落在 y=0（顶部），与 SwiftUI Canvas 行为一致。
@@ -71,11 +68,48 @@ enum SnakeFrameRenderer {
 
         let palette = ContributionPalette.palette(for: colorScheme, style: style)
 
-        drawGrid(ctx: ctx, payload: payload, frame: frame, palette: palette, layout: layout)
+        if baseGrid == nil {
+            drawGrid(ctx: ctx, payload: payload, frame: frame, palette: palette, layout: layout)
+        } else {
+            drawEatenCells(ctx: ctx, frame: frame, palette: palette, layout: layout)
+        }
         drawSnakes(ctx: ctx, frame: frame, palette: palette, layout: layout)
         drawFood(ctx: ctx, frame: frame, time: time, layout: layout)
 
         return ctx.makeImage()
+    }
+
+    /// 生成不含蛇与食物的草坪底图。动画服务在 configure 时只调用一次并复用。
+    static func renderBaseGrid(
+        payload: ContributionCalendarPayload?,
+        colorScheme: ColorScheme,
+        style: ContributionGraphStyle = .standard,
+        layout: Layout = .standard
+    ) -> CGImage? {
+        guard let ctx = makeBitmapContext(layout: layout) else { return nil }
+        let size = layout.size
+        ctx.translateBy(x: 0, y: size.height)
+        ctx.scaleBy(x: 1, y: -1)
+
+        let palette = ContributionPalette.palette(for: colorScheme, style: style)
+        drawGrid(ctx: ctx, payload: payload, frame: .empty, palette: palette, layout: layout)
+        return ctx.makeImage()
+    }
+
+    private static func makeBitmapContext(layout: Layout) -> CGContext? {
+        let size = layout.size
+        let width = Int(size.width.rounded(.up))
+        let height = Int(size.height.rounded(.up))
+        guard width > 0, height > 0 else { return nil }
+        return CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
     }
 
     // MARK: - 草坪
@@ -131,6 +165,34 @@ enum SnakeFrameRenderer {
                     strokeColor: palette.noneBorder?.cg
                 )
             }
+        }
+    }
+
+    /// 在缓存底图上擦除已被蛇吃掉的格子。其工作量随实际 eatenCells 增长，常态远小于
+    /// 每帧重新遍历完整 payload；FoodChase 没有被吃格时这里为 O(1) 空操作。
+    private static func drawEatenCells(
+        ctx: CGContext,
+        frame: AnimationFrame,
+        palette: ContributionPalette,
+        layout: Layout
+    ) {
+        guard !frame.eatenCells.isEmpty else { return }
+        let color = palette.color(for: .none).cg
+        let strokeColor = palette.noneBorder?.cg
+        for pos in frame.eatenCells {
+            let x = CGFloat(pos.col) * (layout.cellWidth + layout.cellSpacing)
+            let y = CGFloat(pos.row) * (layout.cellHeight + layout.cellSpacing)
+            let rect = CGRect(x: x, y: y, width: layout.cellWidth, height: layout.cellHeight)
+            // 先清掉底图中的原格子，再画 none。若直接覆盖，圆角抗锯齿边缘会与旧颜色
+            // 二次混合，产生肉眼很难察觉但会逐帧闪动的像素差异。
+            ctx.clear(rect)
+            fillRoundedRect(
+                ctx,
+                rect,
+                corner: layout.cellCornerRadius,
+                color: color,
+                strokeColor: strokeColor
+            )
         }
     }
 

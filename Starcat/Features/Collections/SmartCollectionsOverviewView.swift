@@ -373,24 +373,42 @@ struct SmartCollectionsOverviewView: View {
 
         do {
             let repos = try await dependencies.repoRepository.fetchAllStarred()
+
+            // 这些计数彼此没有数据依赖。并发发起数据库读取可以把总览刷新耗时
+            // 收敛到最慢的一项，避免卡片数量按集合类型逐个串行出现。
             async let statusMapAsync = dependencies.repoNoteRepository.fetchAllStatusMap()
-            let health = try await dependencies.repoHealthRepository.snapshots(for: repos.map(\.id))
+            async let healthAsync = dependencies.repoHealthRepository.snapshots(for: repos.map(\.id))
+            async let knowledgeCountAsync = dependencies.repoRepository.knowledgeCount()
+            async let libraryStateMapAsync = dependencies.repoNoteRepository.fetchAllLibraryStateMap()
+            async let noTagsCountAsync = dependencies.repoRepository.fetchListCount(
+                scope: .untagged,
+                filters: .empty
+            )
+            async let usingReposAsync = dependencies.repoNoteRepository.fetchRepos(byStatus: .using)
+
+            let health = try await healthAsync
             let statusMap = (try? await statusMapAsync) ?? [:]
+            let knowledgeCount = try await knowledgeCountAsync
+            let libraryStateMap = try await libraryStateMapAsync
+            let noTagsCount = try await noTagsCountAsync
+            let usingRepos = try await usingReposAsync
+            let usingCount = usingRepos.count
+
             var nextSystem: [SmartCollectionKind: Int] = [:]
             for kind in SmartCollectionKind.allCases {
                 if kind == .library {
-                    nextSystem[kind] = try await dependencies.repoRepository.knowledgeCount()
+                    nextSystem[kind] = knowledgeCount
                 } else if kind == .outsideLibraryStars {
-                    let libraryStateMap = try await dependencies.repoNoteRepository.fetchAllLibraryStateMap()
                     nextSystem[kind] = repos.filter { repo in
                         (libraryStateMap[repo.id] ?? .outsideLibrary) != .inLibrary
                     }.count
                 } else if kind == .noTags {
-                    nextSystem[kind] = try await dependencies.repoRepository.fetchUntagged().count
+                    // 总览只需要数量，直接 COUNT 避免为未分类集合构造完整 Repo 数组。
+                    nextSystem[kind] = noTagsCount
                 } else if kind == .using {
                     // 与右侧详情列表的 `.smartCollection(.using)` 同源：正在使用是 repo_notes
                     // 的用户状态，不是 repo metadata；直接用状态仓库避免总览和列表口径漂移。
-                    nextSystem[kind] = try await dependencies.repoNoteRepository.fetchRepos(byStatus: .using).count
+                    nextSystem[kind] = usingCount
                 } else {
                     nextSystem[kind] = repos.filter { repo in
                         HomeViewModel.matchesSmartCollection(

@@ -157,13 +157,13 @@ struct TrendingContributorsSection: View {
     }
 
     private func avatarImage(_ contributor: TrendingRepo.Contributor) -> some View {
-        AsyncImage(url: contributor.avatarURL) { image in
-            image.resizable().scaledToFit()
-        } placeholder: {
-            Circle().fill(Color.gray.opacity(0.3))
-        }
-        .frame(width: 32, height: 32)
-        .clipShape(Circle())
+        // Contributors 会随详情切换反复出现；复用 Kingfisher 内存/磁盘缓存并按 32pt
+        // 请求缩略图，避免 AsyncImage 重建时重复请求和解码原图。
+        RemoteAvatar(
+            urlString: contributor.avatarURL?.absoluteString,
+            size: 32,
+            showBorder: false
+        )
         .overlay(
             Circle()
                 .stroke(Color(NSColor.controlBackgroundColor).opacity(0.9), lineWidth: 2)

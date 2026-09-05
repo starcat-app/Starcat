@@ -235,6 +235,18 @@ struct ContributionGraphView: View {
     /// 外层 aspectRatio 保证 Image 与 intrinsicSize 等比缩放。
     @ViewBuilder
     private var gridContent: some View {
+        // 只有这个叶子 View 读取 `frameImage`。把 Observation 依赖隔离在这里后，
+        // 每帧发布不会让上方标题、相对时间和整张贡献卡片一起重算。
+        SnakeFrameImageView(renderService: renderService)
+    }
+}
+
+/// 动画帧最小观察边界：只替换 CGImage，不把 10~12 FPS 的更新扩散到父视图。
+private struct SnakeFrameImageView: View {
+    let renderService: SnakeRenderService
+
+    @ViewBuilder
+    var body: some View {
         if let image = renderService.frameImage {
             // 后台已经用 CGContext 渲染好一帧（草坪 + 蛇身 + 食物），主线程只显示图片。
             Image(decorative: image, scale: 1)

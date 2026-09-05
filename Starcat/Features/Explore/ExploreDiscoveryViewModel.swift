@@ -279,8 +279,13 @@ final class ExploreDiscoveryViewModel {
         }
 
         page = nextPage
+        let previousCount = repos.count
         let upperBound = min(page * Self.pageSize, filteredLocalRepos.count)
-        repos = Array(filteredLocalRepos.prefix(upperBound))
+        // 分页只追加新增区间。重建 0..<upperBound 的累计前缀会让越靠后的滚动
+        // 产生越多数组复制，也会放大 SwiftUI 对历史 rows 的 diff 成本。
+        if upperBound > previousCount {
+            repos.append(contentsOf: filteredLocalRepos[previousCount..<upperBound])
+        }
         self.nextPage = upperBound < filteredLocalRepos.count ? page + 1 : nil
         reposRevision += 1
     }
