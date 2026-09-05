@@ -85,6 +85,9 @@ struct RAGConversationStatistics: Equatable, Sendable {
 protocol RAGConversationStoring: Sendable {
     func createConversation(title: String?, groupID: UUID?) async throws -> RAGConversationSummary
     func listConversations() async throws -> [RAGConversationSummary]
+    /// 查找任意一条没有任何消息的「空会话」；不存在则返回 `nil`。
+    /// 「新增会话」去重用：已存在空会话时应复用，避免连点堆积空白会话。
+    func findEmptyConversation() async throws -> RAGConversationSummary?
     func loadConversation(id: UUID) async throws -> RAGConversationDetail?
     func saveContextSummary(
         conversationID: UUID,
@@ -164,6 +167,19 @@ struct GRDBRAGConversationStore: RAGConversationStoring {
                 ORDER BY is_pinned DESC, pinned_at DESC, created_at DESC
                 """)
             return rows.compactMap(Self.summary(row:))
+        }
+    }
+
+    func findEmptyConversation() async throws -> RAGConversationSummary? {
+        try await database.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT id, title, is_pinned, pinned_at, group_id, context_summary, context_summary_message_count, created_at, updated_at
+                FROM rag_conversations
+                WHERE NOT EXISTS (SELECT 1 FROM rag_messages WHERE conversation_id = rag_conversations.id)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """)
+            return row.flatMap(Self.summary(row:))
         }
     }
 
