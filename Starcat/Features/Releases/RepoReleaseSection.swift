@@ -60,6 +60,7 @@ enum ReleaseSubscriptionEligibility {
 struct RepoReleaseStatItem: View {
 
     let repo: Repo
+    let libraryState: LibraryState
 
     @Environment(AppDependencies.self) private var dependencies
 
@@ -69,10 +70,6 @@ struct RepoReleaseStatItem: View {
     @Environment(AuthSession.self) private var authSession
 
     @State private var viewModel: RepoReleaseSectionViewModel?
-    /// Release 订阅属于 Starcat 本地关系；未 star 的外部 repo 只有明确加入知识库后
-    /// 才能订阅，避免给纯临时 GitHub 预览结果写入本地私有关系。
-    @State private var libraryState: LibraryState = .outsideLibrary
-
     var body: some View {
         VStack(alignment: .center, spacing: 2) {
             actionRow
@@ -89,7 +86,6 @@ struct RepoReleaseStatItem: View {
                     notificationService: dependencies.releaseNotificationService
                 )
             }
-            libraryState = (try? await dependencies.repoNoteRepository.fetchLibraryState(repoId: repo.id)) ?? .outsideLibrary
             await viewModel?.loadFor(repo: repo)
         }
         .sheet(item: releasePaywallBinding) { context in

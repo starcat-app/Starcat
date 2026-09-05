@@ -290,7 +290,12 @@ final class HomeViewModel {
     ///   ForEach 默认 id 即 `Repo.id`，selection 类型与 ForEach.id 完全匹配，
     ///   SwiftUI 不需要再做 tag 匹配，是最稳的写法。
     /// - selectedRepo（值）通过 computed property 从 items 派生即可。
-    var selectedRepoID: Int64?
+    var selectedRepoID: Int64? {
+        didSet {
+            guard selectedRepoID != nil, selectedRepoID != oldValue else { return }
+            PerformanceTracer.shared.mark(.repoDetailSelectionRequested)
+        }
+    }
 
     /// 外部传入的 Repo 对象（如 Undo Star 选中行），不在当前 Manage 列表中。
     /// 设置后 `selectedRepo` 优先返回此值。

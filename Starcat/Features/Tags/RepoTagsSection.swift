@@ -97,7 +97,7 @@ struct RepoTagsSection: View {
         Button {
             showPicker = true
             Task {
-                await viewModel?.loadFor(repoId: repo.id)
+                await viewModel?.loadFor(repoId: repo.id, forceAllTags: true)
             }
         } label: {
             Label("tagPicker.addOrModify", systemImage: "plus.circle")
@@ -142,6 +142,8 @@ final class RepoTagsSectionViewModel {
     private(set) var allTags: [Tag] = []
     private(set) var isLoading: Bool = false
     private(set) var errorMessage: String?
+    /// 全局标签在进程内复用；切换仓库只需要重读 assigned 关系。
+    private var hasLoadedAllTags = false
 
     /// W4-4 D4：标签变更后通知 HomeViewModel 刷新 Sidebar 计数。
     /// 由 RepoDetailView 在创建 VM 时注入，避免直接持有 HomeViewModel（防止循环依赖）。
@@ -158,14 +160,19 @@ final class RepoTagsSectionViewModel {
         self.repoTagRepository = repoTagRepository
     }
 
-    func loadFor(repoId: Int64) async {
+    func loadFor(repoId: Int64, forceAllTags: Bool = false) async {
         isLoading = true
         defer { isLoading = false }
         do {
-            async let assignedTask = repoTagRepository.fetchTags(forRepo: repoId)
-            async let allTask = tagRepository.fetchAll()
-            assigned = try await assignedTask
-            allTags = try await allTask
+            if forceAllTags || !hasLoadedAllTags {
+                async let assignedTask = repoTagRepository.fetchTags(forRepo: repoId)
+                async let allTask = tagRepository.fetchAll()
+                assigned = try await assignedTask
+                allTags = try await allTask
+                hasLoadedAllTags = true
+            } else {
+                assigned = try await repoTagRepository.fetchTags(forRepo: repoId)
+            }
             errorMessage = nil
         } catch {
             errorMessage = String(format: String.l10n("repoTags.error.loadFailedFormat"), error.localizedDescription)
@@ -187,7 +194,8 @@ final class RepoTagsSectionViewModel {
     func commit(repoId: Int64, tagIds: Set<String>) async {
         do {
             try await repoTagRepository.setTags(repoId: repoId, tagIds: Array(tagIds))
-            await loadFor(repoId: repoId)
+            // picker 内可能刚创建标签，提交后强制对齐一次全局集合。
+            await loadFor(repoId: repoId, forceAllTags: true)
             if !tagIds.isEmpty {
                 NotificationCenter.default.post(name: .gettingStartedDidOrganizeRepo, object: nil)
             }

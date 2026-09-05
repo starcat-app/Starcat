@@ -117,6 +117,10 @@ final class ReadmeTranslationViewModel {
         currentLanguage = targetLanguage
         currentMode = mode
 
+        // repo 先切换、README 后到达是正常时序。没有源文档时只需同步身份并清掉旧 UI，
+        // 不应为每次卡片点击提前发起一次必然无法校验新鲜度的磁盘缓存查询。
+        guard let sourceHtml, !sourceHtml.isEmpty else { return }
+
         let requestedIdentity = identity
         let requestedLanguage = targetLanguage
         let requestedMode = mode
@@ -135,7 +139,7 @@ final class ReadmeTranslationViewModel {
                     mode: requestedMode
                 ) else { return }
 
-                if let cached, let sourceHtml, !sourceHtml.isEmpty {
+                if let cached {
                     self.cacheIsStale = !self.service.isCacheFresh(
                         cached: cached,
                         sourceHtml: sourceHtml

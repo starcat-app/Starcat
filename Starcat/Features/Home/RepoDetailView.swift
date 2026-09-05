@@ -164,7 +164,7 @@ struct RepoDetailView: View {
         }
         // 监听"当前显示的 detail 内容标识"变化，触发 .transition 动效。
         //
-        // 严格只看 `detailContentID`（基于 selectedRepo.id / trending.id / "empty" 计算），
+        // 严格只看 `detailContentID`（Manage 分支固定为 "manage"，其它分支按内容计算），
         // 避免让 .animation 把详情页内部的状态变化（编辑标签、输入笔记、折叠 hero
         // 等）也吃进 implicit 动画，那会引起意外的全局 fade/move 副作用。
         //
@@ -178,12 +178,12 @@ struct RepoDetailView: View {
 
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
     ///
-    /// 三种状态：Manage repo（id 形如 "12345"）/ Trending repo（id 形如 "owner/name"）
-    /// / 空态（"empty"）。任意一种切换到另一种 → 触发 view transition；同状态内
-    /// 重新选同一条 → id 不变 → 无动画。
+    /// Manage 内部切 repo 固定返回 `manage`：该路径由 `repoDetailSwitchEffect` 在不重建
+    /// 视图树的前提下提供轻量动画。只有详情类型真正变化时，外层才运行旧的 0.4 秒
+    /// transition；这样不会把 README / 标签 / 笔记内部更新误纳入整页隐式动画。
     private var detailContentID: String {
         if viewModel.selection == .smartCollectionsHome { return "smart-collections-home-empty" }
-        if let id = viewModel.selectedRepo?.id { return "manage-\(id)" }
+        if viewModel.selectedRepo != nil { return "manage" }
         if let id = selectedTrendingRepo?.id { return "trending-\(id)" }
         if viewModel.selection.isSmartCollectionDetailContext { return "smart-collection-panel-\(viewModel.selection.id)" }
         return "empty"
@@ -316,6 +316,9 @@ struct ReadmeStateView: View {
     /// 当前已渲染文档的两种翻译输入。用 document key 守门，避免切 repo 的一帧窗口误用旧数据。
     @State private var translationSourceDocumentKey: String?
     @State private var translationSourceSnapshot: ReadmeTranslationSourceSnapshot = .empty
+    /// loading 阶段短暂保留上一份文档，让同一个 WKWebView 实例留在视图树中。
+    /// 骨架是不透明的，保留内容不会被用户看到，也不会接收点击或进入辅助功能树。
+    @State private var retainedReadmeDocument: PresentedReadmeDocument?
 
     /// 主窗口各详情页共用一份翻译 VM。星标有 HomeView.selectedRepoID 的 prepare，
     /// 探索 / 活动 / 周刊没有；这里按当前仓 bind，避免 A 的译文和光圈留在 B 上。
@@ -358,16 +361,40 @@ struct ReadmeStateView: View {
         static let contentRevealSeconds = 0.36
     }
 
+    /// README 渲染层的轻量文档快照。
+    ///
+    /// `identity` 使用 scope + 缓存时间 + 字节数：它只用于本地视图更新判定，不承担
+    /// 持久化校验，因此不需要在 SwiftUI body 中反复计算整份 HTML 的 SHA-256。
+    private struct PresentedReadmeDocument {
+        let html: String
+        let cachedAt: Date
+        let identity: String
+        let baseURL: URL?
+    }
+
     var body: some View {
+        let currentDocument = currentReadmeDocument
+        let presentedDocument = currentDocument
+            ?? (showsReadmePlaceholder ? retainedReadmeDocument : nil)
+
         ZStack(alignment: .topLeading) {
-            if showsReadmePlaceholder {
-                readmePlaceholder
-                    .transition(readmePlaceholderTransition)
+            if let presentedDocument {
+                loadedReadmeContent(presentedDocument)
+                    .opacity(showsReadmePlaceholder ? 0 : 1)
+                    .allowsHitTesting(!showsReadmePlaceholder)
+                    .accessibilityHidden(showsReadmePlaceholder)
+                    .transition(readmeContentTransition)
                     .zIndex(0)
             }
 
-            if !showsReadmePlaceholder {
-                resolvedReadmeContent
+            if showsReadmePlaceholder {
+                readmePlaceholder
+                    .transition(readmePlaceholderTransition)
+                    .zIndex(1)
+            }
+
+            if !showsReadmePlaceholder, currentDocument == nil {
+                resolvedNonLoadedContent
                     .transition(readmeContentTransition)
                     .zIndex(1)
             }
@@ -406,6 +433,14 @@ struct ReadmeStateView: View {
         )
         .onChange(of: translationSyncKey, initial: true) { _, _ in
             syncSharedTranslationToCurrentRepo()
+        }
+        .onChange(of: readmeDocumentToken, initial: true) { _, _ in
+            if let currentReadmeDocument {
+                retainedReadmeDocument = currentReadmeDocument
+            } else if !showsReadmePlaceholder {
+                // empty / error / requiresLogin 是终态，不再为它们保留旧 WebView。
+                retainedReadmeDocument = nil
+            }
         }
         .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
             applyTranslationLanguage(newLanguage)
@@ -452,6 +487,24 @@ struct ReadmeStateView: View {
         case .loaded, .empty, .requiresLogin, .error:
             return false
         }
+    }
+
+    /// 当前 scope 已对齐时才生成可呈现文档，避免 A 仓的延迟结果覆盖 B 仓。
+    private var currentReadmeDocument: PresentedReadmeDocument? {
+        guard !isStateStaleForScope,
+              case .loaded(let html, let cachedAt) = state
+        else { return nil }
+        return PresentedReadmeDocument(
+            html: html,
+            cachedAt: cachedAt,
+            identity: "\(refreshCommandIdentity)|\(readmeVM.activeDocumentID ?? "unidentified")",
+            baseURL: baseURL
+        )
+    }
+
+    /// onChange 只比较短 token，避免对可能很大的 README HTML 做重复 Equatable / SHA 计算。
+    private var readmeDocumentToken: String {
+        currentReadmeDocument?.identity ?? "\(refreshCommandIdentity)|unloaded"
     }
 
     /// 导出当前 README 的原始 Markdown 到本地文件。
@@ -583,18 +636,10 @@ struct ReadmeStateView: View {
         return ReadmeTranslationViewModel.readmeIdentity(for: repo)
     }
 
-    /// repo + 已对齐的 HTML。scope 未对齐时不算 loaded，避免用 A 的 HTML 给 B prepare。
+    /// repo + 已对齐文档的轻量身份。scope 未对齐时不算 loaded，避免用 A 的 HTML 给 B prepare。
     private var translationSyncKey: String {
         let repoKey = translationControl.map { "\($0.repo.owner)/\($0.repo.name)" } ?? "none"
-        let htmlKey: String
-        if isStateStaleForScope {
-            htmlKey = "stale"
-        } else if case .loaded(let html, _) = state {
-            htmlKey = ReadmeTranslationService.hash(html)
-        } else {
-            htmlKey = "unloaded"
-        }
-        return "\(repoKey)|\(htmlKey)"
+        return "\(repoKey)|\(readmeDocumentToken)"
     }
 
     private func syncSharedTranslationToCurrentRepo() {
@@ -652,80 +697,82 @@ struct ReadmeStateView: View {
         )
     }
 
-    @ViewBuilder
-    private var resolvedReadmeContent: some View {
-        switch state {
-        case .idle, .loading:
-            readmePlaceholder
-
-        case .loaded(let html, let cachedAt):
-            VStack(spacing: 0) {
-                // 两种翻译方式都不替换整份 HTML。WebView 始终持有原始 DOM：
-                // 分段模式追加译文，全文模式只替换 Text node，切换时无需重载页面。
-                let renderedHtml = html
-                let windowTitle = readmeWindowTitle
-                let documentKey = ReadmeTranslationService.hash(html)
-                let markdownContext = markdownWindowContext
-                ReadmeWebView(
-                    htmlFragment: renderedHtml,
-                    baseURL: baseURL,
-                    onScrollReportChange: onScrollReportChange,
-                    onOpenInNewWindow: { [html = renderedHtml, baseURL, windowTitle, settings, markdownContext] in
-                        ReadmeWindowController.show(
-                            htmlFragment: html,
-                            baseURL: baseURL,
-                            title: windowTitle,
-                            settings: settings,
-                            markdownContext: markdownContext
-                        )
-                    },
-                    onExportMarkdown: { [dependencies] in
-                        exportReadmeMarkdown(dependencies: dependencies)
-                    },
-                    markdownLinkRepositoryOwner: markdownContext?.owner,
-                    markdownLinkRepositoryName: markdownContext?.repo,
-                    onOpenRepositoryMarkdown: markdownContext.map { context in
-                        { target in
-                            ReadmeWindowController.showRepositoryMarkdown(
-                                target: target,
-                                settings: settings,
-                                readmeAPI: context.readmeAPI
-                            )
-                        }
-                    },
-                    translationRenderState: scopedTranslationRenderState,
-                    onTranslationSourceChange: { snapshot in
-                        translationSourceDocumentKey = documentKey
-                        translationSourceSnapshot = snapshot
-                    }
-                )
-                .id(readmeWebViewIdentity)
-                // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
-                // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // 圆角只为翻译光圈对齐；空闲不加灰描边——README 是阅读区不是卡片，
-                // 彩虹条带自己画环，不依赖静止边框。
-                .clipShape(RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous))
-                // README 与通知评论卡共用连续 CA 光圈；NSView 层才能稳定盖住 WKWebView。
-                .padding(StarcatAIHaloMetrics.glowBleed)
-                .overlay {
-                    StarcatAIBloomHaloLayerView(
-                        isActive: isReadmeTranslating,
-                        reduceMotion: reduceMotion
+    /// 已加载 README 始终占据同一个结构分支；切 repo 时只更新现有 WKWebView 的文档。
+    private func loadedReadmeContent(_ document: PresentedReadmeDocument) -> some View {
+        VStack(spacing: 0) {
+            // 两种翻译方式都不替换整份 HTML。WebView 始终持有原始 DOM：
+            // 分段模式追加译文，全文模式只替换 Text node，切换时无需重建原生视图。
+            let renderedHtml = document.html
+            let documentBaseURL = document.baseURL
+            let windowTitle = readmeWindowTitle
+            let documentKey = document.identity
+            let markdownContext = markdownWindowContext
+            ReadmeWebView(
+                htmlFragment: renderedHtml,
+                documentID: documentKey,
+                baseURL: documentBaseURL,
+                onScrollReportChange: onScrollReportChange,
+                onOpenInNewWindow: { [html = renderedHtml, baseURL = documentBaseURL, windowTitle, settings, markdownContext] in
+                    ReadmeWindowController.show(
+                        htmlFragment: html,
+                        baseURL: baseURL,
+                        title: windowTitle,
+                        settings: settings,
+                        markdownContext: markdownContext
                     )
+                },
+                onExportMarkdown: { [dependencies] in
+                    exportReadmeMarkdown(dependencies: dependencies)
+                },
+                markdownLinkRepositoryOwner: markdownContext?.owner,
+                markdownLinkRepositoryName: markdownContext?.repo,
+                onOpenRepositoryMarkdown: markdownContext.map { context in
+                    { target in
+                        ReadmeWindowController.showRepositoryMarkdown(
+                            target: target,
+                            settings: settings,
+                            readmeAPI: context.readmeAPI
+                        )
+                    }
+                },
+                translationRenderState: scopedTranslationRenderState,
+                onTranslationSourceChange: { snapshot in
+                    translationSourceDocumentKey = documentKey
+                    translationSourceSnapshot = snapshot
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                cacheFooter(
-                    cachedAt: cachedAt,
-                    sourceHtml: html,
-                    sourceSnapshot: translationSourceDocumentKey == documentKey
-                        ? translationSourceSnapshot
-                        : .empty
+            )
+            // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
+            // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 圆角只为翻译光圈对齐；空闲不加灰描边——README 是阅读区不是卡片，
+            // 彩虹条带自己画环，不依赖静止边框。
+            .clipShape(RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous))
+            // README 与通知评论卡共用连续 CA 光圈；NSView 层才能稳定盖住 WKWebView。
+            .padding(StarcatAIHaloMetrics.glowBleed)
+            .overlay {
+                StarcatAIBloomHaloLayerView(
+                    isActive: isReadmeTranslating,
+                    reduceMotion: reduceMotion
                 )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            cacheFooter(
+                cachedAt: document.cachedAt,
+                sourceHtml: document.html,
+                sourceSnapshot: translationSourceDocumentKey == documentKey
+                    ? translationSourceSnapshot
+                    : .empty
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
+    @ViewBuilder
+    private var resolvedNonLoadedContent: some View {
+        switch state {
+        case .idle, .loading, .loaded:
+            EmptyView()
         case .empty:
             EmptyStateView(
                 systemImage: "doc.text",
@@ -771,15 +818,6 @@ struct ReadmeStateView: View {
                     .focusEffectDisabled()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
-
-    private var readmeWebViewIdentity: String {
-        switch contentScope {
-        case .manage(let repoId):
-            return "manage-\(repoId)"
-        case .trending(let owner, let repo):
-            return "trending-\(owner)/\(repo)"
         }
     }
 
@@ -1209,6 +1247,10 @@ struct WatchersMenu: View {
         // .task 在 view 离开 / repo 切换时会自动 cancel 旧任务,符合"切换 repo 不抢网络"原意。
         .task(id: repo.id) {
             if WatchSubscriptionSessionCache.state(for: repo.id) == nil {
+                // Watch 状态不影响详情首屏。稍后再请求，避免与 README / 本地关系查询
+                // 同时争抢卡片点击后的关键窗口；连续切换会自动取消旧 task。
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
                 await fetchSubscription()
             } else {
                 applyCachedSubscriptionState()
