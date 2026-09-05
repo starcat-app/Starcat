@@ -1070,26 +1070,9 @@ struct RepoListView: View {
             )
         }()
 
-        let trailing = AnyView(
-            Group {
-                selectionView
-                if CuratedPublisherAccessPolicy.canAccess(userID: authSession.state.user?.id) {
-                    Button {
-                        openWindow(id: CuratedPublisherWindow.id)
-                    } label: {
-                        ToolbarIcon("star.circle.fill")
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(Color(nsColor: .systemRed))
-                            .accessibilityLabel(Text("curatedPublisher.toolbar.open"))
-                    }
-                    .help("curatedPublisher.toolbar.open")
-                }
-            }
-        )
-
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
-            trailingPrimary: trailing,
+            trailingPrimary: selectionView,
             searchField: AnyView(smartSearchField())
         )
     }
