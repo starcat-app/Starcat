@@ -113,7 +113,7 @@ struct ServicesSettingsTab: View {
                     prompt: String.l10n("settings.services.url.placeholder"),
                     onSubmit: { Task { await testConnection(for: service) } }
                 )
-                .frame(width: ServiceFieldLayout.fieldWidth, height: ServiceFieldLayout.fieldHeight)
+                .frame(height: ServiceFieldLayout.fieldHeight)
                 .accessibilityLabel(Text("settings.services.url"))
             } trailingIcon: {
                 serviceFieldIconButton(
@@ -183,7 +183,7 @@ struct ServicesSettingsTab: View {
                 onSubmit: { Task { await testConnection(for: service) } }
             )
             .id(isReveal)
-            .frame(width: ServiceFieldLayout.fieldWidth, height: ServiceFieldLayout.fieldHeight)
+            .frame(height: ServiceFieldLayout.fieldHeight)
             .accessibilityLabel(Text("settings.services.apiKey"))
         } trailingIcon: {
             serviceFieldIconButton(
@@ -236,7 +236,7 @@ struct ServicesSettingsTab: View {
 
     private enum ServiceFieldLayout {
         static let labelWidth: CGFloat = 72
-        static let fieldWidth: CGFloat = 340
+        static let fieldMaxWidth: CGFloat = 340
         static let fieldHeight: CGFloat = 22
         static let iconSlotSize: CGFloat = 28
         static let rowSpacing: CGFloat = 8
@@ -252,8 +252,11 @@ struct ServicesSettingsTab: View {
             Text(labelKey)
                 .font(.body)
                 .frame(width: ServiceFieldLayout.labelWidth, alignment: .leading)
-            Spacer(minLength: ServiceFieldLayout.rowSpacing)
             field()
+                // 详情栏会随 Sidebar 拖拽变窄；输入列保留稳定上限，但必须能让出空间，
+                // 否则固定 340pt 会把尾部操作图标挤出 Section 的可用宽度。
+                .frame(maxWidth: ServiceFieldLayout.fieldMaxWidth)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             trailingIcon()
         }
         .frame(maxWidth: .infinity)
