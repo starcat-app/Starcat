@@ -5,12 +5,12 @@
 //  仓库详情页「owner 卡片」的数据与关注动作服务。
 //
 //  职责：
-//  - 拉取任意 owner（`/users/{login}`）的公开 profile，供 OwnerCardSheet 展示；
+//  - 拉取任意 owner 的公开 profile 与 Social accounts，供 OwnerCardSheet 展示；
 //  - 查询 / 变更「当前用户是否已关注该 owner」。
 //
 //  设计取舍：
-//  - **缓存 profile 与 contribution，不缓存 follow 状态**：profile / 贡献草坪是公开数据，
-//    与「谁登录」无关，跨账号安全（profile 永久内存、草坪 12h TTL）；follow 状态是「我」
+//  - **缓存 profile、Social accounts 与 contribution，不缓存 follow 状态**：前三者是公开数据，
+//    与「谁登录」无关，跨账号安全（profile / Social accounts 永久内存、草坪 12h TTL）；follow 状态是「我」
 //    与 owner 的关系，切账号会串，因此每次实时查（一个 204/404 的 GET 很轻，authenticated
 //    用户 rate limit 5000/h 绰绰有余），换取零串号 + 零 reset 接线。
 //  - 未登录守卫在 UI 层做（OwnerCardSheet 读 `AuthSession.state.isAuthenticated`），
@@ -32,6 +32,9 @@ final class OwnerFollowService {
 
     /// owner login → 公开 profile 的内存缓存。公开数据跨账号安全，App 生命周期内有效。
     private var profileCache: [String: GitHubUserDTO] = [:]
+
+    /// owner login → 公开社交账号的内存缓存。空数组也要缓存，避免无社交账号用户反复请求。
+    private var socialAccountsCache: [String: [GitHubSocialAccountDTO]] = [:]
 
     /// owner login → (贡献草坪, 拉取时间) 的内存缓存。贡献数据有约 3h 服务端更新延迟，
     /// 用 12h TTL 在「新鲜度」与「不打重复 GraphQL」之间取平衡。
@@ -58,6 +61,19 @@ final class OwnerFollowService {
         let dto = try await apiClient.getUser(login: login)
         profileCache[login] = dto
         return dto
+    }
+
+    /// 拉取 owner 的公开社交账号（带内存缓存）。
+    ///
+    /// GitHub login 不区分大小写，因此缓存 key 统一小写，避免同一用户因大小写差异重复请求。
+    func socialAccounts(login: String) async throws -> [GitHubSocialAccountDTO] {
+        let cacheKey = login.lowercased()
+        if let cached = socialAccountsCache[cacheKey] {
+            return cached
+        }
+        let accounts = try await apiClient.getUserSocialAccounts(login: login)
+        socialAccountsCache[cacheKey] = accounts
+        return accounts
     }
 
     // MARK: - Follow

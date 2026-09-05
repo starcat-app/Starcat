@@ -58,7 +58,8 @@ struct RepositoryLanguageDistributionBar: View {
                     hoverTooltip(for: hoveredSegment)
                         .position(
                             x: clampedTooltipX(hoverAnchorX, barWidth: proxy.size.width),
-                            y: -18
+                            // 浮层放在横条下方：Hero 上方紧邻文字，向上弹出会遮挡；6pt 横条 + 18pt 让浮层中心落在条底以下。
+                            y: 24
                         )
                         // 浮层只做即时说明，不能抢走横条按钮的点击和 hover 命中。
                         .allowsHitTesting(false)

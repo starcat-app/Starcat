@@ -51,6 +51,9 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// （status 是当前登录用户经 GraphQL `viewer.status` 补充的字段）。
     func getUser(login: String) async throws -> GitHubUserDTO
 
+    /// 获取任意用户公开社交账号（`GET /users/{login}/social_accounts`）。
+    func getUserSocialAccounts(login: String) async throws -> [GitHubSocialAccountDTO]
+
     /// 当前用户是否已关注 `login`（`GET /user/following/{login}`）。
     /// 204 = 已关注，404 = 未关注。
     func isFollowing(login: String) async throws -> Bool
@@ -224,6 +227,14 @@ protocol GitHubAPIClientProtocol: Sendable {
 }
 
 extension GitHubAPIClientProtocol {
+    /// 旧的窄用途 Mock 不需要社交账号；实际调用时明确失败，避免伪造“没有链接”。
+    func getUserSocialAccounts(login: String) async throws -> [GitHubSocialAccountDTO] {
+        throw NetworkError.clientError(
+            statusCode: 501,
+            message: "User social accounts are not implemented by this client"
+        )
+    }
+
     /// 旧 Mock 的兼容默认实现；调用语言端点时必须显式提供结果，不能伪造空分布。
     func repositoryLanguages(owner: String, repo: String) async throws -> [String: Int] {
         throw NetworkError.clientError(

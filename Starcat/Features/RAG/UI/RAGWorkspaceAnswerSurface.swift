@@ -174,8 +174,17 @@ struct RAGWorkspaceAnswerSurface: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
-            // 会话标题右侧：复制 / 导出全部对话（右对齐）。
+            // 会话标题右侧：创建时间 / 复制 / 导出全部对话（右对齐）。
             if !viewModel.messages.isEmpty {
+                // 创建时间精确到分，放在复制按钮左侧；解析失败时静默省略，不阻塞 header。
+                if let createdAt = viewModel.conversations
+                    .first(where: { $0.id == viewModel.selectedConversationID })?.createdAt,
+                   let createdDate = ISO8601DateFormatter.shared.date(from: createdAt) {
+                    Text(localizedTimestamp(createdDate))
+                        .font(ragFont(.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 CopyFeedbackButton(
                     providesContent: { viewModel.conversationTranscriptMarkdown },
                     tooltip: "rag.workspace.conversation.copyAll"

@@ -22,7 +22,7 @@ struct OwnerCardView: View {
     let bio: String?
     let followers: Int?
     let following: Int?
-    let websiteURL: URL?
+    let externalLinks: [OwnerCardExternalLink]
     let emailAddress: String?
     let contributionPayload: ContributionCalendarPayload?
     let isFollowing: Bool?
@@ -34,7 +34,7 @@ struct OwnerCardView: View {
 
     var onOpenGitHub: () -> Void = {}
     var onClose: () -> Void = {}
-    var onOpenWebsite: () -> Void = {}
+    var onOpenExternalLink: (URL) -> Void = { _ in }
     var onComposeEmail: () -> Void = {}
     var onOpenFollowers: () -> Void = {}
     var onOpenFollowing: () -> Void = {}
@@ -201,13 +201,13 @@ struct OwnerCardView: View {
 
     @ViewBuilder
     private var profileLinks: some View {
-        if websiteURL != nil || normalizedEmail != nil {
+        if !externalLinks.isEmpty || normalizedEmail != nil {
             HStack(spacing: 8) {
-                if let websiteURL {
+                ForEach(externalLinks) { link in
                     compactLinkButton(
-                        systemImage: "link",
-                        accessibilityText: websiteURL.absoluteString,
-                        action: onOpenWebsite
+                        systemImage: link.kind.systemImage,
+                        accessibilityText: link.url.absoluteString,
+                        action: { onOpenExternalLink(link.url) }
                     )
                 }
 

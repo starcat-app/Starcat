@@ -164,6 +164,30 @@ struct GitHubAPIClientTests {
         #expect(graphQLRequest.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 
+    @Test("getUserSocialAccounts: 使用公开用户端点并解码 X 与通用链接")
+    func getUserSocialAccountsDecodesPublicLinks() async throws {
+        let client = makeClient(token: nil)
+        URLProtocolStub.requestHandler = { request in
+            let json = """
+            [
+              {"provider":"twitter","url":"https://x.com/AdrianPunk115"},
+              {"provider":"generic","url":"https://web.telegram.org/k/"}
+            ]
+            """
+            let body = Data(json.utf8)
+            return (httpResponse(200, request.url!), body)
+        }
+
+        let accounts = try await client.getUserSocialAccounts(login: "adrianpunk")
+
+        #expect(accounts == [
+            GitHubSocialAccountDTO(provider: "twitter", url: "https://x.com/AdrianPunk115"),
+            GitHubSocialAccountDTO(provider: "generic", url: "https://web.telegram.org/k/"),
+        ])
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.url?.path == "/users/adrianpunk/social_accounts")
+    }
+
     @Test("securityAdvisories: summary 缺失时用 description 降级，避免整批解析失败")
     func securityAdvisoriesMissingSummaryFallback() async throws {
         let client = makeClient(token: "abc123")

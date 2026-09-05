@@ -4,7 +4,7 @@
 //
 //  仓库详情页 hero 区点击 owner 名弹出的真实资料卡容器。
 //
-//  本视图只负责加载 GitHub 公开资料、贡献数据与关注状态，再交给
+//  本视图只负责加载 GitHub 公开资料、社交账号、贡献数据与关注状态，再交给
 //  OwnerCardView 展示：明亮主题使用 A，黑暗主题使用 B。
 //  贡献数据对组织账号可能不可用，因此 nil 时不渲染，也不预留高度。
 //
@@ -24,6 +24,9 @@ struct OwnerCardSheet: View {
     /// 拉取到的 owner 公开 profile；nil = 加载中或加载失败。
     @State private var profile: GitHubUserDTO?
 
+    /// GitHub 独立 Social accounts 端点返回的公开链接。
+    @State private var socialAccounts: [GitHubSocialAccountDTO] = []
+
     /// 是否已关注；nil = 未登录或查询中。
     @State private var isFollowing: Bool?
 
@@ -41,7 +44,7 @@ struct OwnerCardSheet: View {
             bio: profile?.bio,
             followers: profile?.followers,
             following: profile?.following,
-            websiteURL: websiteURL,
+            externalLinks: externalLinks,
             emailAddress: normalizedEmail,
             contributionPayload: contributionPayload,
             isFollowing: isFollowing,
@@ -49,7 +52,7 @@ struct OwnerCardSheet: View {
             isFollowActionEnabled: followActionEnabled,
             onOpenGitHub: openGitHubProfile,
             onClose: { dismiss() },
-            onOpenWebsite: openWebsite,
+            onOpenExternalLink: openExternalLink,
             onComposeEmail: composeEmail,
             onOpenFollowers: openFollowers,
             onOpenFollowing: openFollowing,
@@ -73,16 +76,9 @@ struct OwnerCardSheet: View {
         return name
     }
 
-    /// GitHub 允许 blog 不带 scheme；统一补成可直接打开的 HTTPS URL。
-    private var websiteURL: URL? {
-        guard let raw = profile?.blog?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else {
-            return nil
-        }
-        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
-            return URL(string: raw)
-        }
-        return URL(string: "https://\(raw)")
+    /// 统一合并旧 profile 字段与 Social accounts，保证 X 兜底并消除重复入口。
+    private var externalLinks: [OwnerCardExternalLink] {
+        OwnerCardExternalLink.make(profile: profile, socialAccounts: socialAccounts)
     }
 
     private var normalizedEmail: String? {
@@ -104,9 +100,8 @@ struct OwnerCardSheet: View {
         NSWorkspace.shared.open(GitHubURLs.userProfile(login: ownerLogin))
     }
 
-    private func openWebsite() {
-        guard let websiteURL else { return }
-        NSWorkspace.shared.open(websiteURL)
+    private func openExternalLink(_ url: URL) {
+        NSWorkspace.shared.open(url)
     }
 
     private func composeEmail() {
@@ -131,6 +126,9 @@ struct OwnerCardSheet: View {
         // profile 与贡献数据都是公开接口。贡献请求失败（常见于组织账号）时保持 nil。
         if let fetched = try? await dependencies.ownerFollowService.profile(login: ownerLogin) {
             profile = fetched
+        }
+        if let fetched = try? await dependencies.ownerFollowService.socialAccounts(login: ownerLogin) {
+            socialAccounts = fetched
         }
         if let contribution = try? await dependencies.ownerFollowService.contribution(login: ownerLogin) {
             contributionPayload = contribution
