@@ -23,7 +23,7 @@ struct RAGConversationSkeletonView: View {
     var body: some View {
         let palette = RAGCompositorSkeletonPalette.forColorScheme(colorScheme)
         ScrollView(.vertical, showsIndicators: false) {
-            skeletonLayer(fill: Color(nsColor: palette.base))
+            skeletonLayer(fill: palette.base)
                 .overlay {
                     // 整个会话骨架共用一个 CA 动画层，避免为每个占位块创建独立 NSView。
                     RAGCompositorShimmerView(
@@ -121,27 +121,28 @@ struct RAGConversationSkeletonView: View {
     }
 }
 
-/// RAG 会话骨架专用配色。这里使用 NSColor，是因为动画在 Core Animation 层完成，
-/// 不再让 SwiftUI 每帧重算渐变；数值保持与共享 SkeletonPalette 一致。
+/// RAG 会话骨架专用配色。highlight 用 NSColor，是因为动画在 Core Animation 层完成，
+/// 不再让 SwiftUI 每帧重算渐变；base 用 Color 与共享 SkeletonPalette 保持一致（同为
+/// sRGB 灰度），避免 calibratedWhite 与 Color(white:) 在广色域屏上产生亮度偏差。
 private struct RAGCompositorSkeletonPalette {
-    let base: NSColor
+    let base: Color
     let highlight: NSColor
 
     static func forColorScheme(_ scheme: ColorScheme) -> Self {
         switch scheme {
         case .dark:
             return Self(
-                base: NSColor.white.withAlphaComponent(0.09),
+                base: Color.white.opacity(0.09),
                 highlight: NSColor.white.withAlphaComponent(0.20)
             )
         case .light:
             return Self(
-                base: NSColor(calibratedWhite: 0.91, alpha: 1),
+                base: Color(white: 0.97),
                 highlight: NSColor.white.withAlphaComponent(0.94)
             )
         @unknown default:
             return Self(
-                base: NSColor.secondaryLabelColor.withAlphaComponent(0.22),
+                base: Color.secondary.opacity(0.22),
                 highlight: NSColor.white.withAlphaComponent(0.40)
             )
         }
