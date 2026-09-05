@@ -86,19 +86,14 @@ struct KnowledgeRAGWorkspaceView: View {
                 // NavigationSplitView 的 Sidebar 是独立 preference 边界，尺寸不能再向
                 // 根视图上传；在列内直接监听 GeometryReader，才能可靠写回 @AppStorage。
         } detail: {
-            RAGWorkspaceAnswerSurface(viewModel: viewModel)
-                .frame(
-                    minWidth: 0,
-                    maxWidth: .infinity,
-                    maxHeight: .infinity
-                )
-                // 中栏可读下限由 NSWindow 硬下限与左右栏最大宽度的总预算保证。
-                // 这里必须显式写 0；省略 minWidth 会继续保留内容的固有下限，
-                // Inspector 向左扩张时仍可能把整个 NavigationSplitView 推出窗口。
+            GeometryReader { proxy in
+                RAGWorkspaceAnswerSurface(viewModel: viewModel)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+            }
+            // 中栏只填充 NavigationSplitView 已分配的尺寸，不把内容固有宽度带回三栏协商；
+            // 否则在最小窗口拖动 Inspector 时，SwiftUI 会反复重算布局并导致主线程卡死。
         }
-        // Inspector 通过压缩前方内容获得宽度；外层 NavigationSplitView 也必须明确
-        // 接受更窄的父级提案，不能只让它内部的 Answer Surface 可压缩。
-        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         // Citation 是语义明确的 trailing inspector。使用系统 Inspector 后，宽度约束
         // 会直接进入分栏控制器，不再依赖 HSplitView 对普通 idealWidth 的布局猜测。
         .inspector(isPresented: $chromeState.isRightColumnPresented) {
