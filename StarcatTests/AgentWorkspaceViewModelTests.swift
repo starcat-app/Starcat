@@ -1577,6 +1577,17 @@ struct AgentWorkspaceLayoutMetricsTests {
         #expect(AgentWorkspaceLayoutMetrics.clampedRightWidth(420) == 420)
     }
 
+    @Test("Agent 窗口硬下限覆盖两侧最大宽度与中栏可读宽度")
+    func windowMinimumWidthPreservesRunSurfaceAtMaximumSidebars() {
+        // 中栏不再设置局部 minWidth；这里守住同一产品约束，确保窗口硬下限扣除
+        // 两侧最大宽度后仍有足够空间，避免未来单独放宽侧栏时重新引入裁切。
+        let remainingRunWidth = AgentWorkspaceWindowMetrics.minimumContentSize.width
+            - AgentWorkspaceLayoutMetrics.leftMaximumWidth
+            - AgentWorkspaceLayoutMetrics.rightMaximumWidth
+
+        #expect(remainingRunWidth >= AgentWorkspaceLayoutMetrics.runMinimumWidth)
+    }
+
     @MainActor
     @Test("右栏折叠状态与原生 Inspector 展示状态保持互为反向")
     func rightInspectorPresentationMirrorsCollapsedState() {

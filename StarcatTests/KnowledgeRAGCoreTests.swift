@@ -5189,6 +5189,17 @@ struct KnowledgeRAGCoreTests {
         #expect(RAGWorkspaceLayoutMetrics.clampedRightWidth(456) == 456)
     }
 
+    @Test("RAG 窗口硬下限覆盖两侧最大宽度与中栏可读宽度")
+    func windowMinimumWidthPreservesAnswerSurfaceAtMaximumSidebars() {
+        // 中栏不再设置局部 minWidth；这里守住同一产品约束，确保窗口硬下限扣除
+        // 两侧最大宽度后仍有足够空间，避免未来单独放宽侧栏时重新引入裁切。
+        let remainingAnswerWidth = KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width
+            - RAGWorkspaceLayoutMetrics.leftMaximumWidth
+            - RAGWorkspaceLayoutMetrics.rightMaximumWidth
+
+        #expect(remainingAnswerWidth >= RAGWorkspaceLayoutMetrics.answerMinimumWidth)
+    }
+
     @Test("会话语义摘要持久化，并只替代 recent window 外的历史")
     func conversationContextSummaryPersistsAndBuildsHistory() async throws {
         let database = try InMemoryDatabaseManager()

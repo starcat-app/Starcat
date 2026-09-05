@@ -16,6 +16,9 @@ enum RAGWorkspaceLayoutMetrics {
     static let leftIdealWidth: CGFloat = 318
     static let leftMaximumWidth: CGFloat = 380
 
+    // 这是窗口级宽度预算，不直接作为 Answer Surface 的 frame 下限。NavigationSplitView
+    // 与 Inspector 会分别协商列宽；把 480pt 再挂到中栏会在最小窗口拖拽时形成冲突，
+    // 让系统通过裁切边缘列满足所有局部约束。
     static let answerMinimumWidth: CGFloat = 480
 
     static let rightMinimumWidth: CGFloat = 320
@@ -85,11 +88,17 @@ struct KnowledgeRAGWorkspaceView: View {
         } detail: {
             RAGWorkspaceAnswerSurface(viewModel: viewModel)
                 .frame(
-                    minWidth: RAGWorkspaceLayoutMetrics.answerMinimumWidth,
+                    minWidth: 0,
                     maxWidth: .infinity,
                     maxHeight: .infinity
                 )
+                // 中栏可读下限由 NSWindow 硬下限与左右栏最大宽度的总预算保证。
+                // 这里必须显式写 0；省略 minWidth 会继续保留内容的固有下限，
+                // Inspector 向左扩张时仍可能把整个 NavigationSplitView 推出窗口。
         }
+        // Inspector 通过压缩前方内容获得宽度；外层 NavigationSplitView 也必须明确
+        // 接受更窄的父级提案，不能只让它内部的 Answer Surface 可压缩。
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         // Citation 是语义明确的 trailing inspector。使用系统 Inspector 后，宽度约束
         // 会直接进入分栏控制器，不再依赖 HSplitView 对普通 idealWidth 的布局猜测。
         .inspector(isPresented: $chromeState.isRightColumnPresented) {
