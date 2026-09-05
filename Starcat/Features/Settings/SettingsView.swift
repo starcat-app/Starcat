@@ -208,7 +208,12 @@ struct SettingsView: View {
 
     /// 设置窗口固定使用当前验收尺寸；Scene 同时声明 `.contentSize`，让 AppKit
     /// 禁用边缘缩放和绿色缩放按钮，而不是只给一个仍可继续放大的最小值。
-    private static let contentSize = CGSize(width: 800, height: 600)
+    /// 注意：这才是窗口实际尺寸的单一来源；`StarcatApp` 的 `.defaultSize` 只
+    /// 是首次启动且无持久化 frame 时的兜底，必须与这里保持一致。
+    private static let contentSize = CGSize(width: 720, height: 720)
+    /// SwiftUI 与 AppKit 桥接共用同一组数值，避免视觉建议和硬拖拽边界分叉。
+    private static let sidebarWidth: (minimum: CGFloat, ideal: CGFloat, maximum: CGFloat) =
+        (220, 240, 260)
 
     var body: some View {
         // NavigationSplitView + sidebar List 使用 macOS 原生选中态、材质和分隔线。
@@ -312,8 +317,20 @@ struct SettingsView: View {
         // Apple 要求把默认项移除声明挂在产生它的 Sidebar column 上；挂在 SplitView
         // 根部时 macOS 26 仍可能在窗口重建 Toolbar 后重新注入折叠按钮。
         .toolbar(removing: .sidebarToggle)
-        // 系统设置采用稳定的分类栏宽度；固定值也能覆盖旧窗口保存的过窄 divider 位置。
-        .navigationSplitViewColumnWidth(240)
+        // 系统设置采用稳定的分类栏宽度；拖动只允许在窄幅范围内微调，
+        // SwiftUI modifier 负责理想值，AppKit limiter 负责真正限制 divider 拖拽边界。
+        .navigationSplitViewColumnWidth(
+            min: Self.sidebarWidth.minimum,
+            ideal: Self.sidebarWidth.ideal,
+            max: Self.sidebarWidth.maximum
+        )
+        .background {
+            SettingsSidebarWidthLimiter(
+                minimumThickness: Self.sidebarWidth.minimum,
+                maximumThickness: Self.sidebarWidth.maximum
+            )
+            .frame(width: 0, height: 0)
+        }
         .searchable(
             text: $settingsSearchText,
             placement: .sidebar,

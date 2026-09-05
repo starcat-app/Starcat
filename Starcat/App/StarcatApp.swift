@@ -227,7 +227,7 @@ struct StarcatApp: App {
         Window("Starcat", id: "settings") {
             settingsSceneRoot
         }
-        .defaultSize(width: 800, height: 600)
+        .defaultSize(width: 720, height: 720)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .windowResizability(.contentSize)
