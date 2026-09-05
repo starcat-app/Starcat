@@ -1367,6 +1367,7 @@ struct HomeView: View {
             detailColumnBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .modifier(RepoShareHost())
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
     }
 

@@ -265,6 +265,7 @@ struct RepoDetailWindowContent: View {
         // `appHostEnvironment` 内部多次重写环境链时可能覆盖掉前面的注入。
         .environment(readmeVM)
         .environment(translationVM)
+        .modifier(RepoShareHost())
         .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
         // 触发首次 README 加载 + 翻译态准备。
         //
