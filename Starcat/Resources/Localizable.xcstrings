@@ -70755,6 +70755,12 @@
         "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在读取 README" } }
       }
     },
+    "awesome.sources.custom.repositories" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Custom Repositories" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自定义仓库" } }
+      }
+    },
     "awesome.sources.custom.subtitle" : {
       "localizations" : {
         "en" : {

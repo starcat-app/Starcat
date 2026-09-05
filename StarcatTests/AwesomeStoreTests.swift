@@ -83,6 +83,49 @@ struct AwesomeStoreTests {
         #expect(!store.hasCompletedSourceSetup)
     }
 
+    @Test("认证后只从本地恢复 Awesome 侧栏数量")
+    @MainActor
+    func cachedSidebarSourcesRestoreCountWithoutRefreshing() async {
+        let source = Self.source(id: "cached", isEnabled: true, githubRepoCount: 37)
+        let repository = AwesomeStoreRepositoryFake(sources: [source])
+        let service = AwesomeCustomSourceService(
+            github: AwesomeStoreGitHubFake(),
+            repository: repository
+        )
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+
+        await store.restoreCachedSidebarSources()
+
+        #expect(store.allRepositoryCount == 37)
+        #expect(await repository.catalogRefreshPolicies().isEmpty)
+        #expect(await repository.entryRefreshPolicies().isEmpty)
+    }
+
+    @Test("不可用来源不进入侧栏且当前选择回退到全部 Awesome")
+    @MainActor
+    func unavailableSourceIsNotVisibleOrSelected() async {
+        let available = Self.source(id: "available", isEnabled: true, githubRepoCount: 12)
+        let unavailable = Self.source(
+            id: "unavailable",
+            isEnabled: true,
+            isAvailable: false,
+            githubRepoCount: 0
+        )
+        let repository = AwesomeStoreRepositoryFake(sources: [available, unavailable])
+        let service = AwesomeCustomSourceService(
+            github: AwesomeStoreGitHubFake(),
+            repository: repository
+        )
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+        store.selectedSourceID = unavailable.id
+
+        await store.loadAwesome()
+
+        #expect(store.enabledSources.map(\.id) == [available.id])
+        #expect(store.selectedSourceID == nil)
+        #expect(store.allRepositoryCount == 12)
+    }
+
     @Test("快速切换来源时同步更新高亮且旧结果不能覆盖新来源")
     @MainActor
     func rapidSourceSelectionKeepsNewestResult() async throws {
@@ -306,31 +349,59 @@ struct AwesomeStoreTests {
         #expect(store.customSourceParseStates[custom.id] != nil)
     }
 
-    @Test("来源选择列表不会展示零项目来源")
+    @Test("删除自定义来源同步清理侧栏来源与当前选择")
     @MainActor
-    func sourcePickerHidesZeroRepositorySources() {
+    func removingCustomSourceClearsVisibleStoreState() async throws {
+        let custom = Self.source(id: "custom:example/list", kind: .custom, isEnabled: true)
+        let repository = AwesomeStoreRepositoryFake(sources: [custom])
+        let service = AwesomeCustomSourceService(
+            github: AwesomeStoreGitHubFake(),
+            repository: repository
+        )
+        let store = AwesomeStore(repository: repository, customSourceService: service)
+        await store.loadAwesome()
+        store.selectedSourceID = custom.id
+
+        try await store.removeCustomSource(id: custom.id)
+
+        #expect(store.sources.isEmpty)
+        #expect(store.enabledSources.isEmpty)
+        #expect(store.selectedSourceID == nil)
+    }
+
+    @Test("来源选择隐藏零项目内置来源但保留零项目自定义来源")
+    @MainActor
+    func sourcePickerKeepsZeroRepositoryCustomSources() {
         let available = Self.source(id: "available", githubRepoCount: 12)
-        let empty = Self.source(id: "empty", githubRepoCount: 0)
+        let emptyManaged = Self.source(id: "empty-managed", githubRepoCount: 0)
+        let emptyCustom = Self.source(id: "empty-custom", kind: .custom, githubRepoCount: 0)
+        let unavailableEnabled = Self.source(
+            id: "unavailable-enabled",
+            isEnabled: true,
+            isAvailable: false,
+            githubRepoCount: 0
+        )
 
         let defaultResults = AwesomeSourceManagerSheet.filterSources(
-            [empty, available],
+            [emptyManaged, unavailableEnabled, emptyCustom, available],
             query: "",
             languageCode: "zh"
         )
         let searchResults = AwesomeSourceManagerSheet.filterSources(
-            [empty, available],
+            [emptyManaged, unavailableEnabled, emptyCustom, available],
             query: "awesome-one",
             languageCode: "zh"
         )
 
-        #expect(defaultResults.map(\.id) == ["available"])
-        #expect(searchResults.map(\.id) == ["available"])
+        #expect(defaultResults.map(\.id) == ["unavailable-enabled", "empty-custom", "available"])
+        #expect(searchResults.map(\.id) == ["unavailable-enabled", "empty-custom", "available"])
     }
 
     private static func source(
         id: String = "one",
         kind: AwesomeSourceKind = .managed,
         isEnabled: Bool = false,
+        isAvailable: Bool = true,
         githubRepoCount: Int = 1,
         externalEntryCount: Int = 0,
         resourceEntryCount: Int = 0
@@ -357,7 +428,7 @@ struct AwesomeStoreTests {
             githubRepoCount: githubRepoCount,
             externalEntryCount: externalEntryCount,
             resourceEntryCount: resourceEntryCount,
-            isAvailable: true,
+            isAvailable: isAvailable,
             isEnabled: isEnabled,
             addedAt: Date(timeIntervalSince1970: 0),
             lastSyncedAt: Date(timeIntervalSince1970: 0),

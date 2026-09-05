@@ -1446,16 +1446,19 @@ struct HomeView: View {
         viewModel.invalidateRepoPinsForDatabaseChange()
         dependencies.awesomeStore.resetForAccountChange()
 
-        if authSession.state.isAuthenticated,
-           selectedSidebarPage == .trending,
+        guard authSession.state.isAuthenticated else { return }
+
+        if selectedSidebarPage == .trending,
            selectedExploreMode == .awesome {
             await dependencies.awesomeStore.loadAwesome()
             return
         }
 
-        guard authSession.state.isAuthenticated,
-              selectedSidebarPage == .manage
-        else { return }
+        // 账号切换时认证状态可能已经先于 View 生命周期稳定；数据库 revision 才是
+        // 新账户 SQLite 可读的确定边沿，因此这里也补一次轻量来源摘要恢复。
+        await dependencies.awesomeStore.restoreCachedSidebarSources()
+
+        guard selectedSidebarPage == .manage else { return }
 
         await viewModel.reloadItems(forceRefresh: true, reason: .externalMutation)
         applyManageDetailSelectionPolicy()
@@ -2417,6 +2420,13 @@ struct HomeView: View {
         }
         viewModel.setActiveUserID(user.id)
         restoreListPreferences(login: user.login)
+
+        // Awesome 的来源选择属于账户数据库，不能混进公开 Explore 目录的启动任务。
+        // 登录态发布时数据库已经完成切换；这里只恢复 SQLite 来源摘要，让侧栏数量
+        // 无需等用户首次进入 Awesome 才出现，也不触发远端目录或 README 条目刷新。
+        Task { @MainActor in
+            await dependencies.awesomeStore.restoreCachedSidebarSources()
+        }
 
         let wasAlreadyOnManage = selectedSidebarPage == .manage
         selectedSidebarPage = .manage

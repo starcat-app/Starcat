@@ -45,7 +45,7 @@ struct AwesomeSourceManagerSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     errorBanner
-                    sourceGrid
+                    sourceSections
                     customSourceSection
                 }
                 .padding(20)
@@ -143,36 +143,65 @@ struct AwesomeSourceManagerSheet: View {
     }
 
     @ViewBuilder
-    private var sourceGrid: some View {
+    private var sourceSections: some View {
         if store.sources.isEmpty, store.isLoading || store.isRefreshing {
             ProgressView("awesome.sources.loading")
                 .frame(maxWidth: .infinity, minHeight: 180)
         } else if selectableSources.isEmpty {
             emptySourceState
-        } else if filteredSources.isEmpty {
+        } else if filteredManagedSources.isEmpty, filteredCustomSources.isEmpty {
             ContentUnavailableView.search(text: searchQuery)
                 .frame(maxWidth: .infinity, minHeight: 180)
         } else {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
-                ForEach(filteredSources) { source in
-                    AwesomeSourceCard(
-                        source: source,
-                        isSelected: enabledIDs.contains(source.id),
-                        hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
-                        parseState: store.customSourceParseStates[source.id],
-                        ogRetryToken: store.ogPrefetchGeneration,
-                        ogRevealSession: store.sourceManagerPresentationGeneration,
-                        onToggle: { toggleSource(source) },
-                        onRetry: source.kind == .custom
-                            ? { store.retryCustomSourceParsing(sourceID: source.id) }
-                            : nil,
-                        onDelete: source.kind == .custom
-                            ? { pendingConfirmation = .delete(source) }
-                            : nil
-                    )
+            if !filteredManagedSources.isEmpty {
+                sourceGrid(filteredManagedSources)
+            }
+            if !filteredCustomSources.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("awesome.sources.custom.repositories")
+                        .font(.headline)
+                    sourceGrid(filteredCustomSources)
                 }
             }
         }
+    }
+
+    private func sourceGrid(_ sources: [AwesomeSource]) -> some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+            ForEach(sources) { source in
+                AwesomeSourceCard(
+                    source: source,
+                    isSelected: enabledIDs.contains(source.id),
+                    hasRefreshError: store.sourceRefreshErrors[source.id] != nil,
+                    parseState: store.customSourceParseStates[source.id],
+                    ogRetryToken: store.ogPrefetchGeneration,
+                    ogRevealSession: store.sourceManagerPresentationGeneration,
+                    onToggle: { toggleSource(source) },
+                    onRetry: source.kind == .custom
+                        ? { store.retryCustomSourceParsing(sourceID: source.id) }
+                        : nil,
+                    onDelete: source.kind == .custom
+                        ? { pendingConfirmation = .delete(source) }
+                        : nil
+                )
+            }
+        }
+    }
+
+    private var filteredManagedSources: [AwesomeSource] {
+        Self.filterSources(
+            store.sources.filter { $0.kind == .managed },
+            query: searchQuery,
+            languageCode: locale.language.languageCode?.identifier
+        )
+    }
+
+    private var filteredCustomSources: [AwesomeSource] {
+        Self.filterSources(
+            store.sources.filter { $0.kind == .custom },
+            query: searchQuery,
+            languageCode: locale.language.languageCode?.identifier
+        )
     }
 
     /// 用全部来源的 OG URL 当预拉签名，搜索过滤不能缩小预拉范围。
@@ -186,22 +215,17 @@ struct AwesomeSourceManagerSheet: View {
         Self.filterSources(store.sources, query: "", languageCode: nil)
     }
 
-    private var filteredSources: [AwesomeSource] {
-        Self.filterSources(
-            store.sources,
-            query: searchQuery,
-            languageCode: locale.language.languageCode?.identifier
-        )
-    }
-
-    /// 零仓库来源仍保留在 Discovery 目录中供后续重新同步，但不进入客户端可选卡片列表。
-    /// 过滤必须先于搜索执行，避免用户通过关键词再次搜出不可用的零项目来源。
+    /// Discovery 中零仓库的普通内置来源暂不可选择；但已启用后被远端下架的来源必须
+    /// 继续显示，用户才能识别并取消订阅。自定义来源即使仍在解析、解析失败或确实为空，
+    /// 也必须保留在管理面板中，确保用户始终能够重试或删除它。
     static func filterSources(
         _ sources: [AwesomeSource],
         query: String,
         languageCode: String?
     ) -> [AwesomeSource] {
-        let selectableSources = sources.filter { $0.githubRepoCount > 0 }
+        let selectableSources = sources.filter {
+            $0.kind == .custom || $0.githubRepoCount > 0 || $0.isEnabled
+        }
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return selectableSources }
 

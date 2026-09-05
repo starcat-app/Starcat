@@ -54,7 +54,11 @@ final class AwesomeStore {
         self.customSourceService = customSourceService
     }
 
-    var enabledSources: [AwesomeSource] { sources.filter(\.isEnabled) }
+    /// 侧栏和“全部 Awesome”只消费当前仍可用的已启用来源。
+    /// 远端下架的 managed 行仍保留在数据库和设置面板中，但不能继续占据导航入口。
+    var enabledSources: [AwesomeSource] {
+        sources.filter { $0.isEnabled && $0.isAvailable }
+    }
     var selectedRepository: AwesomeRepositoryItem? {
         guard let selectedRepositoryID else { return nil }
         return repositories.first { $0.id == selectedRepositoryID }
@@ -68,9 +72,21 @@ final class AwesomeStore {
     /// 后者只适用于“全部 Awesome”；混用会把 awesome-react 显示成 `2 / 267`。
     var currentRepositoryCount: Int {
         guard let selectedSourceID,
-              let source = sources.first(where: { $0.id == selectedSourceID })
+              let source = enabledSources.first(where: { $0.id == selectedSourceID })
         else { return allRepositoryCount }
         return source.totalEntryCount
+    }
+
+    /// 只恢复侧边栏计数依赖的本地来源摘要，不触发目录或条目网络刷新。
+    ///
+    /// Awesome 来源和启用状态按账户数据库隔离；登录完成后先恢复这份轻量快照，
+    /// 用户无需进入 Awesome 页面也能看到正确数量。二次判空用于避免并发的完整加载
+    /// 已经写入新来源后，又被较早发起的缓存读取覆盖。
+    func restoreCachedSidebarSources() async {
+        guard sources.isEmpty else { return }
+        let cachedSources = await repository.sources()
+        guard sources.isEmpty else { return }
+        applySourceSnapshot(cachedSources)
     }
 
     /// 加载 Awesome 本地快照并按缓存策略刷新，不触发任何页面展示副作用。
@@ -107,7 +123,10 @@ final class AwesomeStore {
         await loadCachedState()
         showSourceManager()
         do {
-            sources = try await repository.refreshCatalog()
+            let selectionInvalidated = applySourceSnapshot(try await repository.refreshCatalog())
+            if selectionInvalidated {
+                await reloadRepositories()
+            }
             errorMessage = nil
         } catch {
             // 已有缓存卡片继续展示；错误由 Sheet 作为非阻断提示呈现。
@@ -136,7 +155,7 @@ final class AwesomeStore {
     /// 不再把输入框的 loading 状态绑定到几百个 GitHub 请求。
     func addCustomSource(input: String) async throws -> AwesomeSource {
         let creation = try await customSourceService.create(input: input)
-        sources = await repository.sources()
+        applySourceSnapshot(await repository.sources())
         customSourceParseStates[creation.source.id] = AwesomeCustomSourceParseState(
             sourceID: creation.source.id,
             phase: .queued,
@@ -160,7 +179,7 @@ final class AwesomeStore {
         try await customSourceService.remove(sourceID: id)
         customSourceParseStates[id] = nil
         if selectedSourceID == id { selectedSourceID = nil }
-        sources = await repository.sources()
+        applySourceSnapshot(await repository.sources())
         await reloadRepositories()
     }
 
@@ -225,7 +244,12 @@ final class AwesomeStore {
         let urlsBeforeRefresh = AwesomeSourceOpenGraph.imageURLs(for: sources)
         async let ogWarmup: Void = AwesomeSourceOpenGraph.prefetch(urls: urlsBeforeRefresh)
         do {
-            sources = try await repository.refreshCatalog(policy: .force)
+            let selectionInvalidated = applySourceSnapshot(
+                try await repository.refreshCatalog(policy: .force)
+            )
+            if selectionInvalidated {
+                await reloadRepositories()
+            }
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -269,7 +293,7 @@ final class AwesomeStore {
         async let cachedSources = repository.sources()
         async let completed = repository.hasCompletedSourceSetup()
         async let cachedParseStates = repository.customSourceParseStates()
-        sources = await cachedSources
+        applySourceSnapshot(await cachedSources)
         hasCompletedSourceSetup = await completed
         let parseStates = await cachedParseStates
         customSourceParseStates = Dictionary(
@@ -277,6 +301,22 @@ final class AwesomeStore {
         )
         await reloadRepositories()
         resumeActiveCustomSourceParses()
+    }
+
+    /// 来源快照更新时同步校正导航选择。下架、取消订阅或删除来源后，旧 sourceID
+    /// 不能继续驱动中栏查询，否则侧栏虽已隐藏，列表仍会停留在一个空的失效来源上。
+    @discardableResult
+    private func applySourceSnapshot(_ snapshot: [AwesomeSource]) -> Bool {
+        sources = snapshot
+        guard let selectedSourceID,
+              !enabledSources.contains(where: { $0.id == selectedSourceID })
+        else { return false }
+
+        selectionLoadTask?.cancel()
+        selectionLoadTask = nil
+        self.selectedSourceID = nil
+        selectedRepositoryID = nil
+        return true
     }
 
     /// 从关闭到打开才换 generation，避免 Sheet 已打开时 refreshCatalog 把入场动画重放一遍。
@@ -291,7 +331,7 @@ final class AwesomeStore {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            sources = try await repository.refreshCatalog(policy: policy)
+            applySourceSnapshot(try await repository.refreshCatalog(policy: policy))
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -299,14 +339,14 @@ final class AwesomeStore {
         guard !Task.isCancelled else { return }
         sourceRefreshErrors = await repository.refreshEnabledEntries(policy: policy)
         guard !Task.isCancelled else { return }
-        sources = await repository.sources()
+        applySourceSnapshot(await repository.sources())
         await reloadRepositories()
     }
 
     private func reloadAfterSubscriptionChange() async {
-        sources = await repository.sources()
+        applySourceSnapshot(await repository.sources())
         sourceRefreshErrors = await repository.refreshEnabledEntries()
-        sources = await repository.sources()
+        applySourceSnapshot(await repository.sources())
         await reloadRepositories()
     }
 
@@ -404,7 +444,7 @@ final class AwesomeStore {
         switch state.phase {
         case .enrichingRepositories, .completed:
             // Repository 每批会更新条目数；同步重读即可让卡片计数与中栏部分结果逐步增长。
-            sources = await repository.sources()
+            applySourceSnapshot(await repository.sources())
             await reloadRepositories()
         case .queued, .readingReadme, .failed:
             break

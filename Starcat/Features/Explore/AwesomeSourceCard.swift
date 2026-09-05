@@ -55,7 +55,6 @@ struct AwesomeSourceCard: View {
         Button(action: onToggle) {
             VStack(alignment: .leading, spacing: 0) {
                 ogBanner
-                languageDivider
                 footer
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -78,7 +77,8 @@ struct AwesomeSourceCard: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .disabled(!source.isAvailable)
+        // 已下架但仍被用户选中的内置来源必须允许取消选择；未选中的不可用来源仍不可启用。
+        .disabled(!source.isAvailable && !isSelected)
         .onHover { isHovering = $0 }
         .animation(.easeInOut(duration: 0.12), value: isHovering)
         .onChange(of: ogRetryToken) { _, _ in
@@ -143,6 +143,11 @@ struct AwesomeSourceCard: View {
                     .padding(10)
             }
         }
+        .overlay(alignment: .bottom) {
+            // 部分 GitHub 默认 OG 图本身已带语言色条；把本地色条覆盖在图片底边，
+            // 保证所有来源最终只出现一条固定高度的语言分布，而不是上下叠成双倍高度。
+            languageDivider
+        }
     }
 
     private var ogImageURL: URL? {
@@ -181,7 +186,9 @@ struct AwesomeSourceCard: View {
         let segments = languageSegments
         Group {
             if segments.isEmpty {
-                Divider()
+                Rectangle()
+                    .fill(.background)
+                    .overlay { Divider() }
             } else {
                 GeometryReader { proxy in
                     HStack(spacing: 0) {
