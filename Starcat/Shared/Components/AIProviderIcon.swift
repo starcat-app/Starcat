@@ -71,8 +71,7 @@ struct AIProviderIconView: View {
                         .clipShape(RoundedRectangle(cornerRadius: max(2, size * 0.18), style: .continuous))
                 }
             } else {
-                // Fallback：UI 不留空白；SF Symbol 与字体节奏一致。OrcaRouter 暂用
-                // 路由拓扑符号，避免把网页位图当成可再分发的品牌资源带进 App。
+                // Fallback：品牌资源异常或缺失时 UI 不留空白；SF Symbol 与字体节奏一致。
                 Image(systemName: provider.fallbackSystemImageName)
                     .resizable()
                     .scaledToFit()

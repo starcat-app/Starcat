@@ -365,8 +365,8 @@ enum AIServiceProvider: String, CaseIterable, Identifiable, Codable, Sendable {
 
     /// 品牌 imageset 不可用时采用的中性 SF Symbol。
     ///
-    /// OrcaRouter 官方文档当前只公开网页位图，没有可确认再分发的矢量品牌资源；先用
-    /// 路由拓扑符号表达其网关定位，未来补官方矢量资源时无需改调用方。
+    /// OrcaRouter 已使用官方彩色 PNG；这里仍保留路由拓扑符号，确保 Asset Catalog
+    /// 异常或资源缺失时设置页不会留下空白图标。
     var fallbackSystemImageName: String {
         switch self {
         case .orcaRouter:
