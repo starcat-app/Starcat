@@ -4,16 +4,41 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.6.0-待发布
 
+### New
+
+- OrcaRouter provider: Add OrcaRouter as an AI provider for summaries, tagging, and knowledge base Q&A.
+- Firecrawl web search: Add Firecrawl as a web search provider with domain filtering and full-page fetching; some providers can now be enabled without an API key.
+- Owner profile card: Click an owner name in the repository detail header to view their avatar, bio, and stats, and follow or unfollow them.
+- Language distribution bar: Repository detail gains a language usage bar; hover to see each language's share and click to filter repositories by language.
+- Missing tag auto-creation: AI tag auto-apply can now create missing tags and apply them immediately; the option is off by default.
+- Cache usage overview: Settings now groups cache usage into Content, Discover, AI, and Code categories.
+- Sign-in scope disclosure: General settings shows the GitHub OAuth scopes requested at sign-in and notes organization authorization limits.
+
 ### Improvements
 
 - Native Settings experience: Uses a macOS-style sidebar, search, and back/forward navigation in a fixed-size Settings window.
 - Unified RAG configuration: Inference, prompt, and retrieval controls now live in the main Settings window, save automatically, and present prompt helpers and retrieval options without extra nested navigation.
 - Language categories: Star and Explore language lists now follow your interested languages and add "Other" and "Uncategorized" groups to reduce clutter.
+- AI tag review: Batch selection and select-all for repositories, highest-confidence tags and groups preselected by default, and suggestions that distinguish existing from new tags.
+- Smart collections: Create collections directly from the My Collections header; smoother waterfall scrolling and tighter built-in cards.
+- Repository detail toolbar: The clone menu merges into the external links menu, and repositories opened externally pin temporarily to the top of the list for quick locating.
+- RAG workspace: The conversation header shows the creation time, and new conversations reuse an existing empty one instead of piling up blank sessions.
+- Owner profile card: Refined light and dark styling, and the contribution snake animation runs off the main thread so module switching stays smooth.
+- List performance: Explore sub-pages lazy-load and general lists scroll more smoothly.
+- Interface polish: Explore cards fade in row by row, the library list shows a starred checkmark, and module transitions and empty states read better.
 
 ### Fixes
 
 - Library smart collection paging: Continues loading repositories in full-screen layouts and after fast scrolling to the bottom instead of getting stuck on the current page.
 - Trending scrolling: Fixes laggy scrolling for a smoother browse.
+- AI workspace windows: Fixes split-layout freeze loops, oversized width with the inspector open, content clipping when dragging the sidebar at minimal window sizes, and main-window reopen issues.
+- Search input: Fixes pressing Return while a Chinese input method is composing; after a search, the current repository row is located automatically.
+- Awesome explore: Fixes source status display and card language-bar anomalies.
+- Activity replies: Sent replies now appear immediately in the timeline instead of being delayed or overwritten by stale content.
+- Release assets: "Open" after a completed download now reveals the file in Finder.
+- Skeleton colors: Fixes overly bright skeletons in light mode, with softer contrast in both themes.
+- Settings sidebar: Limits the settings sidebar drag range.
+- Owner heatmap: Fixes the contribution lawn not refreshing after a theme switch.
 
 ## 1.5.0
 
