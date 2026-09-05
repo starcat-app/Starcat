@@ -472,6 +472,10 @@ struct StarcatApp: App {
         // `Starcat/Core/Settings/LocalizedBundle.swift` 顶部注释。
         LocalizedBundle.install()
 
+        // Kingfisher 默认内存上限是物理内存的 1/4、磁盘无限；在大量仓库头像场景下
+        // 会用远超 UI 所需的常驻空间。这里保留较大的磁盘热缓存，同时约束内存峰值。
+        ImageCachePerformanceConfiguration.configureDefault()
+
         // 外部 Runtime 已从 Debug POC 转为 Direct 正式能力。必须在任何 @AppStorage
         // 初始化前迁移旧键，避免升级后看似自动回退内置 Loop、实际丢失用户选择。
         ExternalAgentRuntimePreferences.migrateLegacyDefaults()

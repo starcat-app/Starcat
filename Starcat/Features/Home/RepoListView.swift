@@ -526,6 +526,8 @@ struct RepoListView: View {
     /// 与已确认徽章前缀同步的可见 repo 集合。Health/OpenSSF 通知逐仓到达时用 O(1)
     /// membership 判断，避免在数千行列表上为每条通知反复线性扫描。
     @State private var badgeCacheVisibleRepoIDs: Set<Int64> = []
+    /// 合并鼠标滚轮产生的离散 phase，避免滚动期间反复让整棵列表重新求值。
+    @State private var listInteractionController = ListInteractionSuppressionController()
     /// Repo List 窗口会话级事实源。
     ///
     /// Explore / Activity 的 View 会随 `selectedPage` 条件分支创建和销毁；这里只持有
@@ -2158,6 +2160,13 @@ struct RepoListView: View {
             // 透出底层 `DetailHeroTintBackground`；系统 List 默认实色底会盖住顶栏光晕。
             .scrollContentBackground(.hidden)
             .alternatingRowBackgrounds()
+            .onScrollPhaseChange { _, newPhase in
+                listInteractionController.update(isActive: newPhase != .idle)
+            }
+            .environment(\.starcatListInteractionSuppressed, listInteractionController.isSuppressed)
+            .onDisappear {
+                listInteractionController.cancel()
+            }
             // 阅读状态 v2（2026-06-12）：订阅 .repoStatusDidChange，详情页改 status 后
             // HomeViewModel.statusMap 局部更新 → UnifiedRepoRow.readStatus 重渲染 → 角标即时刷新。
             // task 与 view lifetime 绑定（view 退出自动 cancel），不会泄漏 NotificationCenter observer。

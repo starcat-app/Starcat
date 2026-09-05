@@ -33,7 +33,14 @@ struct RepositorySpotlightServiceTests {
         let database = try InMemoryDatabaseManager()
         let settings = makeSettings(enabled: false)
         let index = RecordingRepositorySpotlightIndex()
-        let service = RepositorySpotlightService(database: database, settings: settings, index: index)
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
 
         await service.rebuild()
 
@@ -76,7 +83,14 @@ struct RepositorySpotlightServiceTests {
 
         let settings = makeSettings(enabled: true)
         let index = RecordingRepositorySpotlightIndex()
-        let service = RepositorySpotlightService(database: database, settings: settings, index: index)
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
 
         await service.rebuild()
 
@@ -87,6 +101,111 @@ struct RepositorySpotlightServiceTests {
         #expect(entity.note == "只保存在本机的用户笔记")
         #expect(entity.attributeSet.textContent?.contains("只保存在本机的用户笔记") == true)
         #expect(entity.attributeSet.keywords?.contains("private-org/secret") == true)
+    }
+
+    @Test("内容未变化时即使经过单项刷新，后续全量重建仍跳过 Core Spotlight 写入")
+    func unchangedContentSkipsSecondReplacement() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await insertRepository(
+            database: database,
+            id: 88,
+            name: "stable",
+            isPrivate: false,
+            isStarred: true,
+            accessState: .accessible
+        )
+        let settings = makeSettings(enabled: true)
+        let index = RecordingRepositorySpotlightIndex()
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
+
+        await service.rebuild()
+        await service.refresh(repositoryID: 88)
+        await service.rebuild()
+
+        #expect(await index.replacementCallCount == 1)
+        #expect(await index.upserted.count == 1)
+    }
+
+    @Test("仓库内容变化后全量重建不会误用旧指纹")
+    func changedContentReplacesIndexAgain() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await insertRepository(
+            database: database,
+            id: 88,
+            name: "before",
+            isPrivate: false,
+            isStarred: true,
+            accessState: .accessible
+        )
+        let settings = makeSettings(enabled: true)
+        let index = RecordingRepositorySpotlightIndex()
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
+
+        await service.rebuild()
+        try await database.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET description = ? WHERE id = ?", arguments: ["changed", 88])
+        }
+        await service.rebuild()
+
+        #expect(await index.replacementCallCount == 2)
+    }
+
+    @Test("冷启动与随后重复校验同一账号时都保留已有 Spotlight 索引")
+    func coldLaunchSameAccountPreservesExistingIndex() async throws {
+        let database = try InMemoryDatabaseManager()
+        let settings = makeSettings(enabled: true)
+        let index = RecordingRepositorySpotlightIndex()
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        indexState.state.record(accountID: 42, fingerprint: "existing")
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
+
+        await service.prepareForAccountChange(to: 42)
+        try await database.reopen(userId: 42)
+        await service.prepareForAccountChange(to: 42)
+
+        #expect(await index.removeAllCallCount == 0)
+        #expect(indexState.state.matches(accountID: 42, fingerprint: "existing"))
+    }
+
+    @Test("冷启动恢复不同账号时先清空 Spotlight 索引与旧指纹")
+    func coldLaunchDifferentAccountRemovesExistingIndex() async throws {
+        let database = try InMemoryDatabaseManager(userId: 42)
+        let settings = makeSettings(enabled: true)
+        let index = RecordingRepositorySpotlightIndex()
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        indexState.state.record(accountID: 42, fingerprint: "existing")
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
+
+        await service.prepareForAccountChange(to: 7)
+
+        #expect(await index.removeAllCallCount == 1)
+        #expect(!indexState.state.matches(accountID: 42, fingerprint: "existing"))
     }
 
     @Test("仓库退出索引条件后，单项刷新删除稳定 ID")
@@ -102,7 +221,14 @@ struct RepositorySpotlightServiceTests {
         )
         let settings = makeSettings(enabled: true)
         let index = RecordingRepositorySpotlightIndex()
-        let service = RepositorySpotlightService(database: database, settings: settings, index: index)
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        let service = RepositorySpotlightService(
+            database: database,
+            settings: settings,
+            index: index,
+            indexState: indexState.state
+        )
 
         await service.refresh(repositoryID: 88)
 
@@ -159,6 +285,16 @@ struct RepositorySpotlightServiceTests {
         let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
         settings.spotlightSearchEnabled = enabled
         return settings
+    }
+
+    private func makeIndexState() -> (state: RepositorySpotlightIndexState, cleanup: () -> Void) {
+        let suiteName = "test.starcat.spotlight.index-state.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return (
+            RepositorySpotlightIndexState(defaults: defaults),
+            { defaults.removePersistentDomain(forName: suiteName) }
+        )
     }
 
     private func insertRepository(

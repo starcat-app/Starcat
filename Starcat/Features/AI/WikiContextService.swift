@@ -95,6 +95,11 @@ final class WikiContextService {
         cache.load(owner: owner, repo: repo)
     }
 
+    /// 启动补齐使用的批量 freshness 查询；磁盘 IO 由 cache 的后台加载器执行。
+    func freshRepositoryIDs(for requests: [WikiAvailabilityRequest]) async -> Set<Int64> {
+        await cache.freshRepositoryIDs(for: requests)
+    }
+
     /// 所有前台消费方共用的 cache-first 入口。fresh 只读缓存，stale / miss 只排队，
     /// 因此详情渲染、Companion 和 AI bootstrap 都不会等待外部 Wiki 网络。
     func cacheFirstLinks(

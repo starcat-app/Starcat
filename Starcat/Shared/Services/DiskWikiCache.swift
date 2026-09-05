@@ -155,6 +155,13 @@ final class DiskWikiCache {
     private let fileManager: FileManager
     private let rootOverride: URL?
 
+    /// reload 时建立的轻量文件大小索引。
+    ///
+    /// Wiki cache 会在后台连续写入上千个小 JSON。旧实现每次 save 都递归扫完整目录，
+    /// 使总成本退化为 O(写入数 × 缓存文件数)，并且这些工作全部发生在 MainActor。
+    /// 用少量内存保存文件大小后，单次写入只需更新一个 key，设置页统计仍保持同步准确。
+    private var knownFileSizes: [URL: Int64] = [:]
+
     private let encoder: JSONEncoder = {
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -205,8 +212,11 @@ final class DiskWikiCache {
         } catch {
             // 损坏 JSON → 删文件让下次 miss 后重新写入（与 HOM-69 / HOM-70 同款兜底）。
             AppLog.ai.warning("Wiki cache: decode failed, removing path=\(url.path, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
-            try? fileManager.removeItem(at: url)
-            reload()
+            if (try? fileManager.removeItem(at: url)) != nil,
+               let removedSize = knownFileSizes.removeValue(forKey: url) {
+                itemCount = max(0, itemCount - 1)
+                totalBytes = max(0, totalBytes - removedSize)
+            }
             return nil
         }
     }
@@ -222,7 +232,11 @@ final class DiskWikiCache {
         )
         let data = try encoder.encode(snapshot)
         try data.write(to: url, options: .atomic)
-        reload()
+        let previousSize = knownFileSizes.updateValue(Int64(data.count), forKey: url)
+        if previousSize == nil {
+            itemCount += 1
+        }
+        totalBytes = max(0, totalBytes - (previousSize ?? 0) + Int64(data.count))
         NotificationCenter.default.post(
             name: .wikiCacheDidChange,
             object: self,
@@ -240,7 +254,9 @@ final class DiskWikiCache {
         if fileManager.fileExists(atPath: root.path) {
             try fileManager.removeItem(at: root)
         }
-        reload()
+        knownFileSizes.removeAll(keepingCapacity: true)
+        itemCount = 0
+        totalBytes = 0
         NotificationCenter.default.post(
             name: .wikiCacheDidReset,
             object: self,
@@ -253,24 +269,40 @@ final class DiskWikiCache {
     /// 扫盘更新派生量。**只读统计，不删任何文件**（与搜索缓存 reload 同款语义）。
     func reload() {
         var total: Int64 = 0
-        var count: Int = 0
+        var nextFileSizes: [URL: Int64] = [:]
 
         guard let root = try? rootURL(),
               fileManager.fileExists(atPath: root.path) else {
             self.totalBytes = 0
             self.itemCount = 0
+            knownFileSizes.removeAll(keepingCapacity: true)
             return
         }
 
         for file in collectJSONFiles(under: root) {
             if let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-                total += Int64(size)
-                count += 1
+                let byteCount = Int64(size)
+                nextFileSizes[file] = byteCount
+                total += byteCount
             }
         }
 
+        knownFileSizes = nextFileSizes
         self.totalBytes = total
-        self.itemCount = count
+        self.itemCount = nextFileSizes.count
+    }
+
+    /// 后台批量判断哪些 repo 的缓存仍 fresh，供启动补齐避免逐条 MainActor 读盘。
+    func freshRepositoryIDs(
+        for requests: [WikiAvailabilityRequest],
+        at now: Date = Date()
+    ) async -> Set<Int64> {
+        guard let root = try? rootURL() else { return [] }
+        return await WikiAvailabilitySnapshotLoader.loadFreshRepositoryIDs(
+            requests: requests,
+            rootOverride: root,
+            now: now
+        )
     }
 
     // MARK: - 私有：路径

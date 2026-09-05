@@ -61,9 +61,19 @@ final class WikiKnowledgeBackfillCoordinator {
             do {
                 let repos = try await self.fetchKnowledgeRepos()
                 guard activeGeneration == self.generation else { return }
-                for repo in repos {
+                let publicRepos = repos.filter { !$0.isPrivate }
+                let requests = publicRepos.map {
+                    WikiAvailabilityRequest(id: $0.id, owner: $0.owner, repo: $0.name)
+                }
+                let freshRepositoryIDs = await self.wikiContextService.freshRepositoryIDs(for: requests)
+                guard activeGeneration == self.generation, !Task.isCancelled else { return }
+                for repo in publicRepos where !freshRepositoryIDs.contains(repo.id) {
                     try Task.checkCancellation()
-                    self.enqueueIfNeeded(repo)
+                    self.wikiContextService.enqueueRefresh(
+                        owner: repo.owner,
+                        repo: repo.name,
+                        isPrivate: false
+                    )
                 }
             } catch is CancellationError {
                 // 切库取消是正常路径。

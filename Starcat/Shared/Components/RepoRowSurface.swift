@@ -57,6 +57,7 @@ struct RepoRowSurface<Content: View>: View {
     private let content: Content
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatListInteractionSuppressed) private var interactionSuppressed
     @State private var isHovered = false
 
     init(
@@ -121,8 +122,20 @@ struct RepoRowSurface<Content: View>: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onHover { hovering in
+                guard !interactionSuppressed else {
+                    if isHovered {
+                        isHovered = false
+                    }
+                    return
+                }
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
                     isHovered = hovering
+                }
+            }
+            .onChange(of: interactionSuppressed) { _, isSuppressed in
+                // 滚动开始时立即清掉旧 hover，避免离开该 row 后仍残留高亮。
+                if isSuppressed, isHovered {
+                    isHovered = false
                 }
             }
             .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
