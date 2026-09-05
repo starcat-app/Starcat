@@ -387,9 +387,6 @@ struct RAGWorkspaceConversationRail: View {
                             ))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        Text(String(conversation.updatedAt.prefix(10)))
-                            .font(ragFont(.caption2))
-                            .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 4)
                 }
@@ -493,9 +490,6 @@ struct RAGWorkspaceConversationRail: View {
                     .font(interfaceScale.font(RAGConversationTypography.text, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(String(conversation.updatedAt.prefix(10)))
-                    .font(ragFont(.caption2))
-                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
         }
