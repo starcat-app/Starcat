@@ -562,6 +562,62 @@ struct ExploreDiscoveryViewModelTests {
         #expect(await repository.fetchPageCount() == 0)
     }
 
+    @Test("SWR 后台刷新进行中分页请求不丢失（快速滚动修复回归）")
+    func loadMoreDuringBackgroundRefreshStillAppends() async throws {
+        let repository = FakeDiscoveryRepository()
+        let repos = (1...25).map { index in
+            Self.makeRepo(
+                repoID: Int64(300 + index),
+                owner: "swr",
+                name: "repo-\(String(format: "%02d", index))",
+                language: "Swift",
+                stars: 100 - index,
+                popularityScore: Double(100 - index),
+                discoveryScore: Double(100 - index)
+            )
+        }
+        // 4 小时前的磁盘缓存（超过 3h TTL）→ 进入分类即发布首屏并启动 SWR 后台刷新。
+        await repository.seedCached(Self.makeBulkResult(repos: repos), lastFetchedAt: Date().addingTimeInterval(-4 * 3600))
+        await repository.pauseNextBulkFetch()
+        let viewModel = ExploreDiscoveryViewModel()
+
+        let reloadTask = Task {
+            await viewModel.reload(
+                repository: repository,
+                mode: .discover,
+                language: nil,
+                topic: nil,
+                platform: nil,
+                sort: .recommended
+            )
+        }
+        await repository.waitForBulkFetchToStart()
+
+        // 刷新进行中列表已可见：快速滚动到底部的行触发分页，不允许被 isRefreshing 吞掉。
+        #expect(viewModel.repos.count == 20)
+        #expect(viewModel.nextPage == 2)
+        #expect(viewModel.isLoading == false)
+        #expect(viewModel.isRefreshing)
+
+        await viewModel.loadMoreIfNeeded(
+            repository: repository,
+            currentRepo: nil,
+            appearingIndex: 19,
+            visibleItemCount: 20,
+            mode: .discover,
+            language: nil,
+            topic: nil,
+            platform: nil,
+            sort: .recommended
+        )
+
+        #expect(viewModel.repos.count == 25)
+        #expect(viewModel.nextPage == nil)
+
+        await repository.resumeBulkFetch()
+        await reloadTask.value
+    }
+
     @Test("新发布列表只展示 new_releases 归属仓库")
     func newReleasesFiltersByCategoryMembership() async throws {
         let repository = FakeDiscoveryRepository()

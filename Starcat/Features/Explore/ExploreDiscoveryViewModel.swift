@@ -262,7 +262,12 @@ final class ExploreDiscoveryViewModel {
         )
         guard publishedQueryIdentity == queryIdentity else { return }
         guard let nextPage else { return }
-        guard !isLoading, !isRefreshing else { return }
+        // 只拦初次加载，不拦 SWR 后台刷新（isRefreshing）。进入分类时 summary/bulk 的
+        // 3h 窗口几乎必然触发一次后台刷新，若用它拦截分页，快速滚动期间的所有触发都会
+        // 被吞掉；刷新完成后 publishPreparedSnapshot 重置回首屏且已加载数量不变，
+        // 共享 modifier 的 onChange 不会重新评估，需求就永久丢失（用户必须来回滚动才能续页）。
+        // 本地切片在 MainActor 上串行执行，与刷新的替换发布之间没有竞态。
+        guard !isLoading else { return }
         if let appearingIndex, let visibleItemCount {
             guard ListPaginationPolicy.shouldPrefetch(
                 appearingIndex: appearingIndex,
