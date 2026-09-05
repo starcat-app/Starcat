@@ -285,6 +285,11 @@ private struct ExploreDiscoveryListView: View {
             ) {
                 refreshCurrentDiscoveryList()
             }
+            MultiSelectButton(
+                isActive: dependencies.exploreMultiSelectionStore.isActive,
+                action: { dependencies.exploreMultiSelectionStore.toggle() },
+                isDisabled: !authSession.state.isAuthenticated
+            )
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)

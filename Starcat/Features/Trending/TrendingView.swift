@@ -333,6 +333,11 @@ struct TrendingView: View {
             HStack(spacing: 8) {
                 freshnessIndicator
                 refreshButton
+                MultiSelectButton(
+                    isActive: dependencies.trendingMultiSelectionStore.isActive,
+                    action: { dependencies.trendingMultiSelectionStore.toggle() },
+                    isDisabled: !authSession.state.isAuthenticated
+                )
             }
         }
         .padding(.horizontal, 14)

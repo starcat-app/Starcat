@@ -101,6 +101,11 @@ struct AwesomeView: View {
             ) {
                 Task { await store.refresh() }
             }
+            MultiSelectButton(
+                isActive: dependencies.exploreMultiSelectionStore.isActive,
+                action: { dependencies.exploreMultiSelectionStore.toggle() },
+                isDisabled: !authSession.state.isAuthenticated
+            )
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.vertical, 9)

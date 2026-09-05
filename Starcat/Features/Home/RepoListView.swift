@@ -970,19 +970,13 @@ struct RepoListView: View {
 
     /// Trending 页面 toolbar spec（W12 PR-4）：
     /// - leading 暂无（period picker 仍在中栏自绘 toolbar，period 是数据切片维度而非排序）；
-    /// - trailing 注入：[wiki / external / clone / share] +「多选按钮」。
-    ///   wiki / external / clone 派发 `selectedTrendingRepo` 单选项；多选按钮驱动
-    ///   `trendingMultiSelectionStore`，由 `TrendingView` 的行点击 toggle 选中状态。
-    /// - PR-4 followup：未登录态多选按钮 disable。批量 star/unstar 都需要 token，
-    ///   未登录直接 disable 比让用户点了再弹错误友好；如果 store 已经处于 active
-    ///   （比如登录后切到 trending 又登出），同帧把 store exit 兜底清掉 stale selection。
+    /// - trailing 只提供当前仓库的 wiki / external / clone / share 操作；
+    ///   多选入口由 `TrendingView` 的中栏顶栏承载，与列表共享选择状态。
     @MainActor
     private func makeTrendingToolbarSpec() -> PageToolbarSpec {
-        let store = dependencies.trendingMultiSelectionStore
         let registry = dependencies.starredRegistry
-        let isAuthed = authSession.state.isAuthenticated
 
-        let trailing: AnyView = {
+        let trailing: AnyView? = {
             let selectionView: AnyView? = selectedTrendingRepo.map { repo in
                 let isStarred = registry.contains(ghRepoId: repo.ghRepoId)
                 let sel = ToolbarRepoSelection.from(
@@ -1003,16 +997,7 @@ struct RepoListView: View {
                     }
                 )
             }
-            return AnyView(
-                Group {
-                    selectionView
-                    MultiSelectButton(
-                        isActive: store.isActive,
-                        action: { store.toggle() },
-                        isDisabled: !isAuthed
-                    )
-                }
-            )
+            return selectionView
         }()
 
         return PageToolbarSpec(
@@ -1027,9 +1012,7 @@ struct RepoListView: View {
     /// 2026-07-05：发现 / 热门 / 新发布 已接入统一多选，支持全部 6 种批量操作。
     @MainActor
     private func makeDiscoveryToolbarSpec() -> PageToolbarSpec {
-        let store = exploreMultiSelectionStore
         let registry = dependencies.starredRegistry
-        let isAuthed = authSession.state.isAuthenticated
 
         let trailing: AnyView? = {
             let selectionView: AnyView? = selectedDiscoveryRepo.map { repo in
@@ -1048,16 +1031,7 @@ struct RepoListView: View {
                     )
                 )
             }
-            return AnyView(
-                Group {
-                    selectionView
-                    MultiSelectButton(
-                        isActive: store.isActive,
-                        action: { store.toggle() },
-                        isDisabled: !isAuthed
-                    )
-                }
-            )
+            return selectionView
         }()
 
         return PageToolbarSpec(
@@ -1069,12 +1043,10 @@ struct RepoListView: View {
 
     /// Explore Weekly toolbar spec：
     /// - 单选动作来自 `WeeklySelectionService.selectedItem`;
-    /// - 多选按钮驱动 `weeklyMultiSelectionStore`,与 `WeeklyContentView` 行点击逻辑同源。
+    /// - 多选入口由 `WeeklyContentView` 的中栏顶栏承载。
     @MainActor
     private func makeWeeklyToolbarSpec() -> PageToolbarSpec {
-        let store = dependencies.weeklyMultiSelectionStore
         let registry = dependencies.starredRegistry
-        let isAuthed = authSession.state.isAuthenticated
 
         let selectionView: AnyView? = {
             guard let item = dependencies.weeklySelectionService.selectedItem else { return nil }
@@ -1112,11 +1084,6 @@ struct RepoListView: View {
                     }
                     .help("curatedPublisher.toolbar.open")
                 }
-                MultiSelectButton(
-                    isActive: store.isActive,
-                    action: { store.toggle() },
-                    isDisabled: !isAuthed
-                )
             }
         )
 
@@ -1127,7 +1094,7 @@ struct RepoListView: View {
         )
     }
 
-    /// Activity 页面 toolbar spec。Undo Star 分类支持多选。
+    /// Activity 页面 toolbar spec；Undo Star 的多选入口由其中栏顶栏承载。
     @MainActor
     private func makeActivityToolbarSpec() -> PageToolbarSpec {
         if selectedActivityCategory == .notification {
@@ -1139,7 +1106,6 @@ struct RepoListView: View {
             )
         }
         let registry = dependencies.starredRegistry
-        let isAuthed = authSession.state.isAuthenticated
 
         let selectionView: AnyView? = {
             guard let repo = selectedActivityItem?.repo else { return nil }
@@ -1160,44 +1126,18 @@ struct RepoListView: View {
             )
         }()
 
-        let trailing = AnyView(
-            Group {
-                selectionView
-                if selectedActivityCategory == .undoStar {
-                    let store = dependencies.undoStarMultiSelectionStore
-                    MultiSelectButton(
-                        isActive: store.isActive,
-                        action: { store.toggle() },
-                        isDisabled: !isAuthed
-                    )
-                }
-            }
-        )
-
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
-            trailingPrimary: trailing,
+            trailingPrimary: selectionView,
             searchField: AnyView(smartSearchField())
         )
     }
 
-    /// Manage 页面 toolbar：filter / multiSelect / external / clone / search。
-    /// 排序与 Stars 同步已迁到列表顶栏 `manageFilterBar`（对齐 Weekly / Activity）。
+    /// Manage 页面 toolbar：filter / external / clone / search。
+    /// 排序、Stars 同步与多选入口统一由列表顶栏 `manageFilterBar` 承载。
     @MainActor
     private func makeManageToolbarSpec() -> PageToolbarSpec {
-        let leading = AnyView(
-            Group {
-                globalFilterMenu(includesStatusFilter: true)
-
-                // W12 PR-5：Manage 多选按钮直接驱动 manageMultiSelectionStore（替代原
-                // viewModel.toggleMultiSelectMode），与 trending/weekly/activity 同款机制。
-                // Manage 已登录是隐含前提（库内 100% 已 star），不传 isDisabled。
-                MultiSelectButton(
-                    isActive: dependencies.manageMultiSelectionStore.isActive,
-                    action: { dependencies.manageMultiSelectionStore.toggle() }
-                )
-            }
-        )
+        let leading = AnyView(globalFilterMenu(includesStatusFilter: true))
 
         let trailing: AnyView? = {
             guard let repo = viewModel.selectedRepo else { return nil }
@@ -1774,7 +1714,7 @@ struct RepoListView: View {
         }
     }
 
-    /// Manage 列表顶栏：当前分类内排序 + 同步于 + Stars 同步按钮（对齐 Weekly / Activity）。
+    /// Manage 列表顶栏：排序 + 同步于 + Stars 同步 + 多选；仅仓库列表分类使用。
     private func manageFilterBar(sortOption: Binding<RepoSortOption>) -> some View {
         HStack(spacing: 10) {
             UnifiedSortMenu(
@@ -1793,6 +1733,10 @@ struct RepoListView: View {
                     .foregroundStyle(.secondary)
             }
             StarsSyncButton()
+            MultiSelectButton(
+                isActive: dependencies.manageMultiSelectionStore.isActive,
+                action: { dependencies.manageMultiSelectionStore.toggle() }
+            )
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)

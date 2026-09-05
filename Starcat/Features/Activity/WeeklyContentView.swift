@@ -200,6 +200,11 @@ struct WeeklyContentView: View {
             Spacer()
 
             refreshButton(viewModel)
+            MultiSelectButton(
+                isActive: dependencies.weeklyMultiSelectionStore.isActive,
+                action: { dependencies.weeklyMultiSelectionStore.toggle() },
+                isDisabled: !authSession.state.isAuthenticated
+            )
         }
     }
 
