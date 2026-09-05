@@ -21,13 +21,7 @@ struct AgentMessageTimelineView: View {
     let viewModel: AgentWorkspaceViewModel
 
     private var presentation: AgentRunPresentation {
-        AgentTimelineProjection.makePresentation(
-            messages: viewModel.messages,
-            approvals: viewModel.approvals,
-            artifacts: viewModel.artifacts,
-            userPrompt: viewModel.currentRunUserPrompt,
-            status: viewModel.status
-        )
+        viewModel.timelinePresentation()
     }
 
     private var isProcessExpanded: Bool {
@@ -49,7 +43,7 @@ struct AgentMessageTimelineView: View {
     }
 
     private var traceSnapshot: AgentTraceTimelineSnapshot {
-        AgentTraceTimelinePresentation.makeSnapshot(viewModel.traceEvents)
+        viewModel.traceTimelineSnapshot()
     }
 
     private var runIdentity: String {

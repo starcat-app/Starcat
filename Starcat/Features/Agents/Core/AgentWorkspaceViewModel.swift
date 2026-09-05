@@ -50,26 +50,55 @@ final class AgentWorkspaceViewModel {
     /// 复用 RAG 已验证的展示节流器：完整文本仍保留在 buffer，UI 只接收有界、低频快照。
     private var assistantReasoningPresentationBuffer = AgentWorkspaceViewModel.makeStreamingPresentationBuffer()
     private var assistantPresentationBuffer = AgentWorkspaceViewModel.makeStreamingPresentationBuffer()
+    /// 流式正文会频繁触发 SwiftUI 求值，但持久化消息、审批和产物通常没有变化。
+    /// 投影缓存按独立 revision 失效，避免每个展示快照都重新扫描整条历史消息链。
+    @ObservationIgnored private var cachedTimelinePresentation: (revision: Int, value: AgentRunPresentation)?
+    @ObservationIgnored private var cachedTraceTimelineSnapshot: (revision: Int, value: AgentTraceTimelineSnapshot)?
+    @ObservationIgnored private var traceEventIndexesByID: [String: Int] = [:]
+    @ObservationIgnored private var traceEventIndexIsCurrent = false
+    @ObservationIgnored private var isApplyingInternalTraceMutation = false
+    private var timelinePresentationRevision = 0
+    private var traceTimelineRevision = 0
     private(set) var repositoryPickerSnapshot = AgentRepositoryPickerSnapshot.empty
     /// 回归测试用：只有查询、筛选、来源、排序或目录变化才允许递增。
     private(set) var repositoryPickerDerivationCountForTesting = 0
     /// 回归测试用：证明一批 token 不会退化成同等数量的 SwiftUI 刷新。
     private(set) var streamingPresentationUpdateCountForTesting = 0
+    /// 回归测试用：流式正文变化不应让持久化时间线和 Trace 快照跟着重建。
+    private(set) var timelineProjectionBuildCountForTesting = 0
+    private(set) var traceProjectionBuildCountForTesting = 0
 
     private(set) var agents: [AgentDefinition]
     var selectedAgentID: String
     /// 当前 Run 的原始用户问题只服务时间线展示；Composer `prompt` 始终代表下一次可编辑输入。
     /// 两者不能复用，否则快照刷新会把已经发送的内容重新塞回输入框。
-    private(set) var currentRunUserPrompt = ""
+    private(set) var currentRunUserPrompt = "" {
+        didSet { invalidateTimelinePresentation() }
+    }
     var prompt: String
     var runTitle: String = String.l10n("agent.workspace.status.ready")
-    var status: AgentRunStatus = .idle
-    var approvals: [AgentApprovalRequest] = []
-    var messages: [AgentMessage] = []
+    var status: AgentRunStatus = .idle {
+        didSet { invalidateTimelinePresentation() }
+    }
+    var approvals: [AgentApprovalRequest] = [] {
+        didSet { invalidateTimelinePresentation() }
+    }
+    var messages: [AgentMessage] = [] {
+        didSet { invalidateTimelinePresentation() }
+    }
     /// Runtime 原生过程按稳定 id 原位更新，避免 Codex 的 delta/completed 把一项拆成多行。
-    var traceEvents: [AgentTraceEvent] = []
+    var traceEvents: [AgentTraceEvent] = [] {
+        didSet {
+            traceTimelineRevision &+= 1
+            cachedTraceTimelineSnapshot = nil
+            guard !isApplyingInternalTraceMutation else { return }
+            traceEventIndexIsCurrent = false
+        }
+    }
     var usage: AgentUsage = .zero
-    var artifacts: [AgentArtifact] = []
+    var artifacts: [AgentArtifact] = [] {
+        didSet { invalidateTimelinePresentation() }
+    }
     var historyRuns: [AgentRunRecord] = []
     var inspectorTab: AgentInspectorTab = .run
     var selectedArtifactID: UUID?
@@ -133,6 +162,45 @@ final class AgentWorkspaceViewModel {
         self.contextProvider = contextProvider
         self.selectedAgentID = agents.first?.id ?? ""
         self.prompt = ""
+    }
+
+    /// 返回与当前持久化 Run 事实对应的时间线快照。`assistantOutput` 的流式变化不在
+    /// revision 中，因此 150ms 展示刷新只更新正在生成的叶子行，不再重扫历史消息。
+    func timelinePresentation() -> AgentRunPresentation {
+        let revision = timelinePresentationRevision
+        if let cachedTimelinePresentation,
+           cachedTimelinePresentation.revision == revision {
+            return cachedTimelinePresentation.value
+        }
+        let value = AgentTimelineProjection.makePresentation(
+            messages: messages,
+            approvals: approvals,
+            artifacts: artifacts,
+            userPrompt: currentRunUserPrompt,
+            status: status
+        )
+        cachedTimelinePresentation = (revision, value)
+        timelineProjectionBuildCountForTesting &+= 1
+        return value
+    }
+
+    /// Trace 父子树只在 Runtime Trace 事实变化时重建；展开状态仍由 View 本地投影，
+    /// 既避免流式 Markdown 连带重算，也不会让折叠状态污染持久化模型。
+    func traceTimelineSnapshot() -> AgentTraceTimelineSnapshot {
+        let revision = traceTimelineRevision
+        if let cachedTraceTimelineSnapshot,
+           cachedTraceTimelineSnapshot.revision == revision {
+            return cachedTraceTimelineSnapshot.value
+        }
+        let value = AgentTraceTimelinePresentation.makeSnapshot(traceEvents)
+        cachedTraceTimelineSnapshot = (revision, value)
+        traceProjectionBuildCountForTesting &+= 1
+        return value
+    }
+
+    private func invalidateTimelinePresentation() {
+        timelinePresentationRevision &+= 1
+        cachedTimelinePresentation = nil
     }
 
     var selectedAgent: AgentDefinition? {
@@ -1083,15 +1151,56 @@ final class AgentWorkspaceViewModel {
     }
 
     private func upsert(_ trace: AgentTraceEvent) {
-        if let index = traceEvents.firstIndex(where: { $0.id == trace.id }) {
+        ensureTraceEventIndex()
+        if let index = traceEventIndexesByID[trace.id] {
+            isApplyingInternalTraceMutation = true
             traceEvents[index] = trace
+            isApplyingInternalTraceMutation = false
         } else {
-            traceEvents.append(trace)
-            traceEvents.sort { lhs, rhs in
-                if lhs.sequence == rhs.sequence { return lhs.startedAt < rhs.startedAt }
-                return lhs.sequence < rhs.sequence
+            let canAppendInOrder = traceEvents.last.map { last in
+                !Self.traceEventPrecedes(trace, last)
+            } ?? true
+
+            if canAppendInOrder {
+                let insertedIndex = traceEvents.count
+                isApplyingInternalTraceMutation = true
+                traceEvents.append(trace)
+                isApplyingInternalTraceMutation = false
+                traceEventIndexesByID[trace.id] = insertedIndex
+                return
             }
+
+            // 绝大多数 Runtime 事件按 sequence 单调到达，可直接 O(1) 追加。只有恢复或
+            // Adapter 迟到事件破坏顺序时才复制并排序一次，避免每条事件都 O(n log n)。
+            var reordered = traceEvents
+            reordered.append(trace)
+            reordered.sort(by: Self.traceEventPrecedes)
+            isApplyingInternalTraceMutation = true
+            traceEvents = reordered
+            isApplyingInternalTraceMutation = false
+            rebuildTraceEventIndex()
         }
+    }
+
+    private func ensureTraceEventIndex() {
+        guard !traceEventIndexIsCurrent else { return }
+        rebuildTraceEventIndex()
+    }
+
+    private func rebuildTraceEventIndex() {
+        traceEventIndexesByID = Dictionary(
+            uniqueKeysWithValues: traceEvents.enumerated().map { index, event in
+                (event.id, index)
+            }
+        )
+        traceEventIndexIsCurrent = true
+    }
+
+    private static func traceEventPrecedes(_ lhs: AgentTraceEvent, _ rhs: AgentTraceEvent) -> Bool {
+        if lhs.sequence == rhs.sequence {
+            return lhs.startedAt < rhs.startedAt
+        }
+        return lhs.sequence < rhs.sequence
     }
 
     private func sendApprovalDecision(
