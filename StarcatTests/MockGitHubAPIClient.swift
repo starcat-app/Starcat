@@ -60,6 +60,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var starHandler: ((_ owner: String, _ repo: String) async throws -> Void)?
     var getCurrentUserHandler: (() async throws -> GitHubUserDTO)?
     var getUserHandler: ((_ login: String) async throws -> GitHubUserDTO)?
+    var getUserSocialAccountsHandler: ((_ login: String) async throws -> [GitHubSocialAccountDTO])?
     var isFollowingHandler: ((_ login: String) async throws -> Bool)?
     var followHandler: ((_ login: String) async throws -> Void)?
     var unfollowHandler: ((_ login: String) async throws -> Void)?
@@ -195,6 +196,13 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     func getUser(login: String) async throws -> GitHubUserDTO {
         guard let handler = getUserHandler else {
             fatalError("MockGitHubAPIClient.getUserHandler 未设置")
+        }
+        return try await handler(login)
+    }
+
+    func getUserSocialAccounts(login: String) async throws -> [GitHubSocialAccountDTO] {
+        guard let handler = getUserSocialAccountsHandler else {
+            fatalError("MockGitHubAPIClient.getUserSocialAccountsHandler 未设置")
         }
         return try await handler(login)
     }

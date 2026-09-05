@@ -138,6 +138,16 @@ struct GitHubUserDTO: Codable, Equatable {
     }
 }
 
+/// `GET /users/{login}/social_accounts` 的公开社交账号条目。
+///
+/// GitHub 把 Profile 页面上的 X、Telegram 等链接放在独立端点，而不是都塞进
+/// `GET /users/{login}` 的 `blog` / `twitter_username` 字段。保持原始 provider 与 URL，
+/// 由展示层统一做 URL 校验、图标选择和去重。
+struct GitHubSocialAccountDTO: Decodable, Equatable, Sendable {
+    let provider: String
+    let url: String
+}
+
 /// GitHub GraphQL `UserStatus` 的 UI 子集。
 ///
 /// `emoji` 可能是 GitHub emoji alias（例如 `face_blowing_a_kiss`），不能直接显示在圆形 badge 里；

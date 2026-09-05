@@ -56,6 +56,17 @@ extension GitHubAPIClient {
         return response.value
     }
 
+    /// 获取任意用户公开展示的社交账号。
+    ///
+    /// GitHub Profile 的 Social accounts 与传统 `blog` / `twitter_username` 是两套字段；
+    /// owner 卡片必须额外请求本端点，才能拿到 Telegram 等通用链接。
+    func getUserSocialAccounts(login: String) async throws -> [GitHubSocialAccountDTO] {
+        let response: APIResponse<[GitHubSocialAccountDTO]> = try await get(
+            path: AppEndpoints.GitHubREST.Paths.userSocialAccounts(login: login)
+        )
+        return response.value
+    }
+
     /// 当前用户是否已关注 `login`。
     ///
     /// GitHub `GET /user/following/{login}` 语义：204 = 已关注，404 = 未关注。

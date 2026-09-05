@@ -410,6 +410,10 @@ enum AppEndpoints {
             static func userProfile(login: String) -> String {
                 "/users/\(login)"
             }
+            /// `GET /users/{login}/social_accounts` —— 任意用户公开社交账号（owner 卡片用）。
+            static func userSocialAccounts(login: String) -> String {
+                "/users/\(login)/social_accounts"
+            }
             /// `GET/PUT/DELETE /user/following/{login}` —— 是否已关注 / 关注 / 取关。
             static func userFollowing(login: String) -> String {
                 "/user/following/\(login)"
