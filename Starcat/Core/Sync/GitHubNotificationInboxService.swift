@@ -88,6 +88,11 @@ final class GitHubNotificationInboxService {
     private var issueTimelineFetchGeneration: [String: Int] = [:]
     /// 详情 `.task` 用这个感知缓存刷新。第一次写入和发评 / 关帖后都会 +1。
     private(set) var issueTimelineRevisions: [String: Int] = [:]
+    /// POST / PATCH 已被 GitHub 确认、但 timeline API 尚未追上的评论。
+    ///
+    /// GitHub 的写接口和 timeline 读接口可能短暂不一致；这里保留本次进程内的已确认结果，
+    /// 后续任何强制回读都必须先合并它们，不能让旧 timeline 快照把刚发送的评论抹掉。
+    private var confirmedTimelineCommentOverrides: [String: [GitHubNotificationComment]] = [:]
     /// 本次进程里 thread → 磁盘路径，作废时不用再解析 fullName。
     private var issueTimelineDiskKeys: [String: (owner: String, repo: String, number: Int)] = [:]
     private let issueTimelineDiskCache: DiskIssueTimelineCache
@@ -354,10 +359,15 @@ final class GitHubNotificationInboxService {
             repositoryFullName: record.repositoryFullName,
             number: number
         )
-        let items = try await apiClient(for: record).listNotificationIssueTimeline(path: path)
+        let fetchedItems = try await apiClient(for: record).listNotificationIssueTimeline(path: path)
         guard (issueTimelineFetchGeneration[threadId] ?? 0) == generation else {
-            return items
+            return fetchedItems
         }
+        let items = mergeConfirmedTimelineComments(
+            into: fetchedItems,
+            threadId: threadId,
+            resolvingRemoteMatches: true
+        )
         rememberIssueTimeline(items, threadId: threadId, record: record, generation: generation)
         persistIssueTimeline(items, record: record)
         return items
@@ -423,6 +433,74 @@ final class GitHubNotificationInboxService {
         }
     }
 
+    /// 用 GitHub 写接口返回的评论立即更新右栏；这是服务端已确认结果，不是乐观占位。
+    private func rememberConfirmedTimelineComment(
+        _ comment: GitHubNotificationComment,
+        threadId: String,
+        record: GitHubNotificationThreadRecord
+    ) async {
+        var overrides = confirmedTimelineCommentOverrides[threadId] ?? []
+        if let index = overrides.firstIndex(where: { $0.id == comment.id }) {
+            overrides[index] = comment
+        } else {
+            overrides.append(comment)
+        }
+        confirmedTimelineCommentOverrides[threadId] = overrides
+
+        let currentItems: [GitHubNotificationIssueTimelineItem]
+        if let cached = issueTimelineCache[threadId] {
+            currentItems = cached
+        } else {
+            // 极快提交时初次 timeline 可能仍在加载；等它结束再合并，避免只剩新评论而丢掉旧事件。
+            currentItems = (try? await loadIssueTimeline(threadId: threadId)) ?? []
+        }
+        let merged = mergeConfirmedTimelineComments(
+            into: currentItems,
+            threadId: threadId,
+            resolvingRemoteMatches: false
+        )
+        issueTimelineCache[threadId] = merged
+        issueTimelineRevisions[threadId, default: 0] += 1
+        persistIssueTimeline(merged, record: record)
+    }
+
+    /// 将尚未被 timeline API 确认的评论覆盖到回读结果，并按 id 去重。
+    /// 只有真实网络回读正文一致时才移除 override；旧正文仍视为 GitHub 尚未追上 PATCH。
+    private func mergeConfirmedTimelineComments(
+        into items: [GitHubNotificationIssueTimelineItem],
+        threadId: String,
+        resolvingRemoteMatches: Bool
+    ) -> [GitHubNotificationIssueTimelineItem] {
+        guard let overrides = confirmedTimelineCommentOverrides[threadId], !overrides.isEmpty else {
+            return items
+        }
+        var merged = items
+        var unresolved = overrides
+        for override in overrides {
+            let existingIndex = merged.firstIndex { item in
+                guard case .comment(let existing) = item else { return false }
+                return existing.id == override.id
+            }
+            if let existingIndex,
+               case .comment(let existing) = merged[existingIndex] {
+                if existing.body == override.body {
+                    if resolvingRemoteMatches {
+                        unresolved.removeAll(where: { $0.id == override.id })
+                    }
+                } else {
+                    merged[existingIndex] = .comment(override)
+                }
+            } else {
+                // 新评论一定晚于当前快照，直接放在事件流末尾即可保持时间顺序。
+                merged.append(.comment(override))
+            }
+        }
+        if resolvingRemoteMatches {
+            confirmedTimelineCommentOverrides[threadId] = unresolved.isEmpty ? nil : unresolved
+        }
+        return merged
+    }
+
     private static func repositoryParts(_ fullName: String) -> (owner: String, repo: String)? {
         let parts = fullName.split(separator: "/").map(String.init)
         guard parts.count == 2 else { return nil }
@@ -476,7 +554,11 @@ final class GitHubNotificationInboxService {
             hydratedAt: record.hydratedAt ?? now,
             labelsJson: record.labelsJson
         )
-        await refreshIssueTimelineAfterMutation(threadId: threadId)
+        if showEvents {
+            await rememberConfirmedTimelineComment(created, threadId: threadId, record: record)
+        } else {
+            invalidateIssueTimeline(threadId: threadId)
+        }
         postDidChange()
     }
 
@@ -584,6 +666,11 @@ final class GitHubNotificationInboxService {
 
     /// 事件流开着时 comments_json 不是快照；先改内存时间线，卡片不用等下一轮 GET。
     private func patchCachedTimelineComment(threadId: String, commentId: Int64, body: String) {
+        if var overrides = confirmedTimelineCommentOverrides[threadId],
+           let index = overrides.firstIndex(where: { $0.id == commentId }) {
+            overrides[index] = overrides[index].withBody(body)
+            confirmedTimelineCommentOverrides[threadId] = overrides
+        }
         guard var items = issueTimelineCache[threadId] else { return }
         var changed = false
         for index in items.indices {
@@ -775,6 +862,7 @@ final class GitHubNotificationInboxService {
             issueStates[id] = nil
             invalidateIssueTimeline(threadId: id)
             issueTimelineRevisions[id] = nil
+            confirmedTimelineCommentOverrides[id] = nil
             postDidChange()
             return
         }
@@ -800,6 +888,7 @@ final class GitHubNotificationInboxService {
         issueStates[id] = nil
         invalidateIssueTimeline(threadId: id)
         issueTimelineRevisions[id] = nil
+        confirmedTimelineCommentOverrides[id] = nil
         postDidChange()
     }
 

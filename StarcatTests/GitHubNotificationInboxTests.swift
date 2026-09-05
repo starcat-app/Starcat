@@ -1453,8 +1453,8 @@ struct GitHubNotificationInboxTests {
         #expect(comments.map(\.id) == [88])
     }
 
-    @Test("事件流打开时发评不写 comments_json，并强制重拉 timeline")
-    func postCommentWhileIssueEventsEnabledRefetchesTimeline() async throws {
+    @Test("事件流打开时立即展示已发送评论，旧 timeline 回读不得覆盖且追上后不重复")
+    func postCommentWhileIssueEventsEnabledPreservesConfirmedComment() async throws {
         let env = try makeEnv()
         env.settings.githubIssueEventTimelineEnabled = true
         let record = GitHubNotificationMapper.record(
@@ -1482,19 +1482,34 @@ struct GitHubNotificationInboxTests {
             labelsJson: nil
         )
         var timelineCalls = 0
+        var timelineIncludesCreatedComment = false
         env.mock.listNotificationIssueTimelineHandler = { _ in
             timelineCalls += 1
-            return [
+            var items: [GitHubNotificationIssueTimelineItem] = [
                 .comment(
                     GitHubNotificationComment(
-                        id: 501,
-                        login: "dong4j",
-                        body: "hello from starcat",
-                        htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
-                        createdAt: "2026-08-19T14:32:00Z"
+                        id: 1,
+                        login: "old",
+                        body: "stale",
+                        htmlURL: nil,
+                        createdAt: "2026-08-18T00:00:00Z"
                     )
                 )
             ]
+            if timelineIncludesCreatedComment {
+                items.append(
+                    .comment(
+                        GitHubNotificationComment(
+                            id: 501,
+                            login: "dong4j",
+                            body: "hello from starcat",
+                            htmlURL: "https://github.com/o/r/issues/1#issuecomment-501",
+                            createdAt: "2026-08-19T14:32:00Z"
+                        )
+                    )
+                )
+            }
+            return items
         }
         env.mock.createNotificationIssueCommentHandler = { _, body in
             GitHubNotificationComment(
@@ -1509,8 +1524,20 @@ struct GitHubNotificationInboxTests {
         _ = try await env.inbox.loadIssueTimeline(threadId: "ev3")
         #expect(timelineCalls == 1)
         try await env.inbox.postComment(threadId: "ev3", body: "hello from starcat")
-        #expect(timelineCalls == 2)
+        #expect(timelineCalls == 1)
         #expect(env.inbox.issueTimelineRevision(threadId: "ev3") >= 2)
+        #expect(env.inbox.cachedIssueTimelineComments(threadId: "ev3").map(\.id) == [1, 501])
+
+        // GitHub 的 timeline 读接口可能短暂仍返回旧快照；强制刷新也不能删掉 POST 已确认的评论。
+        _ = try await env.inbox.loadIssueTimeline(threadId: "ev3", force: true)
+        #expect(timelineCalls == 2)
+        #expect(env.inbox.cachedIssueTimelineComments(threadId: "ev3").map(\.id) == [1, 501])
+
+        // 远端追上后清掉本地 override，但相同 id 仍只显示一次。
+        timelineIncludesCreatedComment = true
+        _ = try await env.inbox.loadIssueTimeline(threadId: "ev3", force: true)
+        #expect(timelineCalls == 3)
+        #expect(env.inbox.cachedIssueTimelineComments(threadId: "ev3").map(\.id) == [1, 501])
 
         let stored = try #require(try await env.threads.fetch(id: "ev3"))
         #expect(stored.commentsJson == nil)
