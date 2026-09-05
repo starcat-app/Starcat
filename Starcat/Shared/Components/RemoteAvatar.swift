@@ -21,16 +21,28 @@ import AppKit
 /// 关键约束：
 /// - `avatars.githubusercontent.com` 用 `s`（像素）；
 /// - `github.com/{owner}.png` redirect 端点用 `size`；
-/// - 默认按 @2x 屏推导并钳制在 32…256，避免 32pt 圆仍拉原图。
+/// - 默认按 @2x 屏推导并钳制在 32…256，避免 32pt 圆仍拉原图；
+/// - Ambient 等大图调用方可显式放宽到 64…1024，但普通头像默认行为不变。
 enum GitHubAvatarURL {
-    static func imageURL(from urlString: String?, displayDiameter: CGFloat) -> URL? {
+    static func imageURL(
+        from urlString: String?,
+        displayDiameter: CGFloat,
+        displayScale: CGFloat = 2,
+        minimumPixelSize: Int = 32,
+        maximumPixelSize: Int = 256
+    ) -> URL? {
         guard let urlString, !urlString.isEmpty else { return nil }
         guard var components = URLComponents(string: urlString) else {
             return URL(string: urlString)
         }
 
         let host = components.host?.lowercased() ?? ""
-        let pixelSize = clampedPixelSize(for: displayDiameter)
+        let pixelSize = clampedPixelSize(
+            for: displayDiameter,
+            displayScale: displayScale,
+            minimumPixelSize: minimumPixelSize,
+            maximumPixelSize: maximumPixelSize
+        )
 
         if host == "avatars.githubusercontent.com" {
             upsertQueryItem(name: "s", value: "\(pixelSize)", on: &components)
@@ -45,9 +57,16 @@ enum GitHubAvatarURL {
         return components.url ?? URL(string: urlString)
     }
 
-    private static func clampedPixelSize(for displayDiameter: CGFloat) -> Int {
-        let scaled = Int(ceil(displayDiameter * 2))
-        return min(max(scaled, 32), 256)
+    private static func clampedPixelSize(
+        for displayDiameter: CGFloat,
+        displayScale: CGFloat,
+        minimumPixelSize: Int,
+        maximumPixelSize: Int
+    ) -> Int {
+        let safeMinimum = max(1, minimumPixelSize)
+        let safeMaximum = max(safeMinimum, maximumPixelSize)
+        let scaled = Int(ceil(max(1, displayDiameter) * max(1, displayScale)))
+        return min(max(scaled, safeMinimum), safeMaximum)
     }
 
     private static func upsertQueryItem(name: String, value: String, on components: inout URLComponents) {

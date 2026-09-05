@@ -860,6 +860,20 @@ struct DebugMenuCommands: Commands {
                 BorderBeamSearchLabWindowController.show()
             }
 
+            Button("ambient.menu.openRepos") {
+                if let dependencies {
+                    AmbientWindowController.show(dependencies: dependencies, scene: .repos)
+                }
+            }
+            .disabled(dependencies == nil)
+
+            Button("ambient.menu.openOwners") {
+                if let dependencies {
+                    AmbientWindowController.show(dependencies: dependencies, scene: .owners)
+                }
+            }
+            .disabled(dependencies == nil)
+
             Divider()
 
             Menu("Window Size") {
