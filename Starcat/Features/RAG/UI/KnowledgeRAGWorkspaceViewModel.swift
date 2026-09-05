@@ -976,6 +976,13 @@ final class KnowledgeRAGWorkspaceViewModel {
     func newConversation() async {
         let requestGeneration = conversationSelectionGate.begin()
         do {
+            // 已存在没有任何消息的空会话时不再新建，直接复用（选中）它，
+            // 避免连点「新增会话」在侧栏堆积一堆空白会话。
+            if let existingEmpty = try await conversationStore.findEmptyConversation() {
+                guard existingEmpty.id != selectedConversationID else { return }
+                await selectConversation(existingEmpty.id)
+                return
+            }
             // 离开当前会话前先暂存未发送草稿，避免「新建」把 @repo / 附件带走。
             saveComposerDraft(for: selectedConversationID)
             dismissMentionPicker()
