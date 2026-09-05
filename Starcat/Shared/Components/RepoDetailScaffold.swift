@@ -784,7 +784,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                                 .frame(width: 28, height: 28)
                                 .background {
                                     Capsule(style: .continuous)
-                                        .fill(WikiAccent.background(colorScheme: colorScheme))
+                                        .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
                                 }
                         }
                         .buttonStyle(.plain)
@@ -803,7 +803,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                             .frame(width: 28, height: 28)
                             .background {
                                 Capsule(style: .continuous)
-                                    .fill(WikiAccent.background(colorScheme: colorScheme))
+                                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
                             }
                     }
                     .buttonStyle(.plain)

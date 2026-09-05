@@ -33,10 +33,6 @@ struct LibraryToggleButton: View {
         return Color.fromHex6(colorScheme == .dark ? 0xFDA4AF : 0xE11D48)
     }
 
-    private var background: Color {
-        foreground.opacity(colorScheme == .dark ? 0.20 : 0.12)
-    }
-
     var body: some View {
         Button {
             action()
@@ -57,11 +53,7 @@ struct LibraryToggleButton: View {
             .frame(width: 28, height: 28)
             .background {
                 Capsule(style: .continuous)
-                    .fill(background)
-            }
-            .overlay {
-                Capsule(style: .continuous)
-                    .strokeBorder(foreground.opacity(isSaved ? 0.28 : 0.16), lineWidth: 1)
+                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
             }
             .contentShape(Capsule())
             .accessibilityLabel(Text(helpKey))

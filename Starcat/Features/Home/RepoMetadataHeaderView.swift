@@ -740,7 +740,7 @@ struct RepoShareButton: View {
             .frame(width: 28, height: 28)
             .background {
                 Capsule(style: .continuous)
-                    .fill((didCopy ? Color.green : Color.secondary).opacity(colorScheme == .dark ? 0.20 : 0.12))
+                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
             }
             .contentShape(Capsule())
     }
