@@ -214,22 +214,37 @@ extension RepoCardViewData {
     }
 }
 
+/// 卡片元信息的显示投影：可缩短可见文本或只显示图标，完整含义仍提供给悬停和无障碍。
 struct RepoCardInlineMetadata: Hashable, Sendable {
     let systemImage: String
     let text: String
     /// 只暴露语义 tint，避免把 SwiftUI.Color 带进跨场景 view data。
     let tint: RepoCardInlineMetadataTint
+    /// 仅项目归属等身份信号使用纯图标，其他场景保留文本。
+    let iconOnly: Bool
+    /// 增长数字省略时间范围后，提示仍需保留完整口径。
+    let helpText: String
 
-    init(systemImage: String, text: String, tint: RepoCardInlineMetadataTint = .secondary) {
+    init(
+        systemImage: String,
+        text: String,
+        tint: RepoCardInlineMetadataTint = .secondary,
+        iconOnly: Bool = false,
+        helpText: String? = nil
+    ) {
         self.systemImage = systemImage
         self.text = text
         self.tint = tint
+        self.iconOnly = iconOnly
+        self.helpText = helpText ?? text
     }
 }
 
 enum RepoCardInlineMetadataTint: Hashable, Sendable {
     case secondary
     case green
+    case orange
+    case purple
 }
 
 // MARK: - CardBadge

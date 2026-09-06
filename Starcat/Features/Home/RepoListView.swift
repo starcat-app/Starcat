@@ -2936,7 +2936,7 @@ private struct ManageRepoRowContent: View {
         }
     }
 
-    /// 在 fullName 同行压成一个稳定徽章，避免为项目场景复制整张 Repo 卡片。
+    /// 标题行用图标表达项目归属、颜色表达可见性，完整关系与权限只放进悬停提示。
     private func projectMetadata(_ project: UserProject) -> RepoCardInlineMetadata {
         let affiliation: String
         let systemImage: String
@@ -2956,19 +2956,29 @@ private struct ManageRepoRowContent: View {
         }
         let visibility = String.l10n("list.filter.project.visibility.\(project.visibility.rawValue)")
         let permission = String.l10n("list.filter.project.permission.\(project.permission.rawValue)")
+        let tint: RepoCardInlineMetadataTint
+        switch project.visibility {
+        case .public: tint = .secondary
+        case .private: tint = .orange
+        case .internal: tint = .purple
+        }
         return RepoCardInlineMetadata(
             systemImage: systemImage,
-            text: [affiliation, visibility, permission].joined(separator: " · ")
+            text: [affiliation, visibility, permission].joined(separator: " · "),
+            tint: tint,
+            iconOnly: true
         )
     }
 
     /// 30 天增长只来自本机已有历史；历史不足时 ViewModel 返回 nil，卡片不伪造 0。
+    /// 胶囊只放有符号数字，时间口径留在悬停提示，避免重复短语挤占列表宽度。
     private func growthMetadata(_ growth: Int) -> RepoCardInlineMetadata {
         let value = growth > 0 ? "+\(growth.formattedShort)" : growth.formattedShort
         return RepoCardInlineMetadata(
             systemImage: growth >= 0 ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis",
-            text: String(format: String.l10n("project.card.growth30d"), value),
-            tint: growth > 0 ? .green : .secondary
+            text: value,
+            tint: growth > 0 ? .green : .secondary,
+            helpText: String(format: String.l10n("project.card.growth30d"), value)
         )
     }
 }

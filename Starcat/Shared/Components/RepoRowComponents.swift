@@ -13,16 +13,15 @@
 //  导出内容：
 //  - `BadgeStyle`：紧凑 / 完整两档样式
 //  - chip 视图：`LanguageBadge` / `StarsBadge` / `MetaBadge` / `ArchivedBadge` /
-//    `RelativeDateBadge`（每个都强制 `.lineLimit(1)` + `.fixedSize(horizontal:)`)
+//    `RelativeDateBadge`（文字强制单行，数字固定宽度，语言名支持受限宽度）
 //  - `LanguageColor`：GitHub 主流语言色卡映射
 //  - `Int.formattedShort`：1234 → "1.2k" 短格式
 //  - `RepoAvatarURL`：owner login 转头像 URL
 //
 //  关键约束（写新 chip 时必须遵守）：
 //  - chip 内部 `Text` **必须**加 `.lineLimit(1)`，禁止竖向换行
-//  - chip 视图最外层 **必须**加 `.fixedSize(horizontal: true, vertical: false)`，
-//    保证 chip 维持自然宽度，宁可整行被 List 水平裁剪带走最后一个 chip，
-//    也不让 chip 被压扁 / 拉高
+//  - chip 用 `.fixedSize(horizontal: true, vertical: false)` 保持自然宽度；
+//    长语言名先按调用方的上限单行截断，短内容不能因 maxWidth 而额外占位。
 //
 
 import SwiftUI
@@ -44,11 +43,14 @@ public enum BadgeStyle {
 public struct LanguageBadge: View {
     let language: String
     let style: BadgeStyle
+    /// 卡片可提供宽度上限以让长语言名截断；其他调用默认保持原有自然宽度。
+    let maximumWidth: CGFloat?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
-    public init(language: String, style: BadgeStyle) {
+    public init(language: String, style: BadgeStyle, maximumWidth: CGFloat? = nil) {
         self.language = language
         self.style = style
+        self.maximumWidth = maximumWidth
     }
 
     public var body: some View {
@@ -62,6 +64,7 @@ public struct LanguageBadge: View {
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(style == .full ? .primary : .secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
         .padding(.horizontal, style == .full ? 7 : 0)
         .padding(.vertical, style == .full ? 3 : 0)
@@ -71,7 +74,12 @@ public struct LanguageBadge: View {
                     .fill(LanguageColor.color(for: language).opacity(0.13))
             }
         }
+        .frame(maxWidth: maximumWidth, alignment: .leading)
+        // 在宽度上限外取 ideal size，既截断长名称，也避免短名称撑满上限制造胶囊间隙。
         .fixedSize(horizontal: true, vertical: false)
+        .help(language)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: language))
     }
 }
 

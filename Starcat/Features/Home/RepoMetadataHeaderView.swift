@@ -540,7 +540,8 @@ private struct RepoOwnerSegment: View {
             }
         }
         .sheet(isPresented: $showOwnerCard) {
-            OwnerCardSheet(ownerLogin: owner)
+            // 详情页已经完成关注状态查询，直接共享给卡片，避免打开时重复请求 GitHub。
+            OwnerCardSheet(ownerLogin: owner, isFollowing: $isFollowing)
                 .appSheetRootEnvironment(dependencies)
         }
         .task(id: owner) {
@@ -570,6 +571,8 @@ private struct RepoOwnerSegment: View {
     }
 
     private func loadFollowing() async {
+        // Repo 切换时先清空旧 owner 状态，避免卡片短暂复用上一位 owner 的结果。
+        isFollowing = nil
         guard authSession.state.isAuthenticated else { return }
         if let following = try? await dependencies.ownerFollowService.isFollowing(login: owner) {
             isFollowing = following

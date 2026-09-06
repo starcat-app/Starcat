@@ -4,8 +4,8 @@
 //
 //  仓库详情页 hero 区点击 owner 名弹出的真实资料卡容器。
 //
-//  本视图只负责加载 GitHub 公开资料、社交账号、贡献数据与关注状态，再交给
-//  OwnerCardView 展示：明亮主题使用 A，黑暗主题使用 B。
+//  本视图负责加载 GitHub 公开资料、社交账号与贡献数据；关注状态由详情页传入并双向同步，
+//  避免打开卡片时重复请求。数据交给 OwnerCardView 展示：明亮主题使用 A，黑暗主题使用 B。
 //  贡献数据对组织账号可能不可用，因此 nil 时不渲染，也不预留高度。
 //
 
@@ -17,6 +17,9 @@ struct OwnerCardSheet: View {
     /// owner 的 GitHub login（如 `apple`）。
     let ownerLogin: String
 
+    /// 详情页已查询的关注状态；卡片内关注 / 取关成功后同步回详情页。
+    @Binding var isFollowing: Bool?
+
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.dismiss) private var dismiss
@@ -26,9 +29,6 @@ struct OwnerCardSheet: View {
 
     /// GitHub 独立 Social accounts 端点返回的公开链接。
     @State private var socialAccounts: [GitHubSocialAccountDTO] = []
-
-    /// 是否已关注；nil = 未登录或查询中。
-    @State private var isFollowing: Bool?
 
     /// 关注 / 取关操作进行中。
     @State private var isFollowingInFlight = false
@@ -132,11 +132,6 @@ struct OwnerCardSheet: View {
         }
         if let contribution = try? await dependencies.ownerFollowService.contribution(login: ownerLogin) {
             contributionPayload = contribution
-        }
-
-        guard authSession.state.isAuthenticated else { return }
-        if let following = try? await dependencies.ownerFollowService.isFollowing(login: ownerLogin) {
-            isFollowing = following
         }
     }
 

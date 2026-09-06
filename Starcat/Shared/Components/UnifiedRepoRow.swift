@@ -199,6 +199,7 @@ struct UnifiedRepoRow: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .layoutPriority(1)
+                            .help(card.fullName)
 
                         if showStarredCheckmark && card.isStarred {
                             // 紧贴 fullName 右侧 4pt（设计 §3.1.2 表格：图标 = checkmark.circle.fill / systemGreen / 11pt）
@@ -211,7 +212,15 @@ struct UnifiedRepoRow: View {
                         }
 
                         if card.isFork {
-                            MetaBadge(systemImage: "tuningfork", text: "Fork", tint: forkTint)
+                            // 标题行只表达 Fork 身份；数量仍在底部单独显示。
+                            MetaBadge(
+                                systemImage: "tuningfork",
+                                text: "",
+                                tint: forkTint,
+                                iconOnly: true,
+                                accessibilityLabel: "repo.fork"
+                            )
+                            .help(Text("repo.fork"))
                         }
 
                         if !card.weeklySources.isEmpty {
@@ -248,26 +257,22 @@ struct UnifiedRepoRow: View {
                         // 行内 chip 区已能传达足够信号。`.release` / `.announcement` 走老的
                         // `ActivityRowView`（不进 UnifiedRepoRow）的时间戳保留不动。
                     }
+                    .lineLimit(1)
 
                     if let description = card.description, !description.isEmpty {
                         Text(description)
                             .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    // chip 行（固定布局，2026-09-04 优化）：
-                    // 原 ViewThatFits 会对 3 个变体各做一次布局测量，macOS List 滚动时每个新 row
-                    // 都重测，累积成滚动卡顿（Trending 尤甚）。改为固定渲染完整 chip，
-                    // 窄栏时靠 .clipped() 尾部裁剪，不再做「降级」测量。
-                    //
-                    // 布局分区（v2.1，2026-06-13 dong4j 反馈）：
-                    // - **左簇**：Language / Stars / Forks / Archived / sceneBadge / RepoStatusChip
-                    // - `Spacer(minLength: 8)` 分隔
-                    // - **右簇**：SemanticScoreBadge
+                    // 保留单棵布局树，避免恢复 ViewThatFits 多变体测量带来的滚动开销。
+                    // 胶囊按自然宽度紧邻排列，空余宽度只交给末尾 Spacer；状态图标不另起右簇。
+                    // clipped 只兜住越界绘制，单行约束负责防止胶囊换行增高。
                     HStack(spacing: 8) {
-                        metadataChipCluster(includeForks: true, footerIconOnly: false)
+                        metadataChipCluster
                         Spacer(minLength: 8)
                         if let semanticHit {
                             SemanticScoreBadge(
@@ -276,6 +281,7 @@ struct UnifiedRepoRow: View {
                             )
                         }
                     }
+                    .lineLimit(1)
                     .clipped()
                 }
                 // minWidth: 0 允许 HStack 内文字区压缩到可用宽度；否则 chip 固有宽度会撑破卡片。
@@ -341,19 +347,15 @@ struct UnifiedRepoRow: View {
         }
     }
 
-    /// chip 左簇变体：供 `ViewThatFits` 在窄栏依次降级（无 Spacer，保证 ideal 测宽可信）。
-    /// - `includeForks == false`：去掉 Forks 计数，先省约 40–50pt
-    /// - `footerIconOnly == true`：footer 元数据（如 RAG 索引 pill）只留图标，完整文案走 tooltip
+    /// 胶囊保持原有顺序与 8pt 间距；长文本在各自宽度上限内截断，不扩展短胶囊的占位。
     @ViewBuilder
-    private func metadataChipCluster(includeForks: Bool, footerIconOnly: Bool) -> some View {
+    private var metadataChipCluster: some View {
         HStack(spacing: 8) {
             if let language = card.language, !language.isEmpty {
-                LanguageBadge(language: language, style: .full)
+                LanguageBadge(language: language, style: .full, maximumWidth: 96 * interfaceScale.multiplier)
             }
             StarsBadge(count: displayedStarsCount, style: .full)
-            if includeForks {
-                MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: forkTint)
-            }
+            MetaBadge(systemImage: "tuningfork", text: card.forksCount.formattedShort, tint: forkTint)
             if hasAISummary {
                 // 与 RAG 仓库选择器复用同一 `sparkles` 语义；只显示图标，完整含义通过
                 // tooltip 与 accessibility label 提供，避免在窄栏挤占 metadata 行。
@@ -367,7 +369,7 @@ struct UnifiedRepoRow: View {
                 .help("repo.card.aiSummaryAvailable")
             }
             if let metadata = card.footerMetadata {
-                RepoCardInlineMetadataBadge(metadata: metadata, iconOnly: footerIconOnly)
+                RepoCardInlineMetadataBadge(metadata: metadata)
             }
             if card.isArchived {
                 // 卡片走 iconOnly：4+ chip 同行下 "Archived" 文字会挤换行。
@@ -375,7 +377,6 @@ struct UnifiedRepoRow: View {
                 ArchivedBadge(iconOnly: true)
             }
             sceneBadgeChip
-            // 阅读状态：场景允许 && isStarred && 已注入 && 非 .read 默认态
             if showReadStatusBadge,
                card.isStarred,
                let readStatus = card.readStatus,
@@ -383,6 +384,7 @@ struct UnifiedRepoRow: View {
                 RepoStatusChip(status: readStatus)
             }
         }
+        .lineLimit(1)
     }
 
     /// 场景独有徽章 chip（trending +N / weekly 第 N 期 / activity kind 已在头像）
@@ -449,11 +451,13 @@ private struct WeeklySourceInlineBadge: View {
                     sourceIcon(source)
                 }
             }
+            .fixedSize()
             if let label, !label.isEmpty {
                 Text(label)
                     .font(interfaceScale.font(.code, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
         .padding(.horizontal, 5)
@@ -462,6 +466,8 @@ private struct WeeklySourceInlineBadge: View {
             Capsule(style: .continuous)
                 .fill(Color.secondary.opacity(0.10))
         }
+        .frame(maxWidth: 96 * interfaceScale.multiplier, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .help(sources.map(\.presentation.displayName).joined(separator: " / "))
     }
 
@@ -489,17 +495,15 @@ private struct WeeklySourceInlineBadge: View {
 
 private struct RepoCardInlineMetadataBadge: View {
     let metadata: RepoCardInlineMetadata
-    /// 窄栏降级：只显示图标，完整 `metadata.text` 走 help / VoiceOver。
-    var iconOnly: Bool = false
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: metadata.systemImage)
                 .font(interfaceScale.font(.captionSmall, weight: .medium))
-            if !iconOnly {
-                // 与同行 Language / Stars / Forks 统一：captionSmall + 常规字重。
-                // 旧实现用 .code + semibold，分片「5/5」会明显偏大偏粗（同 trendingChange 旧坑）。
+                .fixedSize()
+            if !metadata.iconOnly {
+                // 身份徽章只显示图标；其余长文本单行截断，完整含义保留在 help / VoiceOver。
                 Text(verbatim: metadata.text)
                     .font(interfaceScale.font(.captionSmall))
                     .monospacedDigit()
@@ -508,16 +512,18 @@ private struct RepoCardInlineMetadataBadge: View {
             }
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, iconOnly ? 4 : 5)
+        .padding(.horizontal, metadata.iconOnly ? 4 : 5)
         .padding(.vertical, 2)
         .background {
             Capsule(style: .continuous)
                 .fill(tint.opacity(0.10))
         }
-        .frame(maxWidth: iconOnly ? nil : 96, alignment: .leading)
-        .fixedSize(horizontal: iconOnly, vertical: false)
-        .help(metadata.text)
-        .accessibilityLabel(Text(verbatim: metadata.text))
+        .frame(maxWidth: metadata.iconOnly ? nil : 96 * interfaceScale.multiplier, alignment: .leading)
+        // 外层 fixedSize 消除 maxWidth 带来的空白占位，胶囊仍紧贴文字或图标。
+        .fixedSize(horizontal: true, vertical: false)
+        .help(metadata.helpText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: metadata.helpText))
     }
 
     private var tint: Color {
@@ -526,6 +532,11 @@ private struct RepoCardInlineMetadataBadge: View {
             return .secondary
         case .green:
             return .green
+        // 身份图标用颜色表达可见性；完整状态也由 tooltip / VoiceOver 提供。
+        case .orange:
+            return .orange
+        case .purple:
+            return .purple
         }
     }
 }
@@ -567,6 +578,8 @@ struct SemanticScoreBadge: View {
             Text(scoreText)
                 .font(interfaceScale.font(.captionSmall))
                 .monospacedDigit()
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
         .foregroundStyle(.purple)
         .padding(.horizontal, 6)
@@ -575,6 +588,8 @@ struct SemanticScoreBadge: View {
             Capsule(style: .continuous)
                 .fill(Color.purple.opacity(0.12))
         }
+        .frame(maxWidth: 96 * interfaceScale.multiplier, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .help(hit.reason)
     }
 
@@ -677,8 +692,7 @@ struct OpenSSFScoreBadge: View {
 ///
 /// **视觉规格**：
 /// - `.unread`：蓝色实心圆点（7pt），与邮件 / RSS "未读"视觉系统一致；不带文字保持紧凑
-/// - `.using`：`checkmark.seal.fill` 图标 + accent 色 capsule + "在用"短文本
-///   （与详情页 `RepoNotesSection` 状态 pill 同源，避免主窗口 / 详情视觉分叉）
+/// - `.using`：`checkmark.seal.fill` 图标 + accent 色 capsule，文案由 help / VoiceOver 提供
 /// - `.read`：EmptyView（不应被调用方传入，但守卫住做兜底）
 fileprivate struct RepoStatusChip: View {
 
@@ -699,22 +713,20 @@ fileprivate struct RepoStatusChip: View {
                 .help(Text("repo.status.unread"))
 
         case .using:
-            // capsule chip（与 sceneBadge / SemanticScoreBadge 同视觉档），accent 色
-            // 高亮 —— 这是用户主动标的"重点 repo"，应该比 unread 更突出。
-            HStack(spacing: 3) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                Text("repo.status.using")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            }
-            .foregroundStyle(Color.accentColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-            }
-            .accessibilityLabel(Text("repo.status.using"))
+            // 卡片只保留状态图标，避免本地化文案在窄栏被挤成竖排；Label 保留无障碍语义。
+            Label("repo.status.using", systemImage: "checkmark.seal.fill")
+                .labelStyle(.iconOnly)
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background {
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(0.12))
+                }
+                .fixedSize()
+                .accessibilityLabel(Text("repo.status.using"))
+                .help(Text("repo.status.using"))
 
         case .read:
             // 守卫兜底：调用方应该已经过滤掉 .read，这里返回 EmptyView 保持 enum 完备性。
