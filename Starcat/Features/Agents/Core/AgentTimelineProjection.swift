@@ -62,6 +62,33 @@ struct AgentProcessSection: Identifiable, Sendable {
     var id: String
     var kind: Kind
     var items: [AgentTimelineItem]
+    /// 展开区只消费预先筛出的详情，避免每次 disclosure/hover 都重新过滤整组工具事件。
+    var executionDetailItems: [AgentTimelineItem]
+    /// 工具组状态在事实投影时聚合一次，View 刷新不再重复扫描。
+    var aggregateStatus: AgentToolResultStatus?
+    /// 知识检索审计入口同样在投影时定位，点击展开只做 O(1) 读取。
+    var knowledgeAuditToolCallID: String?
+
+    init(id: String, kind: Kind, items: [AgentTimelineItem]) {
+        self.id = id
+        self.kind = kind
+        self.items = items
+        self.executionDetailItems = items.filter(\.hasExecutionDetails)
+        self.aggregateStatus = Self.aggregateStatus(in: items)
+        self.knowledgeAuditToolCallID = items.first {
+            $0.toolAudit?.knowledgeRetrieval != nil
+        }?.toolCallID
+    }
+
+    private static func aggregateStatus(in items: [AgentTimelineItem]) -> AgentToolResultStatus? {
+        let statuses = items.compactMap(\.toolStatus)
+        if statuses.contains(.failed) { return .failed }
+        if statuses.contains(.timedOut) { return .timedOut }
+        if statuses.contains(.rejected) { return .rejected }
+        if statuses.count != items.count { return nil }
+        if statuses.allSatisfy({ $0 == .skipped }) { return .skipped }
+        return .completed
+    }
 }
 
 /// 一次 Run 的双层展示投影：过程可追踪，最终结果可直接阅读。
@@ -76,6 +103,13 @@ struct AgentRunPresentation: Sendable {
 enum AgentTimelineProjection {
     private struct LocatedResult {
         var value: AgentToolResultMessage
+    }
+
+    /// 构建阶段允许原地追加；完成后再一次性生成带缓存字段的展示 section。
+    private struct PendingProcessSection {
+        var id: String
+        var kind: AgentProcessSection.Kind
+        var items: [AgentTimelineItem]
     }
 
     /// 从同一份持久化事实生成 Run Surface。完成态默认收起过程，失败和审批态展开，
@@ -256,7 +290,7 @@ enum AgentTimelineProjection {
 
     /// 相邻同工具执行可聚合；Approval、进度文本与失败执行都是强边界。
     private static func makeProcessSections(_ items: [AgentTimelineItem]) -> [AgentProcessSection] {
-        var sections: [AgentProcessSection] = []
+        var sections: [PendingProcessSection] = []
         for item in items {
             switch item.kind {
             case .toolExecution:
@@ -271,17 +305,31 @@ enum AgentTimelineProjection {
                 if canAppend {
                     sections[sections.count - 1].items.append(item)
                 } else {
-                    sections.append(AgentProcessSection(id: "activity-\(item.id)", kind: .activity, items: [item]))
+                    sections.append(PendingProcessSection(
+                        id: "activity-\(item.id)",
+                        kind: .activity,
+                        items: [item]
+                    ))
                 }
             case .approval:
-                sections.append(AgentProcessSection(id: "approval-\(item.id)", kind: .approval, items: [item]))
+                sections.append(PendingProcessSection(
+                    id: "approval-\(item.id)",
+                    kind: .approval,
+                    items: [item]
+                ))
             case .assistant:
-                sections.append(AgentProcessSection(id: "progress-\(item.id)", kind: .progress, items: [item]))
+                sections.append(PendingProcessSection(
+                    id: "progress-\(item.id)",
+                    kind: .progress,
+                    items: [item]
+                ))
             case .user, .artifact:
                 continue
             }
         }
-        return sections
+        return sections.map { section in
+            AgentProcessSection(id: section.id, kind: section.kind, items: section.items)
+        }
     }
 
     /// 已知与未知工具都使用相同的本地确定性降级，不把内部 snake_case 原样暴露为标题。

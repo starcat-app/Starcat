@@ -12,6 +12,7 @@
 
 import SwiftUI
 
+@MainActor
 struct SmartCollectionsOverviewView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var viewModel
@@ -76,6 +77,7 @@ struct SmartCollectionsOverviewView: View {
             // 进入总览页先同步 sidebar 列表，避免 userSmartCollections 仍为空/过期时
             // 用户看不到旧集合、但 create 门控仍按 DB 行数拦截。
             await viewModel.refreshSidebar()
+            applyCachedCountsIfAvailable()
             await reloadAllCounts()
         }
         .onReceive(NotificationCenter.default.publisher(for: .repoLibraryStateDidChange)) { _ in
@@ -361,63 +363,76 @@ struct SmartCollectionsOverviewView: View {
     }
 
     private func reloadAllCounts() async {
-        async let system: Void = reloadSystemCounts()
-        async let user: Void = reloadUserCounts()
-        _ = await (system, user)
-    }
-
-    /// 内置集合计数：与删除用户集合无关，仅在首屏 / 显式刷新时重算。
-    private func reloadSystemCounts() async {
+        guard !isLoadingSystemCounts, !isLoadingUserCounts else { return }
         isLoadingSystemCounts = true
-        defer { isLoadingSystemCounts = false }
+        isLoadingUserCounts = true
+        defer {
+            isLoadingSystemCounts = false
+            isLoadingUserCounts = false
+        }
 
         do {
-            let repos = try await dependencies.repoRepository.fetchAllStarred()
-            async let statusMapAsync = dependencies.repoNoteRepository.fetchAllStatusMap()
-            let health = try await dependencies.repoHealthRepository.snapshots(for: repos.map(\.id))
-            let statusMap = (try? await statusMapAsync) ?? [:]
-            var nextSystem: [SmartCollectionKind: Int] = [:]
-            for kind in SmartCollectionKind.allCases {
-                if kind == .library {
-                    nextSystem[kind] = try await dependencies.repoRepository.knowledgeCount()
-                } else if kind == .outsideLibraryStars {
-                    let libraryStateMap = try await dependencies.repoNoteRepository.fetchAllLibraryStateMap()
-                    nextSystem[kind] = repos.filter { repo in
-                        (libraryStateMap[repo.id] ?? .outsideLibrary) != .inLibrary
-                    }.count
-                } else if kind == .noTags {
-                    nextSystem[kind] = try await dependencies.repoRepository.fetchUntagged().count
-                } else if kind == .using {
-                    // 与右侧详情列表的 `.smartCollection(.using)` 同源：正在使用是 repo_notes
-                    // 的用户状态，不是 repo metadata；直接用状态仓库避免总览和列表口径漂移。
-                    nextSystem[kind] = try await dependencies.repoNoteRepository.fetchRepos(byStatus: .using).count
-                } else {
-                    nextSystem[kind] = repos.filter { repo in
-                        HomeViewModel.matchesSmartCollection(
-                            repo: repo,
-                            health: health[repo.id],
-                            status: statusMap[repo.id],
-                            kind: kind
-                        )
-                    }.count
-                }
-            }
+            async let system = loadSystemCounts()
+            async let user = loadUserCounts()
+            let (nextSystem, nextUser) = try await (system, user)
+            // 两组计数来自同一次刷新意图，只发布一个 UI transaction，避免卡片分批跳数。
             withAnimation(.easeInOut(duration: 0.18)) {
                 systemCounts = nextSystem
+                userCounts = nextUser
             }
+            storeCountSnapshot()
         } catch {
-            AppLog.database.warning("Smart Collections system counts load failed: \(error.localizedDescription, privacy: .public)")
-            withAnimation(.easeInOut(duration: 0.18)) {
-                systemCounts = [:]
+            // SWR 失败保留已有快照；清空会让短暂数据库故障退化成整页 0。
+            AppLog.database.warning("Smart Collections counts load failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// 内置集合计数在一个数据库事务里读取，保证八张卡片属于同一数据快照。
+    private func loadSystemCounts() async throws -> [SmartCollectionKind: Int] {
+        let snapshot = try await SmartCollectionSystemCountsLoader.load(database: dependencies.database)
+        let repos = snapshot.starredRepos
+        var nextSystem: [SmartCollectionKind: Int] = [:]
+        for kind in SmartCollectionKind.allCases {
+            if kind == .library {
+                nextSystem[kind] = snapshot.knowledgeCount
+            } else if kind == .outsideLibraryStars {
+                nextSystem[kind] = repos.filter { repo in
+                    (snapshot.libraryStateByRepoID[repo.id] ?? .outsideLibrary) != .inLibrary
+                }.count
+            } else if kind == .noTags {
+                nextSystem[kind] = snapshot.noTagsCount
+            } else if kind == .using {
+                nextSystem[kind] = repos.filter {
+                    snapshot.statusByRepoID[$0.id] == .using
+                }.count
+            } else {
+                nextSystem[kind] = repos.filter { repo in
+                    HomeViewModel.matchesSmartCollection(
+                        repo: repo,
+                        health: snapshot.healthByRepoID[repo.id],
+                        status: snapshot.statusByRepoID[repo.id],
+                        kind: kind
+                    )
+                }.count
             }
         }
+        return nextSystem
     }
 
     /// 用户集合计数：编辑规则后重算；删除时只改本地字典，不走 loading。
     private func reloadUserCounts() async {
+        guard !isLoadingUserCounts else { return }
         isLoadingUserCounts = true
         defer { isLoadingUserCounts = false }
 
+        let nextUser = await loadUserCounts()
+        withAnimation(.easeInOut(duration: 0.18)) {
+            userCounts = nextUser
+        }
+        storeCountSnapshot()
+    }
+
+    private func loadUserCounts() async -> [String: Int] {
         var nextUser: [String: Int] = [:]
         for collection in viewModel.userSmartCollections {
             guard let rule = collection.rule else {
@@ -430,8 +445,36 @@ struct SmartCollectionsOverviewView: View {
                 nextUser[collection.id] = 0
             }
         }
-        withAnimation(.easeInOut(duration: 0.18)) {
-            userCounts = nextUser
+        return nextUser
+    }
+
+    private func applyCachedCountsIfAvailable() {
+        guard let cached = SmartCollectionOverviewCountCache.shared.snapshot(
+            accountID: dependencies.database.currentUserId,
+            collections: viewModel.userSmartCollections
+        ) else { return }
+        systemCounts = cached.systemCounts
+        userCounts = cached.userCounts
+    }
+
+    private func storeCountSnapshot() {
+        SmartCollectionOverviewCountCache.shared.store(
+            systemCounts: systemCounts,
+            userCounts: userCounts,
+            accountID: dependencies.database.currentUserId,
+            collections: viewModel.userSmartCollections
+        )
+    }
+
+    private func removeCachedUserCount(id: String) {
+        userCounts.removeValue(forKey: id)
+        storeCountSnapshot()
+    }
+
+    private func applyDeletedCollection(_ collection: UserSmartCollection) {
+        removeCachedUserCount(id: collection.id)
+        if viewModel.selection == .userSmartCollection(collection.id) {
+            viewModel.selectSidebar(.smartCollectionsHome)
         }
     }
 
@@ -439,11 +482,8 @@ struct SmartCollectionsOverviewView: View {
         do {
             try await dependencies.smartCollectionRepository.delete(id: collection.id)
             await viewModel.refreshSidebar()
-            if viewModel.selection == .userSmartCollection(collection.id) {
-                viewModel.selectSidebar(.smartCollectionsHome)
-            }
             // 删除不影响内置集合命中数，只移除本地用户计数，避免整页 spinner。
-            userCounts.removeValue(forKey: collection.id)
+            applyDeletedCollection(collection)
         } catch {
             deleteError = error.localizedDescription
         }

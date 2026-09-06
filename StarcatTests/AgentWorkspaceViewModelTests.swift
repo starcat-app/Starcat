@@ -349,6 +349,78 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.traceEvents == [completed])
     }
 
+    @Test("流式正文刷新复用持久化时间线与 Trace 投影")
+    func streamingPresentationReusesDerivedSnapshots() {
+        let runID = UUID()
+        let trace = AgentTraceEvent(
+            id: "\(runID.uuidString):tool-1",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 0,
+            kind: .tool,
+            status: .running,
+            title: "fixture_lookup"
+        )
+        let viewModel = AgentWorkspaceViewModel(agents: [BuiltInAgents.githubWeeklyReport])
+        viewModel.traceEvents = [trace]
+
+        _ = viewModel.timelinePresentation()
+        _ = viewModel.traceTimelineSnapshot()
+        let timelineBuilds = viewModel.timelineProjectionBuildCountForTesting
+        let traceBuilds = viewModel.traceProjectionBuildCountForTesting
+
+        // Provider 文本快照只更新正在生成的叶子行，不能连带重建历史展示模型。
+        viewModel.assistantOutput = "streaming snapshot"
+        _ = viewModel.timelinePresentation()
+        _ = viewModel.traceTimelineSnapshot()
+
+        #expect(viewModel.timelineProjectionBuildCountForTesting == timelineBuilds)
+        #expect(viewModel.traceProjectionBuildCountForTesting == traceBuilds)
+
+        viewModel.status = .running
+        _ = viewModel.timelinePresentation()
+        #expect(viewModel.timelineProjectionBuildCountForTesting == timelineBuilds + 1)
+    }
+
+    @Test("乱序 Runtime Trace 只在必要时重排")
+    func outOfOrderRuntimeTraceRemainsDeterministicallySorted() async throws {
+        let runID = UUID()
+        let later = AgentTraceEvent(
+            id: "later",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 2,
+            kind: .tool,
+            status: .running,
+            title: "later"
+        )
+        let earlier = AgentTraceEvent(
+            id: "earlier",
+            runID: runID,
+            backend: .codexAppServer,
+            sequence: 1,
+            kind: .reasoningSummary,
+            status: .completed,
+            title: "earlier"
+        )
+        let viewModel = AgentWorkspaceViewModel(
+            agents: [BuiltInAgents.githubWeeklyReport],
+            runtime: EventReplayAgentRuntime(events: [
+                .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+                .traceUpdated(later),
+                .traceUpdated(earlier),
+                .runCompleted,
+            ])
+        )
+        configureRunnable(viewModel)
+        viewModel.prompt = "生成周刊"
+
+        viewModel.run()
+        try await waitUntil { viewModel.status == .completed }
+
+        #expect(viewModel.traceEvents.map(\.id) == ["earlier", "later"])
+    }
+
     @Test("Agent 中间区可渲染为连续任务叙事而非调试卡片")
     func runSurfaceRendersEditorialActivityFeed() async throws {
         let runID = UUID()

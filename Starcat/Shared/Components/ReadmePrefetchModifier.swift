@@ -52,6 +52,7 @@ struct ReadmePrefetchModifier: ViewModifier {
 
     /// 当前 in-flight 的 prefetch task；hover 离开时取消，避免无谓请求。
     @State private var hoverTask: Task<Void, Never>?
+    @Environment(\.starcatListInteractionSuppressed) private var interactionSuppressed
 
     func body(content: Content) -> some View {
         content.onHover { hovering in
@@ -61,13 +62,20 @@ struct ReadmePrefetchModifier: ViewModifier {
             hoverTask?.cancel()
             hoverTask = nil
 
-            guard hovering else { return }
+            guard hovering, !interactionSuppressed else { return }
 
             hoverTask = Task {
                 // Task.sleep 抛 CancellationError 时 try? 直接吃掉，cancellation 路径不打日志
                 try? await Task.sleep(nanoseconds: debounceMs * 1_000_000)
                 guard !Task.isCancelled else { return }
                 await trigger()
+            }
+        }
+        .onChange(of: interactionSuppressed) { _, isSuppressed in
+            // 鼠标固定在列表上滚动时会快速跨过大量 row；滚动期间不创建 500ms Task。
+            if isSuppressed {
+                hoverTask?.cancel()
+                hoverTask = nil
             }
         }
     }

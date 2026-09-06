@@ -400,7 +400,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             ),
             opacity: 1 - metadataPanelCollapseProgress
         )
-        .id(repo.id)
+        // 保持 Scaffold / Notes / Tags / WKWebView 的结构身份，只做轻量 reveal。
+        // 旧 `.id(repo.id)` 会在每次点击卡片时销毁整棵详情树，是切换卡顿的主因。
+        .repoDetailSwitchEffect(identity: repo.id)
         .navigationTitle(repo.name)
         .navigationSubtitle(repo.owner)
         .task(id: wikiLookupKey(for: repo)) {
@@ -413,9 +415,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             reloadWikiLinksIfReset(notification, for: repo)
         }
         .task(id: repo.id, priority: .utility) {
-            // 先让出一次执行权，确保详情 Hero / README 首帧提交后再启动旁路推荐。
-            // 真正的磁盘 I/O 已在 cache actor 中执行，这里只负责最终 UI 状态赋值。
-            await Task.yield()
+            // 推荐不是首屏必需数据；短暂延后可把主线程和 SQLite 资源让给 Hero / README。
+            // task(id:) 会在连续切换时取消旧请求，避免后台追赶用户已经离开的仓库。
+            try? await Task.sleep(for: .milliseconds(180))
             guard !Task.isCancelled else { return }
             guard ProjectPrivacyPolicy.allowsDiscoveryLookup(for: repo) else {
                 recommendationVM.clear()
@@ -455,8 +457,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 metadataPanelCollapseProgress = 0
                 readmeScrollOverflow = nil
             }
+            scrollReportScheduler.pendingReport = nil
+            wikiRepoKey = nil
+            wikiLinks = []
+            recommendationVM.clear()
             showsRecommendations = false
+            aiOverlayTopChromeInset = 0
+            libraryState = .outsideLibrary
+            isLibraryOperationInFlight = false
             detailToastMessage = nil
+            proPaywallContext = nil
         }
         .onChange(of: metadataPanelHeight) { _, newHeight in
             restoreExpandedHeroIfNeeded(naturalPanelHeight: newHeight)
@@ -744,6 +754,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     starHelpKey: starHelpKey,
                     headerSourceBadge: viewData.headerSourceBadge,
                     showsRepoHealthEntry: showsRepoHealthEntry,
+                    libraryState: libraryState,
                     onLanguageTapped: onLanguageTapped,
                     onStarTapped: onStarTapped
                 ) {

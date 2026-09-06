@@ -145,6 +145,18 @@ struct ManageDetailContent: View {
                 onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
             }
         }
+        .onChange(of: repo.id) { _, _ in
+            // Scaffold 现在跨 repo 复用，必须显式结束旧仓洞察并回到 README。
+            // 禁用这里的 mode transition，仓库级轻量 reveal 已由 Scaffold 统一提供。
+            repositoryInsightsViewModel?.cancelRemoteLoading()
+            starHistoryViewModel?.cancel()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                contentMode = .readme
+            }
+            onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
+        }
     }
 
     /// README / 洞察切换行。高度通过 PreferenceKey 上报给 Scaffold，

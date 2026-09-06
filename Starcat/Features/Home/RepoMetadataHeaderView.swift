@@ -63,6 +63,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let starHelpKey: LocalizedStringKey
     let headerSourceBadge: RepoDetailHeaderSourceBadge?
     let showsRepoHealthEntry: Bool
+    /// Scaffold 已读取的知识库状态；Release stat 复用它，避免首屏重复查 repo_notes。
+    let libraryState: LibraryState
     let onLanguageTapped: ((String) -> Void)?
     private let trailingActions: TrailingActions
 
@@ -83,6 +85,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         starHelpKey: LocalizedStringKey = "repo.unstar",
         headerSourceBadge: RepoDetailHeaderSourceBadge? = nil,
         showsRepoHealthEntry: Bool = false,
+        libraryState: LibraryState = .outsideLibrary,
         onLanguageTapped: ((String) -> Void)? = nil,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
@@ -92,6 +95,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         self.starHelpKey = starHelpKey
         self.headerSourceBadge = headerSourceBadge
         self.showsRepoHealthEntry = showsRepoHealthEntry
+        self.libraryState = libraryState
         self.onLanguageTapped = onLanguageTapped
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
@@ -274,7 +278,7 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             // v2.0(2026-06-12,dong4j 反馈)：原本独立成段的 Releases 订阅区被压缩为这一列紧凑 stat,
             // 与 Stars / Forks / Watchers / Created / Updated 同行展示。详见
             // `Starcat/Features/Releases/RepoReleaseSection.swift` 文件头 v2.0 演化说明。
-            RepoReleaseStatItem(repo: repo)
+            RepoReleaseStatItem(repo: repo, libraryState: libraryState)
         }
     }
 }

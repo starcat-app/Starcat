@@ -81,4 +81,57 @@ enum WikiAvailabilitySnapshotLoader {
             }
         )
     }
+
+    /// 批量返回仍处于 fresh TTL 的 repo IDs。
+    ///
+    /// 启动补齐只关心“是否需要排队”，无需把完整 snapshot 带回 MainActor。所有文件
+    /// 读取和 JSON decode 都留在 detached utility task，避免知识库规模增大后阻塞滚动。
+    static func loadFreshRepositoryIDs(
+        requests: [WikiAvailabilityRequest],
+        rootOverride: URL? = nil,
+        now: Date = Date(),
+        readObserverForTesting: (@Sendable (_ isMainThread: Bool) -> Void)? = nil
+    ) async -> Set<Int64> {
+        guard !requests.isEmpty else { return [] }
+
+        let task: Task<Set<Int64>, Never> = Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            let root: URL
+            if let rootOverride {
+                root = rootOverride
+            } else {
+                guard let appSupport = fileManager.urls(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask
+                ).first else { return [] }
+                root = appSupport
+                    .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+                    .appendingPathComponent("wiki-cache", isDirectory: true)
+            }
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            var freshRepositoryIDs = Set<Int64>()
+            freshRepositoryIDs.reserveCapacity(requests.count)
+
+            for request in requests {
+                guard !Task.isCancelled else { return [] }
+                guard (try? DiskWikiCache.assertSafePathComponent(request.owner)) != nil,
+                      (try? DiskWikiCache.assertSafePathComponent(request.repo)) != nil else { continue }
+                let url = root
+                    .appendingPathComponent(request.owner, isDirectory: true)
+                    .appendingPathComponent("\(request.repo).json")
+                readObserverForTesting?(pthread_main_np() != 0)
+                guard let data = try? Data(contentsOf: url),
+                      let snapshot = try? decoder.decode(WikiCacheSnapshot.self, from: data),
+                      snapshot.freshness(at: now) == .fresh else { continue }
+                freshRepositoryIDs.insert(request.id)
+            }
+            return freshRepositoryIDs
+        }
+        return await withTaskCancellationHandler(
+            operation: { await task.value },
+            onCancel: { task.cancel() }
+        )
+    }
 }

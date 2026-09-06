@@ -95,8 +95,25 @@ final class ReadmeViewModel {
         case error(message: String)
     }
 
-    private(set) var state: LoadState = .idle
+    private(set) var state: LoadState = .idle {
+        didSet {
+            switch state {
+            case .loaded(let html, _):
+                // 只在文档发布时计算一次进程内指纹。SwiftUI 后续 body 重算直接复用，
+                // 304 仅更新时间戳时指纹保持不变，不会让 WKWebView 无谓重载。
+                activeDocumentID = "\(html.utf8.count):\(html.hashValue)"
+            case .loading:
+                // 加载新仓期间保留旧指纹，ReadmeStateView 会用它维持原生 WebView 身份。
+                break
+            case .idle, .empty, .requiresLogin, .error:
+                activeDocumentID = nil
+            }
+        }
+    }
     private(set) var isRefreshing: Bool = false
+
+    /// 当前已发布 HTML 的进程内轻量身份，仅供视图更新判定，不持久化也不跨进程比较。
+    private(set) var activeDocumentID: String?
 
     /// UI 判断 `state` 是否仍服务当前 manage 详情（与 `ReadmeStateView.contentScope` 对齐）。
     private(set) var activeRepoId: Int64?

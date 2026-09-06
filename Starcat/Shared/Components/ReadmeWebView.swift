@@ -87,6 +87,10 @@ struct ReadmeWebView: View {
     /// GitHub 返回的 HTML 片段（不含 <html>/<head>/<body>）。
     let htmlFragment: String
 
+    /// 调用方可提供的轻量文档身份。详情页用它避免 `updateNSView` 每次重算时比较整份 HTML；
+    /// 其它调用方省略后仍回退到内容本身，保持原有正确性。
+    var documentID: String? = nil
+
     /// 用于解析 HTML 内相对 URL 的基地址（链接 `<a href>` 等）。
     /// 通常传 repo.htmlUrl（https://github.com/owner/repo）。
     /// HOM-201 P1-2（2026-06-14）起，`<img>` 相对路径已在 IO 层（`ReadmeAPI`）
@@ -138,6 +142,7 @@ struct ReadmeWebView: View {
     var body: some View {
         ReadmeWebContentView(
             htmlFragment: htmlFragment,
+            documentID: documentID,
             baseURL: baseURL,
             onScrollReportChange: handleScrollReport,
             readmeFontSizeAdjustment: settings.readmeFontSizeAdjustment,
@@ -301,6 +306,7 @@ struct ReadmeWebView: View {
 
 private struct ReadmeWebContentView: NSViewRepresentable {
     let htmlFragment: String
+    let documentID: String?
     let baseURL: URL?
     var onScrollReportChange: (RepoDetailScrollReport) -> Void
     let readmeFontSizeAdjustment: Int
@@ -323,6 +329,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> WKWebView {
+        PerformanceTracer.shared.mark(.readmeWebViewCreated)
         let config = WKWebViewConfiguration()
         // GitHub README HTML 已是静态结构，不需要页面脚本。这里仍允许 WebKit 执行
         // app-owned user script（见 installScrollReportingScript），页面脚本由我们注入的
@@ -405,7 +412,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     /// `--readme-body-font-size` CSS 变量，无重载、无白闪、不触发 scroll。
     private func loadIfNeeded(into webView: WKWebView, context: Context) {
         let contentKey = ReadmeKey(
-            fragment: htmlFragment,
+            documentID: documentID ?? htmlFragment,
+            baseURL: baseURL,
             isDark: colorScheme == .dark,
             interfaceScale: interfaceScale
         )
@@ -1441,6 +1449,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            PerformanceTracer.shared.mark(.readmeWebViewNavigationFinished)
             // `updateNSView` 可能先于 document-end script 完成；导航结束后再补一次当前状态。
             lastAppliedTranslationRevision = nil
             applyTranslationRenderStateIfNeeded()
@@ -1952,12 +1961,13 @@ struct ReadmeFindRequest: Equatable {
     var backwards = false
 }
 
-/// 缓存键：HTML 片段 + 主题，用于 updateNSView 时判断是否需要重新 loadHTMLString。
+/// 缓存键：轻量文档身份 + base URL + 主题，用于判断是否需要重新 loadHTMLString。
 ///
 /// 字号调整不在此键中：字号变化时通过 JS 动态更新 CSS 变量 `--readme-body-font-size`，
 /// 避免 `loadHTMLString` 重载触发 scroll 事件导致字号面板意外关闭。
 struct ReadmeKey: Equatable {
-    let fragment: String
+    let documentID: String
+    let baseURL: URL?
     let isDark: Bool
     let interfaceScale: InterfaceScale
 }

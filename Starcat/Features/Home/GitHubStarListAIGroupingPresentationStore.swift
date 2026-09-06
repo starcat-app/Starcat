@@ -33,6 +33,7 @@ final class GitHubStarListAIGroupingPresentationStore {
 
     @ObservationIgnored private var appliedSearchText = ""
     @ObservationIgnored private var visibleLimit = GitHubStarListAIGroupingPresentationStore.pageSize
+    @ObservationIgnored private var matchingItems: [GitHubStarListAIReviewItem] = []
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
 
@@ -66,7 +67,7 @@ final class GitHubStarListAIGroupingPresentationStore {
     func loadMore() {
         guard canLoadMore else { return }
         visibleLimit += Self.pageSize
-        rebuildVisibleItems()
+        appendNextVisiblePage()
     }
 
     func synchronizeImmediately(from session: GitHubStarListAIGroupingSession) {
@@ -125,11 +126,24 @@ final class GitHubStarListAIGroupingPresentationStore {
     }
 
     private func rebuildVisibleItems() {
-        let matches = snapshot.items.filter {
+        matchingItems = snapshot.items.filter {
             $0.matches(filter: filter, searchText: appliedSearchText)
         }
-        matchingItemCount = matches.count
-        visibleItems = Array(matches.prefix(visibleLimit))
-        canLoadMore = visibleItems.count < matches.count
+        matchingItemCount = matchingItems.count
+        visibleItems = Array(matchingItems.prefix(visibleLimit))
+        canLoadMore = visibleItems.count < matchingItems.count
+    }
+
+    /// 筛选条件不变时，下一页只追加固定数量；匹配结果会在会话快照更新时统一重建。
+    /// 额外保留一份轻量展示数组，换取深度滚动时不再反复扫描全部审核项。
+    private func appendNextVisiblePage() {
+        let lowerBound = visibleItems.count
+        let upperBound = min(visibleLimit, matchingItems.count)
+        guard lowerBound < upperBound else {
+            canLoadMore = false
+            return
+        }
+        visibleItems.append(contentsOf: matchingItems[lowerBound..<upperBound])
+        canLoadMore = upperBound < matchingItems.count
     }
 }

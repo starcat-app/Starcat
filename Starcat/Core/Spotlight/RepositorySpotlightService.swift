@@ -19,6 +19,7 @@ final class RepositorySpotlightService {
     private let database: any DatabaseManaging
     private let settings: AppSettings
     private let index: any RepositorySpotlightIndexing
+    private let indexState: RepositorySpotlightIndexState
     private let notificationCenter: NotificationCenter
 
     private var observationTasks: [Task<Void, Never>] = []
@@ -28,11 +29,13 @@ final class RepositorySpotlightService {
         database: any DatabaseManaging,
         settings: AppSettings,
         index: any RepositorySpotlightIndexing = CoreSpotlightRepositoryIndex(),
+        indexState: RepositorySpotlightIndexState = RepositorySpotlightIndexState(),
         notificationCenter: NotificationCenter = .default
     ) {
         self.database = database
         self.settings = settings
         self.index = index
+        self.indexState = indexState
         self.notificationCenter = notificationCenter
     }
 
@@ -55,19 +58,23 @@ final class RepositorySpotlightService {
         observationTasks.append(observePreferenceChanges())
 
         if settings.spotlightSearchEnabled {
-            scheduleRebuild()
+            // AppDependencies 先打开 anonymous DB，随后认证恢复才切到用户 DB。给切库两秒
+            // 合并窗口，避免启动连续构建“空索引 + 用户索引”两份全量任务。
+            scheduleRebuild(delay: .seconds(2))
         } else {
             scheduleRemoveAll()
         }
     }
 
     /// 同步完成或账号切换到已登录数据库后调用。重复请求会取消尚未开始写索引的旧重建。
-    func scheduleRebuild() {
+    func scheduleRebuild(delay: Duration = .milliseconds(250)) {
         scheduledRebuildTask?.cancel()
         scheduledRebuildTask = Task { [weak self] in
-            // 合并同一 run loop 内的同步、账号切换和设置变更，避免连续全量读库。
-            await Task.yield()
-            guard !Task.isCancelled else { return }
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
             await self?.rebuild()
         }
     }
@@ -78,11 +85,36 @@ final class RepositorySpotlightService {
         await performRemoveAll()
     }
 
+    /// 登录态变化前建立 Spotlight 隔离边界。
+    ///
+    /// 冷启动会先打开 anonymous 占位库，再恢复上次账号；随后 `/user` 校验还会用同一
+    /// 账号回调一次。若持久 marker 明确属于目标账号，anonymous → A 与 A → A 都可以
+    /// 保留到指纹核验；A → B、登出和 marker 缺失仍先清空，不能用性能换串号风险。
+    func prepareForAccountChange(to targetAccountID: Int64?) async {
+        scheduledRebuildTask?.cancel()
+        let canReuseSameAccountIndex: Bool
+        if let targetAccountID {
+            let currentAccountID = database.currentUserId
+            canReuseSameAccountIndex = (currentAccountID == nil || currentAccountID == targetAccountID)
+                && indexState.belongs(to: targetAccountID)
+        } else {
+            canReuseSameAccountIndex = false
+        }
+        guard !canReuseSameAccountIndex else {
+            AppLog.general.info("Reusing same-account Spotlight index for cold-launch verification")
+            return
+        }
+        await performRemoveAll()
+    }
+
     /// 与任务调度解耦的实际清理入口。
     ///
     /// 调度任务不能调用公开 `removeAll()`，否则会先取消自己；虽然当前系统索引桥接
     /// 使用独立串行任务链，仍不应依赖未结构化任务的取消继承细节来保证隐私清理。
     private func performRemoveAll() async {
+        // 先使 marker 失效：若进程在系统删除完成后、状态落盘前退出，下次启动也只会
+        // 多做一次安全重建，不会把已经不存在的系统索引误判为可复用。
+        indexState.invalidate()
         do {
             try await index.removeAll()
         } catch {
@@ -115,6 +147,9 @@ final class RepositorySpotlightService {
             } else {
                 try await index.remove(identifiers: [String(repositoryID)])
             }
+            // marker 保留“上次全量内容”的指纹即可。若数据库事实真的变化，下次 rebuild
+            // 计算出的新指纹自然不匹配；若只是启动期重复刷新相同实体，保留 marker 才能
+            // 避免随后无意义的 deleteAll + 全量写入。
         } catch {
             recordFailure(operation: "spotlight.refreshRepository", error: error, repositoryID: repositoryID)
         }
@@ -131,9 +166,24 @@ final class RepositorySpotlightService {
         }
 
         do {
+            let requestedAccountID = database.currentUserId
             let snapshots = try await fetchSnapshots()
             try Task.checkCancellation()
+            guard requestedAccountID == database.currentUserId else { return }
+            let fingerprintTask = Task.detached(priority: .utility) {
+                RepositorySpotlightIndexState.fingerprint(for: snapshots)
+            }
+            let fingerprint = await fingerprintTask.value
+            try Task.checkCancellation()
+            guard !indexState.matches(accountID: requestedAccountID, fingerprint: fingerprint) else {
+                AppLog.general.info(
+                    "Spotlight repository index unchanged; skipped full rebuild (count=\(snapshots.count, privacy: .public))"
+                )
+                return
+            }
+
             try await index.replaceAll(with: snapshots.map(\.entity))
+            indexState.record(accountID: requestedAccountID, fingerprint: fingerprint)
             AppLog.general.info(
                 "Spotlight repository index rebuilt (count=\(snapshots.count, privacy: .public))"
             )

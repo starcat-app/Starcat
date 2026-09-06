@@ -622,23 +622,8 @@ struct HomeView: View {
         .onChange(of: selectedTrendingRepoID) { _, newID in
             handleTrendingRepoIDChange(newID)
         }
-        // HOM-68：README 加载完成后把源 HTML 喂给翻译 VM，用于刷新 cacheIsStale。
-        // 探索 / 活动 / 周刊由 ReadmeStateView 自己 bind；这里只补 Manage 全局 readmeVM。
-        .onChange(of: readmeStateSignature) { _, _ in
-            refreshTranslationSourceIfNeeded()
-        }
-        // 用户在详情页切换目标语言 → 重新预载缓存并复位显示。
-        .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
-            handleReadmeTranslationLanguageChange(newLanguage)
-        }
-        .onChange(of: locale.identifier) { _, _ in
-            guard settings.readmeTranslationLanguage == .auto else { return }
-            handleReadmeTranslationLanguageChange(.auto)
-        }
-        // 翻译方式切换后恢复原文，并重新检查该模式自己的缓存。
-        .onChange(of: settings.readmeTranslationMode) { _, newMode in
-            handleReadmeTranslationModeChange(newMode)
-        }
+        // README 与翻译状态由当前 `ReadmeStateView` 单点绑定。不要在 HomeView 再监听
+        // 同一份状态，否则每次切卡片都会重复 prepare 和磁盘缓存查询。
         )
     }
 
@@ -1479,15 +1464,6 @@ struct HomeView: View {
         }
         if let repo = viewModel.selectedRepo {
             readmeVM.load(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
-            // HOM-68：repo 变化时重置翻译态。源 HTML 尚未拿到，这里只重置 UI
-            // 占位；下方监听 `readmeVM.state` 会在 .loaded 时再补一次 prepare
-            // 让 cacheIsStale 计算到位。
-            translationVM.prepare(
-                repo: repo,
-                sourceHtml: nil,
-                targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                mode: settings.readmeTranslationMode
-            )
         } else {
             readmeVM.reset()
             translationVM.prepare(
@@ -1523,46 +1499,6 @@ struct HomeView: View {
                 mode: settings.readmeTranslationMode
             )
         }
-    }
-
-    private func refreshTranslationSourceIfNeeded() {
-        guard let repo = viewModel.selectedRepo else { return }
-        if case .loaded(let html, _) = readmeVM.state {
-            translationVM.prepare(
-                repo: repo,
-                sourceHtml: html,
-                targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                mode: settings.readmeTranslationMode
-            )
-        }
-    }
-
-    private func handleReadmeTranslationLanguageChange(_ newLanguage: ReadmeTranslationLanguage) {
-        guard let repo = viewModel.selectedRepo else { return }
-        let html: String? = {
-            if case .loaded(let value, _) = readmeVM.state { return value }
-            return nil
-        }()
-        translationVM.changeLanguage(
-            to: newLanguage.resolved(),
-            repo: repo,
-            sourceHtml: html,
-            mode: settings.readmeTranslationMode
-        )
-    }
-
-    private func handleReadmeTranslationModeChange(_ newMode: ReadmeTranslationMode) {
-        guard let repo = viewModel.selectedRepo else { return }
-        let html: String? = {
-            if case .loaded(let value, _) = readmeVM.state { return value }
-            return nil
-        }()
-        translationVM.changeMode(
-            to: newMode,
-            repo: repo,
-            sourceHtml: html,
-            targetLanguage: settings.effectiveReadmeTranslationLanguage
-        )
     }
 
     private func handleAuthRoutingChange(oldState: AuthState, newState: AuthState) {
@@ -2166,24 +2102,6 @@ struct HomeView: View {
             return WeeklyVisualStyle.accentColor
         }
         return selectedActivityItem?.accentColor
-    }
-
-    /// README 加载状态的纯文本签名，用于驱动 `.onChange` 在 .loaded 切换时刷新翻译 VM。
-    ///
-    /// 不直接 `.onChange(of: readmeVM.state)`：`LoadState.loaded(html, cachedAt)` 的
-    /// `html` 字段在 SWR 后台刷新 304 时会保留不变但 `cachedAt` 会变；用 html 的
-    /// 长度 + 状态 case 名做签名即可在「真正拿到新 HTML」时触发一次回调，避免
-    /// 304 时再做一遍 hash 比对。
-    private var readmeStateSignature: String {
-        switch readmeVM.state {
-        case .idle:           return "idle"
-        case .loading:        return "loading"
-        case .empty:          return "empty"
-        case .requiresLogin:  return "requires-login"
-        case .error:          return "error"
-        case .loaded(let html, _):
-            return "loaded:\(html.count)"
-        }
     }
 
     /// 未分组中栏横幅「开始整理」：先过 Pro 门控，再打开现有 GitHub Lists 审核 sheet。

@@ -5,7 +5,7 @@
 //  通用列表行渐进式入场动画。
 //
 //  设计目的：
-//  - 让 List 首屏和滚动中新进入可视区域的 row 有轻量 reveal 反馈。
+//  - 让 List 首屏 row 有轻量 reveal 反馈；更深的行直接显示，避免滚动时反复建状态。
 //  - 不改变数据加载策略，不引入数据库分页 / 无限滚动复杂度。
 //  - 尊重系统 Reduce Motion 设置，避免给不希望动效的用户增加负担。
 //
@@ -24,9 +24,8 @@ enum ListRowRevealMetrics {
 extension View {
     /// 列表 row 的轻量渐进式入场动画。
     ///
-    /// 这不是数据分页：数据仍由对应 ViewModel 按原策略加载。SwiftUI `List` 会懒创建
-    /// 当前可视区域附近的 row，因此 `.onAppear` 可覆盖"首屏逐行出现"和
-    /// "滚动到新 row 时再出现"两个体验点，成本远低于真正分页。
+    /// 这不是数据分页：数据仍由对应 ViewModel 按原策略加载。只有前 15 行保留
+    /// `.onAppear` 动画，更深的行不持有动画状态，避免滚动时额外触发 transaction。
     ///
     /// - Parameters:
     ///   - index: row 在当前快照中的顺序，只用于计算短 stagger delay。
@@ -35,18 +34,25 @@ extension View {
     ///     默认 false；排序切换 / 首次加载仍保留 reveal。
     ///   - replayAfterSnapshotCommit: 是否在快照变化后先提交一帧隐藏状态再播放。
     ///     默认关闭，避免改变现有列表的分页 / 刷新行为；只给明确拥有“发布完成”触发器的列表启用。
+    @ViewBuilder
     func listRowReveal(
         index: Int,
         snapshotID: Int,
         skipAnimation: Bool = false,
         replayAfterSnapshotCommit: Bool = false
     ) -> some View {
-        modifier(ListRowRevealModifier(
-            index: index,
-            snapshotID: snapshotID,
-            skipAnimation: skipAnimation,
-            replayAfterSnapshotCommit: replayAfterSnapshotCommit
-        ))
+        // 只有首屏 15 行需要 reveal。更深的行直接返回原 View，避免给长列表每一行都
+        // 分配两份 @State 和三个生命周期回调。
+        if ListRowRevealMetrics.shouldAnimate(index: index) {
+            modifier(ListRowRevealModifier(
+                index: index,
+                snapshotID: snapshotID,
+                skipAnimation: skipAnimation,
+                replayAfterSnapshotCommit: replayAfterSnapshotCommit
+            ))
+        } else {
+            self
+        }
     }
 }
 
@@ -65,6 +71,7 @@ private struct ListRowRevealModifier: ViewModifier {
     let replayAfterSnapshotCommit: Bool
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.starcatListInteractionSuppressed) private var interactionSuppressed
     @State private var isVisible = false
     @State private var revealGeneration = 0
 
@@ -73,7 +80,7 @@ private struct ListRowRevealModifier: ViewModifier {
     /// 首屏前 15 行覆盖最大化窗口的可见卡片；List 预创建的屏外 rows 如果继续持有 delay/animation
     /// 状态，会在分类切换时放大主线程事务。屏外行直接显示，滚动体验也更稳定。
     private var bypassAnimation: Bool {
-        reduceMotion || skipAnimation || !ListRowRevealMetrics.shouldAnimate(index: index)
+        reduceMotion || skipAnimation || interactionSuppressed
     }
 
     func body(content: Content) -> some View {
@@ -90,6 +97,11 @@ private struct ListRowRevealModifier: ViewModifier {
                 guard replayAfterSnapshotCommit else { return }
                 // 让已经离屏的 row 取消下一帧待执行的 reveal，避免快速切换后旧任务回写。
                 revealGeneration &+= 1
+            }
+            .onChange(of: interactionSuppressed) { _, isSuppressed in
+                guard isSuppressed else { return }
+                revealGeneration &+= 1
+                isVisible = true
             }
     }
 

@@ -13,6 +13,7 @@
 
 import AppKit
 import Charts
+import Kingfisher
 import SwiftUI
 
 enum StarHistoryChartSeriesBuilder {
@@ -2124,17 +2125,25 @@ struct RepositoryInsightsView: View {
     private func contributorItem(_ contributor: RepositoryContributor) -> some View {
         let destinationURL = contributorProfileURL(contributor)
         let isHovered = hoveredContributorID == contributor.id
+        let avatarURL = GitHubAvatarURL.imageURL(
+            from: contributor.avatarURL?.absoluteString,
+            displayDiameter: 28
+        )
         let content = HStack(spacing: 8) {
-            AsyncImage(url: contributor.avatarURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Text(String(contributor.login.prefix(1)).uppercased())
-                    .font(interfaceScale.font(.caption, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // 低透明度强调色让 `.primary` 在明暗主题和增强对比度下都保持系统语义。
-                    .background(InsightsColor.resolve(contributor.colorName).opacity(0.2))
-            }
+            KFImage(avatarURL)
+                .resizable()
+                // 快速切仓时取消离屏请求；已完成图片继续由 Kingfisher 内存/磁盘缓存复用。
+                .cancelOnDisappear(true)
+                .placeholder {
+                    Text(String(contributor.login.prefix(1)).uppercased())
+                        .font(interfaceScale.font(.caption, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        // 低透明度强调色让 `.primary` 在明暗主题和增强对比度下都保持系统语义。
+                        .background(InsightsColor.resolve(contributor.colorName).opacity(0.2))
+                }
+                .fade(duration: 0.15)
+                .scaledToFill()
             .frame(width: 28, height: 28)
             .clipShape(Circle())
 

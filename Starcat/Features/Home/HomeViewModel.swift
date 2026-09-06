@@ -290,7 +290,12 @@ final class HomeViewModel {
     ///   ForEach 默认 id 即 `Repo.id`，selection 类型与 ForEach.id 完全匹配，
     ///   SwiftUI 不需要再做 tag 匹配，是最稳的写法。
     /// - selectedRepo（值）通过 computed property 从 items 派生即可。
-    var selectedRepoID: Int64?
+    var selectedRepoID: Int64? {
+        didSet {
+            guard selectedRepoID != nil, selectedRepoID != oldValue else { return }
+            PerformanceTracer.shared.mark(.repoDetailSelectionRequested)
+        }
+    }
 
     /// 外部传入的 Repo 对象（如 Undo Star 选中行），不在当前 Manage 列表中。
     /// 设置后 `selectedRepo` 优先返回此值。
@@ -1295,6 +1300,8 @@ final class HomeViewModel {
     /// 仅用于并发回归测试，在 DB query 真正启动前制造可控挂起点。
     /// 生产构造始终使用默认 nil，不改变运行时路径。
     private let beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)?
+    /// 仅用于验证分页追加不会重复执行总数查询；生产构造始终为 nil。
+    private let beforeDatabaseListCountFetchForTesting: (@Sendable () async -> Void)?
 
     /// 当前用户智能集合的规则快照。进入非用户集合时清空，避免旧规则污染普通列表。
     private var activeUserSmartCollectionRule: SmartCollectionRule?
@@ -1436,7 +1443,8 @@ final class HomeViewModel {
         openSSFScoreRepository: (any OpenSSFScoreRepositoryProtocol)? = nil,
         smartCollectionRepository: (any SmartCollectionRepositoryProtocol)? = nil,
         semanticSearchService: SemanticSearchService? = nil,
-        beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)? = nil
+        beforeDatabasePageFetchForTesting: (@Sendable () async -> Void)? = nil,
+        beforeDatabaseListCountFetchForTesting: (@Sendable () async -> Void)? = nil
     ) {
         self.repository = repository
         self.tagRepository = tagRepository
@@ -1450,6 +1458,7 @@ final class HomeViewModel {
         self.smartCollectionRepository = smartCollectionRepository
         self.semanticSearchService = semanticSearchService
         self.beforeDatabasePageFetchForTesting = beforeDatabasePageFetchForTesting
+        self.beforeDatabaseListCountFetchForTesting = beforeDatabaseListCountFetchForTesting
     }
 
     // MARK: - 公开 action
@@ -1643,7 +1652,7 @@ final class HomeViewModel {
             async let total = repository.starredCount()
             async let myProjects = fetchMyProjectsCount()
             async let projectOptions = fetchProjectFilterOptions()
-            async let untagged = repository.fetchUntagged().count
+            async let untagged = repository.fetchListCount(scope: .untagged, filters: .empty)
             async let library = repository.fetchListCount(scope: .library, filters: .empty)
             async let langs = repository.languageStats()
             async let knowledgeLangs = repository.knowledgeLanguageStats()
@@ -2904,7 +2913,11 @@ final class HomeViewModel {
                     limit: queryLimit,
                     offset: queryOffset
                 )
-                async let countTask = self.repository.fetchListCount(scope: scope, filters: filters)
+                async let countTask = self.fetchDatabaseListCount(
+                    scope: scope,
+                    filters: filters,
+                    shouldFetch: !isAppend
+                )
                 let databaseInterval = PerformanceTracer.shared.begin(.manageDatabaseQuery)
                 let rowsWithSentinel: [Repo]
                 do {
@@ -2950,7 +2963,7 @@ final class HomeViewModel {
                     pageProjectRelations,
                     pageProjectGrowth
                 ))
-                countResult = .success((try? await countTask) ?? self.visibleRepoTotalCount)
+                countResult = .success(await countTask)
             } catch {
                 result = .failure(error)
                 countResult = .success(self.visibleRepoTotalCount)
@@ -3051,6 +3064,24 @@ final class HomeViewModel {
         reloadCoordinator.installQueryTask(task, generation: generation)
         let span: PerformanceSpan = isAppend ? .manageLoadMore : .manageInitialLoad
         await PerformanceTracer.shared.trace(span, task: task)
+    }
+
+    /// 读取当前查询总数；滚动追加沿用首屏/刷新已经发布的总数。
+    ///
+    /// 追加页的 `LIMIT + 1` sentinel 已足够判断 `hasMore`，再次执行相同条件的
+    /// `COUNT(*)` 只会增加 SQLite 工作量。同步完成或显式刷新仍走非 append 路径，
+    /// 因此数据库总数变化会在正确的刷新边沿重新发布。
+    private func fetchDatabaseListCount(
+        scope: RepoListScope,
+        filters: RepoListFilters,
+        shouldFetch: Bool
+    ) async -> Int {
+        guard shouldFetch else { return visibleRepoTotalCount }
+        if let beforeDatabaseListCountFetchForTesting {
+            await beforeDatabaseListCountFetchForTesting()
+        }
+        return (try? await repository.fetchListCount(scope: scope, filters: filters))
+            ?? visibleRepoTotalCount
     }
 
     func semanticHit(for repoID: Int64) -> SemanticSearchHit? {
@@ -3591,6 +3622,18 @@ final class HomeViewModel {
     ///   stagger 动画把已经看了的 20 行重新淡入，体感极糟。
     private func sliceToCurrentPage(reason: SliceReason) {
         let endIndex = min(currentPage * Self.pageSize, filteredSorted.count)
+
+        if case .append = reason {
+            // 筛选事实源没有变化时，滚动翻页只追加一页。旧实现每次都复制从第 1 页
+            // 到当前页的完整 prefix，深度滚动越往后成本越高，还会让 SwiftUI 比对整段数组。
+            let startIndex = min(items.count, endIndex)
+            if startIndex < endIndex {
+                items.append(contentsOf: filteredSorted[startIndex..<endIndex])
+            }
+            hasMore = filteredSorted.count > items.count
+            return
+        }
+
         let newItems = Array(filteredSorted.prefix(endIndex))
 
         let itemsIdentical = newItems.count == items.count &&
@@ -3598,19 +3641,14 @@ final class HomeViewModel {
 
         if !itemsIdentical {
             items = newItems
-            switch reason {
-            case .recompute, .jump:
-                itemsRevision += 1
-            case .append:
-                break  // 故意不 bump：让 SwiftUI 走增量插入路径，不重建已有行
-            }
+            itemsRevision += 1
         }
         hasMore = filteredSorted.count > items.count
     }
 
     /// R-07：列表滚到底部附近 row `.onAppear` 触发。
     /// DB 分页路径会异步加载下一页；内存分页路径只做本地切片增长。
-    /// 调用频率：每页 20 条 × 1800 条 ≈ 90 次/次完整滚动，开销可忽略。
+    /// 内存分页只复制下一页固定数量，完整滚动时不会反复重建累计前缀。
     func loadMoreIfNeeded() {
         guard hasMore else { return }
         guard !isLoading, !isRefreshing else { return }

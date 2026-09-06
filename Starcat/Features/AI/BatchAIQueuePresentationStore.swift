@@ -60,6 +60,7 @@ final class BatchAIQueuePresentationStore {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var batchStartedAt: Date?
     @ObservationIgnored private var allJobs: [BatchAIJob] = []
+    @ObservationIgnored private var orderedMatchingJobs: [BatchAIJob] = []
     @ObservationIgnored private var normalizedSearchText = ""
 
     private static let pageSize = 100
@@ -88,7 +89,7 @@ final class BatchAIQueuePresentationStore {
     func loadMore() {
         guard canLoadMore else { return }
         visibleLimit += Self.pageSize
-        rebuildVisibleJobs()
+        appendNextVisiblePage()
     }
 
     private func scheduleSearchRebuild() {
@@ -127,12 +128,25 @@ final class BatchAIQueuePresentationStore {
         }
         // 全部视图按主状态分区，同一状态内保留 Service 队列顺序。
         let displayOrder: [BatchAIPrimaryState] = [.pending, .pendingReview, .completed, .failed, .ignored]
-        let ordered = displayOrder.flatMap { state in
+        orderedMatchingJobs = displayOrder.flatMap { state in
             matchingJobs.filter { Self.primaryState(for: $0) == state }
         }
-        matchingJobCount = ordered.count
-        visibleJobs = Array(ordered.prefix(visibleLimit))
-        canLoadMore = visibleJobs.count < ordered.count
+        matchingJobCount = orderedMatchingJobs.count
+        visibleJobs = Array(orderedMatchingJobs.prefix(visibleLimit))
+        canLoadMore = visibleJobs.count < orderedMatchingJobs.count
+    }
+
+    /// 服务快照、筛选或搜索变化时才重建排序缓存；单纯翻页只复制下一页。
+    /// 队列通常可达数千项，这份可重建内存缓存用于稳定深度滚动的响应时间。
+    private func appendNextVisiblePage() {
+        let lowerBound = visibleJobs.count
+        let upperBound = min(visibleLimit, orderedMatchingJobs.count)
+        guard lowerBound < upperBound else {
+            canLoadMore = false
+            return
+        }
+        visibleJobs.append(contentsOf: orderedMatchingJobs[lowerBound..<upperBound])
+        canLoadMore = upperBound < orderedMatchingJobs.count
     }
 
     private func resetPaginationAndRebuild() {

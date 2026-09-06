@@ -165,6 +165,45 @@ struct DiskWikiCacheTests {
                 "批量只读加载器不能越过 DiskWikiCache 的 @MainActor CRUD 边界删文件")
     }
 
+    @Test("批量 freshness 在后台读取，只返回 TTL 未过期的 repo")
+    func batchFreshnessRunsOffMainActor() async throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+        let threadRecorder = WikiReadThreadRecorder()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "foo",
+            repo: "fresh",
+            probedAt: now,
+            nextProbeAt: now.addingTimeInterval(60),
+            items: []
+        ))
+        try cache.save(snapshot: WikiCacheSnapshot(
+            owner: "foo",
+            repo: "stale",
+            probedAt: now.addingTimeInterval(-120),
+            nextProbeAt: now.addingTimeInterval(-60),
+            items: []
+        ))
+
+        let result = await WikiAvailabilitySnapshotLoader.loadFreshRepositoryIDs(
+            requests: [
+                WikiAvailabilityRequest(id: 1, owner: "foo", repo: "fresh"),
+                WikiAvailabilityRequest(id: 2, owner: "foo", repo: "stale"),
+                WikiAvailabilityRequest(id: 3, owner: "foo", repo: "missing")
+            ],
+            rootOverride: root,
+            now: now,
+            readObserverForTesting: { isMainThread in
+                threadRecorder.record(isMainThread: isMainThread)
+            }
+        )
+
+        #expect(result == Set([Int64(1)]))
+        #expect(threadRecorder.observations == [false, false, false])
+    }
+
     // MARK: - miss / 损坏兜底
 
     @Test("load 未命中返回 nil")
@@ -301,6 +340,26 @@ struct DiskWikiCacheTests {
         try cache.deleteEverything()
         #expect(cache.itemCount == 0)
         #expect(cache.totalBytes == 0)
+    }
+
+    @Test("覆盖同一快照只增量更新字节数，不重复增加条目")
+    func overwritingSnapshotKeepsIncrementalCountersAccurate() throws {
+        let (cache, root) = makeIsolatedCache()
+        defer { cleanup(root) }
+
+        try cache.save(snapshot: makeSnapshot(owner: "same", repo: "repo", items: []))
+        let firstSize = cache.totalBytes
+        try cache.save(snapshot: makeSnapshot(owner: "same", repo: "repo"))
+
+        #expect(cache.itemCount == 1)
+        #expect(cache.totalBytes > firstSize)
+        let file = root
+            .appendingPathComponent("same", isDirectory: true)
+            .appendingPathComponent("repo.json")
+        let actualSize = try #require(
+            file.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        )
+        #expect(cache.totalBytes == Int64(actualSize))
     }
 
     @Test("deleteEverything 删干净后再 save 仍能工作（cache 可重新初始化）")

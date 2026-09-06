@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-08-31
+> 最后核对：2026-09-06
 
 ## 登记说明
 
@@ -33,6 +33,7 @@
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
 | `dev` | 本地 + `origin/dev` | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.5.0 已发布，正式 Changelog 与双渠道打包门禁修正已于 2026-08-31 从 `main` 同步。 | 后续功能继续在 `dev` 开发；下一版本发版问题仍先在 `dev` 修复并重新执行门禁。 |
+| `codex/performance-optimization` | 本地；`../Starcat-performance-optimization` worktree | Starcat macOS App 的 UI、列表分页、数据加载与缓存性能专项优化。 | `已合并`；多轮优化与交互修复已于 2026-09-06 合入本地 `dev`，合并前全量测试及 App Store / Direct 构建通过。 | 保留分支与 worktree，等待 dong4j 单独授权后再执行安全清理；尚未 push。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；1.5.0 已于 2026-08-31 发布，同日完成正式 Changelog 收口及 App Store / Direct 修正版重打，既有 `v1.5.0` tag 未改写。 | 保持稳定主线；后续正式发布继续从已验收的 `dev` 进入。 |
 
 ## 推荐数据链路跨仓分支

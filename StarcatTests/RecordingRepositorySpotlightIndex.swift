@@ -10,11 +10,13 @@
 /// 记录 RepositorySpotlightIndexing 调用的并发安全测试替身。
 actor RecordingRepositorySpotlightIndex: RepositorySpotlightIndexing {
     private(set) var replacement: [RepositorySpotlightEntity] = []
+    private(set) var replacementCallCount = 0
     private(set) var upserted: [RepositorySpotlightEntity] = []
     private(set) var removedIdentifiers: [RepositorySpotlightEntity.ID] = []
     private(set) var removeAllCallCount = 0
 
     func replaceAll(with entities: [RepositorySpotlightEntity]) async throws {
+        replacementCallCount += 1
         replacement = entities
     }
 

@@ -55,6 +55,23 @@ struct RepoTagsSectionViewModelTests {
         #expect(vm.allTags.count == 3)
     }
 
+    @Test("loadFor: 切换 repo 复用全局标签，显式刷新才重读")
+    func loadReusesAllTagsUntilForced() async throws {
+        let (vm, tagRepo, _, db) = try makeVM()
+        try await db.insertRepoFixture(id: 1)
+        try await db.insertRepoFixture(id: 2)
+        try await tagRepo.create(.fixture(id: "t-initial"))
+
+        await vm.loadFor(repoId: 1)
+        try await tagRepo.create(.fixture(id: "t-later"))
+
+        await vm.loadFor(repoId: 2)
+        #expect(vm.allTags.map(\.id) == ["t-initial"])
+
+        await vm.loadFor(repoId: 2, forceAllTags: true)
+        #expect(Set(vm.allTags.map(\.id)) == ["t-initial", "t-later"])
+    }
+
     // MARK: - removeTag
 
     @Test("removeTag: 移除后 assigned 不再包含该标签")

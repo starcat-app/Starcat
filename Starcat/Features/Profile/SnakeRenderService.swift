@@ -50,11 +50,32 @@ final class SnakeRenderService {
         // 后台动画循环：时钟 + 算帧 + 渲染全在 detached Task（后台），
         // 发布用 fire-and-forget 的 DispatchQueue.main.async，不阻塞循环 → 不依赖主线程。
         renderTask = Task.detached(priority: .userInitiated) { [weak self] in
+            // payload / 主题在本次 configure 生命周期内不变。缓存静态草坪底图后，
+            // 每帧只合成动态覆盖层，避免持续重画 371 个圆角格子。
+            let baseGrid = SnakeFrameRenderer.renderBaseGrid(
+                payload: payload,
+                colorScheme: colorScheme,
+                style: style
+            )
+            var lastRenderedStepToken = Int.min
+            var lastFrameHadFood = false
             while !Task.isCancelled {
                 guard let self else { return }  // 服务已释放 → 循环自终止
                 let date = Date()
+                let step = animator.currentStep(at: date)
+                // -1 表示轮间暂停；动画 step 本身从 0 开始，不会冲突。
+                let stepToken = step ?? -1
+
+                // 大多数玩法的同一个 step 是完全静态的。50ms 时钟会在默认 80ms
+                // stepDuration 内命中同一帧多次，重复重绘 371 格并发布 CGImage 只会制造
+                // CPU 与 SwiftUI 更新压力。FoodChase 的食物有呼吸效果，仍保留 10 FPS。
+                if stepToken == lastRenderedStepToken, !lastFrameHadFood {
+                    try? await Task.sleep(for: .milliseconds(40))
+                    continue
+                }
+
                 let frame: AnimationFrame
-                if let step = animator.currentStep(at: date) {
+                if let step {
                     frame = animator.frame(at: step)
                 } else {
                     // 处于「轮间暂停」：渲染完整草坪、不画蛇。
@@ -64,12 +85,17 @@ final class SnakeRenderService {
                     payload: payload,
                     frame: frame,
                     colorScheme: colorScheme,
-                    style: style
+                    style: style,
+                    baseGrid: baseGrid
                 )
                 DispatchQueue.main.async {
                     self.frameImage = image
                 }
-                try? await Task.sleep(for: .milliseconds(50))
+                lastRenderedStepToken = stepToken
+                lastFrameHadFood = !frame.foodCells.isEmpty
+                try? await Task.sleep(
+                    for: lastFrameHadFood ? .milliseconds(100) : .milliseconds(40)
+                )
             }
         }
     }
@@ -85,9 +111,8 @@ final class SnakeRenderService {
         colorScheme: ColorScheme,
         style: ContributionGraphStyle
     ) {
-        frameImage = SnakeFrameRenderer.render(
+        frameImage = SnakeFrameRenderer.renderBaseGrid(
             payload: payload,
-            frame: .empty,
             colorScheme: colorScheme,
             style: style
         )

@@ -123,12 +123,8 @@ struct SidebarView: View {
     @State private var showLoginSheet: Bool = false
     /// 底部状态条 popover：承载自动/手动整理详情，以及面板已关闭的单仓摘要任务列表。
     @State private var showBackgroundTaskPopover: Bool = false
-    /// popover 内摘要任务行的 hover 高亮；用 id 而不是 index，避免列表刷新时错位。
-    @State private var hoveredSummaryTaskID: RepoAISummaryBackgroundTask.ID?
     /// GitHub Stars List 创建 / 编辑 Sheet。
     @State private var gitHubStarListEditorItem: GitHubStarListEditorItem?
-    /// 侧边栏分组行 hover 时才显示编辑入口，避免每行常驻铅笔切断扫描线。
-    @State private var hoveredGitHubStarListID: String?
     /// 分组行右键删除的二次确认对象。「未分组」没有删除入口。
     @State private var gitHubStarListPendingDelete: GitHubStarList?
     /// “我的项目”独立授权和同步状态 Sheet。
@@ -169,7 +165,7 @@ struct SidebarView: View {
     /// 38pt 在 `.caption` + `monospacedDigit` 下能容纳 "99,999" 等 6 字符（5 位数 + 千分位
     /// 逗号），对绝大多数 starred 数都够。超过时 Text 会被截到 60pt 容器内，但实际
     /// 用户超过 100,000 stars 概率极低，不需要为此牺牲稳定性。
-    private static let trailingFixedWidth: CGFloat = 60
+    static let trailingFixedWidth: CGFloat = 60
 
     // MARK: - 折叠动画规格（2026-06-11 dong4j 体验优化：对齐 Xcode 文件树的丝滑感）
 
@@ -720,57 +716,45 @@ struct SidebarView: View {
         _ task: RepoAISummaryBackgroundTask,
         rowIndex: Int
     ) -> some View {
-        let isHovered = hoveredSummaryTaskID == task.id
-        return Button {
-            showBackgroundTaskPopover = false
-            onOpenSummaryTask?(task.repo)
-        } label: {
-            HStack(spacing: 8) {
-                summaryTaskIcon(task.state)
-                    .frame(width: 14, height: 14)
+        LocalHoverSurface(
+            normalBackground: rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045),
+            hoveredBackground: Color.accentColor.opacity(0.10),
+            cornerRadius: 0
+        ) {
+            Button {
+                showBackgroundTaskPopover = false
+                onOpenSummaryTask?(task.repo)
+            } label: {
+                HStack(spacing: 8) {
+                    summaryTaskIcon(task.state)
+                        .frame(width: 14, height: 14)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: task.repo.fullName)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: task.repo.fullName)
+                            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(summaryTaskStatusKey(task.state))
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
                         .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(summaryTaskStatusKey(task.state))
-                        .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
-
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(summaryTaskRowBackground(isHovered: isHovered, rowIndex: rowIndex))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .onHover { hovering in
-            hoveredSummaryTaskID = hovering ? task.id : nil
-        }
-        .onDisappear {
-            if hoveredSummaryTaskID == task.id {
-                hoveredSummaryTaskID = nil
-            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
         }
         .help(Text("sidebar.background.summary.tooltip"))
-    }
-
-    /// 斑马纹用 primary 极低透明；hover 优先于斑马纹，避免明暗主题下交替色被盖没。
-    private func summaryTaskRowBackground(isHovered: Bool, rowIndex: Int) -> Color {
-        if isHovered {
-            return Color.accentColor.opacity(0.10)
-        }
-        return rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
     @ViewBuilder
@@ -2370,79 +2354,22 @@ struct SidebarView: View {
     @ViewBuilder
     private func githubStarListRow(_ list: GitHubStarList) -> some View {
         let item = SidebarItem.githubStarList(list.id)
-        let isHovered = hoveredGitHubStarListID == list.id
-        Label {
-            HStack(spacing: 4) {
-                Text(verbatim: list.name)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                if isHovered {
-                    githubStarListEditButton(list)
-                }
-
-                Spacer(minLength: 4)
-
-                HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-
-                    Text((viewModel.githubStarListCounts[list.id] ?? 0).formatted())
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                }
-                .frame(width: Self.trailingFixedWidth, alignment: .trailing)
-            }
-        } icon: {
-            Circle()
-                .fill(
-                    SidebarSemanticIconStyle(
-                        semanticColor: Color(hex: list.colorHex) ?? .accentColor
-                    )
-                )
-                .frame(width: 14, height: 14)
-        }
-        .tag(item)
-        .contextMenu {
-            Button {
+        GitHubStarListSidebarRow(
+            list: list,
+            count: viewModel.githubStarListCounts[list.id] ?? 0,
+            onEdit: {
                 gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
-            } label: {
-                Label("sidebar.githubStarLists.edit", systemImage: "slider.horizontal.2.square")
-            }
-            Divider()
-            Button(role: .destructive) {
+            },
+            onDelete: {
                 gitHubStarListPendingDelete = list
-            } label: {
-                Label("action.delete", systemImage: "trash")
-            }
-        }
-        .onHover { isHovering in
-            if isHovering {
-                hoveredGitHubStarListID = list.id
+            },
+            onPrefetch: {
                 for candidate in item.prefetchCandidates {
                     viewModel.prefetch(selection: candidate)
                 }
-            } else if hoveredGitHubStarListID == list.id {
-                hoveredGitHubStarListID = nil
             }
-        }
-    }
-
-    private func githubStarListEditButton(_ list: GitHubStarList) -> some View {
-        Button {
-            gitHubStarListEditorItem = GitHubStarListEditorItem(list: list)
-        } label: {
-            Image(systemName: "slider.horizontal.2.square")
-                .font(interfaceScale.font(.iconMedium, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help(Text("sidebar.githubStarLists.edit"))
+        )
+        .tag(item)
     }
 
     /// 侧边栏右键删除必须二次确认：这是远端 destructive mutation，失败时不能先改本地 selection。
