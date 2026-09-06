@@ -22,7 +22,7 @@ Starcat 1.6.0 focuses on performance and detail polish: lower background load at
 - Native Settings experience: Uses a macOS-style sidebar, search, and back/forward navigation in a fixed-size Settings window.
 - Unified RAG configuration: Inference, prompt, and retrieval controls now live in the main Settings window, save automatically, and present prompt helpers and retrieval options without extra nested navigation.
 - Language categories: Star and Explore language lists now follow your interested languages and add "Other" and "Uncategorized" groups to reduce clutter.
-- AI tag review: Batch selection and select-all for repositories, highest-confidence tags and groups preselected by default, and suggestions that distinguish existing from new tags.
+- AI organization review: Batch selection and select-all for repositories, highest-confidence tags and groups preselected by default, suggestions that distinguish existing from new tags, and retry plus per-tab batch actions for paused, failed, or skipped work.
 - Smart collections: Create collections directly from the My Collections header; smoother waterfall scrolling and tighter built-in cards.
 - Repository detail toolbar: The clone menu merges into the external links menu, and repositories opened externally pin temporarily to the top of the list for quick locating.
 - RAG workspace: The conversation header shows the creation time, and new conversations reuse an existing empty one instead of piling up blank sessions.
@@ -30,10 +30,11 @@ Starcat 1.6.0 focuses on performance and detail polish: lower background load at
 - List performance: Explore sub-pages lazy-load; pagination appends incrementally and reuses filter results, smart collection stats load concurrently, and avatars reuse the image cache for smoother long lists.
 - Interface polish: Explore cards fade in row by row, the library list shows a starred checkmark, and module transitions and empty states read better.
 - Startup and scrolling performance: Unchanged Spotlight indexes are skipped for lower background load at launch, and scrolling no longer triggers unnecessary prefetching and hover refreshes.
-- Rendering performance: High-frequency areas such as repository detail switching, the library list, and the Agent execution timeline re-render less, keeping interactions snappier.
+- Menus and localization: App menu sections and workspace names are more consistent, while RAG and Agent window titles follow the selected app language.
+- Rendering performance: Settings and About menus avoid synchronous first-open layout work; repository transitions, AI grouping reviews, and RAG and Agent context lists perform less repeated computation, while localized strings ship as binary resources instead of being parsed repeatedly from XML.
 - Conversation sidebar: RAG conversations sort by recent activity, groups expand to show more history, and the brand icon adapts to light and dark themes.
 - Share entry: A unified repository share entry with slimmer list-row actions and a more compact share card.
-- Visual polish: Multi-select toggles move into each list's header bar, the repository detail empty state uses a 3D transparent illustration, and action icon backgrounds are unified, with Release timeline assets matching the insights page style.
+- Visual polish: Multi-select toggles move into each list's header bar, repository and RAG empty states use dedicated transparent artwork, License badges open the repository's GitHub Overview, and action icon backgrounds are unified, with Release timeline assets matching the insights page style.
 
 ### Fixes
 
@@ -50,6 +51,7 @@ Starcat 1.6.0 focuses on performance and detail polish: lower background load at
 - Discover paging: Fixes pagination not triggering while fast-scrolling Discover categories.
 - Service settings: Fixes action icons being squeezed out of service settings fields at narrow window widths.
 - RAG project panel: Fixes Return accidentally switching the active context.
+- Combined sidebar filters: Keeps counts aligned with the active filter scope and prevents tag capsules from shifting while results update.
 
 ## 1.5.0
 
