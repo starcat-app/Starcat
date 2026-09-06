@@ -543,16 +543,19 @@ private struct ReleaseTimelineRow: View {
                 }
 
                 if assets.count <= 3 || isAssetsExpanded {
-                    ForEach(assets) { asset in
-                        ReleaseAssetRowView(
-                            asset: asset,
-                            layout: .compact,
-                            onCopyLink: onCopyAsset,
-                            onDownloadFinished: onDownloadFinished
-                        )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 2)
-                            .background(.bar.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                    // 对齐洞察页发布节奏资产列表：紧凑堆叠 + rowIndex 启用斑马纹 / hover，
+                    // 不再逐行自己垫 .bar 背景（原写法行距过大且视觉嘈杂，dong4j 2026-09-06 反馈）。
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(assets.enumerated()), id: \.element.id) { index, asset in
+                            ReleaseAssetRowView(
+                                asset: asset,
+                                layout: .compact,
+                                rowIndex: index,
+                                onCopyLink: onCopyAsset,
+                                onDownloadFinished: onDownloadFinished
+                            )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
             }
@@ -591,17 +594,18 @@ private struct ReleaseTimelineRow: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.right")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 16, height: 16)
                 if let title {
                     Text(verbatim: title)
                 } else if let titleKey {
                     Text(titleKey)
                 }
                 Spacer(minLength: 0)
+                // chevron 放行尾：左侧文字与标题区左对齐，整行仍是展开/折叠触发区。
+                Image(systemName: "chevron.right")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: 16, height: 16)
             }
             .font(interfaceScale.font(.caption, weight: .semibold))
             .foregroundStyle(.secondary)

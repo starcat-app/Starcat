@@ -5,7 +5,7 @@
 //  Release 资产行共用 UI：文件名 / 大小 / 复制链接 / 应用内下载。
 //
 //  三处消费方：
-//  - `ReleaseTimelineView`（compact + 父级 copy toast）
+//  - `ReleaseTimelineView`（compact + 父级 copy toast + rowIndex 斑马纹/hover）
 //  - `ActivityDetailView`（standard + CopyFeedbackButton）
 //  - `ActivityReleaseDetailContent` / 洞察发布节奏（列表斑马纹 + 圆形下载进度）
 //
