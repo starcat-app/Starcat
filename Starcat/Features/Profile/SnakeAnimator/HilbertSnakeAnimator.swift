@@ -23,7 +23,7 @@
 
 import Foundation
 
-final class HilbertSnakeAnimator: PathBasedSnakeAnimator {
+final class HilbertSnakeAnimator: PathBasedSnakeAnimator, @unchecked Sendable {
 
     init(cols: Int, rows: Int) {
         let path = Self.buildGilbertPath(width: cols, height: rows)

@@ -16,7 +16,7 @@
 
 import Foundation
 
-final class ZigzagSnakeAnimator: PathBasedSnakeAnimator {
+final class ZigzagSnakeAnimator: PathBasedSnakeAnimator, @unchecked Sendable {
 
     init(cols: Int, rows: Int) {
         super.init(path: Self.buildPath(cols: cols, rows: rows))

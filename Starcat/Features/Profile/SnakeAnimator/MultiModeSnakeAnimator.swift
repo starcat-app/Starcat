@@ -97,7 +97,7 @@ final class MultiModeSnakeAnimator: SnakeAnimator, Sendable {
 
 /// 矩形螺旋：从左上角开始顺时针向内绕圈，最后停在中心附近。
 /// 视觉上像"卷起来"，非常对称美观。
-final class SpiralSnakeAnimator: PathBasedSnakeAnimator {
+final class SpiralSnakeAnimator: PathBasedSnakeAnimator, @unchecked Sendable {
 
     init(cols: Int, rows: Int) {
         super.init(path: Self.buildSpiralPath(cols: cols, rows: rows),
@@ -136,7 +136,7 @@ final class SpiralSnakeAnimator: PathBasedSnakeAnimator {
 
 /// 对角线扫描：沿"反对角线"一条一条扫，整张图看起来像被斜着切开。
 /// 对 53×7 这种扁矩形效果最明显——每条对角线只有 1~7 个格子，蛇会"飘"过去。
-final class DiagonalSnakeAnimator: PathBasedSnakeAnimator {
+final class DiagonalSnakeAnimator: PathBasedSnakeAnimator, @unchecked Sendable {
 
     init(cols: Int, rows: Int) {
         super.init(path: Self.buildDiagonalPath(cols: cols, rows: rows),

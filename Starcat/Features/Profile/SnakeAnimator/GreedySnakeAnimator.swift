@@ -29,7 +29,7 @@
 
 import Foundation
 
-final class GreedySnakeAnimator: PathBasedSnakeAnimator {
+final class GreedySnakeAnimator: PathBasedSnakeAnimator, @unchecked Sendable {
 
     /// - Parameters:
     ///   - cols: 列数（标准 53）
