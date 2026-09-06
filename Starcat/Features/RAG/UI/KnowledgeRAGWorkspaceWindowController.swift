@@ -161,6 +161,8 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
     @State private var chromeState: WorkspaceChromeState
     @State private var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var windowReference = WorkspaceSceneWindowReference()
+    /// 语言切换时刷新窗口标题；Scene 标题不跟随 App 内语言，必须手动覆盖。
+    @State private var localeStore = LocaleStore.shared
 
     init(context: AIWorkspaceSceneCoordinator.KnowledgeRAGLaunchContext) {
         self.context = context
@@ -184,8 +186,12 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
             .background {
                 WorkspaceSceneWindowReader(
                     reference: windowReference,
-                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
+                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
+                    titleKey: "rag.workspace.window.title"
                 )
+            }
+            .onChange(of: localeStore.selection) { _, _ in
+                windowReference.window?.title = String.l10n("rag.workspace.window.title")
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

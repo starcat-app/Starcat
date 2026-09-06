@@ -748,7 +748,15 @@ struct ReadmeStateView: View {
             // 彩虹条带自己画环，不依赖静止边框。
             .clipShape(RoundedRectangle(cornerRadius: StarcatAIHaloMetrics.cornerRadius, style: .continuous))
             // README 与通知评论卡共用连续 CA 光圈；NSView 层才能稳定盖住 WKWebView。
-            .padding(StarcatAIHaloMetrics.glowBleed)
+            // 底边不预留 glowBleed：WebView 白底会透进底部垫片，与 .vertical 8 叠出
+            // 约 16pt 的空带压在 cacheFooter 上方，footer 工具栏因此看起来高了一截；
+            // 翻译光圈的底边光晕由 footer（VStack 后绘制的兄弟节点）盖住，顶 / 侧光晕不受影响。
+            .padding(EdgeInsets(
+                top: StarcatAIHaloMetrics.glowBleed,
+                leading: StarcatAIHaloMetrics.glowBleed,
+                bottom: 0,
+                trailing: StarcatAIHaloMetrics.glowBleed
+            ))
             .overlay {
                 StarcatAIBloomHaloLayerView(
                     isActive: isReadmeTranslating,
@@ -756,7 +764,7 @@ struct ReadmeStateView: View {
                 )
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
             cacheFooter(
                 cachedAt: document.cachedAt,
                 sourceHtml: document.html,

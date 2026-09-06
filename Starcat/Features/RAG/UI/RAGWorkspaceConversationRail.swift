@@ -271,6 +271,8 @@ struct RAGWorkspaceConversationRail: View {
                 .menuIndicator(.hidden)
                 .foregroundStyle(.secondary)
                 .help("rag.workspace.group.actions")
+                // 与会话行同款 32pt 菜单列：26pt 图标居中，保证「⋯」与上下行的「⋯」右对齐。
+                .frame(width: 32, height: 26)
                 .padding(.trailing, 6)
             }
             .background(isSelected ? Color.accentColor.opacity(0.11) : Color.clear)

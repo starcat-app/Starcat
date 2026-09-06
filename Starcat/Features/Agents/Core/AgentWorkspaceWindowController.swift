@@ -50,6 +50,8 @@ struct AgentWorkspaceSceneRoot: View {
 
     @State private var chromeState = WorkspaceChromeState()
     @State private var windowReference = WorkspaceSceneWindowReference()
+    /// 语言切换时刷新窗口标题；Scene 标题不跟随 App 内语言，必须手动覆盖。
+    @State private var localeStore = LocaleStore.shared
 
     var body: some View {
         AgentWorkspaceView(chromeState: chromeState)
@@ -61,8 +63,12 @@ struct AgentWorkspaceSceneRoot: View {
             .background {
                 WorkspaceSceneWindowReader(
                     reference: windowReference,
-                    minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
+                    minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize,
+                    titleKey: "agent.workspace.window.title"
                 )
+            }
+            .onChange(of: localeStore.selection) { _, _ in
+                windowReference.window?.title = String.l10n("agent.workspace.window.title")
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
