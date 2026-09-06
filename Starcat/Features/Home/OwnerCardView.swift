@@ -97,7 +97,8 @@ struct OwnerCardView: View {
         VStack(spacing: -48) {
             darkAvatarStage
                 .overlay(alignment: .topTrailing) {
-                    topActions
+                    // GitHub 入口统一放到姓名行；头像右上角只保留关闭动作。
+                    SheetCloseButton(action: onClose)
                         .padding(12)
                 }
 
@@ -128,10 +129,8 @@ struct OwnerCardView: View {
                         .truncationMode(.middle)
                 }
 
-                if colorScheme == .light {
-                    Spacer(minLength: 4)
-                    githubButton
-                }
+                Spacer(minLength: 4)
+                githubButton
             }
 
             if let normalizedBio {
@@ -266,29 +265,28 @@ struct OwnerCardView: View {
 
     // MARK: - 操作
 
-    private var topActions: some View {
-        HStack(spacing: 8) {
-            githubButton
-            SheetCloseButton(action: onClose)
-        }
-    }
-
     private var githubButton: some View {
         Button(action: onOpenGitHub) {
-            HStack(spacing: 4) {
-                Text(verbatim: "GitHub")
-                Image(systemName: "arrow.up.right")
+            Label {
+                Text("repo.openOnGithub")
+            } icon: {
+                // 复用现有 Devicons GitHub mark，并以 template 着色适配明暗主题。
+                Image("github")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
             }
-            .font(.caption.weight(.semibold))
+            .labelStyle(.iconOnly)
             .foregroundStyle(.primary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .frame(width: 36, height: 28)
             .background(.regularMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover(scale: 1.0)
         .help("repo.openOnGithub")
+        .accessibilityLabel(Text("repo.openOnGithub"))
     }
 
     private var followButton: some View {
@@ -299,19 +297,26 @@ struct OwnerCardView: View {
                         .controlSize(.small)
                 } else if isFollowing == true {
                     if isFollowButtonHovered {
-                        Label("repo.owner.unfollow", systemImage: "person.badge.minus")
+                        Label("repo.owner.unfollow", systemImage: "minus.circle.fill")
                     } else {
-                        Label("repo.owner.followingBadge", systemImage: "checkmark")
+                        Label {
+                            Text("repo.owner.followingBadge")
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
                     }
                 } else {
                     Label("repo.owner.follow", systemImage: "plus")
                 }
             }
             .font(.caption.weight(.semibold))
-            .frame(minWidth: 74)
+            .lineLimit(1)
+            // 三种状态共用固定内容尺寸，避免 hover 替换图标和文案时改变卡片高度。
+            .frame(width: 70, height: 16)
             .foregroundStyle(followButtonForeground)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 6)
             .background(followButtonFill, in: Capsule())
             .overlay {
                 Capsule()
