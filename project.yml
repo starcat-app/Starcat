@@ -30,6 +30,9 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
+    # 菜单与无障碍文字查询可能反复读取字符串表；二进制产物避免每次解析整张 XML。
+    # 只改变 App / Widget 内的资源编码，源 String Catalog 仍保留 Xcode 可编辑格式。
+    STRINGS_FILE_OUTPUT_ENCODING: binary
     ENABLE_HARDENED_RUNTIME: YES
     CODE_SIGN_STYLE: Automatic
     # 注意：这两个值仅作 build settings 兜底，实际产物 Info.plist 会被
