@@ -8,6 +8,7 @@ Starcat 1.6.0 focuses on performance and detail polish: lower background load at
 
 ### New
 
+- README Star history: Public repository details now show a full-history Star chart with axes, theme-aware styling, repository identity, and cache-first loading.
 - OrcaRouter provider: Add OrcaRouter as an AI provider for summaries, tagging, and knowledge base Q&A.
 - Firecrawl web search: Add Firecrawl as a web search provider with domain filtering and full-page fetching; some providers can now be enabled without an API key.
 - Owner profile card: Click an owner name in the repository detail header to view their avatar, bio, social links, and stats, and follow or unfollow them.
