@@ -146,6 +146,9 @@ protocol RepoRepositoryProtocol: Sendable {
         filters: RepoListFilters
     ) async throws -> Int
 
+    /// 复用列表查询条件统计侧栏筛选项，独立于当前分页和排序。
+    func fetchListFacetCounts(scope: RepoListScope, filters: RepoListFilters) async throws -> RepoListFacetCounts
+
     /// 当前 Manage 查询下的全部 repo id。
     ///
     /// 仅用于 Cmd+A / 少数全集语义；只投影 `id`，避免加载完整 `Repo` 行。

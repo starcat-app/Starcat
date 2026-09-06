@@ -929,14 +929,18 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sidebarList: some View {
-        @Bindable var vm = viewModel
-
         switch selectedPage {
         case .manage:
-            List(selection: $vm.selection) {
+            List(selection: Binding(
+                get: { viewModel.selection },
+                set: { viewModel.selectSidebarFromUser($0) }
+            )) {
                 manageSidebarContent
             }
             .listStyle(.sidebar)
+            .task(id: viewModel.sidebarFacetQuery) {
+                await viewModel.refreshSidebarFacetCounts()
+            }
         case .trending:
             List(selection: exploreSidebarSelectionBinding) {
                 exploreModeSidebarContent
@@ -1019,19 +1023,27 @@ struct SidebarView: View {
                 if tagsExpanded && !viewModel.tags.isEmpty {
                     TagWallView(
                         tags: viewModel.tags,
-                        tagCounts: viewModel.tagCounts,
+                        tagCounts: viewModel.sidebarTagCounts,
+                        countUpperBounds: viewModel.sidebarTagCountUpperBounds,
                         selectedTagIds: viewModel.selectedTagIds,
                         onTagTap: { tagId in
                             viewModel.toggleSelectedTag(tagId)
                         }
                     )
+                    .disabled(!viewModel.canFilterByTags)
+                    .opacity(viewModel.canFilterByTags ? 1 : 0.5)
                     .transition(Self.disclosureRowTransition)
+                    if !viewModel.canFilterByTags {
+                        Text("sidebar.tags.untaggedExplanation")
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             } header: {
                 tagSectionHeader
             }
 
-            if !viewModel.languageStats.isEmpty {
+            if !viewModel.languageStats.isEmpty || viewModel.libraryCount > 0 || viewModel.myProjectsCount > 0 {
                 // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
                 // 2026-06-11：每行加 disclosureRowTransition,展开时逐行从顶部滑入。
                 // List 内 row .transition 在 macOS 14+ 趋于稳定,与 chevron 旋转 + spring
@@ -2454,7 +2466,7 @@ struct SidebarView: View {
                     Spacer(minLength: 4)
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(row.count.formatted())
+                        Text(viewModel.sidebarFacetCounts == nil ? "—" : row.count.formatted())
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -2500,7 +2512,7 @@ struct SidebarView: View {
 
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(viewModel.totalCount.formatted())
+                        Text(viewModel.sidebarFacetCounts?.languageTotal.formatted() ?? "—")
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()

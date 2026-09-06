@@ -31,7 +31,10 @@ import AppKit
 /// `selectedTagIds` 是被动入参，更新由外部完成。
 struct TagWallView: View {
     let tags: [Tag]
-    let tagCounts: [String: Int]
+    /// nil 表示当前范围仍在查询，不能显示上一范围的数字或伪装成真实的 0。
+    let tagCounts: [String: Int]?
+    /// 当前账号每个标签的总量为计数预留空间，筛选和加载时不改变胶囊宽度。
+    var countUpperBounds: [String: Int] = [:]
     /// 已勾选的 tag id 集合（多选）。
     let selectedTagIds: Set<String>
     /// 用户点击某个 chip 时调用。调用方负责 toggle 这个 id 在集合内的勾选状态。
@@ -42,7 +45,8 @@ struct TagWallView: View {
             ForEach(tags) { tag in
                 TagWallChip(
                     tag: tag,
-                    count: tagCounts[tag.id] ?? 0,
+                    count: tagCounts.map { $0[tag.id] ?? 0 },
+                    countUpperBound: countUpperBounds[tag.id] ?? tagCounts?[tag.id] ?? 0,
                     isSelected: selectedTagIds.contains(tag.id),
                     onTap: { onTagTap(tag.id) }
                 )
@@ -62,12 +66,14 @@ struct TagWallView: View {
 /// - icon 始终展示：tag.icon 优先，无则 `tag.fill`
 struct TagWallChip: View {
     let tag: Tag
-    let count: Int
+    let count: Int?
+    let countUpperBound: Int
     let isSelected: Bool
     let onTap: () -> Void
 
     /// 2026-06-15:tag chip 选中态切换 0.15s 渐变在「关闭应用内动画」时跳过。
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     /// 圆角常量；放在视图外部以便 background / clipShape / overlay 共用同一个值。
     private static let cornerRadius: CGFloat = 6
@@ -97,10 +103,21 @@ struct TagWallChip: View {
                 .font(.caption)
                 .lineLimit(1)
 
-            Text(count.formatted())
+            ZStack(alignment: .trailing) {
+                // 等宽数字只保证单个数字等宽，不能防止位数和横线占位改变整体宽度。
+                // 隐藏参考文本按真实字体 / 数字格式占位，兼顾大计数与本地化分组符。
+                Text(max(countUpperBound, count ?? 0).formatted())
+                    .hidden()
+                    .accessibilityHidden(true)
+                Text("—")
+                    .hidden()
+                    .accessibilityHidden(true)
+                Text(count?.formatted() ?? "—")
+            }
                 .font(.caption2)
                 .opacity(isSelected ? 0.85 : 1)
                 .monospacedDigit()
+                .fixedSize(horizontal: true, vertical: false)
                 // 未选中时让计数走 .secondary 减弱视觉权重，避免和 name 同等高对比抢戏。
                 // 选中时 count 跟随 selectedForeground，0.85 透明度做层级区分。
                 .foregroundStyle(isSelected ? AnyShapeStyle(selectedForeground) : AnyShapeStyle(.secondary))
@@ -126,8 +143,12 @@ struct TagWallChip: View {
         // 选中态加一层柔和投影，进一步突出"已选"层级；未选中投影 radius=0 退化为无。
         .shadow(color: swatchColor.opacity(isSelected ? 0.35 : 0), radius: 2, y: 1)
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-        .onTapGesture { onTap() }
-        .pressableHover()
+        .onTapGesture {
+            // 标签墙使用手势而非 Button，必须主动遵守父视图的禁用状态。
+            guard isEnabled else { return }
+            onTap()
+        }
+        .pressableHover(scale: 1)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
     }
 }

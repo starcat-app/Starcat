@@ -66,7 +66,7 @@ struct HomeViewModelFilterSortTests {
         }
     }
 
-    private func makeSUT() throws -> (HomeViewModel, any DatabaseManaging, GRDBRepoNoteRepository) {
+    private func makeSUT(wikiRoot: URL? = nil) throws -> (HomeViewModel, any DatabaseManaging, GRDBRepoNoteRepository) {
         let db = try InMemoryDatabaseManager()
         let repo = GRDBRepoRepository(database: db)
         let tagRepo = GRDBTagRepository(database: db)
@@ -76,7 +76,8 @@ struct HomeViewModelFilterSortTests {
             repository: repo,
             tagRepository: tagRepo,
             repoTagRepository: rtRepo,
-            repoNoteRepository: noteRepo
+            repoNoteRepository: noteRepo,
+            wikiAvailabilityRootForTesting: wikiRoot
         )
         return (vm, db, noteRepo)
     }
@@ -94,6 +95,226 @@ struct HomeViewModelFilterSortTests {
     }
 
     // MARK: - D1 排序
+
+    /// 同时包含未 Star 知识库、多标签仓库、库外仓库和无语言仓库，防止计数退回全局 Stars。
+    private func makeFacetSUT(wikiRoot: URL? = nil) async throws -> (HomeViewModel, any DatabaseManaging) {
+        let (vm, db, notes) = try makeSUT(wikiRoot: wikiRoot)
+        let tagRepo = GRDBTagRepository(database: db)
+        let assignments = GRDBRepoTagRepository(database: db)
+        let suffix = UUID().uuidString
+        for (id, language) in [(1, "Swift"), (2, "Rust"), (3, "Swift"), (4, "Swift"), (5, "")] {
+            try await insertRepo(
+                db, id: Int64(id), fullName: "o/facet-\(id)-\(suffix)", stars: 0,
+                starredAt: "2026-05-01T00:00:00Z", language: language.isEmpty ? nil : language,
+                isStarred: id != 1
+            )
+            if id != 4 { try await notes.updateLibraryState(repoId: Int64(id), state: .inLibrary) }
+        }
+        for id in ["mac", "tool"] { try await tagRepo.create(.fixture(id: id)) }
+        for (repoID, tagID) in [(1, "mac"), (2, "mac"), (2, "tool"), (3, "tool"), (4, "tool")] {
+            try await assignments.addTag(repoId: Int64(repoID), tagId: tagID)
+        }
+        vm.interestedLanguages = ["Swift", "Rust"]
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebar()
+        vm.selectSidebarFromUser(.library)
+        await vm.awaitPendingListReloadForTesting()
+        return (vm, db)
+    }
+
+    @Test("侧栏分面：标签和语言可按任意顺序叠加，保留知识库范围与未 Star 仓库")
+    func sidebarFacetsKeepScopeAndExcludeTheirOwnFilter() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        for languageFirst in [false, true] {
+            vm.clearSelectedTags()
+            vm.clearSidebarLanguageFilter()
+            if languageFirst { vm.toggleLanguageFilterFromUser(.language("Swift")) }
+            vm.toggleSelectedTag("mac")
+            if !languageFirst { vm.toggleLanguageFilterFromUser(.language("Swift")) }
+            await vm.awaitPendingListReloadForTesting()
+            await vm.refreshSidebarFacetCounts()
+
+            #expect(vm.selection == .library)
+            #expect(vm.items.map(\.id) == [1])
+            #expect(vm.sidebarFacetCounts?.languageTotal == 2)
+            #expect(vm.sidebarFacetCounts?.languages == [
+                LanguageStat(language: "Rust", count: 1), LanguageStat(language: "Swift", count: 1)
+            ])
+            #expect(vm.sidebarFacetCounts?.tags == ["mac": 1, "tool": 1])
+        }
+
+        vm.toggleSelectedTag("tool")
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(Set(vm.items.map(\.id)) == [1, 3], "标签之间是 OR，且库外的 4 不应混入")
+        #expect(vm.sidebarFacetCounts?.languageTotal == 3)
+
+        vm.clearSidebarLanguageFilter()
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.selectedTagIds == ["mac", "tool"])
+        #expect(Set(vm.items.map(\.id)) == [1, 2, 3])
+    }
+
+    @Test("勾选标签保留有效计数，语言和基础分类变化仍使旧计数失效")
+    func sidebarTagCountsStayStableWhileTogglingTags() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        await vm.refreshSidebarFacetCounts()
+        let counts = try #require(vm.sidebarTagCounts)
+        let widthBounds = vm.sidebarTagCountUpperBounds
+        #expect(widthBounds == ["mac": 2, "tool": 3], "宽度上界包含未 Star 和当前分类外的本地关联")
+
+        for tagID in ["mac", "tool", "mac", "tool"] {
+            vm.toggleSelectedTag(tagID)
+            #expect(vm.sidebarTagCounts == counts, "异步刷新开始前也不能闪回占位")
+            await vm.awaitPendingListReloadForTesting()
+            #expect(vm.sidebarTagCounts == counts, "等待计数返回期间保持有效数字")
+            await vm.refreshSidebarFacetCounts()
+            #expect(vm.sidebarTagCounts == counts)
+            #expect(vm.sidebarTagCountUpperBounds == widthBounds)
+        }
+
+        vm.toggleLanguageFilterFromUser(.language("Swift"))
+        #expect(vm.sidebarTagCounts == nil, "语言改变会改变标签计数，不能复用")
+        #expect(vm.sidebarTagCountUpperBounds == widthBounds, "失效占位沿用相同布局宽度")
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarTagCounts == ["mac": 1, "tool": 1])
+
+        vm.selectSidebarFromUser(.allStars)
+        #expect(vm.sidebarTagCounts == nil)
+        #expect(vm.sidebarTagCountUpperBounds == widthBounds)
+        await vm.awaitPendingListReloadForTesting()
+    }
+
+    @Test("主导航和 GitHub 分组清理局部筛选，保留全局条件；未分类禁止标签筛选")
+    func sidebarNavigationResetsOnlyLocalFilters() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        vm.setCategorizedLanguageFiltersFromUser(["Swift", "Rust"])
+        vm.setGlobalFilterFromUser(\.hideArchived, to: true)
+        for target in [SidebarItem.untagged, .githubStarList("list-1"), .githubStarListUngrouped, .allStars] {
+            vm.selectedTagIds = ["mac"]
+            vm.repoLanguageFilter = .language("Swift")
+            vm.toggleTemporaryLanguageFilterFromDetail("Rust")
+            vm.selectSidebarFromUser(target)
+            #expect(vm.selectedTagIds.isEmpty)
+            #expect(vm.repoLanguageFilter == .all)
+            #expect(vm.temporaryGlobalFilterSession == nil)
+            #expect(Set(vm.globalFilterLanguages) == ["Swift", "Rust"])
+            #expect(vm.hideArchived)
+        }
+        vm.selectSidebarFromUser(.untagged)
+        vm.toggleSelectedTag("mac")
+        #expect(vm.selectedTagIds.isEmpty)
+        vm.clearLanguageFiltersFromUser()
+        await vm.awaitPendingListReloadForTesting()
+        await vm.reloadItems()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.items.map(\.id) == [5])
+        #expect(vm.sidebarFacetCounts?.languageTotal == 1)
+        #expect(vm.sidebarFacetCounts?.tags.isEmpty == true)
+    }
+
+    @Test("全局语言只清理互斥的局部语言，全部语言不清全局条件")
+    func globalLanguagesReconcileLocalLanguage() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        vm.toggleLanguageFilterFromUser(.language("Swift"))
+        vm.setCategorizedLanguageFiltersFromUser(["Swift", "Rust"])
+        #expect(vm.repoLanguageFilter == .language("Swift"))
+        #expect(vm.languageFilterTitles.count == 2)
+        #expect(vm.languageFilterTitles[0].contains("Rust"))
+        #expect(vm.languageFilterTitles[1].contains("Swift"))
+        vm.setCategorizedLanguageFiltersFromUser(["Rust"])
+        #expect(vm.repoLanguageFilter == .all)
+        vm.toggleLanguageFilterFromUser(.uncategorized)
+        vm.setCategorizedLanguageFiltersFromUser(["Swift"])
+        #expect(vm.repoLanguageFilter == .all)
+        vm.toggleLanguageFilterFromUser(.other)
+        vm.setCategorizedLanguageFiltersFromUser(["Go"])
+        #expect(vm.repoLanguageFilter == .other)
+        vm.clearSidebarLanguageFilter()
+        #expect(vm.globalFilterLanguages == ["Go"])
+        vm.toggleLanguageFilterFromUser(.language("Go"))
+        vm.clearLanguageFiltersFromUser()
+        #expect(vm.repoLanguageFilter == .language("Go"))
+        await vm.awaitPendingListReloadForTesting()
+    }
+
+    @Test("侧栏计数独立于分页；查询变化立即丢弃旧数字，取消请求不能发布")
+    func sidebarFacetCountsCoverAllPagesAndRejectObsoleteQueries() async throws {
+        let (vm, db, _) = try makeSUT()
+        let total = HomeViewModel.pageSize + 15
+        for id in 1...total {
+            try await insertRepo(db, id: Int64(id), fullName: "o/page-\(id)", stars: 0,
+                                 starredAt: "2026-05-01T00:00:00Z", language: "Swift")
+        }
+        await vm.reloadItems()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.items.count == HomeViewModel.pageSize)
+        #expect(vm.sidebarFacetCounts?.languageTotal == total)
+
+        vm.setCategorizedLanguageFiltersFromUser(["Rust"])
+        #expect(vm.sidebarFacetCounts == nil, "新查询不得展示 Swift 的旧计数")
+        let cancelled = Task { await vm.refreshSidebarFacetCounts() }
+        cancelled.cancel()
+        await cancelled.value
+        #expect(vm.sidebarFacetCounts == nil)
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarFacetCounts?.languageTotal == 0)
+        #expect(vm.items.isEmpty)
+
+        vm.clearLanguageFiltersFromUser()
+        let obsolete = Task { await vm.refreshSidebarFacetCounts() }
+        await Task.yield()
+        vm.selectSidebarFromUser(.library)
+        await obsolete.value
+        #expect(vm.sidebarFacetCounts == nil, "已经返回的旧快照也不能用于新分类")
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarFacetCounts?.languageTotal == 0)
+    }
+
+    @Test("Wiki 内存回退与数据库分页保持相同的分面口径，并继续叠加全局语言")
+    func sidebarFacetsPreserveWikiFallbackAndGlobalLanguage() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("sidebar-facets-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let (vm, db) = try await makeFacetSUT(wikiRoot: root)
+        vm.toggleSelectedTag("mac")
+        vm.toggleLanguageFilterFromUser(.language("Swift"))
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        let databaseCounts = vm.sidebarFacetCounts
+
+        // 没有探测记录是 unknown，不能混入「已确认无 Wiki」；使用独立目录验证这条约束。
+        vm.setGlobalFilterFromUser(\.wikiAvailabilityFilter, to: .missing)
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarFacetCounts?.languageTotal == 0)
+        #expect(vm.items.isEmpty)
+
+        let cache = DiskWikiCache(rootOverride: root)
+        for repo in try await GRDBRepoRepository(database: db).fetchKnowledgeRepos() {
+            let item = WikiStatusItem(
+                source: .deepWiki, status: .notIndexed,
+                url: try #require(URL(string: "https://deepwiki.com/\(repo.owner)/\(repo.name)")),
+                probeMethod: "GET", httpStatus: 404, matchedSignals: nil
+            )
+            try cache.save(snapshot: WikiCacheSnapshot(
+                owner: repo.owner, repo: repo.name, probedAt: Date(),
+                nextProbeAt: WikiCacheSnapshot.computeNextProbeAt(items: [item]), items: [item]
+            ))
+        }
+        await vm.reloadItems(forceRefresh: true)
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarFacetCounts == databaseCounts)
+        #expect(vm.items.map(\.id) == [1])
+
+        vm.setCategorizedLanguageFiltersFromUser(["Swift"])
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarFacetCounts?.languages == [LanguageStat(language: "Swift", count: 1)])
+        #expect(vm.sidebarFacetCounts?.tags == ["mac": 1, "tool": 1])
+    }
 
     @Test("D1: reloadItems 后按默认 starredAtDesc 排序")
     func defaultSortAfterReload() async throws {

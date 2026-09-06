@@ -136327,6 +136327,18 @@
         }
       }
     },
+    "list.filter.language.globalFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Global languages: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "全局语言：%@" } }
+      }
+    },
+    "list.filter.language.localFormat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Current language: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前语言：%@" } }
+      }
+    },
     "list.filter.language.clearSelection" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -409232,6 +409244,12 @@
             "value" : "標籤管理"
           }
         }
+      }
+    },
+    "sidebar.tags.untaggedExplanation" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Untagged contains repositories without tags, so tag filtering is unavailable here." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "“未分类”只包含没有标签的仓库，因此这里无法使用标签筛选。" } }
       }
     },
     "sidebar.tags" : {

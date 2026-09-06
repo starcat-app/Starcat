@@ -209,6 +209,18 @@ struct GRDBRepoTagRepository: RepoTagRepositoryProtocol {
         }
     }
 
+    /// Manage 内存筛选只需要 ID；与 Starred 导出分开，保留未 Star 的知识库 / 项目关联。
+    func fetchAllTagIDsByRepo() async throws -> [Int64: Set<String>] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT repo_id, tag_id FROM repo_tags")
+            var result: [Int64: Set<String>] = [:]
+            for row in rows {
+                result[row["repo_id"] as Int64, default: []].insert(row["tag_id"] as String)
+            }
+            return result
+        }
+    }
+
     private func postTagsDidChange(repoId: Int64) {
         NotificationCenter.default.post(
             name: .repoTagsDidChange,

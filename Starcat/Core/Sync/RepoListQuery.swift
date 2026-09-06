@@ -128,6 +128,26 @@ enum RepoLanguageFilter: Equatable, Hashable, Codable, Sendable {
         case .language(let language): return language
         }
     }
+
+    /// 与列表 SQL 使用相同的主语言匹配规则；「其他」只排除设置中的候选语言。
+    func matches(_ language: String?, excluding interestedLanguages: Set<String>) -> Bool {
+        switch self {
+        case .all: return true
+        case .uncategorized: return language == nil
+        case .language(let selected): return language == selected
+        case .other:
+            guard let language else { return false }
+            return !interestedLanguages.contains(language)
+        }
+    }
+}
+
+/// 侧栏各筛选项的全集计数。语言忽略自身单选，标签忽略自身多选，其余条件继续生效。
+struct RepoListFacetCounts: Equatable {
+    var languages: [LanguageStat]
+    var tags: [String: Int]
+
+    var languageTotal: Int { languages.reduce(0) { $0 + $1.count } }
 }
 
 /// 全局“是否存在某类信号”的三态筛选。

@@ -33,7 +33,7 @@ import GRDB
 struct LanguageStat: FetchableRecord, Codable, Equatable, Identifiable {
     /// 仓库主语言；空字符串表示 GitHub 上无主语言（纯文本/配置项目）。
     let language: String
-    /// 该语言下已 star 的 repo 数量。
+    /// 当前统计范围内该语言的 repo 数量。
     let count: Int
 
     /// Identifiable id：直接用 language（空串也是合法 id）。
@@ -617,6 +617,38 @@ struct GRDBRepoRepository {
         )
         return try await database.writer.read { db in
             try Int.fetchOne(db, sql: query.sql, arguments: query.arguments) ?? 0
+        }
+    }
+
+    /// 两个分面共享列表的 SQL 构造器，并在同一个读事务中取快照。
+    /// 不带 LIMIT，标签通过子查询关联，避免多标签仓库重复计入语言总数。
+    func fetchListFacetCounts(scope: RepoListScope, filters: RepoListFilters) async throws -> RepoListFacetCounts {
+        var languageFilters = filters
+        languageFilters.language = .all
+        let languages = Self.makeListQuery(
+            projection: "r.language", scope: scope, filters: languageFilters,
+            sort: .starredAtDesc, limit: nil, offset: nil, includeOrderBy: false
+        )
+        var tagFilters = filters
+        tagFilters.selectedTagIDs = []
+        let tags = Self.makeListQuery(
+            projection: "r.id", scope: scope, filters: tagFilters,
+            sort: .starredAtDesc, limit: nil, offset: nil, includeOrderBy: false
+        )
+        return try await database.writer.read { db in
+            let languageStats = try LanguageStat.fetchAll(db, sql: """
+                SELECT COALESCE(language, '') AS language, COUNT(*) AS count
+                FROM (\(languages.sql)) GROUP BY COALESCE(language, '') ORDER BY language
+                """, arguments: languages.arguments)
+            let tagRows = try Row.fetchAll(db, sql: """
+                SELECT rt.tag_id, COUNT(*) AS count
+                FROM repo_tags rt JOIN (\(tags.sql)) matched ON matched.id = rt.repo_id
+                GROUP BY rt.tag_id
+                """, arguments: tags.arguments)
+            return RepoListFacetCounts(
+                languages: languageStats,
+                tags: Dictionary(uniqueKeysWithValues: tagRows.map { ($0["tag_id"] as String, $0["count"] as Int) })
+            )
         }
     }
 

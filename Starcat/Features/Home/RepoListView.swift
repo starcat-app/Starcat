@@ -1578,6 +1578,16 @@ struct RepoListView: View {
             } else {
                 manageFilterBar(sortOption: $bindableVM.sortOption)
             }
+            if viewModel.selection != .smartCollectionsHome, !viewModel.languageFilterTitles.isEmpty {
+                // 系统标题会截断；所有仓库分类在中栏完整展示两层条件，包括智能集合详情。
+                Text(viewModel.languageFilterTitles.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
+                    .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
+            }
             Divider()
         }
         // 顶栏背景透明，让外层 `detailHeroTintBackground` 光晕能透到标题 / 排序行背后。
@@ -2323,26 +2333,6 @@ struct RepoListView: View {
     }
 
     private var manageNavigationPresentation: ManageNavigationPresentation {
-        let filters = viewModel.effectiveGlobalFilterState
-        // 面包屑优先展示 toolbar 全局筛选语言；全局为空时回退展示左侧语言分类（单选），
-        // 避免两套语言筛选同时塞进标题造成混淆。
-        var selectedLanguageTitles: [String] = []
-        if !filters.globalFilterLanguages.isEmpty {
-            selectedLanguageTitles = filters.globalFilterLanguages.map {
-                LanguageDisplayName.shortened(for: $0)
-            }
-        } else {
-            switch filters.repoLanguageFilter {
-            case .all:
-                break
-            case .uncategorized:
-                selectedLanguageTitles.append(String.l10n("trending.language.uncategorized"))
-            case .other:
-                selectedLanguageTitles.append(String.l10n("sidebar.languages.other"))
-            case .language(let language):
-                selectedLanguageTitles.append(LanguageDisplayName.shortened(for: language))
-            }
-        }
         let selectedTagTitles = viewModel.tags
             .filter { viewModel.selectedTagIds.contains($0.id) }
             .map(\.name)
@@ -2353,7 +2343,7 @@ struct RepoListView: View {
         return ManageNavigationPresentation.make(
             selection: viewModel.selection,
             selectionTitle: localizedTitle(for: viewModel.selection),
-            selectedLanguageTitles: selectedLanguageTitles,
+            selectedLanguageTitles: viewModel.languageFilterTitles,
             selectedTagTitles: selectedTagTitles,
             searchTitle: searchTitle
         )
