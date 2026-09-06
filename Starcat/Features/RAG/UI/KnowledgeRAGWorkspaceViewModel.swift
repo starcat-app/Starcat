@@ -966,7 +966,11 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     var highlightedMentionRepoIDValue: Int64? {
-        let suggestions = mentionSuggestions
+        highlightedMentionRepoID(in: mentionSuggestions)
+    }
+
+    /// 已经持有快照的 UI 应传入同一份候选，避免为了校正键盘落点再次派生快照。
+    func highlightedMentionRepoID(in suggestions: [RAGMentionCandidate]) -> Int64? {
         guard !suggestions.isEmpty else { return nil }
         return suggestions.contains(where: { $0.id == highlightedMentionRepoID })
             ? highlightedMentionRepoID

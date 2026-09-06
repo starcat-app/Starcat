@@ -26,6 +26,7 @@ struct RAGWorkspaceAnswerSurface: View {
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     @State private var composerContentHeight: CGFloat = 0
     @FocusState private var isContextPickerSearchFocused: Bool
+    @State private var contextPickerInteractionController = ListInteractionSuppressionController()
     @State private var messageTail = ScrollTailController()
     @State private var historyWindow = RAGConversationHistoryWindow()
     @State private var isMessageNearBottom = true
@@ -1067,6 +1068,11 @@ struct RAGWorkspaceAnswerSurface: View {
     /// 全宽悬浮上下文选择面板：停在消息区底边、Composer 上方，已选仓库始终置顶。
     var contextPickerPanel: some View {
         let snapshot = viewModel.mentionPickerSnapshot
+        // 选择态与键盘落点在面板级一次性投影；LazyVStack 创建行时只做 O(1) 查询，
+        // 不能让每个新出现的行重新扫描选择数组或重建整份候选快照。
+        let selectedRepoIDs = Set(viewModel.selectedRepoContexts.map(\.id))
+        let highlightedRepoID = viewModel.highlightedMentionRepoID(in: snapshot.suggestions)
+        let selectionFull = selectedRepoIDs.count >= KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts
 
         return VStack(alignment: .leading, spacing: 0) {
             contextPickerHeader(snapshot: snapshot)
@@ -1124,13 +1130,32 @@ struct RAGWorkspaceAnswerSurface: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(snapshot.suggestions) { repo in
-                            mentionPickerRow(repo)
+                            let isSelected = selectedRepoIDs.contains(repo.id)
+                            RAGContextPickerRepositoryRow(
+                                candidate: repo,
+                                isSelected: isSelected,
+                                isHighlighted: repo.id == highlightedRepoID,
+                                isEnabled: isSelected || !selectionFull,
+                                selectionLimit: KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts,
+                                onToggle: { viewModel.toggleMention(repo) }
+                            )
+                            .equatable()
                         }
                     }
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onScrollPhaseChange { _, newPhase in
+                    contextPickerInteractionController.update(isActive: newPhase != .idle)
+                }
+                .environment(
+                    \.starcatListInteractionSuppressed,
+                    contextPickerInteractionController.isSuppressed
+                )
+                .onDisappear {
+                    contextPickerInteractionController.cancel()
+                }
             }
 
             if snapshot.isTruncated {
@@ -1240,79 +1265,6 @@ struct RAGWorkspaceAnswerSurface: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 16)
-    }
-
-    func mentionPickerRow(_ candidate: RAGMentionCandidate) -> some View {
-        let isHighlighted = candidate.id == viewModel.highlightedMentionRepoIDValue
-        let isSelected = viewModel.isMentionSelected(candidate)
-        // 已达上限时仍允许取消已选项；未选中的行禁用，避免一次塞进上千仓库。
-        let selectionFull = viewModel.selectedRepoContexts.count
-            >= KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts
-        let canToggle = isSelected || !selectionFull
-        return Button { viewModel.toggleMention(candidate) } label: {
-            UnifiedCompactRepoRow(
-                fullName: candidate.fullName,
-                owner: candidate.owner,
-                ownerAvatarURL: candidate.ownerAvatar,
-                language: candidate.language,
-                starsCount: candidate.starsCount,
-                isChecked: isSelected,
-                isHighlighted: isHighlighted,
-                isEnabled: canToggle
-            ) {
-                // 索引侧元数据属于 RAG，不下沉进共享 Row 的仓库身份模型。
-                if candidate.chunkCount > 0 {
-                    MetaBadge(
-                        systemImage: "square.stack.3d.up",
-                        text: candidate.chunkCount.formattedShort,
-                        tint: .secondary
-                    )
-                    .help(
-                        Text(
-                            String(
-                                format: String.l10n("rag.workspace.mention.badge.chunks"),
-                                locale: locale,
-                                candidate.chunkCount
-                            )
-                        )
-                    )
-                }
-                if candidate.hasAISummary {
-                    MetaBadge(
-                        systemImage: "sparkles",
-                        text: "",
-                        tint: .accentColor,
-                        iconOnly: true,
-                        accessibilityLabel: "rag.workspace.mention.badge.aiSummary"
-                    )
-                    .help("rag.workspace.mention.badge.aiSummary")
-                }
-                if candidate.hasPrivateNote {
-                    MetaBadge(
-                        systemImage: "note.text",
-                        text: "",
-                        tint: .orange,
-                        iconOnly: true,
-                        accessibilityLabel: "rag.workspace.mention.badge.privateNote"
-                    )
-                    .help("rag.workspace.mention.badge.privateNote")
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(!canToggle)
-        .help(
-            canToggle
-                ? Text(candidate.fullName)
-                : Text(
-                    String(
-                        format: String.l10n("rag.workspace.mention.selectionLimit"),
-                        locale: locale,
-                        KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts
-                    )
-                )
-        )
     }
 
     var composerNSFont: NSFont {
