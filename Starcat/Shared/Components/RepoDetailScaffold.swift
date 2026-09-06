@@ -400,9 +400,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             ),
             opacity: 1 - metadataPanelCollapseProgress
         )
-        // 保持 Scaffold / Notes / Tags / WKWebView 的结构身份，只做轻量 reveal。
-        // 旧 `.id(repo.id)` 会在每次点击卡片时销毁整棵详情树，是切换卡顿的主因。
-        .repoDetailSwitchEffect(identity: repo.id)
+        // 切仓直接更新现有视图，避免入场位移让 Hero 在加载时上下抖动。
+        // 保持 Scaffold / Notes / Tags / WKWebView 的结构身份，首帧统计仍在让出执行权后记录。
+        .task(id: repo.id) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            PerformanceTracer.shared.mark(.repoDetailFirstFrame)
+        }
         .navigationTitle(repo.name)
         .navigationSubtitle(repo.owner)
         .task(id: wikiLookupKey(for: repo)) {
@@ -453,7 +457,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             bottomPadding: detailToastBottomPadding
         )
         .onChange(of: repo.id) { _, _ in
-            withAnimation(reduceMotion ? nil : metadataPanelAnimation) {
+            // 新仓库直接恢复展开，不能沿用上一仓库的折叠进度播放弹簧动画。
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
                 metadataPanelCollapseProgress = 0
                 readmeScrollOverflow = nil
             }

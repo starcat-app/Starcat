@@ -86,53 +86,6 @@ extension View {
         modifier(DetailContentTransitionModifier())
     }
 
-    /// Manage 仓库详情的轻量切换反馈。
-    ///
-    /// 与 `detailContentTransition()` 的关键区别是：这个 modifier 不依赖 `.id`，因此
-    /// 不会为了动画销毁 `RepoDetailScaffold` 与其内部的 `WKWebView`。仓库切换时只对
-    /// 现有视图树做一次很短的透明度 + 位移动画，兼顾视觉连续性与点击响应速度。
-    func repoDetailSwitchEffect(identity: Int64) -> some View {
-        modifier(RepoDetailSwitchEffectModifier(identity: identity))
-    }
-}
-
-/// 复用同一详情视图身份的入场反馈。
-///
-/// `.task(id:)` 在快速连续点击时会自动取消上一轮动画任务，只保留最后一次选择；
-/// `Task.yield()` 让 SwiftUI 先提交仓库数据与骨架首帧，再开始 0.18 秒 reveal，避免
-/// 把 README 加载耗时包进一个 0.4 秒的整树 transition。
-private struct RepoDetailSwitchEffectModifier: ViewModifier {
-
-    let identity: Int64
-
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-    @State private var revealProgress: CGFloat = 1
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(reduceMotion ? 1 : 0.94 + 0.06 * revealProgress)
-            .offset(y: reduceMotion ? 0 : 6 * (1 - revealProgress))
-            .task(id: identity) {
-                guard !reduceMotion else {
-                    revealProgress = 1
-                    await Task.yield()
-                    PerformanceTracer.shared.mark(.repoDetailFirstFrame)
-                    return
-                }
-
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    revealProgress = 0
-                }
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                PerformanceTracer.shared.mark(.repoDetailFirstFrame)
-                withAnimation(.easeOut(duration: 0.18)) {
-                    revealProgress = 1
-                }
-            }
-    }
 }
 
 /// 详情页 root 切换 transition 实现（私有,通过 `.detailContentTransition()`

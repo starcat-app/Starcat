@@ -178,9 +178,9 @@ struct RepoDetailView: View {
 
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
     ///
-    /// Manage 内部切 repo 固定返回 `manage`：该路径由 `repoDetailSwitchEffect` 在不重建
-    /// 视图树的前提下提供轻量动画。只有详情类型真正变化时，外层才运行旧的 0.4 秒
-    /// transition；这样不会把 README / 标签 / 笔记内部更新误纳入整页隐式动画。
+    /// Manage 内部切 repo 固定返回 `manage`：复用现有视图树并直接更新内容。
+    /// Manage 与其它详情类型切换时，外层才运行 0.4 秒 transition，避免把
+    /// README / 标签 / 笔记内部更新误纳入整页隐式动画。
     private var detailContentID: String {
         if viewModel.selection == .smartCollectionsHome { return "smart-collections-home-empty" }
         if viewModel.selectedRepo != nil { return "manage" }
