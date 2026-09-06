@@ -4,15 +4,18 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.6.0-待发布
 
+Starcat 1.6.0 focuses on performance and detail polish: lower background load at launch, smoother scrolling and long lists, and lighter rendering in high-frequency views. It also adds a privacy settings page and an Owner profile card, brings OrcaRouter models and Firecrawl search, and continues refining Settings, Knowledge Base, and sharing.
+
 ### New
 
 - OrcaRouter provider: Add OrcaRouter as an AI provider for summaries, tagging, and knowledge base Q&A.
 - Firecrawl web search: Add Firecrawl as a web search provider with domain filtering and full-page fetching; some providers can now be enabled without an API key.
-- Owner profile card: Click an owner name in the repository detail header to view their avatar, bio, and stats, and follow or unfollow them.
+- Owner profile card: Click an owner name in the repository detail header to view their avatar, bio, social links, and stats, and follow or unfollow them.
 - Language distribution bar: Repository detail gains a language usage bar; hover to see each language's share and click to filter repositories by language.
 - Missing tag auto-creation: AI tag auto-apply can now create missing tags and apply them immediately; the option is off by default.
 - Cache usage overview: Settings now groups cache usage into Content, Discover, AI, and Code categories.
-- Sign-in scope disclosure: General settings shows the GitHub OAuth scopes requested at sign-in and notes organization authorization limits.
+- Privacy settings: A new dedicated privacy page centralizes sign-in scope and public data contribution controls.
+- Sign-in scope disclosure: The privacy settings page shows the GitHub OAuth scopes requested at sign-in and notes organization authorization limits.
 
 ### Improvements
 
@@ -24,21 +27,29 @@ Release notes for the Mac App Store edition of Starcat.
 - Repository detail toolbar: The clone menu merges into the external links menu, and repositories opened externally pin temporarily to the top of the list for quick locating.
 - RAG workspace: The conversation header shows the creation time, and new conversations reuse an existing empty one instead of piling up blank sessions.
 - Owner profile card: Refined light and dark styling, and the contribution snake animation runs off the main thread so module switching stays smooth.
-- List performance: Explore sub-pages lazy-load and general lists scroll more smoothly.
+- List performance: Explore sub-pages lazy-load; pagination appends incrementally and reuses filter results, smart collection stats load concurrently, and avatars reuse the image cache for smoother long lists.
 - Interface polish: Explore cards fade in row by row, the library list shows a starred checkmark, and module transitions and empty states read better.
+- Startup and scrolling performance: Unchanged Spotlight indexes are skipped for lower background load at launch, and scrolling no longer triggers unnecessary prefetching and hover refreshes.
+- Rendering performance: High-frequency areas such as repository detail switching, the library list, and the Agent execution timeline re-render less, keeping interactions snappier.
+- Conversation sidebar: RAG conversations sort by recent activity, groups expand to show more history, and the brand icon adapts to light and dark themes.
+- Share entry: A unified repository share entry with slimmer list-row actions and a more compact share card.
+- Visual polish: Multi-select toggles move into each list's header bar, the repository detail empty state uses a 3D transparent illustration, and action icon backgrounds are unified, with Release timeline assets matching the insights page style.
 
 ### Fixes
 
 - Library smart collection paging: Continues loading repositories in full-screen layouts and after fast scrolling to the bottom instead of getting stuck on the current page.
 - Trending scrolling: Fixes laggy scrolling for a smoother browse.
 - AI workspace windows: Fixes split-layout freeze loops, oversized width with the inspector open, content clipping when dragging the sidebar at minimal window sizes, and main-window reopen issues.
-- Search input: Fixes pressing Return while a Chinese input method is composing; after a search, the current repository row is located automatically.
+- Search input: Fixes pressing Return while a Chinese input method is composing, and keys being swallowed during global search composition; after a search, the current repository row is located automatically.
 - Awesome explore: Fixes source status display and card language-bar anomalies.
 - Activity replies: Sent replies now appear immediately in the timeline instead of being delayed or overwritten by stale content.
 - Release assets: "Open" after a completed download now reveals the file in Finder.
 - Skeleton colors: Fixes overly bright skeletons in light mode, with softer contrast in both themes.
 - Settings sidebar: Limits the settings sidebar drag range.
 - Owner heatmap: Fixes the contribution lawn not refreshing after a theme switch.
+- Discover paging: Fixes pagination not triggering while fast-scrolling Discover categories.
+- Service settings: Fixes action icons being squeezed out of service settings fields at narrow window widths.
+- RAG project panel: Fixes Return accidentally switching the active context.
 
 ## 1.5.0
 
