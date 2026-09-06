@@ -81,6 +81,7 @@ final class UndoStarViewModel {
 
 struct UndoStarContentView: View {
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
 
     @State private var viewModel: UndoStarViewModel
     @State private var toastMessage: String?
@@ -231,6 +232,13 @@ struct UndoStarContentView: View {
                 showClearAllConfirm = true
             }
             .disabled(viewModel.records.isEmpty)
+
+            // 此分类没有刷新按钮，多选紧接现有顶栏操作，继续复用 Undo Star 的选择状态。
+            MultiSelectButton(
+                isActive: dependencies.undoStarMultiSelectionStore.isActive,
+                action: { dependencies.undoStarMultiSelectionStore.toggle() },
+                isDisabled: !authSession.state.isAuthenticated
+            )
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

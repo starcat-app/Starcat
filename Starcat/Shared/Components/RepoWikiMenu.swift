@@ -19,10 +19,6 @@ enum WikiAccent {
         Color.fromHex6(colorScheme == .dark ? 0x818CF8 : 0x4F46E5)
     }
 
-    static func background(colorScheme: ColorScheme) -> Color {
-        let opacity = colorScheme == .dark ? 0.20 : 0.12
-        return foreground(colorScheme: colorScheme).opacity(opacity)
-    }
 }
 
 /// Wiki 入口统一 SF Symbol：`doc.text.magnifyingglass` 表达「可查的外部文档」，
@@ -49,7 +45,7 @@ struct RepoWikiMenu: View {
         menuButton
     }
 
-    /// 只保留图标入口；indigo 浅底 + 有色图标，明暗主题各一档对比度。
+    /// 只保留图标入口；背景与同组操作一致，indigo 只用于表达 Wiki 语义。
     @ViewBuilder
     private var menuButton: some View {
         Menu {
@@ -67,7 +63,7 @@ struct RepoWikiMenu: View {
                 .frame(width: 28, height: 28)
                 .background {
                     Capsule()
-                        .fill(WikiAccent.background(colorScheme: colorScheme))
+                        .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
                 }
                 .contentShape(Capsule())
                 .accessibilityLabel(Text("wiki.menu.title"))

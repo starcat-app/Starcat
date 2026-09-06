@@ -354005,6 +354005,118 @@
         }
       }
     },
+    "settings.privacy.title" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخصوصية"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datenschutz"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacidad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confidentialité"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privasi"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プライバシー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "개인정보 보호"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prywatność"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacidade"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфиденциальность"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gizlilik"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Конфіденційність"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quyền riêng tư"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐私"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隱私"
+          }
+        }
+      }
+    },
     "settings.pro.account.footer" : {
       "localizations" : {
         "ar" : {
@@ -489587,1020 +489699,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開放網路讀取"
-          }
-        }
-      }
-    },
-    "curatedPublisher.accessDenied.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This window is available only to authorized maintainers."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此窗口仅对已授权的维护者开放。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.accessDenied.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Access denied"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无权访问"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.clear" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清空"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.connect" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.disconnect" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disconnect"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "断开连接"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.publish" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confirm and publish"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认并推送"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.resolve" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Identify project"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "识别项目"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.retryStatus" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry status"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试状态查询"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.verify" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify again"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新核验"
-          }
-        }
-      }
-    },
-    "curatedPublisher.batch.failed" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publish failed"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推送失败"
-          }
-        }
-      }
-    },
-    "curatedPublisher.batch.partialSuccess" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partially published"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "部分推送成功"
-          }
-        }
-      }
-    },
-    "curatedPublisher.batch.pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting for processing"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "等待处理"
-          }
-        }
-      }
-    },
-    "curatedPublisher.batch.processing" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Processing"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "处理中"
-          }
-        }
-      }
-    },
-    "curatedPublisher.batch.success" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Published successfully"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推送成功"
-          }
-        }
-      }
-    },
-    "curatedPublisher.batch.summaryFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld of %lld succeeded · %lld discarded"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "成功 %lld / %lld · 已剔除 %lld"
-          }
-        }
-      }
-    },
-    "curatedPublisher.candidates.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Possible repositories"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可能的仓库"
-          }
-        }
-      }
-    },
-    "curatedPublisher.clue.description" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Paste a GitHub URL, owner/repo, project description, or any source page. Starcat will find possible official repositories."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "粘贴 GitHub URL、owner/repo、项目描述或任意来源页面，Starcat 会查找可能的官方仓库。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.clue.placeholder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Project clue"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "项目线索"
-          }
-        }
-      }
-    },
-    "curatedPublisher.clue.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter a project clue"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "输入项目线索"
-          }
-        }
-      }
-    },
-    "curatedPublisher.confirm.official" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "I have confirmed this is the official repository"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "我已确认这是项目官方仓库"
-          }
-        }
-      }
-    },
-    "curatedPublisher.connection.connected" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Admin API connected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理员 API 已连接"
-          }
-        }
-      }
-    },
-    "curatedPublisher.connection.disconnected" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Admin API not connected"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理员 API 未连接"
-          }
-        }
-      }
-    },
-    "curatedPublisher.connection.keyHint" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stored only in local encrypted credential storage after validation."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "验证成功后仅保存到本机加密凭据存储。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.connection.keyPlaceholder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "weekly-api admin key"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "weekly-api 管理员密钥"
-          }
-        }
-      }
-    },
-    "curatedPublisher.connection.ready" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The admin credential is valid and manual sources are available."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理员凭据有效，人工导入来源可用。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.connection.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Admin connection"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理员连接"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.accessDenied" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The current GitHub account cannot use Curated Publisher."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前 GitHub 账号不能使用精选发布台。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.confirmationRequired" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Confirm that the final URL is the official repository before publishing."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推送前请确认最终地址是项目官方仓库。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.emptyClue" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter a project clue first."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先输入项目线索。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.invalidFinalURL" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter a valid GitHub repository URL."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请输入有效的 GitHub 仓库地址。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.invalidSourceURL" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The source URL must be a valid HTTP or HTTPS URL."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原始来源必须是有效的 HTTP 或 HTTPS 地址。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.missingAdminKey" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter a weekly-api admin key first."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先输入 weekly-api 管理员密钥。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.noCandidates" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No GitHub repository candidates were found."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有找到可核验的 GitHub 仓库候选。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.noManualSources" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "weekly-api returned no available manual import sources."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "weekly-api 没有返回可用的人工导入来源。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.repositoryNotFoundFormat" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub could not verify repository %@."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub 无法核验仓库 %@。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.unauthorized" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The weekly-api admin credential is invalid or expired."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "weekly-api 管理员凭据无效或已过期。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.error.unverifiedRepository" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify the final GitHub repository before publishing."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请先核验最终 GitHub 仓库地址。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.field.displayTitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Display title (optional)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "展示标题（可选）"
-          }
-        }
-      }
-    },
-    "curatedPublisher.field.sourceURL" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Original source URL (optional)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "原始来源链接（可选）"
-          }
-        }
-      }
-    },
-    "curatedPublisher.preview.repository" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repository"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仓库"
-          }
-        }
-      }
-    },
-    "curatedPublisher.preview.source" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Category"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分类"
-          }
-        }
-      }
-    },
-    "curatedPublisher.preview.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publish preview"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推送预览"
-          }
-        }
-      }
-    },
-    "curatedPublisher.preview.titleField" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Title"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "标题"
-          }
-        }
-      }
-    },
-    "curatedPublisher.publish.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Category and publish"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分类与推送"
-          }
-        }
-      }
-    },
-    "curatedPublisher.publish.warning" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Publishing affects all Starcat users. Verify the repository and category before continuing."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推送后会影响所有 Starcat 用户，请再次确认仓库与分类。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.search.fallback" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web Search is unavailable; results were found with GitHub Search only."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "外部 Web Search 不可用，本次已降级为仅使用 GitHub Search。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.source.queue" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active queue"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "活跃队列"
-          }
-        }
-      }
-    },
-    "curatedPublisher.source.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Source category"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "来源分类"
-          }
-        }
-      }
-    },
-    "curatedPublisher.subtitle" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn collected clues into verified recommendations for Starcat users."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将日常收集的项目线索核验后推荐给 Starcat 用户。"
-          }
-        }
-      }
-    },
-    "curatedPublisher.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Curated Publisher"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "精选发布台"
-          }
-        }
-      }
-    },
-    "curatedPublisher.toolbar.open" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Curated Publisher"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开精选发布台"
-          }
-        }
-      }
-    },
-    "curatedPublisher.verify.finalURL" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Final GitHub URL"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最终 GitHub 地址"
-          }
-        }
-      }
-    },
-    "curatedPublisher.verify.passed" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verified by GitHub"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub 官方核验通过"
-          }
-        }
-      }
-    },
-    "curatedPublisher.verify.pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not verified"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未核验"
-          }
-        }
-      }
-    },
-    "curatedPublisher.verify.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verify the official repository"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "确认官方仓库"
-          }
-        }
-      }
-    },
-    "curatedPublisher.action.aiIdentify" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Identify with AI" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 甄别项目" } } } },
-    "curatedPublisher.aiInput.hint" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Paste links, names, notes, or a mixed list. AI will split the content and locate official GitHub repositories." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "粘贴链接、项目名、笔记或混合清单，AI 会拆分内容并查找官方 GitHub 仓库。" } } } },
-    "curatedPublisher.aiInput.model" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Model" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "识别模型" } } } },
-    "curatedPublisher.aiInput.subtitle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Natural language, web pages, and multiple projects are all supported." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "支持自然语言、网页线索和多个项目混合输入。" } } } },
-    "curatedPublisher.aiInput.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Collect project clues" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收集项目线索" } } } },
-    "curatedPublisher.aiPhase.judging" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Reviewing evidence and selecting official repositories…" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在审阅证据并判断官方仓库…" } } } },
-    "curatedPublisher.aiPhase.searchingFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Searching and verifying %d/%d…" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在检索并核验 %d/%d…" } } } },
-    "curatedPublisher.aiPhase.understanding" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Understanding and splitting the input…" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在理解并拆分输入…" } } } },
-    "curatedPublisher.connection.stored" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Admin credential is stored locally. Publishing is enabled after AI identification." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "管理员凭据已保存在本机，AI 甄别完成后可连接发布。" } } } },
-    "curatedPublisher.error.aiInvalidResponse" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI returned an invalid identification result. Please retry." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 返回的甄别结果无效，请重试。" } } } },
-    "curatedPublisher.error.noSelectedFindings" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Select at least one confirmed repository before publishing." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "请至少选择一个已确认的仓库后再发布。" } } } },
-    "curatedPublisher.preview.moreFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "+%d more repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "另有 %d 个仓库" } } } },
-    "curatedPublisher.publish.subtitle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Connect only after identification, choose a category, then publish the confirmed batch." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "甄别完成后连接服务，选择分类并批量发布已确认项目。" } } } },
-    "curatedPublisher.review.candidates" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Candidate repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "候选仓库" } } } },
-    "curatedPublisher.review.confirmed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Confirmed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已确认" } } } },
-    "curatedPublisher.review.emptyDescription" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Run AI identification to review evidence and correct ambiguous repositories here." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "运行 AI 甄别后，可在这里审阅证据并修正有歧义的仓库。" } } } },
-    "curatedPublisher.review.emptyTitle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No identification results yet" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂无甄别结果" } } } },
-    "curatedPublisher.review.evidenceTitle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Evidence and decision" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "证据与判断" } } } },
-    "curatedPublisher.review.needsReview" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Needs review" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待确认" } } } },
-    "curatedPublisher.review.notFound" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Not found" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未找到" } } } },
-    "curatedPublisher.review.subtitle" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Verify AI decisions before anything reaches Weekly." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先核对 AI 判断，再让任何数据进入 Weekly。" } } } },
-    "curatedPublisher.review.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Review identification" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审阅甄别结果" } } } },
-    "curatedPublisher.source.code" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Category code" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分类编码" } } } },
-    "curatedPublisher.source.codeHint" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Lowercase letters, digits, and underscores; start with a letter." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "使用小写字母、数字和下划线，且必须以字母开头。" } } } },
-    "curatedPublisher.source.create" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Create category" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "新增分类" } } } },
-    "curatedPublisher.source.nameEN" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "English name" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "英文名称" } } } },
-    "curatedPublisher.source.nameZH" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Chinese name" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "中文名称" } } } },
-    "githubStarLists.aiGrouping.noAvailableGroups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "No available groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "没有可用分组" } } } },
-    "githubStarLists.aiGrouping.applyFailure.organizationRestriction" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub blocks third-party apps from updating this organization repository." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 限制第三方应用操作此组织仓库。" } } } },
-    "githubStarLists.aiGrouping.applyFailure.network" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Network error. Try again." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "网络错误，请重试。" } } } },
-    "githubStarLists.aiGrouping.applyFailure.rateLimited" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub rate limit reached. Try again later." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 请求已限流，请稍后重试。" } } } },
-    "githubStarLists.aiGrouping.applyFailure.authentication" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub authorization expired. Sign in again." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "GitHub 授权已失效，请重新登录。" } } } },
-    "githubStarLists.aiGrouping.applyFailure.repositoryUnavailable" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository is unavailable or no longer starred." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库不可用或已不再 Star。" } } } },
-    "githubStarLists.aiGrouping.applyFailure.unknown" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Could not update this GitHub List." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法更新此 GitHub 分组。" } } } },
-    "githubStarLists.aiGrouping.applyFailure.openGitHub" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Open on GitHub" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在 GitHub 中打开" } } } },
-    "githubStarLists.aiGrouping.filter.analysisFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析失败" } } } },
-    "githubStarLists.aiGrouping.filter.applyFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Apply Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用失败" } } } },
-    "batchAI.organizeTags.title" : { "extractionState" : "manual", "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Tagging" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 整理标签" } } } },
-    "batchAI.organizeTags.subtitle.compact" : { "extractionState" : "manual", "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Review AI suggestions before applying tags" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审核 AI 建议后再应用标签" } } } },
-    "batchAI.organizeTags.running" : { "extractionState" : "manual", "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Generating tag suggestions" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "正在生成标签建议" } } } },
-    "batchAI.options.tagsPerRepository" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Tags per repository" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每仓库标签" } } } },
-    "batchAI.options.selectedActions" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Selected actions" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选操作" } } } },
-    "batchAI.options.estimatedTime" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Estimated time" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "预计耗时" } } } },
-    "batchAI.options.estimatedMinutesFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "About %d min" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "约 %d 分钟" } } } },
-    "batchAI.options.autoApplyEnabledCompactFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-apply tags at %@+; review the rest." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "达到 %@ 的标签自动应用，其余进入待确认。" } } } },
-    "batchAI.options.autoApplyDisabledCompact" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Review all tag suggestions before applying." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所有标签建议均进入待确认。" } } } },
-    "batchAI.options.summaryStoredLocallyCompact" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI summaries are stored locally." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "生成的 AI 摘要保存在本地。" } } } },
-    "githubStarLists.aiGrouping.filter.applied" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Applied" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已应用" } } } },
-    "githubStarLists.aiGrouping.filter.automaticallyIgnored" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-ignored" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动忽略" } } } },
-    "githubStarLists.aiGrouping.filter.tab.actionable" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Pending" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待处理" } } } },
-    "githubStarLists.aiGrouping.filter.tab.suggestions" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggested" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "有建议" } } } },
-    "githubStarLists.aiGrouping.filter.tab.applyFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "应用失败" } } } },
-    "githubStarLists.aiGrouping.filter.tab.applied" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Applied" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已应用" } } } },
-    "githubStarLists.aiGrouping.filter.tab.automaticallyIgnored" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动忽略" } } } },
-    "githubStarLists.aiGrouping.filter.ignored" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Ignored" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已忽略" } } } },
-    "githubStarLists.aiGrouping.filter.tab.ignored" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Ignored" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已忽略" } } } },
-    "githubStarLists.aiGrouping.filter.automaticallyIgnored.helpButton" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Why repositories are auto-ignored" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看自动忽略原因" } } } },
-    "githubStarLists.aiGrouping.filter.automaticallyIgnored.reason" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "These repositories belong to organizations that restrict OAuth app access. GitHub does not allow third-party apps to update Lists, so Starcat skips them automatically instead of retrying. An organization owner can approve Starcat in GitHub organization settings, then run grouping again." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这些仓库所在组织开启了 OAuth 应用访问限制，GitHub 不允许第三方应用改分组。Starcat 会自动跳过，避免反复失败。组织管理员可在 GitHub 组织设置里批准 Starcat 后再整理。" } } } },
-    "githubStarLists.aiGrouping.filter.automaticallyIgnored.persistentReason" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "These repositories belong to organizations that restrict OAuth app access. Starcat keeps them visible in each grouping session but skips them in later runs to avoid repeated failures. After an organization owner approves Starcat, retry one repository or retry all manually." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "这些仓库所在组织限制了 OAuth 应用访问。Starcat 会在每次整理中保留展示，但后续不会重复处理，避免反复失败。组织管理员批准 Starcat 后，可手动重试单个仓库或全部重试。" } } } },
-    "githubStarLists.aiGrouping.preflight.automaticallyIgnoredCompactReason" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Skipped because organization access is restricted. Authorize Starcat, then retry." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "因组织访问限制自动跳过。授权 Starcat 后可手动重试。" } } } },
-    "githubStarLists.aiGrouping.discard.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this grouping session?" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放弃本次分组整理？" } } } },
-    "githubStarLists.aiGrouping.discard.action" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard Session" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "放弃本次整理" } } } },
-    "githubStarLists.aiGrouping.discard.message" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Analysis results and review selections will be removed. GitHub changes already applied are not affected." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "分析结果和审核选择将被清除，已经成功写入 GitHub 的分组不会受到影响。" } } } },
-    "githubStarLists.aiGrouping.loadFailed" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Could Not Load Grouping Context" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无法加载分组整理上下文" } } } },
-    "githubStarLists.aiGrouping.preflight.repositories" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库" } } } },
-    "githubStarLists.aiGrouping.preflight.groups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Eligible groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "可用分组" } } } },
-    "githubStarLists.aiGrouping.preflight.grouped" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "In Groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入分组" } } } },
-    "githubStarLists.aiGrouping.preflight.overlapNote" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "A repository can belong to multiple groups, so counts may overlap." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "一个仓库可以同时加入多个分组，数量可能重叠。" } } } },
-    "githubStarLists.aiGrouping.preflight.existingGroups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Existing Groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "现有分组" } } } },
-    "githubStarLists.aiGrouping.preflight.rulesPrivacyNote" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Rules stay local and are sent to your AI provider only during grouping." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "规则仅保存在本地，整理时会发送给 AI Provider。" } } } },
-    "githubStarLists.aiGrouping.preflight.repoCountFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%d repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "%d 个仓库" } } } },
-    "githubStarLists.aiGrouping.preflight.ruleConfigured" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI rule configured" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 规则已配置" } } } },
-    "githubStarLists.aiGrouping.preflight.ruleMissing" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI rule not configured" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未配置 AI 规则" } } } },
-    "githubStarLists.aiGrouping.preflight.autoEnabled" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-organize on" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动整理已开启" } } } },
-    "githubStarLists.aiGrouping.preflight.autoDisabled" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-organize off" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动整理未开启" } } } },
-    "githubStarLists.aiGrouping.preflight.autoOrganize" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-organize" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动整理" } } } },
-    "githubStarLists.aiGrouping.preflight.editRule" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Edit AI Rule" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "修改 AI 规则" } } } },
-    "githubStarLists.aiGrouping.preflight.addRule" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Add AI Rule" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "添加 AI 规则" } } } },
-    "githubStarLists.aiGrouping.preflight.thresholdFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Min. confidence %@" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "最低置信度 %@" } } } },
-    "githubStarLists.aiGrouping.preflight.currentRepos" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Current repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "当前仓库" } } } },
-    "githubStarLists.aiGrouping.preflight.session" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "This session" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "本次整理" } } } },
-    "githubStarLists.aiGrouping.preflight.toAnalyze" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories to analyze" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待分析仓库" } } } },
-    "githubStarLists.aiGrouping.preflight.eligibleGroups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Groups in this run" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "参与判断的分组" } } } },
-    "githubStarLists.aiGrouping.preflight.groupsWithoutRules" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Groups without rules" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未配置规则" } } } },
-    "githubStarLists.aiGrouping.preflight.autoOrganizeGroups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-organize groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动整理分组" } } } },
-    "githubStarLists.aiGrouping.preflight.autoConfirm" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Auto-apply" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动确认" } } } },
-    "githubStarLists.aiGrouping.preflight.autoConfirm.disabled" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "All suggestions stay in Review until you apply them." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "所有建议均需确认后写入 GitHub。" } } } },
-    "githubStarLists.aiGrouping.preflight.autoConfirm.enabledFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggestions at %@ or above are automatically applied to groups with auto-organize enabled; others stay in Review." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "达到 %@ 且目标分组已开启自动整理的建议将自动写入；其他建议保留在待确认。" } } } },
-    "githubStarLists.aiGrouping.preflight.autoConfirmDisabledCompact" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Review suggestions before applying." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "建议需确认后应用。" } } } },
-    "githubStarLists.aiGrouping.preflight.multipleGroupsCompactNote" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories can join multiple groups, so counts may overlap." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "仓库可加入多个分组，数量可能重叠。" } } } },
-    "githubStarLists.aiGrouping.preflight.configuredGroupsCompactNote" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI uses only groups with rules; it does not create groups." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 仅使用已配置规则的分组，不会新建。" } } } },
-    "githubStarLists.aiGrouping.preflight.writeAfterReview" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Writes to GitHub only after review" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审核后才写入 GitHub" } } } },
-    "githubStarLists.aiGrouping.preflight.autoGroupingOn" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI auto-grouping is on" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 自动分组已开启" } } } },
-    "githubStarLists.aiGrouping.preflight.autoGroupingOff" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI auto-grouping is off" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 自动分组未开启" } } } },
-    "githubStarLists.aiGrouping.preflight.closedSetHelp" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI only uses groups you have already created and configured. It will not create new groups." } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 只会使用你已经创建并配置规则的分组，不会自动新建分组。" } } } },
-    "githubStarLists.aiGrouping.search.groups" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索分组" } } } },
-    "githubStarLists.aiGrouping.search.repositories" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search repositories" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索仓库" } } } },
-    "githubStarLists.aiGrouping.search.tab" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Search" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索仓库" } } } },
-    "githubStarLists.aiGrouping.retryFailed.tab" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试失败项" } } } },
-    "githubStarLists.aiGrouping.subtitle.compact" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Review AI suggestions before updating GitHub" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "审核 AI 建议后再更新 GitHub" } } } },
-    "githubStarLists.aiGrouping.subtitle.organize" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Organize repositories into existing GitHub groups" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "将仓库整理到现有 GitHub 分组" } } } },
-    "githubStarLists.aiGrouping.suggestJoinFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggest joining %@ · %@" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "建议加入 %@ · %@" } } } },
-    "githubStarLists.aiGrouping.suggestJoinNameFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggest joining %@" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "建议加入 %@" } } } },
-    "githubStarLists.aiGrouping.appliedJoinFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Joined %@ · %@" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入 %@ · %@" } } } },
-    "githubStarLists.aiGrouping.appliedJoinNameFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Joined %@" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入 %@" } } } },
-    "githubStarLists.aiGrouping.metric.pendingReview" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "To Review" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "待审核" } } } },
-    "githubStarLists.aiGrouping.suggestJoinPrefix" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggest joining" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "建议加入" } } } },
-    "githubStarLists.aiGrouping.appliedJoinPrefix" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Joined" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已加入" } } } },
-    "githubStarLists.aiGrouping.showMore" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Show more" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示更多" } } } },
-    "githubStarLists.aiGrouping.showLess" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Show less" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "收起" } } } },
-    "githubStarLists.aiGrouping.retryRecoverable" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Retry Recoverable Failures" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重试可恢复失败" } } } },
-    "githubStarLists.aiGrouping.selectionSummaryFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "%d repositories · %d groups selected" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已选择 %d 个仓库 · %d 个分组" } } } },
-    "githubStarLists.aiGrouping.stop" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Stop Analysis" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "停止分析" } } } },
-    "githubStarLists.aiGrouping.continue" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue Analysis" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续分析" } } } },
-    "sidebar.githubStarLists.aiGrouping.runningFormat" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI grouping %d/%d" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 仓库分组 %d/%d" } } } },
-    "sidebar.githubStarLists.aiGrouping.tooltip" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "View AI repository grouping progress" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "查看 AI 仓库分组进度" } } } },
-    "sidebar.githubStarLists.aiGrouping.popover.title" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "AI Repository Grouping" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "AI 仓库分组" } } } },
-    "sidebar.githubStarLists.aiGrouping.openReview" : { "localizations" : { "en" : { "stringUnit" : { "state" : "translated", "value" : "Open Review" } }, "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "打开审核" } } } },
-    "curatedPublisher.window.title" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Curated Publisher"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "精选发布台"
           }
         }
       }

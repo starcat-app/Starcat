@@ -285,6 +285,11 @@ private struct ExploreDiscoveryListView: View {
             ) {
                 refreshCurrentDiscoveryList()
             }
+            MultiSelectButton(
+                isActive: dependencies.exploreMultiSelectionStore.isActive,
+                action: { dependencies.exploreMultiSelectionStore.toggle() },
+                isDisabled: !authSession.state.isAuthenticated
+            )
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
         .padding(.top, ManageListFilterBarMetrics.topPadding)
@@ -439,7 +444,10 @@ private struct ExploreDiscoveryListView: View {
                     visibleItemCount: indexedRepos.count,
                     loadedItemCount: viewModel.repos.count,
                     hasMore: viewModel.nextPage != nil,
-                    isLoading: viewModel.isLoading || viewModel.isRefreshing,
+                    // 只用 isLoading 做闸门，不掺 isRefreshing：SWR 后台刷新几乎覆盖
+                    // 每次进入分类的头几秒，若一并拦截，快速滚动触发的请求会被整体
+                    // 吞掉且刷新完成后无法经 onChange 恢复（见 loadMoreIfNeeded 注释）。
+                    isLoading: viewModel.isLoading,
                     identity: queryIdentity
                 ) {
                     await viewModel.loadMoreIfNeeded(
@@ -462,7 +470,8 @@ private struct ExploreDiscoveryListView: View {
             visibleItemCount: indexedRepos.count,
             loadedItemCount: viewModel.repos.count,
             hasMore: viewModel.nextPage != nil,
-            isLoading: viewModel.isLoading || viewModel.isRefreshing,
+            // 与行级触发器同口径：SWR 后台刷新不拦截分页（见上方注释）。
+            isLoading: viewModel.isLoading,
             identity: queryIdentity
         ) {
             await viewModel.loadMoreIfNeeded(

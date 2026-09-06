@@ -656,20 +656,42 @@ struct RepoAIOpenButton: View {
     }
 }
 
-/// 仓库分享菜单。
+/// Hero 分享入口：已 Star 展示两项菜单，未 Star 直接复制公开链接。
 ///
-/// 基础链接是免费、无登录依赖的主路径；AI 分享是已 Star 仓库可选的增强路径。
-/// 两者放在同一个系统分享入口里，避免用户把「复制公开链接」误解为 Pro 能力。
-struct RepoShareMenu: View {
+/// 两种状态共用同一图标外观且不显示下拉箭头；任务与 Sheet 由稳定的 RepoShareHost 承载。
+struct RepoShareButton: View {
+    let repo: Repo
     let publicURL: URL
-    let isSharing: Bool
-    let isShared: Bool
-    let canCreateAIShare: Bool
-    let createAIShare: () -> Void
     /// 系统菜单点击后会立即关闭，复制成功提示必须交给稳定的页面根节点显示。
     let onLinkCopied: () -> Void
 
+    @Environment(AppDependencies.self) private var dependencies
+    @Environment(RepoShareTaskStore.self) private var taskStore
+    @Environment(\.presentRepoShare) private var presentRepoShare
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
+        // 探索和独立详情可能持有旧快照；统一读 registry，确保 Star / 取消 Star 后
+        // 立即切换点击行为，不把入口绑定到侧边栏分类或快照里的旧 isStarred。
+        let targetRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
+        if targetRepo.isStarred {
+            shareMenu(for: targetRepo)
+        } else {
+            CopyFeedbackButton(
+                providesContent: { publicURL.absoluteString },
+                tooltip: "repo.share.link.copy.help",
+                onCopied: onLinkCopied
+            ) { didCopy in
+                shareIcon(didCopy: didCopy)
+            }
+            .accessibilityLabel(Text("repo.share.link.copy"))
+            .pressableHover()
+            .fixedSize()
+        }
+    }
+
+    /// 菜单保留已有任务的恢复 / 完成文案；权限门控只在选择 AI 分享时执行。
+    private func shareMenu(for targetRepo: Repo) -> some View {
         Menu {
             CopyFeedbackButton(
                 providesContent: { publicURL.absoluteString },
@@ -683,32 +705,48 @@ struct RepoShareMenu: View {
                 .foregroundStyle(didCopy ? Color.green : Color.primary)
             }
 
-            if canCreateAIShare {
-                Divider()
-                Button(action: createAIShare) {
-                    if isSharing {
-                        Label {
-                            Text("repo.share.progress.reopen")
-                        } icon: {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    } else {
-                        Label(
-                            isShared ? "repo.share.ai.created" : "repo.share.ai.create",
-                            systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
-                        )
+            Divider()
+            Button { presentRepoShare(targetRepo) } label: {
+                if taskStore.isRunning(repoID: targetRepo.id) {
+                    Label {
+                        Text("repo.share.progress.reopen")
+                    } icon: {
+                        ProgressView()
+                            .controlSize(.small)
                     }
+                } else {
+                    let isShared = taskStore.isSuccessful(repoID: targetRepo.id)
+                    Label(
+                        isShared ? "repo.share.ai.created" : "repo.share.ai.create",
+                        systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
+                    )
                 }
             }
         } label: {
-            // macOS 的 Menu 由 AppKit 承载；异步操作期间替换 label 的根视图类型，
-            // 可能让 toolbar 复用到空的菜单宿主，因此入口图标必须始终保持稳定。
-            ToolbarIcon("square.and.arrow.up.circle")
-                .accessibilityLabel(Text("repo.share.button.label"))
+            // AppKit Menu 的 label 根类型保持稳定，任务进度只更新菜单内容。
+            shareIcon()
         }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover()
         .accessibilityLabel(Text("repo.share.button.label"))
         .help("repo.share.button.help")
+        .fixedSize()
+    }
+
+    /// 沿用 Hero 操作的 28pt 点击区域与 13pt 图标，和知识库 / Wiki 入口保持一致。
+    private func shareIcon(didCopy: Bool = false) -> some View {
+        Image(systemName: didCopy ? "checkmark.circle.fill" : "square.and.arrow.up")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+            .frame(width: 28, height: 28)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
+            }
+            .contentShape(Capsule())
     }
 }
 

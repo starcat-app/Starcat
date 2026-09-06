@@ -113,13 +113,13 @@ struct ShareCardSheet: View {
 
                 actionButtons
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 20)
             .padding(.top, 4)
             .padding(.bottom, 24)
         }
-        // 分享卡本体保持 400×560；这里只裁掉 sheet 早期 820pt 高度留下的底部背景空白。
+        // 分享卡本体保持 400×560；sheet 两侧各留 20pt，让预览更紧凑且不改变导出尺寸。
         // 内容总高低于主窗口运行期最小 content 高度 763pt，初始窗口下不会再向底部凸出。
-        .frame(width: 480, height: 760)
+        .frame(width: 440, height: 760)
         .background {
             // HOM-173 v3：sheet 整体动态背景（Metal `swDotsFlow` 流场）。
             //
@@ -133,7 +133,7 @@ struct ShareCardSheet: View {
             // - `tint: .accentColor` 让背景跟随系统强调色（且分享卡 5 套主题色相不一，
             //   用品牌色比绑定某一主题色更协调）；`opacity(0.45)` 是经验值——再高
             //   会抢卡片视觉权重，再低基本看不见。
-            // - `vignette: 0` 必须关掉，sheet 自身已限定 480×820 边界，再叠 vignette
+            // - `vignette: 0` 必须关掉，sheet 自身已限定 440×760 边界，再叠 vignette
             //   会让画面塌成中心一团。
             // - `background: .clear` 不传也是默认值，但显式写出来便于排查
             //   "为什么背景被盖住了"——见 DotsFlowBackground.swift 文件头第 3 条约束。
@@ -249,7 +249,7 @@ struct ShareCardSheet: View {
             )
             .keyboardShortcut(.cancelAction)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 20)
         // 2026-06-25：加大 top 内边距，避免标题 / 反馈 pill / 关闭钮贴窗口顶缘；
         // 垂直预算从选择器按钮尺寸回收。
         .padding(.top, 16)
@@ -561,8 +561,8 @@ struct ShareCardSheet: View {
 
     // MARK: - 卡片预览
 
-    /// 卡片预览区。直接渲染 `ShareCardContent`（与导出图同源），缩放后嵌在 sheet 里。
-    /// sheet 宽 480 - 24×2 padding = 432pt 可用，卡片本体 400pt，自然居中。
+    /// 卡片预览区。直接渲染 `ShareCardContent`（与导出图同源），按原尺寸嵌在 sheet 里。
+    /// sheet 宽 440 - 20×2 padding = 400pt，与卡片、选择器和底部按钮同宽。
     @ViewBuilder
     private var cardPreview: some View {
         ShareCardContent(

@@ -107,6 +107,8 @@ struct SettingsView: View {
     private enum SettingsTab: String, CaseIterable, Hashable, Identifiable {
         case general
         case pro
+        /// 2026-09-06 新增：权限类配置（OAuth scope、数据贡献）独立成页。
+        case privacy
         case ai
         case mcp
         /// 2026-06-08 新增：第三方 / 自建后端服务的 URL 配置。
@@ -126,6 +128,7 @@ struct SettingsView: View {
             switch self {
             case .general:      return "settings.general.title"
             case .pro:          return "Pro"
+            case .privacy:      return "settings.privacy.title"
             case .ai:           return "settings.ai.title"
             case .mcp:          return "settings.mcp.title"
             case .services:     return "settings.services.title"
@@ -146,6 +149,7 @@ struct SettingsView: View {
             switch self {
             case .general:      return "gearshape"
             case .pro:          return "crown.fill"
+            case .privacy:      return "lock.shield"
             case .ai:           return "sparkles"
             case .mcp:          return "point.3.connected.trianglepath.dotted"
             case .services:     return "network"
@@ -291,6 +295,7 @@ struct SettingsView: View {
             Section("settings.sidebar.group.basic") {
                 settingsSidebarRow(.general)
                 settingsSidebarRow(.pro)
+                settingsSidebarRow(.privacy)
             }
 
             Section("settings.sidebar.group.intelligence") {
@@ -361,6 +366,8 @@ struct SettingsView: View {
             generalTab
         case .pro:
             ProSettingsTab()
+        case .privacy:
+            privacyTab
         case .ai:
             AISettingsTab()
         case .mcp:
@@ -397,6 +404,12 @@ struct SettingsView: View {
                                keywords: ["动画", "无障碍", "accessibility", "motion"]),
             SettingsSearchItem("pro", titleKey: "Pro", tab: .pro,
                                keywords: ["订阅", "授权", "激活", "license", "subscription", "purchase"]),
+            SettingsSearchItem("privacy", titleKey: "settings.privacy.title", tab: .privacy,
+                               keywords: ["隐私", "权限", "OAuth", "数据贡献", "推荐", "privacy"]),
+            SettingsSearchItem("privacy.oauthScopes", titleKey: "settings.general.oauthScopes.section", tab: .privacy,
+                               keywords: ["OAuth", "scope", "权限", "组织"]),
+            SettingsSearchItem("privacy.dataContribution", titleKey: "settings.general.dataContribution.section", tab: .privacy,
+                               keywords: ["数据贡献", "匿名", "推荐", "隐私"]),
             SettingsSearchItem("ai", titleKey: "settings.ai.title", tab: .ai,
                                keywords: ["人工智能", "模型", "provider", "model", "api key"]),
             SettingsSearchItem("ai.provider", titleKey: "settings.ai.provider.sectionTitle", tab: .ai,
@@ -469,6 +482,8 @@ struct SettingsView: View {
             return SettingsLocation(tab: .general)
         case "pro":
             return SettingsLocation(tab: .pro)
+        case "privacy", "privacy.oauthScopes", "privacy.dataContribution":
+            return SettingsLocation(tab: .privacy)
         case "ai", "ai.chat", "ai.embedding", "ai.repoContext":
             return SettingsLocation(tab: .ai, target: target == "ai" ? nil : target)
         case "mcp":
@@ -651,70 +666,6 @@ struct SettingsView: View {
                 SettingsSectionHeader(
                     "settings.general.language",
                     systemImage: "globe",
-                    style: .prominent
-                )
-            }
-
-            Section {
-                Text("settings.general.oauthScopes.summary")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                ForEach(AppConstants.githubOAuthScopes, id: \.self) { scope in
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Text(scope)
-                            .font(.body.monospaced())
-
-                        Spacer(minLength: 16)
-
-                        Text(githubOAuthScopeDescriptionKey(for: scope))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                    }
-                }
-
-                Text("settings.general.oauthScopes.organizationHelp")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } header: {
-                SettingsSectionHeader(
-                    "settings.general.oauthScopes.section",
-                    systemImage: "lock.shield.fill",
-                    style: .prominent
-                )
-            }
-
-            // 数据贡献严格默认关闭且按 GitHub 账号隔离。这里只展示一个授权开关；
-            // 上传数量、时间、失败和重试均属于后台旁路状态，不进入用户界面。
-            Section {
-                Toggle(isOn: Binding(
-                    get: { dependencies.dataContributionSettings.isEnabled },
-                    set: { newValue in
-                        guard let accountID = dependencies.database.currentUserId else { return }
-                        Task {
-                            await dependencies.dataContributionSettings.setEnabled(
-                                newValue,
-                                accountID: accountID
-                            )
-                        }
-                    }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.general.dataContribution.title")
-                        Text("settings.general.dataContribution.help")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .disabled(dependencies.database.currentUserId == nil)
-            } header: {
-                SettingsSectionHeader(
-                    "settings.general.dataContribution.section",
-                    systemImage: "hand.raised.fill",
                     style: .prominent
                 )
             }
@@ -1050,6 +1001,80 @@ struct SettingsView: View {
                 SettingsSectionHeader(
                     "settings.general.other",
                     systemImage: "ellipsis.circle",
+                    style: .prominent
+                )
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// 2026-09-06 dong4j 需求：新增「隐私」侧栏页，收拢权限类配置。
+    /// GitHub OAuth 权限（登录申请的 scope）与隐私与推荐（数据贡献开关）从
+    /// 通用页整体迁入：两者本质都是「用户数据授权边界」，独立成页后用户能
+    /// 在一处看全 Starcat 申请了哪些权限、贡献了哪些数据；通用页只保留
+    /// 界面 / 行为偏好。两个 Section 的标题、图标与内容保持迁入前原样。
+    private var privacyTab: some View {
+        Form {
+            Section {
+                Text("settings.general.oauthScopes.summary")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(AppConstants.githubOAuthScopes, id: \.self) { scope in
+                    HStack(alignment: .firstTextBaseline, spacing: 16) {
+                        Text(scope)
+                            .font(.body.monospaced())
+
+                        Spacer(minLength: 16)
+
+                        Text(githubOAuthScopeDescriptionKey(for: scope))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+
+                Text("settings.general.oauthScopes.organizationHelp")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                SettingsSectionHeader(
+                    "settings.general.oauthScopes.section",
+                    systemImage: "lock.shield.fill",
+                    style: .prominent
+                )
+            }
+
+            // 数据贡献严格默认关闭且按 GitHub 账号隔离。这里只展示一个授权开关；
+            // 上传数量、时间、失败和重试均属于后台旁路状态，不进入用户界面。
+            Section {
+                Toggle(isOn: Binding(
+                    get: { dependencies.dataContributionSettings.isEnabled },
+                    set: { newValue in
+                        guard let accountID = dependencies.database.currentUserId else { return }
+                        Task {
+                            await dependencies.dataContributionSettings.setEnabled(
+                                newValue,
+                                accountID: accountID
+                            )
+                        }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.general.dataContribution.title")
+                        Text("settings.general.dataContribution.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .disabled(dependencies.database.currentUserId == nil)
+            } header: {
+                SettingsSectionHeader(
+                    "settings.general.dataContribution.section",
+                    systemImage: "hand.raised.fill",
                     style: .prominent
                 )
             }

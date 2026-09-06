@@ -214,14 +214,6 @@ struct StarcatApp: App {
         )
         .defaultLaunchBehavior(.suppressed)
 
-        // 运营工具使用真正的独立 Window 而不是 sheet：提交后可与主窗口并行工作，
-        // Window id 保证重复点击入口只激活同一个实例。默认不随 App 启动自动展示。
-        Window("curatedPublisher.window.title", id: CuratedPublisherWindow.id) {
-            curatedPublisherSceneRoot
-        }
-        .defaultSize(width: 1_080, height: 720)
-        .defaultLaunchBehavior(.suppressed)
-
         // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window：保留标准
         // 交通灯、原生 Sidebar/Toolbar，同时按产品约束固定为当前验收尺寸。
         Window("Starcat", id: "settings") {
@@ -323,31 +315,6 @@ struct StarcatApp: App {
                 .animation(dependencies.settings.disableAnimations ? nil : .easeInOut(duration: 0.3), value: dependencies.settings.appearanceMode)
         } else {
             StartupFailureView(error: startupError ?? UserFacingError.map(DatabaseError.applicationSupportNotFound, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat"))
-        }
-    }
-
-    @ViewBuilder
-    private var curatedPublisherSceneRoot: some View {
-        if let dependencies {
-            CuratedPublisherView(
-                identification: dependencies.curatedProjectIdentificationSession,
-                publisher: dependencies.curatedPublisherSession
-            )
-                .frame(minWidth: 900, minHeight: 620)
-                .starcatAnimationOverride()
-                .environment(dependencies)
-                .environment(dependencies.authSession)
-                .environment(dependencies.settings)
-                .environment(\.locale, localeStore.selection.effectiveLocale)
-                .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
-                .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
-                .id(localeStore.selection.rawValue)
-        } else {
-            StartupFailureView(error: startupError ?? UserFacingError.map(
-                DatabaseError.applicationSupportNotFound,
-                operation: String.l10n("diagnostics.operation.startup"),
-                service: "Starcat"
-            ))
         }
     }
 

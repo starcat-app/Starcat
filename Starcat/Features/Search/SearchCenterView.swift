@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct SearchCenterView: View {
     @Bindable var viewModel: SearchCenterViewModel
@@ -148,15 +149,21 @@ struct SearchCenterView: View {
         .sheet(item: $viewModel.paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
+        // 中文输入法组合输入（marked text）期间，上/下/回车/Esc 都属于 IME 的按键：
+        // 回车默认「上屏英文」、上下选候选、Esc 取消选词。容器级 onKeyPress 若在此期间
+        // 返回 .handled 会把按键从输入法手里抢走，表现为「按回车无反应」，因此先放行。
         .onKeyPress(.upArrow) {
+            guard !isIMEComposing else { return .ignored }
             viewModel.moveSelection(by: -1)
             return .handled
         }
         .onKeyPress(.downArrow) {
+            guard !isIMEComposing else { return .ignored }
             viewModel.moveSelection(by: 1)
             return .handled
         }
         .onKeyPress(.return) {
+            guard !isIMEComposing else { return .ignored }
             let normalizedDraft = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
             if let candidate = viewModel.selectedCandidate,
                !viewModel.lastSubmittedQuery.isEmpty,
@@ -168,6 +175,7 @@ struct SearchCenterView: View {
             return .handled
         }
         .onKeyPress(.escape) {
+            guard !isIMEComposing else { return .ignored }
             viewModel.dismiss()
             return .handled
         }
@@ -203,6 +211,13 @@ struct SearchCenterView: View {
 
     private var filtersAvailable: Bool {
         viewModel.scope == .all || viewModel.scope == .github || viewModel.scope == .web
+    }
+
+    /// 当前焦点 field editor 是否持有输入法未提交的组合文本（中文拼音草稿）。
+    /// SwiftUI 的 TextField 绑定在组合期间不更新，也无法自查询 marked text，
+    /// 只能透过 AppKit firstResponder 探测；无焦点编辑器时按非组合态处理。
+    private var isIMEComposing: Bool {
+        (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
     }
 
     private var shouldShowFilterDrawer: Bool {

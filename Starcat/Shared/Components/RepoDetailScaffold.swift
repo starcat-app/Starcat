@@ -773,9 +773,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Wiki 评审约束（2026-06-11）：Weekly Issue 是 Weekly 分组特有入口，必须永远排第一。
     /// 因此先渲染 `.weeklyIssue`，最后渲染 AI / custom。
     /// Share 已迁入 window toolbar：它是当前 repo 的全局操作，不应继续占用 hero
-    /// 内容区的主 CTA 位置。Wiki 保留在 hero action 区并排在 AI 前，避免它的
-    /// 异步服务商探测结果让 toolbar 重排跳动；这里仍接收 `.share`，但派发时跳过，
-    /// 避免四个场景调用方为一个展示位置变化同步改数据模型。
+    /// 内容区操作统一放在 Hero；分享位于知识库按钮右侧，直接跟随当前详情仓库。
+    /// 分享可见性不依赖各 shell 的旧 `.share` 标记，未 Star 的公开仓库也可直接复制链接。
     @ViewBuilder
     private var trailingActionsView: some View {
         HStack(spacing: 8) {
@@ -796,7 +795,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                                 .frame(width: 28, height: 28)
                                 .background {
                                     Capsule(style: .continuous)
-                                        .fill(WikiAccent.background(colorScheme: colorScheme))
+                                        .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
                                 }
                         }
                         .buttonStyle(.plain)
@@ -815,7 +814,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                             .frame(width: 28, height: 28)
                             .background {
                                 Capsule(style: .continuous)
-                                    .fill(WikiAccent.background(colorScheme: colorScheme))
+                                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
                             }
                     }
                     .buttonStyle(.plain)
@@ -830,7 +829,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             // 位置：Wiki 菜单之后、剩余 actions（.ai 等）之前 —— 即 AI 按钮的左侧。
             // 显示条件：recommendationVM.hasItems（保持旧浮动按钮的「有就显示、没有就不显示」契约）。
             if recommendationVM.hasItems {
-                RepoRecommendButton(hasItems: true) {
+                RepoRecommendButton {
                     guard dependencies.authSession.state.isAuthenticated else {
                         dependencies.authSession.requestLoginSheet()
                         return
@@ -900,6 +899,14 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     }
                 }
                 .gettingStartedAnchor(.addToLibrary)
+            }
+            if !repo.isPrivate,
+               let deepLink = RepositoryDeepLink(fullName: repo.fullName, repositoryID: repo.id) {
+                RepoShareButton(repo: repo, publicURL: deepLink.publicURL) {
+                    detailToastMessage = "repo.share.link.copied"
+                }
+                // AppKit 可能保留旧 NSMenu action；切换仓库时连同复制反馈一起重建。
+                .id("\(repo.id):\(repo.fullName)")
             }
             ForEach(remainingActions) { action in
                 actionButton(for: action)
