@@ -43,6 +43,10 @@ enum PerformanceSpan: Sendable {
 /// 这里刻意使用固定事件名，不携带仓库、分组或搜索内容；在 Instruments 的 Points of
 /// Interest 里用相邻 requested / first_frame 事件即可量出 Sheet 呈现延迟。
 enum PerformanceEvent: Sendable {
+    case settingsWindowRequested
+    case settingsWindowFirstFrame
+    case aboutWindowRequested
+    case aboutWindowFirstFrame
     case repoDetailSelectionRequested
     case repoDetailFirstFrame
     case readmeWebViewCreated
@@ -169,6 +173,14 @@ final class PerformanceTracer: @unchecked Sendable {
 
     private func name(for event: PerformanceEvent) -> StaticString {
         switch event {
+        case .settingsWindowRequested:
+            return "settings.window.requested"
+        case .settingsWindowFirstFrame:
+            return "settings.window.first_frame"
+        case .aboutWindowRequested:
+            return "about.window.requested"
+        case .aboutWindowFirstFrame:
+            return "about.window.first_frame"
         case .repoDetailSelectionRequested:
             return "repo_detail.selection.requested"
         case .repoDetailFirstFrame:

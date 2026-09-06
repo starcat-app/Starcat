@@ -50,4 +50,30 @@ struct SettingsSidebarWidthLimiterTests {
         #expect(detailItem.minimumThickness != 220)
         #expect(detailItem.maximumThickness != 260)
     }
+
+    /// 固定窗口边界必须区分 content size 与包含标题栏的 frame size，否则 AppKit
+    /// 会得到互相冲突的 min/max 约束并在首次布局中反复修正窗口。
+    @Test("按 content size 锁定设置窗口")
+    func appliesFixedSettingsWindowSize() {
+        let contentSize = NSSize(width: 720, height: 720)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 240),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+
+        let didApply = SettingsWindowSizeLimiter.apply(contentSize: contentSize, to: window)
+        let expectedFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: contentSize)
+        ).size
+
+        #expect(didApply)
+        #expect(window.contentMinSize == contentSize)
+        #expect(window.contentMaxSize == contentSize)
+        #expect(window.minSize == expectedFrameSize)
+        #expect(window.maxSize == expectedFrameSize)
+        #expect(abs(window.contentLayoutRect.width - contentSize.width) <= 0.5)
+        #expect(abs(window.contentLayoutRect.height - contentSize.height) <= 0.5)
+    }
 }

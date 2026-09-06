@@ -236,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 这里不自行创建 `NSWindow`：窗口生命周期仍由 SwiftUI `Window` scene 管理，
     /// 才能保留系统交通灯、工具栏、状态恢复与 `openWindow(id:)` 的单例语义。
     static func openSettingsWindow(target: String? = nil) {
+        PerformanceTracer.shared.mark(.settingsWindowRequested)
         NSApp.activate(ignoringOtherApps: true)
         if let target {
             pendingSettingsTarget = target

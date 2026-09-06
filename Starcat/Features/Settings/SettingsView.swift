@@ -73,6 +73,7 @@ struct SettingsView: View {
     @State private var forwardHistory: [SettingsLocation] = []
     @State private var settingsSearchText = ""
     @State private var isRedispatchingSettingsJump = false
+    @State private var hasMarkedFirstFrame = false
     /// 快捷键录制失败时只在 General 页就地提示，不修改已保存配置。
     @State private var shortcutValidationError: KeyboardShortcutConfiguration.ValidationError?
 
@@ -233,10 +234,14 @@ struct SettingsView: View {
                 .navigationTitle(String.l10n(selectedTab.titleKeyString))
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(
-            width: Self.contentSize.width,
-            height: Self.contentSize.height
-        )
+        // Window scene 的 defaultSize 负责初始尺寸；内容只填满已分配 bounds，不再把
+        // 720×720 作为 intrinsic size 回传给 SwiftUI 窗口控制器。这样菜单 action
+        // 不需要先同步测量完整的 NavigationSplitView 才能决定窗口大小。
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            SettingsWindowSizeLimiter(contentSize: Self.contentSize)
+                .frame(width: 0, height: 0)
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
@@ -267,6 +272,10 @@ struct SettingsView: View {
             }
         }
         .onAppear {
+            if !hasMarkedFirstFrame {
+                hasMarkedFirstFrame = true
+                PerformanceTracer.shared.mark(.settingsWindowFirstFrame)
+            }
             dependencies.telemetryManager.track(.settingsOpened)
             // 第一次打开 Window 时通知可能早于 View 安装订阅；消费 AppDelegate
             // 暂存的目标，保证独立窗口入口首次也能准确定位到目标页/区块。

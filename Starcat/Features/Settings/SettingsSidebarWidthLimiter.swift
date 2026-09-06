@@ -35,10 +35,15 @@ struct SettingsSidebarWidthLimiter: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
-        (nsView as? ProbeView)?.onHierarchyChange = nil
+        guard let probe = nsView as? ProbeView else { return }
+        probe.onHierarchyChange = nil
+        probe.cancelPendingApplication()
     }
 
-    /// SwiftUI 可能重建 Sidebar 的宿主层级；每次挂载和更新都幂等重设约束。
+    /// SwiftUI 可能重建 Sidebar 的宿主层级；更新时只安排一次延迟应用。
+    ///
+    /// 不能在 `NSView.layout()` 里直接执行：约束内部可能移动 divider，而移动 divider
+    /// 会再次触发布局，形成 layout → setPosition → layout 的同步反馈环。
     private func updateProbe(_ probe: ProbeView) {
         probe.onHierarchyChange = { [minimumThickness, maximumThickness] view in
             Self.applyConstraints(
@@ -47,7 +52,7 @@ struct SettingsSidebarWidthLimiter: NSViewRepresentable {
                 toColumnContaining: view
             )
         }
-        probe.onHierarchyChange?(probe)
+        probe.scheduleConstraintApplication()
     }
 
     /// 找到真正包含探针的 split item，而不是假定 Sidebar 永远是窗口中的第一个分栏。
@@ -59,6 +64,12 @@ struct SettingsSidebarWidthLimiter: NSViewRepresentable {
         maximumThickness: CGFloat,
         toColumnContaining view: NSView
     ) -> Bool {
+        guard minimumThickness.isFinite,
+              maximumThickness.isFinite,
+              minimumThickness >= 0,
+              maximumThickness >= minimumThickness else {
+            return false
+        }
         guard let context = splitViewContext(containing: view) else {
             return false
         }
@@ -159,37 +170,148 @@ struct SettingsSidebarWidthLimiter: NSViewRepresentable {
         let splitView = context.controller.splitView
         guard splitView.isVertical,
               context.itemIndex == 0,
-              context.controller.splitViewItems.count > 1 else {
+              context.controller.splitViewItems.count > 1,
+              splitView.bounds.width.isFinite,
+              splitView.bounds.width > minimumThickness else {
             return
         }
 
         let currentThickness = context.item.viewController.view.frame.width
-        guard currentThickness > 0 else { return }
+        guard currentThickness.isFinite, currentThickness > 0 else { return }
         let clampedThickness = min(max(currentThickness, minimumThickness), maximumThickness)
         guard abs(currentThickness - clampedThickness) > 0.5 else { return }
 
         splitView.setPosition(clampedThickness, ofDividerAt: 0)
-        splitView.layoutSubtreeIfNeeded()
     }
 
     /// 零尺寸探针只监听宿主层级变化，不参与绘制、布局或事件处理。
     private final class ProbeView: NSView {
-        var onHierarchyChange: ((NSView) -> Void)?
+        var onHierarchyChange: ((NSView) -> Bool)?
+        private var applicationTask: Task<Void, Never>?
+        private var didApplyConstraints = false
 
         override func viewDidMoveToSuperview() {
             super.viewDidMoveToSuperview()
-            onHierarchyChange?(self)
+            didApplyConstraints = false
+            scheduleConstraintApplication()
         }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            onHierarchyChange?(self)
+            didApplyConstraints = false
+            scheduleConstraintApplication()
         }
 
-        override func layout() {
-            super.layout()
-            // 首次挂窗时 split item 可能还是 0 宽；布局完成后再幂等补一次约束和钳制。
-            onHierarchyChange?(self)
+        /// 等当前布局事务退出后再约束 split item；最多重试三轮，覆盖 SwiftUI
+        /// 首次挂窗时 controller 层级尚未完整安装的短暂状态。
+        func scheduleConstraintApplication() {
+            guard window != nil, !didApplyConstraints else { return }
+            applicationTask?.cancel()
+            applicationTask = Task { @MainActor [weak self] in
+                for _ in 0..<3 {
+                    await Task.yield()
+                    guard let self, !Task.isCancelled, self.window != nil else { return }
+                    if self.onHierarchyChange?(self) == true {
+                        self.didApplyConstraints = true
+                        return
+                    }
+                }
+            }
+        }
+
+        func cancelPendingApplication() {
+            applicationTask?.cancel()
+            applicationTask = nil
+        }
+    }
+}
+
+/// 设置窗口固定尺寸的 AppKit 补充约束。
+///
+/// SwiftUI Scene 只提供 `defaultSize`，避免 `.windowResizability(.contentSize)` 在菜单
+/// action 内同步测量完整设置页。探针挂窗后的下一轮 RunLoop 再锁定实际尺寸，此时窗口
+/// 已有有效 frame，不会把负数或无限 proposed size 传回 NavigationSplitView。
+struct SettingsWindowSizeLimiter: NSViewRepresentable {
+    let contentSize: CGSize
+
+    func makeNSView(context: Context) -> NSView {
+        let probe = WindowProbeView(frame: .zero)
+        probe.contentSize = contentSize
+        return probe
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let probe = nsView as? WindowProbeView else { return }
+        probe.contentSize = contentSize
+        probe.scheduleConfiguration()
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        (nsView as? WindowProbeView)?.cancelPendingConfiguration()
+    }
+
+    /// 同时设置 content 与 frame 两套边界；`NSWindow.minSize/maxSize` 使用的是包含
+    /// 标题栏的 frame 尺寸，不能直接复用 contentSize。
+    @discardableResult
+    static func apply(contentSize: CGSize, to window: NSWindow) -> Bool {
+        guard contentSize.width.isFinite,
+              contentSize.height.isFinite,
+              contentSize.width > 0,
+              contentSize.height > 0 else {
+            return false
+        }
+
+        window.contentMinSize = contentSize
+        window.contentMaxSize = contentSize
+        let frameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: contentSize)
+        ).size
+        guard frameSize.width.isFinite,
+              frameSize.height.isFinite,
+              frameSize.width > 0,
+              frameSize.height > 0 else {
+            return false
+        }
+        window.minSize = frameSize
+        window.maxSize = frameSize
+
+        let currentContentSize = window.contentLayoutRect.size
+        if abs(currentContentSize.width - contentSize.width) > 0.5 ||
+            abs(currentContentSize.height - contentSize.height) > 0.5 {
+            window.setContentSize(contentSize)
+        }
+        return true
+    }
+
+    private final class WindowProbeView: NSView {
+        var contentSize: CGSize = .zero
+        private var configurationTask: Task<Void, Never>?
+        private var didConfigureWindow = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            didConfigureWindow = false
+            scheduleConfiguration()
+        }
+
+        /// 必须延迟到挂窗布局事务结束后；在 viewDidMoveToWindow 内同步 setContentSize
+        /// 会重新进入正在执行的 SwiftUI/AppKit 首帧布局。
+        func scheduleConfiguration() {
+            guard window != nil, !didConfigureWindow else { return }
+            configurationTask?.cancel()
+            configurationTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard let self, !Task.isCancelled, let window = self.window else { return }
+                self.didConfigureWindow = SettingsWindowSizeLimiter.apply(
+                    contentSize: self.contentSize,
+                    to: window
+                )
+            }
+        }
+
+        func cancelPendingConfiguration() {
+            configurationTask?.cancel()
+            configurationTask = nil
         }
     }
 }

@@ -52,6 +52,7 @@ private enum AboutPage: String, CaseIterable, Identifiable {
 struct AboutView: View {
 
     @State private var selectedPage: AboutPage = .overview
+    @State private var hasMarkedFirstFrame = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -79,6 +80,11 @@ struct AboutView: View {
         }
         .frame(minWidth: 680, minHeight: 450)
         .background(.regularMaterial)
+        .onAppear {
+            guard !hasMarkedFirstFrame else { return }
+            hasMarkedFirstFrame = true
+            PerformanceTracer.shared.mark(.aboutWindowFirstFrame)
+        }
     }
 
     /// 用 Picker 保留 macOS 原生 segmented control 的键盘与无障碍行为。
@@ -200,14 +206,17 @@ private struct AboutBrandAnimatedBackground: View {
                         )
                     )
                 }
-                .blur(radius: 34)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 9).repeatForever(autoreverses: true), value: isAnimating)
-                .onAppear {
-                    guard !reduceMotion else { return }
+                .task(id: reduceMotion) {
+                    guard !reduceMotion else {
+                        isAnimating = false
+                        return
+                    }
+                    // 先让窗口完成首帧和菜单收起，再启动装饰动画。径向渐变自身已经
+                    // 平滑衰减，不再叠加全窗口实时 Blur，避免首次 CA 提交卡住主线程。
+                    try? await Task.sleep(for: .milliseconds(120))
+                    guard !Task.isCancelled else { return }
                     isAnimating = true
-                }
-                .onChange(of: reduceMotion) { _, newValue in
-                    isAnimating = !newValue
                 }
             }
         }

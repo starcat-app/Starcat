@@ -30,6 +30,7 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
     /// 显示关于窗口，并激活应用。
     @MainActor
     static func show() {
+        PerformanceTracer.shared.mark(.aboutWindowRequested)
         let controller: AboutWindowController
         let shouldCenter: Bool
 
@@ -60,15 +61,26 @@ final class AboutWindowController: NSWindowController, NSWindowDelegate {
             .appLocaleEnvironment()
             .environment(AppSettings.shared)
         let hostingController = NSHostingController(rootView: content)
-        let window = NSWindow(contentViewController: hostingController)
+        // About 是固定尺寸窗口，不能让 NSHostingController 把 preferred/intrinsic size
+        // 反向交给 AppKit；否则首次菜单点击会在 showWindow 内同步测量整棵 SwiftUI 树。
+        hostingController.sizingOptions = []
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: AboutWindowMetrics.defaultContentSize),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = hostingController
 
         window.title = String.l10n("app.about")
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(AboutWindowMetrics.defaultContentSize)
         // AboutView 只声明最小可用布局，固定尺寸边界必须由 AppKit 窗口层控制。
         window.contentMinSize = AboutWindowMetrics.defaultContentSize
-        window.minSize = AboutWindowMetrics.defaultContentSize
-        window.maxSize = AboutWindowMetrics.defaultContentSize
+        window.contentMaxSize = AboutWindowMetrics.defaultContentSize
+        let fixedFrameSize = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: AboutWindowMetrics.defaultContentSize)
+        ).size
+        window.minSize = fixedFrameSize
+        window.maxSize = fixedFrameSize
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden

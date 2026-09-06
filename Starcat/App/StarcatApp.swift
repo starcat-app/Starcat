@@ -215,14 +215,15 @@ struct StarcatApp: App {
         .defaultLaunchBehavior(.suppressed)
 
         // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window：保留标准
-        // 交通灯、原生 Sidebar/Toolbar，同时按产品约束固定为当前验收尺寸。
+        // 交通灯与原生 Sidebar/Toolbar。固定尺寸由 SettingsView 内部的 AppKit 探针
+        // 在窗口挂载后设置，不能使用 `.windowResizability(.contentSize)`：后者会在菜单
+        // action 尚未返回时同步 sizeThatFits 整棵 NavigationSplitView，造成彩虹圈。
         Window("Starcat", id: "settings") {
             settingsSceneRoot
         }
         .defaultSize(width: 720, height: 720)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
-        .windowResizability(.contentSize)
         .commands {
             SettingsWindowCommands(dependencies: dependencies)
         }
