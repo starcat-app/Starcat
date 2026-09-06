@@ -96740,13 +96740,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开知识库 RAG 工作台"
+            "value" : "打开 RAG 工作台"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开知识库 RAG 工作台"
+            "value" : "打开 RAG 工作台"
           }
         }
       }
@@ -96853,13 +96853,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开当前仓库 AI"
+            "value" : "打开 AI 摘要"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开当前仓库 AI"
+            "value" : "打开 AI 摘要"
           }
         }
       }
@@ -332123,13 +332123,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击录制新的知识库 RAG 工作台快捷键"
+            "value" : "点击录制新的 RAG 工作台快捷键"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點擊以錄製新的知識庫 RAG 工作區快捷鍵"
+            "value" : "點擊以錄製新的 RAG 工作區快捷鍵"
           }
         }
       }
@@ -332236,13 +332236,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "知识库 RAG 工作台"
+            "value" : "RAG 工作台"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "知識庫 RAG 工作區"
+            "value" : "RAG 工作區"
           }
         }
       }
@@ -333283,13 +333283,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "点击录制新的当前仓库 AI 快捷键"
+            "value" : "点击录制新的 AI 摘要快捷键"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "點擊以錄製新的目前儲存庫 AI 快捷鍵"
+            "value" : "點擊以錄製新的 AI 摘要快捷鍵"
           }
         }
       }
@@ -333396,13 +333396,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前仓库 AI"
+            "value" : "AI 摘要"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "目前儲存庫 AI"
+            "value" : "AI 摘要"
           }
         }
       }
@@ -381354,13 +381354,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按仓库保存的 AI 助手窗口对话，不含知识库 RAG 工作台。总占用超过 100 MB 时按最久未访问优先淘汰。"
+            "value" : "按仓库保存的 AI 助手窗口对话，不含 RAG 工作台。总占用超过 100 MB 时按最久未访问优先淘汰。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每個倉庫 AI 助手視窗的對話工作階段（不含知識庫 RAG 工作台）。總量超過 100 MB 時，LRU 會淘汰最舊的工作階段。"
+            "value" : "每個倉庫 AI 助手視窗的對話工作階段（不含 RAG 工作台）。總量超過 100 MB 時，LRU 會淘汰最舊的工作階段。"
           }
         }
       }
@@ -381467,13 +381467,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "选择仓库 AI 助手新对话历史的写入位置，不影响知识库 RAG 工作台。需重启应用后生效；已有历史不会自动迁移。"
+            "value" : "选择仓库 AI 助手新对话历史的写入位置，不影响 RAG 工作台。需重启应用后生效；已有历史不会自动迁移。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選擇新倉庫 AI 助手對話記錄的儲存位置，不影響知識庫 RAG 工作台。需重新啟動 Starcat 才能套用；現有記錄不會自動遷移。"
+            "value" : "選擇新倉庫 AI 助手對話記錄的儲存位置，不影響 RAG 工作台。需重新啟動 Starcat 才能套用；現有記錄不會自動遷移。"
           }
         }
       }
@@ -388537,13 +388537,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "知识库 RAG 工作台的问答与引用元数据，保存在主数据库中，与仓库 AI 助手对话历史分开。"
+            "value" : "RAG 工作台的问答与引用元数据，保存在主数据库中，与仓库 AI 助手对话历史分开。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "知识库 RAG 工作台的问答与引用元数据，保存在主数据库中，与仓库 AI 助手对话历史分开。"
+            "value" : "RAG 工作台的问答与引用元数据，保存在主数据库中，与仓库 AI 助手对话历史分开。"
           }
         }
       }
@@ -443299,13 +443299,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开知识库 RAG 工作台 (%@)"
+            "value" : "打开 RAG 工作台 (%@)"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟知識庫 RAG 工作台 (%@)"
+            "value" : "開啟 RAG 工作台 (%@)"
           }
         }
       }
@@ -443412,13 +443412,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开知识库 RAG 工作台；键盘快捷键已停用"
+            "value" : "打开 RAG 工作台；键盘快捷键已停用"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟知識庫 RAG 工作台；鍵盤快捷鍵已停用"
+            "value" : "開啟 RAG 工作台；鍵盤快捷鍵已停用"
           }
         }
       }
@@ -443525,13 +443525,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "知识库 RAG 工作台"
+            "value" : "RAG 工作台"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "知識庫 RAG 工作台"
+            "value" : "RAG 工作台"
           }
         }
       }

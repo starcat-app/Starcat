@@ -170,7 +170,7 @@ struct StarcatApp: App {
                 }
             }
 
-            SettingsWindowCommands()
+            SettingsWindowCommands(dependencies: dependencies)
 
             StarcatAppCommands(
                 dependencies: dependencies,
@@ -224,7 +224,7 @@ struct StarcatApp: App {
         .restorationBehavior(.disabled)
         .windowResizability(.contentSize)
         .commands {
-            SettingsWindowCommands()
+            SettingsWindowCommands(dependencies: dependencies)
         }
     }
 
@@ -516,12 +516,32 @@ private extension View {
 /// 用普通 `Window` 承接设置页后，显式恢复 macOS 标准的「设置…」菜单与 Cmd+,。
 /// 重复触发 `openWindow(id:)` 只会激活同一个设置窗口，不会创建多个实例。
 private struct SettingsWindowCommands: Commands {
+    // 检查更新与设置同属主菜单尾段，直接放进同一个 .appSettings 替换组，
+    // 保证「检查更新」始终紧跟「打开设置」；不额外用 CommandGroup(after:) 追加，
+    // SwiftUI 对 .appSettings 的跨结构追加合并在真机上不可靠。
+    let dependencies: AppDependencies?
+
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
             Button("menubar.openSettings") {
                 AppDelegate.openSettingsWindow()
             }
             .keyboardShortcut(",", modifiers: .command)
+
+            if dependencies?.directUpdateController.isDirectBuild == true {
+                Button("commands.actions.checkForUpdates") {
+                    dependencies?.directUpdateController.checkForUpdates()
+                }
+                .disabled(dependencies?.directUpdateController.canCheckForUpdates != true)
+            } else if let updateController = dependencies?.appStoreUpdateController,
+                      updateController.isAppStoreBuild {
+                Button("commands.actions.checkForUpdates") {
+                    Task {
+                        await updateController.checkManually()
+                    }
+                }
+                .disabled(!updateController.canCheckForUpdates)
+            }
         }
     }
 }
@@ -542,16 +562,6 @@ private struct StarcatAppCommands: Commands {
 
     var body: some Commands {
         CommandMenu("commands.actions.menu") {
-            Button("commands.actions.openGlobalSearch") {
-                commandRouter.openGlobalSearch()
-            }
-            .keyboardShortcut(
-                settings.keyboardShortcutsEnabled && settings.globalSearchShortcutEnabled
-                    ? settings.globalSearchShortcut.swiftUIShortcut
-                    : nil
-            )
-            .disabled(!commandRouter.canOpenGlobalSearch)
-
             Button("commands.actions.findInList") {
                 commandRouter.performListSearch(preferred: focusedListSearchAction)
             }
@@ -566,6 +576,36 @@ private struct StarcatAppCommands: Commands {
                 commandRouter.performReadmeFind(preferred: focusedReadmeFindAction)
             }
             .disabled(!commandRouter.isReadmeFindAvailable(preferred: focusedReadmeFindAction))
+
+            Divider()
+
+            Button("commands.actions.refreshCurrentContent") {
+                commandRouter.refreshCurrentContent(preferred: focusedRefreshAction)
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.refreshCurrentContentShortcutEnabled
+                    ? settings.refreshCurrentContentShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.isRefreshAvailable(preferred: focusedRefreshAction))
+
+            Button("diagnostics.export.button") {
+                exportDiagnostics()
+            }
+        }
+
+        // 「显示」菜单承接窗口 / 工作台类入口：全局搜索与各 AI 工作台都是
+        // "打开某个界面"的性质，和纯动作（查找 / 刷新）分开，降低操作菜单长度。
+        CommandGroup(after: .toolbar) {
+            Button("commands.actions.openGlobalSearch") {
+                commandRouter.openGlobalSearch()
+            }
+            .keyboardShortcut(
+                settings.keyboardShortcutsEnabled && settings.globalSearchShortcutEnabled
+                    ? settings.globalSearchShortcut.swiftUIShortcut
+                    : nil
+            )
+            .disabled(!commandRouter.canOpenGlobalSearch)
 
             Button("commands.actions.openKnowledgeRAGWorkspace") {
                 commandRouter.openKnowledgeRAGWorkspace()
@@ -598,43 +638,12 @@ private struct StarcatAppCommands: Commands {
 
             Divider()
 
-            Button("commands.actions.refreshCurrentContent") {
-                commandRouter.refreshCurrentContent(preferred: focusedRefreshAction)
-            }
-            .keyboardShortcut(
-                settings.keyboardShortcutsEnabled && settings.refreshCurrentContentShortcutEnabled
-                    ? settings.refreshCurrentContentShortcut.swiftUIShortcut
-                    : nil
-            )
-            .disabled(!commandRouter.isRefreshAvailable(preferred: focusedRefreshAction))
-
             Button("ai.usage.open") {
                 if let dependencies {
                     AIUsageWindowController.show(dependencies: dependencies)
                 }
             }
             .disabled(dependencies == nil)
-
-            Divider()
-
-            if dependencies?.directUpdateController.isDirectBuild == true {
-                Button("commands.actions.checkForUpdates") {
-                    dependencies?.directUpdateController.checkForUpdates()
-                }
-                .disabled(dependencies?.directUpdateController.canCheckForUpdates != true)
-            } else if let updateController = dependencies?.appStoreUpdateController,
-                      updateController.isAppStoreBuild {
-                Button("commands.actions.checkForUpdates") {
-                    Task {
-                        await updateController.checkManually()
-                    }
-                }
-                .disabled(!updateController.canCheckForUpdates)
-            }
-
-            Button("diagnostics.export.button") {
-                exportDiagnostics()
-            }
         }
 
         // 替换系统 Edit > Find，避免 ⌘F 被默认文本查找吃掉，而 README WebView 收不到。
