@@ -1,11 +1,11 @@
 {
   "images" : [
     {
-      "filename" : "rag-empty-conversation.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
+      "filename" : "rag-empty-conversation.png",
       "idiom" : "universal",
       "scale" : "2x"
     },

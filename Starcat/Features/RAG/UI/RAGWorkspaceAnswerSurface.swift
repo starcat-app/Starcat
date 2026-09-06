@@ -19,7 +19,6 @@ struct RAGWorkspaceAnswerSurface: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.ragSettingsNavigation) private var settingsNavigation
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
@@ -472,41 +471,23 @@ struct RAGWorkspaceAnswerSurface: View {
                     .help("rag.workspace.addToLibrary.openHelp")
                 }
             } else {
-                if colorScheme == .light {
-                    decoratedEmptyConversation
-                } else {
-                    // 示意图是浅色视觉稿，深色模式继续用系统语义色空态，避免白底位图破坏窗口层级。
-                    EmptyStateView(
-                        systemImage: "text.book.closed",
-                        title: "rag.workspace.empty.title",
-                        subtitle: "rag.workspace.empty.subtitle",
-                        iconSize: interfaceScale.scaled(52),
-                        spacing: 14,
-                        subtitleHorizontalPadding: 48,
-                        titleFont: interfaceScale.font(.workspaceTitle, weight: .semibold),
-                        subtitleFont: ragFont(.callout)
-                    )
-                }
+                decoratedEmptyConversation
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 浅色新会话空态只表达中栏将发生的问答与引用，不重复现有窗口的三栏结构。
-    /// 资源图自带的中文标题会在这里被裁出，实际文案仍由 xcstrings 绘制，确保英文界面可本地化。
+    /// 3D 透明插画表达知识检索、问答与引用，明暗主题共用同一份素材。
+    /// 图片不含文字，标题与说明仍由 xcstrings 绘制，避免固定语言和裁切文案的旧路径。
     private var decoratedEmptyConversation: some View {
         VStack(spacing: interfaceScale.scaled(14)) {
-            Image("RAGEmptyConversationArtwork")
+            Image(decorative: "RAGEmptyConversationArtwork")
                 .resizable()
-                .scaledToFill()
-                // 原图底部是中文视觉稿文案；只取上半部对话示意，避免和本地化文本重复。
-                .frame(
-                    width: interfaceScale.scaled(520),
-                    height: interfaceScale.scaled(282),
-                    alignment: .top
-                )
-                .clipped()
-                .accessibilityHidden(true)
+                .renderingMode(.original)
+                .scaledToFit()
+                // 完整保留书本和引用标签；窄中栏按可用宽度缩小，不再裁取图片上半部。
+                .frame(maxWidth: interfaceScale.scaled(520))
+                .frame(height: interfaceScale.scaled(282))
 
             Text("rag.workspace.empty.title")
                 .font(interfaceScale.font(.workspaceTitle, weight: .semibold))
