@@ -188,6 +188,11 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     @ViewBuilder
     private var badgeRow: some View {
+        // 原始展示文本：去空白，空串归一成 N/A（与可点分支共用，避免两处文案漂移）。
+        let licenseText = repo.license.flatMap { value in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        } ?? "N/A"
         HStack(spacing: 10) {
             if repo.isArchived {
                 RepoBadgeChip(text: "repo.archived", systemImage: "archivebox", tint: .orange)
@@ -198,14 +203,30 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             if repo.isPrivate {
                 RepoBadgeChip(text: "repo.private", systemImage: "lock.fill", tint: .purple)
             }
-            RepoRawBadgeChip(
-                text: repo.license.flatMap { value in
-                    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                    return trimmed.isEmpty ? nil : trimmed
-                } ?? "N/A",
-                systemImage: "scale.3d",
-                tint: .secondary
-            )
+            // License chip：标准 SPDX 时整颗可点，跳 GitHub license 概览页
+            // （与仓库页侧栏 license 胶囊同一目标）；N/A / Other 等无法构造
+            // 合法链接的场景保持纯展示。
+            if let licenseURL = RepoExternalLinks.license(repo) {
+                Button {
+                    NSWorkspace.shared.open(licenseURL)
+                } label: {
+                    RepoRawBadgeChip(
+                        text: licenseText,
+                        systemImage: "scale.3d",
+                        tint: .secondary
+                    )
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .pressableHover()
+                .help("repo.license.openHelp")
+            } else {
+                RepoRawBadgeChip(
+                    text: licenseText,
+                    systemImage: "scale.3d",
+                    tint: .secondary
+                )
+            }
         }
         .lineLimit(1)
         .frame(minHeight: 18, maxHeight: 18, alignment: .leading)

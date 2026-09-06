@@ -14,6 +14,7 @@
 //  - issues:  https://github.com/{owner}/{name}/issues
 //  - releases:https://github.com/{owner}/{name}/releases
 //  - pulls:   https://github.com/{owner}/{name}/pulls
+//  - license: https://github.com/{owner}/{name}?tab={SPDX}-1-ov-file
 //  - homepage: Repo.homepage（用户自定义，可能为 nil / 非 http）
 //
 
@@ -45,6 +46,25 @@ enum RepoExternalLinks {
     /// 这里只接受 http/https 开头的，避免 NSWorkspace 打开本地路径之类的安全风险。
     static func homepage(_ repo: Repo) -> URL? {
         homepage(raw: repo.homepage)
+    }
+
+    /// License 概览页（= GitHub 仓库页侧栏 license 胶囊的跳转目标）。
+    ///
+    /// GitHub 前端会把页内锚点 `#{SPDX}-1-ov-file` 规范化成 `?tab={SPDX}-1-ov-file`
+    /// 查询参数（2026-09 抓包验证：public-apis → MIT、psf/requests → Apache-2.0），
+    /// 落地后高亮并滚动到 LICENSE 文件行。仅标准 SPDX 可构造；`Other` / `NOASSERTION`
+    /// 在 GitHub 上本来就不提供该链接（如 FFmpeg 胶囊无 href），返回 nil 让调用方
+    /// 保持纯展示，避免拼出 404。
+    static func license(owner: String, name: String, spdx: String?) -> URL? {
+        guard let spdx = spdx?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !spdx.isEmpty,
+              spdx.caseInsensitiveCompare("Other") != .orderedSame,
+              spdx.caseInsensitiveCompare("NOASSERTION") != .orderedSame else { return nil }
+        return URL(string: "\(githubBase(owner: owner, name: name))?tab=\(spdx)-1-ov-file")
+    }
+
+    static func license(_ repo: Repo) -> URL? {
+        license(owner: repo.owner, name: repo.name, spdx: repo.license)
     }
 
     // MARK: - 基于 owner/name 的拼接重载（trending / weekly / activity 共用）
