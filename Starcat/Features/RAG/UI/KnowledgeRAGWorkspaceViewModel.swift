@@ -424,17 +424,27 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 运行中的 Debug Trace 按会话隔离；切换后事件仍写原会话，并在切回时与磁盘历史合并。
     @ObservationIgnored private var liveDebugTracesByConversation: [UUID: [RAGDebugTrace]] = [:]
     @ObservationIgnored private var linkDetectionTask: Task<Void, Never>?
+    /// Context Usage 会遍历完整历史并渲染 Prompt；必须可取消、去重且在后台计算，不能留在 View.body。
+    @ObservationIgnored private var composerContextUsageTask: Task<Void, Never>?
     /// 历史 XML 读取必须跟随会话选择取消；commit/hash 不匹配时保持 nil，绝不展示后来版本。
     @ObservationIgnored private var repoContextHistoryLoadTask: Task<Void, Never>?
     /// 洞察历史同样只在 hash 全匹配时恢复；删除或更新 Artifact 后保持空正文。
     @ObservationIgnored private var repositoryInsightsHistoryLoadTask: Task<Void, Never>?
 
-    var conversations: [RAGConversationSummary] = []
-    var conversationGroups: [RAGConversationGroup] = []
+    var conversations: [RAGConversationSummary] = [] {
+        didSet { rebuildConversationRailPresentation() }
+    }
+    var conversationGroups: [RAGConversationGroup] = [] {
+        didSet { rebuildConversationRailPresentation() }
+    }
+    /// 左侧会话栏只消费这份单次分桶结果，hover 和拖拽状态变化不再重复过滤完整会话数组。
+    private(set) var conversationRailPresentation = RAGConversationRailPresentation.empty
     /// 点选分组目录时设置；点选会话时清空。新会话写入此分组。
     var selectedGroupID: UUID?
     var selectedConversationID: UUID?
-    var messages: [RAGStoredMessage] = []
+    var messages: [RAGStoredMessage] = [] {
+        didSet { scheduleComposerContextUsageRefresh() }
+    }
     /// 缓存未命中时使用轻量加载态，不能继续展示上一会话内容冒充当前选择。
     private(set) var isConversationLoading = false
     /// 只在持久化消息集合变化时重建，避免流式 revision 重复扫描历史消息。
@@ -447,7 +457,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 只在“点开并安装历史会话”时递增。回答落库刷新不会改它，Answer Surface 因而
     /// 能把历史首屏重置为 2 轮，同时保留当前会话已经展开的轮次。
     private(set) var conversationHistoryInstallSequence = 0
-    var draftQuestion = ""
+    var draftQuestion = "" {
+        didSet { scheduleComposerContextUsageRefresh() }
+    }
     var streamingAnswer = ""
     /// 流式阶段只提交稳定 Markdown chunk 与未闭合尾部，避免每个 delta 重解析完整回答。
     var streamingPresentation: StreamingMarkdownSnapshot?
@@ -492,7 +504,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 明确上下文仓库上限（见 `RAGMentionPickerLogic.maxSelectedRepoContexts`）。
     static var maxSelectedRepoContexts: Int { RAGMentionPickerLogic.maxSelectedRepoContexts }
     var explicitRepoMode: RAGExplicitRepoMode = .only
-    var attachments: [RAGComposerAttachment] = []
+    var attachments: [RAGComposerAttachment] = [] {
+        didSet { scheduleComposerContextUsageRefresh() }
+    }
     var githubLinkContexts: [RAGGitHubLinkReference] = []
     /// 用户在 Composer 主动授权本轮联网。按会话暂存，连续追问无需重复开启；关闭后
     /// Planner 产生的普通 Web 请求会在执行层被清除，GitHub 实时请求仍需逐项确认。
@@ -515,6 +529,7 @@ final class KnowledgeRAGWorkspaceViewModel {
             if dependencies.settings.ragWorkspaceSelectedModelID != trimmed {
                 dependencies.settings.ragWorkspaceSelectedModelID = trimmed
             }
+            scheduleComposerContextUsageRefresh()
         }
     }
     /// 仓库上下文面板由 + 或独立的 `@` 触发；搜索词不再混入用户问题。
@@ -604,7 +619,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     private var retryQuestion: String?
     /// 最近一次实际请求的预算快照。用户开始编辑下一轮问题后，Composer 改为轻量预估，
     /// 避免把上轮的证据/远程上下文错误标记成当前输入。
-    private var lastContextUsage: RAGContextUsage?
+    private var lastContextUsage: RAGContextUsage? {
+        didSet { scheduleComposerContextUsageRefresh() }
+    }
     /// 开关本身持久化；debug 事件只服务当前窗口，关闭开关立即清空，不进会话历史。
     var isDebugModeEnabled = false {
         didSet {
@@ -622,7 +639,9 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
     var debugTraces: [RAGDebugTrace] = []
     /// 当前会话已持久化的语义摘要；只覆盖 recent window 以外的消息，完整历史仍可浏览。
-    private var conversationContextSummary: RAGConversationContextSummary?
+    private var conversationContextSummary: RAGConversationContextSummary? {
+        didSet { scheduleComposerContextUsageRefresh() }
+    }
 
     init(
         dependencies: AppDependencies,
@@ -633,9 +652,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         self.homeViewModel = homeViewModel
         self.conversationStore = dependencies.ragConversationStore
         self.debugFileStore = debugFileStore
+        let availableModels = dependencies.knowledgeRAGChatModels
+        self.availableModels = availableModels
         let resolvedModelID = Self.resolveInitialModelID(
             savedModelID: dependencies.settings.ragWorkspaceSelectedModelID,
-            availableModels: dependencies.knowledgeRAGChatModels,
+            availableModels: availableModels,
             chatTask: dependencies.settings.aiChatTask
         )
         self.selectedModelID = resolvedModelID
@@ -684,7 +705,28 @@ final class KnowledgeRAGWorkspaceViewModel {
         return last.id
     }
 
-    var availableModels: [AIModelDescriptor] { dependencies.knowledgeRAGChatModels }
+    /// 模型清单只在 AI Provider 设置真正变化时刷新，避免每次 View 求值都过滤、扁平化并排序。
+    private(set) var availableModels: [AIModelDescriptor] = []
+
+    /// 设置窗口可能与 RAG 工作台并存；只有 Provider 配置实际变化时才替换模型快照。
+    func refreshAvailableModels() {
+        let refreshedModels = dependencies.knowledgeRAGChatModels
+        guard refreshedModels != availableModels else { return }
+
+        availableModels = refreshedModels
+        let savedModelID = selectedModelID
+            ?? dependencies.settings.ragWorkspaceSelectedModelID
+        let resolvedModelID = Self.resolveInitialModelID(
+            savedModelID: savedModelID,
+            availableModels: refreshedModels,
+            chatTask: dependencies.settings.aiChatTask
+        )
+        if selectedModelID != resolvedModelID {
+            selectedModelID = resolvedModelID
+        } else {
+            scheduleComposerContextUsageRefresh()
+        }
+    }
     var inferenceBackend: RAGInferenceBackend {
         let configuredBackend = dependencies.settings.ragInferenceBackend
         return RAGInferenceBackend.available(using: dependencies.distributionGate)
@@ -802,26 +844,49 @@ final class KnowledgeRAGWorkspaceViewModel {
             ?? dependencies.settings.effectiveParameters(for: dependencies.settings.aiChatTask)
     }
 
-    var composerContextUsage: RAGContextUsage {
-        if draftQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let lastContextUsage {
-            return lastContextUsage
+    /// View 只读取已完成的不可变快照；完整历史映射和 token 估算由后台任务刷新。
+    private(set) var composerContextUsage: RAGContextUsage = .empty
+
+    /// Prompt / 检索预算等设置由工作台根视图观察；变化后复用同一去重、取消链刷新快照。
+    func refreshComposerContextUsage() {
+        scheduleComposerContextUsageRefresh()
+    }
+
+    /// 高频输入先做短 debounce；最终输入冻结为纯值后再移出 MainActor 计算。
+    /// 不在主线程比较完整 input：长会话的消息数组逐项 Equatable 同样会造成可见卡顿。
+    private func scheduleComposerContextUsageRefresh() {
+        composerContextUsageTask?.cancel()
+        composerContextUsageTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(80))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+
+            let modelParameters = self.selectedModelParameters
+            let input = RAGComposerContextUsageCalculator.Input(
+                question: self.draftQuestion,
+                messages: self.messages,
+                contextSummary: self.conversationContextSummary,
+                attachmentNames: self.attachments.map(\.filename),
+                contextWindowTokens: modelParameters.resolvedContextWindowTokens,
+                maximumOutputTokens: modelParameters.maxCompletionTokens,
+                // 与实际 Service 使用同一分片预算，避免 Composer 预览误导用户。
+                maxEvidenceTokens: self.dependencies.settings.ragRetrievalSettings.evidenceTokenBudget,
+                promptConfiguration: self.dependencies.settings.ragPromptSettings.generator,
+                outputLanguage: LocaleStore.shared.selection.aiOutputLanguageDescriptor,
+                lastContextUsage: self.lastContextUsage
+            )
+
+            let usage = await Task.detached(priority: .utility) {
+                RAGComposerContextUsageCalculator.calculate(input)
+            }.value
+            guard !Task.isCancelled else { return }
+
+            // 不在 MainActor 比较含完整 promptPreview 的快照；一次值替换比长字符串相等判断更稳定。
+            self.composerContextUsage = usage
         }
-        return KnowledgeRAGPromptBuilder(
-            // 与实际 Service 使用同一分片预算，避免 Composer 的 Context Usage 预览误导用户。
-            maxEvidenceTokens: dependencies.settings.ragRetrievalSettings.evidenceTokenBudget,
-            promptConfiguration: dependencies.settings.ragPromptSettings.generator,
-            outputLanguage: LocaleStore.shared.selection.aiOutputLanguageDescriptor
-        ).preview(
-            question: draftQuestion,
-            history: RAGConversationHistoryBuilder.build(
-                from: messages,
-                contextSummary: conversationContextSummary
-            ),
-            attachmentNames: attachments.map(\.filename),
-            contextWindowTokens: selectedModelParameters.resolvedContextWindowTokens,
-            maximumOutputTokens: selectedModelParameters.maxCompletionTokens
-        )
     }
 
     /// 模型记录保存的是 provider profile ID；解析为枚举后，UI 才能复用统一的服务商 logo。
@@ -1044,8 +1109,13 @@ final class KnowledgeRAGWorkspaceViewModel {
         // 选择意图必须在第一次 await 之前提交：左栏立即响应，旧会话之后的流式事件也会
         // 因 selectedConversationID 已变化而停止投影到当前中栏。
         selectedConversationID = id
-        selectedGroupID = nil
-        debugTraces = []
+        // 大多数连续切换都已处于“未选中分组”状态；避免重复写 nil 让整个左栏（含分组菜单）失效。
+        if selectedGroupID != nil {
+            selectedGroupID = nil
+        }
+        if !debugTraces.isEmpty {
+            debugTraces = []
+        }
 
         if isSwitchingConversation {
             // 让 SwiftUI 先画出一帧骨架，再装缓存或读库；否则同帧 loading→安装会看不见骨架。
@@ -1443,10 +1513,13 @@ final class KnowledgeRAGWorkspaceViewModel {
     /// 置顶 / 取消置顶：先本地乐观更新，再落库刷新，保证钉子图标与置顶区位置立刻响应。
     func setConversationPinned(id: UUID, isPinned: Bool) async {
         let now = ISO8601DateFormatter.shared.string(from: Date())
-        if let index = conversations.firstIndex(where: { $0.id == id }) {
-            conversations[index].isPinned = isPinned
-            conversations[index].pinnedAt = isPinned ? now : nil
-            conversations.sort(by: Self.conversationListOrder)
+        var updatedConversations = conversations
+        if let index = updatedConversations.firstIndex(where: { $0.id == id }) {
+            updatedConversations[index].isPinned = isPinned
+            updatedConversations[index].pinnedAt = isPinned ? now : nil
+            updatedConversations.sort(by: Self.conversationListOrder)
+            // 一次发布同时更新会话和 rail 快照，避免连续字段写入触发三次分桶。
+            conversations = updatedConversations
         }
         do {
             try await conversationStore.setConversationPinned(id: id, isPinned: isPinned)
@@ -1491,11 +1564,13 @@ final class KnowledgeRAGWorkspaceViewModel {
     func createGroup(title: String?) async {
         do {
             let group = try await conversationStore.createGroup(title: title)
-            conversationGroups.append(group)
-            conversationGroups.sort { lhs, rhs in
+            var updatedGroups = conversationGroups
+            updatedGroups.append(group)
+            updatedGroups.sort { lhs, rhs in
                 if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
                 return lhs.createdAt < rhs.createdAt
             }
+            conversationGroups = updatedGroups
             selectedGroupID = group.id
         } catch {
             errorMessage = error.localizedDescription
@@ -1519,10 +1594,12 @@ final class KnowledgeRAGWorkspaceViewModel {
         do {
             try await conversationStore.deleteGroup(id: id)
             conversationGroups.removeAll { $0.id == id }
-            for index in conversations.indices where conversations[index].groupID == id {
-                conversations[index].groupID = nil
-                conversationPresentationCache.remove(conversations[index].id)
+            var updatedConversations = conversations
+            for index in updatedConversations.indices where updatedConversations[index].groupID == id {
+                updatedConversations[index].groupID = nil
+                conversationPresentationCache.remove(updatedConversations[index].id)
             }
+            conversations = updatedConversations
             if selectedGroupID == id {
                 selectedGroupID = nil
             }
@@ -1535,15 +1612,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         conversations.filter { $0.groupID == groupID }
     }
 
-    /// 所有置顶会话（跨分组 + 未分组）直接顶到侧栏列表最前，不单独成组。
-    /// 顺序由 store 的 `pinned_at DESC` 保证：「最后置顶」永远在最上。
-    var pinnedConversations: [RAGConversationSummary] {
-        conversations.filter(\.isPinned)
-    }
-
-    /// 分组 / 未分组内的「未置顶」会话；置顶项已上浮到列表顶部，避免重复呈现。
-    func unpinnedConversations(inGroupID groupID: UUID?) -> [RAGConversationSummary] {
-        conversations.filter { $0.groupID == groupID && !$0.isPinned }
+    private func rebuildConversationRailPresentation() {
+        conversationRailPresentation = RAGConversationRailPresentation(
+            conversations: conversations,
+            groups: conversationGroups
+        )
     }
 
     /// 与 `listConversations` SQL 一致：置顶优先，同组内最后置顶在前，其余按最近活跃。

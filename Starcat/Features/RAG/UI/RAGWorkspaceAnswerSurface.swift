@@ -218,14 +218,12 @@ struct RAGWorkspaceAnswerSurface: View {
     var messageTimeline: some View {
         let conversationID = viewModel.selectedConversationID
         let outlineTurns = viewModel.conversationOutlineTurns
-        let visibleMessages = historyWindow.visibleMessages(
+        let historyPresentation = historyWindow.visiblePresentation(
             conversationID: conversationID,
             messages: viewModel.messages
         )
-        let hasEarlierMessages = historyWindow.hasEarlierMessages(
-            conversationID: conversationID,
-            messages: viewModel.messages
-        )
+        let visibleMessages = historyPresentation.messages
+        let hasEarlierMessages = historyPresentation.hasEarlierMessages
         let hasTimelineContent = !viewModel.messages.isEmpty
             || viewModel.isAnswering
             || !viewModel.streamingAnswer.isEmpty
@@ -728,10 +726,10 @@ struct RAGWorkspaceAnswerSurface: View {
                     // 不与右侧的动作按钮（附件 / 联网 / 发送）争视觉权重。
                     RAGContextUsageButton(usage: viewModel.composerContextUsage)
 
-                    modelMenu
+                    RAGWorkspaceModelMenu(viewModel: viewModel)
 
                     if !viewModel.selectedRepoContexts.isEmpty {
-                        explicitModeMenu
+                        RAGWorkspaceRepoModeMenu(viewModel: viewModel)
                     }
 
                     Spacer(minLength: 8)
@@ -1334,85 +1332,6 @@ struct RAGWorkspaceAnswerSurface: View {
         )
     }
 
-    var modelMenu: some View {
-        Menu {
-            // 用 inline Picker：系统只给当前 selection 打勾，避免手写 checkmark 在
-            // macOS Menu 里被全部渲染成已选状态。
-            Picker("", selection: $viewModel.selectedModelID) {
-                ForEach(viewModel.availableModels) { model in
-                    modelPickerLabel(model)
-                        .tag(Optional(model.id))
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
-        } label: {
-            HStack(spacing: 6) {
-                if let provider = viewModel.selectedModelProvider {
-                    AIProviderIconView(provider: provider, size: 14)
-                } else {
-                    // fallback 也固定 14×14，避免与有 logo 时（14pt）宽窄跳动。
-                    Image(systemName: "sparkles")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 14, height: 14)
-                        .foregroundStyle(.secondary)
-                }
-                Text(viewModel.selectedModelDisplayName)
-                    .lineLimit(1)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .ragComposerMenuLabelStyle(font: ragFont(.caption, weight: .semibold))
-        .fixedSize()
-        // CLI 后端由 RAG 设置统一选择；这里保留当前 API 模型作为切回 API 时的偏好，
-        // 但不能让用户误以为 Codex / Claude 会使用这个 OpenAI-compatible 模型名。
-        .disabled(!viewModel.usesAPIInferenceBackend)
-        .help("rag.workspace.composer.model")
-    }
-
-    var explicitModeMenu: some View {
-        Menu {
-            // Text("key") 走 LocalizedStringKey；勿把 String 字面量传进 Text，否则会显示 raw key。
-            Picker("", selection: $viewModel.explicitRepoMode) {
-                Text("rag.workspace.repoMode.only").tag(RAGExplicitRepoMode.only)
-                Text("rag.workspace.repoMode.prefer").tag(RAGExplicitRepoMode.prefer)
-                Text("rag.workspace.repoMode.exclude").tag(RAGExplicitRepoMode.exclude)
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
-        } label: {
-            HStack(spacing: 6) {
-                // 与模型菜单的 14pt 品牌 logo 对齐：SF Symbol 默认跟随字号会比 logo
-                // 更粗更沉，这里固定成 14×14 让两个底栏菜单图标视觉等大。
-                Image(systemName: "scope")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 14, height: 14)
-                Text(repoModeKey(viewModel.explicitRepoMode))
-                    .lineLimit(1)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .ragComposerMenuLabelStyle(font: ragFont(.caption, weight: .semibold))
-        .fixedSize()
-        .help("rag.workspace.composer.scope")
-    }
-
-    /// 模型的 providerID 是配置 profile 的 ID，不是 AIServiceProvider 的 rawValue；
-    /// 必须经 ViewModel 映射，才能在多个同类服务商 profile 共存时展示正确 logo。
-    @ViewBuilder
-    func modelPickerLabel(_ model: AIModelDescriptor) -> some View {
-        if let provider = viewModel.provider(for: model) {
-            Label {
-                Text(model.name)
-            } icon: {
-                AIProviderIconView(provider: provider, size: 15)
-            }
-        } else {
-            Label(model.name, systemImage: "sparkles")
-        }
-    }
     var composerNSFont: NSFont {
         NSFont.systemFont(
             ofSize: interfaceScale.scaled(RAGConversationTypography.text.pointSize)
@@ -1488,14 +1407,6 @@ struct RAGWorkspaceAnswerSurface: View {
         case .generating: return String.l10n("rag.workspace.state.generating")
         case .cancelled: return String.l10n("rag.workspace.state.cancelled")
         case .failed(let message): return message
-        }
-    }
-
-    func repoModeKey(_ mode: RAGExplicitRepoMode) -> LocalizedStringKey {
-        switch mode {
-        case .only: return "rag.workspace.repoMode.only"
-        case .prefer: return "rag.workspace.repoMode.prefer"
-        case .exclude: return "rag.workspace.repoMode.exclude"
         }
     }
 

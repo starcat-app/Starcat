@@ -19,13 +19,14 @@ struct RAGConversationHistoryWindowTests {
         var window = RAGConversationHistoryWindow()
 
         window.reset(conversationID: conversationID, messages: messages)
-        let visible = Array(window.visibleMessages(
+        let presentation = window.visiblePresentation(
             conversationID: conversationID,
             messages: messages
-        ))
+        )
+        let visible = Array(presentation.messages)
 
         #expect(visible.map(\.id) == Array(messages.suffix(4)).map(\.id))
-        #expect(window.hasEarlierMessages(conversationID: conversationID, messages: messages))
+        #expect(presentation.hasEarlierMessages)
     }
 
     @Test("每次手动加载十轮直至完整历史")

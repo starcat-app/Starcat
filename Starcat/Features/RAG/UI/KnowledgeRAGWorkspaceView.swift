@@ -117,9 +117,26 @@ struct KnowledgeRAGWorkspaceView: View {
         // RAG 是独立窗口，无底层 WKWebView cursor 穿透问题。
         // `defaultCursorShield` 会在 mouseMoved 里强制 NSCursor.arrow，盖掉
         // Markdown 链接与芯片的 pointing-hand，故此处不加。
-        .task { await viewModel.bootstrap() }
+        .task {
+            // 先提交轻量占位，完整 Context Usage 由 ViewModel 在后台生成；不能让首帧
+            // 因历史消息映射和 token 估算阻塞。
+            viewModel.refreshComposerContextUsage()
+            await viewModel.bootstrap()
+        }
         .task { await viewModel.observeKnowledgeBoundaryChanges() }
         .task { await viewModel.observeIndexChanges() }
+        .onChange(of: dependencies.settings.aiProviderProfiles) { _, _ in
+            viewModel.refreshAvailableModels()
+        }
+        .onChange(of: dependencies.settings.ragPromptSettings) { _, _ in
+            viewModel.refreshComposerContextUsage()
+        }
+        .onChange(of: dependencies.settings.ragRetrievalSettings) { _, _ in
+            viewModel.refreshComposerContextUsage()
+        }
+        .onChange(of: dependencies.settings.ragInferenceBackend) { _, _ in
+            viewModel.refreshComposerContextUsage()
+        }
         .onDisappear {
             // 用户可能拖完立即关闭窗口；同步提交最后测量值，不能依赖 debounce 任务来得及执行。
             persistLastMeasuredWidths()

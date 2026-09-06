@@ -49,6 +49,20 @@ struct RAGConversationHistoryWindow: Equatable, Sendable {
         conversationID: UUID?,
         messages: [RAGStoredMessage]
     ) -> ArraySlice<RAGStoredMessage> {
+        visiblePresentation(
+            conversationID: conversationID,
+            messages: messages
+        ).messages
+    }
+
+    /// 同时返回可见切片与“是否还有更早消息”，让高频 `body` 只扫描一次轮次起点。
+    ///
+    /// 旧调用先取 `visibleMessages`，再由 `hasEarlierMessages` 内部重复取一次；长会话越大，
+    /// 每次布局的双重线性扫描越明显。保留两个兼容方法给测试和命令式调用，主界面走此入口。
+    func visiblePresentation(
+        conversationID: UUID?,
+        messages: [RAGStoredMessage]
+    ) -> (messages: ArraySlice<RAGStoredMessage>, hasEarlierMessages: Bool) {
         let effectiveVisibleTurnCount = self.conversationID == conversationID
             ? visibleTurnCount
             : Self.initialVisibleTurnCount
@@ -56,7 +70,11 @@ struct RAGConversationHistoryWindow: Equatable, Sendable {
             in: messages,
             visibleTurnCount: effectiveVisibleTurnCount
         )
-        return messages[startIndex...]
+        let visibleMessages = messages[startIndex...]
+        return (
+            messages: visibleMessages,
+            hasEarlierMessages: visibleMessages.startIndex > messages.startIndex
+        )
     }
 
     func hasEarlierMessages(
@@ -64,8 +82,10 @@ struct RAGConversationHistoryWindow: Equatable, Sendable {
         messages: [RAGStoredMessage]
     ) -> Bool {
         guard !messages.isEmpty else { return false }
-        let visible = visibleMessages(conversationID: conversationID, messages: messages)
-        return visible.startIndex > messages.startIndex
+        return visiblePresentation(
+            conversationID: conversationID,
+            messages: messages
+        ).hasEarlierMessages
     }
 
     /// 每次只向前扩 10 轮，并返回扩窗前的首条消息，供调用方恢复视口。
