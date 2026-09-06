@@ -120,6 +120,7 @@ final class GitHubStarListAIGroupingPresentationStore {
             existingListIDsByRepo: session.existingListIDsByRepo,
             selectedListIDsByRepo: session.selectedListIDsByRepo,
             selectedRepoIDsForBulkApply: session.selectedRepoIDsForBulkApply,
+            bulkActionRepoIDs: session.bulkActionRepoIDs,
             editedListIDsByRepo: session.editedListIDsByRepo,
             ignoredRepoIDs: session.ignoredRepoIDs,
             preparedRepositoryCount: session.preparedRepositoryCount,
@@ -233,6 +234,7 @@ final class GitHubStarListAIGroupingPresentationStore {
         let existingListIDsByRepo: [Int64: Set<String>]
         let selectedListIDsByRepo: [Int64: Set<String>]
         let selectedRepoIDsForBulkApply: Set<Int64>
+        let bulkActionRepoIDs: Set<Int64>
         let editedListIDsByRepo: [Int64: Set<String>]
         let ignoredRepoIDs: Set<Int64>
         let preparedRepositoryCount: Int
@@ -256,6 +258,7 @@ final class GitHubStarListAIGroupingPresentationStore {
                 existingListIDsByRepo: existingListIDsByRepo,
                 selectedListIDsByRepo: selectedListIDsByRepo,
                 selectedRepoIDsForBulkApply: selectedRepoIDsForBulkApply,
+                bulkActionRepoIDs: bulkActionRepoIDs,
                 editedListIDsByRepo: editedListIDsByRepo,
                 ignoredRepoIDs: ignoredRepoIDs,
                 preparedRepositoryCount: preparedRepositoryCount,

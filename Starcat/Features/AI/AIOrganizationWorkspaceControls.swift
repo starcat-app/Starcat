@@ -80,6 +80,11 @@ struct AIOrganizationReviewFooter: View {
     var canClearSelection = false
     var onSelectAll: () -> Void = {}
     var onClearSelection: () -> Void = {}
+    /// 非应用类批量动作（批量重试/忽略/取消忽略）的按钮标题。
+    /// 非 nil 时右侧主按钮从「应用选中项」切换为该动作，`canApply` 不再参与判断。
+    var bulkActionTitle: LocalizedStringKey?
+    var canRunBulkAction = false
+    var onBulkAction: () -> Void = {}
     let onDiscard: () -> Void
     let onApply: () -> Void
 
@@ -106,9 +111,15 @@ struct AIOrganizationReviewFooter: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
-                Button("githubStarLists.aiGrouping.applySelected", action: onApply)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canApply || isApplying)
+                if let bulkActionTitle {
+                    Button(bulkActionTitle, action: onBulkAction)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canRunBulkAction || isApplying)
+                } else {
+                    Button("githubStarLists.aiGrouping.applySelected", action: onApply)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canApply || isApplying)
+                }
             }
         }
         .padding(.horizontal, 20)

@@ -278,6 +278,9 @@ final class GitHubStarListAIGroupingSession {
     private var runTask: Task<Void, Never>?
     private var applyTask: Task<Void, Never>?
     private var generation: UInt64 = 0
+    /// 当前 runTask 批次覆盖的仓库。暂停态重试靠它判断目标能否直接重新入队，
+    /// 还是必须重启一个覆盖全部待办的批次（目标可能来自更早批次的失败）。
+    private var activeRunRepoIDs: Set<Int64> = []
     private var rateLimitCooldownUntil: Date?
     /// 人工整理启动时冻结自动确认阈值；暂停、继续和单仓重试必须保持同一语义。
     @ObservationIgnored private var manualAutomaticThreshold: Double?
@@ -606,34 +609,90 @@ final class GitHubStarListAIGroupingSession {
         isPaused = false
     }
 
+    /// 重试入口的统一门槛：应用中一律禁止；运行中只在暂停态放开——
+    /// 暂停态重试等价于「重新入队 + 立即恢复运行」，完全停止反而会丢掉队列进度。
+    var canRetryFailedItems: Bool {
+        mode == .manual && !isApplying && (!isRunning || isPaused)
+    }
+
     func retryAnalysis(repoID: Int64) {
         guard mode == .manual,
-              !isRunning,
-              let repo = jobs.first(where: { $0.id == repoID })?.repo
+              canRetryFailedItems,
+              let job = jobs.first(where: { $0.id == repoID }),
+              job.status == .failed
         else { return }
-        beginAnalysis(
-            repos: [repo],
-            candidates: candidateContexts,
-            existingMemberships: existingListIDsByRepo,
-            mode: .manual,
-            automaticThreshold: manualAutomaticThreshold,
-            replaceJobs: false
-        )
+        if isRunning {
+            requeueFailedItemsDuringPause(repoIDs: [repoID])
+        } else {
+            beginAnalysis(
+                repos: [job.repo],
+                candidates: candidateContexts,
+                existingMemberships: existingListIDsByRepo,
+                mode: .manual,
+                automaticThreshold: manualAutomaticThreshold,
+                replaceJobs: false
+            )
+        }
     }
 
     /// 分析失败与应用失败是两条独立恢复路径；批量重试只重新排队分析失败仓库。
     func retryAllAnalysisFailures() {
-        guard mode == .manual, !isRunning, !isApplying else { return }
-        let repos = jobs.compactMap { $0.status == .failed ? $0.repo : nil }
-        guard !repos.isEmpty else { return }
-        beginAnalysis(
-            repos: repos,
-            candidates: candidateContexts,
-            existingMemberships: existingListIDsByRepo,
-            mode: .manual,
-            automaticThreshold: manualAutomaticThreshold,
-            replaceJobs: false
-        )
+        retryAnalysisFailures(repoIDs: Set(jobs.compactMap { $0.status == .failed ? $0.id : nil }))
+    }
+
+    /// 按选中子集重试分析失败；暂停态走重新入队恢复，停止态新开一个只覆盖目标的批次。
+    func retryAnalysisFailures(repoIDs: Set<Int64>) {
+        guard mode == .manual, canRetryFailedItems, !repoIDs.isEmpty else { return }
+        let failedRepoIDs = Set(jobs.compactMap { job -> Int64? in
+            guard job.status == .failed, repoIDs.contains(job.id) else { return nil }
+            return job.id
+        })
+        guard !failedRepoIDs.isEmpty else { return }
+        if isRunning {
+            requeueFailedItemsDuringPause(repoIDs: failedRepoIDs)
+        } else {
+            let repos = jobs.compactMap { job -> Repo? in
+                guard job.status == .failed, repoIDs.contains(job.id) else { return nil }
+                return job.repo
+            }
+            beginAnalysis(
+                repos: repos,
+                candidates: candidateContexts,
+                existingMemberships: existingListIDsByRepo,
+                mode: .manual,
+                automaticThreshold: manualAutomaticThreshold,
+                replaceJobs: false
+            )
+        }
+    }
+
+    /// 暂停态重试的执行路径。目标仍在当前批次时，重新入队并解除暂停即可，
+    /// Worker 下一次领取会直接消费；目标来自更早批次的失败时，只能取消暂停中的
+    /// 旧运行，重启一个覆盖「队列中待办 + 本次重试目标」的新批次（语义等同继续整理）。
+    private func requeueFailedItemsDuringPause(repoIDs: Set<Int64>) {
+        guard isRunning, isPaused else { return }
+        let allInActiveBatch = repoIDs.allSatisfy { activeRunRepoIDs.contains($0) }
+        if allInActiveBatch {
+            for index in jobs.indices where repoIDs.contains(jobs[index].id) {
+                jobs[index].status = .queued
+                jobs[index].analysisFailure = nil
+            }
+            isPaused = false
+        } else {
+            var pendingRepoByID: [Int64: Repo] = [:]
+            for job in jobs
+            where job.status == .queued || job.status == .failed || repoIDs.contains(job.id) {
+                pendingRepoByID[job.id] = job.repo
+            }
+            beginAnalysis(
+                repos: Array(pendingRepoByID.values),
+                candidates: candidateContexts,
+                existingMemberships: existingListIDsByRepo,
+                mode: .manual,
+                automaticThreshold: manualAutomaticThreshold,
+                replaceJobs: false
+            )
+        }
     }
 
     /// 后台自动分组使用独立会话，但不保留审核选择。人工任务优先，运行中时后台直接让位。
@@ -989,6 +1048,96 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
+    // MARK: 非“待确认”Tab 的批量选择与批量动作
+
+    /// 当前 Tab（无匹配/分析失败/自动忽略/已忽略/应用失败）勾选的仓库。
+    /// 与待确认的批量应用选择分开保存：两者的可选集合和批量动作完全不同；
+    /// 切换 Tab 时由 Sheet 清空，避免把上一个 Tab 的勾选喂给下一个 Tab 的批量动作。
+    private(set) var bulkActionRepoIDs: Set<Int64> = [] {
+        didSet { presentationRevision &+= 1 }
+    }
+
+    func toggleRepoForBulkAction(repoID: Int64, filter: GitHubStarListAIResultFilter) {
+        guard isRepoSelectableForBulkAction(repoID: repoID, filter: filter) else { return }
+        if bulkActionRepoIDs.contains(repoID) {
+            bulkActionRepoIDs.remove(repoID)
+        } else {
+            bulkActionRepoIDs.insert(repoID)
+        }
+    }
+
+    func selectAllReposForBulkAction(filter: GitHubStarListAIResultFilter) {
+        bulkActionRepoIDs = Set(jobs.compactMap { job -> Int64? in
+            isRepoSelectableForBulkAction(repoID: job.id, filter: filter) ? job.id : nil
+        })
+    }
+
+    func clearBulkActionSelection() {
+        guard !bulkActionRepoIDs.isEmpty else { return }
+        bulkActionRepoIDs = []
+    }
+
+    /// 可选集合与 Tab 分类一一对应；行渲染先按 Tab 过滤，这里再做一次防御，
+    /// 防止状态在渲染后变化导致把不匹配的仓库喂给批量动作。
+    private func isRepoSelectableForBulkAction(
+        repoID: Int64,
+        filter: GitHubStarListAIResultFilter
+    ) -> Bool {
+        guard mode == .manual, let job = jobs.first(where: { $0.id == repoID }) else { return false }
+        switch filter {
+        case .analysisFailed:
+            return job.status == .failed
+        case .automaticallyIgnored:
+            if case .ignored = job.applyState { return true }
+            return false
+        case .applyFailed:
+            if case .failed = job.applyState { return true }
+            return false
+        case .noMatch:
+            guard job.status == .completed, case .idle = job.applyState else { return false }
+            return Set(job.suggestions.map(\.listId))
+                .isDisjoint(with: existingListIDsByRepo[job.id] ?? [])
+        case .ignored:
+            return ignoredRepoIDs.contains(job.id)
+        case .actionable, .all, .suggestions, .applied:
+            // 待确认沿用 selectedRepoIDsForBulkApply；待处理和已应用不参与批量选择。
+            return false
+        }
+    }
+
+    /// 底栏批量动作：按当前 Tab 语义消费勾选集合，执行后清空勾选。
+    func applyBulkAction(filter: GitHubStarListAIResultFilter) {
+        let selectedRepoIDs = bulkActionRepoIDs
+        clearBulkActionSelection()
+        switch filter {
+        case .analysisFailed:
+            retryAnalysisFailures(repoIDs: selectedRepoIDs)
+        case .applyFailed:
+            retryApplyFailures(repoIDs: selectedRepoIDs)
+        case .noMatch:
+            ignore(repoIDs: selectedRepoIDs)
+        case .ignored:
+            unignore(repoIDs: selectedRepoIDs)
+        case .automaticallyIgnored, .actionable, .all, .suggestions, .applied:
+            // 自动忽略重试需要异步清库，走 retryAutomaticallyIgnored(repoIDs:)；
+            // 其余 Tab 没有批量动作。
+            break
+        }
+    }
+
+    func ignore(repoIDs: Set<Int64>) {
+        let targets = ignoredRepoIDs.union(repoIDs)
+        guard targets != ignoredRepoIDs else { return }
+        ignoredRepoIDs = targets
+    }
+
+    /// 取消用户忽略；仓库回到忽略前的状态（通常是无匹配或待确认）。
+    func unignore(repoIDs: Set<Int64>) {
+        let targets = ignoredRepoIDs.subtracting(repoIDs)
+        guard targets != ignoredRepoIDs else { return }
+        ignoredRepoIDs = targets
+    }
+
     func retryApply(repoID: Int64) {
         guard mode == .manual,
               !isApplying,
@@ -1015,10 +1164,15 @@ final class GitHubStarListAIGroupingSession {
     }
 
     func retryAllRecoverableApplyFailures() {
+        retryApplyFailures(repoIDs: nil)
+    }
+
+    /// 按选中子集重试应用失败；`repoIDs` 为空集合视为无可重试目标，`nil` 表示全部可重试项。
+    func retryApplyFailures(repoIDs: Set<Int64>?) {
         guard mode == .manual, !isApplying else { return }
         let retryJobs = jobs.filter { job in
-            guard case .failed(let failure) = job.applyState else { return false }
-            return failure.isRetryable
+            guard case .failed(let failure) = job.applyState, failure.isRetryable else { return false }
+            return repoIDs.map { $0.contains(job.id) } ?? true
         }
         guard !retryJobs.isEmpty else { return }
 
@@ -1043,8 +1197,9 @@ final class GitHubStarListAIGroupingSession {
         }
     }
 
-    private func retryAutomaticallyIgnored(repoIDs: Set<Int64>) async {
-        guard mode == .manual, !isRunning, !isApplying, !repoIDs.isEmpty else { return }
+    /// 批量重试自动忽略仓库；底栏批量动作与「重试全部」共用，选中子集由 `repoIDs` 指定。
+    func retryAutomaticallyIgnored(repoIDs: Set<Int64>) async {
+        guard mode == .manual, canRetryFailedItems, !repoIDs.isEmpty else { return }
         let retryRepos = jobs.compactMap { job -> Repo? in
             guard repoIDs.contains(job.id), job.automaticallyIgnoredFailure != nil else { return nil }
             return job.repo
@@ -1061,6 +1216,7 @@ final class GitHubStarListAIGroupingSession {
         onAutoIgnoredReposChanged?()
         preparedAutomaticallyIgnoredRepoIDs.subtract(retryRepos.map(\.id))
         preparedAnalysisRepositoryCount += retryRepos.count
+        let retryRepoIDs = Set(retryRepos.map(\.id))
         for repo in retryRepos {
             guard let index = jobs.firstIndex(where: { $0.id == repo.id }) else { continue }
             jobs[index].isExcludedFromAnalysis = false
@@ -1068,14 +1224,18 @@ final class GitHubStarListAIGroupingSession {
             jobs[index].suggestions = []
             jobs[index].finishedAt = nil
         }
-        beginAnalysis(
-            repos: retryRepos,
-            candidates: candidateContexts,
-            existingMemberships: existingListIDsByRepo,
-            mode: .manual,
-            automaticThreshold: manualAutomaticThreshold,
-            replaceJobs: false
-        )
+        if isRunning {
+            requeueFailedItemsDuringPause(repoIDs: retryRepoIDs)
+        } else {
+            beginAnalysis(
+                repos: retryRepos,
+                candidates: candidateContexts,
+                existingMemberships: existingListIDsByRepo,
+                mode: .manual,
+                automaticThreshold: manualAutomaticThreshold,
+                replaceJobs: false
+            )
+        }
     }
 
     private func beginAnalysis(
@@ -1093,6 +1253,7 @@ final class GitHubStarListAIGroupingSession {
         self.mode = mode
         isRunning = true
         isPaused = false
+        activeRunRepoIDs = Set(repos.map(\.id))
         contextErrorMessage = nil
         if replaceJobs {
             rateLimitCooldownUntil = nil

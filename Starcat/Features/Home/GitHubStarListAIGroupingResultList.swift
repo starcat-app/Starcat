@@ -18,7 +18,11 @@ struct GitHubStarListAIGroupingResultList: View, Equatable {
     let hasMore: Bool
     let canRetryAnalysis: Bool
     let canRetryAutomaticallyIgnored: Bool
+    /// 当前 Tab 是否启用批量动作勾选（无匹配/分析失败/自动忽略/已忽略/应用失败）。
+    /// “全部”Tab 混合多种状态，只保留待确认行的勾选，避免两种选择语义混在一屏。
+    let showsBulkActionCheckboxes: Bool
     let onToggleRepositorySelection: (Int64) -> Void
+    let onToggleBulkActionSelection: (Int64) -> Void
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
     let onClearSelection: (Int64) -> Void
@@ -44,6 +48,7 @@ struct GitHubStarListAIGroupingResultList: View, Equatable {
             && lhs.hasMore == rhs.hasMore
             && lhs.canRetryAnalysis == rhs.canRetryAnalysis
             && lhs.canRetryAutomaticallyIgnored == rhs.canRetryAutomaticallyIgnored
+            && lhs.showsBulkActionCheckboxes == rhs.showsBulkActionCheckboxes
     }
 
     var body: some View {
@@ -72,8 +77,11 @@ struct GitHubStarListAIGroupingResultList: View, Equatable {
                             canRetryAnalysis: canRetryAnalysis,
                             canRetryAutomaticallyIgnored: canRetryAutomaticallyIgnored,
                             isRepositorySelected: item.isSelectedForBulkApply,
+                            showsBulkActionCheckbox: showsBulkActionCheckboxes,
+                            isBulkActionSelected: item.isSelectedForBulkAction,
                             onToggleExpansion: { toggleExpansion(for: item) },
                             onToggleRepositorySelection: { onToggleRepositorySelection(item.id) },
+                            onToggleBulkActionSelection: { onToggleBulkActionSelection(item.id) },
                             onToggleList: { onToggleList(item.id, $0) },
                             onSelectAllSuggestions: { onSelectAllSuggestions(item.id) },
                             onClearSelection: { onClearSelection(item.id) },
@@ -147,8 +155,11 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     let canRetryAnalysis: Bool
     let canRetryAutomaticallyIgnored: Bool
     let isRepositorySelected: Bool
+    let showsBulkActionCheckbox: Bool
+    let isBulkActionSelected: Bool
     let onToggleExpansion: () -> Void
     let onToggleRepositorySelection: () -> Void
+    let onToggleBulkActionSelection: () -> Void
     let onToggleList: (String) -> Void
     let onSelectAllSuggestions: () -> Void
     let onClearSelection: () -> Void
@@ -174,6 +185,8 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
             && lhs.canRetryAnalysis == rhs.canRetryAnalysis
             && lhs.canRetryAutomaticallyIgnored == rhs.canRetryAutomaticallyIgnored
             && lhs.isRepositorySelected == rhs.isRepositorySelected
+            && lhs.showsBulkActionCheckbox == rhs.showsBulkActionCheckbox
+            && lhs.isBulkActionSelected == rhs.isBulkActionSelected
     }
 
     var body: some View {
@@ -213,6 +226,19 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                     .focusEffectDisabled()
                     .disabled(!item.hasSelection)
             }
+        } else if showsBulkActionCheckbox {
+            // 失败/忽略类 Tab 的勾选直接进入对应批量动作（重试/忽略/取消忽略）。
+            Button {
+                onToggleBulkActionSelection()
+            } label: {
+                Image(systemName: isBulkActionSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isBulkActionSelected ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .accessibilityLabel(isBulkActionSelected
+                ? "githubStarLists.aiGrouping.selection.clearRepo"
+                : "githubStarLists.aiGrouping.action.acceptAll")
         } else {
             Color.clear
                 .frame(width: 16, height: 16)

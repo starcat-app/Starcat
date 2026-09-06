@@ -151,6 +151,8 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     let selectedListIDs: Set<String>
     /// 仓库层复选状态属于展示快照，避免后台自动预选直接让整棵 Sheet 观察 Session 集合。
     let isSelectedForBulkApply: Bool
+    /// 非“待确认”Tab 的批量动作勾选状态；与批量应用选择相互独立。
+    let isSelectedForBulkAction: Bool
     /// 已应用行展开时的最终 membership 草稿；未修改时等于当前分组集合。
     let membershipEditorListIDs: Set<String>
     let selectedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
@@ -296,6 +298,13 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let selectableRepositoryCount: Int
     let selectedRepositoryCount: Int
     let selectedListCount: Int
+    /// 各批量动作 Tab 的已勾选数；只在单一 Tab 内有效，供底栏与「选中全部」判断。
+    private let selectedAnalysisFailedCount: Int
+    private let selectedAutomaticallyIgnoredCount: Int
+    private let selectedApplyFailedCount: Int
+    private let selectedNoMatchCount: Int
+    private let selectedIgnoredCount: Int
+    let bulkActionSelectedCount: Int
     let hasContinuableJobs: Bool
 
     var totalCount: Int { items.count }
@@ -306,6 +315,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         existingListIDsByRepo: [Int64: Set<String>],
         selectedListIDsByRepo: [Int64: Set<String>],
         selectedRepoIDsForBulkApply: Set<Int64> = [],
+        bulkActionRepoIDs: Set<Int64> = [],
         editedListIDsByRepo: [Int64: Set<String>] = [:],
         ignoredRepoIDs: Set<Int64>,
         preparedRepositoryCount: Int = 0,
@@ -345,6 +355,11 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         var selectableRepositoryCount = 0
         var selectedRepositoryCount = 0
         var selectedListIDs: Set<String> = []
+        var selectedAnalysisFailedCount = 0
+        var selectedAutomaticallyIgnoredCount = 0
+        var selectedApplyFailedCount = 0
+        var selectedNoMatchCount = 0
+        var selectedIgnoredCount = 0
         var hasContinuableJobs = false
 
         for job in jobs {
@@ -369,6 +384,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 suggestions: suggestions,
                 selectedListIDs: selection,
                 isSelectedForBulkApply: selectedRepoIDsForBulkApply.contains(job.id),
+                isSelectedForBulkAction: bulkActionRepoIDs.contains(job.id),
                 membershipEditorListIDs: membershipEditorListIDs,
                 // 已选与已应用摘要都按分组名称排序，保持芯片墙顺序稳定且不遗漏多选结果。
                 selectedGroupSummaries: Self.makeGroupSummaries(
@@ -423,6 +439,18 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                     selectedListIDs.formUnion(selection)
                 }
             }
+            if item.isSelectedForBulkAction {
+                // 勾选只在单一 Tab 内有效（切换 Tab 时清空），但统计仍按行当前状态归类，
+                // 被批量动作消费掉或状态已变化的过期勾选不会计入。
+                switch reviewState {
+                case .analysisFailed: selectedAnalysisFailedCount += 1
+                case .automaticallyIgnored: selectedAutomaticallyIgnoredCount += 1
+                case .applyFailed: selectedApplyFailedCount += 1
+                case .noMatch: selectedNoMatchCount += 1
+                case .ignored: selectedIgnoredCount += 1
+                case .pendingAnalysis, .pendingReview, .applied: break
+                }
+            }
             if job.status == .queued || job.status == .stopped || job.status == .failed {
                 hasContinuableJobs = true
             }
@@ -451,7 +479,43 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         self.selectableRepositoryCount = selectableRepositoryCount
         self.selectedRepositoryCount = selectedRepositoryCount
         self.selectedListCount = selectedListIDs.count
+        self.selectedAnalysisFailedCount = selectedAnalysisFailedCount
+        self.selectedAutomaticallyIgnoredCount = selectedAutomaticallyIgnoredCount
+        self.selectedApplyFailedCount = selectedApplyFailedCount
+        self.selectedNoMatchCount = selectedNoMatchCount
+        self.selectedIgnoredCount = selectedIgnoredCount
+        self.bulkActionSelectedCount = selectedAnalysisFailedCount
+            + selectedAutomaticallyIgnoredCount
+            + selectedApplyFailedCount
+            + selectedNoMatchCount
+            + selectedIgnoredCount
         self.hasContinuableJobs = hasContinuableJobs
+    }
+
+    /// 当前 Tab 已勾选数量；“待确认/全部”沿用批量应用的选择语义，待处理/已应用不可勾选。
+    func selectedCount(for filter: GitHubStarListAIResultFilter) -> Int {
+        switch filter {
+        case .suggestions, .all: selectedRepositoryCount
+        case .analysisFailed: selectedAnalysisFailedCount
+        case .automaticallyIgnored: selectedAutomaticallyIgnoredCount
+        case .applyFailed: selectedApplyFailedCount
+        case .noMatch: selectedNoMatchCount
+        case .ignored: selectedIgnoredCount
+        case .actionable, .applied: 0
+        }
+    }
+
+    /// 当前 Tab 可勾选总数，供「选中全部」判断是否还有未勾选项。
+    func selectableCount(for filter: GitHubStarListAIResultFilter) -> Int {
+        switch filter {
+        case .suggestions, .all: selectableRepositoryCount
+        case .analysisFailed: analysisFailedCount
+        case .automaticallyIgnored: automaticallyIgnoredCount
+        case .applyFailed: applyFailedCount
+        case .noMatch: noMatchCount
+        case .ignored: ignoredCount
+        case .actionable, .applied: 0
+        }
     }
 
     /// 快照阶段一次性生成摘要，避免 SwiftUI 每次刷新可见行时重复构造字典和排序。

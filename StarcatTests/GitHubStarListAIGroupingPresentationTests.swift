@@ -482,6 +482,7 @@ struct GitHubStarListAIGroupingPresentationTests {
             suggestions: suggestions,
             selectedListIDs: selectedListIDs,
             isSelectedForBulkApply: false,
+            isSelectedForBulkAction: false,
             membershipEditorListIDs: Set(currentLists.map(\.id)),
             selectedGroupSummaries: [],
             appliedGroupSummaries: [],

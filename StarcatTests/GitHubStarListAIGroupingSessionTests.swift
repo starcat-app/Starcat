@@ -411,6 +411,178 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(try await environment.listService.allAIAutoIgnoredRepos().isEmpty)
     }
 
+    @Test("暂停态允许重试分析失败仓库并自动恢复运行")
+    func pausedSessionRetriesAnalysisFailuresAndResumes() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            blockedRepoID: 1,
+            failingRepoIDs: [6, 7, 8]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 8,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await provider.waitUntilBlockedCallStarts()
+
+        // 等首批其余仓库收口：2-5 成功，6-8 失败，仓库 1 仍被阻塞。
+        try? await Task.sleep(for: .milliseconds(120))
+        // 运行中(未暂停)重试门槛保持关闭。
+        #expect(environment.session.isRunning)
+        #expect(!environment.session.isPaused)
+        #expect(!environment.session.canRetryFailedItems)
+        environment.session.pauseAnalysis()
+        #expect(environment.session.isPaused)
+        #expect(environment.session.jobs.filter { $0.status == .failed }.map(\.id).sorted() == [6, 7, 8])
+
+        // 暂停态下重试门槛放开。
+        #expect(environment.session.canRetryFailedItems)
+        environment.session.retryAllAnalysisFailures()
+        #expect(!environment.session.isPaused)
+        #expect(environment.session.jobs.filter { [6, 7, 8].contains($0.id) }.allSatisfy { $0.status == .queued })
+
+        provider.releaseBlockedCall()
+        await waitUntilStopped(environment.session)
+
+        #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
+        let retriedCallCount = provider.calledRepoIDs.count { [6, 7, 8].contains($0) }
+        #expect(retriedCallCount == 6)
+    }
+
+    @Test("暂停态可重试自动忽略仓库，重试解除持久化忽略并重新分析")
+    func pausedSessionRetriesAutomaticallyIgnoredRepo() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            blockedRepoID: 2
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 3,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+        try await environment.listService.markAIAutoIgnored(
+            repoID: 1,
+            reason: .organizationOAuthRestriction
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await provider.waitUntilBlockedCallStarts()
+        try? await Task.sleep(for: .milliseconds(60))
+        environment.session.pauseAnalysis()
+        #expect(environment.session.isPaused)
+        #expect(environment.session.canRetryFailedItems)
+        #expect(environment.session.jobs.first(where: { $0.id == 3 })?.status == .completed)
+
+        await environment.session.retryAutomaticallyIgnored(repoID: 1)
+        #expect(!environment.session.isPaused)
+        #expect(environment.session.preparedAutomaticallyIgnoredRepoIDs.isEmpty)
+        #expect(try await environment.listService.allAIAutoIgnoredRepos().isEmpty)
+
+        provider.releaseBlockedCall()
+        await waitUntilStopped(environment.session)
+
+        #expect(provider.calledRepoIDs.contains(1))
+        #expect(environment.session.jobs.first(where: { $0.id == 1 })?.status == .completed)
+        #expect(environment.session.jobs.first(where: { $0.id == 1 })?.automaticallyIgnoredFailure == nil)
+    }
+
+    @Test("分析失败 Tab 支持批量勾选并按选中子集重试")
+    func analysisFailedTabSupportsBulkSelectionAndSubsetRetry() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            failingRepoIDs: [2, 3]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 3,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        #expect(environment.session.jobs.filter { $0.status == .failed }.map(\.id).sorted() == [2, 3])
+
+        // 勾选按 Tab 语义过滤：完成的仓库 1 不可勾选进分析失败集合。
+        environment.session.toggleRepoForBulkAction(repoID: 1, filter: .analysisFailed)
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+        environment.session.selectAllReposForBulkAction(filter: .analysisFailed)
+        #expect(environment.session.bulkActionRepoIDs == [2, 3])
+        environment.session.toggleRepoForBulkAction(repoID: 3, filter: .analysisFailed)
+        #expect(environment.session.bulkActionRepoIDs == [2])
+
+        environment.session.applyBulkAction(filter: .analysisFailed)
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+        await waitUntilStopped(environment.session)
+
+        // 只有勾选的仓库 2 被重试并成功；仓库 3 保持失败。
+        #expect(environment.session.jobs.first(where: { $0.id == 2 })?.status == .completed)
+        #expect(environment.session.jobs.first(where: { $0.id == 3 })?.status == .failed)
+        #expect(provider.calledRepoIDs.count { $0 == 2 } == 2)
+        #expect(provider.calledRepoIDs.count { $0 == 3 } == 1)
+    }
+
+    @Test("无匹配 Tab 批量忽略后可在已忽略 Tab 批量取消忽略")
+    func noMatchAndIgnoredTabsSupportBulkIgnoreCycle() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(delay: .milliseconds(1))
+        let environment = try await makeEnvironment(
+            repoCount: 2,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+        #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
+
+        environment.session.selectAllReposForBulkAction(filter: .noMatch)
+        #expect(environment.session.bulkActionRepoIDs == [1, 2])
+        environment.session.applyBulkAction(filter: .noMatch)
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+        #expect(environment.session.ignoredRepoIDs == [1, 2])
+
+        // 已忽略 Tab 的批量动作是取消忽略；仓库回到无匹配状态。
+        environment.session.selectAllReposForBulkAction(filter: .ignored)
+        #expect(environment.session.bulkActionRepoIDs == [1, 2])
+        environment.session.applyBulkAction(filter: .ignored)
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+        #expect(environment.session.ignoredRepoIDs.isEmpty)
+    }
+
+    @Test("切换 Tab 或跨 Tab 勾选不会让批量选择串语义")
+    func bulkActionSelectionIsFilteredPerTab() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(delay: .milliseconds(1))
+        let environment = try await makeEnvironment(
+            repoCount: 1,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        // 待确认/全部/待处理/已应用不提供批量动作勾选。
+        environment.session.selectAllReposForBulkAction(filter: .all)
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+        environment.session.selectAllReposForBulkAction(filter: .suggestions)
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+        environment.session.selectAllReposForBulkAction(filter: .noMatch)
+        #expect(environment.session.bulkActionRepoIDs == [1])
+        environment.session.clearBulkActionSelection()
+        #expect(environment.session.bulkActionRepoIDs.isEmpty)
+    }
+
     @Test("已应用结果可展开后精确移除原分组")
     func appliedResultCanReplaceMemberships() async throws {
         let provider = ConcurrentGitHubStarListSuggestionProvider(
@@ -555,11 +727,13 @@ struct GitHubStarListAIGroupingSessionTests {
 private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSuggestionProviding {
     private let delay: Duration
     private let blockedRepoID: Int64?
+    private let failingRepoIDs: Set<Int64>
     private let suggestionsByRepoID: [Int64: [GitHubStarListAISuggestion]]
     private var activeCalls = 0
     private var blockedCallStarted = false
     private var blockedContinuation: CheckedContinuation<Void, Never>?
     private var blockedStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var alreadyFailedRepoIDs: Set<Int64> = []
 
     private(set) var callSizes: [Int] = []
     private(set) var calledRepoIDs: [Int64] = []
@@ -569,10 +743,12 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
     init(
         delay: Duration,
         blockedRepoID: Int64? = nil,
+        failingRepoIDs: Set<Int64> = [],
         suggestionsByRepoID: [Int64: [GitHubStarListAISuggestion]] = [:]
     ) {
         self.delay = delay
         self.blockedRepoID = blockedRepoID
+        self.failingRepoIDs = failingRepoIDs
         self.suggestionsByRepoID = suggestionsByRepoID
     }
 
@@ -601,6 +777,12 @@ private final class ConcurrentGitHubStarListSuggestionProvider: GitHubStarListSu
                 blockedStartWaiters.removeAll()
                 waiters.forEach { $0.resume() }
             }
+        } else if failingRepoIDs.contains(repo.id),
+                  !alreadyFailedRepoIDs.contains(repo.id) {
+            // 每个仓库只失败一次，重试后走成功路径，便于验证重试真的重新入队。
+            alreadyFailedRepoIDs.insert(repo.id)
+            try await Task.sleep(for: delay)
+            throw URLError(.badURL)
         } else {
             try await Task.sleep(for: delay)
         }
