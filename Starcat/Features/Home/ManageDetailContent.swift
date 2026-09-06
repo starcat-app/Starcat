@@ -114,9 +114,12 @@ struct ManageDetailContent: View {
     /// tags + notes + release 计数等)。详见文件头 v2.1 修订段。
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.locale) private var locale
     @State private var contentMode: ManageDetailContentMode = .readme
     @State private var repositoryInsightsViewModel: RepositoryInsightsViewModel?
     @State private var starHistoryViewModel: StarHistoryViewModel?
+    @State private var readmeStarHistoryViewModel: ReadmeStarHistoryViewModel?
+    @State private var readmeStarHistoryTask: Task<Void, Never>?
     @State private var loadedInsightsDatabaseScopeRevision: UInt64?
 
     var body: some View {
@@ -140,6 +143,7 @@ struct ManageDetailContent: View {
                 repositoryInsightsViewModel?.cancelRemoteLoading()
                 starHistoryViewModel?.cancel()
             case .resetScroll:
+                cancelReadmeStarHistory()
                 // README 可能在切换前已把 Hero 折叠；洞察页首帧先恢复顶部 Metadata，
                 // 后续再由自己的 ScrollView 持续上报 offset。
                 onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
@@ -150,12 +154,20 @@ struct ManageDetailContent: View {
             // 禁用这里的 mode transition，仓库级轻量 reveal 已由 Scaffold 统一提供。
             repositoryInsightsViewModel?.cancelRemoteLoading()
             starHistoryViewModel?.cancel()
+            cancelReadmeStarHistory()
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 contentMode = .readme
             }
             onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
+        }
+        .onChange(of: dependencies.databaseScopeRevision) { _, _ in
+            // 同一个 repo id 在账号切换后属于另一份数据库，旧摘要不能跨作用域复用。
+            cancelReadmeStarHistory()
+        }
+        .onDisappear {
+            cancelReadmeStarHistory()
         }
     }
 
@@ -207,7 +219,9 @@ struct ManageDetailContent: View {
                     repo: repo,
                     translationVM: translationVM,
                     settings: settings
-                )
+                ),
+                starHistoryRenderState: readmeStarHistoryViewModel?.renderState ?? .empty,
+                onApproachingBottom: loadReadmeStarHistoryIfNeeded
             ) {
                 refreshReadmeAndRepo()
             } onLogin: {
@@ -276,8 +290,44 @@ struct ManageDetailContent: View {
 
     /// v2.1 既有语义保持不变：Manage 的 README 刷新同时重读当前 repo 视图数据。
     private func refreshReadmeAndRepo() {
+        // 用户主动刷新 README 时让摘要重新走 cache-first + 后台校验；旧 HTML 会随文档重载清掉。
+        cancelReadmeStarHistory()
         readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
         Task { await viewModel.reloadItems(forceRefresh: true) }
+    }
+
+    /// README 首屏与历史服务彻底解耦：只有 WebView document-end 判定接近底部后才创建状态机。
+    private func loadReadmeStarHistoryIfNeeded() {
+        let historyViewModel: ReadmeStarHistoryViewModel
+        if let readmeStarHistoryViewModel {
+            historyViewModel = readmeStarHistoryViewModel
+        } else {
+            let created = ReadmeStarHistoryViewModel(
+                repository: dependencies.repoStarHistoryRepository,
+                projectVisibilityProvider: { repoID in
+                    (try? await dependencies.userProjectRepository.fetchProject(repoID: repoID))?.visibility
+                }
+            )
+            readmeStarHistoryViewModel = created
+            historyViewModel = created
+        }
+
+        let databaseScopeRevision = dependencies.databaseScopeRevision
+        readmeStarHistoryTask?.cancel()
+        readmeStarHistoryTask = Task {
+            await historyViewModel.loadIfNeeded(
+                repo: repo,
+                databaseScopeRevision: databaseScopeRevision,
+                locale: locale
+            )
+        }
+    }
+
+    /// 原始 `Task` 不随 SwiftUI 状态机自动取消；切仓时必须先停任务，再让 generation 失效。
+    private func cancelReadmeStarHistory() {
+        readmeStarHistoryTask?.cancel()
+        readmeStarHistoryTask = nil
+        readmeStarHistoryViewModel?.cancel()
     }
 
     private func makeRepositoryInsightsViewModel() -> RepositoryInsightsViewModel {

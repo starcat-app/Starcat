@@ -331,6 +331,10 @@ struct ReadmeStateView: View {
     /// HOM-68：可选的 README 翻译控件描述。nil 时不渲染翻译入口
     /// （Trending 详情页不接翻译，传 nil；Manage 详情页传具体值）。
     let translationControl: ReadmeTranslationControl?
+    /// Manage README 可选的 Star History DOM 状态；其它调用方保持空状态。
+    let starHistoryRenderState: ReadmeStarHistoryRenderState
+    /// WebView 接近文档底部时的按需加载入口。
+    let onApproachingBottom: () -> Void
     let onRetry: @MainActor @Sendable () -> Void
     /// 未登录用户点击"登录"按钮时的回调
     let onLogin: () -> Void
@@ -344,6 +348,8 @@ struct ReadmeStateView: View {
         baseURL: URL?,
         onScrollReportChange: @escaping (RepoDetailScrollReport) -> Void,
         translationControl: ReadmeTranslationControl? = nil,
+        starHistoryRenderState: ReadmeStarHistoryRenderState = .empty,
+        onApproachingBottom: @escaping () -> Void = {},
         onRetry: @escaping @MainActor @Sendable () -> Void,
         onLogin: @escaping () -> Void
     ) {
@@ -352,6 +358,8 @@ struct ReadmeStateView: View {
         self.baseURL = baseURL
         self.onScrollReportChange = onScrollReportChange
         self.translationControl = translationControl
+        self.starHistoryRenderState = starHistoryRenderState
+        self.onApproachingBottom = onApproachingBottom
         self.onRetry = onRetry
         self.onLogin = onLogin
     }
@@ -739,7 +747,9 @@ struct ReadmeStateView: View {
                 onTranslationSourceChange: { snapshot in
                     translationSourceDocumentKey = documentKey
                     translationSourceSnapshot = snapshot
-                }
+                },
+                starHistoryRenderState: starHistoryRenderState,
+                onApproachingBottom: onApproachingBottom
             )
             // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
             // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。

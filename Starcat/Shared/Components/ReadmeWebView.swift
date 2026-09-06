@@ -130,6 +130,12 @@ struct ReadmeWebView: View {
     /// 用户点击翻译后才会把当前模式对应的数据发给 AI。
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
 
+    /// README 末尾 Star History 的受控 HTML。默认空状态让其它 README 调用方保持原行为。
+    var starHistoryRenderState: ReadmeStarHistoryRenderState = .empty
+
+    /// 文档距离底部不超过两个 viewport 时触发。Coordinator 对每份文档只回调一次。
+    var onApproachingBottom: () -> Void = {}
+
     @Environment(AppSettings.self) private var settings
     @State private var scrollToTopRequestID = 0
     @State private var isFindBarVisible = false
@@ -151,6 +157,8 @@ struct ReadmeWebView: View {
             onFindResult: { findHasMatch = $0 },
             translationRenderState: translationRenderState,
             onTranslationSourceChange: onTranslationSourceChange,
+            starHistoryRenderState: starHistoryRenderState,
+            onApproachingBottom: onApproachingBottom,
             openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
@@ -315,6 +323,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     var onFindResult: (Bool?) -> Void
     let translationRenderState: ReadmeTranslationRenderState
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
+    let starHistoryRenderState: ReadmeStarHistoryRenderState
+    var onApproachingBottom: () -> Void
     var openRepositoryMarkdownInApp: Bool
     var markdownLinkRepositoryOwner: String?
     var markdownLinkRepositoryName: String?
@@ -351,6 +361,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
+        context.coordinator.onApproachingBottom = onApproachingBottom
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -360,12 +371,14 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             reduceMotion: reduceMotion
         )
         loadIfNeeded(into: webView, context: context)
+        context.coordinator.updateStarHistoryRenderState(starHistoryRenderState)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
+        context.coordinator.onApproachingBottom = onApproachingBottom
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -375,6 +388,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             reduceMotion: reduceMotion
         )
         loadIfNeeded(into: webView, context: context)
+        context.coordinator.updateStarHistoryRenderState(starHistoryRenderState)
         scrollToTopIfNeeded(in: webView, context: context)
         performFindIfNeeded(in: webView, context: context)
     }
@@ -475,7 +489,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         interfaceScale: InterfaceScale = .standard,
         readmeFontSizeAdjustment: Int = 0
     ) -> String {
-        let css = ReadmeCSS.full + "\n" + ReadmeMermaidDOM.css + "\n" + ReadmeTranslationDOM.css + "\n" + ReadmeCSS.readingVariables(
+        let css = ReadmeCSS.full + "\n" + ReadmeMermaidDOM.css + "\n" + ReadmeTranslationDOM.css + "\n" + ReadmeStarHistoryDOM.css + "\n" + ReadmeCSS.readingVariables(
             bodyFontSize: readmeBodyFontSize(
                 for: interfaceScale,
                 adjustment: readmeFontSizeAdjustment
@@ -494,6 +508,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         </head>
         <body class="\(bodyClass)">
         <article>\(fragment)</article>
+        <div id="starcat-readme-star-history" data-starcat-owned="true" hidden></div>
         </body>
         </html>
         """
@@ -518,6 +533,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
+        var onApproachingBottom: () -> Void = {}
         var onFindResult: (Bool?) -> Void = { _ in }
         var openRepositoryMarkdownInApp = false
         var markdownLinkRepositoryOwner: String?
@@ -526,6 +542,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         private weak var userContentController: WKUserContentController?
         private var pendingTranslationRenderState: ReadmeTranslationRenderState = .hidden
         private var lastAppliedTranslationRevision: Int?
+        private var pendingStarHistoryRenderState: ReadmeStarHistoryRenderState = .empty
+        private var lastAppliedStarHistoryRevision: String?
+        private var starHistoryDOMTask: Task<Void, Never>?
+        private var didReportApproachingBottom = false
         /// App 关动画或系统 Reduce Motion 时，DOM 入场一律关掉。
         private var translationReduceMotion = false
         private var mermaidDocumentRevision = 0
@@ -613,6 +633,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             userContentController?.removeScriptMessageHandler(
                 forName: ReadmeWebViewConstants.mermaidRequestMessageName
             )
+            starHistoryDOMTask?.cancel()
+            starHistoryDOMTask = nil
             mermaidRuntimeTask?.cancel()
             mermaidRuntimeTask = nil
             userContentController = nil
@@ -634,6 +656,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 同时取消旧文档尚未完成的 Mermaid 任务，避免切换仓库后把图表写进新 DOM。
         func prepareForDocumentReload() {
             lastAppliedTranslationRevision = nil
+            lastAppliedStarHistoryRevision = nil
+            didReportApproachingBottom = false
+            starHistoryDOMTask?.cancel()
+            starHistoryDOMTask = nil
             mermaidDocumentRevision &+= 1
             mermaidRuntimeTask?.cancel()
             mermaidRuntimeTask = nil
@@ -679,6 +705,48 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     )
                 } catch {
                     AppLog.ui.debug("Readme translation DOM update deferred: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+
+        /// 保存最新摘要并在当前文档中原地替换 placeholder。
+        ///
+        /// HTML 由 Swift 固定模板生成并完成转义，通过 `arguments` 桥接给 WebKit；这里不把
+        /// HTML 插进 JavaScript 源码，避免引号或换行改变脚本结构。revision 相同则完全跳过。
+        func updateStarHistoryRenderState(_ state: ReadmeStarHistoryRenderState) {
+            pendingStarHistoryRenderState = state
+            applyStarHistoryRenderStateIfNeeded()
+        }
+
+        private func applyStarHistoryRenderStateIfNeeded() {
+            guard let webView,
+                  lastAppliedStarHistoryRevision != pendingStarHistoryRenderState.revision
+            else { return }
+
+            let state = pendingStarHistoryRenderState
+            let revision = state.revision
+            starHistoryDOMTask?.cancel()
+            starHistoryDOMTask = Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, !Task.isCancelled else { return }
+                do {
+                    _ = try await webView.callAsyncJavaScript(
+                        """
+                        if (typeof window.starcatReplaceReadmeStarHistory !== 'function') {
+                            throw new Error('Starcat README Star History bridge is unavailable');
+                        }
+                        window.starcatReplaceReadmeStarHistory(html);
+                        """,
+                        arguments: ["html": state.html ?? ""],
+                        in: nil,
+                        contentWorld: .page
+                    )
+                    guard !Task.isCancelled,
+                          revision == self.pendingStarHistoryRenderState.revision
+                    else { return }
+                    self.lastAppliedStarHistoryRevision = revision
+                } catch {
+                    // updateNSView 可能早于 document-end script；didFinish 会再次应用。
+                    AppLog.ui.debug("README Star History DOM update deferred: \(error.localizedDescription, privacy: .public)")
                 }
             }
         }
@@ -813,6 +881,26 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 return Math.max(0, scrollHeight - clientHeight);
             }
 
+            window.starcatReplaceReadmeStarHistory = function(html) {
+                var host = document.getElementById('starcat-readme-star-history');
+                if (!host) { return; }
+                if (!html) {
+                    host.replaceChildren();
+                    host.hidden = true;
+                    schedule();
+                    return;
+                }
+                host.innerHTML = html;
+                host.querySelectorAll('.starcat-star-history-avatar img').forEach(function(image) {
+                    image.addEventListener('error', function() {
+                        // 头像网络失败时移除图片，让底层 owner 首字母继续承担仓库标识。
+                        image.remove();
+                    }, { once: true });
+                });
+                host.hidden = false;
+                schedule();
+            };
+
             function report() {
                 ticking = false;
                 var y = currentY();
@@ -823,7 +911,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 window.webkit.messageHandlers.\(ReadmeWebViewConstants.scrollMessageName).postMessage({
                     y: y,
                     scrollHeight: overflow + (window.innerHeight || document.documentElement.clientHeight || 0),
-                    clientHeight: window.innerHeight || document.documentElement.clientHeight || 0
+                    clientHeight: window.innerHeight || document.documentElement.clientHeight || 0,
+                    isNearBottom: Math.max(0, overflow - y) <=
+                        2 * (window.innerHeight || document.documentElement.clientHeight || 0)
                 });
             }
 
@@ -1441,6 +1531,14 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     offsetY: CGFloat(truncating: yValue),
                     scrollOverflow: overflow
                 )
+                if (payload["isNearBottom"] as? NSNumber)?.boolValue == true,
+                   !didReportApproachingBottom {
+                    didReportApproachingBottom = true
+                    // 只在文档端确认接近底部后才启动数据层；短 README 也要等 document-end。
+                    Task { @MainActor in
+                        self.onApproachingBottom()
+                    }
+                }
                 // 避免在 WebKit 回调栈内同步触发 SwiftUI 重排，干扰 loadHTMLString 首帧。
                 Task { @MainActor in
                     self.onScrollReportChange(report)
@@ -1453,6 +1551,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             // `updateNSView` 可能先于 document-end script 完成；导航结束后再补一次当前状态。
             lastAppliedTranslationRevision = nil
             applyTranslationRenderStateIfNeeded()
+            lastAppliedStarHistoryRevision = nil
+            applyStarHistoryRenderStateIfNeeded()
         }
 
         func webView(
@@ -1554,6 +1654,232 @@ private enum ReadmeWebViewConstants {
     static let mermaidRequestMessageName = "readmeMermaidRequest"
     static let maximumMermaidSectionCount = 100
     static let maximumMermaidSourceLength = 50_000
+}
+
+/// README 末尾摘要使用静态 SVG 和轻量卡片层级；不引入图表运行时或额外滚动容器。
+private enum ReadmeStarHistoryDOM {
+    static let css = """
+    #starcat-readme-star-history[hidden] {
+        display: none;
+    }
+    .starcat-star-history {
+        --star-history-accent: #1f9d55;
+        --star-history-area: rgba(31, 157, 85, 0.16);
+        --star-history-card-background: var(--bg);
+        --star-history-card-border: var(--border);
+        margin: 32px 0 8px;
+        padding-top: 28px;
+        border-top: 1px solid var(--border);
+        color: var(--fg);
+    }
+    body.dark .starcat-star-history {
+        --star-history-accent: #34c759;
+        --star-history-area: rgba(52, 199, 89, 0.16);
+        /* 叠在透明 WebView 的系统窗底上，避免固定近黑色把卡片压成黑块。 */
+        --star-history-card-background: rgba(255, 255, 255, 0.07);
+        --star-history-card-border: rgba(255, 255, 255, 0.18);
+    }
+    .starcat-star-history-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+    }
+    .starcat-star-history-heading {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+    }
+    .starcat-star-history-heading-icon {
+        color: #f5b301;
+        font-size: 1.25em;
+        line-height: 1;
+    }
+    .starcat-star-history h2 {
+        margin: 0;
+        padding: 0;
+        border: 0;
+        font-size: 1.35em;
+    }
+    .starcat-star-history-range,
+    .starcat-star-history-attribution,
+    .starcat-star-history-footer {
+        color: var(--muted);
+        font-size: 0.78em;
+    }
+    .starcat-star-history-attribution {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: baseline;
+        gap: 4px;
+        padding: 2px 7px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        line-height: 1.45;
+    }
+    .starcat-star-history-attribution strong {
+        color: #f5b301;
+        font-weight: 700;
+    }
+    .starcat-star-history-card {
+        padding: 20px 20px 12px;
+        border: 1px solid var(--star-history-card-border);
+        border-radius: 12px;
+        background: var(--star-history-card-background);
+        box-shadow: 0 3px 14px rgba(31, 35, 40, 0.06);
+    }
+    body.dark .starcat-star-history-card {
+        box-shadow: 0 3px 16px rgba(0, 0, 0, 0.22);
+    }
+    .starcat-star-history-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 0 8px 10px 42px;
+    }
+    .starcat-star-history-card-copy {
+        min-width: 0;
+    }
+    .starcat-star-history-repository {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 10px;
+    }
+    .starcat-star-history-avatar {
+        position: relative;
+        display: grid;
+        width: 32px;
+        height: 32px;
+        flex: 0 0 32px;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--code-bg);
+        color: var(--muted);
+        font-size: 0.78em;
+        font-weight: 700;
+    }
+    .starcat-star-history-avatar img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .starcat-star-history-card-kicker {
+        display: block;
+        color: var(--muted);
+        font-size: 0.78em;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    .starcat-star-history-card h3 {
+        margin: 3px 0 0;
+        color: var(--fg);
+        overflow: hidden;
+        font-size: 1.18em;
+        font-weight: 650;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .starcat-star-history-current {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 7px;
+        color: var(--star-history-accent);
+        line-height: 1;
+    }
+    .starcat-star-history-current strong {
+        font-size: 1.35em;
+        font-variant-numeric: tabular-nums;
+    }
+    .starcat-star-history-current span {
+        font-size: 1.2em;
+    }
+    .starcat-star-history-current-star {
+        color: #f5b301;
+    }
+    .starcat-star-history-chart {
+        min-width: 0;
+    }
+    .starcat-star-history-chart svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 360px;
+        overflow: visible;
+    }
+    .starcat-star-history-grid {
+        stroke: var(--border);
+        stroke-width: 1;
+        vector-effect: non-scaling-stroke;
+    }
+    .starcat-star-history-grid-vertical {
+        stroke-dasharray: 3 6;
+    }
+    .starcat-star-history-axis {
+        fill: var(--muted);
+        font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-variant-numeric: tabular-nums;
+    }
+    .starcat-star-history-axis-y {
+        font-weight: 600;
+    }
+    .starcat-star-history-area {
+        fill: var(--star-history-area);
+        stroke: none;
+    }
+    .starcat-star-history-line {
+        fill: none;
+        stroke: var(--star-history-accent);
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+    }
+    .starcat-star-history-endpoint {
+        fill: var(--star-history-accent);
+        stroke: var(--bg);
+        stroke-width: 2.5;
+        vector-effect: non-scaling-stroke;
+    }
+    .starcat-star-history-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 5px;
+        margin-top: 0;
+        padding: 0 8px;
+        text-align: end;
+    }
+    @media (max-width: 520px) {
+        .starcat-star-history-header {
+            display: block;
+        }
+        .starcat-star-history-attribution {
+            display: inline-block;
+            margin-top: 6px;
+        }
+        .starcat-star-history-card {
+            padding: 16px 12px 10px;
+        }
+        .starcat-star-history-card-header {
+            padding-left: 36px;
+        }
+        .starcat-star-history-footer {
+            display: block;
+        }
+        .starcat-star-history-footer span {
+            margin-inline-end: 4px;
+        }
+    }
+    """
 }
 
 /// GitHub 的 Mermaid enrichment HTML 默认等待 Viewscreen iframe 回填；Starcat 不加载
