@@ -80,6 +80,8 @@ struct RAGWorkspaceConversationRow: View {
     @Bindable var selectionState: RAGConversationRowSelectionState
     let conversation: RAGConversationSummary
     let rowIndex: Int
+    /// 分组内的会话行不显示气泡图标；保留同宽占位，使文字与根级行文字对齐。
+    let showsIcon: Bool
     let isDragging: Bool
     let isSettling: Bool
     let onSelected: () -> Void
@@ -96,14 +98,19 @@ struct RAGWorkspaceConversationRow: View {
                 Task { await viewModel.selectConversation(conversation.id) }
             } label: {
                 HStack(alignment: .top, spacing: 9) {
-                    Image(systemName: conversation.isPinned ? "pin.fill" : "bubble.left")
-                        .font(iconFont(size: 13, weight: .medium))
-                        .foregroundStyle(
-                            conversation.isPinned
-                                ? Color.accentColor
-                                : (selectionState.isSelected ? Color.accentColor : .secondary)
-                        )
-                        .frame(width: 18)
+                    // 分组内行不渲染图标，但保留同宽占位，让文字与根级行文字纵向对齐。
+                    if showsIcon {
+                        Image(systemName: conversation.isPinned ? "pin.fill" : "bubble.left")
+                            .font(iconFont(size: 13, weight: .medium))
+                            .foregroundStyle(
+                                conversation.isPinned
+                                    ? Color.accentColor
+                                    : (selectionState.isSelected ? Color.accentColor : .secondary)
+                            )
+                            .frame(width: 18)
+                    } else {
+                        Color.clear.frame(width: 18)
+                    }
                     Text(conversation.title)
                         .font(interfaceScale.font(
                             RAGConversationTypography.text,

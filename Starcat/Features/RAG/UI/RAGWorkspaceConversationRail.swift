@@ -16,6 +16,8 @@ struct RAGWorkspaceConversationRail: View {
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     /// 把全局 selection 拆成行级状态，切换时只失效旧、新两行。
     @State private var selectionStore = RAGConversationRailSelectionStore()
+    /// 「展开更多」分页状态是进程级单例：关闭工作台窗口重开不重置，仅应用重启归零。
+    private let expansionStore = RAGConversationRailExpansionStore.shared
     @State private var expandedGroupIDs: Set<UUID> = []
     @State private var conversationDropTarget: RAGConversationDropTarget?
     /// 正在拖拽的会话；源行压暗，避免系统 preview 与源行叠成残影。
@@ -131,8 +133,12 @@ struct RAGWorkspaceConversationRail: View {
                         groupSection(group)
                     }
 
-                    ForEach(viewModel.conversationRailPresentation.ungroupedRows) { entry in
+                    let ungroupedRows = viewModel.conversationRailPresentation.ungroupedRows
+                    ForEach(visibleBucketRows(ungroupedRows, groupID: nil)) { entry in
                         conversationRow(entry.conversation, rowIndex: entry.rowIndex)
+                    }
+                    if showsShowMoreButton(ungroupedRows, groupID: nil) {
+                        showMoreButton(groupID: nil)
                     }
                 }
                 .padding(.bottom, 12)
@@ -231,12 +237,7 @@ struct RAGWorkspaceConversationRail: View {
                     viewModel.selectedGroupID = group.id
                 } label: {
                     HStack(spacing: 8) {
-                        // 固定 chevron.right + 旋转，避免换 symbol 时无过渡。
-                        Image(systemName: "chevron.right")
-                            .font(iconFont(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        // 不放展开/折叠 chevron：折叠状态由点击整行切换，图标列与普通会话行保持一致。
                         Image(systemName: "folder.fill")
                             .font(iconFont(size: 13, weight: .medium))
                             .foregroundStyle(isSelected ? Color.accentColor : .secondary)
@@ -246,10 +247,6 @@ struct RAGWorkspaceConversationRail: View {
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        // 计数只统计组内未置顶会话；置顶已上浮到顶部置顶区，避免展开后数字与实际条数对不上。
-                        Text("\(viewModel.conversationRailPresentation.rows(inGroupID: group.id).count)")
-                            .font(ragFont(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
                     }
                     .contentShape(Rectangle())
                     .padding(.horizontal, 10)
@@ -301,17 +298,21 @@ struct RAGWorkspaceConversationRail: View {
             }
 
             if isExpanded {
-                ForEach(viewModel.conversationRailPresentation.rows(inGroupID: group.id)) { entry in
-                    conversationRow(entry.conversation, rowIndex: entry.rowIndex)
-                        .padding(.leading, 14)
+                let groupRows = viewModel.conversationRailPresentation.rows(inGroupID: group.id)
+                ForEach(visibleBucketRows(groupRows, groupID: group.id)) { entry in
+                    // 分组内行不带气泡图标，也不再额外缩进：文字与根级会话行对齐。
+                    conversationRow(entry.conversation, rowIndex: entry.rowIndex, showsIcon: false)
                         // 仅淡入淡出：去掉 .move，降低松手时与 drag preview 的位移叠影。
                         .transition(reduceMotion ? .identity : .opacity)
+                }
+                if showsShowMoreButton(groupRows, groupID: group.id) {
+                    showMoreButton(groupID: group.id)
                 }
             }
         }
     }
 
-    func conversationRow(_ conversation: RAGConversationSummary, rowIndex: Int) -> some View {
+    func conversationRow(_ conversation: RAGConversationSummary, rowIndex: Int, showsIcon: Bool = true) -> some View {
         let isDragging = draggingConversationID == conversation.id
         let isSettling = settlingConversationID == conversation.id
         return RAGWorkspaceConversationRow(
@@ -319,6 +320,7 @@ struct RAGWorkspaceConversationRail: View {
             selectionState: selectionStore.state(for: conversation.id),
             conversation: conversation,
             rowIndex: rowIndex,
+            showsIcon: showsIcon,
             isDragging: isDragging,
             isSettling: isSettling,
             onSelected: {
@@ -338,6 +340,49 @@ struct RAGWorkspaceConversationRail: View {
     private static func conversationID(fromDropItems items: [String]) -> UUID? {
         guard let raw = items.first else { return nil }
         return UUID(uuidString: raw)
+    }
+
+    // MARK: - 「展开更多」分页
+
+    /// 桶（未分组 / 单个分组）当前应展示的行数：用户展开数与「选中行保底可见数」取大者。
+    /// 选中行保底只影响本次切片，不写回 store，避免选中态悄悄抬高用户心智里的分页进度。
+    private func visibleBucketRows(
+        _ rows: [RAGConversationRailPresentation.Row],
+        groupID: UUID?
+    ) -> [RAGConversationRailPresentation.Row] {
+        let selectedIndex = rows.firstIndex { $0.conversation.id == viewModel.selectedConversationID }
+        var limit = expansionStore.userVisibleCount(groupID: groupID)
+        if let selectedIndex {
+            limit = max(limit, selectedIndex + 1)
+        }
+        return Array(rows.prefix(min(limit, rows.count)))
+    }
+
+    private func showsShowMoreButton(
+        _ rows: [RAGConversationRailPresentation.Row],
+        groupID: UUID?
+    ) -> Bool {
+        rows.count > visibleBucketRows(rows, groupID: groupID).count
+    }
+
+    private func showMoreButton(groupID: UUID?) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+                expansionStore.expand(groupID: groupID)
+            }
+        } label: {
+            // 左缘 8(行外距) + 10(行内距) + 18(图标列) + 9(间距)：文案与上方会话行标题对齐。
+            Text("rag.workspace.conversation.showMore")
+                .font(ragFont(.caption))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 45)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pointerStyle(.link)
     }
 
     private func updateDropTarget(_ target: RAGConversationDropTarget, isTargeted: Bool) {
@@ -411,6 +456,38 @@ struct RAGWorkspaceConversationRail: View {
             if draggingConversationID == conversationID {
                 draggingConversationID = nil
             }
+        }
+    }
+}
+
+/// 「展开更多」分页状态；进程级单例。
+///
+/// 需求约束：关闭工作台窗口再打开不得重置，只有整个 Starcat 重启才回到默认 5 条。
+/// 因此状态不能挂在 View 的 `@State` 上（窗口关闭即销毁），也不能写 UserDefaults
+/// （会跨启动残留），放在 App 进程单例里生命周期正好匹配。
+@MainActor
+@Observable
+final class RAGConversationRailExpansionStore {
+    static let shared = RAGConversationRailExpansionStore()
+
+    private static let initialVisibleCount = 5
+    private static let expandStep = 10
+
+    private var ungroupedVisibleCount = 0
+    private var visibleCountsByGroupID: [UUID: Int] = [:]
+
+    /// 用户在指定桶里已展开到的条数（含默认值），不会超过调用方的总量约束（视图侧 min）。
+    func userVisibleCount(groupID: UUID?) -> Int {
+        let stored = groupID.flatMap { visibleCountsByGroupID[$0] } ?? ungroupedVisibleCount
+        return max(stored, Self.initialVisibleCount)
+    }
+
+    func expand(groupID: UUID?) {
+        let next = userVisibleCount(groupID: groupID) + Self.expandStep
+        if let groupID {
+            visibleCountsByGroupID[groupID] = next
+        } else {
+            ungroupedVisibleCount = next
         }
     }
 }
