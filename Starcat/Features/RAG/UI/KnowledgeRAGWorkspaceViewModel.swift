@@ -4248,6 +4248,7 @@ final class KnowledgeRAGWorkspaceViewModel {
     private func mergePersistedConversationSummary(_ persisted: RAGConversationSummary) -> RAGConversationSummary {
         guard let index = conversations.firstIndex(where: { $0.id == persisted.id }) else {
             conversations.append(persisted)
+            conversations.sort(by: Self.conversationListOrder)
             return persisted
         }
         var merged = conversations[index]
@@ -4256,6 +4257,9 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         merged.updatedAt = persisted.updatedAt
         conversations[index] = merged
+        // 侧栏按最近活跃排序：一轮问答落库后立刻把该会话移到所在桶（分组/未分组）顶部；
+        // 置顶区不受影响（conversationListOrder 里 pinned_at 优先于 updated_at）。
+        conversations.sort(by: Self.conversationListOrder)
         return merged
     }
 

@@ -5093,14 +5093,14 @@ struct KnowledgeRAGCoreTests {
         #expect(pinnedFirstAfterRename.summary.pinnedAt == pinnedFirstBeforeRename.summary.pinnedAt)
     }
 
-    @Test("未置顶会话按创建时间排序，发送消息和生成回答不触发重排")
-    func conversationActivityKeepsCreationOrdering() async throws {
+    @Test("未置顶会话按最近活跃排序，发送消息和回答完成后上浮到顶部")
+    func conversationActivityReordersByUpdatedAt() async throws {
         let database = try InMemoryDatabaseManager()
         let store = GRDBRAGConversationStore(database: database)
         let first = try await store.createConversation(title: "first")
         let second = try await store.createConversation(title: "second")
 
-        // first 会话更早创建；后续即使成为最近活跃会话，也必须留在 second 后面。
+        // 固定 created_at 与 updated_at：first 创建更早，second 活跃更晚，初始顺序由 updated_at 决定。
         try await database.writer.write { db in
             try db.execute(
                 sql: "UPDATE rag_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
@@ -5108,11 +5108,13 @@ struct KnowledgeRAGCoreTests {
             )
             try db.execute(
                 sql: "UPDATE rag_conversations SET created_at = ?, updated_at = ? WHERE id = ?",
-                arguments: ["2026-07-15T11:00:00.000Z", "2026-07-15T11:00:00.000Z", second.id.uuidString]
+                arguments: ["2026-07-15T11:00:00.000Z", "2026-07-15T11:30:00.000Z", second.id.uuidString]
             )
         }
 
         let originalOrder = try await store.listConversations().map(\.id)
+        #expect(originalOrder == [second.id, first.id])
+
         try await store.appendUserMessage(
             conversationID: first.id,
             messageID: UUID(),
@@ -5122,8 +5124,8 @@ struct KnowledgeRAGCoreTests {
         let orderAfterUserMessage = try await store.listConversations().map(\.id)
         let firstAfterUserMessage = try #require(try await store.loadConversation(id: first.id))
 
-        #expect(originalOrder == [second.id, first.id])
-        #expect(orderAfterUserMessage == originalOrder)
+        // 发送消息推进 updated_at 后，创建更早的 first 应上浮到普通区顶部。
+        #expect(orderAfterUserMessage == [first.id, second.id])
         #expect(firstAfterUserMessage.summary.updatedAt == "2026-07-15T12:00:00.000Z")
 
         try await store.appendTurn(
@@ -5136,7 +5138,7 @@ struct KnowledgeRAGCoreTests {
         let orderAfterAnswer = try await store.listConversations().map(\.id)
         let firstAfterAnswer = try #require(try await store.loadConversation(id: first.id))
 
-        #expect(orderAfterAnswer == originalOrder)
+        #expect(orderAfterAnswer == [first.id, second.id])
         #expect(firstAfterAnswer.summary.createdAt == "2026-07-15T10:00:00.000Z")
         #expect(firstAfterAnswer.summary.updatedAt != firstAfterUserMessage.summary.updatedAt)
     }
