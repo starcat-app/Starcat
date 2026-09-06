@@ -48,6 +48,13 @@ final class BatchAIQueueService {
         didSet { presentationRevision &+= 1 }
     }
 
+    /// “失败/已忽略”Tab 的批量动作勾选（批量重试 / 批量取消忽略）。
+    /// 与待确认的批量应用选择分开保存：两者可选集合和动作语义完全不同；
+    /// 切换 Tab 时由 Panel 清空，避免把上一个 Tab 的勾选喂给下一个 Tab 的动作。
+    private(set) var bulkActionRepoIDs: Set<Int64> = [] {
+        didSet { presentationRevision &+= 1 }
+    }
+
     /// 本次启动时的执行配置。空表示当前没有进行中的批次。
     private(set) var options: BatchAIQueueOptions?
 
@@ -314,6 +321,7 @@ final class BatchAIQueueService {
             )
         }
         self.selectedRepoIDsForTagApplication = []
+        self.bulkActionRepoIDs = []
         self.repoCache = Dictionary(uniqueKeysWithValues: repos.map { ($0.id, $0) })
         self.isPaused = false
         self.isRunning = true
@@ -424,6 +432,7 @@ final class BatchAIQueueService {
         guard !isRunning else { return }
         jobs = []
         selectedRepoIDsForTagApplication = []
+        bulkActionRepoIDs = []
         options = nil
         startedAt = nil
         processingJobIDs = []
@@ -475,13 +484,26 @@ final class BatchAIQueueService {
             isPaused = false
             cancelRequested = false
             launchRunLoop()
+        } else if isPaused {
+            // 暂停态单行重试与批量重试同语义：重新入队即恢复运行（旧 runLoop 已退出）。
+            isPaused = false
+            cancelRequested = false
+            launchRunLoop()
         }
     }
 
     /// 重试全部失败。批量版本，避免 UI 端循环触发 N 次 runLoop。
     func retryAllFailed() {
+        retryGenerationFailures(repoIDs: nil)
+    }
+
+    /// 按选中子集重新入队生成失败仓库；`repoIDs` 为 nil 表示全部失败项。
+    /// 暂停态重试 = 重新入队 + 自动恢复运行；注意标签队列暂停时旧 runLoop 已退出
+    /// （与仓库分组窗口的常驻 Worker 不同），必须重新 launchRunLoop 才能消费新队列。
+    func retryGenerationFailures(repoIDs: Set<Int64>?) {
         var touched = false
-        for idx in jobs.indices where jobs[idx].status == .failed {
+        for idx in jobs.indices
+        where jobs[idx].status == .failed && (repoIDs.map { $0.contains(jobs[idx].repoId) } ?? true) {
             jobs[idx].status = .queued
             jobs[idx].attempts = 0
             jobs[idx].failure = nil
@@ -491,7 +513,14 @@ final class BatchAIQueueService {
             retryNotBeforeByRepoID[jobs[idx].repoId] = nil
             touched = true
         }
-        if touched, !isRunning {
+        guard touched else { return }
+        if isRunning {
+            if isPaused {
+                isPaused = false
+                cancelRequested = false
+                launchRunLoop()
+            }
+        } else {
             isRunning = true
             isPaused = false
             cancelRequested = false
@@ -501,8 +530,9 @@ final class BatchAIQueueService {
 
     /// “失败”Tab 同时收纳生成失败和人工应用失败；批量重试必须覆盖两条恢复路径。
     /// 先串行重试标签落库，避免它与重新启动的 AI Worker 同时修改同一会话状态。
+    /// 暂停态可用：runLoop 保持存活，恢复后按新队列继续。
     func retryAllFailures() async {
-        guard !isRunning, !isApplyingSuggestedTags else { return }
+        guard !isRunning || isPaused, !isApplyingSuggestedTags else { return }
         let reviewFailureRepoIDs = jobs.compactMap { job -> Int64? in
             if case .failed = job.tagReviewState { return job.repoId }
             return nil
@@ -511,7 +541,7 @@ final class BatchAIQueueService {
             guard !Task.isCancelled else { return }
             await applySelectedSuggestedTags(repoId: repoID)
         }
-        retryAllFailed()
+        retryGenerationFailures(repoIDs: nil)
     }
 
     // MARK: - 人工标签审核
@@ -609,6 +639,96 @@ final class BatchAIQueueService {
             selectedRepoIDsForTagApplication.remove(repoId)
         case .notRequired, .applying, .applied, .ignored:
             return
+        }
+    }
+
+    // MARK: - “失败/已忽略”Tab 批量动作
+
+    /// 各 Tab 的可选集合与批量动作一一对应；行渲染先按 Tab 过滤，这里再做一次防御，
+    /// 防止状态在渲染后变化导致把不匹配的仓库喂给批量动作。
+    /// 已忽略 Tab 里低于阈值自动忽略的行（`status == .ignored`）没有可恢复的建议，不可勾选。
+    func isRepoSelectableForBulkAction(repoId: Int64, filter: BatchAIResultFilter) -> Bool {
+        guard let job = jobs.first(where: { $0.repoId == repoId }) else { return false }
+        switch filter {
+        case .failed:
+            if job.status == .failed { return true }
+            if case .failed = job.tagReviewState { return true }
+            return false
+        case .ignored:
+            return job.tagReviewState == .ignored
+        case .actionable, .pendingReview, .completed, .all:
+            // 待确认沿用 selectedRepoIDsForTagApplication；待处理/已完成不参与批量选择。
+            return false
+        }
+    }
+
+    func toggleRepoForBulkAction(repoId: Int64, filter: BatchAIResultFilter) {
+        guard isRepoSelectableForBulkAction(repoId: repoId, filter: filter) else { return }
+        if bulkActionRepoIDs.contains(repoId) {
+            bulkActionRepoIDs.remove(repoId)
+        } else {
+            bulkActionRepoIDs.insert(repoId)
+        }
+    }
+
+    func selectAllReposForBulkAction(filter: BatchAIResultFilter) {
+        bulkActionRepoIDs = Set(jobs.compactMap { job -> Int64? in
+            isRepoSelectableForBulkAction(repoId: job.repoId, filter: filter) ? job.repoId : nil
+        })
+    }
+
+    func clearBulkActionSelection() {
+        guard !bulkActionRepoIDs.isEmpty else { return }
+        bulkActionRepoIDs = []
+    }
+
+    /// 当前 Tab 仍有效的勾选数；被批量动作消费或状态已变化的过期勾选不计入。
+    func bulkActionSelectedCount(for filter: BatchAIResultFilter) -> Int {
+        let selectedRepoIDs = bulkActionRepoIDs
+        return jobs.filter { job in
+            selectedRepoIDs.contains(job.repoId)
+                && isRepoSelectableForBulkAction(repoId: job.repoId, filter: filter)
+        }.count
+    }
+
+    /// 当前 Tab 可勾选总数，供「选中全部」判断是否还有未勾选项。
+    func bulkActionSelectableCount(for filter: BatchAIResultFilter) -> Int {
+        jobs.filter {
+            isRepoSelectableForBulkAction(repoId: $0.repoId, filter: filter)
+        }.count
+    }
+
+    /// 底栏批量动作：按当前 Tab 语义消费勾选集合，执行后清空勾选。
+    func applyBulkAction(filter: BatchAIResultFilter) async {
+        let selectedRepoIDs = bulkActionRepoIDs
+        clearBulkActionSelection()
+        switch filter {
+        case .failed:
+            // 与 retryAllFailures 同序：先串行重试标签应用，再重新入队生成失败。
+            guard !isRunning || isPaused, !isApplyingSuggestedTags else { return }
+            let reviewFailureRepoIDs = jobs.compactMap { job -> Int64? in
+                guard selectedRepoIDs.contains(job.repoId),
+                      case .failed = job.tagReviewState
+                else { return nil }
+                return job.repoId
+            }
+            for repoID in reviewFailureRepoIDs {
+                guard !Task.isCancelled else { return }
+                await applySelectedSuggestedTags(repoId: repoID)
+            }
+            retryGenerationFailures(repoIDs: selectedRepoIDs)
+        case .ignored:
+            unignoreSuggestedTags(repoIDs: selectedRepoIDs)
+        case .actionable, .pendingReview, .completed, .all:
+            break
+        }
+    }
+
+    /// 取消忽略：恢复为待确认。忽略只可能来自待确认/应用失败行，建议标签仍在，可重新勾选应用。
+    func unignoreSuggestedTags(repoIDs: Set<Int64>) {
+        for index in jobs.indices where jobs[index].tagReviewState == .ignored {
+            guard repoIDs.contains(jobs[index].repoId) else { continue }
+            jobs[index].tagReviewState = .pending
         }
     }
 

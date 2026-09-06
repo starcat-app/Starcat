@@ -44,6 +44,8 @@ struct BatchAIQueuePanel: View {
             presentation.scheduleSynchronize(from: service)
         }
         .onChange(of: presentation.filter) { _, newValue in
+            // 失败/已忽略的勾选只在单一 Tab 内有效；切换 Tab 清空，避免跨语义误操作。
+            service.clearBulkActionSelection()
             onFilterChange(newValue)
         }
     }
@@ -108,10 +110,11 @@ struct BatchAIQueuePanel: View {
                 }
                 .controlSize(.small)
                 .fixedSize()
+                // 暂停态允许批量重试：重试会重新入队并自动恢复运行，与仓库分组窗口语义一致。
                 .disabled(
                     store.count(for: .failed) == 0
                         || service.isCancelling
-                        || service.isRunning
+                        || (service.isRunning && !service.isPaused)
                         || service.isApplyingSuggestedTags
                 )
             }
@@ -144,9 +147,14 @@ struct BatchAIQueuePanel: View {
                         rowIndex: rowIndex,
                         isExpanded: expandedRepoID == job.repoId,
                         isRepositorySelected: service.isRepoSelectedForTagApplication(repoId: job.repoId),
+                        showsBulkActionCheckbox: showsBulkActionCheckboxes,
+                        isBulkActionSelected: service.bulkActionRepoIDs.contains(job.repoId),
                         onToggleExpansion: { toggleExpansion(for: job) },
                         onToggleRepositorySelection: {
                             service.toggleRepoForTagApplication(repoId: job.repoId)
+                        },
+                        onToggleBulkActionSelection: {
+                            service.toggleRepoForBulkAction(repoId: job.repoId, filter: presentation.filter)
                         },
                         onToggleTag: {
                             service.toggleSuggestedTag(repoId: job.repoId, suggestionID: $0)
@@ -188,6 +196,11 @@ struct BatchAIQueuePanel: View {
     }
 
     // MARK: - 派生
+
+    /// 支持批量动作勾选的 Tab；待确认/全部沿用批量应用勾选，待处理/已完成不参与批量选择。
+    private var showsBulkActionCheckboxes: Bool {
+        presentation.filter == .failed || presentation.filter == .ignored
+    }
 
     private var progressFraction: Double {
         guard service.totalCount > 0 else { return 0 }

@@ -17,8 +17,13 @@ struct BatchAITagReviewRow: View {
     let rowIndex: Int
     let isExpanded: Bool
     let isRepositorySelected: Bool
+    /// 当前 Tab 是否启用批量动作勾选（失败/已忽略）。启用时勾选列切换为批量动作语义，
+    /// 待确认的仓库级勾选（应用选中项）不再显示，避免两种选择状态混在同一列。
+    let showsBulkActionCheckbox: Bool
+    let isBulkActionSelected: Bool
     let onToggleExpansion: () -> Void
     let onToggleRepositorySelection: () -> Void
+    let onToggleBulkActionSelection: () -> Void
     let onToggleTag: (String) -> Void
     let onSelectAll: () -> Void
     let onClearSelection: () -> Void
@@ -69,7 +74,20 @@ struct BatchAITagReviewRow: View {
 
     @ViewBuilder
     private var repositorySelectionButton: some View {
-        if canSelectRepository {
+        if showsBulkActionCheckbox {
+            // 失败/已忽略 Tab 的勾选直接进入对应批量动作（批量重试/取消忽略）。
+            Button {
+                onToggleBulkActionSelection()
+            } label: {
+                Image(systemName: isBulkActionSelected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isBulkActionSelected ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .accessibilityLabel(isBulkActionSelected
+                ? "githubStarLists.aiGrouping.selection.clearRepo"
+                : "githubStarLists.aiGrouping.selection.acceptRepo")
+        } else if canSelectRepository {
             Button(
                 isRepositorySelected
                     ? "githubStarLists.aiGrouping.selection.clearRepo"

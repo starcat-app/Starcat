@@ -574,6 +574,98 @@ struct BatchAIQueueServiceTests {
         }
     }
 
+    @Test("暂停态批量重试失败项会重新入队并自动恢复运行")
+    func pausedBatchRetryRequeuesFailuresAndResumes() async throws {
+        let provider = SelectiveBatchAIInsightProvider(
+            blockedRepoID: 1,
+            failingRepoIDs: [2, 3],
+            suggestions: Self.sampleSuggestions
+        )
+        let service = try makeService(insightProvider: provider)
+
+        #expect(service.start(repos: Self.makeTestRepos(ids: [1, 2, 3]), options: BatchAIQueueOptions()))
+        await provider.waitUntilBlockedCallStarts()
+        try? await Task.sleep(for: .milliseconds(100))
+        service.pause()
+        #expect(service.isRunning)
+        #expect(service.isPaused)
+        #expect(service.jobs.filter { $0.status == .failed }.map(\.repoId).sorted() == [2, 3])
+
+        // 暂停态批量重试：重新入队并自动恢复运行，无需用户再点继续。
+        await service.retryAllFailures()
+        #expect(!service.isPaused)
+
+        provider.releaseBlockedCall()
+        await waitUntilStopped(service)
+
+        #expect(service.jobs.allSatisfy { $0.status == .completed })
+        #expect(provider.calledRepoIDs.filter { $0 == 2 }.count == 2)
+        #expect(provider.calledRepoIDs.filter { $0 == 3 }.count == 2)
+    }
+
+    @Test("失败 Tab 支持批量勾选并按选中子集重试")
+    func failedTabSupportsBulkSelectionAndSubsetRetry() async throws {
+        let provider = SelectiveBatchAIInsightProvider(
+            failingRepoIDs: [2, 3],
+            suggestions: Self.sampleSuggestions
+        )
+        let service = try makeService(insightProvider: provider)
+
+        #expect(service.start(repos: Self.makeTestRepos(ids: [1, 2, 3]), options: BatchAIQueueOptions()))
+        await waitUntilStopped(service)
+        #expect(service.jobs.filter { $0.status == .failed }.map(\.repoId).sorted() == [2, 3])
+
+        // 勾选按 Tab 语义过滤：待确认行不可进入失败 Tab 的批量动作集合。
+        service.toggleRepoForBulkAction(repoId: 1, filter: .failed)
+        #expect(service.bulkActionRepoIDs.isEmpty)
+        service.selectAllReposForBulkAction(filter: .failed)
+        #expect(service.bulkActionRepoIDs == [2, 3])
+        service.toggleRepoForBulkAction(repoId: 3, filter: .failed)
+        #expect(service.bulkActionRepoIDs == [2])
+
+        await service.applyBulkAction(filter: .failed)
+        #expect(service.bulkActionRepoIDs.isEmpty)
+        await waitUntilStopped(service)
+
+        // 只有勾选的仓库 2 被重试并成功；仓库 3 保持失败。
+        #expect(service.jobs.first(where: { $0.repoId == 2 })?.status == .completed)
+        #expect(service.jobs.first(where: { $0.repoId == 3 })?.status == .failed)
+        #expect(provider.calledRepoIDs.filter { $0 == 2 }.count == 2)
+        #expect(provider.calledRepoIDs.filter { $0 == 3 }.count == 1)
+    }
+
+    @Test("已忽略 Tab 支持批量勾选并取消忽略恢复待确认")
+    func ignoredTabSupportsBulkUnignore() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let service = try makeService(insightProvider: provider)
+
+        #expect(service.start(repos: Self.makeTestRepos(ids: [1, 2]), options: BatchAIQueueOptions()))
+        await waitUntilStopped(service)
+
+        service.ignoreSuggestedTags(repoId: 1)
+        service.ignoreSuggestedTags(repoId: 2)
+        #expect(service.jobs.allSatisfy { $0.tagReviewState == .ignored })
+
+        service.selectAllReposForBulkAction(filter: .ignored)
+        #expect(service.bulkActionRepoIDs == [1, 2])
+        await service.applyBulkAction(filter: .ignored)
+        #expect(service.bulkActionRepoIDs.isEmpty)
+        #expect(service.jobs.allSatisfy { $0.tagReviewState == .pending })
+        #expect(service.pendingTagReviewCount == 2)
+
+        // 待确认/全部 Tab 不提供批量动作勾选，不会跨语义串集合。
+        service.selectAllReposForBulkAction(filter: .all)
+        #expect(service.bulkActionRepoIDs.isEmpty)
+    }
+
+    private static func makeTestRepos(ids: [Int]) -> [Repo] {
+        ids.map { id in
+            var repo = Repo.makeMinimal(owner: "acme", name: "repo-\(id)")
+            repo.id = Int64(id)
+            return repo
+        }
+    }
+
     private func makeService(
         insightProvider: any BatchAIInsightProviding
     ) throws -> BatchAIQueueService {
@@ -808,6 +900,99 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
             contextDegradationReason: nil,
             externalContextDegradationReason: nil
         )
+    }
+}
+
+/// 一个仓库保持阻塞、指定仓库首次调用即失败，其余仓库立即返回建议；
+/// 用于验证暂停态重试与“失败”Tab 按选中子集重试。
+@MainActor
+private final class SelectiveBatchAIInsightProvider: BatchAIInsightProviding {
+    private let blockedRepoID: Int64?
+    private let failingRepoIDs: Set<Int64>
+    private let suggestions: [AITagSuggestion]
+    private var alreadyFailedRepoIDs: Set<Int64> = []
+    private var blockedContinuation: CheckedContinuation<Void, Never>?
+    private var blockedStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var blockedCallStarted = false
+
+    private(set) var calledRepoIDs: [Int64] = []
+
+    init(
+        blockedRepoID: Int64? = nil,
+        failingRepoIDs: Set<Int64> = [],
+        suggestions: [AITagSuggestion] = []
+    ) {
+        self.blockedRepoID = blockedRepoID
+        self.failingRepoIDs = failingRepoIDs
+        self.suggestions = suggestions
+    }
+
+    func ensureGenerationClientsReady(includeSummary: Bool, includeTags: Bool) throws {}
+
+    func generateBatchTagSuggestions(
+        for repos: [Repo],
+        tagHintsByRepoID: [Int64: AITagHints]
+    ) async throws -> [Int64: [AITagSuggestion]] {
+        Issue.record("仓库级 Worker 不应调用批量标签接口")
+        return [:]
+    }
+
+    func generateBatchInsight(
+        for repo: Repo,
+        existingTagHints: AITagHints,
+        includeSummary: Bool,
+        includeTags: Bool,
+        codeContextEnabledOverride: Bool?,
+        externalContextEnabledOverride: Bool?
+    ) async throws -> RepoAIInsightGeneration {
+        calledRepoIDs.append(repo.id)
+        if repo.id == blockedRepoID {
+            await withCheckedContinuation { continuation in
+                blockedContinuation = continuation
+                blockedCallStarted = true
+                let waiters = blockedStartWaiters
+                blockedStartWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+        } else if failingRepoIDs.contains(repo.id),
+                  !alreadyFailedRepoIDs.contains(repo.id) {
+            // 每个仓库只失败一次（永久错误不消耗重试次数），重试后走成功路径。
+            alreadyFailedRepoIDs.insert(repo.id)
+            throw RepoAIInsightError.missingAPIKey
+        }
+        return RepoAIInsightGeneration(
+            insight: RepoAIInsight(
+                oneLiner: "",
+                summary: "",
+                summaryMarkdown: nil,
+                platforms: [],
+                suitableFor: [],
+                strengths: [],
+                risks: [],
+                minimalExample: nil,
+                suggestedTags: includeTags ? suggestions : [],
+                model: "test-model",
+                generatedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                contextMetadata: nil,
+                externalContextMarkdown: nil,
+                generationContextSettings: nil
+            ),
+            tagErrorMessage: nil,
+            contextDegradationReason: nil,
+            externalContextDegradationReason: nil
+        )
+    }
+
+    func waitUntilBlockedCallStarts() async {
+        guard !blockedCallStarted else { return }
+        await withCheckedContinuation { continuation in
+            blockedStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseBlockedCall() {
+        blockedContinuation?.resume()
+        blockedContinuation = nil
     }
 }
 

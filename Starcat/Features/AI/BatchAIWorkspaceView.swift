@@ -186,12 +186,29 @@ struct BatchAIWorkspaceView: View {
                     selectionSummary: tagSelectionSummary,
                     canApply: service.selectedTagReviewRepositoryCount > 0,
                     isApplying: service.isApplyingSuggestedTags,
-                    showsApplyActions: reviewFilter != .completed,
-                    showsSelectionControls: true,
-                    canSelectAll: service.selectedTagReviewRepositoryCount < service.pendingTagReviewCount,
-                    canClearSelection: service.selectedTagReviewRepositoryCount > 0,
-                    onSelectAll: service.selectAllTagReviewRepositories,
-                    onClearSelection: service.clearTagReviewRepositorySelection,
+                    showsApplyActions: showsFooterApplyActions,
+                    showsSelectionControls: showsFooterSelectionControls,
+                    canSelectAll: selectionCanSelectAll,
+                    canClearSelection: selectionCanClear,
+                    onSelectAll: {
+                        if showsBulkActionSelection {
+                            service.selectAllReposForBulkAction(filter: reviewFilter)
+                        } else {
+                            service.selectAllTagReviewRepositories()
+                        }
+                    },
+                    onClearSelection: {
+                        if showsBulkActionSelection {
+                            service.clearBulkActionSelection()
+                        } else {
+                            service.clearTagReviewRepositorySelection()
+                        }
+                    },
+                    bulkActionTitle: footerBulkActionTitle,
+                    canRunBulkAction: canRunBulkAction,
+                    onBulkAction: {
+                        Task { await service.applyBulkAction(filter: reviewFilter) }
+                    },
                     onDiscard: { showDiscardConfirmation = true },
                     onApply: {
                         Task { await service.applySelectedTagReviewRepositories() }
@@ -203,6 +220,61 @@ struct BatchAIWorkspaceView: View {
 
     private var configurationIssue: String? {
         service.configurationIssue(for: options)
+    }
+
+    // MARK: - 审核底栏按 Tab 派生
+
+    /// 支持批量动作勾选的 Tab；待确认/全部沿用批量应用勾选，待处理/已完成不参与批量选择。
+    private var showsBulkActionSelection: Bool {
+        reviewFilter == .failed || reviewFilter == .ignored
+    }
+
+    /// 待处理与已完成没有可勾选行，也不该出现隐藏选择的应用按钮，底栏只保留放弃。
+    private var showsFooterApplyActions: Bool {
+        reviewFilter != .completed && reviewFilter != .actionable
+    }
+
+    private var showsFooterSelectionControls: Bool {
+        showsFooterApplyActions
+    }
+
+    private var footerBulkActionTitle: LocalizedStringKey? {
+        guard showsBulkActionSelection else { return nil }
+        return switch reviewFilter {
+        case .failed: "githubStarLists.aiGrouping.bulkAction.retry"
+        case .ignored: "githubStarLists.aiGrouping.bulkAction.unignore"
+        default: nil
+        }
+    }
+
+    private var selectionCanSelectAll: Bool {
+        if showsBulkActionSelection {
+            return service.bulkActionSelectedCount(for: reviewFilter)
+                < service.bulkActionSelectableCount(for: reviewFilter)
+        }
+        return service.selectedTagReviewRepositoryCount < service.pendingTagReviewCount
+    }
+
+    private var selectionCanClear: Bool {
+        if showsBulkActionSelection {
+            return service.bulkActionSelectedCount(for: reviewFilter) > 0
+        }
+        return service.selectedTagReviewRepositoryCount > 0
+    }
+
+    private var canRunBulkAction: Bool {
+        guard service.bulkActionSelectedCount(for: reviewFilter) > 0 else { return false }
+        switch reviewFilter {
+        case .failed:
+            // 与工具栏“重试失败项”同一门槛：取消中和标签落库中禁止；暂停态允许。
+            return !service.isCancelling
+                && !service.isApplyingSuggestedTags
+                && (!service.isRunning || service.isPaused)
+        case .ignored:
+            return !service.isApplyingSuggestedTags
+        default:
+            return false
+        }
     }
 
     private var isReviewMode: Bool {
@@ -219,10 +291,10 @@ struct BatchAIWorkspaceView: View {
     }
 
     private var tagSelectionSummary: String {
-        String(
-            format: String.l10n("batch.selectedCountFormat"),
-            service.selectedTagReviewRepositoryCount
-        )
+        let count = showsBulkActionSelection
+            ? service.bulkActionSelectedCount(for: reviewFilter)
+            : service.selectedTagReviewRepositoryCount
+        return String(format: String.l10n("batch.selectedCountFormat"), count)
     }
 
     private var statusTitle: String {
