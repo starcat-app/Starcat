@@ -53,9 +53,18 @@ struct AgentWorkspaceSceneRoot: View {
     /// 语言切换时刷新窗口标题；Scene 标题不跟随 App 内语言，必须手动覆盖。
     @State private var localeStore = LocaleStore.shared
 
+    /// 读取 `localeStore.selection` 注册观察：语言切换 → body 重算 → navigationTitle 更新。
+    private var windowTitle: String {
+        _ = localeStore.selection
+        return String.l10n("agent.workspace.window.title")
+    }
+
     var body: some View {
         AgentWorkspaceView(chromeState: chromeState)
             .appHostEnvironment(dependencies)
+            // Window Scene 声明的标题按系统 bundle 语言解析，不跟随 App 内语言设置；
+            // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
+            .navigationTitle(windowTitle)
             .frame(
                 minWidth: AgentWorkspaceWindowMetrics.minimumContentSize.width,
                 minHeight: AgentWorkspaceWindowMetrics.minimumContentSize.height
@@ -63,12 +72,8 @@ struct AgentWorkspaceSceneRoot: View {
             .background {
                 WorkspaceSceneWindowReader(
                     reference: windowReference,
-                    minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize,
-                    titleKey: "agent.workspace.window.title"
+                    minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
                 )
-            }
-            .onChange(of: localeStore.selection) { _, _ in
-                windowReference.window?.title = String.l10n("agent.workspace.window.title")
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

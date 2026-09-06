@@ -164,6 +164,12 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
     /// 语言切换时刷新窗口标题；Scene 标题不跟随 App 内语言，必须手动覆盖。
     @State private var localeStore = LocaleStore.shared
 
+    /// 读取 `localeStore.selection` 注册观察：语言切换 → body 重算 → navigationTitle 更新。
+    private var windowTitle: String {
+        _ = localeStore.selection
+        return String.l10n("rag.workspace.window.title")
+    }
+
     init(context: AIWorkspaceSceneCoordinator.KnowledgeRAGLaunchContext) {
         self.context = context
         _chromeState = State(initialValue: WorkspaceChromeState())
@@ -179,6 +185,9 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
             .environment(\.ragSettingsNavigation, RAGSettingsNavigationAction { target in
                 AppDelegate.openSettingsWindow(target: target)
             })
+            // Window Scene 声明的标题按系统 bundle 语言解析，不跟随 App 内语言设置；
+            // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
+            .navigationTitle(windowTitle)
             .frame(
                 minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
                 minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
@@ -186,12 +195,8 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
             .background {
                 WorkspaceSceneWindowReader(
                     reference: windowReference,
-                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize,
-                    titleKey: "rag.workspace.window.title"
+                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
                 )
-            }
-            .onChange(of: localeStore.selection) { _, _ in
-                windowReference.window?.title = String.l10n("rag.workspace.window.title")
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

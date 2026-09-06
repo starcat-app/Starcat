@@ -99,10 +99,6 @@ struct WorkspaceSceneWindowReader: NSViewRepresentable {
 
     let reference: WorkspaceSceneWindowReference
     let minimumContentSize: NSSize
-    /// SwiftUI `Window("key")` 的 Scene 标题由系统按 bundle 偏好语言解析，绕开
-    /// `String.l10n` 与 `.appLocaleEnvironment` 注入（它们只影响 scene 内视图树），
-    /// 设置里选英文 + 系统中文时标题栏仍会显示中文。窗口挂载后在这里手动覆盖。
-    var titleKey: String?
 
     func makeNSView(context: Context) -> ProbeView {
         let view = ProbeView()
@@ -118,9 +114,6 @@ struct WorkspaceSceneWindowReader: NSViewRepresentable {
     private func configure(window: NSWindow?) {
         guard let window else { return }
         reference.window = window
-        if let titleKey {
-            window.title = String.l10n(titleKey)
-        }
 
         // `contentMinSize` 与 `minSize` 分别描述内容区和含标题栏外框，不能复用同一数值。
         let minimumFrameSize = window.frameRect(
