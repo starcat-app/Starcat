@@ -528,15 +528,14 @@ struct AgentMessageTimelineView: View {
     }
 
     private func activityRow(_ section: AgentProcessSection) -> some View {
-        let status = aggregateStatus(section.items)
+        let status = section.aggregateStatus
         let isExpanded = expandedItemIDs.contains(section.id)
-        let hasDetails = section.items.contains(where: \.hasExecutionDetails)
+        let hasDetails = !section.executionDetailItems.isEmpty
         return VStack(alignment: .leading, spacing: 6) {
             if hasDetails {
                 Button {
                     toggle(section.id)
-                    if let auditedItem = section.items.first(where: { $0.toolAudit?.knowledgeRetrieval != nil }),
-                       let toolCallID = auditedItem.toolCallID {
+                    if let toolCallID = section.knowledgeAuditToolCallID {
                         viewModel.selectKnowledgeAudit(toolCallID: toolCallID)
                     }
                 } label: {
@@ -561,7 +560,7 @@ struct AgentMessageTimelineView: View {
             }
 
             if isExpanded, hasDetails {
-                ForEach(section.items.filter(\.hasExecutionDetails)) { item in
+                ForEach(section.executionDetailItems) { item in
                     toolExecutionDetail(item)
                 }
             }
@@ -848,16 +847,6 @@ struct AgentMessageTimelineView: View {
             .buttonStyle(.borderedProminent)
         }
         .controlSize(.small)
-    }
-
-    private func aggregateStatus(_ items: [AgentTimelineItem]) -> AgentToolResultStatus? {
-        let statuses = items.compactMap(\.toolStatus)
-        if statuses.contains(.failed) { return .failed }
-        if statuses.contains(.timedOut) { return .timedOut }
-        if statuses.contains(.rejected) { return .rejected }
-        if statuses.count != items.count { return nil }
-        if statuses.allSatisfy({ $0 == .skipped }) { return .skipped }
-        return .completed
     }
 
     private func statusIcon(_ status: AgentToolResultStatus?) -> String {
