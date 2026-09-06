@@ -33,7 +33,9 @@ struct RAGWorkspaceConversationRail: View {
                 HStack(spacing: 9) {
                     Image(systemName: "square.3.layers.3d.bottom.filled")
                         .font(iconFont(size: 24, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
+                        // 左上角品牌标识走独立双主题色（light #0E9488 / dark #2DD4BF），
+                        // 不随系统强调色变蓝；其余 accent 高亮保持不变。
+                        .foregroundStyle(Color("RAGWorkspaceBrand"))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("rag.workspace.title")
                             .font(ragFont(.headline, weight: .semibold))
