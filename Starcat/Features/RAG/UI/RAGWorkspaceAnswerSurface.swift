@@ -992,7 +992,8 @@ struct RAGWorkspaceAnswerSurface: View {
             && viewModel.composerBlockingReason == nil
     }
 
-    /// 按钮、Return 与 ⌘Return 共用同一发送入口，保证展开面板只在真实发送时收起。
+    /// 按钮、Return 与 ⌘Return 共用同一发送入口；只有真实发送才收起上下文相关面板。
+    /// 已选仓库保存在 ViewModel 中，关闭项目列表只移除浮层，不会丢失本轮 RAG 上下文。
     func submitComposerQuestion() {
         guard composerCanSend else { return }
         if isComposerContextExpanded {
@@ -1000,6 +1001,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 isComposerContextExpanded = false
             }
         }
+        viewModel.dismissMentionPicker()
         viewModel.send()
     }
 
@@ -1358,11 +1360,8 @@ struct RAGWorkspaceAnswerSurface: View {
             return false
         case .returnKey(let modifiers):
             let flags = modifiers.intersection(.deviceIndependentFlagsMask)
-            // @ 候选打开时：Enter 切换勾选；Cmd+Enter 仍走发送偏好。
-            if viewModel.isContextPickerPresented, !flags.contains(.command) {
-                viewModel.selectHighlightedMention()
-                return true
-            }
+            // 事件来自主 Composer，就必须遵循发送偏好，不能因为项目面板仍打开而改成
+            // 勾选/取消项目。面板搜索框自己的 onSubmit 仍负责键盘选择高亮候选。
             switch AIComposerKeyboardPolicy.action(
                 for: flags,
                 requiresCommandReturn: settings.aiChatRequiresCommandReturn
