@@ -241,6 +241,7 @@ struct GitHubStarListAIGroupingPresentationTests {
             availableLists: [swiftList, databaseList, skillsList],
             existingListIDsByRepo: [:],
             selectedListIDsByRepo: [1: ["swift", "database", "skills"]],
+            selectedRepoIDsForBulkApply: [1],
             ignoredRepoIDs: []
         )
 
@@ -249,8 +250,10 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(snapshot.analyzedCount == 1)
         #expect(snapshot.suggestionCount == 1)
         #expect(snapshot.actionableCount == 0)
+        #expect(snapshot.selectableRepositoryCount == 1)
         #expect(snapshot.selectedRepositoryCount == 1)
         #expect(snapshot.selectedListCount == 3)
+        #expect(item.isSelectedForBulkApply)
         #expect(item.selectedListIDs == ["swift", "database", "skills"])
         #expect(item.actionableSuggestions.count == 2)
         #expect(item.selectedGroupSummaries.map(\.id) == ["database", "skills", "swift"])
@@ -478,6 +481,7 @@ struct GitHubStarListAIGroupingPresentationTests {
             currentLists: currentLists,
             suggestions: suggestions,
             selectedListIDs: selectedListIDs,
+            isSelectedForBulkApply: false,
             membershipEditorListIDs: Set(currentLists.map(\.id)),
             selectedGroupSummaries: [],
             appliedGroupSummaries: [],

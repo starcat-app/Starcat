@@ -10,7 +10,7 @@
 
 import SwiftUI
 
-struct GitHubStarListAIGroupingResultList: View {
+struct GitHubStarListAIGroupingResultList: View, Equatable {
     let items: [GitHubStarListAIReviewItem]
     let searchText: String
     let filter: GitHubStarListAIResultFilter
@@ -18,7 +18,6 @@ struct GitHubStarListAIGroupingResultList: View {
     let hasMore: Bool
     let canRetryAnalysis: Bool
     let canRetryAutomaticallyIgnored: Bool
-    let selectedRepoIDsForBulkApply: Set<Int64>
     let onToggleRepositorySelection: (Int64) -> Void
     let onToggleList: (Int64, String) -> Void
     let onSelectAllSuggestions: (Int64) -> Void
@@ -30,9 +29,22 @@ struct GitHubStarListAIGroupingResultList: View {
     let onDiscardAppliedChanges: (Int64) -> Void
     let onRetryAutomaticallyIgnored: (Int64) -> Void
     let onLoadMore: () -> Void
+    let onScrollInteractionChanged: (Bool) -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var expandedRepoID: Int64?
+
+    /// 父 Sheet 的进度和底栏可以高频刷新，列表只在实际展示输入变化时重算。
+    /// 所有闭包都稳定指向同一个 Session / Store，不参与等价判断。
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.items == rhs.items
+            && lhs.searchText == rhs.searchText
+            && lhs.filter == rhs.filter
+            && lhs.availableLists == rhs.availableLists
+            && lhs.hasMore == rhs.hasMore
+            && lhs.canRetryAnalysis == rhs.canRetryAnalysis
+            && lhs.canRetryAutomaticallyIgnored == rhs.canRetryAutomaticallyIgnored
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,7 +71,7 @@ struct GitHubStarListAIGroupingResultList: View {
                             isExpanded: expandedRepoID == item.id,
                             canRetryAnalysis: canRetryAnalysis,
                             canRetryAutomaticallyIgnored: canRetryAutomaticallyIgnored,
-                            isRepositorySelected: selectedRepoIDsForBulkApply.contains(item.id),
+                            isRepositorySelected: item.isSelectedForBulkApply,
                             onToggleExpansion: { toggleExpansion(for: item) },
                             onToggleRepositorySelection: { onToggleRepositorySelection(item.id) },
                             onToggleList: { onToggleList(item.id, $0) },
@@ -85,6 +97,13 @@ struct GitHubStarListAIGroupingResultList: View {
                         }
                     }
                     .listStyle(.inset)
+                    .onScrollPhaseChange { _, newPhase in
+                        onScrollInteractionChanged(newPhase != .idle)
+                    }
+                    .onDisappear {
+                        // 窗口关闭或筛选切到空态时释放冻结，避免下次打开仍保留旧列表窗口。
+                        onScrollInteractionChanged(false)
+                    }
                 }
             }
             // 空态和列表态共享完全相同的剩余空间，切换任意 Tab 都不会重新分配工具栏高度。

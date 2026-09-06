@@ -57,13 +57,16 @@ struct GitHubStarListAIGroupingSheet: View {
         // 固定窗口：min/max 同值，避免 macOS sheet 按内容把窗口撑出屏幕。
         .frame(minWidth: 960, maxWidth: 960, minHeight: 640, maxHeight: 640)
         .clipped()
+        .background {
+            GitHubStarListAIGroupingPresentationObserver(
+                session: session,
+                presentation: presentation
+            )
+        }
         .onAppear {
             guard !hasMarkedFirstFrame else { return }
             hasMarkedFirstFrame = true
             PerformanceTracer.shared.mark(.gitHubStarListAIGroupingFirstFrame)
-        }
-        .onChange(of: session.presentationRevision) { _, _ in
-            presentation.scheduleSynchronize(from: session)
         }
         .sheet(isPresented: $showCreateGroupSheet) {
             GitHubStarListEditorSheet(
@@ -92,8 +95,8 @@ struct GitHubStarListAIGroupingSheet: View {
         } message: {
             Text(String(
                 format: String.l10n("githubStarLists.aiGrouping.applyConfirm.messageFormat"),
-                session.selectedRepoIDsForBulkApply.count,
-                session.selectedListCountForBulkApply
+                presentation.snapshot.selectedRepositoryCount,
+                presentation.snapshot.selectedListCount
             ))
         }
         .confirmationDialog(
@@ -194,7 +197,6 @@ struct GitHubStarListAIGroupingSheet: View {
                 hasMore: presentation.canLoadMore,
                 canRetryAnalysis: !session.isRunning && !session.isApplying,
                 canRetryAutomaticallyIgnored: !session.isRunning && !session.isApplying,
-                selectedRepoIDsForBulkApply: session.selectedRepoIDsForBulkApply,
                 onToggleRepositorySelection: { repoID in
                     performReviewUpdate { session.toggleRepoForBulkApply(repoID: repoID) }
                 },
@@ -228,8 +230,10 @@ struct GitHubStarListAIGroupingSheet: View {
                         presentation.synchronizeImmediately(from: session)
                     }
                 },
-                onLoadMore: presentation.loadMore
+                onLoadMore: presentation.loadMore,
+                onScrollInteractionChanged: presentation.setScrollInteractionActive
             )
+            .equatable()
         }
     }
 
@@ -380,14 +384,15 @@ struct GitHubStarListAIGroupingSheet: View {
                 selectionSummary: String(
                     format: String.l10n("githubStarLists.aiGrouping.selectionSummaryFormat"),
                     locale: locale,
-                    session.selectedRepoIDsForBulkApply.count,
-                    session.selectedListCountForBulkApply
+                    presentation.snapshot.selectedRepositoryCount,
+                    presentation.snapshot.selectedListCount
                 ),
-                canApply: !session.selectedRepoIDsForBulkApply.isEmpty,
+                canApply: presentation.snapshot.selectedRepositoryCount > 0,
                 isApplying: session.isApplying,
                 showsSelectionControls: true,
-                canSelectAll: session.selectedRepoIDsForBulkApply.count < session.selectableRepoCountForBulkApply,
-                canClearSelection: !session.selectedRepoIDsForBulkApply.isEmpty,
+                canSelectAll: presentation.snapshot.selectedRepositoryCount
+                    < presentation.snapshot.selectableRepositoryCount,
+                canClearSelection: presentation.snapshot.selectedRepositoryCount > 0,
                 onSelectAll: {
                     performReviewUpdate { session.selectAllReposForBulkApply() }
                 },

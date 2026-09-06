@@ -139,6 +139,80 @@ struct GitHubStarListAIGroupingSessionTests {
         #expect(environment.session.jobs.allSatisfy { $0.status == .completed })
     }
 
+    @Test("滚动期间冻结可见列表，结束后一次合入最新审核状态")
+    func presentationStoreDefersVisibleRefreshWhileScrolling() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            suggestionsByRepoID: [
+                1: [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.95, reason: "Tools")]
+            ]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 1,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        let presentation = GitHubStarListAIGroupingPresentationStore()
+        presentation.filter = .suggestions
+        presentation.synchronizeImmediately(from: environment.session)
+        #expect(presentation.snapshot.selectedRepositoryCount == 1)
+        #expect(presentation.visibleItems.first?.isSelectedForBulkApply == true)
+
+        presentation.setScrollInteractionActive(true)
+        environment.session.toggleRepoForBulkApply(repoID: 1)
+        presentation.synchronizeImmediately(from: environment.session)
+
+        // 进度和底栏使用的新快照已更新，但滚动中的 List 仍保持同一份可见数据。
+        #expect(presentation.snapshot.selectedRepositoryCount == 0)
+        #expect(presentation.visibleItems.first?.isSelectedForBulkApply == true)
+
+        presentation.setScrollInteractionActive(false)
+        #expect(presentation.visibleItems.first?.isSelectedForBulkApply == false)
+    }
+
+    @Test("分组展示缓存对大结果集按一百条稳定追加")
+    func presentationStorePaginatesLargeGroupingResult() async throws {
+        let suggestionsByRepoID = Dictionary(uniqueKeysWithValues: (1...205).map { value in
+            (
+                Int64(value),
+                [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.95, reason: "Tools")]
+            )
+        })
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            suggestionsByRepoID: suggestionsByRepoID
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 205,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider
+        )
+
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+
+        let presentation = GitHubStarListAIGroupingPresentationStore()
+        presentation.filter = .suggestions
+        presentation.synchronizeImmediately(from: environment.session)
+        #expect(presentation.matchingItemCount == 205)
+        #expect(presentation.visibleItems.count == 100)
+        #expect(presentation.canLoadMore)
+
+        presentation.loadMore()
+        #expect(presentation.visibleItems.count == 200)
+        presentation.loadMore()
+        #expect(presentation.visibleItems.count == 205)
+        #expect(!presentation.canLoadMore)
+    }
+
     @Test("多选入口只分析冻结的仓库，并把已有分组名称交给 AI")
     func selectedScopeUsesOnlyFrozenRepositoriesAndExistingGroupNames() async throws {
         let provider = ConcurrentGitHubStarListSuggestionProvider(delay: .milliseconds(5))

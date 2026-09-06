@@ -149,6 +149,8 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
     let currentLists: [GitHubStarListAIListDisplay]
     let suggestions: [GitHubStarListAISuggestionDisplay]
     let selectedListIDs: Set<String>
+    /// 仓库层复选状态属于展示快照，避免后台自动预选直接让整棵 Sheet 观察 Session 集合。
+    let isSelectedForBulkApply: Bool
     /// 已应用行展开时的最终 membership 草稿；未修改时等于当前分组集合。
     let membershipEditorListIDs: Set<String>
     let selectedGroupSummaries: [GitHubStarListAIGroupSummaryDisplay]
@@ -291,6 +293,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     let automaticallyIgnoredCount: Int
     let ignoredCount: Int
     let actionableCount: Int
+    let selectableRepositoryCount: Int
     let selectedRepositoryCount: Int
     let selectedListCount: Int
     let hasContinuableJobs: Bool
@@ -302,6 +305,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         availableLists: [GitHubStarListAIListDisplay],
         existingListIDsByRepo: [Int64: Set<String>],
         selectedListIDsByRepo: [Int64: Set<String>],
+        selectedRepoIDsForBulkApply: Set<Int64> = [],
         editedListIDsByRepo: [Int64: Set<String>] = [:],
         ignoredRepoIDs: Set<Int64>,
         preparedRepositoryCount: Int = 0,
@@ -338,6 +342,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         var automaticallyIgnoredCount = 0
         var ignoredCount = 0
         var actionableCount = 0
+        var selectableRepositoryCount = 0
         var selectedRepositoryCount = 0
         var selectedListIDs: Set<String> = []
         var hasContinuableJobs = false
@@ -363,16 +368,17 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 currentLists: currentLists,
                 suggestions: suggestions,
                 selectedListIDs: selection,
+                isSelectedForBulkApply: selectedRepoIDsForBulkApply.contains(job.id),
                 membershipEditorListIDs: membershipEditorListIDs,
-                // 两处摘要和芯片墙都沿用 `orderedLists`，只改变展示顺序，不遗漏多选结果。
+                // 已选与已应用摘要都按分组名称排序，保持芯片墙顺序稳定且不遗漏多选结果。
                 selectedGroupSummaries: Self.makeGroupSummaries(
                     listIDs: selection,
-                    orderedLists: orderedLists,
+                    listsByID: listsByID,
                     suggestions: suggestions
                 ),
                 appliedGroupSummaries: Self.makeGroupSummaries(
                     listIDs: Self.itemAppliedListIDs(currentIDs: currentIDs, appliedListIDs: appliedListIDs),
-                    orderedLists: orderedLists,
+                    listsByID: listsByID,
                     suggestions: suggestions
                 ),
                 applyState: job.applyState,
@@ -382,13 +388,14 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 finishedAt: job.finishedAt
             )
             projectedItems.append(item)
+            let reviewState = item.reviewState
 
             if !job.isExcludedFromAnalysis,
                (job.status == .completed || job.status == .failed) {
                 analyzedCount += 1
             }
             // 每个仓库只累加一个主状态；“全部”由 items.count 单独计算。
-            switch item.reviewState {
+            switch reviewState {
             case .pendingAnalysis:
                 actionableCount += 1
             case .pendingReview:
@@ -407,10 +414,14 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
                 ignoredCount += 1
             }
             if item.applyFailure?.isRetryable == true { recoverableApplyFailureCount += 1 }
-            if !selection.isEmpty,
-               item.reviewState == .pendingReview || item.reviewState == .applyFailed {
-                selectedRepositoryCount += 1
-                selectedListIDs.formUnion(selection)
+            let isSelectableForBulkApply = !selection.isEmpty
+                && (reviewState == .pendingReview || reviewState == .applyFailed)
+            if isSelectableForBulkApply {
+                selectableRepositoryCount += 1
+                if item.isSelectedForBulkApply {
+                    selectedRepositoryCount += 1
+                    selectedListIDs.formUnion(selection)
+                }
             }
             if job.status == .queued || job.status == .stopped || job.status == .failed {
                 hasContinuableJobs = true
@@ -437,6 +448,7 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
         self.automaticallyIgnoredCount = automaticallyIgnoredCount
         self.ignoredCount = ignoredCount
         self.actionableCount = actionableCount
+        self.selectableRepositoryCount = selectableRepositoryCount
         self.selectedRepositoryCount = selectedRepositoryCount
         self.selectedListCount = selectedListIDs.count
         self.hasContinuableJobs = hasContinuableJobs
@@ -445,18 +457,21 @@ struct GitHubStarListAIGroupingPresentationSnapshot: Equatable, Sendable {
     /// 快照阶段一次性生成摘要，避免 SwiftUI 每次刷新可见行时重复构造字典和排序。
     private static func makeGroupSummaries(
         listIDs: Set<String>,
-        orderedLists: [GitHubStarListAIListDisplay],
+        listsByID: [String: GitHubStarListAIListDisplay],
         suggestions: [GitHubStarListAISuggestionDisplay]
     ) -> [GitHubStarListAIGroupSummaryDisplay] {
         guard !listIDs.isEmpty else { return [] }
         let confidenceByListID = Dictionary(uniqueKeysWithValues: suggestions.map { ($0.id, $0.confidence) })
-        return orderedLists.compactMap { list in
-            guard listIDs.contains(list.id) else { return nil }
-            return GitHubStarListAIGroupSummaryDisplay(
-                list: list,
-                confidence: confidenceByListID[list.id]
-            )
-        }
+        // 一个仓库通常只涉及 1～3 个分组。按实际 ID 查字典后再排序，避免每次全量快照都为
+        // 每个仓库扫描全部 GitHub Lists，复杂度从 O(repo * list) 收敛到 O(repo * selected)。
+        return listIDs.compactMap { listsByID[$0] }
+            .sorted { $0.name < $1.name }
+            .map { list in
+                GitHubStarListAIGroupSummaryDisplay(
+                    list: list,
+                    confidence: confidenceByListID[list.id]
+                )
+            }
     }
 
     /// 分段控件显示的数字与对应筛选严格复用同一份判断，避免“数字可点但不是 Tab 数据”的歧义。
