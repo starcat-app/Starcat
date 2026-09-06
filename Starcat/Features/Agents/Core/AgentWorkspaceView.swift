@@ -100,6 +100,7 @@ struct AgentWorkspaceView: View {
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var composerContentHeight: CGFloat = 0
     @State private var isComposerContextExpanded = false
+    @State private var contextPickerInteractionController = ListInteractionSuppressionController()
     /// 拖动期间只更新布局测量值，停止变化后再落盘，避免每个 mouse-drag 事件都写 UserDefaults。
     @State private var lastMeasuredLeftColumnWidth: CGFloat?
     @State private var lastMeasuredRightColumnWidth: CGFloat?
@@ -1259,6 +1260,12 @@ struct AgentWorkspaceView: View {
         let totalCount = viewModel.repositoryPickerTotalCount
         let matchCount = viewModel.repositoryPickerMatchCount
         let isTruncated = viewModel.isRepositoryPickerTruncated
+        // 行只接收本轮展示所需的值，避免滚动创建行时重复扫描选择数组或读取整个 ViewModel。
+        let selectedRepoIDs = Set(viewModel.selectedRepoContexts.map(\.id))
+        let selectionFull = selectedRepoIDs.count >= viewModel.maximumSelectedRepoContexts
+        let highlightedRepoID = candidates.indices.contains(viewModel.highlightedMentionIndex)
+            ? candidates[viewModel.highlightedMentionIndex].id
+            : nil
         return VStack(alignment: .leading, spacing: 0) {
             agentContextPickerHeader(totalCount: totalCount)
             Divider()
@@ -1324,14 +1331,34 @@ struct AgentWorkspaceView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
-                            agentContextPickerRow(candidate, index: index)
+                        ForEach(candidates) { candidate in
+                            let isSelected = selectedRepoIDs.contains(candidate.id)
+                            AgentContextPickerRepositoryRow(
+                                candidate: candidate,
+                                sources: viewModel.repositorySources(for: candidate.id),
+                                isSelected: isSelected,
+                                isHighlighted: candidate.id == highlightedRepoID,
+                                isEnabled: isSelected || !selectionFull,
+                                selectionLimit: viewModel.maximumSelectedRepoContexts,
+                                onToggle: { viewModel.toggleRepoContext(candidate) }
+                            )
+                            .equatable()
                         }
                     }
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onScrollPhaseChange { _, newPhase in
+                    contextPickerInteractionController.update(isActive: newPhase != .idle)
+                }
+                .environment(
+                    \.starcatListInteractionSuppressed,
+                    contextPickerInteractionController.isSuppressed
+                )
+                .onDisappear {
+                    contextPickerInteractionController.cancel()
+                }
             }
 
             if isTruncated {
@@ -1439,47 +1466,6 @@ struct AgentWorkspaceView: View {
                 }
                 viewModel.highlightedMentionIndex = 0
             }
-        )
-    }
-
-    private func agentContextPickerRow(_ candidate: RAGMentionCandidate, index: Int) -> some View {
-        let isSelected = viewModel.selectedRepoContexts.contains { $0.id == candidate.id }
-        let selectionFull = viewModel.selectedRepoContexts.count >= viewModel.maximumSelectedRepoContexts
-        let canToggle = isSelected || !selectionFull
-        return Button {
-            viewModel.toggleRepoContext(candidate)
-        } label: {
-            UnifiedCompactRepoRow(
-                fullName: candidate.fullName,
-                owner: candidate.owner,
-                ownerAvatarURL: candidate.ownerAvatar,
-                language: candidate.language,
-                starsCount: candidate.starsCount,
-                isChecked: isSelected,
-                isHighlighted: index == viewModel.highlightedMentionIndex,
-                isEnabled: canToggle
-            ) {
-                HStack(spacing: 4) {
-                    ForEach(viewModel.repositorySources(for: candidate.id).prefix(2), id: \.self) { source in
-                        Image(systemName: source.systemImage)
-                            .font(agentFont(.caption2))
-                            .foregroundStyle(.secondary)
-                            .help(source.title)
-                    }
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .disabled(!canToggle)
-        .help(
-            canToggle
-                ? Text(candidate.fullName)
-                : Text(String(
-                    format: String.l10n("agent.workspace.repositoryPicker.selectionLimit"),
-                    locale: locale,
-                    viewModel.maximumSelectedRepoContexts
-                ))
         )
     }
 

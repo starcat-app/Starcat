@@ -248,12 +248,14 @@ struct AgentWorkspaceViewModelTests {
 
         let initialDerivationCount = viewModel.repositoryPickerDerivationCountForTesting
         let first = try #require(viewModel.displayedMentionCandidates.first)
+        #expect(viewModel.displayedMentionCandidates == viewModel.repositoryPickerSnapshot.mentionSuggestions)
 
         viewModel.isContextPickerFilterPresented = true
         viewModel.toggleRepoContext(first)
         viewModel.clearSelectedRepoContexts()
 
         #expect(viewModel.repositoryPickerDerivationCountForTesting == initialDerivationCount)
+        #expect(viewModel.displayedMentionCandidates == viewModel.repositoryPickerSnapshot.mentionSuggestions)
         #expect(viewModel.repositoryPickerDisplayedCount == AgentRepositoryPickerLogic.unselectedDisplayLimit)
 
         viewModel.selectedRepositorySources = [.weekly, .discovery]

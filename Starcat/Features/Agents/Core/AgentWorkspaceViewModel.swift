@@ -264,7 +264,7 @@ final class AgentWorkspaceViewModel {
     /// 与 RAG 仓库选择器保持一致：已选仓库固定置顶，即使它不匹配当前筛选词也不能消失。
     var displayedMentionCandidates: [RAGMentionCandidate] {
         if hasLoadedRepositoryCatalog {
-            return repositoryPickerSnapshot.suggestions.map(\.mentionCandidate)
+            return repositoryPickerSnapshot.mentionSuggestions
         }
         let candidatesByID = Dictionary(uniqueKeysWithValues: mentionCandidates.map { ($0.id, $0) })
         let selectedCandidates = selectedRepoContexts.map { reference in

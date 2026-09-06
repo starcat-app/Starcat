@@ -375,6 +375,8 @@ actor GRDBAgentRepositoryCatalog: AgentRepositoryCatalogProviding {
 /// Agent 选择器的纯逻辑快照，便于 ViewModel 和单测共用。
 struct AgentRepositoryPickerSnapshot: Sendable {
     var suggestions: [AgentRepositoryCandidate]
+    /// 展示层直接消费的轻量候选；随展示窗口失效时一次转换，避免每次 body 求值重复 map。
+    var mentionSuggestions: [RAGMentionCandidate]
     var totalCount: Int
     var matchCount: Int
     var displayedCount: Int
@@ -382,6 +384,7 @@ struct AgentRepositoryPickerSnapshot: Sendable {
 
     static let empty = AgentRepositoryPickerSnapshot(
         suggestions: [],
+        mentionSuggestions: [],
         totalCount: 0,
         matchCount: 0,
         displayedCount: 0,
@@ -475,6 +478,7 @@ enum AgentRepositoryPickerLogic {
         let suggestions = selectedCandidates + visibleUnselected
         return AgentRepositoryPickerSnapshot(
             suggestions: suggestions,
+            mentionSuggestions: suggestions.map(\.mentionCandidate),
             totalCount: totalCount,
             matchCount: matches.candidates.count,
             displayedCount: suggestions.count,
