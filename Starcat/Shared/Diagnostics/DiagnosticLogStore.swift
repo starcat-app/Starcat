@@ -71,7 +71,7 @@ actor DiagnosticLogStore {
             try append(data)
             markRecorded(event)
             if event.visibility == .issue {
-                NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
+                await postIssuesDidChange()
             }
         } catch {
             AppLog.general.error("Diagnostic log write failed: \(error.localizedDescription, privacy: .public)")
@@ -99,7 +99,7 @@ actor DiagnosticLogStore {
             try ensureDirectory()
             let text = ISO8601DateFormatter.shared.string(from: date)
             try text.write(to: acknowledgedFileURL, atomically: true, encoding: .utf8)
-            NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
+            await postIssuesDidChange()
         } catch {
             AppLog.general.error("Diagnostic issue acknowledgement failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -166,6 +166,13 @@ actor DiagnosticLogStore {
         try handle.seekToEnd()
         try handle.write(contentsOf: data)
         try handle.write(contentsOf: Data("\n".utf8))
+    }
+
+    /// NotificationCenter 会在发布线程同步投递；切回主线程，避免 SwiftUI 订阅者从 actor executor 收到 UI 更新。
+    private func postIssuesDidChange() async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
+        }
     }
 
     private func acknowledgedAt() -> Date? {
