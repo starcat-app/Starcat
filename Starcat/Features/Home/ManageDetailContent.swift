@@ -162,6 +162,17 @@ struct ManageDetailContent: View {
             }
             onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
         }
+        // 同仓同步会更新总数、描述和 Topics；已有摘要只原地刷新，不提前触发首屏加载。
+        .onChange(of: repo) { oldRepo, newRepo in
+            if oldRepo.id == newRepo.id, readmeStarHistoryViewModel != nil, contentMode == .readme {
+                loadReadmeStarHistoryIfNeeded()
+            }
+        }
+        .onChange(of: locale.identifier) { _, _ in
+            if readmeStarHistoryViewModel != nil, contentMode == .readme {
+                loadReadmeStarHistoryIfNeeded()
+            }
+        }
         .onChange(of: dependencies.databaseScopeRevision) { _, _ in
             // 同一个 repo id 在账号切换后属于另一份数据库，旧摘要不能跨作用域复用。
             cancelReadmeStarHistory()

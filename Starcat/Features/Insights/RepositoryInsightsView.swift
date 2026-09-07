@@ -22,7 +22,7 @@ enum StarHistoryChartSeriesBuilder {
     static let oneYearPointLimit = 80
     static let allRangePointLimit = 90
 
-    /// 为图表准备最终渲染点：全部范围补创建日零基线，各范围都用 LTTB 保留主要视觉拐点。
+    /// 为图表准备最终渲染点：全部范围补齐创建日起点，各范围都用 LTTB 保留主要视觉拐点。
     ///
     /// 原始日级事件仍完整保留在 ViewModel 中，统计值和缓存不会因图表抽稀而丢失；
     /// 这里只减少 Swift Charts 的 Mark 数量；数据来源与精度仍完整保留在原始数据中。
@@ -64,29 +64,34 @@ enum StarHistoryChartSeriesBuilder {
         return [first, last]
     }
 
-    private static func addingCreationBaseline(
+    /// 输入必须按日期升序；完整交互序列与抽稀曲线共用起点，补点不得写回统计或缓存。
+    static func addingCreationBaseline(
         to points: [StarHistoryPoint],
         range: StarHistoryRange,
         repositoryCreatedAt: Date?
     ) -> [StarHistoryPoint] {
         guard range == .all,
               let repositoryCreatedAt,
-              let first = points.first,
-              repositoryCreatedAt < first.date
+              let first = points.first
         else {
             return points
         }
 
-        // 仓库创建时 Star 必然为 0；沿用首个观测点的 source / precision，避免引入
-        // 仅为图表展示而存在的新数据语义。该点不会写回缓存或数据库。
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let hasCreationDayRecord = calendar.isDate(first.date, inSameDayAs: repositoryCreatedAt)
+        guard hasCreationDayRecord || repositoryCreatedAt < first.date else { return points }
+
+        // 日级历史可能位于 UTC 零点，而 createdAt 带具体时分秒：同日优先保留观测值，
+        // 只对齐绘图时间；缺少创建日记录时才补 0，不能把这个视觉起点声称为真实快照。
         let baseline = StarHistoryPoint(
             date: repositoryCreatedAt,
-            count: 0,
+            count: hasCreationDayRecord ? first.count : 0,
             source: first.source,
-            precision: first.precision,
+            precision: hasCreationDayRecord ? first.precision : .estimated,
             fetchedAt: first.fetchedAt
         )
-        return [baseline] + points
+        return [baseline] + (hasCreationDayRecord ? Array(points.dropFirst()) : points)
     }
 
     /// Largest-Triangle-Three-Buckets：按相邻桶形成的三角形面积保留最能表达形状的点。

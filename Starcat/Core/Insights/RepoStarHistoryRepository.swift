@@ -117,6 +117,15 @@ enum StarHistoryRemoteState: Equatable, Sendable {
     case unavailable
 }
 
+/// 服务端覆盖信息与曲线分开保存：没有新 Star 的日期仍然可能已经完成采集。
+/// generatedAt 同时作为缓存配对身份，禁止把新水位贴到另一批旧曲线上。
+struct StarHistoryCoverage: Codable, Equatable, Sendable {
+    let start: Date?
+    let lastEvent: Date?
+    let dataThrough: Date?
+    let generatedAt: Date
+}
+
 struct StarHistorySnapshot: Equatable, Sendable {
     let range: StarHistoryRange
     let points: [StarHistoryPoint]
@@ -124,6 +133,7 @@ struct StarHistorySnapshot: Equatable, Sendable {
     let coverageStart: Date?
     let updatedAt: Date?
     let statistics: StarHistoryStatistics
+    let coverage: StarHistoryCoverage?
 
     init(
         range: StarHistoryRange,
@@ -131,7 +141,8 @@ struct StarHistorySnapshot: Equatable, Sendable {
         remoteState: StarHistoryRemoteState,
         coverageStart: Date?,
         updatedAt: Date?,
-        statistics: StarHistoryStatistics = .empty
+        statistics: StarHistoryStatistics = .empty,
+        coverage: StarHistoryCoverage? = nil
     ) {
         self.range = range
         self.points = points
@@ -139,6 +150,7 @@ struct StarHistorySnapshot: Equatable, Sendable {
         self.coverageStart = coverageStart
         self.updatedAt = updatedAt
         self.statistics = statistics
+        self.coverage = coverage
     }
 }
 
@@ -149,6 +161,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     }
 
     private let database: any DatabaseManaging
+    private let coverageCache: GRDBRepositoryInsightsCache
     private let api: (any StarHistoryAPIProtocol)?
     private let projectRepository: (any UserProjectRepositoryProtocol)?
     private let oauthStargazersAPI: (any GitHubStargazersAPIProtocol)?
@@ -169,6 +182,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.database = database
+        self.coverageCache = GRDBRepositoryInsightsCache(database: database)
         self.api = api
         self.projectRepository = projectRepository
         self.oauthStargazersAPI = oauthStargazersAPI
@@ -193,7 +207,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         try await recordCurrentMetadataSnapshotIfPossible(repo)
         let cachedPoints = try await points(repoId: repo.id)
         let hasGitHubHistory = cachedPoints.contains { $0.source == .githubStargazers }
-        return snapshot(
+        return await snapshot(
             repo: repo,
             range: range,
             rawPoints: cachedPoints,
@@ -288,16 +302,16 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         if let project = try await projectRepository?.fetchProject(repoID: repo.id) {
             guard project.canReadStargazers else {
                 let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
-                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: state)
+                return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: state)
             }
             let candidates = stargazersAPICandidates(for: project, repo: repo)
             guard !candidates.isEmpty else {
                 let state: StarHistoryRemoteState = repo.isPrivate ? .privateOnly : .unavailable
-                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: state)
+                return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: state)
             }
 
             if !forceRefresh, loadedGitHubStargazerRepoIDs.contains(repo.id) {
-                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .cached)
+                return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .cached)
             }
 
             var lastError: Error?
@@ -310,7 +324,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                     try await replaceRemotePoints(repoId: repo.id, points: githubPoints)
                     loadedGitHubStargazerRepoIDs.insert(repo.id)
                     let refreshedPoints = try await points(repoId: repo.id)
-                    return snapshot(repo: repo, range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+                    return await snapshot(repo: repo, range: range, rawPoints: refreshedPoints, remoteState: .fresh)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -327,14 +341,14 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             // 项目路径失败后绝不降级 Discovery：私仓防外泄，公开仓避免与 Stargazers 口径混用。
             if repo.isPrivate,
                !cachedPoints.contains(where: { $0.source == .githubStargazers }) {
-                return snapshot(
+                return await snapshot(
                     repo: repo,
                     range: range,
                     rawPoints: cachedPoints,
                     remoteState: .privateOnly
                 )
             }
-            return snapshot(
+            return await snapshot(
                 repo: repo,
                 range: range,
                 rawPoints: cachedPoints,
@@ -346,15 +360,15 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
 
         // 没有“我的项目”关系的私有仓库绝不调用公共 Discovery。
         guard !repo.isPrivate else {
-            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .privateOnly)
+            return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .privateOnly)
         }
         guard repo.id > 0, repo.cachedAt != nil, let api else {
-            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .unavailable)
+            return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .unavailable)
         }
         // events 接口返回完整日级序列。每次进程生命周期首次打开该仓库都刷新一次，
         // 之后所有范围共享同一份 canonical cache，不再用旧范围点猜测“已经完整”。
         if !forceRefresh, fullyLoadedRepoIDs.contains(repo.id) {
-            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .cached)
+            return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .cached)
         }
 
         let cacheKey = RemoteCacheKey(repoID: repo.id, range: range)
@@ -370,7 +384,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                       series.fullName.caseInsensitiveCompare(repo.fullName) == .orderedSame,
                       series.range == range
                 else {
-                    return snapshot(
+                    return await snapshot(
                         repo: repo,
                         range: range,
                         rawPoints: cachedPoints,
@@ -378,21 +392,27 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                     )
                 }
                 try await replaceRemotePoints(repoId: repo.id, points: series.points)
+                if let coverage = series.coverage {
+                    try await coverageCache.store(
+                        coverage, repoId: repo.id, dataset: .starHistoryCoverage, range: .all,
+                        fetchedAt: series.generatedAt, responseETag: nil, defaultBranchSHA: nil
+                    )
+                }
                 if let etag {
                     etags[cacheKey] = etag
                 }
                 fullyLoadedRepoIDs.insert(repo.id)
                 let refreshedPoints = try await points(repoId: repo.id)
-                return snapshot(repo: repo, range: range, rawPoints: refreshedPoints, remoteState: .fresh)
+                return await snapshot(repo: repo, range: range, rawPoints: refreshedPoints, remoteState: .fresh)
 
             case .notModified(let etag):
                 if let etag {
                     etags[cacheKey] = etag
                 }
-                return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .notModified)
+                return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .notModified)
 
             case .building(let retryAfter):
-                return snapshot(
+                return await snapshot(
                     repo: repo,
                     range: range,
                     rawPoints: cachedPoints,
@@ -403,9 +423,9 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             throw CancellationError()
         } catch let error as StarHistoryAPIError {
             // 远端错误不清空上次成功缓存；ViewModel 可以用 stale 状态显示非阻塞提示。
-            return snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .stale(error))
+            return await snapshot(repo: repo, range: range, rawPoints: cachedPoints, remoteState: .stale(error))
         } catch {
-            return snapshot(
+            return await snapshot(
                 repo: repo,
                 range: range,
                 rawPoints: cachedPoints,
@@ -576,7 +596,17 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         range: StarHistoryRange,
         rawPoints: [StarHistoryPoint],
         remoteState: StarHistoryRemoteState
-    ) -> StarHistorySnapshot {
+    ) async -> StarHistorySnapshot {
+        let cachedCoverage = try? await coverageCache.load(
+            repoId: repo.id, dataset: .starHistoryCoverage, range: .all,
+            as: StarHistoryCoverage.self
+        )
+        // 旧缓存没有覆盖信息时仍可画曲线；只是不声称最后事件日就是采集水位。
+        let coverage = cachedCoverage?.value
+        let matchingCoverage = coverage.flatMap { value in
+            rawPoints.contains { $0.source == .ghArchive && $0.fetchedAt == value.generatedAt }
+                ? value : nil
+        }
         let merged = Self.mergeByObservedDay(rawPoints)
         let stitched = StarHistoryCurveBuilder.stitchToPreciseSnapshots(merged)
         let filtered = StarHistoryCurveBuilder.selectRange(stitched, range: range, now: now())
@@ -589,7 +619,8 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             statistics: StarHistoryStatisticsBuilder.build(
                 points: stitched,
                 repositoryCreatedAt: repo.createdAt.flatMap(ISO8601DateFormatter.githubDate(from:))
-            )
+            ),
+            coverage: matchingCoverage
         )
     }
 

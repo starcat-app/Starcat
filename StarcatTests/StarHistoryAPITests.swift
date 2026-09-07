@@ -31,6 +31,7 @@ struct StarHistoryAPITests {
                     "full_name": "octo/history",
                     "coverage_start": "2026-01-01",
                     "coverage_end": "2026-08-25",
+                    "active_watermark": "2026-08-28",
                     "event_total": 4,
                     "generated_at": "2026-08-29T12:00:00Z",
                     "events": [
@@ -67,6 +68,8 @@ struct StarHistoryAPITests {
         #expect(series.repoID == 42)
         #expect(series.fullName == "octo/history")
         #expect(series.currentStars == 100)
+        #expect(series.coverage?.dataThrough == StarHistoryDateCodec.date(from: "2026-08-28"))
+        #expect(series.coverage?.lastEvent == StarHistoryDateCodec.date(from: "2026-08-25"))
         #expect(series.points.count == 2)
         #expect(series.points.last?.count == 100)
         #expect(series.points.map(\.source) == [.ghArchive, .ghArchive])

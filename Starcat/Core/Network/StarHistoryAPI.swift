@@ -54,6 +54,7 @@ struct StarHistoryRemoteSeries: Equatable, Sendable {
     let coverageStart: Date?
     let generatedAt: Date
     let points: [StarHistoryPoint]
+    var coverage: StarHistoryCoverage? = nil
 }
 
 enum StarHistoryAPIResult: Equatable, Sendable {
@@ -280,7 +281,13 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
                 generatedAt: generatedAt,
                 // `/events` 与 range 无关，始终持久化完整日级序列；范围筛选只在 Repository
                 // 的读模型中执行，避免用户按不同顺序切换范围得到不同密度的曲线。
-                points: normalized
+                points: normalized,
+                coverage: StarHistoryCoverage(
+                    start: coverageStart,
+                    lastEvent: dto.coverageEnd.flatMap(StarHistoryDateCodec.date(from:)),
+                    dataThrough: dto.activeWatermark.flatMap(StarHistoryDateCodec.date(from:)),
+                    generatedAt: generatedAt
+                )
             ),
             etag: response.value(forHTTPHeaderField: "ETag")
         )
@@ -339,6 +346,7 @@ private struct StarHistoryEventsResponseDTO: Decodable, Sendable {
     let coverageEnd: String?
     let eventTotal: Int64
     let generatedAt: String
+    let activeWatermark: String?
     let events: [StarHistoryEventDTO]
 
     enum CodingKeys: String, CodingKey {
@@ -348,6 +356,7 @@ private struct StarHistoryEventsResponseDTO: Decodable, Sendable {
         case coverageEnd = "coverage_end"
         case eventTotal = "event_total"
         case generatedAt = "generated_at"
+        case activeWatermark = "active_watermark"
         case events
     }
 }

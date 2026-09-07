@@ -427,6 +427,22 @@ struct StarHistoryChartSeriesBuilderTests {
         #expect(rendered.last == points.last)
     }
 
+    @Test("创建日已有观测值时保留真实 Stars，不追加同日零值点", arguments: [-9, 0, 9])
+    func creationDayRecordKeepsObservedCount(hourOffset: Int) throws {
+        let created = try #require(StarHistoryDateCodec.date(from: "2026-07-22")).addingTimeInterval(9 * 3_600)
+        let first = StarHistoryPoint(date: created.addingTimeInterval(Double(hourOffset) * 3_600),
+                                     count: 42, source: .localSnapshot, precision: .snapshot)
+        let last = try point("2026-08-18", 752, source: .ghArchive, precision: .estimated)
+        let rendered = StarHistoryChartSeriesBuilder.renderedPoints(
+            [first, last], range: .all, repositoryCreatedAt: created
+        )
+        #expect(rendered.count == 2)
+        #expect(rendered.first?.date == created)
+        #expect(rendered.first?.count == 42)
+        #expect(rendered.first?.precision == .snapshot)
+        #expect(rendered.last == last)
+    }
+
     @Test("十年日级历史最多生成 90 个渲染点并保留突增位置")
     func tenYearDailyHistoryUsesBoundedLTTBSampling() throws {
         let start = try #require(StarHistoryDateCodec.date(from: "2016-01-01"))

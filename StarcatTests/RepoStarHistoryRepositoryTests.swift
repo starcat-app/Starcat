@@ -120,6 +120,11 @@ struct RepoStarHistoryRepositoryTests {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 5, owner: "octo", name: "priority")
         let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
+        let coverage = StarHistoryCoverage(
+            start: StarHistoryDateCodec.date(from: "2026-07-26"),
+            lastEvent: StarHistoryDateCodec.date(from: "2026-07-27"),
+            dataThrough: StarHistoryDateCodec.date(from: "2026-07-28"), generatedAt: now
+        )
         let api = StubStarHistoryAPI(results: [
             .success(.ready(
                 series: StarHistoryRemoteSeries(
@@ -132,7 +137,8 @@ struct RepoStarHistoryRepositoryTests {
                     points: [
                         point("2026-07-26", 100, .ghArchive, .estimated, now),
                         point("2026-07-27", 118, .ghArchive, .estimated, now)
-                    ]
+                    ],
+                    coverage: coverage
                 ),
                 etag: "\"priority-v1\""
             ))
@@ -159,6 +165,11 @@ struct RepoStarHistoryRepositoryTests {
         #expect(snapshot.points.last?.count == 120)
         #expect(snapshot.points.last?.source == .localSnapshot)
         #expect(snapshot.points.last?.precision == .snapshot)
+        #expect(snapshot.coverage == coverage)
+        // 重建 Repository 模拟下次启动：覆盖元信息必须随 SQLite 缓存恢复。
+        let reopened = GRDBRepoStarHistoryRepository(database: database, now: { now })
+        let restored = try await reopened.cached(repo: repo, range: .all)
+        #expect(restored.coverage == coverage)
     }
 
     @Test("AI 与洞察页并发刷新同一 Star 范围只请求一次")

@@ -863,6 +863,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             var previewOverlay = null;
             var previewRemoveTimer = null;
 
+            \(ReadmeStarHistoryDOM.script)
+
             function currentY() {
                 return window.scrollY ||
                     document.documentElement.scrollTop ||
@@ -884,6 +886,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             window.starcatReplaceReadmeStarHistory = function(html) {
                 var host = document.getElementById('starcat-readme-star-history');
                 if (!host) { return; }
+                if (host.starcatHistoryCleanup) { host.starcatHistoryCleanup(); }
                 if (!html) {
                     host.replaceChildren();
                     host.hidden = true;
@@ -898,6 +901,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     }, { once: true });
                 });
                 host.hidden = false;
+                configureStarHistory(host);
                 schedule();
             };
 
@@ -1654,232 +1658,6 @@ private enum ReadmeWebViewConstants {
     static let mermaidRequestMessageName = "readmeMermaidRequest"
     static let maximumMermaidSectionCount = 100
     static let maximumMermaidSourceLength = 50_000
-}
-
-/// README 末尾摘要使用静态 SVG 和轻量卡片层级；不引入图表运行时或额外滚动容器。
-private enum ReadmeStarHistoryDOM {
-    static let css = """
-    #starcat-readme-star-history[hidden] {
-        display: none;
-    }
-    .starcat-star-history {
-        --star-history-accent: #1f9d55;
-        --star-history-area: rgba(31, 157, 85, 0.16);
-        --star-history-card-background: var(--bg);
-        --star-history-card-border: var(--border);
-        margin: 32px 0 8px;
-        padding-top: 28px;
-        border-top: 1px solid var(--border);
-        color: var(--fg);
-    }
-    body.dark .starcat-star-history {
-        --star-history-accent: #34c759;
-        --star-history-area: rgba(52, 199, 89, 0.16);
-        /* 叠在透明 WebView 的系统窗底上，避免固定近黑色把卡片压成黑块。 */
-        --star-history-card-background: rgba(255, 255, 255, 0.07);
-        --star-history-card-border: rgba(255, 255, 255, 0.18);
-    }
-    .starcat-star-history-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 18px;
-    }
-    .starcat-star-history-heading {
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-        min-width: 0;
-    }
-    .starcat-star-history-heading-icon {
-        color: #f5b301;
-        font-size: 1.25em;
-        line-height: 1;
-    }
-    .starcat-star-history h2 {
-        margin: 0;
-        padding: 0;
-        border: 0;
-        font-size: 1.35em;
-    }
-    .starcat-star-history-range,
-    .starcat-star-history-attribution,
-    .starcat-star-history-footer {
-        color: var(--muted);
-        font-size: 0.78em;
-    }
-    .starcat-star-history-attribution {
-        display: flex;
-        flex: 0 0 auto;
-        align-items: baseline;
-        gap: 4px;
-        padding: 2px 7px;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        line-height: 1.45;
-    }
-    .starcat-star-history-attribution strong {
-        color: #f5b301;
-        font-weight: 700;
-    }
-    .starcat-star-history-card {
-        padding: 20px 20px 12px;
-        border: 1px solid var(--star-history-card-border);
-        border-radius: 12px;
-        background: var(--star-history-card-background);
-        box-shadow: 0 3px 14px rgba(31, 35, 40, 0.06);
-    }
-    body.dark .starcat-star-history-card {
-        box-shadow: 0 3px 16px rgba(0, 0, 0, 0.22);
-    }
-    .starcat-star-history-card-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 18px;
-        padding: 0 8px 10px 42px;
-    }
-    .starcat-star-history-card-copy {
-        min-width: 0;
-    }
-    .starcat-star-history-repository {
-        display: flex;
-        min-width: 0;
-        align-items: center;
-        gap: 10px;
-    }
-    .starcat-star-history-avatar {
-        position: relative;
-        display: grid;
-        width: 32px;
-        height: 32px;
-        flex: 0 0 32px;
-        place-items: center;
-        overflow: hidden;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--code-bg);
-        color: var(--muted);
-        font-size: 0.78em;
-        font-weight: 700;
-    }
-    .starcat-star-history-avatar img {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .starcat-star-history-card-kicker {
-        display: block;
-        color: var(--muted);
-        font-size: 0.78em;
-        font-weight: 600;
-        line-height: 1.2;
-    }
-    .starcat-star-history-card h3 {
-        margin: 3px 0 0;
-        color: var(--fg);
-        overflow: hidden;
-        font-size: 1.18em;
-        font-weight: 650;
-        line-height: 1.25;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .starcat-star-history-current {
-        display: flex;
-        flex: 0 0 auto;
-        align-items: center;
-        gap: 7px;
-        color: var(--star-history-accent);
-        line-height: 1;
-    }
-    .starcat-star-history-current strong {
-        font-size: 1.35em;
-        font-variant-numeric: tabular-nums;
-    }
-    .starcat-star-history-current span {
-        font-size: 1.2em;
-    }
-    .starcat-star-history-current-star {
-        color: #f5b301;
-    }
-    .starcat-star-history-chart {
-        min-width: 0;
-    }
-    .starcat-star-history-chart svg {
-        display: block;
-        width: 100%;
-        height: auto;
-        max-height: 360px;
-        overflow: visible;
-    }
-    .starcat-star-history-grid {
-        stroke: var(--border);
-        stroke-width: 1;
-        vector-effect: non-scaling-stroke;
-    }
-    .starcat-star-history-grid-vertical {
-        stroke-dasharray: 3 6;
-    }
-    .starcat-star-history-axis {
-        fill: var(--muted);
-        font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        font-variant-numeric: tabular-nums;
-    }
-    .starcat-star-history-axis-y {
-        font-weight: 600;
-    }
-    .starcat-star-history-area {
-        fill: var(--star-history-area);
-        stroke: none;
-    }
-    .starcat-star-history-line {
-        fill: none;
-        stroke: var(--star-history-accent);
-        stroke-width: 3;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        vector-effect: non-scaling-stroke;
-    }
-    .starcat-star-history-endpoint {
-        fill: var(--star-history-accent);
-        stroke: var(--bg);
-        stroke-width: 2.5;
-        vector-effect: non-scaling-stroke;
-    }
-    .starcat-star-history-footer {
-        display: flex;
-        justify-content: flex-end;
-        gap: 5px;
-        margin-top: 0;
-        padding: 0 8px;
-        text-align: end;
-    }
-    @media (max-width: 520px) {
-        .starcat-star-history-header {
-            display: block;
-        }
-        .starcat-star-history-attribution {
-            display: inline-block;
-            margin-top: 6px;
-        }
-        .starcat-star-history-card {
-            padding: 16px 12px 10px;
-        }
-        .starcat-star-history-card-header {
-            padding-left: 36px;
-        }
-        .starcat-star-history-footer {
-            display: block;
-        }
-        .starcat-star-history-footer span {
-            margin-inline-end: 4px;
-        }
-    }
-    """
 }
 
 /// GitHub 的 Mermaid enrichment HTML 默认等待 Viewscreen iframe 回填；Starcat 不加载

@@ -1,0 +1,343 @@
+//
+//  ReadmeStarHistoryDOM.swift
+//  Starcat
+//
+//  README 历史卡片的主题样式与有界交互。脚本只由 App 的 WKUserScript 注入；
+//  ResizeObserver 只响应图表和标签尺寸变化，滚动不重建图表。卸载时释放 observer。
+//
+
+import Foundation
+
+/// 与固定 HTML renderer 配套的私有 DOM 协议，所有选择器局限于 Starcat 拥有的卡片。
+enum ReadmeStarHistoryDOM {
+    static let css = """
+    #starcat-readme-star-history[hidden] { display: none; }
+    .starcat-star-history {
+        --history-line: #08bd59;
+        --history-foreground: #101725;
+        --history-secondary: #677791;
+        --history-panel: #ffffff;
+        --history-inner: #ffffff;
+        --history-border: #e5eaf2;
+        --history-grid: #dde5ef;
+        --history-chip: #eef1f6;
+        --history-shadow: rgba(37, 52, 76, .07);
+        --history-green: #12bc75;
+        --history-purple: #8453ff;
+        --history-pink: #f44895;
+        --history-gold: #f4bb21;
+        --history-brand: #9a6b00;
+        container-type: inline-size;
+        margin: 28px 0 8px;
+        font-size: calc(var(--readme-body-font-size, 16px) * .875);
+        color: var(--history-foreground);
+        line-height: 1.4;
+    }
+    body.dark .starcat-star-history {
+        --history-line: #30d875;
+        --history-foreground: #f2f4f8;
+        --history-secondary: #adb8ca;
+        /* 半透明面板随真实系统窗底抬升，避免把深色卡片锁成黑色或蓝色块。 */
+        --history-panel: rgba(255,255,255,.065);
+        --history-inner: rgba(255,255,255,.045);
+        --history-border: rgba(221,230,246,.12);
+        --history-grid: rgba(209,221,244,.12);
+        --history-chip: rgba(226,234,251,.085);
+        --history-shadow: rgba(0,0,0,.16);
+        --history-green: #35d990;
+        --history-purple: #b293ff;
+        --history-pink: #ff77b6;
+        --history-gold: #ffd34d;
+        --history-brand: #ffd34d;
+    }
+    .starcat-star-history *, .starcat-star-history *::before, .starcat-star-history *::after { box-sizing: border-box; }
+    .starcat-star-history-card {
+        padding: 24px 24px 18px;
+        border: 1px solid var(--history-border);
+        border-radius: 18px;
+        background: var(--history-panel);
+        box-shadow: 0 8px 28px var(--history-shadow);
+    }
+    .starcat-star-history-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+    .starcat-star-history-repository { display: flex; flex: 1; min-width: 0; align-items: flex-start; gap: 18px; }
+    .starcat-star-history-avatar {
+        position: relative; display: grid; place-items: center; width: 76px; height: 76px; flex: 0 0 76px;
+        padding: 7px; border-radius: 18px; background: var(--history-chip); color: var(--history-secondary); font-size: 1.8em;
+    }
+    .starcat-star-history-avatar img { position: absolute; inset: 7px; width: calc(100% - 14px); height: calc(100% - 14px); border-radius: 12px; object-fit: cover; }
+    .starcat-star-history-card-copy { min-width: 0; flex: 1; }
+    .starcat-star-history-card-kicker { display: flex; align-items: center; gap: 9px; color: var(--history-secondary); font-weight: 500; font-size: .95em; }
+    .starcat-star-history-card-kicker .starcat-star-history-icon { width: 20px; height: 20px; }
+    .starcat-star-history-card h3 { margin: 5px 0 6px; padding: 0; border: 0; font-size: 1.55em; line-height: 1.2; letter-spacing: -.02em; color: var(--history-foreground); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .starcat-star-history-card .starcat-star-history-description { margin: 0; color: var(--history-secondary); font-size: 1em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .starcat-star-history-tags { display: flex; gap: 7px; flex-wrap: nowrap; min-width: 0; overflow: hidden; margin-top: 12px; }
+    .starcat-star-history-tag { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; max-width: 180px; min-width: 0; padding: 4px 10px; border-radius: 999px; background: var(--history-chip); color: var(--history-secondary); font-size: .82em; line-height: 1.3; }
+    .starcat-star-history-tag[hidden] { display: none; }
+    .starcat-star-history-tag-language { max-width: min(180px, 100%); }
+    .starcat-star-history-tag > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .starcat-star-history-tag i { display: block; width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; }
+    .starcat-star-history-dot-purple { background: var(--history-purple); }
+    .starcat-star-history-dot-pink { background: var(--history-pink); }
+    .starcat-star-history-dot-green { background: var(--history-green); }
+    .starcat-star-history-current { flex: 0 0 auto; text-align: right; padding-top: 3px; }
+    .starcat-star-history-current-value { display: flex; align-items: center; justify-content: flex-end; gap: 11px; }
+    .starcat-star-history-current-value strong { color: var(--history-foreground); font-size: 2.25em; font-weight: 700; letter-spacing: -.035em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .starcat-star-history-current-star { color: var(--history-gold); display: flex; }
+    .starcat-star-history-current-star .starcat-star-history-icon { width: 32px; height: 32px; }
+    .starcat-star-history-current-label { display: block; color: var(--history-secondary); margin-top: 9px; font-size: .9em; }
+    .starcat-star-history-icon { display: inline-block; width: 18px; height: 18px; flex: 0 0 auto; background: currentColor; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; }
+    .starcat-star-history-chart { position: relative; height: 310px; min-width: 0; margin-top: 14px; outline: none; }
+    .starcat-star-history-chart:focus-visible { border-radius: 8px; outline: 2px solid var(--history-secondary); outline-offset: 3px; }
+    .starcat-star-history-chart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+    .starcat-star-history-grid { stroke: var(--history-grid); stroke-width: 1; stroke-dasharray: 3 4; }
+    .starcat-star-history-axis { fill: var(--history-secondary); font: 12px -apple-system, BlinkMacSystemFont, sans-serif; font-variant-numeric: tabular-nums; }
+    .starcat-star-history-area { fill: url(#starcat-history-fill); stroke: none; }
+    .starcat-star-history-gradient-top { stop-color: var(--history-line); stop-opacity: .27; }
+    .starcat-star-history-gradient-bottom { stop-color: var(--history-line); stop-opacity: .035; }
+    .starcat-star-history-line { fill: none; stroke: var(--history-line); stroke-width: 2.8; stroke-linejoin: round; stroke-linecap: round; }
+    .starcat-star-history-endpoint, .starcat-star-history-hover-point { fill: var(--history-line); stroke: #fff; stroke-width: 2.5; }
+    body.dark .starcat-star-history-endpoint, body.dark .starcat-star-history-hover-point { stroke: #30353c; }
+    .starcat-star-history-crosshair { stroke: var(--history-secondary); stroke-width: 1; stroke-dasharray: 3 4; opacity: .5; }
+    .starcat-star-history-callout, .starcat-star-history-tooltip {
+        position: absolute; padding: 7px 10px; min-width: 94px; max-width: 180px; border: 1px solid var(--history-border);
+        border-radius: 9px; background: #fff; box-shadow: 0 4px 12px var(--history-shadow); pointer-events: none; white-space: nowrap; z-index: 1;
+    }
+    body.dark .starcat-star-history-callout, body.dark .starcat-star-history-tooltip { background: #353940; }
+    .starcat-star-history-callout::after, .starcat-star-history-tooltip::after {
+        content: ''; position: absolute; top: 100%; left: var(--tip-x, 50%); width: 8px; height: 8px;
+        transform: translate(-50%, -4px) rotate(45deg); background: inherit; border-right: 1px solid var(--history-border); border-bottom: 1px solid var(--history-border);
+    }
+    .starcat-star-history-callout strong, .starcat-star-history-tooltip strong { display: block; color: var(--history-foreground); font-size: .9em; font-weight: 650; }
+    .starcat-star-history-callout small, .starcat-star-history-tooltip small { display: block; color: var(--history-secondary); font-size: .8em; }
+    .starcat-star-history-tooltip[hidden] { display: none; }
+    .starcat-star-history-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+    /* 收紧纵向留白来减薄卡片；保留最小高度，让放大字号时仍能由两行文字自然撑开。 */
+    .starcat-star-history-metric { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 56px; padding: 5px 12px; border: 1px solid var(--history-border); border-radius: 13px; background: var(--history-inner); box-shadow: 0 3px 10px var(--history-shadow); }
+    .starcat-star-history-metric-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 9px; }
+    .starcat-star-history-metric-icon .starcat-star-history-icon { width: 23px; height: 23px; }
+    .starcat-star-history-green { color: var(--history-green); background: rgba(18,188,117,.095); }
+    .starcat-star-history-purple { color: var(--history-purple); background: rgba(132,83,255,.09); }
+    .starcat-star-history-gold { color: var(--history-gold); background: rgba(244,187,33,.10); }
+    .starcat-star-history-pink { color: var(--history-pink); background: rgba(244,72,149,.09); }
+    .starcat-star-history-metric-copy { min-width: 0; flex: 1; }
+    .starcat-star-history-metric-copy strong, .starcat-star-history-metric-copy > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .starcat-star-history-metric-copy strong { font-size: 1.3em; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .starcat-star-history-metric-copy > span { margin-top: 2px; font-size: max(11px, .82em); color: var(--history-secondary); }
+    .starcat-star-history-footer { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-top: 20px; color: var(--history-secondary); font-size: .78em; }
+    .starcat-star-history-source, .starcat-star-history-footer-actions, .starcat-star-history-attribution { display: flex; align-items: center; gap: 7px; }
+    .starcat-star-history-source { flex-wrap: wrap; }
+    .starcat-star-history-footer-actions { margin-left: auto; flex: 0 0 auto; gap: 10px; }
+    /* 小字号署名采用更深的金色以保证白底可读，深色主题再提亮，色相仍呼应星形。 */
+    .starcat-star-history-attribution strong { font-weight: 600; color: var(--history-brand); }
+    @container (max-width: 799px) {
+        .starcat-star-history-card { padding: 20px 18px 16px; }
+        .starcat-star-history-card-header { gap: 16px; }
+        .starcat-star-history-avatar { width: 64px; height: 64px; flex-basis: 64px; }
+        .starcat-star-history-repository { gap: 12px; }
+        .starcat-star-history-card .starcat-star-history-description { display: block; white-space: nowrap; text-overflow: ellipsis; }
+        .starcat-star-history-current-value strong { font-size: 1.9em; }
+        .starcat-star-history-current-star .starcat-star-history-icon { width: 27px; height: 27px; }
+        .starcat-star-history-metrics { gap: 8px; }
+        .starcat-star-history-metric { gap: 8px; padding: 4px 10px; min-height: 52px; }
+        .starcat-star-history-metric-icon { width: 28px; height: 28px; flex-basis: 28px; border-radius: 8px; }
+        .starcat-star-history-metric-icon .starcat-star-history-icon { width: 20px; height: 20px; }
+        .starcat-star-history-metric-copy strong { font-size: 1.15em; }
+        .starcat-star-history-chart { height: 280px; }
+    }
+    /* 最窄详情栏仍保留四列；先去掉装饰图标，把宽度留给两行读数，不靠继续缩字挤入。 */
+    @container (max-width: 639px) {
+        .starcat-star-history-metrics { gap: 6px; }
+        .starcat-star-history-metric { padding-inline: 8px; }
+        .starcat-star-history-metric-icon { display: none; }
+    }
+    @container (max-width: 519px) {
+        .starcat-star-history-card { padding: 16px 12px; }
+        .starcat-star-history-card-header { flex-direction: column; }
+        .starcat-star-history-repository { width: 100%; }
+        .starcat-star-history-current { display: flex; align-items: center; gap: 12px; padding-left: 76px; }
+        .starcat-star-history-current-label { margin: 0; }
+        .starcat-star-history-card h3 { font-size: 1.35em; }
+        .starcat-star-history-chart { height: 250px; margin-top: 2px; }
+    }
+    @container (max-width: 339px) {
+        .starcat-star-history-card { padding-inline: 8px; }
+        .starcat-star-history-metrics { gap: 4px; }
+        .starcat-star-history-metric { padding-inline: 3px; }
+        .starcat-star-history-current { padding-left: 0; }
+    }
+    """
+
+    /// 在 README 文档自己的闭包中声明，避免暴露给远端内容新的 native bridge。
+    static let script = """
+    function configureStarHistory(host) {
+        var chart = host.querySelector('.starcat-star-history-chart');
+        if (!chart) { return; }
+        var points = JSON.parse(chart.dataset.points);
+        var rendered = JSON.parse(chart.dataset.rendered);
+        if (points.length < 2 || rendered.length < 2) { return; }
+        var svg = chart.querySelector('svg');
+        var callouts = chart.querySelector('.starcat-star-history-callouts');
+        var tooltip = chart.querySelector('.starcat-star-history-tooltip');
+        var markerGroup = svg.querySelector('.starcat-star-history-markers');
+        var crosshair = svg.querySelector('.starcat-star-history-crosshair');
+        var hoverPoint = svg.querySelector('.starcat-star-history-hover-point');
+        var maximum = Number(chart.dataset.maximum), step = Number(chart.dataset.step);
+        var tags = host.querySelector('.starcat-star-history-tags');
+        var languageChip = tags && tags.querySelector('.starcat-star-history-tag-language');
+        var topicChips = tags ? Array.from(tags.querySelectorAll('.starcat-star-history-tag-topic')) : [];
+        var moreChip = tags && tags.querySelector('.starcat-star-history-tag-more');
+        var topicNames = tags ? JSON.parse(tags.dataset.topics) : [];
+        var locale = chart.dataset.locale;
+        var number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+        var shortNumber = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+        var fullDate = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+        var start = points[0][0], end = points[points.length - 1][0], duration = Math.max(1, end - start);
+        var width = 0, height = 0, left = 44, right = 12, top = 64, bottom = 30;
+        var selected = points.length - 1, interacting = false;
+        // 先预留语言与 +N，再依次减少 Topic；每次从完整候选集开始，放宽窗口才能恢复标签。
+        function layoutTags() {
+            if (!tags || !moreChip || tags.clientWidth <= 0) { return; }
+            if (languageChip) { languageChip.style.maxWidth = ''; }
+            topicChips.forEach(function(chip) { chip.hidden = false; });
+            var available = tags.clientWidth, gap = parseFloat(getComputedStyle(tags).columnGap) || 0;
+            var languageWidth = languageChip ? languageChip.getBoundingClientRect().width : 0;
+            var topicWidths = topicChips.map(function(chip) { return chip.getBoundingClientRect().width; });
+            var shown = topicChips.length, moreWidth = 0;
+            for (; shown >= 0; shown--) {
+                var hidden = topicNames.length - shown;
+                moreChip.hidden = hidden === 0;
+                moreChip.textContent = '+' + hidden;
+                moreWidth = hidden ? moreChip.getBoundingClientRect().width : 0;
+                var chipCount = (languageChip ? 1 : 0) + shown + (hidden ? 1 : 0);
+                var needed = languageWidth + moreWidth + topicWidths.slice(0, shown).reduce(function(sum, value) { return sum + value; }, 0)
+                    + gap * Math.max(0, chipCount - 1);
+                if (needed <= available || shown === 0) { break; }
+            }
+            topicChips.forEach(function(chip, index) { chip.hidden = index >= shown; });
+            moreChip.title = topicNames.slice(shown).join(', ');
+            if (languageChip && shown === 0) {
+                languageChip.style.maxWidth = Math.max(0, Math.min(languageWidth, available - moreWidth - (moreWidth ? gap : 0))) + 'px';
+            }
+        }
+        function compact(value) {
+            var magnitude = Math.abs(value);
+            if (magnitude >= 999500) { return shortNumber.format(value / 1000000) + 'M'; }
+            if (magnitude >= 1000) { return shortNumber.format(value / 1000) + 'K'; }
+            return number.format(value);
+        }
+        function x(point) { return left + (point[0] - start) / duration * (width - left - right); }
+        function y(point) { return top + (1 - point[1] / maximum) * (height - top - bottom); }
+        function element(tag, attributes, text) {
+            var node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+            Object.keys(attributes).forEach(function(key) { node.setAttribute(key, attributes[key]); });
+            if (text !== undefined) { node.textContent = text; }
+            return node;
+        }
+        // 全序列二分查找，mousemove 不扫描数千个日期，也不触发 SwiftUI 重算。
+        function nearest(time) {
+            var low = 0, high = points.length - 1;
+            while (low < high) {
+                var middle = (low + high) >> 1;
+                if (points[middle][0] < time) { low = middle + 1; } else { high = middle; }
+            }
+            return low > 0 && time - points[low - 1][0] < points[low][0] - time ? low - 1 : low;
+        }
+        function fillLabel(label, point, full) {
+            var value = document.createElement('strong');
+            value.textContent = full ? number.format(point[1]) : compact(point[1]);
+            var date = document.createElement('small');
+            date.textContent = fullDate.format(point[0]);
+            label.replaceChildren(value, date);
+        }
+        function positionLabel(label, point) {
+            var labelWidth = label.offsetWidth, labelHeight = label.offsetHeight;
+            var labelX = Math.max(2, Math.min(width - labelWidth - 2, x(point) - labelWidth / 2));
+            var labelY = Math.max(2, y(point) - labelHeight - 14);
+            label.style.left = labelX + 'px'; label.style.top = labelY + 'px';
+            label.style.setProperty('--tip-x', Math.max(10, Math.min(labelWidth - 10, x(point) - labelX)) + 'px');
+            return { x: labelX, y: labelY, width: labelWidth, height: labelHeight };
+        }
+        function showSelection() {
+            var point = points[selected];
+            tooltip.hidden = false;
+            fillLabel(tooltip, point, true);
+            positionLabel(tooltip, point);
+            callouts.style.visibility = 'hidden';
+            crosshair.style.display = ''; hoverPoint.style.display = '';
+            crosshair.setAttribute('x1', x(point)); crosshair.setAttribute('x2', x(point));
+            crosshair.setAttribute('y1', top); crosshair.setAttribute('y2', height - bottom);
+            hoverPoint.setAttribute('cx', x(point)); hoverPoint.setAttribute('cy', y(point));
+            chart.setAttribute('aria-valuenow', selected);
+            chart.setAttribute('aria-valuetext', number.format(point[1]) + ', ' + fullDate.format(point[0]) + (point[2] ? ', ' + chart.dataset.estimatedLabel : ''));
+        }
+        function hideSelection() {
+            interacting = false;
+            tooltip.hidden = true; callouts.style.visibility = '';
+            crosshair.style.display = 'none'; hoverPoint.style.display = 'none';
+        }
+        function layout() {
+            if (!chart.isConnected) { return; }
+            layoutTags();
+            width = chart.clientWidth; height = chart.clientHeight;
+            if (width < 100) { return; }
+            svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+            var coordinates = rendered.map(function(point) { return x(point) + ',' + y(point); }).join(' ');
+            svg.querySelector('.starcat-star-history-line').setAttribute('points', coordinates);
+            svg.querySelector('.starcat-star-history-area').setAttribute('points', x(rendered[0]) + ',' + (height - bottom) + ' ' + coordinates + ' ' + x(rendered[rendered.length - 1]) + ',' + (height - bottom));
+            var yTicks = svg.querySelector('.starcat-star-history-y-ticks'); yTicks.replaceChildren();
+            for (var index = 0; index <= 4; index++) {
+                var value = step * index, tickY = y([0, value]);
+                yTicks.appendChild(element('line', { class: 'starcat-star-history-grid starcat-star-history-grid-horizontal', x1: left, x2: width - right, y1: tickY, y2: tickY }));
+                yTicks.appendChild(element('text', { class: 'starcat-star-history-axis starcat-star-history-axis-y', x: left - 10, y: tickY, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, compact(value)));
+            }
+            var tickCount = width >= 800 ? 6 : (width >= 500 ? 4 : 3);
+            var days = duration / 86400000;
+            var dateFormat = new Intl.DateTimeFormat(locale, days <= 180 ? { month: 'short', day: 'numeric', timeZone: 'UTC' } : { year: 'numeric', month: 'short', timeZone: 'UTC' });
+            var xTicks = svg.querySelector('.starcat-star-history-x-ticks'); xTicks.replaceChildren();
+            for (var tick = 0; tick < tickCount; tick++) {
+                var time = start + duration * tick / (tickCount - 1), tickX = x([time, 0]);
+                xTicks.appendChild(element('line', { class: 'starcat-star-history-grid', x1: tickX, x2: tickX, y1: top, y2: height - bottom }));
+                xTicks.appendChild(element('text', { class: 'starcat-star-history-axis starcat-star-history-axis-x', x: tickX, y: height - 8, 'text-anchor': tick === 0 ? 'start' : (tick === tickCount - 1 ? 'end' : 'middle') }, dateFormat.format(time)));
+            }
+            callouts.replaceChildren(); markerGroup.replaceChildren();
+            var candidates = width >= 750 ? [nearest(start + duration * .04), nearest(start + duration * .48), nearest(start + duration * .78), points.length - 1] : (width >= 480 ? [nearest(start + duration * .4), points.length - 1] : [points.length - 1]);
+            var occupied = [], used = new Set();
+            // 最新点优先，余下标签只有在没有碰撞时出现，窄栏不缩小字体硬塞。
+            candidates.reverse().forEach(function(candidate) {
+                if (used.has(candidate)) { return; } used.add(candidate);
+                var point = points[candidate], label = document.createElement('div');
+                label.className = 'starcat-star-history-callout'; fillLabel(label, point, false); callouts.appendChild(label);
+                var box = positionLabel(label, point);
+                var overlaps = occupied.some(function(other) { return box.x < other.x + other.width + 12 && box.x + box.width + 12 > other.x && box.y < other.y + other.height + 8 && box.y + box.height + 8 > other.y; });
+                if (overlaps) { label.remove(); return; } occupied.push(box);
+                markerGroup.appendChild(element('circle', { class: 'starcat-star-history-endpoint', cx: x(point), cy: y(point), r: 5.5 }));
+            });
+            if (interacting) { showSelection(); } else { hideSelection(); }
+        }
+        chart.addEventListener('pointermove', function(event) {
+            var box = chart.getBoundingClientRect();
+            var progress = Math.max(0, Math.min(1, (event.clientX - box.left - left) / (width - left - right)));
+            selected = nearest(start + duration * progress); interacting = true; showSelection();
+        });
+        chart.addEventListener('pointerleave', function() { if (document.activeElement !== chart) { hideSelection(); } });
+        chart.addEventListener('focus', function() { interacting = true; showSelection(); });
+        chart.addEventListener('blur', hideSelection);
+        chart.addEventListener('keydown', function(event) {
+            if (event.key === 'ArrowLeft') { selected = Math.max(0, selected - 1); }
+            else if (event.key === 'ArrowRight') { selected = Math.min(points.length - 1, selected + 1); }
+            else if (event.key === 'Home') { selected = 0; }
+            else if (event.key === 'End') { selected = points.length - 1; }
+            else if (event.key === 'Escape') { chart.blur(); return; }
+            else { return; }
+            event.preventDefault(); interacting = true; showSelection();
+        });
+        // ResizeObserver 已按布局批次通知；再次等待动画帧会在离屏 WebView 中停滞，留下旧坐标。
+        // SVG 和绝对定位标注不改变容器尺寸，因此可以直接重排，不产生尺寸反馈循环。
+        var observer = new ResizeObserver(layout);
+        observer.observe(chart);
+        if (tags) { observer.observe(tags); }
+        host.starcatHistoryCleanup = function() { observer.disconnect(); };
+        layout();
+    }
+    """
+}

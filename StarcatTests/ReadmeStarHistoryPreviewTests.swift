@@ -164,8 +164,7 @@ struct ReadmeStarHistoryPreviewTests {
         let html = try #require(ReadmeStarHistoryHTMLRenderer.render(
             snapshot: snapshot,
             model: model,
-            repositoryName: "octo/history",
-            repositoryOwner: "octo",
+            repo: Self.repo(),
             locale: Locale(identifier: "zh-Hans")
         ))
 
@@ -202,8 +201,7 @@ struct ReadmeStarHistoryPreviewTests {
         let html = try #require(ReadmeStarHistoryHTMLRenderer.render(
             snapshot: snapshot,
             model: model,
-            repositoryName: "octo/<history>",
-            repositoryOwner: "octo",
+            repo: Self.repo(),
             locale: Locale(identifier: "en")
         ))
 
@@ -211,17 +209,18 @@ struct ReadmeStarHistoryPreviewTests {
         #expect(html.contains("GitHub Star History"))
         #expect(html.contains("Powered by"))
         #expect(html.contains("<strong>Starcat</strong>"))
-        #expect(html.contains("octo/&lt;history&gt;"))
+        #expect(html.contains("octo/history"))
         #expect(html.contains(#"class="starcat-star-history-avatar""#))
         #expect(html.contains(#"src="https://github.com/octo.png?size=80""#))
         #expect(html.contains(#"class="starcat-star-history-card-kicker""#))
         #expect(html.contains(#"class="starcat-star-history-current-star""#))
         #expect(html.contains(#"class="starcat-star-history-area""#))
-        #expect(html.contains(#"class="starcat-star-history-endpoint""#))
-        #expect(html.contains(">1,165</text>"))
-        #expect(!html.contains(">1.2K</text>"))
-        #expect(html.components(separatedBy: "starcat-star-history-axis-y").count - 1 == 6)
-        #expect(html.components(separatedBy: "starcat-star-history-axis-x").count - 1 == 6)
+        #expect(html.contains("starcat-star-history-metrics"))
+        #expect(html.contains("starcat-star-history-callouts"))
+        #expect(html.contains("starcat-star-history-gradient-top"))
+        #expect(html.contains(">1.2K</text>"))
+        #expect(!html.contains(">1,165</text>"))
+        #expect(html.components(separatedBy: "starcat-star-history-axis-y").count - 1 == 5)
     }
 
     private nonisolated static func repo() -> Repo {
@@ -231,6 +230,128 @@ struct ReadmeStarHistoryPreviewTests {
         repo.createdAt = "2020-01-01T00:00:00Z"
         repo.cachedAt = "2026-09-06T00:00:00Z"
         return repo
+    }
+
+    @Test("整刻度上限覆盖峰值，避免按峰值五等分产生零碎数值", arguments: [0, 1, 9, 99, 1_165, 50_511, 100_001, 999_999, 4_000_000])
+    func niceAxisCoversPeak(peak: Int) {
+        let axis = ReadmeStarHistoryAxis(peak: peak)
+        #expect(axis.maximum >= Double(peak))
+        #expect(axis.step >= 1)
+        #expect(axis.ticks.count == 5)
+        #expect(axis.ticks.first == 0)
+        #expect(axis.ticks.last == axis.maximum)
+        #expect(Set(axis.ticks).count == 5)
+        if peak == 50_511 {
+            #expect(axis.ticks == [0, 15_000, 30_000, 45_000, 60_000])
+        }
+    }
+
+    @Test("90 天统计使用完整日序列，按期初数计算增长率")
+    func ninetyDayGrowthUsesBaseline() throws {
+        let end = try #require(StarHistoryDateCodec.date(from: "2026-09-06"))
+        let points = [
+            StarHistoryPoint(date: end.addingTimeInterval(-100 * 86_400), count: 20_000),
+            StarHistoryPoint(date: end.addingTimeInterval(-90 * 86_400), count: 38_155),
+            StarHistoryPoint(date: end.addingTimeInterval(-89 * 86_400), count: 40_000),
+            StarHistoryPoint(date: end, count: 50_495)
+        ]
+        let metrics = ReadmeStarHistoryMetrics(snapshot: Self.snapshot(points: points, state: .fresh), createdAt: nil)
+        #expect(metrics.growth == 12_340)
+        #expect(metrics.periodDays == 90)
+        #expect(abs(try #require(metrics.dailyAverage) - 12_340.0 / 90) < 0.000001)
+        #expect(abs(try #require(metrics.growthRate) - 12_340.0 / 38_155) < 0.000001)
+        #expect(metrics.isEstimated)
+        #expect(!metrics.sinceCreated)
+    }
+
+    @Test("历史不足不能补造零基线，新仓零基线不能显示无穷增长率")
+    func incompleteCoverageAndNewRepositoryAreDistinct() throws {
+        let end = try #require(StarHistoryDateCodec.date(from: "2026-09-06"))
+        let points = [StarHistoryPoint(date: end.addingTimeInterval(-20 * 86_400), count: 10), StarHistoryPoint(date: end, count: 200)]
+        let snapshot = Self.snapshot(points: points, state: .cached)
+        let old = ReadmeStarHistoryMetrics(snapshot: snapshot, createdAt: end.addingTimeInterval(-200 * 86_400))
+        #expect(old.growth == nil)
+        #expect(old.growthRate == nil)
+        #expect(old.dailyAverage == nil)
+        let young = ReadmeStarHistoryMetrics(snapshot: snapshot, createdAt: end.addingTimeInterval(-25 * 86_400), now: end)
+        #expect(young.growth == 200)
+        #expect(young.growthRate == nil)
+        #expect(young.sinceCreated)
+        #expect(young.ageDays == 25)
+        #expect(young.dailyAverage == 8)
+    }
+
+    @Test("日均新增保留负值，不足一天不能强行补成一天")
+    func dailyAverageHandlesDeclineAndSameDayCreation() throws {
+        let end = try #require(StarHistoryDateCodec.date(from: "2026-09-06"))
+        let points = [StarHistoryPoint(date: end.addingTimeInterval(-90 * 86_400), count: 300),
+                      StarHistoryPoint(date: end, count: 210)]
+        let decline = ReadmeStarHistoryMetrics(snapshot: Self.snapshot(points: points, state: .fresh), createdAt: nil)
+        #expect(decline.dailyAverage == -1)
+        let sameDay = ReadmeStarHistoryMetrics(snapshot: Self.snapshot(points: points, state: .fresh),
+                                              createdAt: end, now: end)
+        #expect(sameDay.dailyAverage == nil)
+    }
+
+    @Test("相同仓库更新元数据后总数和描述必须原地更新")
+    func sameRepositoryMetadataUpdateRebuildsCard() async {
+        let snapshot = Self.snapshot(state: .fresh)
+        let repository = ReadmeStarHistoryRepositoryStub(cachedSnapshot: snapshot, refreshSnapshot: snapshot)
+        let viewModel = ReadmeStarHistoryViewModel(repository: repository, projectVisibilityProvider: { _ in .public })
+        var repo = Self.repo()
+        await viewModel.loadIfNeeded(repo: repo, databaseScopeRevision: 1, locale: Locale(identifier: "en"))
+        let revision = viewModel.renderState.revision
+        repo.starsCount = 50_511
+        repo.description = "Description from updated metadata"
+        await viewModel.loadIfNeeded(repo: repo, databaseScopeRevision: 1, locale: Locale(identifier: "en"))
+        #expect(viewModel.renderState.revision != revision)
+        #expect(viewModel.renderState.html?.contains("<strong>50.5K</strong>") == true)
+        #expect(viewModel.renderState.html?.contains("Description from updated metadata") == true)
+    }
+
+    @Test("README 从创建日起画，补点不能给缺历史的老仓制造增长数据", arguments: ["2020-01-01", "2026-07-22"])
+    func creationAnchorIsOnlyUsedForDrawing(createdDay: String) async throws {
+        let created = try #require(StarHistoryDateCodec.date(from: createdDay))
+        let first = try #require(StarHistoryDateCodec.date(from: "2026-08-18"))
+        let last = try #require(StarHistoryDateCodec.date(from: "2026-09-07"))
+        let points = [StarHistoryPoint(date: first, count: 752, source: .ghArchive, precision: .estimated),
+                      StarHistoryPoint(date: last, count: 1_165, source: .ghArchive, precision: .estimated)]
+        let snapshot = Self.snapshot(points: points, state: .fresh)
+        let repository = ReadmeStarHistoryRepositoryStub(cachedSnapshot: snapshot, refreshSnapshot: snapshot)
+        let viewModel = ReadmeStarHistoryViewModel(repository: repository, projectVisibilityProvider: { _ in .public })
+        var repo = Self.repo()
+        repo.createdAt = createdDay + "T00:00:00Z"
+        await viewModel.loadIfNeeded(repo: repo, databaseScopeRevision: 1, locale: Locale(identifier: "en"))
+        let html = try #require(viewModel.renderState.html)
+        for attribute in ["data-points", "data-rendered"] {
+            let prefix = try #require(html.range(of: attribute + "=\""))
+            let value = try #require(html[prefix.upperBound...].split(separator: "\"", maxSplits: 1).first)
+            let series = try #require(try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [[Double]])
+            #expect(series.first == [created.timeIntervalSince1970 * 1_000, 0, 1])
+            #expect(series.last?[1] == 1_165)
+        }
+        #expect(html.contains(#"class="starcat-star-history-line" points="44.00,280.00 "#))
+        if createdDay == "2020-01-01" {
+            #expect(html.components(separatedBy: "<strong>—</strong>").count - 1 == 3)
+        }
+        #expect(snapshot.points == points)
+    }
+
+    @Test("描述与 Topics 不可注入脚本，总数不能误用历史最后读数")
+    func repositoryFieldsAreEscapedAndTotalUsesMetadata() throws {
+        var repo = Self.repo()
+        repo.starsCount = 50_511
+        repo.description = "<script>alert('description')</script>"
+        repo.topics = #"["ai", "<img src=x onerror=bad>", "research", "extra"]"#
+        let snapshot = Self.snapshot(state: .cached)
+        let model = StarHistoryChartRenderModel(points: snapshot.points, range: .all, repositoryCreatedAt: nil)
+        let html = try #require(ReadmeStarHistoryHTMLRenderer.render(snapshot: snapshot, model: model, repo: repo, locale: Locale(identifier: "en")))
+        #expect(html.contains("<strong>50.5K</strong>"))
+        #expect(!html.contains("<script>"))
+        #expect(!html.contains("<img src=x"))
+        #expect(html.contains("&lt;script&gt;"))
+        #expect(html.contains("&lt;img src=x onerror=bad&gt;"))
+        #expect(html.contains(">+1</span>"))
     }
 
     private nonisolated static func points(
