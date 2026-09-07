@@ -160,6 +160,7 @@ struct RepoAIFloatingOverlay: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .repoAICollapsedLauncherSurface()
         .gettingStartedAnchor(.ai)
         .help("ai.assistant.inline.collapsed.help")
     }
@@ -292,14 +293,13 @@ extension Notification.Name {
 }
 
 private extension View {
-    /// 详情页浮层的玻璃态容器。单独收口，避免后续调阴影 / 边框时改散在多处。
-    func glassPanel(cornerRadius: CGFloat, shadowOpacity: Double) -> some View {
-        background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                    .allowsHitTesting(false)
-            }
-            .shadow(color: .black.opacity(shadowOpacity), radius: 18, x: 0, y: 10)
+    @ViewBuilder
+    func repoAICollapsedLauncherSurface() -> some View {
+        if #available(macOS 26.0, *) {
+            // 折叠态是短时交互控件，不承载长文本；只在这里启用系统玻璃交互反馈。
+            glassEffect(.regular.interactive(), in: Capsule(style: .continuous))
+        } else {
+            self
+        }
     }
 }

@@ -368,42 +368,66 @@ struct RepoAIWindowContentView: View {
 
             Spacer(minLength: 12)
 
-            if let onOpenDetachedWindow {
-                Button(action: onOpenDetachedWindow) {
-                    Image(systemName: "rectangle.on.rectangle")
-                        .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("ai.assistant.inline.detach.help")
-            }
-
-            if let onInlineResizeTapped {
-                Button(action: onInlineResizeTapped) {
-                    Image(systemName: isInlineMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                        .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(isInlineMaximized ? "ai.assistant.inline.resize.restore.help" : "ai.assistant.inline.resize.maximize.help")
-            }
-
-            SheetCloseButton(
-                action: onClose,
-                iconFont: .system(size: 16, weight: .medium),
-                frameSize: 26,
-                helpKey: "ai.assistant.window.close.help"
-            )
+            panelHeaderActions
         }
         .padding(.leading, 16)
         .padding(.trailing, 12)
         .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var panelHeaderActions: some View {
+        if #available(macOS 26.0, *) {
+            // 标题栏短时操作共享玻璃采样区域，避免相邻按钮形成割裂的材质边界。
+            GlassEffectContainer(spacing: 6) {
+                HStack(spacing: 6) {
+                    panelHeaderActionButtons
+                }
+            }
+        } else {
+            HStack(spacing: 6) {
+                panelHeaderActionButtons
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var panelHeaderActionButtons: some View {
+        if let onOpenDetachedWindow {
+            Button(action: onOpenDetachedWindow) {
+                Image(systemName: "rectangle.on.rectangle")
+                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .repoAIHeaderControlSurface()
+            .help("ai.assistant.inline.detach.help")
+        }
+
+        if let onInlineResizeTapped {
+            Button(action: onInlineResizeTapped) {
+                Image(systemName: isInlineMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .repoAIHeaderControlSurface()
+            .help(isInlineMaximized ? "ai.assistant.inline.resize.restore.help" : "ai.assistant.inline.resize.maximize.help")
+        }
+
+        SheetCloseButton(
+            action: onClose,
+            iconFont: .system(size: 16, weight: .medium),
+            frameSize: 26,
+            helpKey: "ai.assistant.window.close.help"
+        )
+        .repoAIHeaderControlSurface()
     }
 
     // MARK: - 初始化
@@ -2519,6 +2543,17 @@ extension RequestPrepStep {
         switch self {
         case .externalSearch: return String.l10n("ai.assistant.prep.step.externalSearch")
         case .requestingLLM: return String.l10n("ai.assistant.prep.step.requestingLLM")
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func repoAIHeaderControlSurface() -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            self
         }
     }
 }
