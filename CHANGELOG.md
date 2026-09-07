@@ -8,7 +8,8 @@ Starcat 1.6.0 focuses on performance and detail polish: lower background load at
 
 ### New
 
-- README Star history: Public repository details now show a full-history Star chart with axes, theme-aware styling, repository identity, and cache-first loading.
+- README Star history: Public repository details show a full-history Star chart starting at creation, with total stars, compact axis labels, light and dark themes, and reuse of cached history and repository icons.
+- Star Journey: A timeline shows repository creation, the first recorded observation, milestones, and growth events from available history, adjusting visible nodes to the window width.
 - OrcaRouter provider: Add OrcaRouter as an AI provider for summaries, tagging, and knowledge base Q&A.
 - Firecrawl web search: Add Firecrawl as a web search provider with domain filtering and full-page fetching; some providers can now be enabled without an API key.
 - Owner profile card: Click an owner name in the repository detail header to view their avatar, bio, social links, and stats, and follow or unfollow them.
@@ -20,6 +21,9 @@ Starcat 1.6.0 focuses on performance and detail polish: lower background load at
 
 ### Improvements
 
+- Star history metrics: Average daily growth, repository age, period growth, and growth rate stay in one row of four cards, retaining icons with tighter spacing at small sizes and adding mini charts at larger sizes.
+- Star history tooltips: Hover details use structured fields that fit narrow views, keep a stable layout at the same point, and display star counts directly.
+- Star history layout: Descriptions and topics stay on single lines in narrow views, and symmetric card margins leave room for floating controls; timeline labels sit close below and to the right of their nodes, with only a hollow ring at the current endpoint.
 - Native Settings experience: Uses a macOS-style sidebar, search, and back/forward navigation in a fixed-size Settings window.
 - Unified RAG configuration: Inference, prompt, and retrieval controls now live in the main Settings window, save automatically, and present prompt helpers and retrieval options without extra nested navigation.
 - Language categories: Star and Explore language lists now follow your interested languages and add "Other" and "Uncategorized" groups to reduce clutter.
