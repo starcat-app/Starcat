@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  README 历史卡片的主题样式与有界交互。脚本只由 App 的 WKUserScript 注入；
-//  ResizeObserver 只响应图表和标签尺寸变化，滚动不重建图表。卸载时释放 observer。
+//  ResizeObserver 只响应图表、标签和时间线尺寸变化，滚动不重建图表。卸载时释放 observer。
 //
 
 import Foundation
@@ -27,8 +27,12 @@ enum ReadmeStarHistoryDOM {
         --history-pink: #f44895;
         --history-gold: #f4bb21;
         --history-brand: #9a6b00;
+        --history-accent: #2580ff;
+        --history-growth: #e96b4d;
         container-type: inline-size;
-        margin: 28px 0 8px;
+        container-name: star-history;
+        /* 正文左右已有 24px；各补 28px 后保持对称，并在 34pt 工具条 + 10pt 贴边距离之外留 8px。 */
+        margin: 28px 28px 8px;
         font-size: calc(var(--readme-body-font-size, 16px) * .875);
         color: var(--history-foreground);
         line-height: 1.4;
@@ -49,6 +53,8 @@ enum ReadmeStarHistoryDOM {
         --history-pink: #ff77b6;
         --history-gold: #ffd34d;
         --history-brand: #ffd34d;
+        --history-accent: #6ba7ff;
+        --history-growth: #ff927a;
     }
     .starcat-star-history *, .starcat-star-history *::before, .starcat-star-history *::after { box-sizing: border-box; }
     .starcat-star-history-card {
@@ -97,9 +103,13 @@ enum ReadmeStarHistoryDOM {
     .starcat-star-history-line { fill: none; stroke: var(--history-line); stroke-width: 2.8; stroke-linejoin: round; stroke-linecap: round; }
     .starcat-star-history-endpoint, .starcat-star-history-hover-point { fill: var(--history-line); stroke: #fff; stroke-width: 2.5; }
     body.dark .starcat-star-history-endpoint, body.dark .starcat-star-history-hover-point { stroke: #30353c; }
+    .starcat-star-history-marker-milestone, .starcat-star-history-marker-current { fill: var(--history-accent); }
+    .starcat-star-history-marker-firstRecorded { fill: var(--history-green); }
+    .starcat-star-history-marker-spike { fill: var(--history-growth); }
+    .starcat-star-history-endpoint-ring { fill: none; stroke: var(--history-accent); stroke-width: 1.5; }
     .starcat-star-history-crosshair { stroke: var(--history-secondary); stroke-width: 1; stroke-dasharray: 3 4; opacity: .5; }
     .starcat-star-history-callout, .starcat-star-history-tooltip {
-        position: absolute; padding: 7px 10px; min-width: 94px; max-width: 180px; border: 1px solid var(--history-border);
+        position: absolute; padding: 7px 10px; width: max-content; min-width: 94px; max-width: 180px; border: 1px solid var(--history-border);
         border-radius: 9px; background: #fff; box-shadow: 0 4px 12px var(--history-shadow); pointer-events: none; white-space: nowrap; z-index: 1;
     }
     body.dark .starcat-star-history-callout, body.dark .starcat-star-history-tooltip { background: #353940; }
@@ -109,10 +119,22 @@ enum ReadmeStarHistoryDOM {
     }
     .starcat-star-history-callout strong, .starcat-star-history-tooltip strong { display: block; color: var(--history-foreground); font-size: .9em; font-weight: 650; }
     .starcat-star-history-callout small, .starcat-star-history-tooltip small { display: block; color: var(--history-secondary); font-size: .8em; }
+    .starcat-star-history-callout-subtitle { display: block; color: var(--history-secondary); font-size: .8em; }
+    .starcat-star-history-callout > * { overflow: hidden; text-overflow: ellipsis; }
+    .starcat-star-history-callout-spike strong { color: var(--history-growth); }
+    .starcat-star-history-callout-current strong { font-weight: 700; }
+    /* max-content 按内容收紧，上限只依赖图表宽度；不使用受 left 剩余空间影响的 auto 宽度。 */
+    .starcat-star-history-tooltip { width: max-content; min-width: 0; max-width: min(260px, calc(100% - 8px)); white-space: normal; z-index: 2; }
+    .starcat-star-history-tooltip > strong { white-space: nowrap; }
+    .starcat-star-history-tooltip .starcat-star-history-tooltip-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 8px; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid var(--history-border); font-size: .8em; line-height: 1.4; }
+    .starcat-star-history-tooltip-fields dt, .starcat-star-history-tooltip-fields dd { margin: 0; padding: 0; font-size: inherit; font-weight: 400; }
+    .starcat-star-history-tooltip-fields dt { max-width: 6.5em; color: var(--history-secondary); overflow-wrap: anywhere; }
+    .starcat-star-history-tooltip-fields dd { color: var(--history-foreground); overflow-wrap: anywhere; }
+    .starcat-star-history-tooltip-fields dd small { margin-top: 2px; font-size: 1em; }
     .starcat-star-history-tooltip[hidden] { display: none; }
     .starcat-star-history-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
     /* 收紧纵向留白来减薄卡片；保留最小高度，让放大字号时仍能由两行文字自然撑开。 */
-    .starcat-star-history-metric { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 56px; padding: 5px 12px; border: 1px solid var(--history-border); border-radius: 13px; background: var(--history-inner); box-shadow: 0 3px 10px var(--history-shadow); }
+    .starcat-star-history-metric { container: star-history-metric / inline-size; display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 56px; padding: 5px 12px; border: 1px solid var(--history-border); border-radius: 13px; background: var(--history-inner); box-shadow: 0 3px 10px var(--history-shadow); }
     .starcat-star-history-metric-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: 9px; }
     .starcat-star-history-metric-icon .starcat-star-history-icon { width: 23px; height: 23px; }
     .starcat-star-history-green { color: var(--history-green); background: rgba(18,188,117,.095); }
@@ -123,13 +145,43 @@ enum ReadmeStarHistoryDOM {
     .starcat-star-history-metric-copy strong, .starcat-star-history-metric-copy > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .starcat-star-history-metric-copy strong { font-size: 1.3em; font-weight: 650; font-variant-numeric: tabular-nums; }
     .starcat-star-history-metric-copy > span { margin-top: 2px; font-size: max(11px, .82em); color: var(--history-secondary); }
+    .starcat-star-history-miniature { display: none; width: clamp(56px, 28cqw, 112px); height: 36px; flex: 0 0 auto; fill: currentColor; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .starcat-star-history-miniature-green { color: var(--history-green); }
+    .starcat-star-history-miniature-purple { color: var(--history-purple); }
+    .starcat-star-history-miniature-gold { color: var(--history-gold); }
+    .starcat-star-history-miniature-pink { color: var(--history-pink); }
+    @container star-history-metric (min-width: 240px) {
+        .starcat-star-history-miniature { display: block; }
+    }
+    /* 与原型一致的开放时间线：弱连接线、类型色圆点、日期/标题/补充三层，不再套一层卡片。 */
+    .starcat-star-journey { margin-top: 18px; }
+    .starcat-star-journey h4 { margin: 0 0 8px; padding: 0; border: 0; color: var(--history-secondary); font-size: .85em; font-weight: 600; }
+    /* 历史事件各占一列，文字在圆点右下方；最后 10px 专属于真实 Current，只画圆环。 */
+    .starcat-star-journey .starcat-star-journey-track { position: relative; display: grid; grid-template-columns: repeat(var(--journey-columns), minmax(0, 1fr)) 10px; list-style: none; margin: 0; padding: 0; }
+    .starcat-star-journey-track::before { content: ''; position: absolute; top: 5px; left: 5px; right: 5px; height: 1px; background: var(--history-grid); }
+    .starcat-star-journey-track > .starcat-star-journey-node { --journey-color: var(--history-accent); position: relative; min-width: 0; margin: 0; padding: 20px 12px 0; list-style: none; text-align: left; }
+    .starcat-star-journey-node[hidden] { display: none; }
+    .starcat-star-journey-track > .starcat-star-journey-created { --journey-color: var(--history-secondary); }
+    .starcat-star-journey-track > .starcat-star-journey-firstRecorded { --journey-color: var(--history-green); }
+    .starcat-star-journey-track > .starcat-star-journey-spike,
+    .starcat-star-journey-track > .starcat-star-journey-bestDay,
+    .starcat-star-journey-track > .starcat-star-journey-bestWeek { --journey-color: var(--history-growth); }
+    .starcat-star-journey-track > .starcat-star-journey-current { grid-column: -2 / -1; padding: 0; min-height: 10px; }
+    .starcat-star-journey-dot { position: absolute; top: 0; left: 0; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: var(--journey-color); }
+    body.dark .starcat-star-journey-dot { border-color: #353940; }
+    .starcat-star-journey-dot::after { content: ''; position: absolute; top: 11px; left: 2px; height: 1.8em; border-left: 1px dashed var(--journey-color); }
+    .starcat-star-journey-current .starcat-star-journey-dot { box-shadow: 0 0 0 1.5px var(--history-accent); }
+    .starcat-star-journey-current .starcat-star-journey-dot::after { display: none; }
+    .starcat-star-journey-copy > * { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.45; }
+    .starcat-star-journey-copy time, .starcat-star-journey-copy > span { font-size: .78em; color: var(--history-secondary); }
+    .starcat-star-journey-copy strong { color: var(--history-foreground); font-size: .82em; font-weight: 500; }
     .starcat-star-history-footer { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-top: 20px; color: var(--history-secondary); font-size: .78em; }
     .starcat-star-history-source, .starcat-star-history-footer-actions, .starcat-star-history-attribution { display: flex; align-items: center; gap: 7px; }
     .starcat-star-history-source { flex-wrap: wrap; }
     .starcat-star-history-footer-actions { margin-left: auto; flex: 0 0 auto; gap: 10px; }
     /* 小字号署名采用更深的金色以保证白底可读，深色主题再提亮，色相仍呼应星形。 */
     .starcat-star-history-attribution strong { font-weight: 600; color: var(--history-brand); }
-    @container (max-width: 799px) {
+    @container star-history (max-width: 799px) {
         .starcat-star-history-card { padding: 20px 18px 16px; }
         .starcat-star-history-card-header { gap: 16px; }
         .starcat-star-history-avatar { width: 64px; height: 64px; flex-basis: 64px; }
@@ -145,12 +197,12 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-chart { height: 280px; }
     }
     /* 最窄详情栏仍保留四列；先去掉装饰图标，把宽度留给两行读数，不靠继续缩字挤入。 */
-    @container (max-width: 639px) {
+    @container star-history (max-width: 639px) {
         .starcat-star-history-metrics { gap: 6px; }
         .starcat-star-history-metric { padding-inline: 8px; }
         .starcat-star-history-metric-icon { display: none; }
     }
-    @container (max-width: 519px) {
+    @container star-history (max-width: 519px) {
         .starcat-star-history-card { padding: 16px 12px; }
         .starcat-star-history-card-header { flex-direction: column; }
         .starcat-star-history-repository { width: 100%; }
@@ -158,8 +210,9 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-current-label { margin: 0; }
         .starcat-star-history-card h3 { font-size: 1.35em; }
         .starcat-star-history-chart { height: 250px; margin-top: 2px; }
+        .starcat-star-history-tooltip { max-width: min(220px, calc(100% - 8px)); padding: 6px 8px; }
     }
-    @container (max-width: 339px) {
+    @container star-history (max-width: 339px) {
         .starcat-star-history-card { padding-inline: 8px; }
         .starcat-star-history-metrics { gap: 4px; }
         .starcat-star-history-metric { padding-inline: 3px; }
@@ -170,30 +223,13 @@ enum ReadmeStarHistoryDOM {
     /// 在 README 文档自己的闭包中声明，避免暴露给远端内容新的 native bridge。
     static let script = """
     function configureStarHistory(host) {
-        var chart = host.querySelector('.starcat-star-history-chart');
-        if (!chart) { return; }
-        var points = JSON.parse(chart.dataset.points);
-        var rendered = JSON.parse(chart.dataset.rendered);
-        if (points.length < 2 || rendered.length < 2) { return; }
-        var svg = chart.querySelector('svg');
-        var callouts = chart.querySelector('.starcat-star-history-callouts');
-        var tooltip = chart.querySelector('.starcat-star-history-tooltip');
-        var markerGroup = svg.querySelector('.starcat-star-history-markers');
-        var crosshair = svg.querySelector('.starcat-star-history-crosshair');
-        var hoverPoint = svg.querySelector('.starcat-star-history-hover-point');
-        var maximum = Number(chart.dataset.maximum), step = Number(chart.dataset.step);
         var tags = host.querySelector('.starcat-star-history-tags');
         var languageChip = tags && tags.querySelector('.starcat-star-history-tag-language');
         var topicChips = tags ? Array.from(tags.querySelectorAll('.starcat-star-history-tag-topic')) : [];
         var moreChip = tags && tags.querySelector('.starcat-star-history-tag-more');
         var topicNames = tags ? JSON.parse(tags.dataset.topics) : [];
-        var locale = chart.dataset.locale;
-        var number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-        var shortNumber = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
-        var fullDate = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
-        var start = points[0][0], end = points[points.length - 1][0], duration = Math.max(1, end - start);
-        var width = 0, height = 0, left = 44, right = 12, top = 64, bottom = 30;
-        var selected = points.length - 1, interacting = false;
+        var journey = host.querySelector('.starcat-star-journey-track');
+        var journeyNodes = journey ? Array.from(journey.children) : [];
         // 先预留语言与 +N，再依次减少 Topic；每次从完整候选集开始，放宽窗口才能恢复标签。
         function layoutTags() {
             if (!tags || !moreChip || tags.clientWidth <= 0) { return; }
@@ -219,6 +255,45 @@ enum ReadmeStarHistoryDOM {
                 languageChip.style.maxWidth = Math.max(0, Math.min(languageWidth, available - moreWidth - (moreWidth ? gap : 0))) + 'px';
             }
         }
+        // 每次根据容器宽度重新取排名前 N 个；保留创建/当前，放宽后恢复被隐藏的成长节点。
+        // 字号参与预算，放大 README 文字时减少节点，不缩字或把时间线折成两行。
+        function layoutJourney() {
+            if (!journey || journey.clientWidth <= 0) { return; }
+            var minimumWidth = Math.max(118, parseFloat(getComputedStyle(journey).fontSize) * 10);
+            // Current 仍计入事件名额；只改变其显示内容，避免改变前面历史节点的筛选结果。
+            var slots = Math.max(2, Math.min(6, Math.floor((journey.clientWidth - 10) / minimumWidth)));
+            journeyNodes.forEach(function(node) { node.hidden = Number(node.dataset.rank) >= slots; });
+            var visible = journeyNodes.filter(function(node) { return !node.hidden; });
+            journey.style.setProperty('--journey-columns', Math.max(1, visible.length - 1));
+        }
+        function layoutMetadata() { layoutTags(); layoutJourney(); }
+        var chart = host.querySelector('.starcat-star-history-chart');
+        var points = chart ? JSON.parse(chart.dataset.points) : [];
+        var rendered = chart ? JSON.parse(chart.dataset.rendered) : [];
+        // 0 Star 卡片仍有时间线和标签，不能因为没有曲线而跳过响应式布局。
+        if (!chart || points.length < 2 || rendered.length < 2) {
+            var metadataObserver = new ResizeObserver(layoutMetadata);
+            if (tags) { metadataObserver.observe(tags); }
+            if (journey) { metadataObserver.observe(journey); }
+            host.starcatHistoryCleanup = function() { metadataObserver.disconnect(); };
+            layoutMetadata();
+            return;
+        }
+        var annotations = JSON.parse(chart.dataset.annotations || '[]');
+        var svg = chart.querySelector('svg');
+        var callouts = chart.querySelector('.starcat-star-history-callouts');
+        var tooltip = chart.querySelector('.starcat-star-history-tooltip');
+        var markerGroup = svg.querySelector('.starcat-star-history-markers');
+        var crosshair = svg.querySelector('.starcat-star-history-crosshair');
+        var hoverPoint = svg.querySelector('.starcat-star-history-hover-point');
+        var maximum = Number(chart.dataset.maximum), step = Number(chart.dataset.step);
+        var locale = chart.dataset.locale;
+        var number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+        var shortNumber = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+        var fullDate = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+        var start = points[0][0], end = points[points.length - 1][0], duration = Math.max(1, end - start);
+        var width = 0, height = 0, left = 44, right = 12, top = 64, bottom = 30;
+        var selected = points.length - 1, tooltipIndex = -1, interacting = false;
         function compact(value) {
             var magnitude = Math.abs(value);
             if (magnitude >= 999500) { return shortNumber.format(value / 1000000) + 'M'; }
@@ -259,8 +334,30 @@ enum ReadmeStarHistoryDOM {
         }
         function showSelection() {
             var point = points[selected];
+            var annotation = annotations.find(function(item) { return item.index === selected; });
+            var rows = annotation ? (annotation.rows || []) : [];
             tooltip.hidden = false;
-            fillLabel(tooltip, point, true);
+            // 相同历史点复用 DOM；容器缩放只重新定位，垂直移动光标不会改变内容或换行。
+            if (tooltipIndex !== selected) {
+                tooltipIndex = selected;
+                fillLabel(tooltip, point, true);
+                if (rows.length) {
+                    var fields = document.createElement('dl');
+                    fields.className = 'starcat-star-history-tooltip-fields';
+                    rows.forEach(function(row) {
+                        var label = document.createElement('dt'), value = document.createElement('dd');
+                        label.textContent = row.label;
+                        value.textContent = row.value;
+                        if (row.note) {
+                            var note = document.createElement('small');
+                            note.textContent = row.note;
+                            value.appendChild(note);
+                        }
+                        fields.appendChild(label); fields.appendChild(value);
+                    });
+                    tooltip.appendChild(fields);
+                }
+            }
             positionLabel(tooltip, point);
             callouts.style.visibility = 'hidden';
             crosshair.style.display = ''; hoverPoint.style.display = '';
@@ -268,7 +365,8 @@ enum ReadmeStarHistoryDOM {
             crosshair.setAttribute('y1', top); crosshair.setAttribute('y2', height - bottom);
             hoverPoint.setAttribute('cx', x(point)); hoverPoint.setAttribute('cy', y(point));
             chart.setAttribute('aria-valuenow', selected);
-            chart.setAttribute('aria-valuetext', number.format(point[1]) + ', ' + fullDate.format(point[0]) + (point[2] ? ', ' + chart.dataset.estimatedLabel : ''));
+            var details = rows.map(function(row) { return row.label + ': ' + row.value + (row.note ? ', ' + row.note : ''); });
+            chart.setAttribute('aria-valuetext', [number.format(point[1]), fullDate.format(point[0])].concat(details).join(', '));
         }
         function hideSelection() {
             interacting = false;
@@ -277,7 +375,7 @@ enum ReadmeStarHistoryDOM {
         }
         function layout() {
             if (!chart.isConnected) { return; }
-            layoutTags();
+            layoutMetadata();
             width = chart.clientWidth; height = chart.clientHeight;
             if (width < 100) { return; }
             svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
@@ -300,24 +398,40 @@ enum ReadmeStarHistoryDOM {
                 xTicks.appendChild(element('text', { class: 'starcat-star-history-axis starcat-star-history-axis-x', x: tickX, y: height - 8, 'text-anchor': tick === 0 ? 'start' : (tick === tickCount - 1 ? 'end' : 'middle') }, dateFormat.format(time)));
             }
             callouts.replaceChildren(); markerGroup.replaceChildren();
-            var candidates = width >= 750 ? [nearest(start + duration * .04), nearest(start + duration * .48), nearest(start + duration * .78), points.length - 1] : (width >= 480 ? [nearest(start + duration * .4), points.length - 1] : [points.length - 1]);
+            var limit = width >= 800 ? 4 : (width >= 480 ? 3 : (width >= 300 ? 2 : 1));
             var occupied = [], used = new Set();
-            // 最新点优先，余下标签只有在没有碰撞时出现，窄栏不缩小字体硬塞。
-            candidates.reverse().forEach(function(candidate) {
+            // 只使用完整历史选出的语义事件；Current 排第一，余下按价值与碰撞情况决定是否显示。
+            annotations.forEach(function(annotation) {
+                if (occupied.length >= limit) { return; }
+                var candidate = annotation.index;
                 if (used.has(candidate)) { return; } used.add(candidate);
                 var point = points[candidate], label = document.createElement('div');
-                label.className = 'starcat-star-history-callout'; fillLabel(label, point, false); callouts.appendChild(label);
+                label.className = 'starcat-star-history-callout starcat-star-history-callout-' + annotation.kind;
+                fillLabel(label, point, false);
+                label.querySelector('strong').textContent = annotation.title;
+                if (annotation.subtitle) {
+                    var subtitle = document.createElement('span');
+                    subtitle.className = 'starcat-star-history-callout-subtitle';
+                    subtitle.textContent = annotation.subtitle;
+                    label.insertBefore(subtitle, label.querySelector('small'));
+                }
+                callouts.appendChild(label);
                 var box = positionLabel(label, point);
                 var overlaps = occupied.some(function(other) { return box.x < other.x + other.width + 12 && box.x + box.width + 12 > other.x && box.y < other.y + other.height + 8 && box.y + box.height + 8 > other.y; });
                 if (overlaps) { label.remove(); return; } occupied.push(box);
-                markerGroup.appendChild(element('circle', { class: 'starcat-star-history-endpoint', cx: x(point), cy: y(point), r: 5.5 }));
+                if (annotation.kind === 'current') {
+                    markerGroup.appendChild(element('circle', { class: 'starcat-star-history-endpoint-ring', cx: x(point), cy: y(point), r: 7.5 }));
+                }
+                markerGroup.appendChild(element('circle', { class: 'starcat-star-history-endpoint starcat-star-history-marker-' + annotation.kind, cx: x(point), cy: y(point), r: 5.5 }));
             });
             if (interacting) { showSelection(); } else { hideSelection(); }
         }
         chart.addEventListener('pointermove', function(event) {
             var box = chart.getBoundingClientRect();
             var progress = Math.max(0, Math.min(1, (event.clientX - box.left - left) / (width - left - right)));
-            selected = nearest(start + duration * progress); interacting = true; showSelection();
+            var next = nearest(start + duration * progress);
+            if (interacting && next === selected) { return; }
+            selected = next; interacting = true; showSelection();
         });
         chart.addEventListener('pointerleave', function() { if (document.activeElement !== chart) { hideSelection(); } });
         chart.addEventListener('focus', function() { interacting = true; showSelection(); });
@@ -336,6 +450,7 @@ enum ReadmeStarHistoryDOM {
         var observer = new ResizeObserver(layout);
         observer.observe(chart);
         if (tags) { observer.observe(tags); }
+        if (journey) { observer.observe(journey); }
         host.starcatHistoryCleanup = function() { observer.disconnect(); };
         layout();
     }

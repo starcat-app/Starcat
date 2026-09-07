@@ -25,7 +25,7 @@ struct ReadmeStarHistoryRenderState: Equatable, Sendable {
     static let empty = ReadmeStarHistoryRenderState(revision: "empty", html: nil)
 }
 
-/// README 摘要比洞察页更克制：只展示公开仓库中足以形成历史曲线的 GH Archive 数据。
+/// README 只展示公开仓库的 GH Archive 历史；零 Star 仓库可单独展示创建/当前时间线。
 enum ReadmeStarHistoryVisibilityPolicy {
     static func shouldDisplay(
         repo: Repo,
@@ -35,12 +35,12 @@ enum ReadmeStarHistoryVisibilityPolicy {
         guard !repo.isPrivate,
               projectVisibility != .private,
               projectVisibility != .internal,
-              snapshot.range == .all,
-              snapshot.points.count >= 2
+              snapshot.range == .all
         else {
             return false
         }
-        return snapshot.points.contains { $0.source == .ghArchive }
+        // 零 Star 仓库也有 Created / Current 两个真实状态；没有历史时仅展示 Journey，不补造曲线。
+        return repo.starsCount == 0 || (snapshot.points.count >= 2 && snapshot.points.contains { $0.source == .ghArchive })
     }
 }
 
