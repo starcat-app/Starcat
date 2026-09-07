@@ -40,4 +40,13 @@ extension View {
             background(legacyMaterial, in: shape)
         }
     }
+
+    /// 标记可点击玻璃表面，使 macOS 26 能按指针交互提供系统级高光反馈。
+    @ViewBuilder
+    func starcatInteractiveGlassSurface<S: Shape>(
+        _ legacyMaterial: Material,
+        in shape: S
+    ) -> some View {
+        starcatGlassSurface(legacyMaterial, in: shape, interactive: true)
+    }
 }

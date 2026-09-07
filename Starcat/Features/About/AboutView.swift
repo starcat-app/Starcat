@@ -557,7 +557,7 @@ private struct SupportReviewRow: View {
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
-                    .background(.regularMaterial, in: Capsule())
+                    .starcatInteractiveGlassSurface(.regularMaterial, in: Capsule())
                     .overlay {
                         Capsule().stroke(.quaternary, lineWidth: 1)
                     }
@@ -804,7 +804,7 @@ private struct SafeExternalLink: View {
                     .labelStyle(.iconOnly)
                     .font(.system(size: 11, weight: .medium))
                     .frame(width: 22, height: 22)
-                    .background(.regularMaterial, in: Circle())
+                    .starcatInteractiveGlassSurface(.regularMaterial, in: Circle())
                     .overlay {
                         Circle().stroke(.quaternary, lineWidth: 1)
                     }
@@ -813,7 +813,7 @@ private struct SafeExternalLink: View {
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
-                    .background(.regularMaterial, in: Capsule())
+                    .starcatInteractiveGlassSurface(.regularMaterial, in: Capsule())
                     .overlay {
                         Capsule().stroke(.quaternary, lineWidth: 1)
                     }

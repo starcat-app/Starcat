@@ -96,7 +96,7 @@ struct RAGCitationChipsRow: View {
                     .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .starcatInteractiveGlassSurface(.thinMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()

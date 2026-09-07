@@ -220,7 +220,7 @@ struct AwesomeSourceCard: View {
                     action: onRetry
                 )
                 .padding(5)
-                .background(.regularMaterial, in: Circle())
+                .starcatInteractiveGlassSurface(.regularMaterial, in: Circle())
                 .help(parseState?.errorMessage ?? String.l10n("action.retry"))
             }
             actionIsland
@@ -230,7 +230,7 @@ struct AwesomeSourceCard: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 27, height: 27)
-                        .background(.regularMaterial, in: Circle())
+                        .starcatInteractiveGlassSurface(.regularMaterial, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()

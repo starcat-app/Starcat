@@ -280,7 +280,7 @@ struct OwnerCardView: View {
             .labelStyle(.iconOnly)
             .foregroundStyle(.primary)
             .frame(width: 36, height: 28)
-            .background(.regularMaterial, in: Capsule())
+            .starcatInteractiveGlassSurface(.regularMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
