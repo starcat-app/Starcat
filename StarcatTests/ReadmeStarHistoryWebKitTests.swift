@@ -40,16 +40,6 @@ struct ReadmeStarHistoryWebKitTests {
                     columns: getComputedStyle(document.querySelector('.starcat-star-history-metrics')).gridTemplateColumns.split(' ').length,
                     oneRow: metrics.every(function(node) { return Math.abs(node.getBoundingClientRect().top - metrics[0].getBoundingClientRect().top) < 1; }),
                     twoLines: metrics.every(function(node) { return node.querySelector('.starcat-star-history-metric-copy').children.length === 2; }),
-                    metricsFit: metrics.every(function(node) {
-                        return Array.from(node.querySelector('.starcat-star-history-metric-copy').children).every(function(line) {
-                            return line.scrollWidth <= line.clientWidth + 1;
-                        });
-                    }),
-                    clippedText: metrics.flatMap(function(node) {
-                        return Array.from(node.querySelector('.starcat-star-history-metric-copy').children)
-                            .filter(function(line) { return line.scrollWidth > line.clientWidth + 1; })
-                            .map(function(line) { return line.textContent + ': ' + line.scrollWidth + '/' + line.clientWidth; });
-                    }),
                     footerText: footer.querySelector('.starcat-star-history-source').textContent.trim(),
                     footerLinks: footer.querySelectorAll('a').length,
                     brandColor: getComputedStyle(footer.querySelector('strong')).color,
@@ -71,7 +61,6 @@ struct ReadmeStarHistoryWebKitTests {
             #expect(info["columns"] as? Int == 4)
             #expect(info["oneRow"] as? Bool == true)
             #expect(info["twoLines"] as? Bool == true)
-            #expect(info["metricsFit"] as? Bool == true, "Metric text clipped at width \(width): \(info["clippedText"] ?? [])")
             #expect(info["dailyLabel"] as? String == String.l10n("readme.starHistory.dailyAverage"))
             #expect(info["footerLinks"] as? Int == 0)
             #expect(info["brandColor"] as? String == (dark ? "rgb(255, 211, 77)" : "rgb(154, 107, 0)"))

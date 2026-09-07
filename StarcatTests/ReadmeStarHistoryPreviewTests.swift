@@ -202,7 +202,8 @@ struct ReadmeStarHistoryPreviewTests {
             snapshot: snapshot,
             model: model,
             repo: Self.repo(),
-            locale: Locale(identifier: "en")
+            locale: Locale(identifier: "en"),
+            avatarDataURI: "data:image/png;base64,Y2FjaGVk"
         ))
 
         #expect(html.contains(#"class="starcat-star-history-card""#))
@@ -211,7 +212,8 @@ struct ReadmeStarHistoryPreviewTests {
         #expect(html.contains("<strong>Starcat</strong>"))
         #expect(html.contains("octo/history"))
         #expect(html.contains(#"class="starcat-star-history-avatar""#))
-        #expect(html.contains(#"src="https://github.com/octo.png?size=80""#))
+        #expect(html.contains(#"src="data:image/png;base64,Y2FjaGVk""#))
+        #expect(!html.contains("https://github.com/octo.png"))
         #expect(html.contains(#"class="starcat-star-history-card-kicker""#))
         #expect(html.contains(#"class="starcat-star-history-current-star""#))
         #expect(html.contains(#"class="starcat-star-history-area""#))
@@ -327,7 +329,7 @@ struct ReadmeStarHistoryPreviewTests {
             let prefix = try #require(html.range(of: attribute + "=\""))
             let value = try #require(html[prefix.upperBound...].split(separator: "\"", maxSplits: 1).first)
             let series = try #require(try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [[Double]])
-            #expect(series.first == [created.timeIntervalSince1970 * 1_000, 0, 1])
+            #expect(series.first == [created.timeIntervalSince1970 * 1_000, 0])
             #expect(series.last?[1] == 1_165)
         }
         #expect(html.contains(#"class="starcat-star-history-line" points="44.00,280.00 "#))

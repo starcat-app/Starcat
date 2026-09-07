@@ -214,14 +214,15 @@ struct ReadmeWebViewTests {
         #expect(html.contains(".starcat-star-history-line"))
         #expect(html.contains(".starcat-star-history-area"))
         #expect(html.contains(".starcat-star-history-endpoint"))
-        #expect(html.contains("--star-history-card-background: var(--bg);"))
-        #expect(html.contains("--star-history-card-background: rgba(255, 255, 255, 0.07);"))
+        #expect(html.contains("--history-panel: #ffffff;"))
+        #expect(html.contains("--history-panel: rgba(255,255,255,.065);"))
         #expect(html.contains(".starcat-star-history-attribution"))
         #expect(html.contains(".starcat-star-history-attribution strong"))
         #expect(html.contains(".starcat-star-history-avatar img"))
         #expect(html.contains(".starcat-star-history-card-kicker"))
         #expect(html.contains(".starcat-star-history-current-star"))
-        #expect(html.contains("color: #f5b301;"))
+        #expect(html.contains("--history-brand: #9a6b00;"))
+        #expect(html.contains("--history-brand: #ffd34d;"))
     }
 
     @Test("Star History 只在接近底部时触发并通过受控函数局部替换")
