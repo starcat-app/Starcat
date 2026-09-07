@@ -64,13 +64,31 @@ extension View {
     /// 输入区上方的「上下文 chip」（@仓库 / 附件 / 链接）胶囊底。
     /// 关键约束：用 `Color.primary` 低透明度实底 + 细描边，取代 `.thinMaterial`——
     /// 后者在浅色输入区上对比过低、且明暗主题观感不一致；primary 透明度在黑白主题下都能自适应。
+    @ViewBuilder
     func ragContextChipCapsule() -> some View {
-        self
-            .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
-            )
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular, in: Capsule(style: .continuous))
+        } else {
+            self
+                .background(Color.primary.opacity(0.06), in: Capsule(style: .continuous))
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                )
+        }
+    }
+
+    @ViewBuilder
+    func ragFloatingActionSurface() -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            background(.regularMaterial, in: Circle())
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
+        }
     }
 }
 

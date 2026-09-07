@@ -586,7 +586,7 @@ struct AgentWorkspaceView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .aiCommandAuxiliarySurface(cornerRadius: 6)
     }
 
     private var railHeader: some View {
@@ -1135,7 +1135,7 @@ struct AgentWorkspaceView: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+        .aiCommandAuxiliarySurface(cornerRadius: 7)
     }
 
     private var composerContextFlow: some View {
@@ -1158,13 +1158,14 @@ struct AgentWorkspaceView: View {
                 .font(agentFont(.caption))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                .aiCommandAuxiliarySurface(cornerRadius: 7)
             }
 
             ForEach(viewModel.githubLinks) { link in
                 composerContextChip("\(link.owner)/\(link.repository)", icon: "link")
             }
         }
+        .aiCommandGlassContainer(spacing: 7)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -1840,9 +1841,10 @@ struct AgentWorkspaceView: View {
                     .font(agentFont(.caption))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 7))
+                    .aiCommandAuxiliarySurface(cornerRadius: 7)
                 }
             }
+            .aiCommandGlassContainer(spacing: 6)
         }
         .scrollIndicators(.hidden)
     }

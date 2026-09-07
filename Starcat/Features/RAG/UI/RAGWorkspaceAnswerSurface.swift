@@ -373,11 +373,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 .font(iconFont(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: 32, height: 32)
-                .background(.regularMaterial, in: Circle())
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                )
+                .ragFloatingActionSurface()
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -911,6 +907,7 @@ struct RAGWorkspaceAnswerSurface: View {
                 githubLinkChip(reference)
             }
         }
+        .aiCommandGlassContainer(spacing: 7)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

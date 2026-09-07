@@ -23,7 +23,40 @@ struct AICommandComposerView<Content: View>: View {
             content
         }
         .padding(10)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+        .aiCommandComposerSurface()
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func aiCommandComposerSurface() -> some View {
+        if #available(macOS 26.0, *) {
+            // Composer 是输入与执行操作的统一控制层；玻璃仅包裹控制层，不进入消息正文。
+            glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder
+    func aiCommandAuxiliarySurface(cornerRadius: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            background(.thinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    func aiCommandGlassContainer(spacing: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            // 多个相邻 chip 共享一次玻璃采样，减少渲染 pass，并允许系统平滑合并边界。
+            GlassEffectContainer(spacing: spacing) {
+                self
+            }
+        } else {
+            self
+        }
     }
 }
