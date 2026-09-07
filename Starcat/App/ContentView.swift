@@ -90,7 +90,7 @@ struct ContentView: View {
         // 让三栏内容背景延伸到 window toolbar 下方，避免 toolbar 的独立实色背景
         // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
-        .toolbarBackground(.hidden, for: .windowToolbar)
+            .starcatWindowToolbarChrome()
         .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         // 2026-06-29：.onOpenURL 已移到 StarcatApp 顶层（更早注册 NSAppleEventManager，

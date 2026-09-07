@@ -86,6 +86,6 @@ struct AgentWorkspaceSceneRoot: View {
                 }
             }
             // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
-            .toolbarBackground(.hidden, for: .windowToolbar)
+            .starcatWindowToolbarChrome()
     }
 }
