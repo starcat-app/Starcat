@@ -643,7 +643,7 @@ struct SearchCenterView: View {
                         .font(interfaceScale.font(.caption))
                         .foregroundStyle(.orange)
                         .padding(10)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .starcatGlassSurface(.ultraThinMaterial, in: Capsule())
                         .padding()
                 }
             }

@@ -44,7 +44,7 @@ struct LayoutDebugOverlay: View {
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .background(.regularMaterial, in: Capsule())
+                .starcatGlassSurface(.regularMaterial, in: Capsule())
                 .overlay {
                     Capsule()
                         .stroke(.primary.opacity(0.12), lineWidth: 0.5)

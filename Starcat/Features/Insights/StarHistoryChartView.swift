@@ -223,7 +223,7 @@ struct StarHistoryChartView: View {
         .font(interfaceScale.font(.captionSmall, weight: .medium))
         .padding(.horizontal, 7)
         .padding(.vertical, 4)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+        .starcatGlassSurface(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
     }
 
     /// 数据来源与精度仍保留在模型中供统计和诊断使用，但趋势本身只表达 Stars 数量变化。

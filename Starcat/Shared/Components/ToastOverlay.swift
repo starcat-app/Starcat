@@ -89,7 +89,7 @@ private struct ToastModifier: ViewModifier {
                 .padding(.leading, 14)
                 .padding(.trailing, (!autoDismiss || actionLabel != nil) ? 8 : 14)
                 .padding(.vertical, 8)
-                .background(.regularMaterial, in: Capsule())
+                .starcatGlassSurface(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.15)))
                 .padding(.bottom, bottomPadding)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))

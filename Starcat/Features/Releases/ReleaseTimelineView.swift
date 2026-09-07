@@ -84,7 +84,7 @@ struct ReleaseTimelineView: View {
                 Text(toast)
                     .font(.caption)
                     .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(.regularMaterial, in: Capsule())
+                    .starcatGlassSurface(.regularMaterial, in: Capsule())
                     .padding(.bottom, 16)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
             }

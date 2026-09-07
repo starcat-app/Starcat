@@ -1925,7 +1925,7 @@ struct RepositoryInsightsView: View {
         .font(interfaceScale.font(.captionSmall, weight: .medium))
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .starcatGlassSurface(.regularMaterial, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .fixedSize()
     }
 

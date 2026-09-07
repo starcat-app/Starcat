@@ -114,7 +114,7 @@ struct RepositoryLanguageDistributionBar: View {
             .foregroundStyle(.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .starcatGlassSurface(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
             .fixedSize()
     }
 

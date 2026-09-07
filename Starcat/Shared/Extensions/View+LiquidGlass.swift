@@ -23,4 +23,21 @@ extension View {
             toolbarBackground(.hidden, for: .windowToolbar)
         }
     }
+
+    /// 为悬浮提示和小型控件统一切换系统 Liquid Glass，同时保留 macOS 15/16 的原有材质表现。
+    ///
+    /// 该入口只用于脱离正文层级的瞬时表面；内容卡片继续使用不透明背景或 Material，
+    /// 避免在 macOS 26 上形成层层叠加的玻璃层级。
+    @ViewBuilder
+    func starcatGlassSurface<S: Shape>(
+        _ legacyMaterial: Material,
+        in shape: S,
+        interactive: Bool = false
+    ) -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(.regular.interactive(interactive), in: shape)
+        } else {
+            background(legacyMaterial, in: shape)
+        }
+    }
 }

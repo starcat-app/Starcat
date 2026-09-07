@@ -695,7 +695,7 @@ private struct OpenSSFRadarChart: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(.regularMaterial, in: Capsule())
+            .starcatGlassSurface(.regularMaterial, in: Capsule())
             .overlay {
                 Capsule().stroke(Color.accentColor.opacity(0.3), lineWidth: 1)
             }
