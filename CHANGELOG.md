@@ -2,7 +2,7 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
-## 1.6.0-待发布
+## 1.6.0
 
 Starcat 1.6.0 focuses on performance and detail polish: lower background load at launch, smoother scrolling and long lists, and lighter rendering in high-frequency views. It also adds a privacy settings page and an Owner profile card, brings OrcaRouter models and Firecrawl search, and continues refining Settings, Knowledge Base, and sharing.
 
