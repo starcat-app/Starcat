@@ -173,21 +173,7 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         //   的窗口背景材质"，与 SwiftUI `WindowGroup` 主窗的默认实色背景对齐，并排
         //   摆放时两个窗口同色同调，不再有主次窗色差。`blendingMode = .behindWindow`
         //   保留——让窗口背后桌面 / 其它窗口仍能透出一丝纹理，与主窗整体观感对齐。
-        let glassView = NSVisualEffectView()
-        glassView.material = .windowBackground
-        glassView.blendingMode = .behindWindow
-        glassView.state = .active
-        glassView.maskImage = Self.roundedCornerMaskImage(radius: 18)
-
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        glassView.addSubview(hostingController.view)
-        NSLayoutConstraint.activate([
-            hostingController.view.leadingAnchor.constraint(equalTo: glassView.leadingAnchor),
-            hostingController.view.trailingAnchor.constraint(equalTo: glassView.trailingAnchor),
-            hostingController.view.topAnchor.constraint(equalTo: glassView.topAnchor),
-            hostingController.view.bottomAnchor.constraint(equalTo: glassView.bottomAnchor)
-        ])
-        window.contentView = glassView
+        window.contentView = Self.makeWindowSurface(contentView: hostingController.view)
 
         // 窗口标题走 String.l10n(...) + format：AppKit NSWindow.title 是 String，
         // 不像 SwiftUI Text 那样自动解析 LocalizedStringKey，必须显式跑一次本地化。
@@ -228,6 +214,37 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         // 见上文 maskImage 注释：圆角 contentView + borderless 时阴影需要重算一次，
         // 否则首帧 shadow 按矩形 frame 绘制，圆角处会硬切。
         window.invalidateShadow()
+    }
+
+    /// 为独立 AI 面板选择与当前系统一致的 AppKit 根材质。
+    ///
+    /// macOS 26 的 `NSGlassEffectView` 同时负责动态采样和圆角，必须通过
+    /// `contentView` 属性嵌入 hosting view；旧系统继续保留已经线上验证过的
+    /// `NSVisualEffectView` + 9-slice mask 路径，避免改变 macOS 15–25 外观。
+    private static func makeWindowSurface(contentView: NSView) -> NSView {
+        if #available(macOS 26.0, *) {
+            let glassView = NSGlassEffectView()
+            glassView.style = .regular
+            glassView.cornerRadius = 18
+            glassView.contentView = contentView
+            return glassView
+        }
+
+        let effectView = NSVisualEffectView()
+        effectView.material = .windowBackground
+        effectView.blendingMode = .behindWindow
+        effectView.state = .active
+        effectView.maskImage = roundedCornerMaskImage(radius: 18)
+
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        effectView.addSubview(contentView)
+        NSLayoutConstraint.activate([
+            contentView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: effectView.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
+        ])
+        return effectView
     }
 
     /// 生成 9-slice 圆角蒙版图，用于 `NSVisualEffectView.maskImage`。
