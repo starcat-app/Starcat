@@ -32,9 +32,9 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `dev` | 本地 + `origin/dev` | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.6.0 发布基线与 `main` 已同步，Direct、官网、GitHub Release 与 Homebrew 已于 2026-09-07 发布。 | 继续承载 1.6.0 后续维护与新功能开发；App Store Connect 上传完成后关注处理结果。 |
+| `dev` | 本地 + `origin/dev` | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；1.6.0 发布基线与 `main` 已同步，Direct、官网、GitHub Release 与 Homebrew 已于 2026-09-07 发布，App Store Connect 构建 `1.6.0 (3111)` 已上传。 | 继续承载 1.6.0 后续维护与新功能开发；App Store 版本发布由 dong4j 完成。 |
 | `codex/performance-optimization` | 本地；无独立 worktree | Starcat macOS App 的 UI、列表分页、数据加载与缓存性能专项优化。 | `已合并`；多轮优化与交互修复已于 2026-09-06 合入 `dev`，独有提交为 0，原 worktree 已安全删除。 | 暂时保留本地分支；如需删除分支，等待 dong4j 单独授权。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；1.6.0 已于 2026-09-07 推送 `main` 与 `v1.6.0`，Direct 公证、官网、GitHub Release 和 Homebrew 已完成，App Store 包已验证并由 dong4j 上传中。 | 保持 1.6.0 发布基线；跟进 App Store Connect 处理结果，并在后续版本发布时从已验收的 `dev` 快进。 |
+| `main` | 本地 + `origin/main`；仓库根目录 worktree | 远端默认稳定主线和发布基线。 | `长期保留`；1.6.0 已于 2026-09-07 推送 `main` 与 `v1.6.0`，Direct 公证、官网、GitHub Release 和 Homebrew 已完成，App Store Connect 构建 `1.6.0 (3111)` 已上传。 | 保持 1.6.0 发布基线；App Store 版本发布由 dong4j 完成，后续版本继续从已验收的 `dev` 快进。 |
 
 ## 推荐数据链路跨仓分支
 
