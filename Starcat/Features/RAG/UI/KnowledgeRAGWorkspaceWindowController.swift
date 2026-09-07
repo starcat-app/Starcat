@@ -1692,7 +1692,8 @@ private struct KnowledgeRAGBrowserView: View {
         }
         .padding(.horizontal, 14)
         .frame(height: 42)
-        .background(.regularMaterial)
+        // 折叠后这一行承担导航 chrome，而非正文卡片；macOS 26 使用系统玻璃，旧系统保留原 Material。
+        .starcatGlassSurface(.regularMaterial, in: Rectangle())
         .overlay(alignment: .bottom) { Divider() }
         .opacity(knowledgeHeroCollapseProgress)
         .offset(y: -8 * (1 - knowledgeHeroCollapseProgress))

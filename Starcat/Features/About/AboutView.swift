@@ -79,11 +79,22 @@ struct AboutView: View {
             .frame(minWidth: 461, maxWidth: .infinity)
         }
         .frame(minWidth: 680, minHeight: 450)
-        .background(.regularMaterial)
+        .background { windowBackground }
         .onAppear {
             guard !hasMarkedFirstFrame else { return }
             hasMarkedFirstFrame = true
             PerformanceTracer.shared.mark(.aboutWindowFirstFrame)
+        }
+    }
+
+    /// Liquid Glass 应承载窗口 chrome，而不是覆盖整块正文画布。
+    /// macOS 26 使用稳定的系统窗口底色；旧系统继续保留原有 Material 外观。
+    @ViewBuilder
+    private var windowBackground: some View {
+        if #available(macOS 26.0, *) {
+            Color(nsColor: .windowBackgroundColor)
+        } else {
+            Rectangle().fill(.regularMaterial)
         }
     }
 
