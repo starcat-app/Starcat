@@ -159,7 +159,7 @@ enum ReadmeStarHistoryDOM {
     /* 历史事件各占一列，文字在圆点右下方；最后 10px 专属于真实 Current，只画圆环。 */
     .starcat-star-journey .starcat-star-journey-track { position: relative; display: grid; grid-template-columns: repeat(var(--journey-columns), minmax(0, 1fr)) 10px; list-style: none; margin: 0; padding: 0; }
     .starcat-star-journey-track::before { content: ''; position: absolute; top: 5px; left: 5px; right: 5px; height: 1px; background: var(--history-grid); }
-    .starcat-star-journey-track > .starcat-star-journey-node { --journey-color: var(--history-accent); position: relative; min-width: 0; margin: 0; padding: 20px 12px 0; list-style: none; text-align: left; }
+    .starcat-star-journey-track > .starcat-star-journey-node { --journey-color: var(--history-accent); position: relative; min-width: 0; margin: 0; padding: 12px 12px 0; list-style: none; text-align: left; }
     .starcat-star-journey-node[hidden] { display: none; }
     .starcat-star-journey-track > .starcat-star-journey-created { --journey-color: var(--history-secondary); }
     .starcat-star-journey-track > .starcat-star-journey-firstRecorded { --journey-color: var(--history-green); }
@@ -169,9 +169,10 @@ enum ReadmeStarHistoryDOM {
     .starcat-star-journey-track > .starcat-star-journey-current { grid-column: -2 / -1; padding: 0; min-height: 10px; }
     .starcat-star-journey-dot { position: absolute; top: 0; left: 0; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: var(--journey-color); }
     body.dark .starcat-star-journey-dot { border-color: #353940; }
-    .starcat-star-journey-dot::after { content: ''; position: absolute; top: 11px; left: 2px; height: 1.8em; border-left: 1px dashed var(--journey-color); }
     .starcat-star-journey-current .starcat-star-journey-dot { box-shadow: 0 0 0 1.5px var(--history-accent); }
-    .starcat-star-journey-current .starcat-star-journey-dot::after { display: none; }
+    /* 日期紧跟 10px 圆点下方；虚线依附文字区，随两行/三行内容伸缩，不额外撑出留白。 */
+    .starcat-star-journey-copy { position: relative; margin: 0; padding: 0; }
+    .starcat-star-journey-copy::before { content: ''; position: absolute; top: 0; bottom: 2px; left: -8px; border-left: 1px dashed var(--journey-color); }
     .starcat-star-journey-copy > * { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.45; }
     .starcat-star-journey-copy time, .starcat-star-journey-copy > span { font-size: .78em; color: var(--history-secondary); }
     .starcat-star-journey-copy strong { color: var(--history-foreground); font-size: .82em; font-weight: 500; }
@@ -196,11 +197,14 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-metric-copy strong { font-size: 1.15em; }
         .starcat-star-history-chart { height: 280px; }
     }
-    /* 最窄详情栏仍保留四列；先去掉装饰图标，把宽度留给两行读数，不靠继续缩字挤入。 */
+    /* 窄栏仍保留四列和语义图标；缩小底座、间距与行高，避免隐藏图标后留下空卡片。 */
     @container star-history (max-width: 639px) {
         .starcat-star-history-metrics { gap: 6px; }
-        .starcat-star-history-metric { padding-inline: 8px; }
-        .starcat-star-history-metric-icon { display: none; }
+        .starcat-star-history-metric { gap: 6px; min-height: 44px; padding: 3px 6px; border-radius: 11px; }
+        .starcat-star-history-metric-icon { width: 24px; height: 24px; flex-basis: 24px; border-radius: 7px; }
+        .starcat-star-history-metric-icon .starcat-star-history-icon { width: 18px; height: 18px; }
+        .starcat-star-history-metric-copy strong { line-height: 1.2; }
+        .starcat-star-history-metric-copy > span { line-height: 1.3; }
     }
     @container star-history (max-width: 519px) {
         .starcat-star-history-card { padding: 16px 12px; }
@@ -215,7 +219,9 @@ enum ReadmeStarHistoryDOM {
     @container star-history (max-width: 339px) {
         .starcat-star-history-card { padding-inline: 8px; }
         .starcat-star-history-metrics { gap: 4px; }
-        .starcat-star-history-metric { padding-inline: 3px; }
+        .starcat-star-history-metric { gap: 4px; padding-inline: 3px; }
+        .starcat-star-history-metric-icon { width: 20px; height: 20px; flex-basis: 20px; border-radius: 6px; }
+        .starcat-star-history-metric-icon .starcat-star-history-icon { width: 14px; height: 14px; }
         .starcat-star-history-current { padding-left: 0; }
     }
     """
