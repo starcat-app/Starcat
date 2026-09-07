@@ -46,6 +46,30 @@ struct WorkspaceTitlebarControls: View {
     var onSettings: (() -> Void)? = nil
 
     var body: some View {
+        platformControlGroup
+            .padding(.trailing, 10)
+            // NSTitlebarAccessoryViewController 不会可靠地从 SwiftUI 内容推导尺寸。
+            // 按钮数可变（Agent 3 / RAG 4），用 fixedSize 避免末尾按钮被裁掉。
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(height: 32, alignment: .trailing)
+            // titlebar accessory 是独立 hosting 树，不继承主窗口 locale。
+            .appLocaleEnvironment()
+    }
+
+    /// macOS 26 需要把邻近 glass 控件放进同一个容器，系统才能统一采样背景，
+    /// 并在窗口状态变化时保持一致的融合效果；旧系统继续渲染原有按钮组。
+    @ViewBuilder
+    private var platformControlGroup: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 6) {
+                controls
+            }
+        } else {
+            controls
+        }
+    }
+
+    private var controls: some View {
         HStack(spacing: 6) {
             controlButton(
                 systemImage: "inset.filled.rightthird.rectangle",
@@ -78,13 +102,6 @@ struct WorkspaceTitlebarControls: View {
                 }
             }
         }
-        .padding(.trailing, 10)
-        // NSTitlebarAccessoryViewController 不会可靠地从 SwiftUI 内容推导尺寸。
-        // 按钮数可变（Agent 3 / RAG 4），用 fixedSize 避免末尾按钮被裁掉。
-        .fixedSize(horizontal: true, vertical: false)
-        .frame(height: 32, alignment: .trailing)
-        // titlebar accessory 是独立 hosting 树，不继承主窗口 locale。
-        .appLocaleEnvironment()
     }
 
     private func controlButton(
@@ -102,7 +119,28 @@ struct WorkspaceTitlebarControls: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .foregroundStyle(isActive ? Color.accentColor : .secondary)
-        .background(isActive ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+        .workspaceTitlebarControlSurface(isActive: isActive)
         .help(helpKey)
+    }
+}
+
+private extension View {
+    /// 只让窗口级紧凑控件采用交互式 glass；active tint 表达状态而非装饰。
+    /// 旧系统保留原背景，避免兼容路径的视觉和点击区域发生变化。
+    @ViewBuilder
+    func workspaceTitlebarControlSurface(isActive: Bool) -> some View {
+        if #available(macOS 26.0, *) {
+            glassEffect(
+                .regular
+                    .tint(isActive ? Color.accentColor.opacity(0.16) : nil)
+                    .interactive(),
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+        } else {
+            background(
+                isActive ? Color.accentColor.opacity(0.12) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+        }
     }
 }

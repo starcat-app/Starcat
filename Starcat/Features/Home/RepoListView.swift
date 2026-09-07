@@ -796,10 +796,22 @@ struct RepoListView: View {
                         leading
                     }
                 }
+                if #available(macOS 26.0, *),
+                   spec.leadingPrimary != nil,
+                   spec.trailingPrimary != nil {
+                    // 让系统把全局筛选与当前仓库操作识别为两个独立 glass 分组。
+                    ToolbarSpacer(.fixed, placement: .primaryAction)
+                }
                 if let trailing = spec.trailingPrimary {
                     ToolbarItemGroup(placement: .primaryAction) {
                         trailing
                     }
+                }
+                if #available(macOS 26.0, *),
+                   spec.searchField != nil,
+                   (spec.leadingPrimary != nil || spec.trailingPrimary != nil) {
+                    // 搜索是持续输入区，不与一次性操作共享同一块 glass 背景。
+                    ToolbarSpacer(.fixed, placement: .primaryAction)
                 }
                 if let search = spec.searchField {
                     ToolbarItem(placement: .primaryAction) {
