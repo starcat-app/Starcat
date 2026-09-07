@@ -896,7 +896,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 host.innerHTML = html;
                 host.querySelectorAll('.starcat-star-history-avatar img').forEach(function(image) {
                     image.addEventListener('error', function() {
-                        // 头像网络失败时移除图片，让底层 owner 首字母继续承担仓库标识。
+                        // 缓存图片无法解码时移除损坏图像，保留圆角底框，不显示破图或字母占位。
                         image.remove();
                     }, { once: true });
                 });

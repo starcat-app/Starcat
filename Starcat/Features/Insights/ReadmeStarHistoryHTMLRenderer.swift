@@ -19,7 +19,8 @@ enum ReadmeStarHistoryHTMLRenderer {
         model: StarHistoryChartRenderModel,
         repo: Repo,
         locale: Locale,
-        now: Date = Date()
+        now: Date = Date(),
+        avatarDataURI: String? = nil
     ) -> String? {
         let points = snapshot.points.filter { $0.count >= 0 }.sorted { $0.date < $1.date }
         guard snapshot.range == .all, points.count >= 2, let first = points.first,
@@ -99,7 +100,10 @@ enum ReadmeStarHistoryHTMLRenderer {
         let generatedAt = snapshot.coverage?.generatedAt
             ?? points.filter { $0.source == .ghArchive }.compactMap(\.fetchedAt).max()
         let historyUpdated = format("readme.starHistory.updatedFormat", generatedAt.map { dateText($0, locale: locale) } ?? "—")
-        let ownerAvatar = escape(RepoAvatarURL.from(owner: repo.owner))
+        // 只接收 App 已准备好的图片数据，避免 WebView 再发远程请求；缺图由 ViewModel 异步补齐。
+        let avatarImage = avatarDataURI.map {
+            "<img src=\"\(escape($0))\" alt=\"\" width=\"72\" height=\"72\" loading=\"eager\" decoding=\"sync\">"
+        } ?? ""
         let chart = chartHTML(points: plottingPoints, rendered: rendered, axis: axis, locale: locale)
 
         return """
@@ -108,7 +112,7 @@ enum ReadmeStarHistoryHTMLRenderer {
             <header class="starcat-star-history-card-header">
               <div class="starcat-star-history-repository">
                 <span class="starcat-star-history-avatar" aria-hidden="true">
-                  <img src="\(ownerAvatar)" alt="" width="72" height="72" loading="lazy" decoding="async">
+                  \(avatarImage)
                 </span>
                 <div class="starcat-star-history-card-copy">
                   <span class="starcat-star-history-card-kicker">\(icon("github"))\(chartTitle)</span>

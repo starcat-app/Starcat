@@ -10,6 +10,7 @@
 //    去重刷新；远端失败不会清空已经显示的缓存曲线。
 //  - 只输出固定模板和纯文本转义后的内容，远端字段不能成为标签、属性或脚本。
 //  - 全历史在 Snapshot 更新时只建模一次，最多保留 90 个绘制点；滚动期间不做 O(n) 计算。
+//  - 头像先复用 Kingfisher 本地缓存，作为图片数据随卡片交给 WebView；缺图下载与历史刷新并行。
 //
 
 import Foundation
@@ -68,6 +69,8 @@ final class ReadmeStarHistoryViewModel {
     private var generation: UInt64 = 0
     private var activeIdentity: LoadIdentity?
     private var loadingIdentity: LoadIdentity?
+    private var avatarDataURI: String?
+    private var latestSnapshot: StarHistorySnapshot?
 
     private(set) var renderState: ReadmeStarHistoryRenderState = .empty
 
@@ -98,6 +101,8 @@ final class ReadmeStarHistoryViewModel {
             generation &+= 1
             activeIdentity = identity
             loadingIdentity = nil
+            avatarDataURI = nil
+            latestSnapshot = nil
             // 同仓元数据或语言更新时保留旧卡片，避免 SQLite await 期间先移除 DOM 导致滚动跳动。
             if changesRepository {
                 renderState = ReadmeStarHistoryRenderState(
@@ -125,12 +130,34 @@ final class ReadmeStarHistoryViewModel {
               visibility != .internal
         else { return }
 
+        // WebKit 不读取 Kingfisher 缓存。先复用列表/详情常用尺寸，再生成带本地图片的首帧 HTML。
+        if avatarDataURI == nil {
+            let keys = SnapshotAvatarImage.cacheKeys(owner: repo.owner, ownerAvatar: repo.ownerAvatar, displayDiameter: 64)
+            let cachedAvatar = await AvatarCacheLoader.cachedDataURI(cacheKeys: keys)
+            guard owns(requestedGeneration, identity: identity) else { return }
+            avatarDataURI = cachedAvatar
+        }
+
         // 先读持久缓存。即使后续网络较慢或失败，用户到达 README 末尾时也能立即看到旧曲线。
         if let cached = try? await repository.cached(repo: repo, range: .all),
            owns(requestedGeneration, identity: identity) {
             applyIfVisible(cached, repo: repo, visibility: visibility, identity: identity, locale: locale)
         }
 
+        // 两个结构化子任务各自发布就绪结果：曲线不等头像下载，头像也不等 History 网络刷新。
+        // 它们继承调用方取消状态，并在写回前核对 generation，避免旧仓库图片覆盖新卡片。
+        async let history: Void = refreshHistory(repo: repo, visibility: visibility, identity: identity,
+                                                 locale: locale, requestedGeneration: requestedGeneration)
+        async let avatar: Void = refreshAvatar(repo: repo, visibility: visibility, identity: identity,
+                                               locale: locale, requestedGeneration: requestedGeneration)
+        _ = await (history, avatar)
+    }
+
+    /// 历史刷新独立于头像请求，仍由 Repository 负责业务缓存与请求去重。
+    private func refreshHistory(
+        repo: Repo, visibility: ProjectVisibility?, identity: LoadIdentity,
+        locale: Locale, requestedGeneration: UInt64
+    ) async {
         // Repository 内部继续处理 ETag、304、同仓请求合并与本进程已加载短路。
         // README 摘要不轮询 202，避免用户只是阅读文档时产生持续后台请求。
         guard owns(requestedGeneration, identity: identity) else { return }
@@ -143,6 +170,25 @@ final class ReadmeStarHistoryViewModel {
         applyIfVisible(refreshed, repo: repo, visibility: visibility, identity: identity, locale: locale)
     }
 
+    /// 只有本地缺图才下载；加载器写回同一份 Kingfisher 缓存，后续浏览可直接复用。
+    private func refreshAvatar(
+        repo: Repo, visibility: ProjectVisibility?, identity: LoadIdentity,
+        locale: Locale, requestedGeneration: UInt64
+    ) async {
+        guard avatarDataURI == nil, owns(requestedGeneration, identity: identity) else { return }
+        let url = GitHubAvatarURL.imageURL(
+            from: repo.ownerAvatar ?? RepoAvatarURL.from(owner: repo.owner), displayDiameter: 64
+        )
+        guard let dataURI = await AvatarCacheLoader.loadAsDataURI(urlString: url?.absoluteString),
+              owns(requestedGeneration, identity: identity)
+        else { return }
+        avatarDataURI = dataURI
+        // 使用当前最新快照，避免头像晚到时把已刷新的曲线回退成最初的缓存数据。
+        if let snapshot = latestSnapshot {
+            applyIfVisible(snapshot, repo: repo, visibility: visibility, identity: identity, locale: locale)
+        }
+    }
+
     /// 切仓、切账号或退出 README 模式时只让旧结果失去写回资格。
     ///
     /// 底层 Repository 的共享刷新可能仍会完成并落入 SQLite，供下次进入直接命中缓存。
@@ -150,6 +196,8 @@ final class ReadmeStarHistoryViewModel {
         generation &+= 1
         activeIdentity = nil
         loadingIdentity = nil
+        avatarDataURI = nil
+        latestSnapshot = nil
         renderState = .empty
     }
 
@@ -166,6 +214,7 @@ final class ReadmeStarHistoryViewModel {
             snapshot: snapshot
         ) else { return }
 
+        latestSnapshot = snapshot
         let model = StarHistoryChartRenderModel(
             points: snapshot.points,
             range: .all,
@@ -175,7 +224,8 @@ final class ReadmeStarHistoryViewModel {
             snapshot: snapshot,
             model: model,
             repo: repo,
-            locale: locale
+            locale: locale,
+            avatarDataURI: avatarDataURI
         ) else { return }
 
         // 描述、Topics、覆盖水位变化也必须更新；相同 HTML 不重复触碰 DOM 和 hover 状态。

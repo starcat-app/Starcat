@@ -31,7 +31,7 @@
 import Foundation
 import Kingfisher
 
-/// HTML 导出场景的头像加载器。无状态，一组 enum 静态方法。
+/// HTML 导出与 README 卡片共用的头像加载器。无状态，一组 enum 静态方法。
 ///
 /// 与 `RemoteAvatar`（SwiftUI 实时显示）解耦：
 /// - `RemoteAvatar` 是给 UI 渲染用的（直接给 SwiftUI 一个 View）；
@@ -46,6 +46,27 @@ enum AvatarCacheLoader {
     static let resourceTimeout: TimeInterval = 10
 
     // MARK: - 公开 API
+
+    /// 按现有头像尺寸的候选 key 读取本地图片，禁止触发网络，供卡片首帧使用。
+    /// 先查全部内存 key，避免列表头像已经在内存中却仍逐个探测磁盘；磁盘命中保留原始格式。
+    /// async 非 actor 方法沿用本模块的后台执行方式，磁盘读取和图片编码不占用主线程。
+    static func cachedDataURI(cacheKeys: [String]) async -> String? {
+        for key in cacheKeys {
+            guard !Task.isCancelled else { return nil }
+            if let image = ImageCache.default.retrieveImageInMemoryCache(forKey: key),
+               let data = image.kf.pngRepresentation(), data.count <= maxBytes {
+                return "data:image/png;base64,\(data.base64EncodedString())"
+            }
+        }
+        for key in cacheKeys {
+            guard !Task.isCancelled else { return nil }
+            if let data = try? ImageCache.default.diskStorage.value(forKey: key),
+               !data.isEmpty, data.count <= maxBytes {
+                return "data:\(sniffMimeType(data: data));base64,\(data.base64EncodedString())"
+            }
+        }
+        return nil
+    }
 
     /// 给一个图片 URL 字符串，返回 base64 data URI；任何失败返回 nil。
     ///
