@@ -585,23 +585,43 @@ struct SmartSearchField: View {
         String.l10n(isSemantic ? "search.semantic.placeholder" : "search.repoPlaceholder")
     }
 
+    /// 搜索框承载输入、模式切换和历史入口，属于高频功能控件而非内容卡片。
+    /// macOS 26 使用交互式 glass；旧系统继续使用原有实体背景和语义色覆盖。
+    @ViewBuilder
     private var searchBackground: some View {
-        Capsule(style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor))
-            .overlay {
-                if isSemantic {
-                    Capsule(style: .continuous)
-                        .fill(Color.purple.opacity(0.055))
+        if #available(macOS 26.0, *) {
+            Capsule(style: .continuous)
+                .fill(.clear)
+                .glassEffect(
+                    .regular
+                        .tint(isSemantic ? Color.purple.opacity(0.10) : nil)
+                        .interactive(),
+                    in: Capsule(style: .continuous)
+                )
+        } else {
+            Capsule(style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .overlay {
+                    if isSemantic {
+                        Capsule(style: .continuous)
+                            .fill(Color.purple.opacity(0.055))
+                    }
                 }
-            }
+        }
     }
 
+    /// Liquid Glass 自带边界高光；继续叠加旧描边会造成双边框。
+    @ViewBuilder
     private var searchBorder: some View {
-        Capsule(style: .continuous)
-            .strokeBorder(
-                isSemantic ? Color.purple.opacity(0.36) : Color.secondary.opacity(0.22),
-                lineWidth: 1
-            )
+        if #available(macOS 26.0, *) {
+            EmptyView()
+        } else {
+            Capsule(style: .continuous)
+                .strokeBorder(
+                    isSemantic ? Color.purple.opacity(0.36) : Color.secondary.opacity(0.22),
+                    lineWidth: 1
+                )
+        }
     }
 
     @ViewBuilder
