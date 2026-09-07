@@ -766,10 +766,7 @@ struct RepoShareButton: View {
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(didCopy ? Color.green : Color.secondary)
             .frame(width: 28, height: 28)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
-            }
+            .heroActionIconSurface(colorScheme: colorScheme)
             .contentShape(Capsule())
     }
 }

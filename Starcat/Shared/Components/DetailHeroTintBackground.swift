@@ -60,7 +60,19 @@ struct DetailHeroTintBackground: View {
         .opacity(overallOpacity)
         .allowsHitTesting(false)
         // 绘制进 titlebar / toolbar 透明区域；不扩其它边，避免影响底部 batch bar inset。
-        .ignoresSafeArea(edges: .top)
+        .detailHeroTopBackgroundExtension()
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func detailHeroTopBackgroundExtension() -> some View {
+        if #available(macOS 26.0, *) {
+            // 让系统从 Hero 渐变生成标题栏延展，避免手工拉伸背景与 Liquid Glass 采样脱节。
+            backgroundExtensionEffect()
+        } else {
+            ignoresSafeArea(edges: .top)
+        }
     }
 }
 

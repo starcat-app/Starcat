@@ -16,3 +16,18 @@ enum HeroActionIconStyle {
         Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.06)
     }
 }
+
+extension View {
+    @ViewBuilder
+    func heroActionIconSurface(colorScheme: ColorScheme) -> some View {
+        if #available(macOS 26.0, *) {
+            // Hero 图标是短时高频操作，适合使用系统交互式玻璃；语义前景色仍由调用方决定。
+            glassEffect(.regular.interactive(), in: Capsule(style: .continuous))
+        } else {
+            background {
+                Capsule(style: .continuous)
+                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
+            }
+        }
+    }
+}

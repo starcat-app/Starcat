@@ -51,10 +51,7 @@ struct LibraryToggleButton: View {
                 }
             }
             .frame(width: 28, height: 28)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
-            }
+            .heroActionIconSurface(colorScheme: colorScheme)
             .contentShape(Capsule())
             .accessibilityLabel(Text(helpKey))
         }

@@ -800,10 +800,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         } label: {
                             WikiEntryIcon(size: 13)
                                 .frame(width: 28, height: 28)
-                                .background {
-                                    Capsule(style: .continuous)
-                                        .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
-                                }
+                                .heroActionIconSurface(colorScheme: colorScheme)
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
@@ -819,10 +816,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     } label: {
                         WikiEntryIcon(size: 13)
                             .frame(width: 28, height: 28)
-                            .background {
-                                Capsule(style: .continuous)
-                                    .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
-                            }
+                            .heroActionIconSurface(colorScheme: colorScheme)
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()

@@ -61,10 +61,7 @@ struct RepoWikiMenu: View {
         } label: {
             WikiEntryIcon(size: 13)
                 .frame(width: 28, height: 28)
-                .background {
-                    Capsule()
-                        .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
-                }
+                .heroActionIconSurface(colorScheme: colorScheme)
                 .contentShape(Capsule())
                 .accessibilityLabel(Text("wiki.menu.title"))
         }

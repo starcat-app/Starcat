@@ -37,10 +37,7 @@ struct RepoRecommendButton: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 28, height: 28)
-                .background {
-                    Capsule(style: .continuous)
-                        .fill(HeroActionIconStyle.background(colorScheme: colorScheme))
-                }
+                .heroActionIconSurface(colorScheme: colorScheme)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
