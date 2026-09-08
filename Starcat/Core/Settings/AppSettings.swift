@@ -2470,14 +2470,18 @@ final class AppSettings {
     /// 只升级仍等于已发布旧默认值的标签 Prompt，保留用户选择的 Provider / Model / 参数。
     ///
     /// 标签任务整份配置持久化在同一个 JSON key 下；若仅修改 `AIDefaultPrompts.tags`，
-    /// 老用户会永久继续使用“每次生成 3...8 个”的旧 Prompt。反过来，直接覆盖整份配置
-    /// 又会破坏用户自定义 Prompt。本迁移用完整值相等判断区分两者，并在命中时只替换
-    /// `prompt` 字段。编码失败时返回内存中的新值，下次启动仍可重试持久化。
+    /// 老用户会永久继续使用旧 Prompt（含允许 Untagged 空结果的 V2）。反过来，直接覆盖
+    /// 整份配置又会破坏用户自定义 Prompt。本迁移用完整值相等判断区分两者，并在命中时
+    /// 只替换 `prompt` 字段。编码失败时返回内存中的新值，下次启动仍可重试持久化。
     private static func migrateLegacyDefaultTagsPromptIfNeeded(
         _ task: AIModelTaskConfiguration,
         defaults: UserDefaults
     ) -> AIModelTaskConfiguration {
-        guard task.prompt == AIDefaultPrompts.legacyTagsV1 else { return task }
+        let legacyPrompts: [AIPromptConfiguration] = [
+            AIDefaultPrompts.legacyTagsV1,
+            AIDefaultPrompts.legacyTagsV2
+        ]
+        guard legacyPrompts.contains(task.prompt) else { return task }
 
         var migrated = task
         migrated.prompt = AIDefaultPrompts.tags

@@ -963,7 +963,7 @@ enum AIDefaultPrompts {
     /// **删占位符 = 不注入对应数据**：用户在 Settings 改默认 prompt 把某个占位符删掉，
     /// service 层就不渲染对应内容；改坏了点 Restore Default 还原。
     /// 占位符在 dict 中查不到时保留原文（让 LLM 看到字面量便于排错，不静默吞）。
-    /// 2026-07-19 前发布的标签默认 Prompt。
+    /// 2026-07-19 前发布的标签默认 Prompt（强制 3…8 个）。
     ///
     /// 只用于 `AppSettings` 做“旧默认值才升级”的精确比较；不能删除或修改，否则已经
     /// 持久化旧默认 Prompt 的用户无法安全迁移，而真正的自定义 Prompt 又可能被误覆盖。
@@ -1034,12 +1034,11 @@ enum AIDefaultPrompts {
         """
     )
 
-    /// 复用优先的标签默认 Prompt（2026-07-19）。
+    /// 2026-07-19「复用优先、允许空结果」默认 Prompt。
     ///
-    /// 与旧版“每次必须生成 3...8 个”不同，新版允许 0 个结果，并把标签库从风格参考
-    /// 提升为首选词表；只有词表确实无法表达仓库核心概念时才允许创建至多 1 个新标签。
-    /// 本地结果收敛仍会再次执行数量、置信度和同义形式约束，不能只信任模型自报遵守。
-    static let tags = AIPromptConfiguration(
+    /// 只用于 `AppSettings` 做“旧默认值才升级”的精确比较；不能删除或修改。
+    /// 该版在 Untagged 批量整理时会把空数组当成合法捷径，导致大量空标签失败。
+    static let legacyTagsV2 = AIPromptConfiguration(
         systemPrompt: """
         You are Starcat's repository tagging assistant. Your primary goal is to reuse the user's existing tag vocabulary and prevent tag-library growth.
 
@@ -1089,6 +1088,85 @@ enum AIDefaultPrompts {
         """,
         userPromptTemplate: """
         Suggest 0 to 3 reuse-first tags for the GitHub repository described below.
+
+        Repository metadata:
+        {metadata}
+
+        README:
+        {readme}
+
+        Code structure:
+        {codeContext}
+
+        Existing tags on this repository (already covered; do not generate synonyms):
+        {repoTags}
+
+        Existing tag vocabulary (reuse exact names whenever applicable):
+        {libraryTags}
+        """
+    )
+
+    /// 复用优先的标签默认 Prompt（2026-09-09）。
+    ///
+    /// 相对 `legacyTagsV2`：Untagged（`{repoTags}` 为空）时禁止返回空数组，避免批量
+    /// 整理把「不够自信」当成合法捷径；已打标仓仍允许空结果表示“概念已覆盖”。
+    /// 标签库仍是首选词表；词表外最多 1 个新标签。本地 `AITagSuggestionPolicy` 会再次
+    /// 收敛数量 / 置信度 / 同义形式，不能只信任模型自报遵守。
+    static let tags = AIPromptConfiguration(
+        systemPrompt: """
+        You are Starcat's repository tagging assistant. Your primary goal is to reuse the user's existing tag vocabulary and prevent tag-library growth, while still producing usable suggestions for untagged repositories.
+
+        # Output Format (STRICT)
+        Return strict JSON only in message.content. NO prose, NO markdown fences, NO reasoning traces, NO explanations outside the JSON.
+
+        Schema (failure to match this schema will cause the output to be rejected):
+        {
+          "suggestedTags": [
+            {"name": "string", "confidence": 0.0, "reason": "string"}
+          ]
+        }
+
+        Constraints:
+        - If "Existing tags on this repository" is empty: return 1 to 3 tags. An empty suggestedTags array is FORBIDDEN in that case.
+        - If "Existing tags on this repository" is non-empty: return 0 to 3 tags. An empty array is correct ONLY when those existing repository tags already cover the project's core concepts.
+        - Do NOT return an empty array merely because confidence feels imperfect; for untagged repositories always produce the best reuse-first tags you can.
+        - Reuse existing library tags whenever they express the same concept, even if you would normally choose a synonym.
+        - Copy a reused tag's spelling, capitalization, spacing, and punctuation EXACTLY from the provided vocabulary.
+        - Propose at most ONE tag that does not already exist in the provided vocabulary, and only when it represents an essential core concept that no existing tag covers.
+        - "confidence" MUST be a number in the closed interval [0, 1] (for example 0.86, never 86).
+        - "name" MUST be short (1-3 tokens), reusable across repositories, and suitable for a local tag system.
+        - "reason" should be one short sentence explaining why this tag fits this repository.
+        - Do not output duplicate, synonymous, broader-and-narrower, singular-and-plural, case-only, spacing-only, or hyphen-only variants in the same result.
+
+        # Tag Style Rules
+        Apply ONLY the branch matching {outputLanguage}:
+
+        - If {outputLanguage} is "Simplified Chinese" or "Traditional Chinese":
+          - New tag names must be no longer than 4 Chinese characters; use nouns or short technical terms only.
+          - Well-known technical English terms (e.g. RAG, LLM, GitHub, API) MAY remain in English.
+
+        - If {outputLanguage} is "English":
+          - New tag names must be a single domain word, abbreviation, or common technical term.
+          - New tag names MUST be in English; do NOT include non-ASCII characters.
+
+        - Otherwise (Japanese / Korean / others):
+          - Follow the same spirit: short nouns, no sentences. Well-known technical English terms may remain in English.
+
+        # Decision Order
+        1. If "Existing tags on this repository" is empty: you MUST return 1 to 3 tags. Prefer exact reuse from "Existing tag vocabulary"; if the vocabulary cannot express an essential concept, propose at most one genuinely new reusable tag and still fill remaining slots with the best vocabulary matches when possible.
+        2. If "Existing tags on this repository" is non-empty: treat them as already-covered concepts. Do not suggest a synonym for them.
+        3. Search "Existing tag vocabulary" for reusable tags and copy matching names exactly.
+        4. If existing repository tags already sufficiently cover the project, return {"suggestedTags": []}.
+        5. Only if an essential uncovered concept remains after reuse, propose at most one genuinely new reusable tag.
+
+        # Output Language
+        The "reason" field MUST be written in {outputLanguage}.
+        Reused tag names retain the exact vocabulary spelling; only genuinely new names follow the language-specific style rules.
+        """,
+        userPromptTemplate: """
+        Suggest reuse-first tags for the GitHub repository described below.
+        - If Existing tags on this repository is empty: return 1 to 3 tags (empty array forbidden).
+        - If Existing tags on this repository is non-empty: return 0 to 3 tags; empty only when already covered.
 
         Repository metadata:
         {metadata}

@@ -838,6 +838,21 @@ struct AppSettingsTests {
         #expect(AppSettings(defaults: defaults).aiTagsTask == migrated)
     }
 
+    @Test("AI Tags: 允许 Untagged 空结果的 V2 默认 Prompt 也自动升级")
+    func legacyDefaultTagsPromptV2Migrates() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+        var legacyTask = seeded.aiTagsTask
+        legacyTask.prompt = AIDefaultPrompts.legacyTagsV2
+        legacyTask.modelID = "custom-tag-model-v2"
+        seeded.aiTagsTask = legacyTask
+
+        let migrated = AppSettings(defaults: defaults).aiTagsTask
+        #expect(migrated.prompt == AIDefaultPrompts.tags)
+        #expect(migrated.modelID == "custom-tag-model-v2")
+        #expect(AppSettings(defaults: defaults).aiTagsTask == migrated)
+    }
+
     @Test("AI Tags: 用户自定义 Prompt 不被默认升级覆盖")
     func customTagsPromptIsPreserved() {
         let defaults = makeIsolatedDefaults()
