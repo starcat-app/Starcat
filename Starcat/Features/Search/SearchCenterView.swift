@@ -278,6 +278,9 @@ struct SearchCenterView: View {
                 .focusEffectDisabled()
             }
             Spacer()
+            if shouldShowSemanticIndexControl {
+                semanticIndexControl
+            }
             if filtersAvailable {
                 Button {
                     isFilterDrawerPresented.toggle()
@@ -295,6 +298,64 @@ struct SearchCenterView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 46)
+    }
+
+    /// “全部 / 本地”都会执行本地语义 Provider，因此只在这两个 scope 暴露索引刷新。
+    /// GitHub / Web 不读取本地向量，显示按钮会错误暗示刷新能影响远端结果。
+    private var shouldShowSemanticIndexControl: Bool {
+        viewModel.scope == .all || viewModel.scope == .local
+    }
+
+    /// 复用项目统一刷新控件，并沿用旧 SmartSearchField 已有的进度文案。
+    /// 索引状态继续由 HomeViewModel 单一持有，避免 Search Center 再造一套并发状态。
+    private var semanticIndexControl: some View {
+        HStack(spacing: 6) {
+            if homeViewModel.isSemanticIndexing,
+               let progress = homeViewModel.semanticIndexProgress {
+                Text(verbatim: "\(progress.processed)/\(progress.total)")
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            SyncIconButton(
+                isRefreshing: homeViewModel.isSemanticIndexing,
+                disabled: homeViewModel.isSemanticIndexing || viewModel.isSearching,
+                tooltip: semanticIndexTooltip,
+                action: refreshSemanticIndex
+            )
+            .accessibilityLabel(Text("search.semantic.refreshIndex"))
+        }
+    }
+
+    private var semanticIndexTooltip: String {
+        guard homeViewModel.isSemanticIndexing,
+              let progress = homeViewModel.semanticIndexProgress else {
+            return String.l10n("search.semantic.refreshIndex")
+        }
+        return String(
+            format: String.l10n("search.semantic.indexingProgressFormat"),
+            progress.processed,
+            progress.total
+        )
+    }
+
+    private func refreshSemanticIndex() {
+        guard dependencies.entitlementGate.isProUser else {
+            viewModel.paywallContext = ProPaywallContext(
+                feature: .semanticSearch,
+                message: String.l10n("search.paywall.semantic.upgrade")
+            )
+            return
+        }
+
+        Task {
+            await homeViewModel.refreshSemanticIndex()
+            // 刷新完成后重跑当前已提交查询；成功时立即纳入新向量，失败时则让
+            // LocalSemanticSearchProvider 把可执行错误展示在结果区，而不是静默无效。
+            guard !viewModel.lastSubmittedQuery.isEmpty else { return }
+            await viewModel.submit()
+        }
     }
 
     /// scope 栏 Filters / 历史区 Clear all 共用的右侧胶囊样式。
@@ -836,22 +897,30 @@ struct SearchCenterView: View {
 
     private func shouldShowSourceIndicator(_ source: SearchResultSourceIndicator?) -> Bool {
         guard let source else { return false }
+        if case .semantic = source {
+            // 语义标记不仅用于“全部”聚合来源，还要在“本地”范围明确证明向量
+            // Provider 确实参与了召回；关键词-only 本地结果仍保持无标记的低噪音样式。
+            return viewModel.scope == .all || viewModel.scope == .local
+        }
         if viewModel.scope == .all { return true }
         if viewModel.scope == .web {
             switch source {
             case .web, .externalProvider(_):
                 return true
-            case .local, .github:
+            case .local, .semantic, .github:
                 return false
             }
         }
         return false
     }
 
-    /// 同一 repo 可能同时命中本地与 GitHub。优先显示「本地」，因为它已经是用户库内对象；
-    /// 纯远端候选才显示 GitHub，避免单卡出现多来源图标造成噪音。
+    /// 同一 repo 可能命中多个 Provider。语义命中优先显示 sparkles，让用户能确认
+    /// 向量召回是否生效；其余本地结果显示磁盘，纯远端候选才显示 GitHub。
     private func repositorySourceIndicator(for candidate: RepositoryCandidate) -> SearchResultSourceIndicator? {
-        if candidate.sources.contains(.localKeyword) || candidate.sources.contains(.localSemantic) {
+        if candidate.sources.contains(.localSemantic) {
+            return .semantic
+        }
+        if candidate.sources.contains(.localKeyword) {
             return .local
         }
         if candidate.sources.contains(.github) {
@@ -869,6 +938,7 @@ struct SearchCenterView: View {
 
     private enum SearchResultSourceIndicator {
         case local
+        case semantic
         case github
         case web
         case externalProvider(ExternalSearchProviderID)
@@ -898,6 +968,9 @@ struct SearchCenterView: View {
             switch source {
             case .local:
                 Image(systemName: "internaldrive")
+                    .font(.system(size: 11, weight: .semibold))
+            case .semantic:
+                Image(systemName: "sparkles")
                     .font(.system(size: 11, weight: .semibold))
             case .github:
                 Image("github")
@@ -929,6 +1002,7 @@ struct SearchCenterView: View {
         private var tint: Color {
             switch source {
             case .local: return .secondary
+            case .semantic: return .secondary
             case .github: return .primary
             case .web: return .blue
             case .externalProvider(let provider):
@@ -939,6 +1013,7 @@ struct SearchCenterView: View {
         private var helpText: Text {
             switch source {
             case .local: return Text("search.scope.local")
+            case .semantic: return Text("search.mode.semantic")
             case .github: return Text(verbatim: "GitHub")
             case .web: return Text("search.scope.web")
             case .externalProvider(let provider):

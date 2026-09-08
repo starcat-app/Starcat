@@ -185,6 +185,27 @@ struct SearchCenterViewModelTests {
         #expect(provider.lastRequest?.externalSearchProvider == .braveLLMContext)
     }
 
+    @Test("语义 Provider 失败时保留其它结果并展示本地化来源名")
+    func semanticFailureKeepsResultsAndUsesLocalizedSourceName() async throws {
+        let db = try InMemoryDatabaseManager()
+        let history = GRDBSearchHistoryRepository(database: db)
+        let candidate = Self.makeCandidate()
+        let coordinator = SearchCoordinator(providers: [
+            SearchCenterSessionStubProvider(candidate: candidate),
+            SearchCenterSemanticFailureStubProvider()
+        ])
+        let viewModel = SearchCenterViewModel(coordinator: coordinator, historyRepository: history)
+
+        viewModel.query = "swift"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(viewModel.candidates.count == 1)
+        #expect(viewModel.errorMessages == [
+            "\(String.l10n("search.mode.semantic")): 向量服务不可用"
+        ])
+    }
+
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
@@ -250,6 +271,22 @@ private struct SearchCenterSessionStubProvider: SearchProvider {
             totalCount: 1,
             hasNextPage: false
         )
+    }
+}
+
+private struct SearchCenterSemanticFailureStubProvider: SearchProvider {
+    let source: SearchSource = .localSemantic
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        throw SearchCenterSemanticFailure.unavailable
+    }
+}
+
+private enum SearchCenterSemanticFailure: LocalizedError {
+    case unavailable
+
+    var errorDescription: String? {
+        "向量服务不可用"
     }
 }
 

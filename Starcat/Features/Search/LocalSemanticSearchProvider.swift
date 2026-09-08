@@ -67,16 +67,19 @@ struct LocalSemanticSearchProvider: SearchProvider {
                 totalCount: candidates.count,
                 hasNextPage: false
             )
+        } catch is CancellationError {
+            // 用户继续输入、切换 scope 或关闭面板时，旧搜索任务被取消属于正常控制流。
+            // 不把它升级成错误提示，避免新查询结果上叠一条已经过期的失败信息。
+            return .empty
         } catch EntitlementGateError.requiresPro {
-            return .empty
-        } catch let error as AIEmbeddingError where error.isConfigurationIssue {
-            return .empty
-        } catch SemanticSearchError.missingAPIKey, SemanticSearchError.noVectors {
+            // “全部”搜索对非 Pro 用户仍以关键词结果为基线；只有显式点击索引刷新时
+            // 才由 Search Center 弹出付费墙，避免每次普通搜索都显示重复升级错误。
             return .empty
         } catch {
-            // 统一搜索中语义只是增强层。记录诊断但返回空页，让关键词结果继续可用。
+            // SearchCoordinator 天然支持部分成功：这里保留具体错误交给 Search Center
+            // 展示，同时关键词 Provider 的结果仍可正常呈现，不能再静默伪装成“语义无命中”。
             AppLog.ai.error("Search Center semantic enhancement failed: \(error.localizedDescription, privacy: .public)")
-            return .empty
+            throw error
         }
     }
 }

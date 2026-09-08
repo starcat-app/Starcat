@@ -104,7 +104,12 @@ final class SearchCenterViewModel {
     var errorMessages: [String] {
         coordinator.statuses.compactMap { source, status in
             guard case .failed(let message) = status else { return nil }
-            return "\(source.rawValue): \(message)"
+            // `localSemantic` 是内部来源标识，直接展示会像调试日志；改用既有本地化
+            // 产品名，让向量配置、网络或模型错误能被用户立即识别为语义搜索失败。
+            let sourceName = source == .localSemantic
+                ? String.l10n("search.mode.semantic")
+                : source.rawValue
+            return "\(sourceName): \(message)"
         }.sorted()
     }
 
