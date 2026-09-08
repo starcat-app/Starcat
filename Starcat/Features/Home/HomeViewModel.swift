@@ -536,10 +536,20 @@ final class HomeViewModel {
         let derivedRevision: Int
         let isLoading: Bool
 
-        /// 标签计数忽略自身勾选；只改标签时旧数字仍有效，语言计数仍按完整身份刷新。
+        /// 标签计数忽略自身勾选；只改标签时旧数字仍有效。
         var tagCountQuery: Self {
             var query = self
             query.filters.selectedTagIDs = []
+            return query
+        }
+
+        /// 语言计数忽略左侧单选语言；切换语言时复用仍有效的数字，避免闪回占位符。
+        ///
+        /// 全局多选语言保存在 `selectedLanguages`，这里故意只清空 `language`，
+        /// 因为全局语言、标签和其他筛选仍会真实改变这组计数。
+        var languageCountQuery: Self {
+            var query = self
+            query.filters.language = .all
             return query
         }
     }
@@ -571,6 +581,18 @@ final class HomeViewModel {
         guard let snapshot = sidebarFacetSnapshot,
               snapshot.query.tagCountQuery == sidebarFacetQuery.tagCountQuery else { return nil }
         return snapshot.counts.tags
+    }
+
+    /// 复用仍有效的语言计数，避免每次切换左侧语言都经历「数字 → 横杠 → 同一个数字」。
+    var sidebarLanguageStats: [LanguageStat]? {
+        guard let snapshot = sidebarFacetSnapshot,
+              snapshot.query.languageCountQuery == sidebarFacetQuery.languageCountQuery else { return nil }
+        return snapshot.counts.languages
+    }
+
+    /// “全部语言”与逐语言行共用同一份有效性判断，避免一处保留数字、另一处仍闪横杠。
+    var sidebarLanguageTotal: Int? {
+        sidebarLanguageStats.map { $0.reduce(0) { $0 + $1.count } }
     }
 
     /// 仅用于数字区域的宽度上界，不作为当前筛选计数展示。
@@ -665,7 +687,7 @@ final class HomeViewModel {
         var otherCount = 0
         var interestedCountByLowercased: [String: Int] = [:]
 
-        for stat in sidebarFacetCounts?.languages ?? [] {
+        for stat in sidebarLanguageStats ?? [] {
             let name = stat.language
             if name.isEmpty {
                 uncategorizedCount = stat.count
@@ -848,7 +870,7 @@ final class HomeViewModel {
         didSet {
             guard oldValue != repoLanguageFilter else { return }
             guard !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
-            reloadOrApplyCurrentManageView()
+            reloadOrApplyCurrentManageView(preservingSidebarLanguageCounts: true)
         }
     }
 
@@ -1292,7 +1314,7 @@ final class HomeViewModel {
         } else {
             filters.repoLanguageFilter = filter
         }
-        applyPersistentGlobalFilterState(filters)
+        applyPersistentGlobalFilterState(filters, preservingSidebarLanguageCounts: true)
     }
 
     /// 旧版 `.language(...)` 导航恢复：直接落到左侧单选语言筛选，不碰全局多选。
@@ -1307,7 +1329,7 @@ final class HomeViewModel {
             filters.repoLanguageFilter = .uncategorized
         }
 
-        applyPersistentGlobalFilterState(filters)
+        applyPersistentGlobalFilterState(filters, preservingSidebarLanguageCounts: true)
     }
 
     /// 全局语言仍跨分类保留；只有新集合与局部语言互斥时，才将局部选择恢复为「全部」。
@@ -1334,7 +1356,7 @@ final class HomeViewModel {
     func clearSidebarLanguageFilter() {
         var filters = persistentGlobalFilterState
         filters.repoLanguageFilter = .all
-        applyPersistentGlobalFilterState(filters)
+        applyPersistentGlobalFilterState(filters, preservingSidebarLanguageCounts: true)
     }
 
     /// 两层条件分别命名，避免全局多选覆盖局部单选的可见提示。
@@ -1394,8 +1416,12 @@ final class HomeViewModel {
     }
 
     /// 批量写入真实筛选时只触发一次重查，避免十个 didSet 依次启动十份分页任务。
-    private func applyPersistentGlobalFilterState(_ filters: GlobalRepoFilterState) {
+    private func applyPersistentGlobalFilterState(
+        _ filters: GlobalRepoFilterState,
+        preservingSidebarLanguageCounts: Bool = false
+    ) {
         let previous = effectiveGlobalFilterState
+        let wasTemporaryFilterActive = temporaryGlobalFilterSession != nil
         isApplyingGlobalFilterState = true
         temporaryGlobalFilterSession = nil
         hideArchived = filters.hideArchived
@@ -1411,7 +1437,11 @@ final class HomeViewModel {
         isApplyingGlobalFilterState = false
 
         if effectiveGlobalFilterState != previous {
-            reloadOrApplyCurrentManageView()
+            // 结束临时筛选会话可能同时改变其它条件，此时旧语言计数不再保证有效。
+            reloadOrApplyCurrentManageView(
+                preservingSidebarLanguageCounts:
+                    preservingSidebarLanguageCounts && !wasTemporaryFilterActive
+            )
         }
     }
 
@@ -1757,7 +1787,7 @@ final class HomeViewModel {
     /// 普通列表走数据库分页后，继续调用 `applyView()` 只会重排当前已加载页，
     /// 不能得到“全量排序后的第一页”。因此这里按模式分流：普通列表重查第一页，
     /// 智能集合/语义搜索等复杂路径仍走旧的内存派生。
-    private func reloadOrApplyCurrentManageView() {
+    private func reloadOrApplyCurrentManageView(preservingSidebarLanguageCounts: Bool = false) {
         let actionGeneration = reloadCoordinator.beginAction()
         guard currentRepoListScopeForDatabasePaging() != nil, !isSearching else {
             let task = Task { [weak self] in
@@ -1773,7 +1803,7 @@ final class HomeViewModel {
                       self.reloadCoordinator.isCurrent(generation: actionGeneration)
                 else { return }
                 PerformanceTracer.shared.trace(.manageDerive) {
-                    self.applyView()
+                    self.applyView(preservingSidebarLanguageCounts: preservingSidebarLanguageCounts)
                 }
             }
             reloadCoordinator.installActionTask(task, generation: actionGeneration)
@@ -3444,8 +3474,15 @@ final class HomeViewModel {
     /// **R-07（2026-06-15）**：算出 filteredSorted 后切片到 items；resetPage = true
     /// 把 currentPage 重置回 1（典型场景：切分类 / 排序 / 过滤），false 时保留
     /// （典型场景：SWR / forceRefresh 数据变化，preserveScrollPosition）。
-    private func applyView(resetPage: Bool = true) {
-        sidebarFacetDerivedRevision &+= 1
+    private func applyView(
+        resetPage: Bool = true,
+        preservingSidebarLanguageCounts: Bool = false
+    ) {
+        // 语言分面本来就排除左侧单选语言；仅这一个条件变化时，旧语言数字仍然有效。
+        // 其他调用继续递增 revision，避免数据或外部事实变化后复用过期计数。
+        if !preservingSidebarLanguageCounts {
+            sidebarFacetDerivedRevision &+= 1
+        }
         let wasDeepScrolledToEnd = !resetPage && !hasMore && items.count > Self.pageSize
         let newFilteredSorted = computeFilteredSorted()
         visibleRepoTotalCount = newFilteredSorted.count

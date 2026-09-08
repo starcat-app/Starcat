@@ -2466,7 +2466,7 @@ struct SidebarView: View {
                     Spacer(minLength: 4)
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(viewModel.sidebarFacetCounts == nil ? "—" : row.count.formatted())
+                        Text(viewModel.sidebarLanguageStats == nil ? "—" : row.count.formatted())
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -2512,7 +2512,7 @@ struct SidebarView: View {
 
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(viewModel.sidebarFacetCounts?.languageTotal.formatted() ?? "—")
+                        Text(viewModel.sidebarLanguageTotal?.formatted() ?? "—")
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()

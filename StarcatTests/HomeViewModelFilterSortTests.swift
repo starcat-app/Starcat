@@ -186,6 +186,51 @@ struct HomeViewModelFilterSortTests {
         await vm.awaitPendingListReloadForTesting()
     }
 
+    @Test("切换侧栏语言保留有效语言计数，标签和基础分类变化仍使旧计数失效")
+    func sidebarLanguageCountsStayStableWhileTogglingLanguages() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        await vm.refreshSidebarFacetCounts()
+        let stats = try #require(vm.sidebarLanguageStats)
+        #expect(vm.sidebarLanguageTotal == 4)
+
+        for filter in [RepoLanguageFilter.language("Swift"), .language("Rust"), .language("Rust")] {
+            vm.toggleLanguageFilterFromUser(filter)
+            #expect(vm.sidebarLanguageStats == stats, "异步刷新开始前也不能闪回横杠")
+            await vm.awaitPendingListReloadForTesting()
+            #expect(vm.sidebarLanguageStats == stats, "等待标签计数返回期间保持有效语言数字")
+            await vm.refreshSidebarFacetCounts()
+            #expect(vm.sidebarLanguageStats == stats)
+        }
+
+        vm.toggleSelectedTag("mac")
+        #expect(vm.sidebarLanguageStats == nil, "标签改变会真实改变语言计数，不能复用")
+        await vm.awaitPendingListReloadForTesting()
+        await vm.refreshSidebarFacetCounts()
+        #expect(vm.sidebarLanguageTotal == 2)
+
+        vm.selectSidebarFromUser(.allStars)
+        #expect(vm.sidebarLanguageStats == nil, "基础分类变化后不能展示上一分类的语言计数")
+        await vm.awaitPendingListReloadForTesting()
+    }
+
+    @Test("内存筛选路径切换侧栏语言也保留有效语言计数")
+    func sidebarLanguageCountsStayStableInMemoryScope() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        vm.selectSidebarFromUser(.smartCollection(.using))
+        await vm.awaitPendingListReloadForTesting()
+        // 单测没有 SidebarView 的 `.task(id:)` 驱动，切换分类后显式补齐真实列表加载。
+        await vm.reloadItems()
+        await vm.refreshSidebarFacetCounts()
+        let stats = try #require(vm.sidebarLanguageStats)
+        let countQuery = vm.sidebarFacetQuery.languageCountQuery
+
+        vm.toggleLanguageFilterFromUser(.language("Swift"))
+        #expect(vm.sidebarLanguageStats == stats, "筛选动作开始时不能闪回横杠")
+        await vm.awaitPendingListReloadForTesting()
+        #expect(vm.sidebarFacetQuery.languageCountQuery == countQuery)
+        #expect(vm.sidebarLanguageStats == stats, "内存列表重算后仍应复用同一组语言计数")
+    }
+
     @Test("主导航和 GitHub 分组清理局部筛选，保留全局条件；未分类禁止标签筛选")
     func sidebarNavigationResetsOnlyLocalFilters() async throws {
         let (vm, _) = try await makeFacetSUT()
