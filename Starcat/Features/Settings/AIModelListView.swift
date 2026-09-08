@@ -12,6 +12,8 @@
 //  关键约束：
 //  - 模型能力不是所有 OpenAI-compatible 服务都会返回统一字段，因此能力 Picker 是用户可修正项。
 //  - 组件只负责展示和绑定，不直接修改 AppSettings；实际写入由父视图提供 Binding，便于测试和复用。
+//  - 列表必须用 `List`（AppKit 表视图虚拟化），禁止 `Form` 内再套 `ScrollView + LazyVStack`：
+//    外层 Form 量测时会迫使 Lazy 栈对全部模型跑 measureEstimates，勾选时主线程可卡死数十秒。
 //
 
 import SwiftUI
@@ -84,30 +86,48 @@ struct AIModelListView: View {
     }
 
     private var modelScroll: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if filteredModels.isEmpty {
-                    Text("settings.ai.modelList.empty")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                } else {
-                    ForEach(filteredModels) { model in
-                        modelRow(model)
-                        if model.id != filteredModels.last?.id {
-                            Divider()
+        // 用 List 而不是 ScrollView+LazyVStack：Form 嵌套时后者会在 sizeThatFits 阶段
+        // 对全部模型做 measureEstimates（含每行 Toggle / Picker / SF Symbol Button），
+        // 大目录或内存压力下会直接 hang。List 走 NSTableView 虚拟化，外层只量固定高度。
+        List {
+            if filteredModels.isEmpty {
+                Text("settings.ai.modelList.empty")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(filteredModels) { model in
+                    AIModelListRow(
+                        model: model,
+                        isEnabled: enabledBinding(model),
+                        capability: capabilityBinding(model),
+                        isCustomized: modelHasCustomizedParameters(model),
+                        popoverItem: popoverBinding(model: model),
+                        parameters: nonNullParametersBinding(for: model),
+                        onResetParameters: {
+                            parametersBinding(model).wrappedValue = nil
+                        },
+                        onOpenParameters: {
+                            popoverModel = model
                         }
-                    }
+                    )
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowSeparator(.visible)
+                    .listRowBackground(Color.clear)
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .frame(height: modelScrollHeight)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.quaternary)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     /// HOM-126 follow-up (dong4j 反馈 2026-06-07，截图：2 个模型 → 列表底部留大片空白)：
@@ -128,72 +148,6 @@ struct AIModelListView: View {
         let perRowHeight: CGFloat = 44
         let dividerHeight: CGFloat = 1
         return CGFloat(visibleRows) * perRowHeight + CGFloat(max(0, visibleRows - 1)) * dividerHeight
-    }
-
-    private func modelRow(_ model: AIModelDescriptor) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Toggle(isOn: enabledBinding(model)) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.name)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    if let ownedBy = model.ownedBy, !ownedBy.isEmpty {
-                        Text(ownedBy)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            // 能力是目录标签：Chat/Embedding 参与任务路由，其余（含 Unknown）仅分类。
-            // 保持 macOS 原生 popup Picker 样式；菜单项带 SF Symbol。
-            Picker("", selection: capabilityBinding(model)) {
-                ForEach(AIModelCapability.allCases) { capability in
-                    Label(capability.displayName, systemImage: capability.systemImage)
-                        .tag(capability)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 148)
-
-            // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
-            // 齿轮按钮 → 弹出模型参数编辑 popover。锚定到 plain Button 而不是
-            // 整行，避免点击其它区域（toggle / capability picker）误触发 popover。
-            // 已覆盖参数的模型 SF Symbol 显示 .fill 变体 + tint orange，给个轻量
-            // "这个模型已自定义"视觉提示，与 popover header 的"已自定义"角标呼应。
-            // 「已自定义」按语义判断：打开弹窗误写回的默认值副本不算覆盖。
-            let isCustomized = modelHasCustomizedParameters(model)
-            Button {
-                popoverModel = model
-            } label: {
-                Image(systemName: isCustomized ? "gearshape.fill" : "gearshape")
-                    .foregroundStyle(isCustomized ? Color.orange : Color.secondary)
-                    .imageScale(.medium)
-            }
-            .buttonStyle(.plain)
-            // HOM-68 follow-up v10 (dong4j 反馈 2026-06-05 23:55)：项目强制规则
-            // (docs/3-设计/详细设计/07-UI交互设计.md §1.2)——所有 .buttonStyle(.plain) 必
-            // 须紧跟 .focusEffectDisabled() 抑制 macOS 15+ 默认蓝色 focus ring。
-            .focusEffectDisabled()
-            .help("settings.ai.modelList.parametersHelp")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .popover(item: popoverBinding(model: model), arrowEdge: .trailing) { focused in
-            AIModelParametersPopover(
-                model: focused,
-                parameters: nonNullParametersBinding(for: focused),
-                hasOverride: modelHasCustomizedParameters(focused),
-                onReset: {
-                    parametersBinding(focused).wrappedValue = nil
-                }
-            )
-            .appLocaleEnvironment()
-        }
     }
 
     /// 实时读 binding：落库为默认值副本时也不算自定义。
@@ -236,5 +190,73 @@ struct AIModelListView: View {
                 nullable.wrappedValue = newValue
             }
         )
+    }
+}
+
+/// 单行模型控件。拆成独立 View，避免父列表 body 因其它行状态变化整表重建时重复量测。
+private struct AIModelListRow: View {
+    let model: AIModelDescriptor
+    @Binding var isEnabled: Bool
+    @Binding var capability: AIModelCapability
+    let isCustomized: Bool
+    @Binding var popoverItem: AIModelDescriptor?
+    @Binding var parameters: AIModelParameters
+    let onResetParameters: () -> Void
+    let onOpenParameters: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Toggle(isOn: $isEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let ownedBy = model.ownedBy, !ownedBy.isEmpty {
+                        Text(ownedBy)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            // 能力是目录标签：Chat/Embedding 参与任务路由，其余（含 Unknown）仅分类。
+            // 保持 macOS 原生 popup Picker 样式；菜单项带 SF Symbol。
+            Picker("", selection: $capability) {
+                ForEach(AIModelCapability.allCases) { item in
+                    Label(item.displayName, systemImage: item.systemImage)
+                        .tag(item)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 148)
+
+            // HOM-68 follow-up v9 (dong4j 反馈 2026-06-05 23:35)：
+            // 齿轮按钮 → 弹出模型参数编辑 popover。锚定到 plain Button 而不是
+            // 整行，避免点击其它区域（toggle / capability picker）误触发 popover。
+            Button(action: onOpenParameters) {
+                Image(systemName: isCustomized ? "gearshape.fill" : "gearshape")
+                    .foregroundStyle(isCustomized ? Color.orange : Color.secondary)
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.plain)
+            // HOM-68 follow-up v10：所有 .buttonStyle(.plain) 必须紧跟 .focusEffectDisabled()。
+            .focusEffectDisabled()
+            .help("settings.ai.modelList.parametersHelp")
+            .popover(item: $popoverItem, arrowEdge: .trailing) { focused in
+                AIModelParametersPopover(
+                    model: focused,
+                    parameters: $parameters,
+                    hasOverride: isCustomized,
+                    onReset: onResetParameters
+                )
+                .appLocaleEnvironment()
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
     }
 }

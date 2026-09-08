@@ -2620,7 +2620,8 @@ struct AISettingsTab: View {
             )).listModels()
 
             var verified = profile
-            mergeModels(models, into: &verified)
+            // 去重 / 大目录不全开 / 容量上限：避免 OpenRouter 类目录在勾选时卡死主线程。
+            verified.mergeDiscoveredModels(models)
             verified.isEnabled = true
             verified.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
             verified.lastTestStatus = .success(modelCount: verified.models.count)
@@ -2666,20 +2667,6 @@ struct AISettingsTab: View {
                     current.lastTestStatus = .failed(error.localizedDescription)
                 }
             }
-        }
-    }
-
-    private func mergeModels(_ models: [AIModelDescriptor], into profile: inout AIProviderProfile) {
-        let oldByName = Dictionary(uniqueKeysWithValues: profile.models.map { ($0.name, $0) })
-        profile.models = models.map { incoming in
-            if var old = oldByName[incoming.name] {
-                old.ownedBy = incoming.ownedBy
-                if old.capability == .unknown {
-                    old.capability = incoming.capability
-                }
-                return old
-            }
-            return incoming
         }
     }
 
@@ -2866,12 +2853,30 @@ struct AISettingsTab: View {
         Binding(
             get: { model(profileID: profileID, modelID: modelID)?.isEnabled ?? false },
             set: { enabled in
+                // 取消勾选前先记下是否被任务引用：未引用时不必跑 repair（会连写 5 份 task JSON）。
+                let modelName = model(profileID: profileID, modelID: modelID)?.name
+                let needsTaskRepair = !enabled && isModelReferencedByAnyTask(
+                    providerID: profileID,
+                    modelName: modelName
+                )
                 updateModel(profileID: profileID, modelID: modelID) { model in
                     model.isEnabled = enabled
                 }
-                repairTasksAfterProfileChange()
+                if needsTaskRepair {
+                    repairTasksAfterProfileChange()
+                }
             }
         )
+    }
+
+    /// 任一任务是否正指向该 provider + 模型（自定义模型名不算「目录勾选」引用）。
+    private func isModelReferencedByAnyTask(providerID: String, modelName: String?) -> Bool {
+        guard let modelName, !modelName.isEmpty else { return false }
+        return AIModelTask.allCases.contains { task in
+            let config = taskConfig(task)
+            guard config.providerID == providerID, !config.useCustomModel else { return false }
+            return config.modelID == modelName
+        }
     }
 
     private func modelCapabilityBinding(_ profileID: String, _ modelID: String) -> Binding<AIModelCapability> {

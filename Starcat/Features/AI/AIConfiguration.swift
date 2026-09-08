@@ -247,6 +247,135 @@ struct AIProviderProfile: Codable, Identifiable, Equatable, Sendable {
     var isVerifiedConfiguration: Bool {
         isEnabled && lastTestStatus.isSuccess
     }
+
+    /// 单个 profile 落库 / UI 可承受的模型上限。
+    ///
+    /// OpenRouter、部分聚合网关会返回上千条 `/models`。全量写入 UserDefaults + 在
+    /// `Form` 里用 Lazy 栈量测，会在勾选模型时把主线程卡死（见 2026-09-08 hang：
+    /// NavigationStack → Form ScrollView → 内层 LazyVStack.measureEstimates）。
+    static let maxStoredModels = 300
+
+    /// 超过此数量视为「大目录」：新发现模型默认不勾选，避免一次启用数百模型拖垮任务下拉与布局。
+    static let autoEnableModelLimit = 40
+
+    /// 首次拉取大目录时，自动勾选的 Chat/Unknown 模型数量上限。
+    static let firstFetchAutoEnableCount = 12
+
+    /// 将 `/models` 返回结果合并进本 profile。
+    ///
+    /// 关键约束：
+    /// - 按 `name` 去重，避免 ForEach 重复 `id` 触发 SwiftUI 布局异常；
+    /// - 保留用户已有的启用态 / capability 修正 / 参数覆盖；
+    /// - 大目录不全开；超过 `maxStoredModels` 时优先保留已启用与 Chat/Embedding。
+    mutating func mergeDiscoveredModels(_ incoming: [AIModelDescriptor]) {
+        models = Self.mergedDiscoveredModels(
+            existing: models,
+            incoming: incoming,
+            providerID: id
+        )
+    }
+
+    /// 纯函数版合并，供单测与 `mergeDiscoveredModels` 共用。
+    static func mergedDiscoveredModels(
+        existing: [AIModelDescriptor],
+        incoming: [AIModelDescriptor],
+        providerID: String
+    ) -> [AIModelDescriptor] {
+        var seenNames = Set<String>()
+        var uniqueIncoming: [AIModelDescriptor] = []
+        uniqueIncoming.reserveCapacity(min(incoming.count, maxStoredModels * 2))
+        for model in incoming {
+            let name = model.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, seenNames.insert(name).inserted else { continue }
+            uniqueIncoming.append(
+                AIModelDescriptor(
+                    providerID: providerID,
+                    name: name,
+                    ownedBy: model.ownedBy,
+                    capability: model.capability,
+                    isEnabled: model.isEnabled,
+                    isCustom: model.isCustom,
+                    parameters: model.parameters
+                )
+            )
+        }
+
+        let oldByName = Dictionary(
+            existing.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let catalogIsLarge = uniqueIncoming.count > autoEnableModelLimit
+        let hadExisting = !existing.isEmpty
+
+        var merged: [AIModelDescriptor] = uniqueIncoming.map { incomingModel in
+            if var old = oldByName[incomingModel.name] {
+                // 目录侧只刷新 ownedBy；capability 仅在用户尚未手动归类时跟随推断。
+                old.ownedBy = incomingModel.ownedBy
+                if old.capability == .unknown {
+                    old.capability = incomingModel.capability
+                }
+                return old
+            }
+            var fresh = incomingModel
+            if catalogIsLarge {
+                // 大目录里的新增项默认关闭；首次拉取下面再按额度打开一小撮。
+                fresh.isEnabled = false
+            }
+            return fresh
+        }
+
+        if catalogIsLarge && !hadExisting {
+            var enabledChatCount = 0
+            for index in merged.indices {
+                guard enabledChatCount < firstFetchAutoEnableCount else { break }
+                let capability = merged[index].capability
+                guard capability == .chat || capability == .unknown else { continue }
+                merged[index].isEnabled = true
+                enabledChatCount += 1
+            }
+            if let embeddingIndex = merged.firstIndex(where: { $0.capability == .embedding }) {
+                merged[embeddingIndex].isEnabled = true
+            }
+        }
+
+        guard merged.count > maxStoredModels else { return merged }
+
+        // 超额时优先保住用户已启用与任务相关能力，再按原顺序补齐。
+        var kept: [AIModelDescriptor] = []
+        kept.reserveCapacity(maxStoredModels)
+        var keptNames = Set<String>()
+
+        func appendPreferentially(from items: [AIModelDescriptor]) {
+            for model in items where kept.count < maxStoredModels {
+                if keptNames.insert(model.name).inserted {
+                    kept.append(model)
+                }
+            }
+        }
+
+        appendPreferentially(from: merged.filter(\.isEnabled))
+        appendPreferentially(from: merged.filter {
+            $0.capability == .chat || $0.capability == .unknown
+        })
+        appendPreferentially(from: merged.filter { $0.capability == .embedding })
+        appendPreferentially(from: merged)
+        return kept
+    }
+
+    /// 读库后的轻量消毒：去重 + 截断。不改用户启用态，只防止历史脏数据再次卡死设置页。
+    func sanitizedForStorage() -> AIProviderProfile {
+        var copy = self
+        var seen = Set<String>()
+        var unique: [AIModelDescriptor] = []
+        unique.reserveCapacity(min(models.count, Self.maxStoredModels))
+        for model in models {
+            guard seen.insert(model.name).inserted else { continue }
+            unique.append(model)
+            if unique.count >= Self.maxStoredModels { break }
+        }
+        copy.models = unique
+        return copy
+    }
 }
 
 /// 一次 embedding 调用所需的已校验配置快照。

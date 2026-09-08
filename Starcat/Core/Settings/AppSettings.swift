@@ -1794,7 +1794,20 @@ final class AppSettings {
             embeddingModel: resolvedAIEmbeddingModel
         )
         let profiles = Self.decodeJSON([AIProviderProfile].self, key: Keys.aiProviderProfiles, defaults: defaults) ?? []
-        self.aiProviderProfiles = profiles.isEmpty ? [defaultProfile] : profiles
+        // 历史脏数据（重复 id / 超大目录）会在设置页勾选模型时卡死主线程；启动时只做去重+截断。
+        let sanitizedProfiles = profiles.isEmpty
+            ? [defaultProfile]
+            : profiles.map { $0.sanitizedForStorage() }
+        self.aiProviderProfiles = sanitizedProfiles
+        // init 里不能调实例方法（其余 stored 属性尚未齐），且 didSet 也不会触发；
+        // 若消毒改写了内容，直接写 UserDefaults，避免每次冷启动重复处理同一份脏 JSON。
+        if !profiles.isEmpty, sanitizedProfiles != profiles {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            if let data = try? encoder.encode(sanitizedProfiles) {
+                defaults.set(String(decoding: data, as: UTF8.self), forKey: Keys.aiProviderProfiles)
+            }
+        }
         let defaultSummaryTask = Self.makeDefaultTask(
             task: .summary,
             profileID: defaultProfile.id,
