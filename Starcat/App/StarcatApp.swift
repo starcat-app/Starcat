@@ -186,8 +186,8 @@ struct StarcatApp: App {
             #endif
         }
 
-        // 两个 AI 工作台必须和主窗口一样由 SwiftUI Window Scene 承载：只有这样
-        // NavigationSplitView 的原生 Sidebar 才能贯穿 toolbar 并包住交通灯。
+        // 两个 AI 工作台继续由 SwiftUI Window Scene 承载，但隐藏重复标题栏，让业务 Header
+        // 直接贴到窗口顶部；交通灯由 hiddenTitleBar 保留，分栏控制统一放回内容 Header。
         Window("rag.workspace.window.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
             KnowledgeRAGWorkspaceSceneHost(coordinator: AIWorkspaceSceneCoordinator.shared)
         }
@@ -195,6 +195,7 @@ struct StarcatApp: App {
             width: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.width,
             height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
         )
+        .windowStyle(.hiddenTitleBar)
         .defaultLaunchBehavior(.suppressed)
 
         Window("agent.workspace.window.title", id: AgentWorkspaceWindowController.sceneID) {
@@ -212,6 +213,7 @@ struct StarcatApp: App {
             width: AgentWorkspaceWindowMetrics.defaultContentSize.width,
             height: AgentWorkspaceWindowMetrics.defaultContentSize.height
         )
+        .windowStyle(.hiddenTitleBar)
         .defaultLaunchBehavior(.suppressed)
 
         // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window：保留标准

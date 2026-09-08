@@ -116,6 +116,8 @@ struct AgentWorkspaceView: View {
     @State private var hasPendingKnowledgeConfigurationRefresh = false
     @FocusState private var isContextPickerSearchFocused: Bool
     @Bindable var chromeState: WorkspaceChromeState
+    /// 标题栏隐藏后，业务 Header 继续负责切换窗口置顶层级。
+    let onPinnedChange: (Bool) -> Void
 
     private var restoredLeftColumnWidth: CGFloat {
         AgentWorkspaceLayoutMetrics.clampedLeftWidth(persistedLeftColumnWidth)
@@ -878,6 +880,8 @@ struct AgentWorkspaceView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .contentShape(Rectangle())
+            .gesture(WindowDragGesture())
             Spacer(minLength: 8)
             Text(activeRuntimeBackend.displayName)
                 .font(agentFont(.caption, weight: .semibold))
@@ -885,6 +889,10 @@ struct AgentWorkspaceView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.primary.opacity(0.06), in: Capsule())
+            WorkspaceTitlebarControls(
+                chromeState: chromeState,
+                onPinnedChange: onPinnedChange
+            )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 11)
