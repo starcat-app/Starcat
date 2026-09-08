@@ -37,6 +37,63 @@ final class WorkspaceChromeState {
     }
 }
 
+/// Agent / RAG 工作台共用的原生窗口工具栏内容。
+///
+/// 按钮必须直接作为 `ToolbarItemGroup` 的子项交给系统，不能再包进自定义 HStack 或
+/// titlebar accessory。这样按钮的纵向位置、组合胶囊和交互动画都由窗口 toolbar 统一管理。
+struct WorkspaceToolbarContent: ToolbarContent {
+
+    @Bindable var chromeState: WorkspaceChromeState
+    let onPinnedChange: (Bool) -> Void
+    /// RAG 工作台传入设置动作；Agent 不传时复用同一组工具栏，只少一个按钮。
+    var onSettings: (() -> Void)? = nil
+
+    @ToolbarContentBuilder
+    var body: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            // Inspector 首次挂载会参与 toolbar 排版；flexible spacer 让主操作组始终锚定窗口右侧。
+            ToolbarSpacer(.flexible, placement: .primaryAction)
+        }
+
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                chromeState.isRightColumnCollapsed.toggle()
+            } label: {
+                Image(systemName: "inset.filled.rightthird.rectangle")
+            }
+            .foregroundStyle(chromeState.isRightColumnCollapsed ? Color.accentColor : .secondary)
+            .help(
+                chromeState.isRightColumnCollapsed
+                    ? LocalizedStringKey("workspace.chrome.showRight")
+                    : LocalizedStringKey("workspace.chrome.hideRight")
+            )
+
+            Button {
+                chromeState.isPinned.toggle()
+                onPinnedChange(chromeState.isPinned)
+            } label: {
+                Image(systemName: chromeState.isPinned ? "pin.circle.fill" : "pin.circle")
+            }
+            .foregroundStyle(chromeState.isPinned ? Color.accentColor : .secondary)
+            .help(
+                chromeState.isPinned
+                    ? LocalizedStringKey("workspace.chrome.unpin")
+                    : LocalizedStringKey("workspace.chrome.pin")
+            )
+
+            if let onSettings {
+                Button {
+                    onSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .foregroundStyle(.secondary)
+                .help(LocalizedStringKey("rag.workspace.settings.open"))
+            }
+        }
+    }
+}
+
 /// 放在 `NSTitlebarAccessoryViewController` 内的窗口级图标按钮组。
 struct WorkspaceTitlebarControls: View {
 
@@ -122,6 +179,7 @@ struct WorkspaceTitlebarControls: View {
         .workspaceTitlebarControlSurface(isActive: isActive)
         .help(helpKey)
     }
+
 }
 
 private extension View {
