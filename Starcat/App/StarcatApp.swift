@@ -829,13 +829,6 @@ struct DebugMenuCommands: Commands {
 
             Divider()
 
-            Button("Open Agent Workspace") {
-                guard let dependencies else { return }
-                // Debug 入口仍走正式工作台控制器，避免调试菜单形成第二套窗口与门禁语义。
-                AgentWorkspaceWindowController.show(dependencies: dependencies)
-            }
-            .disabled(dependencies == nil)
-
             Button("ambient.menu.openRepos") {
                 if let dependencies {
                     AmbientWindowController.show(dependencies: dependencies, scene: .repos)
