@@ -629,8 +629,11 @@ final class RepoAIInsightService {
             taskName: String.l10n("ai.taskName.tagRecommendation")
         )
         let outputLanguage = Self.outputLanguageDescriptor()
+        let tagCounts = settings.clampedAITagSuggestionCounts
         let baseSystemPrompt = task.prompt.renderedSystemPrompt(placeholders: [
-            "outputLanguage": outputLanguage
+            "outputLanguage": outputLanguage,
+            "minTags": String(tagCounts.minimum),
+            "maxTags": String(tagCounts.maximum)
         ])
         let systemPrompt = baseSystemPrompt + """
 
@@ -665,7 +668,9 @@ final class RepoAIInsightService {
                 "readme": String(source.readme.prefix(4_000)),
                 "codeContext": "",
                 "repoTags": hints.repoTags.joined(separator: ", "),
-                "libraryTags": "Use exact names from <shared_library_tags> below."
+                "libraryTags": "Use exact names from <shared_library_tags> below.",
+                "minTags": String(tagCounts.minimum),
+                "maxTags": String(tagCounts.maximum)
             ])
             repositoryRequests.append([
                 "repo_id": repo.id,
@@ -703,7 +708,8 @@ final class RepoAIInsightService {
             let hints = tagHintsByRepoID[repo.id] ?? .empty
             let suggestions = AITagSuggestionPolicy.normalizedSuggestions(
                 decoded[repo.id] ?? [],
-                vocabulary: hints.repoTags + hints.libraryTags
+                vocabulary: hints.repoTags + hints.libraryTags,
+                maximumSuggestionCount: tagCounts.maximum
             )
             return (repo.id, suggestions)
         })
@@ -1277,8 +1283,9 @@ final class RepoAIInsightService {
     /// Tags 任务私有占位符渲染。
     ///
     /// **占位符约定**（v4，详见 `AIDefaultPrompts.tags` 注释）：
-    /// - system prompt：`{outputLanguage}`（驱动 Tag Style Rules 分支 + reason 字段语言）
-    /// - user prompt：`{metadata}` / `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}`
+    /// - system prompt：`{outputLanguage}` / `{minTags}` / `{maxTags}`
+    /// - user prompt：`{metadata}` / `{readme}` / `{codeContext}` / `{repoTags}` / `{libraryTags}` /
+    ///   `{minTags}` / `{maxTags}`
     ///
     /// **2026-06-14 v4 重命名**（dong4j 拍板，方案 C 全栈占位符归一化）：
     /// 旧两段式 `{output.language}` / `{repository.metadata}` / `{repository.readme}` /
@@ -1293,8 +1300,11 @@ final class RepoAIInsightService {
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String.l10n("ai.taskName.tagRecommendation"))
 
         let outputLanguage = Self.outputLanguageDescriptor()
+        let tagCounts = settings.clampedAITagSuggestionCounts
         let systemPrompt = task.prompt.renderedSystemPrompt(placeholders: [
-            "outputLanguage": outputLanguage
+            "outputLanguage": outputLanguage,
+            "minTags": String(tagCounts.minimum),
+            "maxTags": String(tagCounts.maximum)
         ])
         // hints 已由 makeTagHints 工厂方法做过 trim + 去重 + 排序 + 截断（详见 AITagHints 注释），
         // 这里 join 即可；任一为空时占位符渲染为空字符串，prompt 模板里对应的 label
@@ -1304,7 +1314,9 @@ final class RepoAIInsightService {
             "readme": source.readme,
             "codeContext": source.codeContext,
             "repoTags": hints.repoTags.joined(separator: ", "),
-            "libraryTags": hints.libraryTags.joined(separator: ", ")
+            "libraryTags": hints.libraryTags.joined(separator: ", "),
+            "minTags": String(tagCounts.minimum),
+            "maxTags": String(tagCounts.maximum)
         ])
 
         let response = try await client.chat(request: AIChatRequest(
@@ -1321,7 +1333,8 @@ final class RepoAIInsightService {
         // 同义形式冲突时优先沿用当前仓库已经绑定的标准拼写。
         return AITagSuggestionPolicy.normalizedSuggestions(
             decoded,
-            vocabulary: hints.repoTags + hints.libraryTags
+            vocabulary: hints.repoTags + hints.libraryTags,
+            maximumSuggestionCount: tagCounts.maximum
         )
     }
 

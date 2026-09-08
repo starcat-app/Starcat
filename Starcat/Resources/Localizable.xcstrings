@@ -77980,6 +77980,23 @@
         }
       }
     },
+    "batchAI.generateTags.action.tags.descFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generate %lld–%lld high-confidence tags for each repository."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为每个仓库生成 %lld–%lld 个高置信度标签。"
+          }
+        }
+      }
+    },
     "batchAI.generateTags.startFormat" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -77993,6 +78010,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "开始生成（%lld）"
+          }
+        }
+      }
+    },
+    "batchAI.generateTags.start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Generating"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始生成"
           }
         }
       }
@@ -310851,6 +310885,40 @@
         }
       }
     },
+    "settings.ai.prompt.placeholder.minTags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimum tag count from Settings (Tags)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置里「标签分类」的最少推荐数。"
+          }
+        }
+      }
+    },
+    "settings.ai.prompt.placeholder.maxTags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum tag count from Settings (Tags)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置里「标签分类」的最多推荐数。"
+          }
+        }
+      }
+    },
     "settings.ai.prompt.placeholder.license" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -320742,6 +320810,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI 推荐并直接应用标签；启用阈值后，仅应用达到置信度要求的标签。"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.tagSuggestionCount" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags per repository"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每仓库推荐标签数"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.tagSuggestionCount.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untagged repos get at least the minimum; results are capped at the maximum. Default 1–3, up to 8."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未打标仓库至少生成最少数量，结果最多保留最多数量。默认 1–3，可调至 8。"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.tagSuggestionCount.min" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimum"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最少"
+          }
+        }
+      }
+    },
+    "settings.autoTidy.tagSuggestionCount.max" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多"
           }
         }
       }

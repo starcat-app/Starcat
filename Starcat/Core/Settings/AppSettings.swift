@@ -984,6 +984,33 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.aiTagsTask, value: aiTagsTask) }
     }
 
+    /// 每仓库 AI 标签推荐最少数量（与最多数量组成区间，默认 1）。
+    ///
+    /// 请通过 `applyAITagSuggestionCounts` 写入，以保证与最大值一起钳制。
+    var aiTagSuggestionMinCount: Int {
+        didSet { defaults.set(aiTagSuggestionMinCount, forKey: Keys.aiTagSuggestionMinCount) }
+    }
+
+    /// 每仓库 AI 标签推荐最多数量（默认 3，上限 8）。
+    var aiTagSuggestionMaxCount: Int {
+        didSet { defaults.set(aiTagSuggestionMaxCount, forKey: Keys.aiTagSuggestionMaxCount) }
+    }
+
+    /// 当前已钳制的标签推荐数量区间，供提示词占位符与本地截断共用。
+    var clampedAITagSuggestionCounts: (minimum: Int, maximum: Int) {
+        AITagSuggestionCountPolicy.clamp(
+            minimum: aiTagSuggestionMinCount,
+            maximum: aiTagSuggestionMaxCount
+        )
+    }
+
+    /// 同时写入最少 / 最多推荐数，并钳制到 1…8 且保证 min ≤ max。
+    func applyAITagSuggestionCounts(minimum: Int, maximum: Int) {
+        let clamped = AITagSuggestionCountPolicy.clamp(minimum: minimum, maximum: maximum)
+        aiTagSuggestionMinCount = clamped.minimum
+        aiTagSuggestionMaxCount = clamped.maximum
+    }
+
     /// Embedding 任务模型配置。
     var aiEmbeddingTask: AIModelTaskConfiguration {
         didSet { persistJSON(key: Keys.aiEmbeddingTask, value: aiEmbeddingTask) }
@@ -1841,6 +1868,16 @@ final class AppSettings {
             persistedTagsTask,
             defaults: defaults
         )
+        let persistedTagMin = defaults.object(forKey: Keys.aiTagSuggestionMinCount) as? Int
+            ?? AITagSuggestionCountPolicy.defaultMinimum
+        let persistedTagMax = defaults.object(forKey: Keys.aiTagSuggestionMaxCount) as? Int
+            ?? AITagSuggestionCountPolicy.defaultMaximum
+        let clampedTagCounts = AITagSuggestionCountPolicy.clamp(
+            minimum: persistedTagMin,
+            maximum: persistedTagMax
+        )
+        self.aiTagSuggestionMinCount = clampedTagCounts.minimum
+        self.aiTagSuggestionMaxCount = clampedTagCounts.maximum
         self.aiEmbeddingTask = Self.decodeJSON(AIModelTaskConfiguration.self, key: Keys.aiEmbeddingTask, defaults: defaults) ?? defaultEmbeddingTask
         // HOM-68 follow-up：翻译任务首次升级时与摘要使用同一 provider+model，
         // 参数走 translationDefault（低温度 + 高 maxToken），用户可在设置页改。
@@ -2216,6 +2253,8 @@ final class AppSettings {
         aiProviderProfiles = [defaultProfile]
         aiSummaryTask = Self.makeDefaultTask(task: .summary, profileID: defaultProfile.id, modelName: chatModel)
         aiTagsTask = Self.makeDefaultTask(task: .tags, profileID: defaultProfile.id, modelName: chatModel)
+        aiTagSuggestionMinCount = AITagSuggestionCountPolicy.defaultMinimum
+        aiTagSuggestionMaxCount = AITagSuggestionCountPolicy.defaultMaximum
         aiEmbeddingTask = Self.makeDefaultTask(task: .embedding, profileID: defaultProfile.id, modelName: embeddingModel)
         aiTranslationTask = Self.makeDefaultTask(task: .translation, profileID: defaultProfile.id, modelName: chatModel)
         aiFullTranslationPrompt = AIDefaultPrompts.fullTranslation
@@ -2479,7 +2518,8 @@ final class AppSettings {
     ) -> AIModelTaskConfiguration {
         let legacyPrompts: [AIPromptConfiguration] = [
             AIDefaultPrompts.legacyTagsV1,
-            AIDefaultPrompts.legacyTagsV2
+            AIDefaultPrompts.legacyTagsV2,
+            AIDefaultPrompts.legacyTagsV3
         ]
         guard legacyPrompts.contains(task.prompt) else { return task }
 
@@ -2670,6 +2710,8 @@ final class AppSettings {
         static let aiProviderProfiles = "settings.ai.providerProfiles.v2"
         static let aiSummaryTask = "settings.ai.task.summary.v2"
         static let aiTagsTask = "settings.ai.task.tags.v2"
+        static let aiTagSuggestionMinCount = "settings.ai.tagSuggestion.minCount.v1"
+        static let aiTagSuggestionMaxCount = "settings.ai.tagSuggestion.maxCount.v1"
         static let aiEmbeddingTask = "settings.ai.task.embedding.v2"
         static let aiTranslationTask = "settings.ai.task.translation.v2"  // HOM-68 follow-up
         static let aiFullTranslationPrompt = "settings.ai.prompt.translation.full.v1"
@@ -2778,6 +2820,8 @@ final class AppSettings {
             aiProviderProfiles,
             aiSummaryTask,
             aiTagsTask,
+            aiTagSuggestionMinCount,
+            aiTagSuggestionMaxCount,
             aiEmbeddingTask,
             aiTranslationTask,
             aiFullTranslationPrompt,

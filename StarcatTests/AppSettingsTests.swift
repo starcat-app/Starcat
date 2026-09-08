@@ -853,6 +853,40 @@ struct AppSettingsTests {
         #expect(AppSettings(defaults: defaults).aiTagsTask == migrated)
     }
 
+    @Test("AI Tags: 硬编码 1…3 的 V3 默认 Prompt 升级到可配置占位符版")
+    func legacyDefaultTagsPromptV3Migrates() {
+        let defaults = makeIsolatedDefaults()
+        let seeded = AppSettings(defaults: defaults)
+        var legacyTask = seeded.aiTagsTask
+        legacyTask.prompt = AIDefaultPrompts.legacyTagsV3
+        seeded.aiTagsTask = legacyTask
+
+        let migrated = AppSettings(defaults: defaults).aiTagsTask
+        #expect(migrated.prompt == AIDefaultPrompts.tags)
+        #expect(migrated.prompt.systemPrompt.contains("{minTags}"))
+        #expect(migrated.prompt.systemPrompt.contains("{maxTags}"))
+    }
+
+    @Test("AI Tags: 推荐数量区间钳制并持久化")
+    func tagSuggestionCountRangePersists() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.aiTagSuggestionMinCount == 1)
+        #expect(settings.aiTagSuggestionMaxCount == 3)
+
+        settings.applyAITagSuggestionCounts(minimum: 5, maximum: 2)
+        #expect(settings.aiTagSuggestionMinCount == 2)
+        #expect(settings.aiTagSuggestionMaxCount == 2)
+
+        settings.applyAITagSuggestionCounts(minimum: 0, maximum: 99)
+        #expect(settings.aiTagSuggestionMinCount == 1)
+        #expect(settings.aiTagSuggestionMaxCount == 8)
+
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.aiTagSuggestionMinCount == 1)
+        #expect(reloaded.aiTagSuggestionMaxCount == 8)
+    }
+
     @Test("AI Tags: 用户自定义 Prompt 不被默认升级覆盖")
     func customTagsPromptIsPreserved() {
         let defaults = makeIsolatedDefaults()

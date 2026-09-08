@@ -152,15 +152,43 @@ struct AITagSuggestion: Codable, Identifiable, Equatable, Sendable {
     var id: String { name.localizedLowercase }
 }
 
+/// 每仓库 AI 标签推荐数量区间（设置页 / 批量整理窗口 / 提示词占位符共用）。
+///
+/// 默认 1…3，与「复用优先、Untagged 禁空」策略一致；上限钳到 8，避免一次推荐过多
+/// 淹没审核列表。真正截断仍由 `AITagSuggestionPolicy.normalizedSuggestions` 执行。
+enum AITagSuggestionCountPolicy {
+    static let allowedRange = 1...8
+    static let defaultMinimum = 1
+    static let defaultMaximum = 3
+
+    /// 钳制后保证 `minimum ≤ maximum`，且都落在 `allowedRange`。
+    static func clamp(minimum: Int, maximum: Int) -> (minimum: Int, maximum: Int) {
+        let loBound = allowedRange.lowerBound
+        let hiBound = allowedRange.upperBound
+        var hi = min(max(maximum, loBound), hiBound)
+        var lo = min(max(minimum, loBound), hiBound)
+        if lo > hi { lo = hi }
+        return (lo, hi)
+    }
+
+    /// 摘要卡与设置旁路展示用的 en-dash 区间，例如 `1–3`。
+    static func displayRange(minimum: Int, maximum: Int) -> String {
+        let clamped = clamp(minimum: minimum, maximum: maximum)
+        return "\(clamped.minimum)–\(clamped.maximum)"
+    }
+}
+
 /// AI 标签名的本地收敛策略。
 ///
 /// Prompt 只能提高模型遵守规则的概率，不能充当数据完整性边界；尤其不同 Provider 可能
 /// 继续返回 8 个结果、越界置信度，或把 `Open-Source` 改写成 `open source`。因此生成结果
 /// 在进入 UI / 批量自动应用前必须再经过本地确定性规则：复用已有标准拼写、同义形式去重、
-/// 最多 3 个结果且最多 1 个真正的新标签。
+/// 按配置截断总数且最多 1 个真正的新标签。
 enum AITagSuggestionPolicy {
-    static let maximumSuggestionCount = 3
     static let maximumNewTagCount = 1
+
+    /// 兼容旧调用与单测：未显式传上限时用产品默认最大值。
+    static var maximumSuggestionCount: Int { AITagSuggestionCountPolicy.defaultMaximum }
 
     /// 只整理不可见的首尾 / 连续空白，不擅自改变用户标签的展示拼写。
     static func normalizedDisplayName(_ raw: String) -> String {
@@ -188,10 +216,14 @@ enum AITagSuggestionPolicy {
     /// `vocabulary` 必须按产品优先级排序：当前 repo 标签在前，其余全库标签按使用频率
     /// 降序在后。多个历史标签落到同一 canonical key 时保留第一个，从而优先沿用当前
     /// repo 已有拼写，否则选择全库更常用的拼写。
+    ///
+    /// `maximumSuggestionCount` 来自设置页区间的最大值；调用方应先 clamp。
     static func normalizedSuggestions(
         _ suggestions: [AITagSuggestion],
-        vocabulary: [String]
+        vocabulary: [String],
+        maximumSuggestionCount: Int = AITagSuggestionCountPolicy.defaultMaximum
     ) -> [AITagSuggestion] {
+        let limit = max(1, maximumSuggestionCount)
         var existingNameByKey: [String: String] = [:]
         for rawName in vocabulary {
             let name = normalizedDisplayName(rawName)
@@ -236,7 +268,7 @@ enum AITagSuggestionPolicy {
         // 选哪些标签仍由词表复用 + 新标签配额决定；展示顺序按置信度从高到低，
         // 避免模型乱序或「已有标签在前」让高置信度项沉到列表下面。
         return sortedByConfidenceDescending(
-            Array((existingResults + newResults).prefix(maximumSuggestionCount))
+            Array((existingResults + newResults).prefix(limit))
         )
     }
 

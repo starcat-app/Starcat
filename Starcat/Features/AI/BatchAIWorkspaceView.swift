@@ -154,7 +154,15 @@ struct BatchAIWorkspaceView: View {
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        Label("batchAI.generateTags.action.tags.desc", systemImage: "checkmark.shield")
+                        Label {
+                            Text(verbatim: String(
+                                format: String.l10n("batchAI.generateTags.action.tags.descFormat"),
+                                dependencies.settings.clampedAITagSuggestionCounts.minimum,
+                                dependencies.settings.clampedAITagSuggestionCounts.maximum
+                            ))
+                        } icon: {
+                            Image(systemName: "checkmark.shield")
+                        }
                             .font(interfaceScale.font(.caption))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -165,10 +173,7 @@ struct BatchAIWorkspaceView: View {
                     Button {
                         start(context)
                     } label: {
-                        Text(String(
-                            format: String.l10n("batchAI.generateTags.startFormat"),
-                            context.pendingCount
-                        ))
+                        Text("batchAI.generateTags.start")
                     }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)

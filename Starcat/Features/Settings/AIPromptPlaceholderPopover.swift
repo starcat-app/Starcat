@@ -54,6 +54,8 @@ struct AIPromptPlaceholderCatalog {
                     .init(token: "{codeContext}", systemImage: "chevron.left.forwardslash.chevron.right", meaningKey: "settings.ai.prompt.placeholder.codeContext"),
                     .init(token: "{repoTags}", systemImage: "tag", meaningKey: "settings.ai.prompt.placeholder.repoTags"),
                     .init(token: "{libraryTags}", systemImage: "tray.full", meaningKey: "settings.ai.prompt.placeholder.libraryTags"),
+                    .init(token: "{minTags}", systemImage: "minus.circle", meaningKey: "settings.ai.prompt.placeholder.minTags"),
+                    .init(token: "{maxTags}", systemImage: "plus.circle", meaningKey: "settings.ai.prompt.placeholder.maxTags"),
                 ],
                 footnoteKey: nil
             )

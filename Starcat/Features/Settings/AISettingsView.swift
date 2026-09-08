@@ -1164,6 +1164,41 @@ struct AISettingsTab: View {
             )
         }
         Divider()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                autoTidyLabel(
+                    title: "settings.autoTidy.tagSuggestionCount",
+                    description: "settings.autoTidy.tagSuggestionCount.description"
+                )
+                Spacer(minLength: 12)
+                HStack(spacing: 6) {
+                    TextField(
+                        "",
+                        value: tagSuggestionMinCountBinding,
+                        format: .number.grouping(.never)
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 44)
+                    .help("settings.autoTidy.tagSuggestionCount.min")
+                    Text(verbatim: "–")
+                        .foregroundStyle(.secondary)
+                    TextField(
+                        "",
+                        value: tagSuggestionMaxCountBinding,
+                        format: .number.grouping(.never)
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 44)
+                    .help("settings.autoTidy.tagSuggestionCount.max")
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .disabled(!settings.autoTidySettings.generateTags)
+        .opacity(settings.autoTidySettings.generateTags ? 1.0 : 0.5)
+        Divider()
         autoTidyRow {
             autoTidyToggle(
                 title: "settings.autoTidy.actions.generateSummary",
@@ -1340,6 +1375,32 @@ struct AISettingsTab: View {
                 var s = self.settings.autoTidySettings
                 s.scheduledIntervalHours = AutoTidySettings.clampScheduledIntervalHours(newValue)
                 self.settings.autoTidySettings = s
+            }
+        )
+    }
+
+    /// 标签推荐最少数量：与最大值一起钳制后写回 Settings。
+    private var tagSuggestionMinCountBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.aiTagSuggestionMinCount },
+            set: { newValue in
+                self.settings.applyAITagSuggestionCounts(
+                    minimum: newValue,
+                    maximum: self.settings.aiTagSuggestionMaxCount
+                )
+            }
+        )
+    }
+
+    /// 标签推荐最多数量：与最小值一起钳制后写回 Settings。
+    private var tagSuggestionMaxCountBinding: Binding<Int> {
+        Binding(
+            get: { self.settings.aiTagSuggestionMaxCount },
+            set: { newValue in
+                self.settings.applyAITagSuggestionCounts(
+                    minimum: self.settings.aiTagSuggestionMinCount,
+                    maximum: newValue
+                )
             }
         )
     }
