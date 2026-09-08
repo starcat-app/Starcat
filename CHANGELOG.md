@@ -11,6 +11,7 @@ Starcat 1.6.1 focuses on issues found after the 1.6.0 release across interface l
 - Native macOS 26 appearance: The main window, search, repository details, and AI and Knowledge Base workspaces now apply system Liquid Glass to toolbars, controls, and floating surfaces.
 - Star history data: Uses GitHub's official history as the sole data source, removing mixed legacy estimates and local snapshots for consistent charts and metrics.
 - Unified Search Center: Combines keyword and semantic retrieval in one entry, adopts the new search field, and keeps index status and refresh feedback visible.
+- Local search coverage: Search Center's local results include every repository already cached in the database, including unstarred My Projects and private repos.
 - Sidebar terminology: Clearly distinguishes Recently Starred from Recently Added to Knowledge Base and hides empty tags in the current category.
 
 ### Fixes
