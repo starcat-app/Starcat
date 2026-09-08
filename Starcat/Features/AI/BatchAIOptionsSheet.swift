@@ -343,8 +343,7 @@ struct BatchAIOptionsSheet: View {
     // MARK: - 辅助
 
     private var selectedActionCount: Int {
-        // 只统计 options.actions，避免写死「标签 = 1」与真实预检集合脱节。
-        options.actions.count
+        options.selectedOperationStepCount
     }
 
     private var estimatedMinutes: Int {

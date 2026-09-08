@@ -315,6 +315,18 @@ struct BatchAIQueueOptions: Codable, Equatable, Sendable {
     /// 至少要选一个标签整理子任务。
     var isValidForStart: Bool { !actions.isEmpty }
 
+    /// 预检页「已选操作」步数：主任务 + 摘要开启时的代码上下文 / 外部搜索子步骤。
+    ///
+    /// 子步骤只在 `.summary` 已勾选时计入；摘要关闭后即便 override 残留为 true 也不展示，
+    /// 避免用户关掉摘要后绿卡数字仍含上下文选项。
+    var selectedOperationStepCount: Int {
+        var count = actions.count
+        guard actions.contains(.summary) else { return count }
+        if codeContextEnabledOverride == true { count += 1 }
+        if externalContextEnabledOverride == true { count += 1 }
+        return count
+    }
+
     func shouldRun(_ action: BatchAIAction, forRepoID repoID: Int64) -> Bool {
         guard actions.contains(action) else { return false }
         return standardActionRepoIDs?.contains(repoID) ?? true

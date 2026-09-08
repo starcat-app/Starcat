@@ -75,3 +75,25 @@ struct BatchAIRepositoryScopeTests {
         #expect(filtered.map(\.id) == [301, 303])
     }
 }
+
+@Suite("Batch AI Queue Options")
+struct BatchAIQueueOptionsTests {
+
+    @Test("已选操作步数包含摘要的代码上下文与外部搜索")
+    func selectedOperationStepCountIncludesSummarySubsteps() {
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.codeContextEnabledOverride = true
+        options.externalContextEnabledOverride = true
+        #expect(options.selectedOperationStepCount == 1)
+
+        options.actions = [.tags, .summary]
+        #expect(options.selectedOperationStepCount == 4)
+
+        options.codeContextEnabledOverride = false
+        #expect(options.selectedOperationStepCount == 3)
+
+        options.actions = [.tags]
+        #expect(options.selectedOperationStepCount == 1)
+    }
+}
