@@ -77,16 +77,14 @@ struct AgentWorkspaceSceneRoot: View {
                 )
             }
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    WorkspaceTitlebarControls(
-                        chromeState: chromeState,
-                        onPinnedChange: { isPinned in
-                            windowReference.window?.level = isPinned ? .floating : .normal
-                        }
-                    )
-                }
+                WorkspaceToolbarContent(
+                    chromeState: chromeState,
+                    onPinnedChange: { isPinned in
+                        windowReference.window?.level = isPinned ? .floating : .normal
+                    }
+                )
             }
-            // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
+            // 让内容表面延伸进系统 toolbar，中栏与 Inspector 顶部保持为同一条连续区域。
             .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
     }
 }
