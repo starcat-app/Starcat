@@ -40,9 +40,16 @@ struct TagWallView: View {
     /// 用户点击某个 chip 时调用。调用方负责 toggle 这个 id 在集合内的勾选状态。
     let onTagTap: (String) -> Void
 
+    /// 计数尚未返回时保留所有标签作为加载占位；只有当前范围明确返回 0 后才隐藏。
+    /// 已选标签即使归零也必须保留，避免产生用户无法从标签墙取消的隐形筛选。
+    var visibleTags: [Tag] {
+        guard let tagCounts else { return tags }
+        return tags.filter { tagCounts[$0.id, default: 0] > 0 || selectedTagIds.contains($0.id) }
+    }
+
     var body: some View {
         FlowLayout(spacing: 6) {
-            ForEach(tags) { tag in
+            ForEach(visibleTags) { tag in
                 TagWallChip(
                     tag: tag,
                     count: tagCounts.map { $0[tag.id] ?? 0 },

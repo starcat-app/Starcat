@@ -2,7 +2,7 @@
 //  TagWallViewLayoutTests.swift
 //  StarcatTests
 //
-//  用真实 SwiftUI 布局验证标签数字、加载占位和选中态不会改变胶囊尺寸或标签墙换行。
+//  验证标签墙隐藏当前范围空标签，同时保持数字、加载占位和选中态的胶囊尺寸稳定。
 //  不依赖屏幕截图像素，避免明暗主题、抗锯齿和颜色动画让布局回归测试产生噪声。
 //
 
@@ -39,8 +39,8 @@ struct TagWallViewLayoutTests {
         }
     }
 
-    @Test("标签墙在加载和选中时保持换行高度", arguments: [180.0, 220.0, 280.0])
-    func wallKeepsItsRows(width: Double) throws {
+    @Test("计数加载期间保留全部标签和原有换行高度", arguments: [180.0, 220.0, 280.0])
+    func wallKeepsItsRowsWhileCountsLoad(width: Double) throws {
         let tags = [Tag.fixture(id: "mac", name: "macOS"), Tag.fixture(id: "tool", name: "开发工具"),
                     Tag.fixture(id: "swift", name: "Swift")]
         let bounds = ["mac": 128, "tool": 12_345, "swift": 36]
@@ -48,13 +48,31 @@ struct TagWallViewLayoutTests {
             tags: tags, tagCounts: bounds, countUpperBounds: bounds,
             selectedTagIds: [], onTagTap: { _ in }
         ).frame(width: width).fixedSize(horizontal: false, vertical: true))
-        let countSnapshots: [[String: Int]?] = [nil, [:], ["mac": 1, "tool": 99, "swift": 0]]
-        for counts in countSnapshots {
-            let measured = try size(of: TagWallView(
-                tags: tags, tagCounts: counts, countUpperBounds: bounds,
-                selectedTagIds: ["tool"], onTagTap: { _ in }
-            ).frame(width: width).fixedSize(horizontal: false, vertical: true))
-            #expect(measured == baseline)
-        }
+        let measured = try size(of: TagWallView(
+            tags: tags, tagCounts: nil, countUpperBounds: bounds,
+            selectedTagIds: ["tool"], onTagTap: { _ in }
+        ).frame(width: width).fixedSize(horizontal: false, vertical: true))
+        #expect(measured == baseline)
+    }
+
+    @Test("已知计数只展示当前范围内有项目的标签")
+    func wallHidesKnownZeroCountTags() {
+        let tags = [Tag.fixture(id: "mac", name: "macOS"), Tag.fixture(id: "tool", name: "开发工具"),
+                    Tag.fixture(id: "swift", name: "Swift")]
+
+        let loadingWall = TagWallView(
+            tags: tags, tagCounts: nil, selectedTagIds: [], onTagTap: { _ in }
+        )
+        #expect(loadingWall.visibleTags.map(\.id) == ["mac", "tool", "swift"])
+
+        let loadedWall = TagWallView(
+            tags: tags, tagCounts: ["mac": 2, "swift": 1], selectedTagIds: [], onTagTap: { _ in }
+        )
+        #expect(loadedWall.visibleTags.map(\.id) == ["mac", "swift"])
+
+        let selectedZeroCountWall = TagWallView(
+            tags: tags, tagCounts: ["mac": 2, "swift": 1], selectedTagIds: ["tool"], onTagTap: { _ in }
+        )
+        #expect(selectedZeroCountWall.visibleTags.map(\.id) == ["mac", "tool", "swift"])
     }
 }
