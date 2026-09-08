@@ -79,7 +79,7 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 /// 设计：把"字段 + 方向"合并成枚举 case，UI 用单层 Picker 就能列全，无需嵌套 Menu。
 /// 默认 `.starredAtDesc` — 最近 star 的在最前，与之前隐式行为一致。
 enum RepoSortOption: String, CaseIterable, Identifiable {
-    /// 默认：最近 star 在前（All Stars / 星标列表）。
+    /// 最近 Star 在前（All Stars / 星标列表默认）。
     case starredAtDesc
     /// 最早 star 在前。
     case starredAtAsc
@@ -110,8 +110,8 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
 
     /// Manage 列表实际展示的排序项。
     ///
-    /// `starredAtDesc` 继续作为星标列表"默认"：按最近 star 排序，但不再把
-    /// "最近星标/最早星标"暴露成独立产品概念。知识库相关排序紧随其后。
+    /// `starredAtDesc` 继续作为星标列表默认值，但菜单明确展示为“最近星标”，
+    /// 避免与按 `library_updated_at` 排序的“最近加入知识库”混淆。
     static let manageOptions: [RepoSortOption] = [
         .starredAtDesc,
         .libraryUpdatedAtDesc,
@@ -134,9 +134,9 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
     /// 本地化显示名（Picker 菜单项用 `Text(verbatim:)` 渲染，走 `String.l10n`）。
     var localizedTitle: String {
         switch self {
-        case .starredAtDesc: return String.l10n("settings.sort.starredAtDesc")
+        case .starredAtDesc: return String.l10n("settings.sort.recentlyStarred")
         case .starredAtAsc:  return String.l10n("settings.sort.starredAtAsc")
-        case .libraryUpdatedAtDesc: return String.l10n("settings.sort.libraryUpdatedAtDesc")
+        case .libraryUpdatedAtDesc: return String.l10n("settings.sort.recentlyAddedToLibrary")
         case .nameAsc:       return String.l10n("settings.sort.nameAsc")
         case .nameDesc:      return String.l10n("settings.sort.nameDesc")
         case .starsDesc:     return String.l10n("settings.sort.starsDesc")
@@ -153,9 +153,9 @@ enum RepoSortOption: String, CaseIterable, Identifiable {
     /// 本地化显示名（SwiftUI `Label` / `LocalizedStringKey` 场景）。
     var displayName: LocalizedStringKey {
         switch self {
-        case .starredAtDesc: return "settings.sort.starredAtDesc"
+        case .starredAtDesc: return "settings.sort.recentlyStarred"
         case .starredAtAsc:  return "settings.sort.starredAtAsc"
-        case .libraryUpdatedAtDesc: return "settings.sort.libraryUpdatedAtDesc"
+        case .libraryUpdatedAtDesc: return "settings.sort.recentlyAddedToLibrary"
         case .nameAsc:       return "settings.sort.nameAsc"
         case .nameDesc:      return "settings.sort.nameDesc"
         case .starsDesc:     return "settings.sort.starsDesc"

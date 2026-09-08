@@ -1061,7 +1061,7 @@ struct GRDBRepoRepository {
         let orderBy: String
         switch sort {
         case .starredAtDesc:
-            // 「默认」始终表示最近 star；知识库默认改走 libraryUpdatedAtDesc。
+            // 星标列表默认按最近 Star；知识库默认改走 libraryUpdatedAtDesc。
             orderBy = "r.starred_at DESC, r.id DESC"
         case .starredAtAsc:
             orderBy = "r.starred_at IS NULL ASC, r.starred_at ASC, r.id ASC"
