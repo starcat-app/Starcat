@@ -9,8 +9,8 @@
 //  - 作为 BatchAIQueueService（状态机执行者）与 SwiftUI（状态展示者）之间的稳定边界。
 //
 //  关键约束：
-//  - Job 是**会话级**对象：纯内存持有，不落库。详细理由见 BatchAIQueueService 文件头。
-//    （已有 AI 摘要会命中 ai_summaries 表，所以重启后再次处理也不会浪费 AI 配额。）
+//  - Job 的运行态由 Service 持有；手动任务会把必要字段逐仓写入账户数据库，App 重启后
+//    以暂停态恢复。完整 Provider 诊断仍只存在内存，避免把敏感 Request / Response 落库。
 //  - 自动应用只处理达到阈值的推荐；人工窗口把低于阈值的推荐留在“待确认”，
 //    静默后台任务因没有审核入口才记为 ignored。`ignored` 与 `failed` 仍须在 UX 上区分。
 //  - 操作集 Options.actions 用 Set<Action> 保证多选幂等；手动入口固定生成标签，摘要可选。
@@ -67,7 +67,7 @@ enum BatchAITagReviewState: Equatable, Sendable {
 ///
 /// 来源只属于当前审核会话，不写数据库：用户需要知道本轮是复用、待创建还是已经创建，
 /// 但标签一旦落库，长期数据模型不应携带“由哪一轮批量任务创建”的临时 UI 状态。
-enum BatchAITagSuggestionAvailability: Equatable, Sendable {
+enum BatchAITagSuggestionAvailability: String, Codable, Equatable, Sendable {
     /// 批次启动前已经存在，确认后只需建立仓库关联。
     case existing
     /// 批次启动前不存在，尚未完成创建。
@@ -88,6 +88,8 @@ enum BatchAIFailure: Equatable, Sendable {
     case repoInsight(RepoAIInsightError)
     case recommendationValidation(AIRecommendationValidationError)
     case cancelled
+    /// App 在 AI 调用或本地应用尚未收口时退出；恢复后必须由用户明确重试。
+    case interrupted
     /// 无法归类的第三方错误；nil 表示原始内容为空或属于不可展示的 SDK dump。
     case unknown(String?)
 
@@ -129,6 +131,8 @@ enum BatchAIFailure: Equatable, Sendable {
             return error.localizedDescription
         case .cancelled:
             return String.l10n("batchAI.panel.cancelledByUser")
+        case .interrupted:
+            return String.l10n("batchAI.panel.interruptedByAppExit")
         case .unknown(let message):
             return message ?? String.l10n("batchAI.panel.row.failedUnknown")
         }
@@ -176,8 +180,8 @@ struct BatchAIJob: Identifiable, Equatable, Sendable {
 
     /// AI 为本仓库生成的全部候选标签。
     ///
-    /// 只保存在当前批量会话中；用户确认前不写入标签表。关闭再打开面板仍可继续审核，
-    /// App 重启后随队列一起清空，维持现有 BatchAIQueueService 的会话级边界。
+    /// 用户确认前不写入标签表；手动任务会把建议存入账户级草稿，关闭窗口或重启 App
+    /// 都可以继续审核，直到用户应用、忽略或明确放弃本轮结果。
     var suggestedTags: [AITagSuggestion] = []
 
     /// 当前人工选择的候选标签 ID。默认包含全部建议，用户可在展开区逐项取消。
@@ -263,7 +267,7 @@ enum BatchAIAction: String, CaseIterable, Codable, Hashable, Sendable {
 /// - autoApplyTags = false（默认在同一个批量窗口内人工确认，避免静默写入）
 /// - confidenceThreshold = 0.90（dong4j 16:22 明确要求默认 90%）
 /// - maxRetries = 3（任务描述明确）
-struct BatchAIQueueOptions: Equatable, Sendable {
+struct BatchAIQueueOptions: Codable, Equatable, Sendable {
 
     /// 本次要跑哪些 AI 子任务。空集合视为无效（UI 应禁用启动按钮）。
     var actions: Set<BatchAIAction> = [.summary, .tags]

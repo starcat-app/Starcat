@@ -70,7 +70,8 @@ struct DatabaseMigrationsV1Tests {
             "rag_message_remote_contexts", "rag_metadata_revision",
             "data_contribution_preferences", "data_contribution_outbox",
             "github_star_list_ai_rules", "github_star_list_ai_auto_ignored_repos",
-            "awesome_resource_entries"
+            "awesome_resource_entries", "ai_organization_drafts",
+            "ai_organization_draft_items"
         ]
         try db.read { db in
             for table in expectedTables {

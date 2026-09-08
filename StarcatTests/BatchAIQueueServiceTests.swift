@@ -18,6 +18,79 @@ import Testing
 @MainActor
 struct BatchAIQueueServiceTests {
 
+    @Test("重启后恢复未确认标签且不会自动重复调用 AI")
+    func restoresPendingReviewWithoutCallingProvider() async throws {
+        let database = try InMemoryDatabaseManager(userId: 1)
+        let draftRepository = GRDBAIOrganizationDraftRepository(database: database)
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: GRDBTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            draftRepository: draftRepository
+        )
+        let repo = Self.makeTestRepos(ids: [77])[0]
+
+        #expect(service.start(repos: [repo], options: BatchAIQueueOptions()))
+        await waitUntilStopped(service)
+        #expect(provider.generationCount == 1)
+        #expect(service.pendingTagReviewCount == 1)
+
+        let restoredService = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: GRDBTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            draftRepository: draftRepository
+        )
+        await restoredService.restoreDraftIfNeeded()
+
+        #expect(provider.generationCount == 1)
+        #expect(!restoredService.isRunning)
+        #expect(restoredService.pendingTagReviewCount == 1)
+        #expect(restoredService.jobs.first?.suggestedTags == Self.sampleSuggestions)
+        #expect(restoredService.discardCurrentSession())
+        for _ in 0..<50 {
+            if try await draftRepository.loadDraft(kind: .batchTags) == nil { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try await draftRepository.loadDraft(kind: .batchTags) == nil)
+    }
+
+    @Test("账号切换中断请求但保留未开始和未确认草稿")
+    func accountSwitchPreservesEntireManualDraft() async throws {
+        let database = try InMemoryDatabaseManager(userId: 1)
+        let draftRepository = GRDBAIOrganizationDraftRepository(database: database)
+        let provider = BlockingBatchAIInsightProvider()
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: GRDBTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            draftRepository: draftRepository
+        )
+        let repos = Self.makeTestRepos(ids: Array(1...6))
+
+        #expect(service.start(repos: repos, options: BatchAIQueueOptions()))
+        await provider.waitUntilGenerationStarts()
+        await service.resetForAccountChange()
+
+        let restoredService = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: GRDBTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            draftRepository: draftRepository
+        )
+        await restoredService.restoreDraftIfNeeded()
+
+        #expect(restoredService.jobs.count == repos.count)
+        #expect(restoredService.jobs.contains { $0.status == .queued })
+        #expect(restoredService.jobs.filter { $0.status == .failed }.allSatisfy { $0.failure == .interrupted })
+        #expect(provider.generationCount <= 5)
+    }
+
     @Test("终止会保留失败结果，明确放弃后才允许下一批启动")
     func cancelKeepsFailureUntilDiscardAndAllowsRestart() async throws {
         let provider = BlockingBatchAIInsightProvider()
@@ -723,13 +796,15 @@ struct BatchAIQueueServiceTests {
         insightProvider: any BatchAIInsightProviding,
         database: InMemoryDatabaseManager,
         tagRepository: any TagRepositoryProtocol,
-        repoTagRepository: any RepoTagRepositoryProtocol
+        repoTagRepository: any RepoTagRepositoryProtocol,
+        draftRepository: (any AIOrganizationDraftRepositoryProtocol)? = nil
     ) -> BatchAIQueueService {
         BatchAIQueueService(
             insightService: insightProvider,
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository,
-            aiSummaryRepository: GRDBAISummaryRepository(database: database)
+            aiSummaryRepository: GRDBAISummaryRepository(database: database),
+            draftRepository: draftRepository
         )
     }
 
@@ -896,6 +971,7 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
     let suggestions: [AITagSuggestion]
     private(set) var lastCodeContextEnabledOverride: Bool?
     private(set) var lastExternalContextEnabledOverride: Bool?
+    private(set) var generationCount = 0
 
     init(suggestions: [AITagSuggestion]) {
         self.suggestions = suggestions
@@ -918,6 +994,7 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
         codeContextEnabledOverride: Bool?,
         externalContextEnabledOverride: Bool?
     ) async throws -> RepoAIInsightGeneration {
+        generationCount += 1
         lastCodeContextEnabledOverride = codeContextEnabledOverride
         lastExternalContextEnabledOverride = externalContextEnabledOverride
         return RepoAIInsightGeneration(

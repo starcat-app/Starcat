@@ -80629,6 +80629,28 @@
         }
       }
     },
+    "batchAI.panel.interruptedByAppExit" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrupted when Starcat exited. Retry manually to continue."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 退出时任务被中断，请手动重试后继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 結束時任務遭中斷，請手動重試後繼續。"
+          }
+        }
+      }
+    },
     "batchAI.panel.pause" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -490887,6 +490909,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "GitHub 授权已失效，请重新登录。"
+          }
+        }
+      }
+    },
+    "githubStarLists.aiGrouping.applyFailure.interrupted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update was interrupted when Starcat exited. Retry to reconcile it with GitHub."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 退出时更新被中断，请重试以与 GitHub 状态对齐。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starcat 結束時更新遭中斷，請重試以與 GitHub 狀態對齊。"
           }
         }
       }

@@ -13,6 +13,51 @@ import Testing
 @MainActor
 struct GitHubStarListAIGroupingSessionTests {
 
+    @Test("重启后恢复未确认分组且不会自动重复调用 AI")
+    func restoresPendingGroupingWithoutCallingProvider() async throws {
+        let provider = ConcurrentGitHubStarListSuggestionProvider(
+            delay: .milliseconds(1),
+            suggestionsByRepoID: [
+                1: [GitHubStarListAISuggestion(listId: "list-1", confidence: 0.93, reason: "Tools")]
+            ]
+        )
+        let environment = try await makeEnvironment(
+            repoCount: 1,
+            groupedRepoFullNames: [],
+            aiRule: (instruction: "Developer tools", autoApplyEnabled: false),
+            insightService: provider,
+            persistDrafts: true
+        )
+        await environment.session.prepareManualContext()
+        await environment.session.startManual()
+        await waitUntilStopped(environment.session)
+        #expect(provider.calledRepoIDs == [1])
+
+        let draftRepository = GRDBAIOrganizationDraftRepository(database: environment.database)
+        let restoredSession = GitHubStarListAIGroupingSession(
+            repoRepository: GRDBRepoRepository(database: environment.database),
+            listService: environment.listService,
+            insightService: provider,
+            entitlementGate: EntitlementGate(
+                entitlementProvider: GroupingSessionTestEntitlementProvider(isPro: true),
+                userIDProvider: { 1 }
+            ),
+            draftRepository: draftRepository
+        )
+        await restoredSession.restoreDraftIfNeeded()
+
+        #expect(provider.calledRepoIDs == [1])
+        #expect(!restoredSession.isRunning)
+        #expect(restoredSession.jobs.first?.suggestions.first?.listId == "list-1")
+        #expect(restoredSession.selectedListIDsByRepo[1] == ["list-1"])
+        restoredSession.discardManualSession()
+        for _ in 0..<50 {
+            if try await draftRepository.loadDraft(kind: .githubStarLists) == nil { break }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(try await draftRepository.loadDraft(kind: .githubStarLists) == nil)
+    }
+
     @Test("开始页只准备 COUNT 统计，不展开全部 starred 仓库")
     func prepareManualContextDoesNotLoadRepositoryPayload() async throws {
         let environment = try await makeEnvironment(
@@ -627,7 +672,8 @@ struct GitHubStarListAIGroupingSessionTests {
         repoCount: Int,
         groupedRepoFullNames: [String],
         aiRule: (instruction: String, autoApplyEnabled: Bool)? = nil,
-        insightService: (any GitHubStarListSuggestionProviding)? = nil
+        insightService: (any GitHubStarListSuggestionProviding)? = nil,
+        persistDrafts: Bool = false
     ) async throws -> (
         session: GitHubStarListAIGroupingSession,
         database: InMemoryDatabaseManager,
@@ -691,7 +737,10 @@ struct GitHubStarListAIGroupingSessionTests {
             entitlementGate: EntitlementGate(
                 entitlementProvider: GroupingSessionTestEntitlementProvider(isPro: true),
                 userIDProvider: { 1 }
-            )
+            ),
+            draftRepository: persistDrafts
+                ? GRDBAIOrganizationDraftRepository(database: database)
+                : nil
         )
         return (session, database, listService)
     }

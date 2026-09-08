@@ -38,7 +38,8 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
-//    `v20-release-1.5.0` / `v21-star-history-github-official-only`
+//    `v20-release-1.5.0` / `v21-star-history-github-official-only` /
+//    `v22-ai-organization-drafts`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -117,6 +118,32 @@ enum DatabaseMigrations {
         registerV19(into: &migrator)
         registerV20(into: &migrator)
         registerV21(into: &migrator)
+        registerV22(into: &migrator)
+    }
+
+    // MARK: - v22-ai-organization-drafts：恢复未确认的 AI 整理结果（2026-09-08）
+
+    /// 手动标签整理与 GitHub Lists 分组都可能包含上千个仓库。Header 只保存会话配置，
+    /// Item 按仓库拆行，使每个 AI 结果完成时只重写一行，避免反复编码整个大数组。
+    private static func registerV22(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v22-ai-organization-drafts") { db in
+            try db.create(table: "ai_organization_drafts") { table in
+                table.column("id", .text).primaryKey()
+                table.column("kind", .text).notNull().unique()
+                table.column("header_json", .text).notNull()
+                table.column("created_at", .double).notNull()
+                table.column("updated_at", .double).notNull()
+            }
+            try db.create(table: "ai_organization_draft_items") { table in
+                table.column("draft_id", .text)
+                    .notNull()
+                    .references("ai_organization_drafts", onDelete: .cascade)
+                table.column("repo_id", .integer).notNull()
+                table.column("payload_json", .text).notNull()
+                table.column("updated_at", .double).notNull()
+                table.primaryKey(["draft_id", "repo_id"])
+            }
+        }
     }
 
     // MARK: - v21-star-history-github-official-only：切换 GitHub 官方单一历史源（2026-09-08）

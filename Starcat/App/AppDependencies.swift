@@ -1149,13 +1149,15 @@ final class AppDependencies {
 
         // HOM-52：批量整理服务装在 AI insight + 标签 + 标签关联 + AI 摘要 Repo 之后。
         // 注：onTagsChanged 由 HomeView 在 environment 注入后挂接，刷新 Sidebar 计数。
+        let aiOrganizationDraftRepository = GRDBAIOrganizationDraftRepository(database: db)
         let batchSvc = BatchAIQueueService(
             insightService: aiInsight,
             tagRepository: tagRepo,
             repoTagRepository: repoTagRepo,
             aiSummaryRepository: summaryRepo,
             entitlementGate: self.entitlementGate,
-            notificationService: notificationService
+            notificationService: notificationService,
+            draftRepository: aiOrganizationDraftRepository
         )
         self.batchAIQueueService = batchSvc
 
@@ -1163,7 +1165,8 @@ final class AppDependencies {
             repoRepository: repo,
             listService: self.githubStarListSyncService,
             insightService: aiInsight,
-            entitlementGate: self.entitlementGate
+            entitlementGate: self.entitlementGate,
+            draftRepository: aiOrganizationDraftRepository
         )
 
         // HOM-126：自动后台 AI 整理调度器。
@@ -1819,6 +1822,10 @@ final class AppDependencies {
     func switchUserDatabase(to userId: Int64?) async throws {
         let previousUserId = database.currentUserId
         if previousUserId != userId {
+            // 两套人工 AI 草稿都属于账号作用域。必须在 reopen 前等旧请求退出，随后再从
+            // 新账号库恢复；把屏障放在数据库所有者内部，避免 View 生命周期竞态。
+            await batchAIQueueService.resetForAccountChange()
+            await githubStarListAIGroupingSession.resetForAccountChange()
             // 屏障从清理前一直保持到 reopen 结束；新请求会等待并在 end 后重新读取 Token。
             await repositoryMetricsClient.beginDatabaseScopeChange()
             await repositoryInsightsCache.clearTransientState()
@@ -1840,6 +1847,10 @@ final class AppDependencies {
             userID: database.currentUserId,
             databaseRevision: databaseScopeRevision
         )
+        if userId != nil {
+            await batchAIQueueService.restoreDraftIfNeeded()
+            await githubStarListAIGroupingSession.restoreDraftIfNeeded()
+        }
     }
 
     // MARK: - 本机恢复出厂
