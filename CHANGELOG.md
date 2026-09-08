@@ -2,6 +2,28 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.6.1-待发布
+
+Starcat 1.6.1 focuses on issues found after the 1.6.0 release across interface layout, filtering, search, and authorization, while refining macOS 26 Liquid Glass, Star history, and AI organization.
+
+### Improvements
+
+- Native macOS 26 appearance: The main window, search, repository details, and AI and Knowledge Base workspaces now apply system Liquid Glass to toolbars, controls, and floating surfaces.
+- Star history data: Uses GitHub's official history as the sole data source, removing mixed legacy estimates and local snapshots for consistent charts and metrics.
+- Unified Search Center: Combines keyword and semantic retrieval in one entry, adopts the new search field, and keeps index status and refresh feedback visible.
+- Sidebar terminology: Clearly distinguishes Recently Starred from Recently Added to Knowledge Base and hides empty tags in the current category.
+
+### Fixes
+
+- Main window and workspace layout: Fixes broken top gradients, leftover borders around repository AI controls, and misaligned or overflowing RAG and Agent toolbars and inspectors across window sizes.
+- Private repository access: Fixes concurrent GitHub App credential refresh and retry after 401 responses; private README and related files no longer fall back to anonymous access.
+- README Star history: Zero-star repositories no longer show stale summaries; history begins loading when README opens, with a stable skeleton even for short README content.
+- AI organization results: Empty tag output and invalid grouping results are no longer recorded as successful; unconfirmed tagging and grouping results survive relaunch for later review.
+- Multi-selection state: Entering multi-select no longer loses the currently selected repository.
+- Filter counts: Fixes flashing language counts and inconsistent tag totals in the Untagged scope.
+- Semantic search feedback: Restores search status and the index refresh action.
+- Agent sidebar performance: Fixes sustained lag after expanding the left sidebar.
+
 ## 1.6.0
 
 Starcat 1.6.0 focuses on performance and detail polish: lower background load at launch, smoother scrolling and long lists, and lighter rendering in high-frequency views. It also adds a privacy settings page and an Owner profile card, brings OrcaRouter models and Firecrawl search, and continues refining Settings, Knowledge Base, and sharing.

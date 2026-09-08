@@ -41,7 +41,7 @@ APPSTORE_ARCHIVE := $(CURDIR)/dist/appstore/Starcat-AppStore.xcarchive
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-appstore build-direct run-appstore run-direct test test-build-scripts reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
+.PHONY: help build-appstore build-direct run-appstore run-direct test test-build-scripts reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct-debug package-direct package-direct-notarized release-direct release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -59,6 +59,7 @@ help: ## 列出所有可用命令
 	@echo "  make open-appstore-archive  打开 App Store archive，交给 Xcode Organizer 上传"
 	@echo ""
 	@echo "Direct："
+	@echo "  make package-direct-debug VERSION=0.1.0       生成含 Debug 菜单的本地 Direct 测试 DMG"
 	@echo "  make package-direct VERSION=0.1.0             生成未公证 Direct DMG，不上传"
 	@echo "  make package-direct-notarized VERSION=0.1.0   生成并公证 Direct DMG，不上传"
 	@echo "  make release-direct VERSION=0.1.0             完整正式发布 Direct 版本"
@@ -137,6 +138,14 @@ open-appstore-archive:
 		exit 1; \
 	fi
 	@open "$(APPSTORE_ARCHIVE)"
+
+## 生成含 Debug 菜单的本地 Direct 测试 DMG（VERSION=0.1.0）
+package-direct-debug:
+	@if [ "$(origin VERSION)" = "file" ]; then \
+		echo "请显式传版本号，例如：make package-direct-debug VERSION=0.1.0"; \
+		exit 1; \
+	fi
+	@bash scripts/package-direct-debug.sh "$(VERSION)"
 
 ## 生成未公证 Direct DMG，不执行发布上传（VERSION=0.1.0）
 package-direct:
