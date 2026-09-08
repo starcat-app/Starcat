@@ -39,8 +39,8 @@ final class WorkspaceChromeState {
 
 /// Agent / RAG 工作台共用的原生窗口工具栏内容。
 ///
-/// 按钮必须直接作为 `ToolbarItemGroup` 的子项交给系统，不能再包进自定义 HStack 或
-/// titlebar accessory。这样按钮的纵向位置、组合胶囊和交互动画都由窗口 toolbar 统一管理。
+/// 按钮必须作为单个系统 `ControlGroup` 交给 toolbar，不能再使用 titlebar accessory
+/// 或自绘 glass。这样 Agent 的两个按钮与 RAG 的三个按钮会生成相同的原生 item 结构。
 struct WorkspaceToolbarContent: ToolbarContent {
 
     @Bindable var chromeState: WorkspaceChromeState
@@ -56,40 +56,42 @@ struct WorkspaceToolbarContent: ToolbarContent {
             Spacer()
         }
 
-        ToolbarItemGroup(placement: .automatic) {
-            Button {
-                chromeState.isRightColumnCollapsed.toggle()
-            } label: {
-                Image(systemName: "inset.filled.rightthird.rectangle")
-            }
-            .foregroundStyle(chromeState.isRightColumnCollapsed ? Color.accentColor : .secondary)
-            .help(
-                chromeState.isRightColumnCollapsed
-                    ? LocalizedStringKey("workspace.chrome.showRight")
-                    : LocalizedStringKey("workspace.chrome.hideRight")
-            )
-
-            Button {
-                chromeState.isPinned.toggle()
-                onPinnedChange(chromeState.isPinned)
-            } label: {
-                Image(systemName: chromeState.isPinned ? "pin.circle.fill" : "pin.circle")
-            }
-            .foregroundStyle(chromeState.isPinned ? Color.accentColor : .secondary)
-            .help(
-                chromeState.isPinned
-                    ? LocalizedStringKey("workspace.chrome.unpin")
-                    : LocalizedStringKey("workspace.chrome.pin")
-            )
-
-            if let onSettings {
+        ToolbarItem(placement: .automatic) {
+            ControlGroup {
                 Button {
-                    onSettings()
+                    chromeState.isRightColumnCollapsed.toggle()
                 } label: {
-                    Image(systemName: "gearshape")
+                    Image(systemName: "inset.filled.rightthird.rectangle")
                 }
-                .foregroundStyle(.secondary)
-                .help(LocalizedStringKey("rag.workspace.settings.open"))
+                .foregroundStyle(chromeState.isRightColumnCollapsed ? Color.accentColor : .secondary)
+                .help(
+                    chromeState.isRightColumnCollapsed
+                        ? LocalizedStringKey("workspace.chrome.showRight")
+                        : LocalizedStringKey("workspace.chrome.hideRight")
+                )
+
+                Button {
+                    chromeState.isPinned.toggle()
+                    onPinnedChange(chromeState.isPinned)
+                } label: {
+                    Image(systemName: chromeState.isPinned ? "pin.circle.fill" : "pin.circle")
+                }
+                .foregroundStyle(chromeState.isPinned ? Color.accentColor : .secondary)
+                .help(
+                    chromeState.isPinned
+                        ? LocalizedStringKey("workspace.chrome.unpin")
+                        : LocalizedStringKey("workspace.chrome.pin")
+                )
+
+                if let onSettings {
+                    Button {
+                        onSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .foregroundStyle(.secondary)
+                    .help(LocalizedStringKey("rag.workspace.settings.open"))
+                }
             }
         }
     }
