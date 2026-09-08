@@ -91,8 +91,8 @@ struct HomeViewModelTagFilterTests {
                     INSERT INTO repo_star_history_points (
                         repo_id, observed_on, stars_count, source, precision, fetched_at
                     ) VALUES
-                        (101, ?, 10, 'local_snapshot', 'snapshot', ?),
-                        (101, ?, 15, 'local_snapshot', 'snapshot', ?)
+                        (101, ?, 10, 'github_history', 'reconstructed', ?),
+                        (101, ?, 15, 'github_history', 'reconstructed', ?)
                     """,
                 arguments: [
                     historyBaselineDay,

@@ -82,7 +82,7 @@ struct UserProjectRepositoryTests {
         )
     }
 
-    @Test("项目 upsert 保留 Star 和用户内容并写入当天 snapshot")
+    @Test("项目 upsert 保留 Star 和用户内容且不写本地星标历史")
     func upsertPreservesIndependentRelations() async throws {
         let (projects, stars, database) = try makeSUT()
         let item = remote(id: 11, name: "shared")
@@ -140,7 +140,7 @@ struct UserProjectRepositoryTests {
             #expect(tagCount == 1)
             #expect(status == "using")
             #expect(libraryState == "in_library")
-            #expect(snapshotCount == 1)
+            #expect(snapshotCount == 0)
         }
     }
 

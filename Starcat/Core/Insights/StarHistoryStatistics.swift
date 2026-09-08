@@ -39,8 +39,8 @@ enum StarHistoryStatisticsBuilder {
         repositoryCreatedAt: Date?
     ) -> StarHistoryStatistics {
         let ordered = points.sorted { $0.date < $1.date }
-        // 只有本机元数据快照时无法证明中间发生过什么，不能伪造历史增长。
-        guard ordered.contains(where: { $0.source.isRemote }) else {
+        // 统计只接受 GitHub 官方历史，旧来源即使尚残留在内存中也不参与计算。
+        guard ordered.contains(where: { $0.source == .githubHistory }) else {
             return .empty
         }
 

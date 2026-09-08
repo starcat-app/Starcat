@@ -158,14 +158,6 @@ struct GRDBUserProjectRepository: UserProjectRepositoryProtocol, Sendable {
                     updatedAt: seenAtISO
                 )
                 try project.save(db)
-
-                try GRDBRepoStarHistoryRepository.saveLocalSnapshot(
-                    repoId: remote.repo.id,
-                    starsCount: remote.repo.stargazersCount,
-                    observedAt: seenAt,
-                    fetchedAt: seenAt,
-                    db: db
-                )
             }
         }
     }

@@ -121,8 +121,8 @@ struct ReadmeStarHistoryPreviewTests {
         #expect(viewModel.renderState.html == nil)
     }
 
-    @Test("README 只展示至少两个 GH Archive 全历史点")
-    func visibilityRequiresPublicAllRangeGHArchivePoints() {
+    @Test("README 只展示至少两个 GitHub 官方历史点")
+    func visibilityRequiresPublicOfficialHistoryPoints() {
         let repo = Self.repo()
 
         #expect(ReadmeStarHistoryVisibilityPolicy.shouldDisplay(
@@ -134,7 +134,7 @@ struct ReadmeStarHistoryPreviewTests {
             repo: repo,
             projectVisibility: nil,
             snapshot: Self.snapshot(
-                points: Self.points(source: .localSnapshot, precision: .snapshot),
+                points: Self.points(source: .ghArchive, precision: .estimated),
                 state: .cached
             )
         ))
@@ -179,15 +179,15 @@ struct ReadmeStarHistoryPreviewTests {
             StarHistoryPoint(
                 date: StarHistoryDateCodec.date(from: "2026-07-23")!,
                 count: 0,
-                source: .ghArchive,
-                precision: .estimated,
+                source: .githubHistory,
+                precision: .reconstructed,
                 fetchedAt: StarHistoryDateCodec.date(from: "2026-09-06")
             ),
             StarHistoryPoint(
                 date: StarHistoryDateCodec.date(from: "2026-09-06")!,
                 count: 1_165,
-                source: .ghArchive,
-                precision: .estimated,
+                source: .githubHistory,
+                precision: .reconstructed,
                 fetchedAt: StarHistoryDateCodec.date(from: "2026-09-06")
             )
         ]
@@ -262,7 +262,7 @@ struct ReadmeStarHistoryPreviewTests {
         #expect(metrics.periodDays == 90)
         #expect(abs(try #require(metrics.dailyAverage) - 12_340.0 / 90) < 0.000001)
         #expect(abs(try #require(metrics.growthRate) - 12_340.0 / 38_155) < 0.000001)
-        #expect(metrics.isEstimated)
+        #expect(!metrics.isEstimated)
         #expect(!metrics.sinceCreated)
     }
 
@@ -316,8 +316,8 @@ struct ReadmeStarHistoryPreviewTests {
         let created = try #require(StarHistoryDateCodec.date(from: createdDay))
         let first = try #require(StarHistoryDateCodec.date(from: "2026-08-18"))
         let last = try #require(StarHistoryDateCodec.date(from: "2026-09-07"))
-        let points = [StarHistoryPoint(date: first, count: 752, source: .ghArchive, precision: .estimated),
-                      StarHistoryPoint(date: last, count: 1_165, source: .ghArchive, precision: .estimated)]
+        let points = [StarHistoryPoint(date: first, count: 752, source: .githubHistory, precision: .reconstructed),
+                      StarHistoryPoint(date: last, count: 1_165, source: .githubHistory, precision: .reconstructed)]
         let snapshot = Self.snapshot(points: points, state: .fresh)
         let repository = ReadmeStarHistoryRepositoryStub(cachedSnapshot: snapshot, refreshSnapshot: snapshot)
         let viewModel = ReadmeStarHistoryViewModel(repository: repository, projectVisibilityProvider: { _ in .public })
@@ -357,8 +357,8 @@ struct ReadmeStarHistoryPreviewTests {
     }
 
     private nonisolated static func points(
-        source: StarHistorySource = .ghArchive,
-        precision: StarHistoryPrecision = .estimated
+        source: StarHistorySource = .githubHistory,
+        precision: StarHistoryPrecision = .reconstructed
     ) -> [StarHistoryPoint] {
         [
             StarHistoryPoint(
@@ -416,14 +416,7 @@ private actor ReadmeStarHistoryRepositoryStub: RepoStarHistoryRepositoryProtocol
         return cachedSnapshot
     }
 
-    func recordLocalSnapshot(
-        repoId: Int64,
-        starsCount: Int,
-        observedAt: Date,
-        fetchedAt: Date
-    ) async throws {}
-
-    func replaceRemotePoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
+    func replaceOfficialPoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
 
     func refresh(
         repo: Repo,

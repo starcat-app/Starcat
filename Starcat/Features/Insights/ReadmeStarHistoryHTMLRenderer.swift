@@ -108,9 +108,9 @@ enum ReadmeStarHistoryHTMLRenderer {
             guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             return "<p class=\"starcat-star-history-description\" title=\"\(escape(value))\">\(escape(value))</p>"
         } ?? ""
-        // 本机快照写入时间不代表服务端数据更新；优先使用对应这批历史的 generatedAt。
+        // 官方历史的 generatedAt 才代表这批曲线的更新时间，Repo metadata 时间不能替代。
         let generatedAt = snapshot.coverage?.generatedAt
-            ?? points.filter { $0.source == .ghArchive }.compactMap(\.fetchedAt).max()
+            ?? points.filter { $0.source == .githubHistory }.compactMap(\.fetchedAt).max()
         let historyUpdated = format("readme.starHistory.updatedFormat", generatedAt.map { dateText($0, locale: locale) } ?? "—")
         // 只接收 App 已准备好的图片数据，避免 WebView 再发远程请求；缺图由 ViewModel 异步补齐。
         let avatarImage = avatarDataURI.map {

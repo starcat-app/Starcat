@@ -2,12 +2,12 @@
 //  StarHistoryCurveBuilder.swift
 //  Starcat
 //
-//  把 history-api 返回的原始日事件校准成洞察图表点。
+//  把远端返回的原始日增量校准成洞察图表点。
 //
 //  为什么放在客户端：
 //  - Starcat 本地已有 Repo.starsCount（详情页 hero 同源），不必再让服务端打 GitHub；
-//  - 校准公式与 starcat-history-api/internal/series.Normalize 对齐；范围选择由
-//    Starcat 的完整日级 canonical cache 独立负责，不受第三方兼容接口点数上限影响。
+//  - GitHub 官方周级历史是唯一事实源，客户端只负责累计与范围抽样；
+//  - 范围选择由 Starcat 的完整日级 canonical cache 独立负责。
 //
 
 import Foundation
@@ -18,12 +18,15 @@ enum StarHistoryCurveBuilder {
         let count: Int
     }
 
-    /// 将 WatchEvent 日计数按当前星标数校准成单调估算曲线。
-    /// 最后一个点强制等于 `currentStars`，与服务端 Normalize 行为一致。
+    /// 将日增量按当前星标数校准成单调曲线。
+    /// 最后一个点强制等于 `currentStars`；来源和精度由调用方显式标记，
+    /// 避免 GitHub 官方历史被误存为旧 GH Archive 估算数据。
     static func normalize(
         events: [DailyEvent],
         currentStars: Int,
-        fetchedAt: Date
+        fetchedAt: Date,
+        source: StarHistorySource = .githubHistory,
+        precision: StarHistoryPrecision = .reconstructed
     ) throws -> [StarHistoryPoint] {
         guard currentStars >= 0 else {
             throw StarHistoryAPIError.decoding("current_stars must not be negative")
@@ -57,8 +60,8 @@ enum StarHistoryCurveBuilder {
                 StarHistoryPoint(
                     date: event.date,
                     count: estimated,
-                    source: .ghArchive,
-                    precision: .estimated,
+                    source: source,
+                    precision: precision,
                     fetchedAt: fetchedAt
                 )
             )
@@ -77,50 +80,10 @@ enum StarHistoryCurveBuilder {
         return points
     }
 
-    /// 把远端重建历史与本机精确快照收敛成一次性精度交接。
+    /// 3m 保留日级点；1y 按周压缩官方点；all 保留全部日级点。
     ///
-    /// 远端曲线使用“当前 Star 数”校准，如果继续让它穿过更早写入的本机快照，
-    /// 两条时间序列会在同一日期范围反复交叉，形成不存在的下降虚线和尖峰。
-    /// 因此这里使用第一个精确快照作为锚点：
-    /// - 锚点之前保留远端形状，并按锚点值等比例重新校准；
-    /// - 锚点开始只保留精确快照；
-    /// - 没有精确快照时保持原远端序列。
-    static func stitchToPreciseSnapshots(_ points: [StarHistoryPoint]) -> [StarHistoryPoint] {
-        let sorted = points.sorted { $0.date < $1.date }
-        let precise = sorted.filter { $0.precision == .snapshot }
-        guard let anchor = precise.first else { return sorted }
-
-        let historical = sorted.filter {
-            $0.precision != .snapshot && $0.date < anchor.date
-        }
-        guard let historicalAnchor = historical.last else { return precise }
-
-        let adjustedHistorical: [StarHistoryPoint]
-        if historicalAnchor.count == 0 {
-            // 远端锚点和精确锚点都为零时保留零值历史；否则没有可解释的比例可用。
-            adjustedHistorical = anchor.count == 0 ? historical : []
-        } else {
-            adjustedHistorical = historical.map { point in
-                let scaled = Int(
-                    (Double(anchor.count) * Double(point.count) / Double(historicalAnchor.count))
-                        .rounded()
-                )
-                return StarHistoryPoint(
-                    date: point.date,
-                    count: min(max(0, scaled), anchor.count),
-                    source: point.source,
-                    precision: point.precision,
-                    fetchedAt: point.fetchedAt
-                )
-            }
-        }
-        return adjustedHistorical + precise
-    }
-
-    /// 3m 保留日级点；1y 只压缩远端估算点并保留全部精确快照；all 保留全部日级点。
-    ///
-    /// `/events` 最多每天一个点，当前十年覆盖约 3,900 点。`all` 不再按月丢点，
-    /// 让“存在 WatchEvent 的日期就有图表点”成为稳定的数据契约。
+    /// 官方接口最多每天一个非零点。`all` 不再按月丢点，
+    /// 让“官方周数据中存在的日期就有图表点”成为稳定数据契约。
     static func selectRange(
         _ points: [StarHistoryPoint],
         range: StarHistoryRange,
@@ -150,19 +113,13 @@ enum StarHistoryCurveBuilder {
             let filtered = sorted.filter { $0.date >= cutoff }
             guard !filtered.isEmpty else { return [] }
 
-            var lastRemoteByWeek: [String: StarHistoryPoint] = [:]
-            var precise: [StarHistoryPoint] = []
+            var lastPointByWeek: [String: StarHistoryPoint] = [:]
             for point in filtered {
-                if point.precision == .snapshot {
-                    precise.append(point)
-                    continue
-                }
                 let week = utcCalendar.component(.weekOfYear, from: point.date)
                 let year = utcCalendar.component(.yearForWeekOfYear, from: point.date)
-                lastRemoteByWeek[String(format: "%04d-W%02d", year, week)] = point
+                lastPointByWeek[String(format: "%04d-W%02d", year, week)] = point
             }
-            return (Array(lastRemoteByWeek.values) + precise)
-                .sorted { $0.date < $1.date }
+            return lastPointByWeek.values.sorted { $0.date < $1.date }
         case .all:
             return sorted
         }

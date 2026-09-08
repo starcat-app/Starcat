@@ -980,8 +980,8 @@ private actor AIContextStarHistoryRepository: RepoStarHistoryRepositoryProtocol 
                 StarHistoryPoint(
                     date: now,
                     count: 140,
-                    source: .localSnapshot,
-                    precision: .snapshot,
+                    source: .githubHistory,
+                    precision: .reconstructed,
                     fetchedAt: now
                 )
             ],
@@ -999,14 +999,7 @@ private actor AIContextStarHistoryRepository: RepoStarHistoryRepositoryProtocol 
         snapshot
     }
 
-    func recordLocalSnapshot(
-        repoId: Int64,
-        starsCount: Int,
-        observedAt: Date,
-        fetchedAt: Date
-    ) async throws {}
-
-    func replaceRemotePoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
+    func replaceOfficialPoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
 
     func refresh(
         repo: Repo,

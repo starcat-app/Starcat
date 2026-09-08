@@ -15,6 +15,8 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
     case commitActivity
     case contributors
     case languages
+    /// GitHub 官方周级 Star History 原始响应；派生曲线可随时由它重建。
+    case starHistoryWeeks
     /// History 的覆盖水位独立于最后一个 Star 事件日，随现有洞察 JSON 缓存持久化。
     case starHistoryCoverage
     case communityProfile
@@ -26,7 +28,7 @@ enum RepositoryInsightsDataset: String, CaseIterable, Sendable {
         switch self {
         case .activityCounts, .recentActivity:
             return 15 * 60
-        case .commitActivity, .contributors, .languages, .starHistoryCoverage:
+        case .commitActivity, .contributors, .languages, .starHistoryWeeks, .starHistoryCoverage:
             return 24 * 60 * 60
         case .communityProfile:
             return 3 * 24 * 60 * 60

@@ -40,7 +40,9 @@ enum ReadmeStarHistoryVisibilityPolicy {
             return false
         }
         // 零 Star 仓库也有 Created / Current 两个真实状态；没有历史时仅展示 Journey，不补造曲线。
-        return repo.starsCount == 0 || (snapshot.points.count >= 2 && snapshot.points.contains { $0.source == .ghArchive })
+        return repo.starsCount == 0 || (snapshot.points.count >= 2 && snapshot.points.contains {
+            $0.source == .githubHistory
+        })
     }
 }
 

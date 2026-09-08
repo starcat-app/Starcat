@@ -73,10 +73,8 @@ struct ReadmeStarHistoryMetrics {
         }
         growth = latest.count - baselineCount
         growthRate = baselineCount > 0 ? Double(latest.count - baselineCount) / Double(baselineCount) : nil
-        // 稀疏本地快照不能证明目标日的精确值，向前沿用时仍标记估算。
-        isEstimated = latest.precision != .snapshot || (!createdInsideWindow && (
-            baseline?.precision != .snapshot || baseline?.date != cutoff
-        ))
+        // 官方历史是稀疏事件序列；期初点非目标日时，增长值仍属向前沿用的估算。
+        isEstimated = !createdInsideWindow && baseline?.date != cutoff
     }
 }
 
@@ -132,7 +130,9 @@ struct ReadmeStarJourney {
         }
         // 首条 GH Archive 记录即使校准后四舍五入为 0，也仍代表一个曾被记录的事件日。
         // 它不能证明整个项目的 First Star，因此文案明确为 First Recorded Star。
-        if count > 0, let first = points.first(where: { $0.source.isRemote }), first.id != latest?.id {
+        if count > 0,
+           let first = points.first(where: { $0.source == .githubHistory }),
+           first.id != latest?.id {
             events.append(Event(kind: .firstRecorded, date: first.date, point: first))
         }
         for threshold in Self.thresholds(for: count) {
@@ -206,8 +206,9 @@ struct ReadmeStarJourney {
         func connects(_ previous: StarHistoryPoint, _ next: StarHistoryPoint) -> Bool {
             guard previous.source == next.source, previous.precision == next.precision,
                   day(next) > day(previous) else { return false }
-            if previous.precision == .snapshot { return day(next) - day(previous) == 1 }
-            guard previous.source == .ghArchive, let coverage, let start = coverage.start,
+            guard previous.source == .githubHistory,
+                  let coverage,
+                  let start = coverage.start,
                   let end = coverage.dataThrough, previous.fetchedAt == coverage.generatedAt,
                   next.fetchedAt == coverage.generatedAt else { return false }
             return previous.date >= start && next.date <= end

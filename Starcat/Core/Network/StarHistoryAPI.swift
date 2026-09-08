@@ -266,7 +266,10 @@ actor StarHistoryAPI: StarHistoryAPIProtocol {
         let normalized = try StarHistoryCurveBuilder.normalize(
             events: events,
             currentStars: request.currentStars,
-            fetchedAt: generatedAt
+            fetchedAt: generatedAt,
+            // 旧 History 客户端只为未改动设置 UI 暂时保留，其产物不能冒充官方来源。
+            source: .ghArchive,
+            precision: .estimated
         )
         let coverageStart = dto.coverageStart.flatMap(StarHistoryDateCodec.date(from:))
             ?? normalized.first?.date

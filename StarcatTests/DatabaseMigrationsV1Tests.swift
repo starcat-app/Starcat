@@ -915,7 +915,7 @@ struct DatabaseMigrationsV1Tests {
         }
     }
 
-    @Test("v16 升级 v17 应保留 Repo、笔记、Star 历史和置顶")
+    @Test("v16 升级到最新版应保留用户数据并清理本机 Star 历史")
     func myProjectsMigrationPreservesExistingData() throws {
         let queue = try DatabaseQueue()
         var migrator = DatabaseMigrator()
@@ -964,7 +964,7 @@ struct DatabaseMigrationsV1Tests {
             #expect(isStarred == true)
             #expect(note == "keep this note")
             #expect(pinCount == 1)
-            #expect(starsCount == 456)
+            #expect(starsCount == nil)
             #expect(hasUserProjects)
             #expect(hasProjectSyncState)
         }
@@ -1076,6 +1076,64 @@ struct DatabaseMigrationsV1Tests {
             #expect(note == "private note")
             #expect(hasInsights)
             #expect(hasStarHistory)
+        }
+    }
+
+    @Test("v21 应只保留 GitHub 官方 Star History")
+    func officialStarHistoryMigrationRemovesEveryLegacySource() throws {
+        let queue = try DatabaseQueue()
+        var migrator = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrator)
+        try migrator.migrate(queue, upTo: "v20-release-1.5.0")
+
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repos (id, owner, name, full_name, html_url)
+                VALUES (89, 'octo', 'history', 'octo/history', 'https://github.com/octo/history')
+                """)
+            for source in [
+                "local_snapshot", "gh_archive", "discovery_snapshot",
+                "github_stargazers", "github_history"
+            ] {
+                try db.execute(
+                    sql: """
+                        INSERT INTO repo_star_history_points (
+                            repo_id, observed_on, stars_count, source, precision, fetched_at
+                        ) VALUES (89, ?, 10, ?, ?, '2026-09-08T00:00:00Z')
+                        """,
+                    arguments: [
+                        source == "github_history" ? "2026-09-08" : "2026-09-07",
+                        source,
+                        source == "github_history" ? "reconstructed" : "estimated"
+                    ]
+                )
+            }
+            for dataset in ["contributors", "starHistoryCoverage", "starHistoryWeeks"] {
+                try db.execute(
+                    sql: """
+                        INSERT INTO repo_insights_snapshots (
+                            repo_id, dataset, range_key, payload_json, fetched_at, stale_after
+                        ) VALUES (89, ?, 'all', ?, '2026-09-08', '2026-09-09')
+                        """,
+                    arguments: [dataset, Data("{}".utf8)]
+                )
+            }
+        }
+
+        try migrator.migrate(queue)
+
+        try queue.read { db in
+            let sources = try String.fetchAll(
+                db,
+                sql: "SELECT source FROM repo_star_history_points WHERE repo_id = 89"
+            )
+            let datasets = try String.fetchAll(
+                db,
+                sql: "SELECT dataset FROM repo_insights_snapshots WHERE repo_id = 89"
+            )
+            #expect(sources == ["github_history"])
+            #expect(datasets == ["contributors"])
+            #expect(try migrator.appliedIdentifiers(db).contains("v21-star-history-github-official-only"))
         }
     }
 

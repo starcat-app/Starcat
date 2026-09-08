@@ -2,7 +2,7 @@
 //  RepoStarHistoryRepositoryTests.swift
 //  StarcatTests
 //
-//  验证本机 Star 精确快照的 UTC 日幂等、远端替换隔离和 repo 生命周期。
+//  验证 GitHub 官方 Star 历史的单一来源、完整替换和 repo 生命周期。
 //
 
 import Foundation
@@ -13,67 +13,63 @@ import Testing
 @Suite("Repo Star History Repository")
 struct RepoStarHistoryRepositoryTests {
 
-    @Test("同一 UTC 日期的本机快照应幂等更新")
-    func localSnapshotIsIdempotentPerUTCDay() async throws {
+    @Test("读取历史时只返回 GitHub 官方来源")
+    func pointsOnlyReturnsOfficialHistory() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 1, owner: "octo", name: "history")
         let repository = GRDBRepoStarHistoryRepository(database: database)
-        let first = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T01:00:00.000Z"))
-        let second = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T23:30:00.000Z"))
-
-        try await repository.recordLocalSnapshot(
-            repoId: 1,
-            starsCount: 10,
-            observedAt: first,
-            fetchedAt: first
-        )
-        try await repository.recordLocalSnapshot(
-            repoId: 1,
-            starsCount: 12,
-            observedAt: second,
-            fetchedAt: second
-        )
+        try await database.writer.write { db in
+            // 模拟升级前已存在的本地行，读路径不得再将它叠加到官方曲线。
+            try db.execute(sql: """
+                INSERT INTO repo_star_history_points (
+                    repo_id, observed_on, stars_count, source, precision, fetched_at
+                ) VALUES
+                    (1, '2026-07-26', 999, 'local_snapshot', 'snapshot', '2026-07-27T00:00:00.000Z'),
+                    (1, '2026-07-27', 12, 'github_history', 'reconstructed', '2026-07-27T00:00:00.000Z')
+                """)
+        }
 
         let points = try await repository.points(repoId: 1)
         #expect(points.count == 1)
         #expect(points[0].count == 12)
-        #expect(points[0].source == .localSnapshot)
-        #expect(points[0].precision == .snapshot)
+        #expect(points[0].source == .githubHistory)
+        #expect(points[0].precision == .reconstructed)
         #expect(StarHistoryDateCodec.dayString(from: points[0].date) == "2026-07-27")
-        #expect(points[0].fetchedAt == second)
     }
 
-    @Test("替换远端点不得删除本机精确快照")
-    func remoteReplacementPreservesLocalSnapshot() async throws {
+    @Test("替换官方历史应清理仓库内所有旧来源")
+    func officialReplacementRemovesLegacySources() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 2, owner: "octo", name: "merged")
         let repository = GRDBRepoStarHistoryRepository(database: database)
         let fetchedAt = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T08:00:00.000Z"))
-        let localDate = try #require(StarHistoryDateCodec.date(from: "2026-07-27"))
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repo_star_history_points (
+                    repo_id, observed_on, stars_count, source, precision, fetched_at
+                ) VALUES (2, '2026-07-25', 100, 'local_snapshot', 'snapshot', '2026-07-27T00:00:00Z')
+                """)
+        }
 
-        try await repository.recordLocalSnapshot(
-            repoId: 2,
-            starsCount: 100,
-            observedAt: localDate,
-            fetchedAt: fetchedAt
-        )
-        try await repository.replaceRemotePoints(repoId: 2, points: [
-            point("2026-07-25", 80, .ghArchive, .estimated, fetchedAt),
-            point("2026-07-26", 95, .discoverySnapshot, .snapshot, fetchedAt)
+        try await repository.replaceOfficialPoints(repoId: 2, points: [
+            point("2026-07-26", 95, .githubHistory, .reconstructed, fetchedAt)
         ])
-        try await repository.replaceRemotePoints(repoId: 2, points: [
-            point("2026-07-26", 96, .ghArchive, .estimated, fetchedAt)
+        try await repository.replaceOfficialPoints(repoId: 2, points: [
+            point("2026-07-27", 96, .githubHistory, .reconstructed, fetchedAt)
         ])
 
         let points = try await repository.points(repoId: 2)
-        #expect(points.count == 2)
-        #expect(points.contains { $0.source == .localSnapshot && $0.count == 100 })
-        #expect(points.contains { $0.source == .ghArchive && $0.count == 96 })
-        #expect(!points.contains { $0.source == .discoverySnapshot })
+        #expect(points.count == 1)
+        #expect(points[0].count == 96)
+        #expect(points[0].source == .githubHistory)
+        let rawSources = try await database.writer.read { db in
+            try String.fetchAll(db, sql: "SELECT source FROM repo_star_history_points WHERE repo_id = 2")
+        }
+        #expect(rawSources == ["github_history"])
     }
 
-    @Test("批量同步与单仓 metadata 更新应复用当天精确点")
-    func repoMetadataWritesLocalSnapshotWithoutExtraFetch() async throws {
+    @Test("批量同步与单仓 metadata 更新不应写入历史")
+    func repoMetadataDoesNotWriteHistory() async throws {
         let database = try InMemoryDatabaseManager()
         let repoRepository = GRDBRepoRepository(database: database)
         let historyRepository = GRDBRepoStarHistoryRepository(database: database)
@@ -90,9 +86,7 @@ struct RepoStarHistoryRepositoryTests {
         )
 
         let points = try await historyRepository.points(repoId: 3)
-        #expect(points.count == 1)
-        #expect(points[0].count == 15)
-        #expect(points[0].source == .localSnapshot)
+        #expect(points.isEmpty)
     }
 
     @Test("删除 repo 应由外键级联清理全部历史点")
@@ -101,12 +95,9 @@ struct RepoStarHistoryRepositoryTests {
         try await database.insertRepoFixture(id: 4, owner: "octo", name: "deleted")
         let repository = GRDBRepoStarHistoryRepository(database: database)
         let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
-        try await repository.recordLocalSnapshot(
-            repoId: 4,
-            starsCount: 5,
-            observedAt: now,
-            fetchedAt: now
-        )
+        try await repository.replaceOfficialPoints(repoId: 4, points: [
+            point("2026-07-27", 5, .githubHistory, .reconstructed, now)
+        ])
 
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM repos WHERE id = 4")
@@ -115,37 +106,21 @@ struct RepoStarHistoryRepositoryTests {
         #expect(try await repository.points(repoId: 4).isEmpty)
     }
 
-    @Test("同日精确快照应覆盖 GH Archive 估算")
-    func exactSnapshotWinsSameDayEstimate() async throws {
+    @Test("GitHub 官方重建点应完整保留")
+    func officialHistoryIsNotTruncatedByMetadata() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 5, owner: "octo", name: "priority")
         let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
-        let coverage = StarHistoryCoverage(
-            start: StarHistoryDateCodec.date(from: "2026-07-26"),
-            lastEvent: StarHistoryDateCodec.date(from: "2026-07-27"),
-            dataThrough: StarHistoryDateCodec.date(from: "2026-07-28"), generatedAt: now
-        )
-        let api = StubStarHistoryAPI(results: [
-            .success(.ready(
-                series: StarHistoryRemoteSeries(
-                    repoID: 5,
-                    fullName: "octo/priority",
-                    currentStars: 120,
-                    range: .oneYear,
-                    coverageStart: StarHistoryDateCodec.date(from: "2026-07-26"),
-                    generatedAt: now,
-                    points: [
-                        point("2026-07-26", 100, .ghArchive, .estimated, now),
-                        point("2026-07-27", 118, .ghArchive, .estimated, now)
-                    ],
-                    coverage: coverage
-                ),
+        let api = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-07-26", days: [100, 20, 0, 0, 0, 0, 0])],
+                nextPage: nil,
                 etag: "\"priority-v1\""
-            ))
+            )
         ])
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: api,
+            oauthHistoryAPI: api,
             now: { now }
         )
         let repo = fixtureRepo(
@@ -163,13 +138,14 @@ struct RepoStarHistoryRepositoryTests {
         #expect(snapshot.remoteState == .fresh)
         #expect(snapshot.points.count == 2)
         #expect(snapshot.points.last?.count == 120)
-        #expect(snapshot.points.last?.source == .localSnapshot)
-        #expect(snapshot.points.last?.precision == .snapshot)
-        #expect(snapshot.coverage == coverage)
+        #expect(snapshot.points.last?.source == .githubHistory)
+        #expect(snapshot.points.last?.precision == .reconstructed)
+        #expect(snapshot.coverage?.start == StarHistoryDateCodec.date(from: "2026-07-26"))
+        #expect(snapshot.coverage?.lastEvent == StarHistoryDateCodec.date(from: "2026-07-27"))
         // 重建 Repository 模拟下次启动：覆盖元信息必须随 SQLite 缓存恢复。
         let reopened = GRDBRepoStarHistoryRepository(database: database, now: { now })
         let restored = try await reopened.cached(repo: repo, range: .all)
-        #expect(restored.coverage == coverage)
+        #expect(restored.coverage == snapshot.coverage)
     }
 
     @Test("AI 与洞察页并发刷新同一 Star 范围只请求一次")
@@ -179,53 +155,41 @@ struct RepoStarHistoryRepositoryTests {
         let now = try #require(
             ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
         )
-        let api = StubStarHistoryAPI(
-            results: [
-                .success(.ready(
-                    series: StarHistoryRemoteSeries(
-                        repoID: 30,
-                        fullName: "octo/single-flight",
-                        currentStars: 20,
-                        range: .oneYear,
-                        coverageStart: StarHistoryDateCodec.date(from: "2026-07-01"),
-                        generatedAt: now,
-                        points: [
-                            point("2026-07-01", 10, .ghArchive, .estimated, now)
-                        ]
-                    ),
+        let api = StubGitHubStarHistoryAPI(
+            pages: [
+                1: .init(
+                    weeks: [week("2026-07-26", days: [10, 10, 0, 0, 0, 0, 0])],
+                    nextPage: nil,
                     etag: "\"single-flight-v1\""
-                ))
+                )
             ],
             delay: .milliseconds(30)
         )
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: api,
+            oauthHistoryAPI: api,
             now: { now }
         )
         let repo = fixtureRepo(id: 30, name: "single-flight", stars: 20)
 
         async let ai = repository.refresh(repo: repo, range: .oneYear, forceRefresh: false)
-        async let insightsPage = repository.refresh(
-            repo: repo,
-            range: .oneYear,
-            forceRefresh: true
-        )
+        async let insightsPage = repository.refresh(repo: repo, range: .all, forceRefresh: true)
         let snapshots = try await [ai, insightsPage]
 
-        #expect(snapshots[0] == snapshots[1])
+        #expect(Set(snapshots.map(\.range)) == Set([.oneYear, .all]))
+        #expect(snapshots[0].remoteState == snapshots[1].remoteState)
         #expect(await api.requests().count == 1)
     }
 
-    @Test("私有仓库只返回本机快照且不调用 API")
+    @Test("私有仓库无官方公开历史且不调用 API")
     func privateRepositoryNeverCallsAPI() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 6, owner: "octo", name: "private")
         let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
-        let api = StubStarHistoryAPI(results: [])
+        let api = StubGitHubStarHistoryAPI(pages: [:])
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: api,
+            oauthHistoryAPI: api,
             now: { now }
         )
         var repo = fixtureRepo(id: 6, name: "private", stars: 8)
@@ -238,13 +202,12 @@ struct RepoStarHistoryRepositoryTests {
         )
 
         #expect(snapshot.remoteState == .privateOnly)
-        #expect(snapshot.points.count == 1)
-        #expect(snapshot.points.first?.source == .localSnapshot)
+        #expect(snapshot.points.isEmpty)
         #expect(await api.requests().isEmpty)
     }
 
-    @Test("个人项目应使用 OAuth 分页重建当前 Stargazers 历史")
-    func ownerProjectUsesOAuthStargazersHistory() async throws {
+    @Test("个人项目应使用 OAuth 分页读取官方历史")
+    func ownerProjectUsesOAuthHistory() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 8, owner: "octo", name: "owned")
         try await insertProject(
@@ -257,27 +220,24 @@ struct RepoStarHistoryRepositoryTests {
         let now = try #require(
             ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
         )
-        let discoveryAPI = StubStarHistoryAPI(results: [])
-        let oauthAPI = StubGitHubStargazersAPI(pages: [
+        let oauthAPI = StubGitHubStarHistoryAPI(pages: [
             1: .init(
-                starredAt: [
-                    "2026-07-01T01:00:00Z",
-                    "2026-07-01T10:00:00Z"
-                ],
-                nextPage: 2
+                weeks: [week("2026-07-26", days: [2, 0, 0, 0, 0, 0, 0])],
+                nextPage: 2,
+                etag: "\"owned-v1\""
             ),
             2: .init(
-                starredAt: ["2026-07-02T03:00:00Z"],
-                nextPage: nil
+                weeks: [week("2026-07-19", days: [1, 0, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: nil
             )
         ])
-        let githubAppAPI = StubGitHubStargazersAPI(pages: [:])
+        let githubAppAPI = StubGitHubStarHistoryAPI(pages: [:])
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: discoveryAPI,
             projectRepository: GRDBUserProjectRepository(database: database),
-            oauthStargazersAPI: oauthAPI,
-            githubAppStargazersAPI: githubAppAPI,
+            oauthHistoryAPI: oauthAPI,
+            githubAppHistoryAPI: githubAppAPI,
             now: { now }
         )
 
@@ -286,19 +246,18 @@ struct RepoStarHistoryRepositoryTests {
             range: .oneYear,
             forceRefresh: true
         )
-        let githubPoints = snapshot.points.filter { $0.source == .githubStargazers }
+        let githubPoints = snapshot.points.filter { $0.source == .githubHistory }
 
         #expect(snapshot.remoteState == .fresh)
-        // 一年视图按 ISO 周压缩远端重建点，同一周只保留最后一个累计值。
-        #expect(githubPoints.map(\.count) == [3])
+        // 一年视图按 ISO 周压缩远端重建点，每个有事件的周保留最后累计值。
+        #expect(githubPoints.map(\.count) == [1, 3])
         #expect(githubPoints.allSatisfy { $0.precision == .reconstructed })
         #expect(await oauthAPI.requestedPages() == [1, 2])
         #expect(await githubAppAPI.requestedPages().isEmpty)
-        #expect(await discoveryAPI.requests().isEmpty)
     }
 
-    @Test("已收藏的外部协作仓库应使用 OAuth Stargazers 且不得调用 Discovery")
-    func starredCollaboratorUsesOAuthStargazersHistory() async throws {
+    @Test("已收藏的外部协作仓库应使用 OAuth 读取 GitHub 官方历史")
+    func starredCollaboratorUsesOAuthHistory() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 10, owner: "external", name: "shared")
         try await insertProject(
@@ -312,23 +271,20 @@ struct RepoStarHistoryRepositoryTests {
         let now = try #require(
             ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
         )
-        let discoveryAPI = StubStarHistoryAPI(results: [])
-        let oauthAPI = StubGitHubStargazersAPI(pages: [
+        let oauthAPI = StubGitHubStarHistoryAPI(pages: [
             1: .init(
-                starredAt: [
-                    "2026-06-01T01:00:00Z",
-                    "2026-07-01T01:00:00Z"
-                ],
-                nextPage: nil
+                weeks: [week("2026-05-31", days: [1, 0, 0, 0, 0, 0, 0]),
+                        week("2026-06-28", days: [0, 0, 0, 1, 0, 0, 0])],
+                nextPage: nil,
+                etag: nil
             )
         ])
-        let githubAppAPI = StubGitHubStargazersAPI(pages: [:])
+        let githubAppAPI = StubGitHubStarHistoryAPI(pages: [:])
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: discoveryAPI,
             projectRepository: GRDBUserProjectRepository(database: database),
-            oauthStargazersAPI: oauthAPI,
-            githubAppStargazersAPI: githubAppAPI,
+            oauthHistoryAPI: oauthAPI,
+            githubAppHistoryAPI: githubAppAPI,
             now: { now }
         )
         var repo = fixtureRepo(id: 10, name: "shared", stars: 2)
@@ -342,17 +298,16 @@ struct RepoStarHistoryRepositoryTests {
             range: .oneYear,
             forceRefresh: true
         )
-        let githubPoints = snapshot.points.filter { $0.source == .githubStargazers }
+        let githubPoints = snapshot.points.filter { $0.source == .githubHistory }
 
         #expect(snapshot.remoteState == .fresh)
         #expect(githubPoints.map(\.count) == [1, 2])
         #expect(githubPoints.allSatisfy { $0.precision == .reconstructed })
         #expect(await oauthAPI.requestedPages() == [1])
         #expect(await githubAppAPI.requestedPages().isEmpty)
-        #expect(await discoveryAPI.requests().isEmpty)
     }
 
-    @Test("私有组织项目应使用 GitHub App 且不得调用公共 Discovery")
+    @Test("私有组织项目应使用 GitHub App 读取官方历史")
     func privateOrganizationProjectUsesGitHubApp() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 9, owner: "acme", name: "private-project")
@@ -366,20 +321,19 @@ struct RepoStarHistoryRepositoryTests {
         let now = try #require(
             ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
         )
-        let discoveryAPI = StubStarHistoryAPI(results: [])
-        let oauthAPI = StubGitHubStargazersAPI(pages: [:])
-        let githubAppAPI = StubGitHubStargazersAPI(pages: [
+        let oauthAPI = StubGitHubStarHistoryAPI(pages: [:])
+        let githubAppAPI = StubGitHubStarHistoryAPI(pages: [
             1: .init(
-                starredAt: ["2026-06-01T01:00:00Z"],
-                nextPage: nil
+                weeks: [week("2026-05-31", days: [0, 1, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: nil
             )
         ])
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: discoveryAPI,
             projectRepository: GRDBUserProjectRepository(database: database),
-            oauthStargazersAPI: oauthAPI,
-            githubAppStargazersAPI: githubAppAPI,
+            oauthHistoryAPI: oauthAPI,
+            githubAppHistoryAPI: githubAppAPI,
             now: { now }
         )
         var repo = fixtureRepo(id: 9, name: "private-project", stars: 1)
@@ -395,14 +349,13 @@ struct RepoStarHistoryRepositoryTests {
 
         #expect(snapshot.remoteState == .fresh)
         #expect(snapshot.points.contains {
-            $0.source == .githubStargazers && $0.precision == .reconstructed
+            $0.source == .githubHistory && $0.precision == .reconstructed
         })
         #expect(await githubAppAPI.requestedPages() == [1])
         #expect(await oauthAPI.requestedPages().isEmpty)
-        #expect(await discoveryAPI.requests().isEmpty)
     }
 
-    @Test("公开 GitHub App 项目在 App Stargazers 403 后回退 OAuth")
+    @Test("公开 GitHub App 项目在官方历史 403 后回退 OAuth")
     func publicGitHubAppProjectFallsBackToOAuthOnForbidden() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 11, owner: "octo", name: "public-app")
@@ -416,20 +369,22 @@ struct RepoStarHistoryRepositoryTests {
         let now = try #require(
             ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
         )
-        let discoveryAPI = StubStarHistoryAPI(results: [])
-        let oauthAPI = StubGitHubStargazersAPI(pages: [
-            1: .init(starredAt: ["2026-06-01T01:00:00Z"], nextPage: nil)
+        let oauthAPI = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-05-31", days: [0, 1, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: nil
+            )
         ])
-        let githubAppAPI = StubGitHubStargazersAPI(
+        let githubAppAPI = StubGitHubStarHistoryAPI(
             pages: [:],
             error: NetworkError.clientError(statusCode: 403, message: "forbidden")
         )
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: discoveryAPI,
             projectRepository: GRDBUserProjectRepository(database: database),
-            oauthStargazersAPI: oauthAPI,
-            githubAppStargazersAPI: githubAppAPI,
+            oauthHistoryAPI: oauthAPI,
+            githubAppHistoryAPI: githubAppAPI,
             now: { now }
         )
         var repo = fixtureRepo(id: 11, name: "public-app", stars: 1)
@@ -443,14 +398,13 @@ struct RepoStarHistoryRepositoryTests {
 
         #expect(snapshot.remoteState == .fresh)
         #expect(snapshot.points.contains {
-            $0.source == .githubStargazers && $0.precision == .reconstructed
+            $0.source == .githubHistory && $0.precision == .reconstructed
         })
         #expect(await githubAppAPI.requestedPages() == [1])
         #expect(await oauthAPI.requestedPages() == [1])
-        #expect(await discoveryAPI.requests().isEmpty)
     }
 
-    @Test("私有 GitHub App 项目 403 后不回退 OAuth 也不调用 Discovery")
+    @Test("私有 GitHub App 项目 403 后不回退 OAuth")
     func privateGitHubAppProjectDoesNotFallBackToOAuth() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 12, owner: "acme", name: "private-app")
@@ -464,20 +418,22 @@ struct RepoStarHistoryRepositoryTests {
         let now = try #require(
             ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
         )
-        let discoveryAPI = StubStarHistoryAPI(results: [])
-        let oauthAPI = StubGitHubStargazersAPI(pages: [
-            1: .init(starredAt: ["2026-06-01T01:00:00Z"], nextPage: nil)
+        let oauthAPI = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-05-31", days: [0, 1, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: nil
+            )
         ])
-        let githubAppAPI = StubGitHubStargazersAPI(
+        let githubAppAPI = StubGitHubStarHistoryAPI(
             pages: [:],
             error: NetworkError.clientError(statusCode: 403, message: "forbidden")
         )
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: discoveryAPI,
             projectRepository: GRDBUserProjectRepository(database: database),
-            oauthStargazersAPI: oauthAPI,
-            githubAppStargazersAPI: githubAppAPI,
+            oauthHistoryAPI: oauthAPI,
+            githubAppHistoryAPI: githubAppAPI,
             now: { now }
         )
         var repo = fixtureRepo(id: 12, name: "private-app", stars: 1)
@@ -492,48 +448,139 @@ struct RepoStarHistoryRepositoryTests {
         )
 
         #expect(snapshot.remoteState == .privateOnly)
-        #expect(!snapshot.points.contains { $0.source == .githubStargazers })
+        #expect(!snapshot.points.contains { $0.source == .githubHistory })
         #expect(await githubAppAPI.requestedPages() == [1])
         #expect(await oauthAPI.requestedPages().isEmpty)
-        #expect(await discoveryAPI.requests().isEmpty)
     }
 
-    @Test("远端失败应保留陈旧缓存并复用 ETag")
+    @Test("跨重启缓存过期后应只用第一页 ETag 轻量校验")
+    func stalePersistentCacheUsesFirstPageETag() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 31, owner: "octo", name: "etag")
+        let firstNow = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let initialAPI = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-07-26", days: [20, 0, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: "\"etag-v1\""
+            )
+        ])
+        let repo = fixtureRepo(id: 31, name: "etag", stars: 20)
+        let initialRepository = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: initialAPI,
+            now: { firstNow }
+        )
+        _ = try await initialRepository.refresh(repo: repo, range: .oneYear, forceRefresh: true)
+
+        let revalidator = StubGitHubStarHistoryAPI(
+            pages: [:],
+            notModifiedETag: "\"etag-v1\""
+        )
+        let reopened = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: revalidator,
+            now: { firstNow.addingTimeInterval(2 * 24 * 60 * 60) }
+        )
+        let snapshot = try await reopened.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: false
+        )
+        let requests = await revalidator.requests()
+
+        #expect(snapshot.remoteState == .notModified)
+        #expect(requests.count == 1)
+        #expect(requests.first?.page == 1)
+        #expect(requests.first?.ifNoneMatch == "\"etag-v1\"")
+        #expect(snapshot.points.contains { $0.source == .githubHistory })
+    }
+
+    @Test("24 小时内的持久化周缓存应跨重启直接命中")
+    func freshPersistentCacheSkipsNetworkAfterReopen() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 32, owner: "octo", name: "fresh-cache")
+        let firstNow = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let initialAPI = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-07-26", days: [20, 0, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: "\"fresh-v1\""
+            )
+        ])
+        let repo = fixtureRepo(id: 32, name: "fresh-cache", stars: 20)
+        let initialRepository = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: initialAPI,
+            now: { firstNow }
+        )
+        _ = try await initialRepository.refresh(repo: repo, range: .oneYear, forceRefresh: true)
+
+        // 新 Repository 实例确保本次命中来自 SQLite，不是 actor 内存状态。
+        let unreachableAPI = StubGitHubStarHistoryAPI(
+            pages: [:],
+            error: NetworkError.serverError(statusCode: 503)
+        )
+        let reopened = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: unreachableAPI,
+            now: { firstNow.addingTimeInterval(60 * 60) }
+        )
+        let snapshot = try await reopened.refresh(
+            repo: repo,
+            range: .oneYear,
+            forceRefresh: false
+        )
+
+        #expect(snapshot.remoteState == .cached)
+        #expect(snapshot.points.contains { $0.source == .githubHistory && $0.count == 20 })
+        #expect(await unreachableAPI.requests().isEmpty)
+    }
+
+    @Test("远端失败应保留官方历史缓存")
     func remoteFailurePreservesStaleCacheAndETag() async throws {
         let database = try InMemoryDatabaseManager()
         try await database.insertRepoFixture(id: 7, owner: "octo", name: "stale")
         let now = try #require(ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z"))
-        let api = StubStarHistoryAPI(results: [
-            .success(.ready(
-                series: StarHistoryRemoteSeries(
-                    repoID: 7,
-                    fullName: "octo/stale",
-                    currentStars: 20,
-                    range: .oneYear,
-                    coverageStart: StarHistoryDateCodec.date(from: "2026-07-26"),
-                    generatedAt: now,
-                    points: [point("2026-07-26", 10, .ghArchive, .estimated, now)]
-                ),
+        let api = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-07-26", days: [20, 0, 0, 0, 0, 0, 0])],
+                nextPage: nil,
                 etag: "\"stale-v1\""
-            )),
-            .failure(.providerUnavailable)
+            )
         ])
         let repository = GRDBRepoStarHistoryRepository(
             database: database,
-            api: api,
+            oauthHistoryAPI: api,
             now: { now }
         )
         let repo = fixtureRepo(id: 7, name: "stale", stars: 20)
 
         _ = try await repository.refresh(repo: repo, range: .oneYear, forceRefresh: true)
-        let stale = try await repository.refresh(repo: repo, range: .oneYear, forceRefresh: true)
-        let requests = await api.requests()
+        let failingAPI = StubGitHubStarHistoryAPI(pages: [:], error: NetworkError.serverError(statusCode: 503))
+        let reopened = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: failingAPI,
+            now: { now.addingTimeInterval(2 * 24 * 60 * 60) }
+        )
+        let stale = try await reopened.refresh(repo: repo, range: .oneYear, forceRefresh: true)
 
         #expect(stale.remoteState == .stale(.providerUnavailable))
-        // 远端估算点与本机当日精确快照重合时，精确快照必须获胜。
-        #expect(stale.points.map(\.count) == [20, 20])
-        #expect(requests.count == 2)
-        #expect(requests.last?.ifNoneMatch == "\"stale-v1\"")
+        #expect(stale.points.contains { $0.source == .githubHistory && $0.count == 20 })
+        #expect(await failingAPI.requests().count == 1)
+    }
+
+    private func week(_ sunday: String, days: [Int]) -> GitHubStarHistoryWeekDTO {
+        let date = StarHistoryDateCodec.date(from: sunday)!
+        return GitHubStarHistoryWeekDTO(
+            week: Int64(date.timeIntervalSince1970),
+            total: days.reduce(0, +),
+            days: days
+        )
     }
 
     private func point(
@@ -644,85 +691,65 @@ struct RepoStarHistoryRepositoryTests {
     }
 }
 
-private actor StubGitHubStargazersAPI: GitHubStargazersAPIProtocol {
+private actor StubGitHubStarHistoryAPI: GitHubStarHistoryAPIProtocol {
     struct Page: Sendable {
-        let starredAt: [String]
+        let weeks: [GitHubStarHistoryWeekDTO]
         let nextPage: Int?
+        let etag: String?
     }
 
     private let pages: [Int: Page]
-    private let error: Error?
-    private var recordedPages: [Int] = []
+    private let error: NetworkError?
+    private let notModifiedETag: String?
+    private let delay: Duration
+    private var recordedRequests: [(page: Int, ifNoneMatch: String?)] = []
 
-    init(pages: [Int: Page], error: Error? = nil) {
+    init(
+        pages: [Int: Page],
+        error: NetworkError? = nil,
+        notModifiedETag: String? = nil,
+        delay: Duration = .zero
+    ) {
         self.pages = pages
         self.error = error
+        self.notModifiedETag = notModifiedETag
+        self.delay = delay
     }
 
-    func stargazers(
+    func starHistory(
         owner: String,
         repo: String,
         page: Int,
-        perPage: Int
-    ) async throws -> APIResponse<[GitHubStargazerDTO]> {
-        recordedPages.append(page)
+        perPage: Int,
+        ifNoneMatch: String?
+    ) async throws -> APIResponse<[GitHubStarHistoryWeekDTO]> {
+        recordedRequests.append((page, ifNoneMatch))
+        if delay > .zero {
+            try await Task.sleep(for: delay)
+        }
+        if ifNoneMatch != nil, let notModifiedETag {
+            throw NetworkError.notModified(etag: notModifiedETag)
+        }
         if let error {
             throw error
         }
         guard let result = pages[page] else {
-            throw StarHistoryAPIError.providerUnavailable
+            throw NetworkError.serverError(statusCode: 503)
         }
         return APIResponse(
-            value: result.starredAt.map(GitHubStargazerDTO.init(starredAt:)),
+            value: result.weeks,
             linkHeader: LinkHeader(nextPage: result.nextPage, lastPage: nil),
             rateLimit: RateLimitInfo(limit: nil, remaining: nil, reset: nil),
             statusCode: 200,
-            etag: nil
+            etag: result.etag
         )
     }
 
     func requestedPages() -> [Int] {
-        recordedPages
-    }
-}
-
-private actor StubStarHistoryAPI: StarHistoryAPIProtocol {
-    struct RecordedRequest: Sendable {
-        let request: StarHistoryRequest
-        let range: StarHistoryRange
-        let ifNoneMatch: String?
+        recordedRequests.map(\.page)
     }
 
-    private var queuedResults: [Result<StarHistoryAPIResult, StarHistoryAPIError>]
-    private var recordedRequests: [RecordedRequest] = []
-    private let delay: Duration
-
-    init(
-        results: [Result<StarHistoryAPIResult, StarHistoryAPIError>],
-        delay: Duration = .zero
-    ) {
-        queuedResults = results
-        self.delay = delay
-    }
-
-    func fetch(
-        request: StarHistoryRequest,
-        range: StarHistoryRange,
-        ifNoneMatch: String?
-    ) async throws -> StarHistoryAPIResult {
-        recordedRequests.append(
-            RecordedRequest(request: request, range: range, ifNoneMatch: ifNoneMatch)
-        )
-        if delay > .zero {
-            try await Task.sleep(for: delay)
-        }
-        guard !queuedResults.isEmpty else {
-            throw StarHistoryAPIError.providerUnavailable
-        }
-        return try queuedResults.removeFirst().get()
-    }
-
-    func requests() -> [RecordedRequest] {
+    func requests() -> [(page: Int, ifNoneMatch: String?)] {
         recordedRequests
     }
 }

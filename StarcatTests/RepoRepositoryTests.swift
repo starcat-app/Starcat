@@ -1001,8 +1001,8 @@ struct RepoRepositoryTests {
         #expect(try await repo.fetchListCount(scope: .allStars, filters: .empty) == 3)
     }
 
-    @Test("项目卡片 30 天增长批量读取本机历史且历史不足不伪造零")
-    func projectGrowthUsesMergedLocalHistory() async throws {
+    @Test("项目卡片 30 天增长只读取官方缓存且历史不足不伪造零")
+    func projectGrowthUsesOfficialCachedHistory() async throws {
         let (repo, db) = try makeRepo()
         try await db.insertRepoFixture(id: 71)
         try await db.insertRepoFixture(id: 72)
@@ -1012,11 +1012,11 @@ struct RepoRepositoryTests {
                     INSERT INTO repo_star_history_points (
                         repo_id, observed_on, stars_count, source, precision, fetched_at
                     ) VALUES
-                        (71, '2026-06-20', 10, 'local_snapshot', 'snapshot', '2026-06-20T12:00:00Z'),
-                        (71, '2026-07-10', 999, 'gh_archive', 'estimated', '2026-07-10T11:00:00Z'),
-                        (71, '2026-07-10', 15, 'local_snapshot', 'snapshot', '2026-07-10T12:00:00Z'),
-                        (71, '2026-07-29', 25, 'local_snapshot', 'snapshot', '2026-07-29T12:00:00Z'),
-                        (72, '2026-07-29', 5, 'local_snapshot', 'snapshot', '2026-07-29T12:00:00Z')
+                        (71, '2026-06-20', 10, 'github_history', 'reconstructed', '2026-06-20T12:00:00Z'),
+                        (71, '2026-07-10', 999, 'local_snapshot', 'snapshot', '2026-07-10T11:00:00Z'),
+                        (71, '2026-07-10', 15, 'github_history', 'reconstructed', '2026-07-10T12:00:00Z'),
+                        (71, '2026-07-29', 25, 'github_history', 'reconstructed', '2026-07-29T12:00:00Z'),
+                        (72, '2026-07-29', 5, 'github_history', 'reconstructed', '2026-07-29T12:00:00Z')
                     """
             )
         }

@@ -177,7 +177,7 @@ struct StarHistoryAPITests {
         #expect(URLProtocolStub.receivedRequests.isEmpty)
     }
 
-    @Test("本地 Normalize 应把终点锚到 currentStars")
+    @Test("官方历史 Normalize 应把终点锚到 currentStars")
     func normalizeAnchorsLastPointToCurrentStars() throws {
         let fetchedAt = Date(timeIntervalSince1970: 1_700_000_000)
         let points = try StarHistoryCurveBuilder.normalize(
@@ -191,8 +191,8 @@ struct StarHistoryAPITests {
         #expect(points.count == 2)
         #expect(points[0].count == 25)
         #expect(points[1].count == 100)
-        #expect(points[0].source == .ghArchive)
-        #expect(points[0].precision == .estimated)
+        #expect(points[0].source == .githubHistory)
+        #expect(points[0].precision == .reconstructed)
     }
 
     private func makeAPI() -> StarHistoryAPI {
@@ -211,6 +211,54 @@ struct StarHistoryAPITests {
             isPrivate: false,
             currentStars: currentStars
         )
+    }
+}
+
+@Suite("GitHub Official Star History API", .serialized)
+struct GitHubOfficialStarHistoryAPITests {
+
+    @Test("官方历史端点应分页解码并透传 ETag")
+    func decodesWeeklyHistoryAndConditionalRequest() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["ETag": "\"github-history-v1\""]
+            )!
+            return (
+                response,
+                Data(#"[{"week":1785024000,"total":3,"days":[1,2,0,0,0,0,0]}]"#.utf8)
+            )
+        }
+        let client = GitHubAPIClient(
+            session: URLProtocolStub.ephemeralSession(),
+            tokenProvider: StubTokenProvider(token: "github-token")
+        )
+
+        let response = try await client.starHistory(
+            owner: "octo",
+            repo: "history",
+            page: 2,
+            perPage: 30,
+            ifNoneMatch: "\"github-history-v0\""
+        )
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+
+        #expect(request.url?.path == "/repos/octo/history/stargazers/history")
+        #expect(request.url?.query?.contains("page=2") == true)
+        #expect(request.url?.query?.contains("per_page=30") == true)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer github-token")
+        #expect(request.value(forHTTPHeaderField: "If-None-Match") == "\"github-history-v0\"")
+        #expect(response.etag == "\"github-history-v1\"")
+        #expect(response.value == [
+            GitHubStarHistoryWeekDTO(
+                week: 1_785_024_000,
+                total: 3,
+                days: [1, 2, 0, 0, 0, 0, 0]
+            )
+        ])
     }
 }
 
@@ -234,78 +282,26 @@ struct StarHistoryCurveBuilderTests {
         #expect(selected == points)
     }
 
-    @Test("一年范围只压缩远端周点并保留全部精确快照")
-    func oneYearKeepsPreciseSnapshots() throws {
-        let remoteFirst = point("2026-08-03", 10)
-        let remoteLast = point("2026-08-07", 15)
-        let snapshotFirst = point(
-            "2026-08-08",
-            14,
-            source: .localSnapshot,
-            precision: .snapshot
-        )
-        let snapshotLast = point(
-            "2026-08-09",
-            16,
-            source: .localSnapshot,
-            precision: .snapshot
-        )
+    @Test("一年范围应按周压缩官方点并保留每周最后一天")
+    func oneYearCompressesOfficialHistoryByWeek() throws {
+        let firstWeekStart = point("2026-08-03", 10)
+        let firstWeekEnd = point("2026-08-07", 15)
+        let nextWeek = point("2026-08-10", 16)
 
         let selected = StarHistoryCurveBuilder.selectRange(
-            [remoteFirst, remoteLast, snapshotFirst, snapshotLast],
+            [firstWeekStart, firstWeekEnd, nextWeek],
             range: .oneYear,
             now: try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
         )
 
-        #expect(selected == [remoteLast, snapshotFirst, snapshotLast])
-    }
-
-    @Test("估算历史应在第一个精确快照处校准并停止")
-    func estimatedHistoryStopsAtFirstPreciseSnapshot() throws {
-        let fetchedAt = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
-        let points = [
-            point("2026-01-01", 100, fetchedAt: fetchedAt),
-            point("2026-02-01", 200, fetchedAt: fetchedAt),
-            point("2026-03-01", 240, fetchedAt: fetchedAt),
-            point(
-                "2026-02-15",
-                180,
-                source: .localSnapshot,
-                precision: .snapshot,
-                fetchedAt: fetchedAt
-            ),
-            point(
-                "2026-03-15",
-                190,
-                source: .localSnapshot,
-                precision: .snapshot,
-                fetchedAt: fetchedAt
-            )
-        ]
-
-        let stitched = StarHistoryCurveBuilder.stitchToPreciseSnapshots(points)
-
-        #expect(stitched.map(\.count) == [90, 180, 180, 190])
-        #expect(stitched.map { StarHistoryDateCodec.dayString(from: $0.date) } == [
-            "2026-01-01", "2026-02-01", "2026-02-15", "2026-03-15"
-        ])
-        #expect(stitched.map(\.precision) == [
-            .estimated, .estimated, .snapshot, .snapshot
-        ])
-    }
-
-    @Test("没有精确快照时不得改写远端历史")
-    func remoteHistoryWithoutSnapshotsIsUnchanged() throws {
-        let points = [point("2026-01-01", 10), point("2026-02-01", 20)]
-
-        #expect(StarHistoryCurveBuilder.stitchToPreciseSnapshots(points) == points)
+        #expect(selected == [firstWeekEnd, nextWeek])
     }
 
     private func point(
         _ day: String,
         _ count: Int,
-        source: StarHistorySource = .ghArchive,
-        precision: StarHistoryPrecision = .estimated,
+        source: StarHistorySource = .githubHistory,
+        precision: StarHistoryPrecision = .reconstructed,
         fetchedAt: Date? = nil
     ) -> StarHistoryPoint {
         let date = StarHistoryDateCodec.date(from: day)!

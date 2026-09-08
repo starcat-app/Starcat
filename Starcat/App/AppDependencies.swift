@@ -312,8 +312,8 @@ final class AppDependencies {
     /// 探索发现与榜单查询客户端。
     /// 构造期不发网络请求；Explore 入口按用户筛选懒加载发现 / 热门 / 新发布数据。
     let discoveryAPI: DiscoveryAPI
-    /// 公共仓库星标历史客户端；业务路由已迁到独立 History 服务。
-    /// 本期仍复用 Discovery 设置中的聚合地址与公共 API Key，不扩大设置模型。
+    /// 旧 History 服务配置客户端仅为现有“服务”设置兼容保留；星标历史数据已直连 GitHub。
+    /// 不在本次数据层迁移中改动设置 UI，后续可随旧客户端退役单独移除该入口。
     let starHistoryAPI: StarHistoryAPI
 
     /// Wiki 探测结果磁盘 JSON 缓存（2026-06-15）。
@@ -1347,10 +1347,9 @@ final class AppDependencies {
         self.starHistoryAPI = starHistoryAPIInstance
         let repoStarHistoryRepository = GRDBRepoStarHistoryRepository(
             database: db,
-            api: starHistoryAPIInstance,
             projectRepository: userProjectRepository,
-            oauthStargazersAPI: api,
-            githubAppStargazersAPI: projectAPIClient
+            oauthHistoryAPI: api,
+            githubAppHistoryAPI: projectAPIClient
         )
         self.repoStarHistoryRepository = repoStarHistoryRepository
         let discoveryRepo = DiscoveryRepository(api: discoveryAPIInstance, database: db)

@@ -52,3 +52,46 @@ extension GitHubAPIClient {
 }
 
 extension GitHubAPIClient: GitHubStargazersAPIProtocol {}
+
+/// GitHub 官方按周返回的 Star 增量。`week` 是周起点 Unix 时间戳，`days` 从周日开始。
+struct GitHubStarHistoryWeekDTO: Codable, Equatable, Sendable {
+    let week: Int64
+    let total: Int
+    let days: [Int]
+}
+
+/// Star History Repository 只依赖官方历史端点，避免把完整 GitHub 客户端带进测试。
+protocol GitHubStarHistoryAPIProtocol: Sendable {
+    func starHistory(
+        owner: String,
+        repo: String,
+        page: Int,
+        perPage: Int,
+        ifNoneMatch: String?
+    ) async throws -> APIResponse<[GitHubStarHistoryWeekDTO]>
+}
+
+extension GitHubAPIClient {
+    /// 拉取一页官方周级 Star 历史。GitHub 当前约束为每页最多 30 周、最多 100 页。
+    func starHistory(
+        owner: String,
+        repo: String,
+        page: Int,
+        perPage: Int = 30,
+        ifNoneMatch: String? = nil
+    ) async throws -> APIResponse<[GitHubStarHistoryWeekDTO]> {
+        precondition(page >= 1 && page <= 100, "page must be in [1, 100]")
+        precondition(perPage >= 1 && perPage <= 30, "perPage must be in [1, 30]")
+
+        return try await get(
+            path: AppEndpoints.GitHubREST.Paths.repoStarHistory(owner: owner, repo: repo),
+            queryItems: [
+                URLQueryItem(name: "page", value: String(page)),
+                URLQueryItem(name: "per_page", value: String(perPage))
+            ],
+            ifNoneMatch: ifNoneMatch
+        )
+    }
+}
+
+extension GitHubAPIClient: GitHubStarHistoryAPIProtocol {}

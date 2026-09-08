@@ -268,17 +268,17 @@ enum StarHistoryChartLayoutPolicy {
 }
 
 enum StarHistoryRestrictionNoticePolicy {
-    /// 已拿到 GitHub Stargazers 数据时不再提示；私仓 / privateOnly 不适用「公开 API 限制」文案。
+    /// 已拿到 GitHub 官方历史时不再提示；私仓 / privateOnly 不适用「公开 API 限制」文案。
     /// 加载与失败状态也不抢占主反馈。
     static func shouldShow(
         points: [StarHistoryPoint],
         phase: StarHistoryViewPhase,
         isPrivateRepository: Bool = false
     ) -> Bool {
-        guard !points.contains(where: { $0.source == .githubStargazers }) else {
+        guard !points.contains(where: { $0.source == .githubHistory }) else {
             return false
         }
-        // 我的项目私仓与 privateOnly 走项目凭据或本机快照，挂公开 Stargazers 限制链接会误导。
+        // 私仓与 privateOnly 不具备公开历史，挂公开 API 限制链接会误导。
         if isPrivateRepository || phase == .privateOnly {
             return false
         }

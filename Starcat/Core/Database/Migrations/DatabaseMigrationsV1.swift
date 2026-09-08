@@ -38,7 +38,7 @@
 //    `v12-rag-metadata-revision` / `v13-weekly-multi-source` /
 //    `v14-ai-usage-events` / `v15-repo-pins` / `v16-repository-insights` /
 //    `v17-my-projects` / `v18-rag-structured-citations` / `v19-release-1.4.0` /
-//    `v20-release-1.5.0`
+//    `v20-release-1.5.0` / `v21-star-history-github-official-only`
 //
 //  **1.4.0 开发期迁移（已由正式 v19 合并接管）**：
 //  `v19-agent-message-contract` 至 `v26-github-timeline-conversations` 仅在开发构建中出现过。
@@ -116,6 +116,32 @@ enum DatabaseMigrations {
         registerV18(into: &migrator)
         registerV19(into: &migrator)
         registerV20(into: &migrator)
+        registerV21(into: &migrator)
+    }
+
+    // MARK: - v21-star-history-github-official-only：切换 GitHub 官方单一历史源（2026-09-08）
+
+    /// GitHub 官方周数据成为唯一事实源；旧远端估算和设备本地快照都不能继续参与曲线。
+    /// 迁移名包含 official-only，让已运行过早期开发草稿的本机库也会执行这次最终清理。
+    private static func registerV21(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v21-star-history-github-official-only") { db in
+            if try db.tableExists("repo_star_history_points") {
+                try db.execute(
+                    sql: """
+                        DELETE FROM repo_star_history_points
+                        WHERE source <> 'github_history'
+                        """
+                )
+            }
+            if try db.tableExists("repo_insights_snapshots") {
+                try db.execute(
+                    sql: """
+                        DELETE FROM repo_insights_snapshots
+                        WHERE dataset IN ('starHistoryCoverage', 'starHistoryWeeks')
+                        """
+                )
+            }
+        }
     }
 
     // MARK: - v20-release-1.5.0：1.5.0 正式版 schema 收口（2026-08-31）

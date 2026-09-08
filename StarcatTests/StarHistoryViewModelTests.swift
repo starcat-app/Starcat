@@ -41,7 +41,7 @@ struct StarHistoryViewModelTests {
         let points = [
             Self.point(latest.addingTimeInterval(-365 * 86_400), 130),
             Self.point(latest.addingTimeInterval(-30 * 86_400), 115),
-            Self.point(latest, 100, source: .localSnapshot, precision: .snapshot)
+            Self.point(latest, 100, source: .githubHistory, precision: .reconstructed)
         ]
         let repository = StubStarHistoryRepository(
             cachedHandler: { _, range in
@@ -209,8 +209,8 @@ struct StarHistoryViewModelTests {
         let point = Self.point(
             "2026-07-27",
             88,
-            source: .localSnapshot,
-            precision: .snapshot
+            source: .githubHistory,
+            precision: .reconstructed
         )
         let repository = StubStarHistoryRepository(
             cachedHandler: { _, range in
@@ -260,8 +260,8 @@ struct StarHistoryViewModelTests {
     private nonisolated static func point(
         _ day: String,
         _ count: Int,
-        source: StarHistorySource = .ghArchive,
-        precision: StarHistoryPrecision = .estimated
+        source: StarHistorySource = .githubHistory,
+        precision: StarHistoryPrecision = .reconstructed
     ) -> StarHistoryPoint {
         point(
             StarHistoryDateCodec.date(from: day)!,
@@ -274,8 +274,8 @@ struct StarHistoryViewModelTests {
     private nonisolated static func point(
         _ date: Date,
         _ count: Int,
-        source: StarHistorySource = .ghArchive,
-        precision: StarHistoryPrecision = .estimated
+        source: StarHistorySource = .githubHistory,
+        precision: StarHistoryPrecision = .reconstructed
     ) -> StarHistoryPoint {
         StarHistoryPoint(
             date: date,
@@ -296,7 +296,7 @@ struct StarHistoryStatisticsBuilderTests {
         let points = [
             point(latest.addingTimeInterval(-45 * 86_400), 100),
             point(latest.addingTimeInterval(-10 * 86_400), 120),
-            point(latest, 130, source: .localSnapshot, precision: .snapshot)
+            point(latest, 130, source: .githubHistory, precision: .reconstructed)
         ]
 
         let statistics = StarHistoryStatisticsBuilder.build(
@@ -323,13 +323,13 @@ struct StarHistoryStatisticsBuilderTests {
         #expect(statistics.averageDailyGrowth30Days == 2)
     }
 
-    @Test("只有本机快照时不得伪造增长")
-    func localSnapshotOnlyProducesNoStatistics() throws {
+    @Test("只有旧来源时不得伪造增长")
+    func legacySourceOnlyProducesNoStatistics() throws {
         let createdAt = try #require(StarHistoryDateCodec.date(from: "2026-08-18"))
         let latest = try #require(StarHistoryDateCodec.date(from: "2026-08-30"))
 
         let statistics = StarHistoryStatisticsBuilder.build(
-            points: [point(latest, 24, source: .localSnapshot, precision: .snapshot)],
+            points: [point(latest, 24, source: .ghArchive, precision: .estimated)],
             repositoryCreatedAt: createdAt
         )
 
@@ -339,8 +339,8 @@ struct StarHistoryStatisticsBuilderTests {
     private func point(
         _ date: Date,
         _ count: Int,
-        source: StarHistorySource = .ghArchive,
-        precision: StarHistoryPrecision = .estimated
+        source: StarHistorySource = .githubHistory,
+        precision: StarHistoryPrecision = .reconstructed
     ) -> StarHistoryPoint {
         StarHistoryPoint(
             date: date,
@@ -382,8 +382,8 @@ struct StarHistoryChartSeriesBuilderTests {
         let firstSnapshot = try point(
             "2026-08-19",
             5,
-            source: .localSnapshot,
-            precision: .snapshot
+            source: .githubHistory,
+            precision: .reconstructed
         )
 
         let rendered = StarHistoryChartSeriesBuilder.renderedPoints(
@@ -405,12 +405,11 @@ struct StarHistoryChartSeriesBuilderTests {
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let points = try (0..<500).map { index in
             let date = try #require(calendar.date(byAdding: .day, value: index, to: start))
-            let isSnapshot = index >= 400
             return StarHistoryPoint(
                 date: date,
                 count: index * index,
-                source: isSnapshot ? .localSnapshot : .ghArchive,
-                precision: isSnapshot ? .snapshot : .estimated,
+                source: .githubHistory,
+                precision: .reconstructed,
                 fetchedAt: date
             )
         }
@@ -431,15 +430,15 @@ struct StarHistoryChartSeriesBuilderTests {
     func creationDayRecordKeepsObservedCount(hourOffset: Int) throws {
         let created = try #require(StarHistoryDateCodec.date(from: "2026-07-22")).addingTimeInterval(9 * 3_600)
         let first = StarHistoryPoint(date: created.addingTimeInterval(Double(hourOffset) * 3_600),
-                                     count: 42, source: .localSnapshot, precision: .snapshot)
-        let last = try point("2026-08-18", 752, source: .ghArchive, precision: .estimated)
+                                     count: 42, source: .githubHistory, precision: .reconstructed)
+        let last = try point("2026-08-18", 752, source: .githubHistory, precision: .reconstructed)
         let rendered = StarHistoryChartSeriesBuilder.renderedPoints(
             [first, last], range: .all, repositoryCreatedAt: created
         )
         #expect(rendered.count == 2)
         #expect(rendered.first?.date == created)
         #expect(rendered.first?.count == 42)
-        #expect(rendered.first?.precision == .snapshot)
+        #expect(rendered.first?.precision == .reconstructed)
         #expect(rendered.last == last)
     }
 
@@ -451,8 +450,8 @@ struct StarHistoryChartSeriesBuilderTests {
             StarHistoryPoint(
                 date: start.addingTimeInterval(Double(index) * 86_400),
                 count: index + (index >= jumpIndex ? 50_000 : 0),
-                source: .ghArchive,
-                precision: .estimated
+                source: .githubHistory,
+                precision: .reconstructed
             )
         }
 
@@ -480,8 +479,8 @@ struct StarHistoryChartSeriesBuilderTests {
             StarHistoryPoint(
                 date: start.addingTimeInterval(Double(index) * 86_400),
                 count: index,
-                source: .ghArchive,
-                precision: .estimated
+                source: .githubHistory,
+                precision: .reconstructed
             )
         }
 
@@ -498,36 +497,36 @@ struct StarHistoryChartSeriesBuilderTests {
 
     @Test("图表只标记首尾点")
     func landmarksStaySparse() throws {
-        let estimatedStart = try point(
+        let officialStart = try point(
             "2026-08-01",
             0,
-            source: .ghArchive,
-            precision: .estimated
+            source: .githubHistory,
+            precision: .reconstructed
         )
-        let estimatedEnd = try point(
+        let officialMiddle = try point(
             "2026-08-10",
             10,
-            source: .ghArchive,
-            precision: .estimated
+            source: .githubHistory,
+            precision: .reconstructed
         )
-        let snapshotStart = try point(
+        let officialLater = try point(
             "2026-08-11",
             11,
-            source: .localSnapshot,
-            precision: .snapshot
+            source: .githubHistory,
+            precision: .reconstructed
         )
-        let snapshotEnd = try point(
+        let officialEnd = try point(
             "2026-08-30",
             30,
-            source: .localSnapshot,
-            precision: .snapshot
+            source: .githubHistory,
+            precision: .reconstructed
         )
 
         let landmarks = StarHistoryChartSeriesBuilder.landmarkPoints(
-            in: [estimatedStart, estimatedEnd, snapshotStart, snapshotEnd]
+            in: [officialStart, officialMiddle, officialLater, officialEnd]
         )
 
-        #expect(landmarks == [estimatedStart, snapshotEnd])
+        #expect(landmarks == [officialStart, officialEnd])
     }
 
     @Test("近期范围不得早于仓库创建时间")
@@ -550,14 +549,14 @@ struct StarHistoryChartSeriesBuilderTests {
         let first = try point(
             "2026-08-01",
             9_000,
-            source: .ghArchive,
-            precision: .estimated
+            source: .githubHistory,
+            precision: .reconstructed
         )
         let latest = try point(
             "2026-08-30",
             10_000,
-            source: .localSnapshot,
-            precision: .snapshot
+            source: .githubHistory,
+            precision: .reconstructed
         )
 
         let all = StarHistoryChartLayoutPolicy.yDomain(range: .all, points: [first, latest])
@@ -630,9 +629,9 @@ struct StarHistoryChartSeriesBuilderTests {
 @Suite("Star History Restriction Notice Policy")
 struct StarHistoryRestrictionNoticePolicyTests {
 
-    @Test("GitHub Stargazers 精确来源不显示访问限制说明")
-    func githubStargazersHidesNotice() {
-        let points = [point(source: .githubStargazers, precision: .reconstructed)]
+    @Test("GitHub 官方历史不显示访问限制说明")
+    func githubHistoryHidesNotice() {
+        let points = [point(source: .githubHistory, precision: .reconstructed)]
 
         #expect(!StarHistoryRestrictionNoticePolicy.shouldShow(points: points, phase: .content))
     }
@@ -650,9 +649,9 @@ struct StarHistoryRestrictionNoticePolicyTests {
         )
     }
 
-    @Test("公开仓仅有本机快照时可显示访问限制说明")
-    func localSnapshotOnPublicShowsNotice() {
-        let points = [point(source: .localSnapshot, precision: .snapshot)]
+    @Test("公开仓仅有旧来源时可显示访问限制说明")
+    func legacySourceOnPublicShowsNotice() {
+        let points = [point(source: .ghArchive, precision: .estimated)]
 
         #expect(
             StarHistoryRestrictionNoticePolicy.shouldShow(
@@ -665,7 +664,7 @@ struct StarHistoryRestrictionNoticePolicyTests {
 
     @Test("私仓与 privateOnly 不显示公开访问限制说明")
     func privateContextsHidePublicRestrictionNotice() {
-        let points = [point(source: .localSnapshot, precision: .snapshot)]
+        let points = [point(source: .ghArchive, precision: .estimated)]
 
         #expect(
             !StarHistoryRestrictionNoticePolicy.shouldShow(
@@ -708,15 +707,15 @@ struct StarHistoryRestrictionNoticePolicyTests {
 struct StarHistoryDisplayPolicyTests {
     @Test("未选中图表日期时不产生选中点")
     func noSelectionReturnsNoPoint() {
-        let points = [point("2026-07-29", source: .localSnapshot, precision: .snapshot)]
+        let points = [point("2026-07-29", source: .githubHistory, precision: .reconstructed)]
 
         #expect(StarHistoryDisplayPolicy.selectedPoint(in: points, selectedDate: nil) == nil)
     }
 
     @Test("选中图表日期时返回最近图表点")
     func selectionReturnsNearestPoint() throws {
-        let first = point("2026-07-27", source: .localSnapshot, precision: .snapshot)
-        let latest = point("2026-07-29", source: .localSnapshot, precision: .snapshot)
+        let first = point("2026-07-27", source: .githubHistory, precision: .reconstructed)
+        let latest = point("2026-07-29", source: .githubHistory, precision: .reconstructed)
         let selectedDay = try #require(StarHistoryDateCodec.date(from: "2026-07-28"))
         let selectedDate = selectedDay.addingTimeInterval(18 * 60 * 60)
 
@@ -807,14 +806,7 @@ private actor StubStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         try await cachedHandler(repo, range)
     }
 
-    func recordLocalSnapshot(
-        repoId: Int64,
-        starsCount: Int,
-        observedAt: Date,
-        fetchedAt: Date
-    ) async throws {}
-
-    func replaceRemotePoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
+    func replaceOfficialPoints(repoId: Int64, points: [StarHistoryPoint]) async throws {}
 
     func refresh(
         repo: Repo,
