@@ -195,7 +195,7 @@ struct StarcatApp: App {
             width: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.width,
             height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
         )
-        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .defaultLaunchBehavior(.suppressed)
 
         Window("agent.workspace.window.title", id: AgentWorkspaceWindowController.sceneID) {
@@ -213,7 +213,7 @@ struct StarcatApp: App {
             width: AgentWorkspaceWindowMetrics.defaultContentSize.width,
             height: AgentWorkspaceWindowMetrics.defaultContentSize.height
         )
-        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .defaultLaunchBehavior(.suppressed)
 
         // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window：保留标准

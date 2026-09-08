@@ -180,24 +180,14 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
     }
 
     var body: some View {
-        KnowledgeRAGWorkspaceView(
-            chromeState: chromeState,
-            viewModel: viewModel,
-            onPinnedChange: { isPinned in
-                windowReference.window?.level = isPinned ? .floating : .normal
-            },
-            onSettings: {
-                AppDelegate.openSettingsWindow(target: "rag.inference")
-            }
-        )
+        KnowledgeRAGWorkspaceView(chromeState: chromeState, viewModel: viewModel)
             .appHostEnvironment(context.dependencies, homeViewModel: context.homeViewModel)
             .environment(\.ragSettingsNavigation, RAGSettingsNavigationAction { target in
                 AppDelegate.openSettingsWindow(target: target)
             })
             // Window Scene 声明的标题按系统 bundle 语言解析，不跟随 App 内语言设置；
-            // 保留逻辑标题供窗口切换器识别，visible title 由业务 Header 承担。
+            // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
             .navigationTitle(windowTitle)
-            .toolbar(removing: .title)
             .frame(
                 minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
                 minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
@@ -208,6 +198,21 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
                     minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
                 )
             }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    WorkspaceTitlebarControls(
+                        chromeState: chromeState,
+                        onPinnedChange: { isPinned in
+                            windowReference.window?.level = isPinned ? .floating : .normal
+                        },
+                        onSettings: {
+                            AppDelegate.openSettingsWindow(target: "rag.inference")
+                        }
+                    )
+                }
+            }
+            // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
+            .starcatWindowToolbarChrome()
             .onAppear {
                 KnowledgeRAGWorkspaceWindowController.registerActiveViewModel(viewModel)
             }

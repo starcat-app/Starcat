@@ -24,9 +24,6 @@ struct RAGWorkspaceAnswerSurface: View {
     @Environment(AuthSession.self) private var authSession
 
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
-    @Bindable var chromeState: WorkspaceChromeState
-    let onPinnedChange: (Bool) -> Void
-    let onSettings: () -> Void
     @State private var composerContentHeight: CGFloat = 0
     @FocusState private var isContextPickerSearchFocused: Bool
     @State private var contextPickerInteractionController = ListInteractionSuppressionController()
@@ -176,8 +173,6 @@ struct RAGWorkspaceAnswerSurface: View {
                     .font(ragFont(.caption))
                     .foregroundStyle(.secondary)
             }
-            .contentShape(Rectangle())
-            .gesture(WindowDragGesture())
             Spacer(minLength: 8)
             // 会话标题右侧：创建时间 / 复制 / 导出全部对话（右对齐）。
             if !viewModel.messages.isEmpty {
@@ -215,11 +210,6 @@ struct RAGWorkspaceAnswerSurface: View {
                 ProgressView()
                     .controlSize(.small)
             }
-            WorkspaceTitlebarControls(
-                chromeState: chromeState,
-                onPinnedChange: onPinnedChange,
-                onSettings: onSettings
-            )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 11)

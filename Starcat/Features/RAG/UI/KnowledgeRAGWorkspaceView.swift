@@ -47,8 +47,6 @@ struct KnowledgeRAGWorkspaceView: View {
 
     @Bindable var chromeState: WorkspaceChromeState
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
-    let onPinnedChange: (Bool) -> Void
-    let onSettings: () -> Void
 
     @AppStorage(RAGWorkspaceLayoutMetrics.leftWidthDefaultsKey)
     private var persistedLeftColumnWidth = Double(RAGWorkspaceLayoutMetrics.leftIdealWidth)
@@ -89,12 +87,7 @@ struct KnowledgeRAGWorkspaceView: View {
                 // 根视图上传；在列内直接监听 GeometryReader，才能可靠写回 @AppStorage。
         } detail: {
             GeometryReader { proxy in
-                RAGWorkspaceAnswerSurface(
-                    viewModel: viewModel,
-                    chromeState: chromeState,
-                    onPinnedChange: onPinnedChange,
-                    onSettings: onSettings
-                )
+                RAGWorkspaceAnswerSurface(viewModel: viewModel)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
             }
