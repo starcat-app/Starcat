@@ -84,8 +84,8 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.9.4"
-  # BorderBeamKit：上游 SPM 尚未在仓库根发布 Package.swift，本地 Vendor 验证
-  # line 搜索条效果。来源见 ThirdParty/BorderBeamKit/VENDOR.md。
+  # BorderBeamKit：上游 SPM 尚未在仓库根发布 Package.swift，Search Center 使用
+  # 本地 Vendor 的 line beam 搜索框。来源见 ThirdParty/BorderBeamKit/VENDOR.md。
   BorderBeamKit:
     path: ThirdParty/BorderBeamKit
 

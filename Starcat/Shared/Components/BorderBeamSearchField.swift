@@ -2,33 +2,31 @@
 //  BorderBeamSearchField.swift
 //  Starcat
 //
-//  独立于 SmartSearchField 的 Border Beam 搜索条实验组件。
-//
-//  为什么单独新建：
-//  - dong4j 要用 [BorderBeamKit](https://github.com/Jakubantalik/Libraries) 验证
-//    demo 里 Search（`size: .line`）的视觉效果，再决定是否替换正式 toolbar 搜索；
-//  - 正式 `SmartSearchField` 承载折叠/模式/Pro/历史等业务，实验期间禁止改动。
+//  Search Center 共用的 Border Beam 搜索输入框。
 //
 //  关键约束：
-//  - 仅作视觉验收；交互只做本地输入草稿，不接 FTS5 / 语义搜索；
-//  - `#if DEBUG` 整文件门控，Release 不编译实验 UI；
-//  - Reduce Motion / 失活时把 `active` 关掉，避免 Metal 动画空转。
+//  - 只负责输入、清空、提交和焦点，不持有任何搜索业务状态；
+//  - Beam 是搜索入口的视觉层，系统 Reduce Motion 开启时必须停止动画；
+//  - Search Center 与 Debug Lab 复用同一组件，避免实验参数和正式效果漂移。
 //
 
-#if DEBUG
 import BorderBeamKit
 import SwiftUI
 
-/// Border Beam `line` 预设包装的胶囊搜索条，对齐上游 demo 的 MockSearchBar 气质。
+/// BorderBeamKit `line` 预设包装的胶囊搜索框。
 struct BorderBeamSearchField: View {
     @Binding var text: String
 
-    /// 是否播放 beam 动画；外部可强制关闭做 A/B。
+    /// 是否播放 beam 动画；调用方可在非活跃窗口或视觉对照时关闭。
     var isBeamActive: Bool = true
     var colorVariant: BeamColorVariant = .colorful
     var theme: BeamTheme = .auto
     var strength: Double = 1
     var duration: Double = 3.1
+    var prompt: Text = Text("search.searchField.placeholder")
+    var accessibilityLabel: Text = Text("search.searchField.placeholder")
+    /// Search Center 出现后需要立即接收键盘输入，Lab 本身则保持手动聚焦。
+    var autofocusOnAppear: Bool = false
     var onSubmit: ((String) -> Void)?
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -55,7 +53,14 @@ struct BorderBeamSearchField: View {
         }
         .frame(height: height)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(verbatim: "Border Beam Search (Lab)"))
+        .accessibilityLabel(accessibilityLabel)
+        .task {
+            guard autofocusOnAppear else { return }
+            // Search Center 作为 overlay 插入视图树时，先让出一轮主线程再申请焦点，
+            // 否则 macOS 可能在 field editor 尚未就绪时吞掉首次聚焦。
+            await Task.yield()
+            isFocused = true
+        }
     }
 
     private var searchContent: some View {
@@ -65,17 +70,13 @@ struct BorderBeamSearchField: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            TextField(
-                "",
-                text: $text,
-                prompt: Text(verbatim: "Search")
-            )
-            .textFieldStyle(.plain)
-            .font(.system(size: 15, weight: .regular))
-            .focused($isFocused)
-            .onSubmit {
-                onSubmit?(text.trimmingCharacters(in: .whitespacesAndNewlines))
-            }
+            TextField("", text: $text, prompt: prompt)
+                .textFieldStyle(.plain)
+                .font(.system(size: 15, weight: .regular))
+                .focused($isFocused)
+                .onSubmit {
+                    onSubmit?(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
 
             if !text.isEmpty {
                 Button {
@@ -90,7 +91,7 @@ struct BorderBeamSearchField: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .help(Text(verbatim: "Clear"))
+                .help("search.clear")
             }
         }
         .padding(.horizontal, 13)
@@ -106,6 +107,7 @@ struct BorderBeamSearchField: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onTapGesture {
+            // 点击 TextField 之外的胶囊留白也应进入输入，而不是要求精确命中文字。
             isFocused = true
         }
     }
@@ -117,4 +119,3 @@ struct BorderBeamSearchField: View {
         .padding(40)
         .frame(width: 420)
 }
-#endif

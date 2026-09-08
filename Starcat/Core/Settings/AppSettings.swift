@@ -1249,7 +1249,7 @@ final class AppSettings {
         didSet { persistBool(key: Keys.globalSearchShortcutEnabled, value: globalSearchShortcutEnabled) }
     }
 
-    /// 列表 toolbar 常规搜索快捷键，默认 Shift+Command+F。展开 SmartSearchField 并聚焦输入框。
+    /// Search Center 本地范围快捷键，默认 Shift+Command+F。
     var regularSearchShortcut: KeyboardShortcutConfiguration {
         didSet { persistJSON(key: Keys.regularSearchShortcut, value: regularSearchShortcut) }
     }

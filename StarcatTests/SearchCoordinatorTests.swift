@@ -38,6 +38,42 @@ struct SearchCoordinatorTests {
         }
     }
 
+    @Test("All scope 合并关键词与语义结果并保持关键词优先")
+    func allScopeMergesKeywordAndSemanticResults() async {
+        let keywordRepo = Self.makeRepo(id: 1, owner: "apple", name: "swift")
+        let semanticOnlyRepo = Self.makeRepo(id: 2, owner: "swiftlang", name: "swift-evolution")
+        let keyword = StubSearchProvider(source: .localKeyword) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: keywordRepo, source: .localKeyword)],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let semantic = StubSearchProvider(source: .localSemantic) { _ in
+            var exactCandidate = Self.makeCandidate(repo: keywordRepo, source: .localSemantic)
+            exactCandidate.semanticScore = 0.95
+            var semanticCandidate = Self.makeCandidate(repo: semanticOnlyRepo, source: .localSemantic)
+            semanticCandidate.semanticScore = 0.88
+            return SearchProviderPage(
+                repositories: [semanticCandidate, exactCandidate],
+                references: [],
+                totalCount: 2,
+                hasNextPage: false
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [semantic, keyword])
+
+        await coordinator.search(SearchRequest(query: "swift", scope: .all))
+
+        #expect(coordinator.repositories.map { $0.card.fullName } == [
+            "apple/swift",
+            "swiftlang/swift-evolution"
+        ])
+        #expect(coordinator.repositories[0].sources == Set<SearchSource>([.localKeyword, .localSemantic]))
+        #expect(coordinator.repositories[0].semanticScore == 0.95)
+    }
+
     @Test("跨来源同一 Repo 合并 sources 并优先保留本地状态")
     func mergeDeduplicatesRepositories() {
         let local = Self.makeRepo(id: 42, owner: "OpenAI", name: "Codex")

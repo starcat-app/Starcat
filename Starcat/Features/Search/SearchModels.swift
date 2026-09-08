@@ -310,6 +310,8 @@ struct SearchRequest: Equatable, Hashable, Sendable {
     let page: Int
     let perPage: Int
     let includeWebInAll: Bool
+    /// Search Center 语义补召回的最低展示分；关键词命中不受此阈值影响。
+    let minimumSemanticScore: Double
 
     init(
         query: String,
@@ -320,7 +322,8 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         externalSearchProvider: ExternalSearchProviderID = .anySearch,
         page: Int = 1,
         perPage: Int = 30,
-        includeWebInAll: Bool = false
+        includeWebInAll: Bool = false,
+        minimumSemanticScore: Double = 0.75
     ) {
         self.query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         self.scope = scope
@@ -331,6 +334,7 @@ struct SearchRequest: Equatable, Hashable, Sendable {
         self.page = max(1, page)
         self.perPage = min(max(1, perPage), 100)
         self.includeWebInAll = includeWebInAll
+        self.minimumSemanticScore = min(max(0, minimumSemanticScore), 1)
     }
 }
 

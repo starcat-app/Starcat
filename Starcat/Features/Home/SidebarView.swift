@@ -56,7 +56,7 @@ struct SidebarView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     /// 系统级"减少动效"开关。开启时把 spring 折叠动画退化为瞬切，避免给晕动症 / 偏好
     /// 静态界面的用户增加负担。与项目内 `ListRowRevealModifier` / `RepoLocalSections`
-    /// / `SmartSearchField` 等动画路径处理方式一致。
+    /// / `BorderBeamSearchField` 等动画路径处理方式一致。
     @Environment(\.starcatReduceMotion) private var reduceMotion
     /// HOM-126：自动整理调度器。Sidebar 底部观察 `isAutoTidyRunning` 决定是否
     /// 显示「AI 自动整理中 N/M」轻量行；点击 / hover 可查看 popover 详情。

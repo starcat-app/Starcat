@@ -345,8 +345,8 @@ private struct StarcatRepositoryAICommandModifier: ViewModifier {
     }
 }
 
-/// 中栏列表常规搜索（SmartSearchField）。Manage 才启用；探索页仍发布 disabled 动作，
-/// 让菜单项在不可用时显示为灰色，而不是误触发主窗口残留闭包。
+/// 中栏列表搜索快捷键。Manage 才启用，并统一打开 Search Center 的 Local scope；
+/// 探索页仍发布 disabled 动作，让菜单项不会误触发主窗口残留闭包。
 private struct StarcatListSearchCommandModifier: ViewModifier {
     @Environment(StarcatCommandRouter.self) private var router
     @State private var ownerID = UUID()

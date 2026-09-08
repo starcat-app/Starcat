@@ -15,6 +15,12 @@ import Testing
 
 @Suite("Search Models")
 struct SearchModelsTests {
+    @Test("SearchRequest 钳制语义展示阈值")
+    func requestClampsSemanticScoreThreshold() {
+        #expect(SearchRequest(query: "swift", minimumSemanticScore: -0.1).minimumSemanticScore == 0)
+        #expect(SearchRequest(query: "swift", minimumSemanticScore: 1.1).minimumSemanticScore == 1)
+    }
+
     @Test("RepoIdentity 有双 ID 时优先按 GitHub ID 判断")
     func identityUsesGitHubID() {
         let first = RepoIdentity(ghRepoID: 42, owner: "old", name: "name")

@@ -28,7 +28,7 @@ struct KeyboardShortcutConfiguration: Codable, Equatable, Sendable {
         shift: false
     )
 
-    /// 列表 toolbar 常规搜索（SmartSearchField）默认 Shift+Command+F。
+    /// Search Center 本地范围快捷键默认 Shift+Command+F。
     /// 与 README 页内查找的 Command+F 拆开，避免再按光标所在栏分流。
     static let regularSearchDefault = KeyboardShortcutConfiguration(
         key: "f",

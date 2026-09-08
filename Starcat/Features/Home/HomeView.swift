@@ -274,12 +274,23 @@ struct HomeView: View {
             telemetryManager: telemetryManager
         ))
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
+        var searchProviders: [any SearchProvider] = [
+            LocalKeywordSearchProvider(repository: repository, noteRepository: repoNoteRepository)
+        ]
+        if let semanticSearchService {
+            searchProviders.append(LocalSemanticSearchProvider(
+                repository: repository,
+                noteRepository: repoNoteRepository,
+                semanticSearchService: semanticSearchService
+            ))
+        }
+        searchProviders.append(GitHubRepositorySearchProvider(
+            client: githubAPIClient,
+            noteRepository: repoNoteRepository
+        ))
+        searchProviders.append(ExternalSearchWebProvider())
         _searchCenterViewModel = State(initialValue: SearchCenterViewModel(
-            coordinator: SearchCoordinator(providers: [
-                LocalKeywordSearchProvider(repository: repository, noteRepository: repoNoteRepository),
-                GitHubRepositorySearchProvider(client: githubAPIClient, noteRepository: repoNoteRepository),
-                ExternalSearchWebProvider()
-            ]),
+            coordinator: SearchCoordinator(providers: searchProviders),
             historyRepository: searchHistoryRepository,
             includeWebInAll: {
                 AppSettings.shared.externalSearchIncludeInAll
@@ -861,8 +872,8 @@ struct HomeView: View {
     }
 
     /// 搜索指引以“用户打开搜索入口”为通过条件；真实搜索提交路径仍会发同一完成事件。
-    private func presentSearchCenterForGettingStarted() {
-        searchCenterViewModel.present()
+    private func presentSearchCenterForGettingStarted(scope: SearchScope? = nil) {
+        searchCenterViewModel.present(scope: scope)
         NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
     }
 
@@ -1325,8 +1336,8 @@ struct HomeView: View {
                     onStartGitHubStarListAIGrouping: {
                         startGitHubStarListAIGrouping()
                     },
-                    onOpenSearchCenter: {
-                        presentSearchCenterForGettingStarted()
+                    onOpenSearchCenter: { scope in
+                        presentSearchCenterForGettingStarted(scope: scope)
                     },
                     onOpenKnowledgeRAGWorkspace: {
                         openKnowledgeRAGWorkspaceForGettingStarted()

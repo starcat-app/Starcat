@@ -39,7 +39,7 @@ struct PageToolbarSpec {
     /// 渲染位置：`ToolbarItemGroup(placement: .primaryAction)` 第 2 组。
     var trailingPrimary: AnyView?
 
-    /// 智能搜索框（SmartSearchField）。
+    /// 全局 Search Center 的可发现入口。
     /// 渲染位置：独立 `ToolbarItem(placement: .primaryAction)`，最右侧。
     var searchField: AnyView?
 

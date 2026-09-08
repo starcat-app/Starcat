@@ -16,7 +16,7 @@
 //  - 键盘快捷键统一 `⌘⇧M`，调用方注入时不重复定义；
 //  - `isDisabled` 由调用方按业务场景注入（典型场景：trending / weekly 未登录态——
 //    批量 star/unstar 必须调 GitHub API 需要 token），禁用时 tooltip 切到
-//    `disabledHelpKey` 解释为何不能用。与 `SmartSearchField` 的 disabled 语义同款。
+//    `disabledHelpKey` 解释为何不能用，避免禁用按钮没有原因提示。
 //
 
 import SwiftUI

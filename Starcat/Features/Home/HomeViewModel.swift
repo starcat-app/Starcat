@@ -453,8 +453,8 @@ final class HomeViewModel {
 
     /// 已提交的搜索词。
     ///
-    /// `SmartSearchField` 内部保存实时输入草稿；只有用户按 Return 或点击清空时，才通过
-    /// `submitSearch(_:)` 写入这里。这样普通 FTS5 和 AI 语义搜索都不会在每个字符输入时触发。
+    /// 该状态继续服务保存的智能集合和历史列表过滤；主窗口的新搜索入口已经统一到
+    /// Search Center，不再由 toolbar 输入框逐字符写入这里。
     var searchQuery: String = ""
 
     /// 搜索提交序号。

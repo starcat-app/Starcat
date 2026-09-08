@@ -483,7 +483,8 @@ struct RepoListView: View {
     /// 未分组中栏横幅的启动回调。Sheet 仍由 Sidebar / HomeView 共用一份状态承载。
     var onStartGitHubStarListAIGrouping: (() -> Void)?
     /// 全局搜索中心由 HomeView 承载；列表 toolbar 只负责触发，不持有浮层状态。
-    var onOpenSearchCenter: (() -> Void)?
+    /// `nil` 保留 Search Center 当前 scope；`.local` 用于原“列表搜索”快捷键。
+    var onOpenSearchCenter: ((SearchScope?) -> Void)?
     /// 覆盖式知识库 RAG 工作台由 HomeView 承载；列表 toolbar 只暴露入口。
     var onOpenKnowledgeRAGWorkspace: (() -> Void)?
     /// Browser Plugin 的 Open in Starcat 由 HomeView 负责切换根页面和选中详情。
@@ -530,8 +531,6 @@ struct RepoListView: View {
     @State private var trendingViewModel: TrendingViewModel?
     @State private var weeklyViewModel: WeeklyContentViewModel?
     @State private var activityViewModel: ActivityViewModel?
-    @State private var smartSearchExpandToken = 0
-    @State private var toolbarSearchHistory: [SearchHistory] = []
     @State private var showingInterestedLanguagePicker = false
     @State private var interestedLanguageDraft = ""
 
@@ -700,7 +699,7 @@ struct RepoListView: View {
         .hidden()
     }
 
-    /// 常规搜索（列表 toolbar SmartSearchField）。默认 Shift+Command+F，仅 Manage 页启用。
+    /// 原列表搜索快捷键继续保留，但只负责打开统一 Search Center 的 Local scope。
     private var isListRegularSearchEnabled: Bool {
         selectedPage == .manage
             && settings.keyboardShortcutsEnabled
@@ -714,8 +713,7 @@ struct RepoListView: View {
                 identity: "list-search-\(selectedPage.rawValue)-\(isListRegularSearchEnabled)",
                 isEnabled: isListRegularSearchEnabled
             ) {
-                viewModel.smartSearchMode = .keyword
-                smartSearchExpandToken += 1
+                onOpenSearchCenter?(.local)
             }
     }
 
@@ -1002,7 +1000,7 @@ struct RepoListView: View {
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: trailing,
-            searchField: AnyView(smartSearchField())
+            searchField: AnyView(globalSearchButton)
         )
     }
 
@@ -1035,7 +1033,7 @@ struct RepoListView: View {
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: trailing,
-            searchField: AnyView(smartSearchField())
+            searchField: AnyView(globalSearchButton)
         )
     }
 
@@ -1070,7 +1068,7 @@ struct RepoListView: View {
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: selectionView,
-            searchField: AnyView(smartSearchField())
+            searchField: AnyView(globalSearchButton)
         )
     }
 
@@ -1082,7 +1080,7 @@ struct RepoListView: View {
             return PageToolbarSpec(
                 leadingPrimary: nil,
                 trailingPrimary: nil,
-                searchField: AnyView(smartSearchField())
+                searchField: AnyView(globalSearchButton)
             )
         }
         let registry = dependencies.starredRegistry
@@ -1108,7 +1106,7 @@ struct RepoListView: View {
         return PageToolbarSpec(
             leadingPrimary: AnyView(globalFilterMenu()),
             trailingPrimary: selectionView,
-            searchField: AnyView(smartSearchField())
+            searchField: AnyView(globalSearchButton)
         )
     }
 
@@ -1139,7 +1137,7 @@ struct RepoListView: View {
         return PageToolbarSpec(
             leadingPrimary: leading,
             trailingPrimary: trailing,
-            searchField: AnyView(smartSearchField())
+            searchField: AnyView(globalSearchButton)
         )
     }
 
@@ -1790,101 +1788,24 @@ struct RepoListView: View {
 
     // MARK: - 顶部操作栏组件
 
-    /// 可折叠智能搜索框。
-    ///
-    /// 2026-06-04 修订：dong4j 确认新原型后，搜索入口不再使用系统 `.searchable`。
-    /// 原因是当前交互需要“默认折叠 + 模式切换内嵌 + AI 光晕 + 索引刷新内嵌”，这些能力
-    /// 超出了 `NSSearchField` / SwiftUI `.searchable` 的定制范围。
-    ///
-    /// W12 PR-2：增加 `isDisabled` 参数。Trending / Activity 页面也会渲染本组件
-    /// 作为常驻入口，但 mode 为 keyword/semantic 时禁用并显示 tooltip。
-    private func smartSearchField(isDisabled: Bool = false) -> some View {
-        @Bindable var vm = viewModel
-        let historyRepository = dependencies.searchHistoryRepository
-        // 直接读 `dependencies.entitlementGate.isProUser`(EntitlementGate 是
-        // `@MainActor @Observable`),SwiftUI 通过访问追踪自动重渲染;
-        // Pro 状态变化(订阅过期/降级)会自动反映到 SmartSearchField 下拉,
-        // 由 SmartSearchField 内部的 .onChange(of: isProUser) 做 mode 回退 + 弹付费墙。
-        let isProUser = dependencies.entitlementGate.isProUser
-        return SmartSearchField(
-            text: $vm.searchQuery,
-            mode: $vm.smartSearchMode,
-            semanticScope: $vm.semanticSearchScope,
-            isIndexing: viewModel.isSemanticIndexing,
-            indexingProgress: viewModel.semanticIndexProgress,
-            isQuerying: viewModel.isSemanticQueryInFlight,
-            onSubmitSearch: { query in
-                viewModel.submitSearch(query)
-                let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !submitted.isEmpty {
-                    NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
-                    Task {
-                        try? await historyRepository.record(submitted)
-                        await reloadToolbarSearchHistory()
-                    }
-                }
-            },
-            onRefreshSemanticIndex: {
-                Task { await viewModel.refreshSemanticIndex() }
-            },
-            onOpenGlobalSearch: {
-                onOpenSearchCenter?()
-            },
-            globalSearchShortcutDisplayText: settings.keyboardShortcutsEnabled && settings.globalSearchShortcutEnabled
-                ? settings.globalSearchShortcut.displayText
-                : nil,
-            regularSearchShortcutDisplayText: settings.keyboardShortcutsEnabled && settings.regularSearchShortcutEnabled
-                ? settings.regularSearchShortcut.displayText
-                : nil,
-            isProUser: isProUser,
-            onRequestProUpgrade: {
-                // 与现有 paywallContext 写入对齐(line 657 / 660 / 718 / 1490):
-                // 给 .semanticSearch 弹付费墙,message 走 service 报的本地化错误文案,
-                // 即便此处文案与执行时报错不一致,用户也能从弹窗明确"是 .semantic 触发的"。
-                paywallContext = ProPaywallContext(
-                    feature: .semanticSearch,
-                    message: String.l10n("search.paywall.semantic.upgrade")
-                )
-            },
-            isDisabled: isDisabled,
-            collapseToken: viewModel.selectedRepoID,
-            expandToken: smartSearchExpandToken,
-            historyEntries: toolbarSearchHistory,
-            onRefreshHistory: {
-                Task { await reloadToolbarSearchHistory() }
-            },
-            onRemoveHistory: { entry in
-                Task { await removeToolbarSearchHistory(entry) }
-            }
-        )
+    /// 中栏只保留一个可发现入口，点击后打开与 Command+K 相同的 Search Center。
+    private var globalSearchButton: some View {
+        Button("commands.actions.openGlobalSearch", systemImage: "magnifyingglass") {
+            onOpenSearchCenter?(nil)
+        }
+        .labelStyle(.iconOnly)
+        .help(globalSearchHelp)
         .gettingStartedAnchor(.search)
-        .onAppear {
-            if viewModel.smartSearchMode != settings.smartSearchMode {
-                viewModel.smartSearchMode = settings.smartSearchMode
-            }
-        }
-        .onChange(of: viewModel.smartSearchMode) { _, newValue in
-            settings.smartSearchMode = newValue
-        }
     }
 
-    /// Toolbar 搜索历史取自与 Search Center 相同的 SQLite 表，并沿用相同半衰期排序。
-    @MainActor
-    private func reloadToolbarSearchHistory() async {
-        guard let entries = try? await dependencies.searchHistoryRepository.fetchAll() else {
-            toolbarSearchHistory = []
-            return
+    private var globalSearchHelp: String {
+        guard settings.keyboardShortcutsEnabled, settings.globalSearchShortcutEnabled else {
+            return String.l10n("toolbar.globalSearchHelp.shortcutDisabled")
         }
-        let now = Date()
-        toolbarSearchHistory = entries.sorted { lhs, rhs in
-            lhs.decayedScore(now: now) > rhs.decayedScore(now: now)
-        }
-    }
-
-    @MainActor
-    private func removeToolbarSearchHistory(_ entry: SearchHistory) async {
-        try? await dependencies.searchHistoryRepository.remove(query: entry.queryLower)
-        await reloadToolbarSearchHistory()
+        return String(
+            format: String.l10n("toolbar.globalSearchHelp"),
+            settings.globalSearchShortcut.displayText
+        )
     }
 
     // MARK: - 列表主体

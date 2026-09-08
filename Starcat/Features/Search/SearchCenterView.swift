@@ -25,7 +25,6 @@ struct SearchCenterView: View {
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    @FocusState private var isSearchFocused: Bool
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
     /// 新增需要展示 `remoteExtras`（disabled / isTemplate / score）以及 sort 模式
     /// 来决定是否渲染匹配度，单纯的 `Repo` 不够用，必须把整张候选传进去。
@@ -119,7 +118,6 @@ struct SearchCenterView: View {
             .transition(reduceMotion ? .opacity : .opacity)
         }
         .defaultCursorShield()
-        .onAppear { focusSearchFieldOnAppear() }
         .sheet(item: $remoteDetailCandidate) { candidate in
             // 把 sort 模式一并传入：仅在 bestMatch 时才渲染匹配度，否则
             // score 字段对当前结果排序无解释力（按 stars / forks / updated
@@ -245,36 +243,23 @@ struct SearchCenterView: View {
     }
 
     private var searchHeader: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("search.searchField.placeholder", text: $viewModel.query)
-                .textFieldStyle(.plain)
-                .font(interfaceScale.font(.iconLarge))
-                .focused($isSearchFocused)
-                .onSubmit { Task { await viewModel.submit() } }
-
-            if !viewModel.query.isEmpty {
-                Button { viewModel.clear() } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+        // Border Beam 只替换输入外观；scope、Provider、提交与结果状态仍由
+        // SearchCenterViewModel 驱动，避免视觉组件反向持有搜索业务。
+        BorderBeamSearchField(
+            text: $viewModel.query,
+            prompt: Text("search.searchField.placeholder"),
+            accessibilityLabel: Text("search.searchField.placeholder"),
+            autofocusOnAppear: true,
+            onSubmit: { submittedQuery in
+                if submittedQuery.isEmpty {
+                    viewModel.clear()
+                } else {
+                    Task { await viewModel.submit() }
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
             }
-        }
-        .padding(.horizontal, 18)
+        )
+        .padding(.horizontal, 12)
         .frame(height: 58)
-    }
-
-    private func focusSearchFieldOnAppear() {
-        Task { @MainActor in
-            // SearchCenterView 作为 overlay 淡入时，首个 onAppear 可能早于 TextField
-            // 真正进入可接收 first responder 的窗口层级；让出一轮主线程后再申请焦点，
-            // 避免 SwiftUI 吞掉这次 focus 赋值，保证打开全局搜索后可直接输入。
-            await Task.yield()
-            isSearchFocused = true
-        }
     }
 
     private var scopePicker: some View {

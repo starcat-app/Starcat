@@ -139,21 +139,41 @@ final class SearchCoordinator {
         switch outcome.result {
         case .success(let page):
             statuses[outcome.source] = .loaded(page)
-            repositories = Self.mergeRepositories(
-                existing: repositories,
-                incoming: page.repositories
-            )
-            references = Self.mergeReferences(existing: references, incoming: page.references)
+            rebuildLoadedResults()
         case .failure(let error):
             statuses[outcome.source] = .failed(error.localizedDescription)
         }
+    }
+
+    /// Provider 并发完成顺序不稳定，不能直接决定最终列表顺序。每次有新页返回时都按
+    /// “关键词 → 语义补召回 → GitHub → Web”重建，保证本地精确命中始终在前，同时
+    /// 让同一仓库合并 `.localKeyword` / `.localSemantic` provenance 与 semanticScore。
+    private func rebuildLoadedResults() {
+        let displayOrder: [SearchSource] = [.localKeyword, .localSemantic, .github, .web]
+        var mergedRepositories: [RepositoryCandidate] = []
+        var mergedReferences: [ReferenceCandidate] = []
+
+        for source in displayOrder {
+            guard case .loaded(let page) = statuses[source] else { continue }
+            mergedRepositories = Self.mergeRepositories(
+                existing: mergedRepositories,
+                incoming: page.repositories
+            )
+            mergedReferences = Self.mergeReferences(
+                existing: mergedReferences,
+                incoming: page.references
+            )
+        }
+
+        repositories = mergedRepositories
+        references = mergedReferences
     }
 
     private static func shouldRun(_ source: SearchSource, for request: SearchRequest) -> Bool {
         switch request.scope {
         case .all:
             if source == .web { return request.includeWebInAll }
-            return source != .localSemantic
+            return true
         case .local:
             return source == .localKeyword || source == .localSemantic
         case .github:

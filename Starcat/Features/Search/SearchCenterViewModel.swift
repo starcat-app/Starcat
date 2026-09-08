@@ -187,16 +187,27 @@ final class SearchCenterViewModel {
         }
     }
 
-    func present() {
+    func present(scope requestedScope: SearchScope? = nil) {
         // 重新打开只恢复面板，不重置选中项或重新搜索。用户误点遮罩关闭后应回到
         // 原来的 query、scope、filters、结果和键盘位置。
+        let shouldRefreshScope = requestedScope.map { $0 != scope } ?? false
+        if let requestedScope {
+            scope = requestedScope
+        }
         isPresented = true
         // HOM-199 修复：每次打开都 fire-and-forget 拉一次最新历史。
         // - 首次打开（init 后从未加载）→ 把历史从真实 user DB 填进来；
         // - 后续打开 → 顺便吸收上一次提交可能并发产生的写入（成本：单次 50 行表 SQLite read）。
         // 用 detached-on-MainActor 模式：本 VM 是 @MainActor，`Task { ... }` 继承 actor，
         // SwiftUI Button 调用 present() 时不需要 await，UI 已经显示后历史会异步填充。
-        Task { await self.reloadHistory() }
+        Task {
+            await self.reloadHistory()
+            if shouldRefreshScope, let requestedScope {
+                // “列表搜索”快捷键与 toolbar 入口复用同一 Search Center，只把初始
+                // scope 切到 Local；已有 query 时同步重跑，不能展示旧 scope 的结果。
+                await self.changeScope(requestedScope)
+            }
+        }
     }
 
     func dismiss() {
@@ -369,7 +380,8 @@ final class SearchCenterViewModel {
             externalSearchFilters: externalSearchFilters,
             externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
             page: currentGitHubPage,
-            includeWebInAll: includeWebInAll()
+            includeWebInAll: includeWebInAll(),
+            minimumSemanticScore: AppSettings.shared.aiSemanticSearchScoreThreshold
         )
     }
 

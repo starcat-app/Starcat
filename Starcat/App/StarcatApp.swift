@@ -836,11 +836,6 @@ struct DebugMenuCommands: Commands {
             }
             .disabled(dependencies == nil)
 
-            Button("Border Beam Search Lab") {
-                // 独立实验窗口：验收 BorderBeamKit line 搜索条，不改正式 SmartSearchField。
-                BorderBeamSearchLabWindowController.show()
-            }
-
             Button("ambient.menu.openRepos") {
                 if let dependencies {
                     AmbientWindowController.show(dependencies: dependencies, scene: .repos)
