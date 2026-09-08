@@ -101,16 +101,51 @@ final class SearchCenterViewModel {
         }
     }
 
+    /// 结果区不再叠浮层错误；完整句留给 footer chip 的 tooltip，
+    /// 短标签走 `footerErrors`，避免底栏被长文案挤爆。
     var errorMessages: [String] {
-        coordinator.statuses.compactMap { source, status in
+        footerErrors.map(\.fullMessage)
+    }
+
+    /// 底部状态栏右侧错误 chip 的数据源（短标签 + 完整原因）。
+    ///
+    /// 排序与历史 `errorMessages` 一致，保证多来源同时失败时顺序稳定、不抖动。
+    var footerErrors: [SearchFooterError] {
+        coordinator.statuses.compactMap { source, status -> SearchFooterError? in
             guard case .failed(let message) = status else { return nil }
-            // `localSemantic` 是内部来源标识，直接展示会像调试日志；改用既有本地化
-            // 产品名，让向量配置、网络或模型错误能被用户立即识别为语义搜索失败。
-            let sourceName = source == .localSemantic
-                ? String.l10n("search.mode.semantic")
-                : source.rawValue
-            return "\(sourceName): \(message)"
-        }.sorted()
+            // `localSemantic` / 各 provider rawValue 对用户不友好；短标签与完整句
+            // 都走产品向本地化名，避免底栏出现调试标识。
+            let sourceName: String
+            switch source {
+            case .localSemantic:
+                sourceName = String.l10n("search.mode.semantic")
+            case .localKeyword:
+                sourceName = String.l10n("search.footer.source.local")
+            case .github:
+                sourceName = String.l10n("search.footer.source.github")
+            case .web:
+                sourceName = String.l10n("search.footer.source.web")
+            }
+            return SearchFooterError(
+                source: source,
+                shortLabel: String.l10n(Self.footerErrorShortKey(for: source)),
+                fullMessage: "\(sourceName): \(message)"
+            )
+        }
+        .sorted { $0.fullMessage < $1.fullMessage }
+    }
+
+    private static func footerErrorShortKey(for source: SearchSource) -> String {
+        switch source {
+        case .localSemantic:
+            return "search.footer.error.semantic"
+        case .localKeyword:
+            return "search.footer.error.localKeyword"
+        case .github:
+            return "search.footer.error.github"
+        case .web:
+            return "search.footer.error.web"
+        }
     }
 
     var canLoadMoreGitHub: Bool {
@@ -456,4 +491,16 @@ struct ResultSourceCount: Identifiable, Equatable, Sendable {
             return "search.footer.source.web"
         }
     }
+}
+
+/// 底部状态栏右侧错误 chip：短标签进栏，完整原因只放 tooltip。
+///
+/// 为什么拆开：完整失败句（含 Base URL / 网络说明）太长，直接塞进 footer
+/// 会挤压左侧「本地 N / GitHub M」计数；短标签保留可扫读性，详情用系统 help。
+struct SearchFooterError: Identifiable, Equatable, Sendable {
+    let source: SearchSource
+    let shortLabel: String
+    let fullMessage: String
+
+    var id: String { source.rawValue }
 }

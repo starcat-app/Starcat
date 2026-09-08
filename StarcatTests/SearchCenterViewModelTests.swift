@@ -204,6 +204,10 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.errorMessages == [
             "\(String.l10n("search.mode.semantic")): 向量服务不可用"
         ])
+        #expect(viewModel.footerErrors.map(\.shortLabel) == [
+            String.l10n("search.footer.error.semantic")
+        ])
+        #expect(viewModel.footerErrors.map(\.fullMessage) == viewModel.errorMessages)
     }
 
     private nonisolated static func makeCandidate(

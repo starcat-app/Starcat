@@ -683,16 +683,8 @@ struct SearchCenterView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: 8)
             }
-            .overlay(alignment: .bottomLeading) {
-                if let message = viewModel.errorMessages.first {
-                    Label(message, systemImage: "exclamationmark.triangle")
-                        .font(interfaceScale.font(.caption))
-                        .foregroundStyle(.orange)
-                        .padding(10)
-                        .starcatGlassSurface(.ultraThinMaterial, in: Capsule())
-                        .padding()
-                }
-            }
+            // Provider 失败提示已迁到 `webResultFooter` 右侧，避免结果列表底角
+            // 玻璃胶囊挡住末行 hover / 与底部状态栏抢视线。
         }
     }
 
@@ -1134,25 +1126,35 @@ struct SearchCenterView: View {
 
     /// 浮层底部 footer。按 scope 分支渲染：
     ///
-    /// - **`.web`**（仅网页）：左侧"X 条 · Y.Ys"汇总 chip + 右侧 rate limit chip
+    /// - **`.web`**（仅网页）：左侧"X 条 · Y.Ys"汇总 chip + 右侧错误 / rate limit
     /// - **`.all`**（聚合）：左侧多段 chip"本地 N · GitHub M · 网页 K"（按 provider
-    ///   命中数依次展示）+ 右侧 rate limit chip（仅当 web 参与且已加载）
-    /// - **`.local` / `.github`**：不渲染 footer
+    ///   命中数依次展示）+ 右侧错误 chip + rate limit chip（仅当 web 参与且已加载）
+    /// - **`.local` / `.github`**：默认不渲染；若有 provider 失败则仍渲染右侧错误
     ///
     /// 关键约束（不要回退）：
     /// - footer 渲染条件 = "至少有一个 chip 可显示"：
     ///   - 至少一个 provider 已加载（resultCounts 非空），或
-    ///   - rate limit chip 可显示（webMetadata.rateLimit 非 nil）
-    /// - rate limit 三字段缺一不全 → 右侧 chip 不显示（左侧 metadata 仍渲染）
-    /// - remaining ≤ 0 时右侧 chip 切换到"额度用尽 · HH:mm 重置"
+    ///   - rate limit chip 可显示（webMetadata.rateLimit 非 nil），或
+    ///   - 至少一个 provider 失败（footerErrors 非空）
+    /// - 右侧顺序固定：错误 chip → 限流 chip（限流贴最右，避免错误出现时跳位）
+    /// - rate limit 三字段缺一不全 → 限流 chip 不显示（左侧 metadata / 错误仍渲染）
+    /// - remaining ≤ 0 时右侧限流 chip 切换到"额度用尽 · HH:mm 重置"
     @ViewBuilder
     private var webResultFooter: some View {
         let counts = viewModel.resultCounts
         let rateLimit = viewModel.webMetadata?.rateLimit
-        if !counts.isEmpty || rateLimit != nil {
+        let errors = viewModel.footerErrors
+        if !counts.isEmpty || rateLimit != nil || !errors.isEmpty {
             HStack(spacing: 8) {
                 leadingSummaryContent(counts: counts)
                 Spacer(minLength: 8)
+                if !errors.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(errors) { error in
+                            footerErrorChip(error)
+                        }
+                    }
+                }
                 if let rateLimit {
                     rateLimitChip(rateLimit)
                 }
@@ -1161,6 +1163,25 @@ struct SearchCenterView: View {
             .padding(.vertical, 6)
             .background(Color.primary.opacity(0.025))
         }
+    }
+
+    /// 右侧紧凑错误 chip：短标签可扫读，完整失败句只挂系统 tooltip。
+    /// 规格对齐 sourceCountChip（captionSmall + capsule），颜色用 warning 橙区分计数。
+    private func footerErrorChip(_ error: SearchFooterError) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            // shortLabel 已是 `String.l10n` 结果，必须 verbatim，避免再被当 key 查找。
+            Text(verbatim: error.shortLabel)
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color.orange.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+        .help(error.fullMessage)
     }
 
     /// 左侧汇总区。根据当前 scope 选择渲染策略：
