@@ -46,6 +46,19 @@ struct MultiSelectionStoreTests {
         #expect(store.snapshots.isEmpty)
     }
 
+    @Test("enter 携带当前单选项进入多选")
+    func enterSeedsCurrentSingleSelection() {
+        let store = MultiSelectionStore()
+        store.toggle(snap(1, "stale", "selection"))
+
+        let current = snap(2, "current", "repo")
+        store.enter(initialSelection: current)
+
+        #expect(store.isActive == true)
+        #expect(store.count == 1)
+        #expect(store.snapshots == [current.ghRepoId: current])
+    }
+
     @Test("exit 退出多选 + 清空选区")
     func exitClearsSelection() {
         let store = MultiSelectionStore()

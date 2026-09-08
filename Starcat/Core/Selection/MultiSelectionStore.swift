@@ -93,10 +93,16 @@ final class MultiSelectionStore {
 
     // MARK: - 写入
 
-    /// 进入多选模式（同时清空之前的 selection，避免与上次状态串场）。
-    func enter() {
-        isActive = true
+    /// 进入多选模式，并用可选的当前单选项初始化选区。
+    ///
+    /// 先重建 snapshots、最后再切换 `isActive`，避免 View 改用多选状态源时短暂看到空选区。
+    /// 未传初始项时保持原有语义：清空上一次 selection，避免跨页面或跨轮次串场。
+    func enter(initialSelection: SelectionSnapshot? = nil) {
         snapshots.removeAll()
+        if let initialSelection {
+            snapshots[initialSelection.ghRepoId] = initialSelection
+        }
+        isActive = true
     }
 
     /// 退出多选模式 + 清空 selection。

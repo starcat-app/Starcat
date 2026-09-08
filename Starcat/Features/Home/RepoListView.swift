@@ -1635,7 +1635,7 @@ struct RepoListView: View {
             StarsSyncButton()
             MultiSelectButton(
                 isActive: dependencies.manageMultiSelectionStore.isActive,
-                action: { dependencies.manageMultiSelectionStore.toggle() }
+                action: toggleManageMultiSelection
             )
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
@@ -1649,6 +1649,23 @@ struct RepoListView: View {
         .onChange(of: viewModel.sortOption) { _, newValue in
             settings.repoSortOption = newValue
         }
+    }
+
+    /// Manage 从单选切入多选时，把当前可见仓库接续为第一项，避免卡片选中态突然消失。
+    /// 当前没有单选项时仍以空选区进入；退出则继续清空多选状态，保持既有生命周期语义。
+    private func toggleManageMultiSelection() {
+        let store = dependencies.manageMultiSelectionStore
+        guard !store.isActive else {
+            store.exit()
+            return
+        }
+
+        let initialSelection = viewModel.selectedRepoID
+            .flatMap { selectedID in viewModel.items.first(where: { $0.id == selectedID }) }
+            .map { repo in
+                SelectionSnapshot(ghRepoId: repo.id, owner: repo.owner, name: repo.name)
+            }
+        store.enter(initialSelection: initialSelection)
     }
 
     /// Smart Collections 总览顶栏：与 `manageFilterBar` 同高，保证中栏与「全部仓库」顶区对齐。
