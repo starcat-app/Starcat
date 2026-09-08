@@ -86,6 +86,7 @@ enum BatchAITagSuggestionAvailability: Equatable, Sendable {
 enum BatchAIFailure: Equatable, Sendable {
     case aiClient(AIClientError)
     case repoInsight(RepoAIInsightError)
+    case recommendationValidation(AIRecommendationValidationError)
     case cancelled
     /// 无法归类的第三方错误；nil 表示原始内容为空或属于不可展示的 SDK dump。
     case unknown(String?)
@@ -97,6 +98,10 @@ enum BatchAIFailure: Equatable, Sendable {
         }
         if let insight = error as? RepoAIInsightError {
             self = .repoInsight(insight)
+            return
+        }
+        if let validation = error as? AIRecommendationValidationError {
+            self = .recommendationValidation(validation)
             return
         }
 
@@ -119,6 +124,8 @@ enum BatchAIFailure: Equatable, Sendable {
         case .aiClient(let error):
             return error.localizedDescription
         case .repoInsight(let error):
+            return error.localizedDescription
+        case .recommendationValidation(let error):
             return error.localizedDescription
         case .cancelled:
             return String.l10n("batchAI.panel.cancelledByUser")

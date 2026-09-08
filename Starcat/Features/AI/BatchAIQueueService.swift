@@ -1010,6 +1010,11 @@ final class BatchAIQueueService {
                 externalContextEnabledOverride: includesSummary ? options.externalContextEnabledOverride : nil
             )
             suggestions = insight.insight.suggestedTags
+            // 标签任务的空结果没有任何可审核或可应用内容，不能计为“全部完成”。
+            // 摘要单独运行仍允许 suggestions 为空，因此只在本仓库确实执行标签任务时失败。
+            guard !includesTags || !suggestions.isEmpty else {
+                throw AIRecommendationValidationError.emptyTagSuggestions
+            }
         } else {
             suggestions = []
         }
@@ -1381,6 +1386,11 @@ final class BatchAIQueueService {
 
     /// 不可重试错误判别：用户没改配置之前永远会失败的那一类。
     private func isPermanentError(_ error: Error) -> Bool {
+        // 结构合法但业务结果不可用时，自动重复相同请求只会继续消耗配额；保留失败态，
+        // 由用户检查模型 / 规则后通过现有“重试”入口再次发起。
+        if error is AIRecommendationValidationError {
+            return true
+        }
         if let insight = error as? RepoAIInsightError {
             switch insight {
             case .missingAPIKey, .missingProvider:

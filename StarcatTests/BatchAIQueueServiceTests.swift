@@ -121,6 +121,47 @@ struct BatchAIQueueServiceTests {
         #expect(try await repoTagRepository.fetchTags(forRepo: repo.id).isEmpty)
     }
 
+    @Test("标签任务返回空建议时直接进入失败，不自动重复消耗配额")
+    func emptyTagSuggestionsBecomeFailure() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: [])
+        let service = try makeService(insightProvider: provider)
+        var repo = Repo.makeMinimal(owner: "acme", name: "empty-tags")
+        repo.id = 512
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+        options.autoApplyTags = false
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.status == .failed)
+        #expect(job.failure == .recommendationValidation(.emptyTagSuggestions))
+        #expect(job.attempts == 1)
+        #expect(BatchAIQueuePresentationStore.primaryState(for: job) == .failed)
+        #expect(service.failedCount == 1)
+        #expect(service.completedCount == 0)
+    }
+
+    @Test("只生成摘要时允许标签建议为空")
+    func summaryOnlyAllowsEmptyTagSuggestions() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: [])
+        let service = try makeService(insightProvider: provider)
+        var repo = Repo.makeMinimal(owner: "acme", name: "summary-only")
+        repo.id = 513
+        var options = BatchAIQueueOptions()
+        options.actions = [.summary]
+
+        #expect(service.start(repos: [repo], options: options))
+        await waitUntilStopped(service)
+
+        let job = try #require(service.jobs.first)
+        #expect(job.status == .completed)
+        #expect(job.failure == nil)
+        #expect(service.completedCount == 1)
+        #expect(service.failedCount == 0)
+    }
+
     @Test("待确认建议区分已有标签和需要新建的标签")
     func pendingSuggestionsExposeTagAvailability() async throws {
         let suggestions = [
@@ -1045,7 +1086,11 @@ private final class StaggeredBatchAIInsightProvider: BatchAIInsightProviding {
                 strengths: [],
                 risks: [],
                 minimalExample: nil,
-                suggestedTags: [],
+                // 本测试只验证 Worker 的即时回写；标签任务必须给出有效结果，
+                // 否则会按生产规则进入失败态，反而污染并发时序断言。
+                suggestedTags: includeTags
+                    ? [AITagSuggestion(name: "Test", confidence: 0.9, reason: "test fixture")]
+                    : [],
                 model: "test-model",
                 generatedAt: ISO8601DateFormatter.shared.string(from: .now),
                 contextMetadata: nil,
@@ -1124,7 +1169,10 @@ private final class ConcurrentBatchAIInsightProvider: BatchAIInsightProviding {
                 strengths: [],
                 risks: [],
                 minimalExample: nil,
-                suggestedTags: [],
+                // 并发测试需要一个可完成的标签结果；空建议现在属于业务失败。
+                suggestedTags: includeTags
+                    ? [AITagSuggestion(name: "Test", confidence: 0.9, reason: "test fixture")]
+                    : [],
                 model: "test-model",
                 generatedAt: ISO8601DateFormatter.shared.string(from: .now),
                 contextMetadata: nil,

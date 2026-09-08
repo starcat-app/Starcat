@@ -51980,6 +51980,52 @@
         }
       }
     },
+    "ai.insight.error.emptyTagSuggestions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI did not return any valid tag suggestions. Retry, or check the selected model if the problem persists."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 未返回任何有效标签建议，请重试；若持续发生，请检查所选模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 未回傳任何有效標籤建議，請重試；若持續發生，請檢查所選模型。"
+          }
+        }
+      }
+    },
+    "ai.insight.error.invalidGitHubListSuggestions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI returned group suggestions, but none passed validation. Retry, or check the group rules if the problem persists."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 返回了分组建议，但校验后没有可用结果，请重试；若持续发生，请检查分组规则。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 回傳了分組建議，但校驗後沒有可用結果，請重試；若持續發生，請檢查分組規則。"
+          }
+        }
+      }
+    },
     "ai.insight.error.invalidJSON" : {
       "extractionState" : "manual",
       "localizations" : {

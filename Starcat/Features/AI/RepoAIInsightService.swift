@@ -38,6 +38,25 @@ enum RepoAIInsightError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+/// AI 推荐请求虽然完成，但结果无法进入后续审核或应用流程。
+///
+/// 这类错误与网络 / JSON 解析错误不同：响应结构可能完全合法，只是没有可用业务结果。
+/// 标签任务必须至少给出一个有效建议；仓库分组则允许模型明确返回空数组表示“无匹配”，
+/// 仅在模型返回了候选、但候选经闭集校验后全部失效时判定为失败。
+enum AIRecommendationValidationError: Error, LocalizedError, Equatable, Sendable {
+    case emptyTagSuggestions
+    case invalidGitHubListSuggestions
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyTagSuggestions:
+            return String.l10n("ai.insight.error.emptyTagSuggestions")
+        case .invalidGitHubListSuggestions:
+            return String.l10n("ai.insight.error.invalidGitHubListSuggestions")
+        }
+    }
+}
+
 struct RepoAIInsightGeneration: Equatable, Sendable {
     var insight: RepoAIInsight
     var tagErrorMessage: String?
@@ -795,7 +814,7 @@ final class RepoAIInsightService {
         )
         var validated: [Int64: [GitHubStarListAISuggestion]] = [:]
         for repo in repos {
-            validated[repo.id] = GitHubStarListAISuggestionPolicy.validatedSuggestions(
+            validated[repo.id] = try GitHubStarListAISuggestionPolicy.validatedModelSuggestions(
                 decoded[repo.id] ?? [],
                 candidates: eligibleCandidates,
                 existingListIDs: existingListIDsByRepo[repo.id] ?? []

@@ -49,6 +49,26 @@ struct GitHubStarListAISuggestion: Codable, Equatable, Hashable, Identifiable, S
 
 /// 封闭候选集的最终执行边界。
 enum GitHubStarListAISuggestionPolicy {
+    /// 校验模型原始结果，同时保留仓库分组中“明确无匹配”的产品语义。
+    ///
+    /// 原始空数组是模型对封闭候选集作出的有效判断；原始结果非空却被全部过滤，说明模型
+    /// 返回了越界 List、已有 membership 或非法置信度，不能伪装成“无匹配”进入成功态。
+    static func validatedModelSuggestions(
+        _ suggestions: [GitHubStarListAISuggestion],
+        candidates: [GitHubStarListAIContext],
+        existingListIDs: Set<String>
+    ) throws -> [GitHubStarListAISuggestion] {
+        let validated = validatedSuggestions(
+            suggestions,
+            candidates: candidates,
+            existingListIDs: existingListIDs
+        )
+        guard suggestions.isEmpty || !validated.isEmpty else {
+            throw AIRecommendationValidationError.invalidGitHubListSuggestions
+        }
+        return validated
+    }
+
     /// 清洗模型建议，并且只返回本轮候选集内、尚未存在的新增 membership。
     ///
     /// 同一 List 重复出现时保留最高置信度项；这不会扩大模型权限，只让偶发重复 JSON

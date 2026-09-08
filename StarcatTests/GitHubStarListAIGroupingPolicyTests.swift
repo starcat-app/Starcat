@@ -49,6 +49,32 @@ struct GitHubStarListAIGroupingPolicyTests {
         #expect(result.isEmpty)
     }
 
+    @Test("模型明确返回空建议时保留无匹配语义")
+    func explicitEmptySuggestionsRemainNoMatch() throws {
+        let result = try GitHubStarListAISuggestionPolicy.validatedModelSuggestions(
+            [],
+            candidates: candidates,
+            existingListIDs: []
+        )
+
+        #expect(result.isEmpty)
+    }
+
+    @Test("模型返回候选但校验后全部无效时判定分析失败")
+    func invalidNonemptySuggestionsFailValidation() {
+        let input = [
+            GitHubStarListAISuggestion(listId: "unknown", confidence: 0.99, reason: "unknown")
+        ]
+
+        #expect(throws: AIRecommendationValidationError.invalidGitHubListSuggestions) {
+            try GitHubStarListAISuggestionPolicy.validatedModelSuggestions(
+                input,
+                candidates: candidates,
+                existingListIDs: []
+            )
+        }
+    }
+
     @Test("一个仓库可保留多个合法建议，重复 List 取最高置信度")
     func keepsMultipleListsAndDeduplicates() {
         let input = [
