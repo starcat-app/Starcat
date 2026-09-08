@@ -118,8 +118,16 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 知识库范围语言聚合统计，允许包含未 star 但已入库的 repo。
     func knowledgeLanguageStats() async throws -> [LanguageStat]
 
-    /// FTS5 全文搜索（空 query 退化为 fetchAllStarred）。
+    /// FTS5 全文搜索，仅已 Star 仓库（空 query 退化为 `fetchAllStarred`）。
+    ///
+    /// Manage「全部 Stars」中栏搜索、Smart Collection、MCP starred scope 继续走这条语义。
     func searchFTS(query: String) async throws -> [Repo]
+
+    /// FTS5 全文搜索本地 `repos` 全表（含未 Star 的我的项目 / 入库仓；空 query 退化为全表）。
+    ///
+    /// Search Center「本地」结果必须走这条：私有组织仓等会以 `is_starred = 0` 落库，
+    /// 若仍用 `searchFTS` 会被永久漏掉。
+    func searchAllLocalFTS(query: String) async throws -> [Repo]
 
     /// 知识库范围 FTS5 全文搜索；空 query 退化为 fetchKnowledgeRepos。
     func searchKnowledgeFTS(query: String) async throws -> [Repo]

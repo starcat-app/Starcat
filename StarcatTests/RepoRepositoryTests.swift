@@ -503,6 +503,44 @@ struct RepoRepositoryTests {
         #expect(hits.count == 5)
     }
 
+    @Test("searchAllLocalFTS 能命中未 Star 的本地缓存仓")
+    func searchAllLocalFTS_includesUnstarredCachedRepos() async throws {
+        let (repo, _) = try makeRepo()
+        try await seedDataset(repo)
+
+        let privateProject = GitHubRepoDTO(
+            id: 9001,
+            name: "starcat-api",
+            fullName: "starcat-app/starcat-api",
+            owner: GitHubUserDTO(
+                id: 2, login: "starcat-app", name: nil, avatarUrl: nil,
+                publicRepos: nil, followers: nil, following: nil,
+                bio: nil, company: nil, location: nil, email: nil,
+                blog: nil, twitterUsername: nil, htmlUrl: nil
+            ),
+            description: "Private aggregate API",
+            language: "Go",
+            stargazersCount: 0, forksCount: 0, watchersCount: 0,
+            topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://github.com/starcat-app/starcat-api",
+            cloneUrl: nil, sshUrl: nil,
+            isPrivate: true, fork: false, archived: false,
+            pushedAt: nil, createdAt: nil, updatedAt: nil,
+            openIssuesCount: nil, defaultBranch: nil,
+            disabled: nil, isTemplate: nil, score: nil
+        )
+        // 我的项目同步路径：元数据进 repos，但 is_starred 保持 false。
+        _ = try await repo.upsertExternalRepoForLibrary(repoDTO: privateProject, syncedAt: Date())
+
+        let starredOnly = try await repo.searchFTS(query: "starcat-api")
+        #expect(starredOnly.isEmpty, "历史 Stars FTS 不应召回未 Star 仓")
+
+        let localHits = try await repo.searchAllLocalFTS(query: "starcat-api")
+        #expect(localHits.map(\.id) == [9001])
+        #expect(localHits.first?.isStarred == false)
+        #expect(localHits.first?.isPrivate == true)
+    }
+
     @Test("searchKnowledgeFTS 只返回知识库范围命中")
     func searchKnowledgeFTSRestrictsToLibraryScope() async throws {
         let (repo, db) = try makeRepo()

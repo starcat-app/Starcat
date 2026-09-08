@@ -7,6 +7,9 @@
 //  只负责把 RepoRepository 查询结果转换为统一候选，不维护 UI 状态、不做缓存。
 //  本地数据库本身就是事实源，再加缓存会制造同步失效问题。
 //
+//  召回范围是本地 `repos` 全表（含未 Star 的我的项目私仓），不是 `searchFTS` 的
+//  「仅已 Star」语义——后者留给 Manage / Smart Collection。
+//
 
 import Foundation
 
@@ -29,7 +32,7 @@ struct LocalKeywordSearchProvider: SearchProvider {
             return .empty
         }
 
-        let repos = try await repository.searchFTS(query: request.query)
+        let repos = try await repository.searchAllLocalFTS(query: request.query)
         let libraryStateMap = try await noteRepository?.fetchLibraryStateMap(repoIds: repos.map(\.id)) ?? [:]
         let candidates = repos.map { repo in
             RepositoryCandidate(

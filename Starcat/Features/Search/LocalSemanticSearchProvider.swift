@@ -38,9 +38,10 @@ struct LocalSemanticSearchProvider: SearchProvider {
         do {
             // FTS 命中 ID 只作为 SemanticSearchService 的排序 boost，不做硬过滤；
             // 因此既保留精确命中的稳定性，也不会丢掉真正的同义语义召回。
-            async let allStarred = repository.fetchAllStarred()
-            async let ftsMatches = repository.searchFTS(query: request.query)
-            let (repos, keywordHits) = try await (allStarred, ftsMatches)
+            // 候选与关键词同源：本地已缓存的全部仓库（含未 Star 私仓），避免语义侧仍只扫 Stars。
+            async let localCatalog = repository.searchAllLocalFTS(query: "")
+            async let ftsMatches = repository.searchAllLocalFTS(query: request.query)
+            let (repos, keywordHits) = try await (localCatalog, ftsMatches)
             let hits = try await semanticSearchService.search(
                 query: request.query,
                 candidates: repos,

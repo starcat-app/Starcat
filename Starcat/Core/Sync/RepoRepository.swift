@@ -484,14 +484,31 @@ struct GRDBRepoRepository {
     /// SQLite FTS5 的 `bm25()` 返回**负数**，越小（越负）越相关。`ASC` 把最负的（最相关）
     /// 排第一；BM25 同分时回落 `starred_at` 让新 star 在前。
     ///
-    /// 空 query 直接退化为全量；用户输入由 caller 用 `FTSQuery.sanitize` 转义，避免 FTS5
+    /// 空 query 直接退化为已 Star 全量；用户输入由 caller 用 `FTSQuery.sanitize` 转义，避免 FTS5
     /// 语法错误（如 `"`、`*`、`-` 等元字符）。
     func searchFTS(query: String) async throws -> [Repo] {
+        try await searchFTS(query: query, starredOnly: true)
+    }
+
+    /// Search Center 本地表：不限 `is_starred`，覆盖我的项目私仓等已缓存行。
+    func searchAllLocalFTS(query: String) async throws -> [Repo] {
+        try await searchFTS(query: query, starredOnly: false)
+    }
+
+    /// - Parameter starredOnly: `true` 保持历史 Stars 搜索语义；`false` 扫本地 `repos` 全表。
+    private func searchFTS(query: String, starredOnly: Bool) async throws -> [Repo] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return try await fetchAllStarred()
+            if starredOnly {
+                return try await fetchAllStarred()
+            }
+            return try await database.writer.read { db in
+                // 未 Star 行的 starred_at 常为 NULL；DESC 会把它们沉底，再用 id 稳定次序。
+                try Repo.order(Column("starred_at").desc, Column("id").desc).fetchAll(db)
+            }
         }
         let ftsQuery = FTSQuery.sanitize(trimmed)
+        let starredPredicate = starredOnly ? "WHERE r.is_starred = 1" : ""
         return try await database.writer.read { db in
             // 用 CTE 把 "repos_fts 命中" 与 "notes_fts 命中" 摊平到同一关系
             // (repo_id, score)；外层按 repo_id 聚合取 MIN(score) = 最相关的来源分数。
@@ -509,8 +526,8 @@ struct GRDBRepoRepository {
                     FROM hits
                     GROUP BY repo_id
                 ) m ON r.id = m.repo_id
-                WHERE r.is_starred = 1
-                ORDER BY m.best_score ASC, r.starred_at DESC
+                \(starredPredicate)
+                ORDER BY m.best_score ASC, r.starred_at DESC, r.id DESC
             """, arguments: [ftsQuery, ftsQuery])
         }
     }
