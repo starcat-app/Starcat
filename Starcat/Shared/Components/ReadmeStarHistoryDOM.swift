@@ -64,6 +64,43 @@ enum ReadmeStarHistoryDOM {
         background: var(--history-panel);
         box-shadow: 0 8px 28px var(--history-shadow);
     }
+    /* 骨架沿用正式卡片的外框和响应式高度，替换为真实内容时不会突然改变滚动范围。 */
+    .starcat-star-history-skeleton { overflow: hidden; }
+    .starcat-star-history-skeleton-block {
+        display: block;
+        border-radius: 9px;
+        background: var(--history-chip);
+        animation: starcat-star-history-skeleton-pulse 1.35s ease-in-out infinite;
+    }
+    .starcat-star-history-skeleton-header {
+        display: grid;
+        grid-template-columns: 76px minmax(0, 1fr) 112px;
+        align-items: start;
+        gap: 18px;
+    }
+    .starcat-star-history-skeleton-avatar { width: 76px; height: 76px; border-radius: 18px; }
+    .starcat-star-history-skeleton-copy { min-width: 0; padding-top: 2px; }
+    .starcat-star-history-skeleton-copy .starcat-star-history-skeleton-block + .starcat-star-history-skeleton-block { margin-top: 9px; }
+    .starcat-star-history-skeleton-kicker { width: min(180px, 48%); height: 14px; }
+    .starcat-star-history-skeleton-title { width: min(320px, 76%); height: 24px; }
+    .starcat-star-history-skeleton-description { width: min(520px, 94%); height: 13px; }
+    .starcat-star-history-skeleton-tag { width: min(210px, 42%); height: 22px; border-radius: 999px; }
+    .starcat-star-history-skeleton-total { width: 112px; height: 54px; justify-self: end; }
+    .starcat-star-history-skeleton-chart { height: 310px; margin-top: 14px; border-radius: 12px; }
+    .starcat-star-history-skeleton-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 18px;
+    }
+    .starcat-star-history-skeleton-metrics .starcat-star-history-skeleton-block { min-height: 56px; border-radius: 13px; }
+    .starcat-star-history-skeleton-journey { height: 76px; margin-top: 20px; border-radius: 12px; }
+    .starcat-star-history-skeleton-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 20px; }
+    .starcat-star-history-skeleton-footer .starcat-star-history-skeleton-block { width: 128px; height: 12px; }
+    @keyframes starcat-star-history-skeleton-pulse {
+        0%, 100% { opacity: .48; }
+        50% { opacity: .86; }
+    }
     .starcat-star-history-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
     .starcat-star-history-repository { display: flex; flex: 1; min-width: 0; align-items: flex-start; gap: 18px; }
     .starcat-star-history-avatar {
@@ -196,6 +233,12 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-metric-icon .starcat-star-history-icon { width: 20px; height: 20px; }
         .starcat-star-history-metric-copy strong { font-size: 1.15em; }
         .starcat-star-history-chart { height: 280px; }
+        .starcat-star-history-skeleton-header { grid-template-columns: 64px minmax(0, 1fr) 96px; gap: 16px; }
+        .starcat-star-history-skeleton-avatar { width: 64px; height: 64px; }
+        .starcat-star-history-skeleton-total { width: 96px; height: 48px; }
+        .starcat-star-history-skeleton-chart { height: 280px; }
+        .starcat-star-history-skeleton-metrics { gap: 8px; }
+        .starcat-star-history-skeleton-metrics .starcat-star-history-skeleton-block { min-height: 52px; }
     }
     /* 窄栏仍保留四列和语义图标；缩小底座、间距与行高，避免隐藏图标后留下空卡片。 */
     @container star-history (max-width: 639px) {
@@ -205,6 +248,8 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-metric-icon .starcat-star-history-icon { width: 18px; height: 18px; }
         .starcat-star-history-metric-copy strong { line-height: 1.2; }
         .starcat-star-history-metric-copy > span { line-height: 1.3; }
+        .starcat-star-history-skeleton-metrics { gap: 6px; }
+        .starcat-star-history-skeleton-metrics .starcat-star-history-skeleton-block { min-height: 44px; }
     }
     @container star-history (max-width: 519px) {
         .starcat-star-history-card { padding: 16px 12px; }
@@ -215,6 +260,9 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-card h3 { font-size: 1.35em; }
         .starcat-star-history-chart { height: 250px; margin-top: 2px; }
         .starcat-star-history-tooltip { max-width: min(220px, calc(100% - 8px)); padding: 6px 8px; }
+        .starcat-star-history-skeleton-header { grid-template-columns: 64px minmax(0, 1fr); }
+        .starcat-star-history-skeleton-total { grid-column: 2; width: min(120px, 50%); justify-self: start; }
+        .starcat-star-history-skeleton-chart { height: 250px; margin-top: 2px; }
     }
     @container star-history (max-width: 339px) {
         .starcat-star-history-card { padding-inline: 8px; }
@@ -223,6 +271,9 @@ enum ReadmeStarHistoryDOM {
         .starcat-star-history-metric-icon { width: 20px; height: 20px; flex-basis: 20px; border-radius: 6px; }
         .starcat-star-history-metric-icon .starcat-star-history-icon { width: 14px; height: 14px; }
         .starcat-star-history-current { padding-left: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .starcat-star-history-skeleton-block { animation: none; opacity: .68; }
     }
     """
 
@@ -276,7 +327,7 @@ enum ReadmeStarHistoryDOM {
         var chart = host.querySelector('.starcat-star-history-chart');
         var points = chart ? JSON.parse(chart.dataset.points) : [];
         var rendered = chart ? JSON.parse(chart.dataset.rendered) : [];
-        // 0 Star 卡片仍有时间线和标签，不能因为没有曲线而跳过响应式布局。
+        // 加载骨架没有图表数据；仍保留通用 metadata observer 清理协议，方便原地替换。
         if (!chart || points.length < 2 || rendered.length < 2) {
             var metadataObserver = new ResizeObserver(layoutMetadata);
             if (tags) { metadataObserver.observe(tags); }

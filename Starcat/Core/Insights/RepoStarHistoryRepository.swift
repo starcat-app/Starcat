@@ -190,6 +190,8 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         repo: Repo,
         range: StarHistoryRange
     ) async throws -> StarHistorySnapshot {
+        // 当前总数为零时产品不展示历史；连派生点和覆盖缓存也不读，旧缓存保留到未来重新获 Star。
+        guard repo.starsCount > 0 else { return Self.zeroStarSnapshot(range: range) }
         let cachedPoints = try await points(repoId: repo.id)
         return await snapshot(
             repo: repo,
@@ -226,6 +228,8 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         range: StarHistoryRange,
         forceRefresh: Bool
     ) async throws -> StarHistorySnapshot {
+        // 放在 single-flight 之前，确保零 Star 调用既不创建请求，也不等待同仓旧任务后误显历史。
+        guard repo.starsCount > 0 else { return Self.zeroStarSnapshot(range: range) }
         if let task = refreshTasks[repo.id] {
             let shared = try await task.value
             guard shared.range != range else { return shared }
@@ -693,6 +697,19 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                 repositoryCreatedAt: repo.createdAt.flatMap(ISO8601DateFormatter.githubDate(from:))
             ),
             coverage: matchingCoverage
+        )
+    }
+
+    /// 零 Star 只返回进程内空读模型，不删除官方缓存；仓库重新获 Star 后仍可按 TTL 复用。
+    private static func zeroStarSnapshot(range: StarHistoryRange) -> StarHistorySnapshot {
+        StarHistorySnapshot(
+            range: range,
+            points: [],
+            remoteState: .unavailable,
+            coverageStart: nil,
+            updatedAt: nil,
+            statistics: .empty,
+            coverage: nil
         )
     }
 

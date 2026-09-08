@@ -206,6 +206,51 @@ struct RepoStarHistoryRepositoryTests {
         #expect(await api.requests().isEmpty)
     }
 
+    @Test("零 Star 仓库忽略旧缓存且不调用官方历史 API")
+    func zeroStarRepositoryNeverReadsOrRefreshesHistory() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 7, owner: "octo", name: "zero-star")
+        let fetchedAt = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let api = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-07-26", days: [1, 0, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: "\"zero-star-v1\""
+            )
+        ])
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: api,
+            now: { fetchedAt }
+        )
+        try await repository.replaceOfficialPoints(
+            repoId: 7,
+            points: [
+                StarHistoryPoint(
+                    date: try #require(StarHistoryDateCodec.date(from: "2026-07-26")),
+                    count: 1,
+                    source: .githubHistory,
+                    precision: .reconstructed,
+                    fetchedAt: fetchedAt
+                )
+            ]
+        )
+        let repo = fixtureRepo(id: 7, name: "zero-star", stars: 0)
+
+        let cached = try await repository.cached(repo: repo, range: .all)
+        let refreshed = try await repository.refresh(repo: repo, range: .all, forceRefresh: true)
+
+        #expect(cached.points.isEmpty)
+        #expect(refreshed.points.isEmpty)
+        #expect(cached.remoteState == .unavailable)
+        #expect(refreshed.remoteState == .unavailable)
+        #expect(await api.requests().isEmpty)
+        // 缓存不删除；未来重新获 Star 时仍可用于 SWR 首帧。
+        #expect(try await repository.points(repoId: repo.id).count == 1)
+    }
+
     @Test("个人项目应使用 OAuth 分页读取官方历史")
     func ownerProjectUsesOAuthHistory() async throws {
         let database = try InMemoryDatabaseManager()

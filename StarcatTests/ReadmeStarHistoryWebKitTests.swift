@@ -14,6 +14,47 @@ import WebKit
 @MainActor
 @Suite("README Star History WebKit", .serialized)
 struct ReadmeStarHistoryWebKitTests {
+    @Test("加载骨架保持正式卡片宽度与响应式图表高度", arguments: [false, true])
+    func loadingSkeletonMatchesResponsiveCard(dark: Bool) async throws {
+        for width in [1_080, 420] {
+            let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 800))
+            let window = NSWindow(contentRect: webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = webView
+            window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+            window.orderFront(nil)
+            defer { window.close() }
+
+            let html = ReadmeWebView.assembleDocument(
+                fragment: ReadmeStarHistoryHTMLRenderer.renderLoading(),
+                isDark: dark
+            )
+            webView.loadHTMLString(html, baseURL: nil)
+            try await waitForSkeleton(webView)
+
+            let result = try await webView.evaluateJavaScript("""
+            (function() {
+                var section = document.querySelector('.starcat-star-history-loading');
+                var chart = document.querySelector('.starcat-star-history-skeleton-chart');
+                var blocks = document.querySelectorAll('.starcat-star-history-skeleton-metrics > span');
+                return {
+                    overflow: document.documentElement.scrollWidth > window.innerWidth,
+                    busy: section.getAttribute('aria-busy'),
+                    metricCount: blocks.length,
+                    chartHeight: Math.round(chart.getBoundingClientRect().height),
+                    animationName: getComputedStyle(chart).animationName
+                };
+            })();
+            """)
+            let info = try #require(result as? [String: Any])
+            #expect(info["overflow"] as? Bool == false)
+            #expect(info["busy"] as? String == "true")
+            #expect(info["metricCount"] as? Int == 4)
+            #expect(info["chartHeight"] as? Int == (width == 1_080 ? 310 : 250))
+            #expect(info["animationName"] as? String == "starcat-star-history-skeleton-pulse")
+        }
+    }
+
     @Test("明暗主题与宽窄卡片布局", arguments: [false, true])
     func themesAndResponsiveLayout(dark: Bool) async throws {
         for width in [1_080, 780, 660, 420, 360] {
@@ -200,6 +241,22 @@ struct ReadmeStarHistoryWebKitTests {
             try await Task.sleep(for: .milliseconds(50))
         }
         throw NSError(domain: "ReadmeStarHistoryWebKitTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Chart script did not finish"])
+    }
+
+    private func waitForSkeleton(_ webView: WKWebView) async throws {
+        for _ in 0..<100 {
+            if (try? await webView.evaluateJavaScript(
+                "document.readyState === 'complete' && document.querySelector('.starcat-star-history-skeleton') !== null"
+            )) as? Bool == true {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        throw NSError(
+            domain: "ReadmeStarHistoryWebKitTests",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "Loading skeleton did not render"]
+        )
     }
 
     /// 固定长历史和真实量级，覆盖普通平台、后期快速增长和中文/英文标签宽度。

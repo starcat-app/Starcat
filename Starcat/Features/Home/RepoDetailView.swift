@@ -333,7 +333,7 @@ struct ReadmeStateView: View {
     let translationControl: ReadmeTranslationControl?
     /// Manage README 可选的 Star History DOM 状态；其它调用方保持空状态。
     let starHistoryRenderState: ReadmeStarHistoryRenderState
-    /// WebView 接近文档底部时的按需加载入口。
+    /// WebView 接近文档底部时的加载兜底；Manage 场景通常已在首帧预加载。
     let onApproachingBottom: () -> Void
     let onRetry: @MainActor @Sendable () -> Void
     /// 未登录用户点击"登录"按钮时的回调

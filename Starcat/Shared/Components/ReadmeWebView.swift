@@ -1538,7 +1538,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 if (payload["isNearBottom"] as? NSNumber)?.boolValue == true,
                    !didReportApproachingBottom {
                     didReportApproachingBottom = true
-                    // 只在文档端确认接近底部后才启动数据层；短 README 也要等 document-end。
+                    // 首帧预加载未启动或被取消时仍可兜底；Coordinator 每份文档只上报一次。
                     Task { @MainActor in
                         self.onApproachingBottom()
                     }

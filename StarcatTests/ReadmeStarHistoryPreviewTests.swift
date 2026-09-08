@@ -12,7 +12,7 @@ import Testing
 @MainActor
 @Suite("README Star History")
 struct ReadmeStarHistoryPreviewTests {
-    @Test("接近底部后先显示 SQLite 缓存，再等待后台刷新")
+    @Test("首次进入 README 后先显示 SQLite 缓存，再等待后台刷新")
     func cachedHistoryAppearsBeforeRefreshCompletes() async {
         let gate = ReadmeStarHistoryLoadGate()
         let cached = Self.snapshot(state: .cached)
@@ -41,6 +41,111 @@ struct ReadmeStarHistoryPreviewTests {
 
         await gate.release()
         await load.value
+    }
+
+    @Test("无缓存时先显示骨架，官方历史返回后原地替换")
+    func loadingSkeletonIsReplacedByOfficialHistory() async {
+        let gate = ReadmeStarHistoryLoadGate()
+        let repository = ReadmeStarHistoryRepositoryStub(
+            cachedSnapshot: Self.snapshot(points: [], state: .cached),
+            refreshSnapshot: Self.snapshot(state: .fresh),
+            refreshGate: gate
+        )
+        let viewModel = ReadmeStarHistoryViewModel(
+            repository: repository,
+            projectVisibilityProvider: { _ in .public }
+        )
+
+        let load = Task {
+            await viewModel.loadIfNeeded(
+                repo: Self.repo(),
+                databaseScopeRevision: 1,
+                locale: Locale(identifier: "en")
+            )
+        }
+        await gate.waitUntilBlocked()
+
+        #expect(viewModel.renderState.html?.contains("starcat-star-history-skeleton") == true)
+        #expect(viewModel.renderState.html?.contains(#"aria-busy="true""#) == true)
+
+        await gate.release()
+        await load.value
+
+        #expect(viewModel.renderState.html?.contains("starcat-star-history-line") == true)
+        #expect(viewModel.renderState.html?.contains("starcat-star-history-skeleton") == false)
+    }
+
+    @Test("无缓存且远端无可用历史时移除骨架")
+    func terminalEmptyHistoryRemovesLoadingSkeleton() async {
+        let empty = Self.snapshot(points: [], state: .unavailable)
+        let repository = ReadmeStarHistoryRepositoryStub(
+            cachedSnapshot: empty,
+            refreshSnapshot: empty
+        )
+        let viewModel = ReadmeStarHistoryViewModel(
+            repository: repository,
+            projectVisibilityProvider: { _ in .public }
+        )
+
+        await viewModel.loadIfNeeded(
+            repo: Self.repo(),
+            databaseScopeRevision: 1,
+            locale: Locale(identifier: "en")
+        )
+
+        #expect(viewModel.renderState.html == nil)
+    }
+
+    @Test("首帧预加载与底部兜底共享同一次加载")
+    func repeatedLoadForSameIdentityDoesNotDuplicateRequests() async {
+        let gate = ReadmeStarHistoryLoadGate()
+        let repository = ReadmeStarHistoryRepositoryStub(
+            cachedSnapshot: Self.snapshot(points: [], state: .cached),
+            refreshSnapshot: Self.snapshot(state: .fresh),
+            refreshGate: gate
+        )
+        let viewModel = ReadmeStarHistoryViewModel(
+            repository: repository,
+            projectVisibilityProvider: { _ in .public }
+        )
+        let repo = Self.repo()
+        let locale = Locale(identifier: "en")
+
+        let preload = Task {
+            await viewModel.loadIfNeeded(repo: repo, databaseScopeRevision: 1, locale: locale)
+        }
+        await gate.waitUntilBlocked()
+        await viewModel.loadIfNeeded(repo: repo, databaseScopeRevision: 1, locale: locale)
+        await gate.release()
+        await preload.value
+        await viewModel.loadIfNeeded(repo: repo, databaseScopeRevision: 1, locale: locale)
+
+        #expect(await repository.cachedRanges() == [.all])
+        #expect(await repository.refreshRanges() == [.all])
+    }
+
+    @Test("零 Star 仓库不读取缓存、不请求远端且不展示卡片")
+    func zeroStarRepositorySkipsHistoryEntirely() async {
+        let repository = ReadmeStarHistoryRepositoryStub(
+            cachedSnapshot: Self.snapshot(state: .cached),
+            refreshSnapshot: Self.snapshot(state: .fresh)
+        )
+        let viewModel = ReadmeStarHistoryViewModel(
+            repository: repository,
+            projectVisibilityProvider: { _ in .public }
+        )
+        var repo = Self.repo()
+        repo.starsCount = 0
+
+        await viewModel.loadIfNeeded(
+            repo: repo,
+            databaseScopeRevision: 1,
+            locale: Locale(identifier: "en")
+        )
+
+        #expect(viewModel.renderState.html == nil)
+        #expect(await repository.cachedRanges().isEmpty)
+        #expect(await repository.refreshRanges().isEmpty)
     }
 
     @Test("Internal 仓库不读取历史缓存也不请求远端")
@@ -141,6 +246,13 @@ struct ReadmeStarHistoryPreviewTests {
         #expect(!ReadmeStarHistoryVisibilityPolicy.shouldDisplay(
             repo: repo,
             projectVisibility: .private,
+            snapshot: Self.snapshot(state: .cached)
+        ))
+        var zeroStarRepo = repo
+        zeroStarRepo.starsCount = 0
+        #expect(!ReadmeStarHistoryVisibilityPolicy.shouldDisplay(
+            repo: zeroStarRepo,
+            projectVisibility: .public,
             snapshot: Self.snapshot(state: .cached)
         ))
     }

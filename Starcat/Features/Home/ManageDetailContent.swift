@@ -97,6 +97,17 @@ private struct RepositoryInsightsLoadIdentity: Hashable {
     let databaseScopeRevision: UInt64
 }
 
+/// README Star History 预加载身份。
+///
+/// 完整 Repo 参与身份可覆盖同仓星标数、描述和 Topics 更新；手动刷新 revision 则确保
+/// README 返回 304、文档指纹未变化时，历史摘要仍能重新走一次 cache-first 校验。
+private struct ReadmeStarHistoryPreloadIdentity: Hashable {
+    let repo: Repo
+    let databaseScopeRevision: UInt64
+    let localeIdentifier: String
+    let manualRefreshRevision: UInt64
+}
+
 /// Manage 场景详情页的 body 内容（README + 翻译入口）。
 struct ManageDetailContent: View {
 
@@ -120,6 +131,7 @@ struct ManageDetailContent: View {
     @State private var starHistoryViewModel: StarHistoryViewModel?
     @State private var readmeStarHistoryViewModel: ReadmeStarHistoryViewModel?
     @State private var readmeStarHistoryTask: Task<Void, Never>?
+    @State private var readmeStarHistoryManualRefreshRevision: UInt64 = 0
     @State private var loadedInsightsDatabaseScopeRevision: UInt64?
 
     var body: some View {
@@ -161,17 +173,6 @@ struct ManageDetailContent: View {
                 contentMode = .readme
             }
             onScrollReport(RepoDetailScrollReport(offsetY: 0, scrollOverflow: 0))
-        }
-        // 同仓同步会更新总数、描述和 Topics；已有摘要只原地刷新，不提前触发首屏加载。
-        .onChange(of: repo) { oldRepo, newRepo in
-            if oldRepo.id == newRepo.id, readmeStarHistoryViewModel != nil, contentMode == .readme {
-                loadReadmeStarHistoryIfNeeded()
-            }
-        }
-        .onChange(of: locale.identifier) { _, _ in
-            if readmeStarHistoryViewModel != nil, contentMode == .readme {
-                loadReadmeStarHistoryIfNeeded()
-            }
         }
         .onChange(of: dependencies.databaseScopeRevision) { _, _ in
             // 同一个 repo id 在账号切换后属于另一份数据库，旧摘要不能跨作用域复用。
@@ -231,8 +232,11 @@ struct ManageDetailContent: View {
                     translationVM: translationVM,
                     settings: settings
                 ),
-                starHistoryRenderState: readmeStarHistoryViewModel?.renderState ?? .empty,
-                onApproachingBottom: loadReadmeStarHistoryIfNeeded
+                // 同仓同步把 Star 数降为零时，本帧就撤下旧卡；异步任务随后清理状态机。
+                starHistoryRenderState: repo.starsCount > 0
+                    ? (readmeStarHistoryViewModel?.renderState ?? .empty)
+                    : .empty,
+                onApproachingBottom: startReadmeStarHistoryFallbackIfNeeded
             ) {
                 refreshReadmeAndRepo()
             } onLogin: {
@@ -240,6 +244,11 @@ struct ManageDetailContent: View {
                 authSession.requestLoginSheet()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task(id: readmeStarHistoryPreloadIdentity) {
+                // 与 README 自身并行预加载。SwiftUI 会在退出 README、切仓或身份变化时
+                // 自动取消任务；Repository 仍可完成已共享的请求并把结果写入 SQLite。
+                await preloadReadmeStarHistoryIfNeeded()
+            }
         } else {
             insightsBody
         }
@@ -303,12 +312,26 @@ struct ManageDetailContent: View {
     private func refreshReadmeAndRepo() {
         // 用户主动刷新 README 时让摘要重新走 cache-first + 后台校验；旧 HTML 会随文档重载清掉。
         cancelReadmeStarHistory()
+        readmeStarHistoryManualRefreshRevision &+= 1
         readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
         Task { await viewModel.reloadItems(forceRefresh: true) }
     }
 
-    /// README 首屏与历史服务彻底解耦：只有 WebView document-end 判定接近底部后才创建状态机。
-    private func loadReadmeStarHistoryIfNeeded() {
+    private var readmeStarHistoryPreloadIdentity: ReadmeStarHistoryPreloadIdentity {
+        ReadmeStarHistoryPreloadIdentity(
+            repo: repo,
+            databaseScopeRevision: dependencies.databaseScopeRevision,
+            localeIdentifier: locale.identifier,
+            manualRefreshRevision: readmeStarHistoryManualRefreshRevision
+        )
+    }
+
+    /// README 模式首帧即启动 cache-first 加载；零 Star 在创建 ViewModel 前短路。
+    private func preloadReadmeStarHistoryIfNeeded() async {
+        guard repo.starsCount > 0 else {
+            readmeStarHistoryViewModel?.cancel()
+            return
+        }
         let historyViewModel: ReadmeStarHistoryViewModel
         if let readmeStarHistoryViewModel {
             historyViewModel = readmeStarHistoryViewModel
@@ -323,14 +346,19 @@ struct ManageDetailContent: View {
             historyViewModel = created
         }
 
-        let databaseScopeRevision = dependencies.databaseScopeRevision
+        await historyViewModel.loadIfNeeded(
+            repo: repo,
+            databaseScopeRevision: dependencies.databaseScopeRevision,
+            locale: locale
+        )
+    }
+
+    /// document-end 的接近底部信号仅作兜底；ViewModel 的身份去重保证不会产生第二次请求。
+    private func startReadmeStarHistoryFallbackIfNeeded() {
+        guard repo.starsCount > 0 else { return }
         readmeStarHistoryTask?.cancel()
         readmeStarHistoryTask = Task {
-            await historyViewModel.loadIfNeeded(
-                repo: repo,
-                databaseScopeRevision: databaseScopeRevision,
-                locale: locale
-            )
+            await preloadReadmeStarHistoryIfNeeded()
         }
     }
 

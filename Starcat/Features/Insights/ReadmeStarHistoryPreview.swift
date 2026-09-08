@@ -5,9 +5,10 @@
 //  README 末尾 Star History 摘要的数据编排与安全 HTML/SVG 渲染。
 //
 //  关键约束：
-//  - README 首屏不加载历史；只有 WebView 上报接近底部后才读取缓存并刷新。
-//  - 先呈现 SQLite 中可用的 GH Archive 缓存，再复用 Repository 的 ETag / 进程内
+//  - 进入 README 即异步预加载；WebView 的接近底部信号仅作兜底，不能重复发请求。
+//  - 先呈现 SQLite 中可用的 GitHub 官方缓存，再复用 Repository 的 ETag / 进程内
 //    去重刷新；远端失败不会清空已经显示的缓存曲线。
+//  - 无可用缓存时显示同尺寸骨架；零 Star、私有或 Internal 仓库不读取历史、不展示占位。
 //  - 只输出固定模板和纯文本转义后的内容，远端字段不能成为标签、属性或脚本。
 //  - 全历史在 Snapshot 更新时只建模一次，最多保留 90 个绘制点；滚动期间不做 O(n) 计算。
 //  - 头像先复用 Kingfisher 本地缓存，作为图片数据随卡片交给 WebView；缺图下载与历史刷新并行。
@@ -25,7 +26,7 @@ struct ReadmeStarHistoryRenderState: Equatable, Sendable {
     static let empty = ReadmeStarHistoryRenderState(revision: "empty", html: nil)
 }
 
-/// README 只展示公开仓库的 GH Archive 历史；零 Star 仓库可单独展示创建/当前时间线。
+/// README 只展示至少两个 GitHub 官方历史点；零 Star 仓库不展示摘要。
 enum ReadmeStarHistoryVisibilityPolicy {
     static func shouldDisplay(
         repo: Repo,
@@ -39,10 +40,9 @@ enum ReadmeStarHistoryVisibilityPolicy {
         else {
             return false
         }
-        // 零 Star 仓库也有 Created / Current 两个真实状态；没有历史时仅展示 Journey，不补造曲线。
-        return repo.starsCount == 0 || (snapshot.points.count >= 2 && snapshot.points.contains {
+        return repo.starsCount > 0 && snapshot.points.count >= 2 && snapshot.points.contains {
             $0.source == .githubHistory
-        })
+        }
     }
 }
 
@@ -71,8 +71,10 @@ final class ReadmeStarHistoryViewModel {
     private var generation: UInt64 = 0
     private var activeIdentity: LoadIdentity?
     private var loadingIdentity: LoadIdentity?
+    private var completedIdentity: LoadIdentity?
     private var avatarDataURI: String?
     private var latestSnapshot: StarHistorySnapshot?
+    private var isShowingLoading = false
 
     private(set) var renderState: ReadmeStarHistoryRenderState = .empty
 
@@ -103,6 +105,7 @@ final class ReadmeStarHistoryViewModel {
             generation &+= 1
             activeIdentity = identity
             loadingIdentity = nil
+            completedIdentity = nil
             avatarDataURI = nil
             latestSnapshot = nil
             // 同仓元数据或语言更新时保留旧卡片，避免 SQLite await 期间先移除 DOM 导致滚动跳动。
@@ -111,26 +114,48 @@ final class ReadmeStarHistoryViewModel {
                     revision: "\(identity.revisionPrefix)|empty",
                     html: nil
                 )
+                isShowingLoading = false
             }
         }
-        guard loadingIdentity != identity else { return }
+        // README 首帧预加载与 WebView 底部兜底可能同时到达；同一身份无论进行中还是
+        // 已完成都只执行一次。手动刷新会由调用方重建 ViewModel 状态和 task identity。
+        guard loadingIdentity != identity, completedIdentity != identity else { return }
 
         generation &+= 1
         let requestedGeneration = generation
         loadingIdentity = identity
         defer {
-            if owns(requestedGeneration, identity: identity) {
+            if generation == requestedGeneration, activeIdentity == identity {
                 loadingIdentity = nil
+                if Task.isCancelled {
+                    // SwiftUI `.task` 离场取消时不能把骨架遗留在仍存活的 WebView；已显示缓存卡则保留。
+                    hideLoadingIfNeeded(identity: identity)
+                } else {
+                    completedIdentity = identity
+                }
             }
         }
 
-        // `Repo.isPrivate` 已足以拒绝公共历史，先短路可省掉一次项目表读取。
-        guard owns(requestedGeneration, identity: identity), !repo.isPrivate else { return }
+        // 零 Star 没有需要呈现的曲线；在项目关系、头像、SQLite 和网络之前短路。
+        guard owns(requestedGeneration, identity: identity),
+              repo.starsCount > 0,
+              !repo.isPrivate
+        else {
+            clearRenderState(identity: identity)
+            return
+        }
         let visibility = await projectVisibilityProvider(repo.id)
         guard owns(requestedGeneration, identity: identity),
               visibility != .private,
               visibility != .internal
-        else { return }
+        else {
+            clearRenderState(identity: identity)
+            return
+        }
+
+        // WebView 可能已经显示一个很短的 README；先挂固定骨架，缓存命中后会原地替换。
+        // 同仓元数据更新若已有正式卡片则保留旧卡，不退回 loading，避免滚动位置跳动。
+        showLoadingIfNeeded(identity: identity)
 
         // WebKit 不读取 Kingfisher 缓存。先复用列表/详情常用尺寸，再生成带本地图片的首帧 HTML。
         if avatarDataURI == nil {
@@ -163,13 +188,20 @@ final class ReadmeStarHistoryViewModel {
         // Repository 内部继续处理 ETag、304、同仓请求合并与本进程已加载短路。
         // README 摘要不轮询 202，避免用户只是阅读文档时产生持续后台请求。
         guard owns(requestedGeneration, identity: identity) else { return }
-        guard let refreshed = try? await repository.refresh(
-            repo: repo,
-            range: .all,
-            forceRefresh: false
-        ), owns(requestedGeneration, identity: identity) else { return }
-
-        applyIfVisible(refreshed, repo: repo, visibility: visibility, identity: identity, locale: locale)
+        do {
+            let refreshed = try await repository.refresh(
+                repo: repo,
+                range: .all,
+                forceRefresh: false
+            )
+            guard owns(requestedGeneration, identity: identity) else { return }
+            applyIfVisible(refreshed, repo: repo, visibility: visibility, identity: identity, locale: locale)
+            hideLoadingIfNeeded(identity: identity)
+        } catch {
+            guard owns(requestedGeneration, identity: identity) else { return }
+            // README 底部属于辅助信息；无缓存且远端失败时静默移除骨架，不留下永久 loading。
+            hideLoadingIfNeeded(identity: identity)
+        }
     }
 
     /// 只有本地缺图才下载；加载器写回同一份 Kingfisher 缓存，后续浏览可直接复用。
@@ -198,8 +230,10 @@ final class ReadmeStarHistoryViewModel {
         generation &+= 1
         activeIdentity = nil
         loadingIdentity = nil
+        completedIdentity = nil
         avatarDataURI = nil
         latestSnapshot = nil
+        isShowingLoading = false
         renderState = .empty
     }
 
@@ -217,6 +251,7 @@ final class ReadmeStarHistoryViewModel {
         ) else { return }
 
         latestSnapshot = snapshot
+        isShowingLoading = false
         let model = StarHistoryChartRenderModel(
             points: snapshot.points,
             range: .all,
@@ -235,6 +270,29 @@ final class ReadmeStarHistoryViewModel {
         renderState = ReadmeStarHistoryRenderState(
             revision: "\(identity.revisionPrefix)|\(UUID().uuidString)",
             html: html
+        )
+    }
+
+    private func showLoadingIfNeeded(identity: LoadIdentity) {
+        guard renderState.html == nil else { return }
+        isShowingLoading = true
+        renderState = ReadmeStarHistoryRenderState(
+            revision: "\(identity.revisionPrefix)|loading",
+            html: ReadmeStarHistoryHTMLRenderer.renderLoading()
+        )
+    }
+
+    private func hideLoadingIfNeeded(identity: LoadIdentity) {
+        guard isShowingLoading else { return }
+        clearRenderState(identity: identity)
+    }
+
+    private func clearRenderState(identity: LoadIdentity) {
+        latestSnapshot = nil
+        isShowingLoading = false
+        renderState = ReadmeStarHistoryRenderState(
+            revision: "\(identity.revisionPrefix)|empty",
+            html: nil
         )
     }
 

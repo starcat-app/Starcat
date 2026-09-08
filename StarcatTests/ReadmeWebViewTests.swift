@@ -221,12 +221,15 @@ struct ReadmeWebViewTests {
         #expect(html.contains(".starcat-star-history-avatar img"))
         #expect(html.contains(".starcat-star-history-card-kicker"))
         #expect(html.contains(".starcat-star-history-current-star"))
+        #expect(html.contains(".starcat-star-history-skeleton-block"))
+        #expect(html.contains("starcat-star-history-skeleton-pulse"))
+        #expect(html.contains("@media (prefers-reduced-motion: reduce)"))
         #expect(html.contains("--history-brand: #9a6b00;"))
         #expect(html.contains("--history-brand: #ffd34d;"))
     }
 
-    @Test("Star History 只在接近底部时触发并通过受控函数局部替换")
-    func starHistoryBridge_isLazyAndIncremental() {
+    @Test("Star History 底部兜底通过受控函数局部替换")
+    func starHistoryBridge_isFallbackAndIncremental() {
         let script = ReadmeWebView.readmeEnhancementScript
 
         #expect(script.contains("Math.max(0, overflow - y) <="))
