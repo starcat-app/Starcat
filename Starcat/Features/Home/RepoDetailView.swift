@@ -579,7 +579,11 @@ struct ReadmeStateView: View {
             return ReadmeWindowMarkdownContext(
                 owner: repo.owner,
                 repo: repo.name,
-                readmeAPI: dependencies.readmeAPI
+                // 私有仓库内的语言版 README / CONTRIBUTING 等文件必须继续使用
+                // GitHub App Contents 权限，不能在独立窗口退回主 OAuth client。
+                readmeAPI: repo.isPrivate
+                    ? dependencies.projectReadmeAPI
+                    : dependencies.readmeAPI
             )
         }
         if case .trending(let owner, let repo) = contentScope {

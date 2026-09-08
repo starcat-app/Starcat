@@ -21,6 +21,7 @@ struct ProjectAccessSessionTests {
         var credential: ProjectAccessCredential
         var refreshed: ProjectAccessCredential
         var refreshError: ProjectAccessOAuthError?
+        var refreshDelayNanoseconds: UInt64 = 0
         var revokeError: ProjectAccessOAuthError?
         private(set) var refreshInputs: [String] = []
         private(set) var revokedTokens: [String] = []
@@ -43,6 +44,9 @@ struct ProjectAccessSessionTests {
         }
         func refreshCredential(using refreshToken: String) async throws -> ProjectAccessCredential {
             refreshInputs.append(refreshToken)
+            if refreshDelayNanoseconds > 0 {
+                try await Task.sleep(nanoseconds: refreshDelayNanoseconds)
+            }
             if let refreshError { throw refreshError }
             return refreshed
         }
@@ -534,6 +538,55 @@ struct ProjectAccessSessionTests {
         #expect(try keychain.loadProjectAccessCredential()?.contains("refresh-new") == true)
     }
 
+    @Test("并发私有请求共享一次 refresh token 轮换")
+    @MainActor
+    func concurrentRequestsShareCredentialRefresh() async throws {
+        let keychain = InMemoryKeychain()
+        let old = credential(token: "old", accessOffset: -10, refreshToken: "refresh-old")
+        let new = credential(token: "new", accessOffset: 3_600, refreshToken: "refresh-new")
+        try storedCredential(keychain, old)
+        let oauth = MockOAuth(credential: old, refreshed: new)
+        // 制造明确的 suspension window，复现 MainActor 重入后重复消费 refresh token 的旧问题。
+        oauth.refreshDelayNanoseconds = 50_000_000
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        async let firstToken = session.validAccessToken()
+        async let secondToken = session.validAccessToken()
+        let (first, second) = try await (firstToken, secondToken)
+        let tokens = [first, second]
+
+        #expect(tokens == ["new", "new"])
+        #expect(oauth.refreshInputs == ["refresh-old"])
+        #expect(try keychain.loadProjectAccessCredential()?.contains("refresh-new") == true)
+    }
+
+    @Test("服务端提前返回 401 时强制轮换尚未到期的 access token")
+    @MainActor
+    func unauthorizedResponseForcesCredentialRefresh() async throws {
+        let keychain = InMemoryKeychain()
+        let old = credential(token: "old", accessOffset: 3_600, refreshToken: "refresh-old")
+        let new = credential(token: "new", accessOffset: 7_200, refreshToken: "refresh-new")
+        try storedCredential(keychain, old)
+        let oauth = MockOAuth(credential: old, refreshed: new)
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+
+        let token = try await session.refreshAccessTokenAfterUnauthorized()
+
+        #expect(token == "new")
+        #expect(oauth.refreshInputs == ["refresh-old"])
+        #expect(session.state == .connected(expiresAt: new.accessExpiresAt))
+    }
+
     @Test("refresh token 过期进入 expired，但 OAuth token 保留")
     @MainActor
     func expiredRefreshFallsBackWithoutLoggingOut() async throws {
@@ -604,6 +657,30 @@ struct ProjectAccessSessionTests {
         let oauthRoute = try await router.resolve()
         #expect(oauthRoute.authorizationSource == .oauth)
         #expect(oauthRoute.accessToken == "oauth-main")
+    }
+
+    @Test("已授权项目刷新失败时不降级成 public-only OAuth 同步")
+    @MainActor
+    func credentialRouterDoesNotHideProjectRefreshFailure() async throws {
+        let keychain = InMemoryKeychain()
+        try keychain.storeGithubToken("oauth-main")
+        let expired = credential(token: "old", accessOffset: -10, refreshToken: "refresh-old")
+        try storedCredential(keychain, expired)
+        let oauth = MockOAuth(credential: expired)
+        oauth.refreshError = .network
+        let session = ProjectAccessSession(
+            oauthService: oauth,
+            keychain: keychain,
+            isConfigured: true,
+            now: { self.now }
+        )
+        let router = ProjectCredentialRouter(projectAccessSession: session, keychain: keychain)
+
+        await #expect(throws: ProjectAccessOAuthError.network) {
+            try await router.resolve()
+        }
+        #expect(oauth.refreshInputs == ["refresh-old"])
+        #expect(try keychain.loadProjectAccessCredential() != nil)
     }
 
     @Test("断开连接先撤销远端 grant 再删除本机凭据")

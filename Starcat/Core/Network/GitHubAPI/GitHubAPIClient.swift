@@ -30,7 +30,16 @@ import Foundation
 /// - 测试环境：直接返回固定字符串或 nil
 /// - 未登录请求：返回 nil（如 Device Flow 起步阶段）
 protocol GitHubTokenProviding: Sendable {
+    /// `true` 表示该 client 只服务已授权资源；拿不到 token 时禁止匿名出站。
+    var requiresAuthentication: Bool { get }
     func currentToken() async -> String?
+    /// 服务端在本地到期时间之前返回 401 时，尝试轮换 token 供原请求重试一次。
+    func refreshedTokenAfterUnauthorized() async -> String?
+}
+
+extension GitHubTokenProviding {
+    var requiresAuthentication: Bool { false }
+    func refreshedTokenAfterUnauthorized() async -> String? { nil }
 }
 
 /// 默认实现：从 KeychainManager 同步读。
@@ -370,6 +379,72 @@ actor GitHubAPIClient {
         return request
     }
 
+    /// 注入当前 token 并执行请求；401 时允许支持轮换的 provider 刷新后重试一次。
+    ///
+    /// 私有项目 client 将 `requiresAuthentication` 设为 true，刷新失败时必须在本地停止，
+    /// 不能移除 Authorization 后匿名请求。GitHub 会把私有资源匿名访问伪装成 404，继续
+    /// 出站会让上层误删 README 缓存并展示“没有 README”。
+    private func executeRequest(
+        _ request: URLRequest,
+        transportContext: String
+    ) async throws -> (data: Data, response: URLResponse, request: URLRequest) {
+        var authorizedRequest = request
+        let currentToken = await tokenProvider.currentToken()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let currentToken, !currentToken.isEmpty {
+            authorizedRequest.setValue(
+                "Bearer \(currentToken)",
+                forHTTPHeaderField: "Authorization"
+            )
+        } else if tokenProvider.requiresAuthentication {
+            throw NetworkError.unauthorized
+        }
+
+        var (data, response) = try await send(
+            authorizedRequest,
+            transportContext: transportContext
+        )
+        guard let http = response as? HTTPURLResponse,
+              http.statusCode == 401,
+              let refreshedToken = await tokenProvider.refreshedTokenAfterUnauthorized()?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !refreshedToken.isEmpty
+        else {
+            return (data, response, authorizedRequest)
+        }
+
+        var retryRequest = request
+        retryRequest.setValue(
+            "Bearer \(refreshedToken)",
+            forHTTPHeaderField: "Authorization"
+        )
+        (data, response) = try await send(
+            retryRequest,
+            transportContext: transportContext
+        )
+        return (data, response, retryRequest)
+    }
+
+    /// URLSession 错误统一映射；认证重试只包网络执行，不重复业务解码或状态码处理。
+    private func send(
+        _ request: URLRequest,
+        transportContext: String
+    ) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch is CancellationError {
+            throw NetworkError.cancelled
+        } catch {
+            if (error as NSError).code == NSURLErrorCancelled {
+                throw NetworkError.cancelled
+            }
+            AppLog.network.error(
+                "Transport error [\(transportContext, privacy: .public)]: \(error.localizedDescription, privacy: .public)"
+            )
+            throw NetworkError.transport(underlying: error)
+        }
+    }
+
     /// 真正发起请求并按状态码处理。
     ///
     /// D-03：移除原 `allowEmptyBody` 参数及 `as! T` 强转路径。DELETE / PUT 等无 body 端点
@@ -377,27 +452,11 @@ actor GitHubAPIClient {
     private func perform<T: Decodable>(
         _ request: URLRequest
     ) async throws -> APIResponse<T> {
-        var req = request
-
-        // 鉴权：每次请求都拉一次 token，token 变更（重新登录）立刻生效
-        if let token = await tokenProvider.currentToken(), !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch is CancellationError {
-            throw NetworkError.cancelled
-        } catch {
-            // URLSession 取消会抛 NSError code = -999
-            if (error as NSError).code == NSURLErrorCancelled {
-                throw NetworkError.cancelled
-            }
-            AppLog.network.error("Transport error: \(error.localizedDescription, privacy: .public)")
-            throw NetworkError.transport(underlying: error)
-        }
+        // 鉴权：每次请求都拉一次 token，token 变更（重新登录）立刻生效。
+        let execution = try await executeRequest(request, transportContext: "json")
+        let data = execution.data
+        let response = execution.response
+        let req = execution.request
 
         guard let http = response as? HTTPURLResponse else {
             throw NetworkError.invalidResponse
@@ -462,25 +521,10 @@ actor GitHubAPIClient {
     /// - 把 304 翻译为 `BytesResponse(notModified: true)` 而非抛错（调用方需要这个语义来命中缓存）
     /// - 200 时直接返回 data
     private func performBytes(_ request: URLRequest) async throws -> BytesResponse {
-        var req = request
-
-        if let token = await tokenProvider.currentToken(), !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch is CancellationError {
-            throw NetworkError.cancelled
-        } catch {
-            if (error as NSError).code == NSURLErrorCancelled {
-                throw NetworkError.cancelled
-            }
-            AppLog.network.error("Transport error (bytes): \(error.localizedDescription, privacy: .public)")
-            throw NetworkError.transport(underlying: error)
-        }
+        let execution = try await executeRequest(request, transportContext: "bytes")
+        let data = execution.data
+        let response = execution.response
+        let req = execution.request
 
         guard let http = response as? HTTPURLResponse else {
             throw NetworkError.invalidResponse
@@ -558,25 +602,10 @@ actor GitHubAPIClient {
     /// 三段上有重复，**本次按 "Surgical Changes" 不抽取**；若未来又新增第 4 种 perform 变体，
     /// 应优先抽取 `executeRequest(_:)` 共享前置层（单独 D-?? 重构项）。
     private func performNoBody(_ request: URLRequest) async throws {
-        var req = request
-
-        if let token = await tokenProvider.currentToken(), !token.isEmpty {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: req)
-        } catch is CancellationError {
-            throw NetworkError.cancelled
-        } catch {
-            if (error as NSError).code == NSURLErrorCancelled {
-                throw NetworkError.cancelled
-            }
-            AppLog.network.error("Transport error (no-body): \(error.localizedDescription, privacy: .public)")
-            throw NetworkError.transport(underlying: error)
-        }
+        let execution = try await executeRequest(request, transportContext: "no-body")
+        let data = execution.data
+        let response = execution.response
+        let req = execution.request
 
         guard let http = response as? HTTPURLResponse else {
             throw NetworkError.invalidResponse

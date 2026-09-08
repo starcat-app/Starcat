@@ -51,6 +51,35 @@ private struct GraphQLMutationPayload: Decodable {
     }
 }
 
+/// 模拟 GitHub 在本地过期时间之前撤销 access token，并在 401 后轮换成功。
+private actor RotatingTokenProvider: GitHubTokenProviding {
+    nonisolated let requiresAuthentication = true
+    private var token: String?
+    private let refreshedToken: String?
+    private var refreshCallCount = 0
+
+    init(token: String?, refreshedToken: String?) {
+        self.token = token
+        self.refreshedToken = refreshedToken
+    }
+
+    func currentToken() async -> String? { token }
+
+    func refreshedTokenAfterUnauthorized() async -> String? {
+        refreshCallCount += 1
+        token = refreshedToken
+        return refreshedToken
+    }
+
+    func recordedRefreshCallCount() -> Int { refreshCallCount }
+}
+
+/// 私有项目 client 缺少凭据时必须本地失败，不能匿名探测仓库是否存在。
+private struct MissingRequiredTokenProvider: GitHubTokenProviding {
+    let requiresAuthentication = true
+    func currentToken() async -> String? { nil }
+}
+
 @Suite("GitHubAPIClient 网络路径分支", .serialized)
 struct GitHubAPIClientTests {
 
@@ -64,6 +93,17 @@ struct GitHubAPIClientTests {
             baseURL: baseURL,
             session: URLProtocolStub.ephemeralSession(),
             tokenProvider: StubTokenProvider(token: token)
+        )
+    }
+
+    private func makeClient(
+        tokenProvider: any GitHubTokenProviding
+    ) -> GitHubAPIClient {
+        URLProtocolStub.reset()
+        return GitHubAPIClient(
+            baseURL: baseURL,
+            session: URLProtocolStub.ephemeralSession(),
+            tokenProvider: tokenProvider
         )
     }
 
@@ -237,6 +277,31 @@ struct GitHubAPIClientTests {
         } catch {
             Issue.record("期望 unauthorized，实际: \(error)")
         }
+    }
+
+    @Test("get<T>: 401 后刷新 token 并重试原请求一次")
+    func get401RefreshesTokenAndRetries() async throws {
+        let provider = RotatingTokenProvider(token: "expired", refreshedToken: "fresh")
+        let client = makeClient(tokenProvider: provider)
+        URLProtocolStub.requestHandler = { request in
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer expired" {
+                return (httpResponse(401, request.url!), Data())
+            }
+            let body = #"{"id":42,"login":"alice"}"#.data(using: .utf8)!
+            return (httpResponse(200, request.url!), body)
+        }
+
+        let response: APIResponse<GitHubUserDTO> = try await client.get(path: "/user")
+        let user = response.value
+
+        #expect(user.login == "alice")
+        #expect(URLProtocolStub.receivedRequests.count == 2)
+        #expect(
+            URLProtocolStub.receivedRequests.last?
+                .value(forHTTPHeaderField: "Authorization") == "Bearer fresh"
+        )
+        let refreshCallCount = await provider.recordedRefreshCallCount()
+        #expect(refreshCallCount == 1)
     }
 
     @Test("get<T>: 403 + remaining=0 + 消息含'rate limit' → NetworkError.rateLimited")
@@ -485,6 +550,50 @@ struct GitHubAPIClientTests {
         let req = try #require(URLProtocolStub.receivedRequests.first)
         #expect(req.url?.path == "/repos/alice/foo/readme")
         #expect(req.value(forHTTPHeaderField: "Accept") == "application/vnd.github.html")
+    }
+
+    @Test("私有 README: 401 后刷新 token 并重试原请求")
+    func privateReadme401RefreshesTokenAndRetries() async throws {
+        let provider = RotatingTokenProvider(token: "expired", refreshedToken: "fresh")
+        let client = makeClient(tokenProvider: provider)
+        let html = Data("<h1>Private</h1>".utf8)
+        URLProtocolStub.requestHandler = { request in
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer expired" {
+                return (httpResponse(401, request.url!), Data())
+            }
+            return (httpResponse(200, request.url!), html)
+        }
+
+        let response = try await client.readmeHTML(owner: "alice", repo: "private")
+
+        #expect(response.data == html)
+        #expect(URLProtocolStub.receivedRequests.count == 2)
+        #expect(
+            URLProtocolStub.receivedRequests.last?
+                .value(forHTTPHeaderField: "Authorization") == "Bearer fresh"
+        )
+        let refreshCallCount = await provider.recordedRefreshCallCount()
+        #expect(refreshCallCount == 1)
+    }
+
+    @Test("私有 README: 缺少项目 token 时禁止匿名请求")
+    func privateReadmeMissingTokenNeverRequestsAnonymously() async throws {
+        let client = makeClient(tokenProvider: MissingRequiredTokenProvider())
+        URLProtocolStub.requestHandler = { request in
+            Issue.record("私有请求不应在缺少 Authorization 时出站：\(request)")
+            return (httpResponse(404, request.url!), Data())
+        }
+
+        do {
+            _ = try await client.readmeHTML(owner: "alice", repo: "private")
+            Issue.record("期望抛 unauthorized 但成功返回")
+        } catch NetworkError.unauthorized {
+            // 本地阻断即通过，不能让 GitHub 的匿名 404 污染 README 缓存语义。
+        } catch {
+            Issue.record("期望 unauthorized，实际：\(error)")
+        }
+
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
     }
 
     @Test("readmeHTML: 304 → BytesResponse(notModified: true) 不抛错")

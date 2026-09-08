@@ -7,7 +7,8 @@
 //  与 `AuthSession` 的边界：
 //  - 本状态机只决定项目可见范围，不代表 Starcat 主账号登录；
 //  - GitHub App 授权失败、过期、撤销或断开均不得删除现有 OAuth token；
-//  - GitHub App 不可用时自动回退 OAuth public 项目，不扩大 OAuth scope。
+//  - 仅在 GitHub App 未安装或本机没有项目凭据时回退 OAuth public 项目；
+//    已有项目授权后的刷新失败必须保留旧项目关系，不能伪装成 public-only 成功。
 //
 
 import Foundation
@@ -183,6 +184,14 @@ final class ProjectAccessSession {
     private let decoder = JSONDecoder()
     private var authorizationTask: Task<Void, Never>?
     private var isWebAuthenticationActive = false
+    /// GitHub refresh token 是一次性轮换凭据。MainActor 在网络 await 期间仍可重入，
+    /// 因此必须让同时到达的 README、Contents 与项目同步请求共享同一次刷新。
+    private var credentialRefreshOperation: CredentialRefreshOperation?
+
+    private struct CredentialRefreshOperation {
+        let id: UUID
+        let task: Task<ProjectAccessCredential, Error>
+    }
 
     init(
         oauthService: any ProjectAccessOAuthServiceProtocol = ProjectAccessOAuthService(),
@@ -216,6 +225,7 @@ final class ProjectAccessSession {
     }
 
     func restore(userID: Int64) {
+        cancelCredentialRefresh()
         guard isConfigured else {
             state = .unavailable
             return
@@ -328,6 +338,7 @@ final class ProjectAccessSession {
         let credential: ProjectAccessCredential
         do {
             credential = try await oauthService.exchangeCallback(callbackURL)
+            cancelCredentialRefresh()
             try saveCredential(credential)
             connectionHistory.markAuthorizationCompleted(for: userID)
         } catch {
@@ -417,6 +428,7 @@ final class ProjectAccessSession {
     /// 仅在项目关系已经清理后删除本机凭据并结束断开恢复点。
     func finishDisconnect(userID: Int64) throws {
         do {
+            cancelCredentialRefresh()
             try keychain.deleteProjectAccessCredential()
             disconnectProgress.clearGrantRevoked(for: userID)
             state = isConfigured ? .disconnected : .unavailable
@@ -456,8 +468,7 @@ final class ProjectAccessSession {
                 throw ProjectAccessSessionError.expired
             }
             do {
-                let refreshed = try await oauthService.refreshCredential(using: refreshToken)
-                try saveCredential(refreshed)
+                let refreshed = try await rotateCredential(using: refreshToken)
                 publishCredentialState(expiresAt: refreshed.accessExpiresAt)
                 return refreshed.accessToken
             } catch ProjectAccessOAuthError.badRefreshToken {
@@ -473,8 +484,41 @@ final class ProjectAccessSession {
         return credential.accessToken
     }
 
+    /// GitHub 在本地到期时间之前撤销 access token 时，网络层会在首个 401 后调用这里。
+    ///
+    /// 这仍是无感自动恢复：轮换成功后原请求只重试一次；并发 401 与正常到期刷新共享
+    /// `credentialRefreshOperation`，避免重复消费同一个一次性 refresh token。
+    func refreshAccessTokenAfterUnauthorized() async throws -> String {
+        guard isConfigured else {
+            state = .unavailable
+            throw ProjectAccessSessionError.unavailable
+        }
+        guard let credential = try loadCredential() else {
+            state = .disconnected
+            throw ProjectAccessSessionError.missingCredential
+        }
+        guard let refreshToken = credential.refreshToken,
+              !isRefreshExpired(credential) else {
+            state = .expired
+            throw ProjectAccessSessionError.expired
+        }
+        do {
+            let refreshed = try await rotateCredential(using: refreshToken)
+            publishCredentialState(expiresAt: refreshed.accessExpiresAt)
+            return refreshed.accessToken
+        } catch ProjectAccessOAuthError.badRefreshToken {
+            try? keychain.deleteProjectAccessCredential()
+            state = .expired
+            throw ProjectAccessSessionError.expired
+        } catch {
+            state = .failed(Self.failureCode(error))
+            throw error
+        }
+    }
+
     /// 项目 API 返回 401 时只撤销 GitHub App 项目授权，不触碰主 OAuth 登录。
     func markRevoked() {
+        cancelCredentialRefresh()
         try? keychain.deleteProjectAccessCredential()
         state = .revoked
     }
@@ -524,8 +568,7 @@ final class ProjectAccessSession {
             throw ProjectAccessSessionError.expired
         }
         do {
-            let refreshed = try await oauthService.refreshCredential(using: refreshToken)
-            try saveCredential(refreshed)
+            let refreshed = try await rotateCredential(using: refreshToken)
             return refreshed
         } catch ProjectAccessOAuthError.badRefreshToken {
             state = .disconnectionFailed(.reauthorizationRequired)
@@ -552,14 +595,55 @@ final class ProjectAccessSession {
             throw ProjectAccessSessionError.expired
         }
         do {
-            let refreshed = try await oauthService.refreshCredential(using: refreshToken)
-            try saveCredential(refreshed)
+            let refreshed = try await rotateCredential(using: refreshToken)
             return refreshed
         } catch ProjectAccessOAuthError.badRefreshToken {
             try? keychain.deleteProjectAccessCredential()
             state = .expired
             throw ProjectAccessSessionError.expired
         }
+    }
+
+    /// 原子轮换并持久化整份 GitHub App 凭据。
+    ///
+    /// 不能只依赖 `@MainActor`：调用 `oauthService` 时会发生 suspension，其他请求会重入。
+    /// Task 必须覆盖“远端轮换 + 本地保存”整个事务窗口，否则第二个调用可能在新凭据落盘前
+    /// 再次使用旧 refresh token。operation id 防止旧 waiter 清掉后续重试的新任务。
+    private func rotateCredential(using refreshToken: String) async throws -> ProjectAccessCredential {
+        let operation: CredentialRefreshOperation
+        if let existing = credentialRefreshOperation {
+            operation = existing
+        } else {
+            let id = UUID()
+            let task = Task { @MainActor [weak self] () throws -> ProjectAccessCredential in
+                guard let self else { throw CancellationError() }
+                let refreshed = try await self.oauthService.refreshCredential(using: refreshToken)
+                try Task.checkCancellation()
+                try self.saveCredential(refreshed)
+                return refreshed
+            }
+            operation = CredentialRefreshOperation(id: id, task: task)
+            credentialRefreshOperation = operation
+        }
+
+        do {
+            let refreshed = try await operation.task.value
+            if credentialRefreshOperation?.id == operation.id {
+                credentialRefreshOperation = nil
+            }
+            return refreshed
+        } catch {
+            if credentialRefreshOperation?.id == operation.id {
+                credentialRefreshOperation = nil
+            }
+            throw error
+        }
+    }
+
+    /// 撤销或切换授权时，阻止仍在飞行中的 refresh 在清理后重新写回凭据。
+    private func cancelCredentialRefresh() {
+        credentialRefreshOperation?.task.cancel()
+        credentialRefreshOperation = nil
     }
 
     /// 刷新 token 不应抹掉“未安装 / 部分授权 / 待组织审批”等更具体的产品状态。
@@ -689,12 +773,21 @@ final class ProjectCredentialRouter {
         // Web Flow 成功但 App 尚未安装时，user token 不具备项目访问范围；继续用它会把
         // “未安装”误报为同步失败，因此明确回退主 OAuth 的 Public 项目。
         let installationMissing = projectAccessSession.state == .installationRequired
-        if !installationMissing,
-           let projectToken = try? await projectAccessSession.validAccessToken() {
-            return ResolvedProjectCredential(
-                accessToken: projectToken,
-                authorizationSource: .githubApp
-            )
+        if !installationMissing {
+            do {
+                let projectToken = try await projectAccessSession.validAccessToken()
+                return ResolvedProjectCredential(
+                    accessToken: projectToken,
+                    authorizationSource: .githubApp
+                )
+            } catch ProjectAccessSessionError.missingCredential {
+                // 从未连接或已完成断开时才允许回退 OAuth public 项目。
+            } catch ProjectAccessSessionError.unavailable {
+                // 当前渠道未配置 GitHub App，保持既有 public-only 能力。
+            } catch {
+                // 已授权后的刷新失败不能降级成 OAuth 成功，否则会漏同步全部私有项目。
+                throw error
+            }
         }
         guard let oauthToken = try keychain.loadGithubToken(), !oauthToken.isEmpty else {
             throw NetworkError.unauthorized
@@ -709,6 +802,8 @@ final class ProjectCredentialRouter {
 /// 一次同步固定使用同一 token，避免刷新中途凭据来源变化造成 generation 混写。
 struct ProjectSyncTokenProvider: GitHubTokenProviding {
     let token: String
+    let requiresAuthentication = true
+
     func currentToken() async -> String? { token }
 }
 
@@ -718,8 +813,27 @@ struct ProjectSyncTokenProvider: GitHubTokenProviding {
 /// 请求应在每次发出前检查过期并刷新凭据，因此这里动态调用独立授权 session。
 struct ProjectAccessTokenProvider: GitHubTokenProviding {
     let session: ProjectAccessSession
+    let requiresAuthentication = true
 
     func currentToken() async -> String? {
-        try? await session.validAccessToken()
+        do {
+            return try await session.validAccessToken()
+        } catch {
+            AppLog.network.error(
+                "GitHub App token unavailable before request: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
+    func refreshedTokenAfterUnauthorized() async -> String? {
+        do {
+            return try await session.refreshAccessTokenAfterUnauthorized()
+        } catch {
+            AppLog.network.error(
+                "GitHub App token refresh after 401 failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 }
