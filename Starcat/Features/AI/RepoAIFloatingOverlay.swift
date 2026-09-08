@@ -160,7 +160,6 @@ struct RepoAIFloatingOverlay: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .repoAICollapsedLauncherSurface()
         .gettingStartedAnchor(.ai)
         .help("ai.assistant.inline.collapsed.help")
     }
@@ -290,16 +289,4 @@ extension Notification.Name {
     static let repoAIInlineGenerateSummaryRequested = Notification.Name("StarcatRepoAIInlineGenerateSummaryRequested")
     /// 外部入口只展开对应 repo 的详情页底部面板，不重复发起生成。
     static let repoAIInlineOpenRequested = Notification.Name("StarcatRepoAIInlineOpenRequested")
-}
-
-private extension View {
-    @ViewBuilder
-    func repoAICollapsedLauncherSurface() -> some View {
-        if #available(macOS 26.0, *) {
-            // 折叠态是短时交互控件，不承载长文本；只在这里启用系统玻璃交互反馈。
-            glassEffect(.regular.interactive(), in: Capsule(style: .continuous))
-        } else {
-            self
-        }
-    }
 }
