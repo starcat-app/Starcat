@@ -200,19 +200,17 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
                 )
             }
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    WorkspaceTitlebarControls(
-                        chromeState: chromeState,
-                        onPinnedChange: { isPinned in
-                            windowReference.window?.level = isPinned ? .floating : .normal
-                        },
-                        onSettings: {
-                            AppDelegate.openSettingsWindow(target: "rag.inference")
-                        }
-                    )
-                }
+                WorkspaceToolbarContent(
+                    chromeState: chromeState,
+                    onPinnedChange: { isPinned in
+                        windowReference.window?.level = isPinned ? .floating : .normal
+                    },
+                    onSettings: {
+                        AppDelegate.openSettingsWindow(target: "rag.inference")
+                    }
+                )
             }
-            // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
+            // 让内容表面延伸进系统 toolbar，中栏与 Inspector 顶部保持为同一条连续区域。
             .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
             .onAppear {
                 KnowledgeRAGWorkspaceWindowController.registerActiveViewModel(viewModel)

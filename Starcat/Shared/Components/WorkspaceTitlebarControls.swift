@@ -50,12 +50,13 @@ struct WorkspaceToolbarContent: ToolbarContent {
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
-        if #available(macOS 26.0, *) {
-            // Inspector 首次挂载会参与 toolbar 排版；flexible spacer 让主操作组始终锚定窗口右侧。
-            ToolbarSpacer(.flexible, placement: .primaryAction)
+        // macOS 会把 `.primaryAction` 固定在 leading。把 SwiftUI `Spacer` 作为独立原生
+        // toolbar item，系统会将它映射为 flexible space，把后续 automatic 组推到最右侧。
+        ToolbarItem(placement: .automatic) {
+            Spacer()
         }
 
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItemGroup(placement: .automatic) {
             Button {
                 chromeState.isRightColumnCollapsed.toggle()
             } label: {
@@ -90,115 +91,6 @@ struct WorkspaceToolbarContent: ToolbarContent {
                 .foregroundStyle(.secondary)
                 .help(LocalizedStringKey("rag.workspace.settings.open"))
             }
-        }
-    }
-}
-
-/// 放在 `NSTitlebarAccessoryViewController` 内的窗口级图标按钮组。
-struct WorkspaceTitlebarControls: View {
-
-    @Bindable var chromeState: WorkspaceChromeState
-    let onPinnedChange: (Bool) -> Void
-    /// RAG 工作台专用：右上角齿轮打开配置；Agent 不传则不显示。
-    var onSettings: (() -> Void)? = nil
-
-    var body: some View {
-        platformControlGroup
-            .padding(.trailing, 10)
-            // NSTitlebarAccessoryViewController 不会可靠地从 SwiftUI 内容推导尺寸。
-            // 按钮数可变（Agent 3 / RAG 4），用 fixedSize 避免末尾按钮被裁掉。
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(height: 32, alignment: .trailing)
-            // titlebar accessory 是独立 hosting 树，不继承主窗口 locale。
-            .appLocaleEnvironment()
-    }
-
-    /// macOS 26 需要把邻近 glass 控件放进同一个容器，系统才能统一采样背景，
-    /// 并在窗口状态变化时保持一致的融合效果；旧系统继续渲染原有按钮组。
-    @ViewBuilder
-    private var platformControlGroup: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: 6) {
-                controls
-            }
-        } else {
-            controls
-        }
-    }
-
-    private var controls: some View {
-        HStack(spacing: 6) {
-            controlButton(
-                systemImage: "inset.filled.rightthird.rectangle",
-                isActive: chromeState.isRightColumnCollapsed,
-                helpKey: chromeState.isRightColumnCollapsed
-                    ? "workspace.chrome.showRight"
-                    : "workspace.chrome.hideRight"
-            ) {
-                chromeState.isRightColumnCollapsed.toggle()
-            }
-
-            controlButton(
-                systemImage: chromeState.isPinned ? "pin.circle.fill" : "pin.circle",
-                isActive: chromeState.isPinned,
-                helpKey: chromeState.isPinned
-                    ? "workspace.chrome.unpin"
-                    : "workspace.chrome.pin"
-            ) {
-                chromeState.isPinned.toggle()
-                onPinnedChange(chromeState.isPinned)
-            }
-
-            if let onSettings {
-                controlButton(
-                    systemImage: "gearshape",
-                    isActive: false,
-                    helpKey: "rag.workspace.settings.open"
-                ) {
-                    onSettings()
-                }
-            }
-        }
-    }
-
-    private func controlButton(
-        systemImage: String,
-        isActive: Bool,
-        helpKey: LocalizedStringKey,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(isActive ? Color.accentColor : .secondary)
-        .workspaceTitlebarControlSurface(isActive: isActive)
-        .help(helpKey)
-    }
-
-}
-
-private extension View {
-    /// 只让窗口级紧凑控件采用交互式 glass；active tint 表达状态而非装饰。
-    /// 旧系统保留原背景，避免兼容路径的视觉和点击区域发生变化。
-    @ViewBuilder
-    func workspaceTitlebarControlSurface(isActive: Bool) -> some View {
-        if #available(macOS 26.0, *) {
-            glassEffect(
-                .regular
-                    .tint(isActive ? Color.accentColor.opacity(0.16) : nil)
-                    .interactive(),
-                in: RoundedRectangle(cornerRadius: 7)
-            )
-        } else {
-            background(
-                isActive ? Color.accentColor.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 7)
-            )
         }
     }
 }
