@@ -577,7 +577,9 @@ final class HomeViewModel {
     }
 
     /// 复用仍有效的标签计数，避免每次勾选都经历「数字 → 占位 → 同一个数字」。
+    /// 无标签范围只禁用交互，数字仍展示全账号 Star 标签总量，避免置灰时误显示为 0。
     var sidebarTagCounts: [String: Int]? {
+        guard canFilterByTags else { return tagCounts }
         guard let snapshot = sidebarFacetSnapshot,
               snapshot.query.tagCountQuery == sidebarFacetQuery.tagCountQuery else { return nil }
         return snapshot.counts.tags

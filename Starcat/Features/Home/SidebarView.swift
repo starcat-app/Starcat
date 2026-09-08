@@ -1033,11 +1033,6 @@ struct SidebarView: View {
                     .disabled(!viewModel.canFilterByTags)
                     .opacity(viewModel.canFilterByTags ? 1 : 0.5)
                     .transition(Self.disclosureRowTransition)
-                    if !viewModel.canFilterByTags {
-                        Text("sidebar.tags.untaggedExplanation")
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                    }
                 }
             } header: {
                 tagSectionHeader

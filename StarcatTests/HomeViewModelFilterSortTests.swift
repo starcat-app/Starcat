@@ -231,7 +231,7 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.sidebarLanguageStats == stats, "内存列表重算后仍应复用同一组语言计数")
     }
 
-    @Test("主导航和 GitHub 分组清理局部筛选，保留全局条件；未分类禁止标签筛选")
+    @Test("主导航和 GitHub 分组清理局部筛选，保留全局条件；无标签范围只禁用标签筛选")
     func sidebarNavigationResetsOnlyLocalFilters() async throws {
         let (vm, _) = try await makeFacetSUT()
         vm.setCategorizedLanguageFiltersFromUser(["Swift", "Rust"])
@@ -257,6 +257,11 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.map(\.id) == [5])
         #expect(vm.sidebarFacetCounts?.languageTotal == 1)
         #expect(vm.sidebarFacetCounts?.tags.isEmpty == true)
+        #expect(vm.sidebarTagCounts == ["mac": 1, "tool": 3], "未分类置灰时仍展示全账号 Star 标签总量")
+
+        vm.selectSidebarFromUser(.smartCollection(.noTags))
+        #expect(!vm.canFilterByTags)
+        #expect(vm.sidebarTagCounts == ["mac": 1, "tool": 3], "无标签智能集合沿用相同展示口径")
     }
 
     @Test("全局语言只清理互斥的局部语言，全部语言不清全局条件")
