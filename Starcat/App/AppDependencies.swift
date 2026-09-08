@@ -95,9 +95,8 @@ final class AppDependencies {
     let projectReadmeAPI: ReadmeAPI
     /// HOM-201 P0-2（2026-06-14）：README "已知不存在" 共享会话状态。
     ///
-    /// 由所有 `ReadmeViewModel`（manage 全局 VM + active/weekly 各 Shell 局部 VM）
-    /// 共用同一实例，让"manage 命中 404 → 切到 active 看同 repo"等跨场景路径
-    /// 短路掉重复的 GitHub 请求。详见 `ReadmeAvailability.swift`。
+    /// 由所有 `ReadmeViewModel` 共用同一实例。2026-09-09 起自动 load 不再据此短路
+    /// GitHub；仍注入以便写入 / 查询一致性。详见 `ReadmeAvailability.swift`。
     let readmeAvailability: ReadmeAvailability
     /// HOM-201 P0-3（2026-06-14）：README 网络刷新 in-flight 去重器。
     ///

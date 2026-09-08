@@ -8,7 +8,7 @@
 //  - idle：尚未加载（初始态或重置后）
 //  - loading：正在请求（仅在"无可用缓存"时显示）
 //  - loaded(html, cachedAt)：已加载并准备渲染
-//  - empty：该 repo 没有 README（404 或本地 session 缓存的"已知 404"）
+//  - empty：该 repo 当前没有 README（GitHub 返回 404）
 //  - error(message)：网络或解析错误（且无可用缓存兜底）
 //
 //  Phase 2 加载流程（stale-while-revalidate，2026-05-30）：
@@ -26,8 +26,8 @@
 //    ▼
 //  判断是否需要后台 refresh：
 //    - forceRefresh=true（用户主动刷新）→ 必刷
-//    - 无可用缓存 → 必刷
-//    - 缓存仍在 softTtl(6h) 内 → 不刷（直接结束）
+//    - 无可用缓存 → 必刷（含曾 404 / empty：每次选中都打 GitHub，便于发现后补 README）
+//    - 缓存仍在 softTtl(6h) 内 → 不刷（直接结束；仅对已有 HTML 内容生效）
 //    - 缓存已过期 → 必刷
 //    │
 //    ▼
@@ -35,7 +35,7 @@
 //    │
 //    ├─ .updated(readme)    → state = .loaded(新 html, 新 cachedAt)   无感替换
 //    ├─ .notModified(readme) → state = .loaded(原 html, 新 cachedAt)  仅刷新"缓存于..."显示
-//    ├─ .notFound           → availability.markNotFound + state = .empty
+//    ├─ .notFound           → state = .empty（不再用 session 404 短路挡住下次自动加载）
 //    └─ .failed(error)      → 有缓存 → 静默 debug 日志; 无缓存 → state = .error
 //  ```
 //
@@ -47,11 +47,10 @@
 //  - **`isRefreshing` 状态不暴露给 UI**（按 §12.2 评审决策）：已显示的 README 被无感替换符合预期，
 //    加 loading spinner 反而吵
 //
-//  Session 404 缓存：
-//  - 状态由共享对象 `ReadmeAvailability`（`AppDependencies` 持有的单例）承载，
-//    跨 manage / active 等多个 VM 实例共享一份"已知不存在"集合（HOM-201 P0-2，2026-06-14）
-//  - 自动加载命中 → 直接走 empty 不发请求
-//  - 手动 reload 清掉对应项给一次重试机会
+//  关于 `ReadmeAvailability`（HOM-201 P0-2）：
+//  - 仍注入共享单例，便于跨 VM 观测「已知无 README」；**不再**在自动 `load` 入口短路。
+//  - 产品决策（2026-09-09）：曾 empty 的仓每次重新选中都要打 GitHub，避免作者补 README
+//    后同会话内永远看不到；手动 footer 刷新仍走 `forceRefresh`。
 //
 
 import Foundation
@@ -131,12 +130,10 @@ final class ReadmeViewModel {
     /// 当前 in-flight 任务。新请求来时先 cancel。
     private var currentTask: Task<Void, Never>?
 
-    /// session 内已确认"无 README"（404）的状态承载对象。
+    /// session 内曾确认"无 README"（404）的状态承载对象。
     ///
-    /// HOM-201 P0-2（2026-06-14）：原 `sessionNotFound: Set<Int64>` 字段提升为
-    /// `AppDependencies` 持有的单例 `ReadmeAvailability`。本字段是它的注入引用，
-    /// manage（HomeView 全局 VM）和 active（每个 Shell 局部 VM）共用同一份状态，
-    /// 跨 VM 命中 404 短路。详见 `ReadmeAvailability.swift` 文件头。
+    /// HOM-201 P0-2（2026-06-14）：原 `sessionNotFound` 提升为 `AppDependencies` 单例。
+    /// 2026-09-09 起自动 load 不再据此短路网络；仍写入 / 清除以免其它读者读到过期标记。
     private let availability: ReadmeAvailability
 
     /// 详情页 HTML 拉到（200 / 304）后触发的可选回调（**manage 路径 only**）。
@@ -188,9 +185,8 @@ final class ReadmeViewModel {
     /// 重新加载当前 repo（用户点击"重试" / 详情底栏"刷新"时调用）。
     ///
     /// 与 `load(repo:)` 的差异：
-    /// - 清掉 availability 中该 repoId 的 404 标记（README 可能刚被作者补上）
-    /// - `forceRefresh: true` → 即使 cached 仍在 softTtl 内也走网络
-    /// - 同一 repo + 当前是 .error → 同步转为 .loading 给反馈
+    /// - `forceRefresh: true` → 即使已有 HTML 且仍在 softTtl 内也走网络
+    /// - 同一 repo + 当前是 .error / .empty → 同步转为 .loading 给反馈
     /// - 同一 repo + 当前是 .loaded → 保持显示，后台静默 refresh（SWR 体验）
     /// - Parameter isLoggedIn: 用户是否已登录（用于判断 403 是否因未授权）
     func reload(repo: Repo, isLoggedIn: Bool) {
@@ -392,20 +388,13 @@ final class ReadmeViewModel {
             return
         }
 
-        // session 404 短路：仅自动加载受其影响；手动 reload 会清掉。
-        // HOM-201 P0-2（2026-06-14）：状态来自跨 VM 共享的 `ReadmeAvailability`，
-        // manage 命中后切到 active 看同 repo 也能短路掉网络请求（详见类头注释）。
-        if forceRefresh {
-            availability.clearNotFound(repoId: repo.id)
-        } else if availability.isKnownNotFound(repoId: repo.id) {
-            bindManageTarget(repoId: repo.id)
-            state = .empty
-            return
-        }
+        // 曾 404 的仓不再在入口短路：无 HTML 时下方 needsRefresh 必为 true，
+        // 每次选中都会打 GitHub。仍清掉标记，避免其它读者误判「本会话已知缺失」。
+        availability.clearNotFound(repoId: repo.id)
 
         // 切到新 repo 时立即同步设 .loading 占位，避免 await cachedReadme 期间
         // 显示上一个 repo 的 README（visual race）。
-        // 同一 repo + .error 也清掉转 .loading，给用户"正在重试"反馈。
+        // 同一 repo + .error / .empty 也清掉转 .loading，给用户"正在重试"反馈。
         // 同一 repo + .loaded：保持显示，后台 refresh 时再无感更新（SWR 体验）。
         let isSameRepo = (currentRepoId == repo.id)
         bindManageTarget(repoId: repo.id)
@@ -413,8 +402,13 @@ final class ReadmeViewModel {
 
         if !isSameRepo {
             state = .loading
-        } else if forceRefresh, case .error = state {
-            state = .loading
+        } else if forceRefresh {
+            switch state {
+            case .error, .empty:
+                state = .loading
+            default:
+                break
+            }
         }
 
         currentTask = Task { [weak self] in

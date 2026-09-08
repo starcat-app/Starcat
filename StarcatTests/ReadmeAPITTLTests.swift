@@ -12,10 +12,9 @@
 //  - 完整网络路径单测要等 D-14（URLProtocol stub）落地后一起做
 //  - 把判定逻辑提取为静态函数后，逻辑分支可独立验证
 //
-//  `ReadmeAvailability` 内的 404 短路行为（HOM-201 P0-2 起从 `ReadmeViewModel`
-//  内部字段 `sessionNotFound: Set<Int64>` 提到 AppDependencies 单例）也未在此覆盖：
-//  - 需要 @MainActor + @Observable 测试基础设施
-//  - 行为由"切换 repo 后 Console 日志数"手动验证（详见 docs Phase 1 T1.10）
+//  `ReadmeAvailability` 曾用于会话内 404 短路（HOM-201 P0-2）；2026-09-09 起
+//  `ReadmeViewModel` 自动 load 不再据此 early-return。集合 API 的单元覆盖见
+//  `ReadmeAvailabilityTests`。
 //
 
 import Testing

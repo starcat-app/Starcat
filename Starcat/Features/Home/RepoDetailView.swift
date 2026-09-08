@@ -796,12 +796,17 @@ struct ReadmeStateView: View {
         case .idle, .loading, .loaded:
             EmptyView()
         case .empty:
-            EmptyStateView(
-                systemImage: "doc.text",
-                title: "readme.empty",
-                subtitle: "readme.emptyDescription"
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 无 README 也保留底栏：作者后来补文件时，用户仍能点右下角强制重拉，
+            // 不被「空态藏 footer」挡在缓存门外（与 loaded 的 cacheFooter 同结构）。
+            VStack(spacing: 0) {
+                EmptyStateView(
+                    systemImage: "doc.text",
+                    title: "readme.empty",
+                    subtitle: "readme.emptyDescription"
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                emptyStatusFooter()
+            }
 
         case .requiresLogin:
             VStack(spacing: 12) {
@@ -857,7 +862,7 @@ struct ReadmeStateView: View {
         sourceHtml: String,
         sourceSnapshot: ReadmeTranslationSourceSnapshot
     ) -> some View {
-        HStack(spacing: 12) {
+        readmeStatusFooter {
             Image(systemName: "clock")
                 .font(.caption2)
             Text(String(format: String.l10n("readme.cachedAtFormat"), RelativeTimeText.pastEvent(cachedAt, locale: locale)))
@@ -871,19 +876,40 @@ struct ReadmeStateView: View {
                 )
                 Divider().frame(height: 14)
             }
-            SyncIconButton(
-                isRefreshing: readmeVM.isRefreshing,
-                disabled: readmeVM.isRefreshing,
-                font: .caption2,
-                frameSize: 18,
-                tooltip: String.l10n("readme.refresh"),
-                action: onRetry
-            )
+            readmeRefreshButton
+        }
+    }
+
+    /// 无 README 空态底栏：左侧中性说明，右侧只留刷新（无 HTML 不展示翻译）。
+    private func emptyStatusFooter() -> some View {
+        readmeStatusFooter {
+            Text("readme.emptyFooterStatus")
+                .font(.caption2)
+            Spacer()
+            readmeRefreshButton
+        }
+    }
+
+    /// loaded / empty 共用底栏容器，保证高度、边距与 `.bar` 背景一致。
+    private func readmeStatusFooter<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 12) {
+            content()
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 6)
         .foregroundStyle(.secondary)
         .background(.bar)
+    }
+
+    private var readmeRefreshButton: some View {
+        SyncIconButton(
+            isRefreshing: readmeVM.isRefreshing,
+            disabled: readmeVM.isRefreshing,
+            font: .caption2,
+            frameSize: 18,
+            tooltip: String.l10n("readme.refresh"),
+            action: onRetry
+        )
     }
 }
 

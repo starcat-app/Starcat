@@ -160,8 +160,8 @@ struct ActivityDetailScaffoldShell: View {
         if let readmeVM {
             return readmeVM
         }
-        // HOM-201 P0-2（2026-06-14）：注入 `readmeAvailability` 单例，让 active 详情
-        // 与 manage 全局 VM 共用同一个"已知 404"集合（详见 ReadmeAvailability.swift）。
+        // HOM-201 P0-2（2026-06-14）：注入 `readmeAvailability` 单例（跨 VM 共享状态；
+        // 2026-09-09 起不再用于自动 load 短路，详见 ReadmeAvailability.swift）。
         // HOM-201 P0-4（2026-06-14）：补挂 `onHTMLLoaded` 回调——active 路径也走
         // `ReadmeViewModel.loadInternal`，与 manage 同源；缺这个回调会导致已 star
         // 仓库在 active 详情页加载 README 后不触发 markdown backfill / 向量重建。
