@@ -36,6 +36,8 @@ struct BatchAIWorkspaceView: View {
     @State private var showDiscardConfirmation = false
     @State private var reviewFilter: BatchAIResultFilter = .actionable
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    /// 预检要读 AI 任务配置；挂上 dependencies 后，设置页改完 Provider / Key 再回工作区会刷新按钮态。
+    @Environment(AppDependencies.self) private var dependencies
 
     init(
         service: BatchAIQueueService,
@@ -219,7 +221,11 @@ struct BatchAIWorkspaceView: View {
     }
 
     private var configurationIssue: String? {
-        service.configurationIssue(for: options)
+        // 显式读取任务配置与服务商列表，建立对 AppSettings 的观察，避免只改 Key 后底栏仍显示旧预检。
+        _ = dependencies.settings.aiTagsTask
+        _ = dependencies.settings.aiSummaryTask
+        _ = dependencies.settings.aiProviderProfiles
+        return service.configurationIssue(for: options)
     }
 
     // MARK: - 审核底栏按 Tab 派生

@@ -52252,6 +52252,52 @@
         }
       }
     },
+    "ai.insight.error.missingAPIKeyFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No AI API key is configured for “%@”. Open Settings → AI, add a provider and API key for this task, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」尚未配置 API Key。请先到「设置 → AI」为该任务选择服务商并填写 API Key，然后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」尚未設定 API Key。請先到「設定 → AI」為該任務選擇服務商並填寫 API Key，然後再試。"
+          }
+        }
+      }
+    },
+    "ai.insight.error.missingTaskProviderFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No usable AI provider is configured for “%@”. Open Settings → AI, add a provider and model for this task, then try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」尚未配置可用的 AI 服务。请先到「设置 → AI」为该任务添加服务商并选择模型，然后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%@」尚未設定可用的 AI 服務。請先到「設定 → AI」為該任務新增服務商並選擇模型，然後再試。"
+          }
+        }
+      }
+    },
     "ai.insight.error.missingProviderFormat" : {
       "extractionState" : "manual",
       "localizations" : {

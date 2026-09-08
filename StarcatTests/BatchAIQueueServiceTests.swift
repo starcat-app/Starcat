@@ -125,7 +125,7 @@ struct BatchAIQueueServiceTests {
     @Test("配置错误在创建 jobs 前拒绝整批")
     func configurationFailureRejectsBatchBeforeEnqueue() throws {
         let provider = BlockingBatchAIInsightProvider()
-        provider.validationError = RepoAIInsightError.missingAPIKey
+        provider.validationError = RepoAIInsightError.missingAPIKey(String.l10n("ai.taskName.tagRecommendation"))
         let service = try makeService(insightProvider: provider)
         var repo = Repo.makeMinimal(owner: "acme", name: "demo")
         repo.id = 303
@@ -872,9 +872,78 @@ struct AIChatTaskSelectionTests {
             keychain: keychain
         )
 
-        #expect(throws: RepoAIInsightError.missingAPIKey) {
+        #expect(throws: RepoAIInsightError.missingAPIKey(String.l10n("ai.taskName.tagRecommendation"))) {
             try service.ensureGenerationClientsReady(includeSummary: false, includeTags: true)
         }
+    }
+
+    @Test("只勾标签时不因摘要任务未配置而失败")
+    func tagsOnlyPreflightIgnoresMissingSummaryTask() throws {
+        let (settings, keychain, profileID) = try makeSettings()
+        try keychain.storeAIKey("sk-test-tags", forProvider: profileID)
+
+        var tagsTask = settings.aiTagsTask
+        tagsTask.providerID = profileID
+        tagsTask.modelID = "chat-model"
+        settings.aiTagsTask = tagsTask
+
+        // 摘要故意指向不存在的 Provider，模拟「只配了标签、没配摘要」。
+        var summaryTask = settings.aiSummaryTask
+        summaryTask.providerID = "missing-summary-provider"
+        summaryTask.modelID = ""
+        settings.aiSummaryTask = summaryTask
+
+        let database = try InMemoryDatabaseManager()
+        let insight = RepoAIInsightService(
+            summaryRepository: GRDBAISummaryRepository(database: database),
+            readmeRepository: ReadmeRepository(database: database),
+            settings: settings,
+            keychain: keychain
+        )
+        let batch = BatchAIQueueService(
+            insightService: insight,
+            tagRepository: GRDBTagRepository(database: database),
+            repoTagRepository: GRDBRepoTagRepository(database: database),
+            aiSummaryRepository: GRDBAISummaryRepository(database: database)
+        )
+
+        var tagsOnly = BatchAIQueueOptions()
+        tagsOnly.actions = [.tags]
+        #expect(batch.configurationIssue(for: tagsOnly) == nil)
+
+        var tagsAndSummary = BatchAIQueueOptions()
+        tagsAndSummary.actions = [.tags, .summary]
+        #expect(batch.configurationIssue(for: tagsAndSummary) != nil)
+        #expect(
+            batch.configurationIssue(for: tagsAndSummary)?
+                .contains(String.l10n("ai.taskName.summary")) == true
+        )
+    }
+
+    @Test("缺少摘要配置时 missingAPIKey 文案必须带任务名")
+    func missingAPIKeyMessageIncludesTaskName() throws {
+        let (settings, keychain, profileID) = try makeSettings()
+        var summaryTask = settings.aiSummaryTask
+        summaryTask.providerID = profileID
+        summaryTask.modelID = "chat-model"
+        settings.aiSummaryTask = summaryTask
+
+        let database = try InMemoryDatabaseManager()
+        let service = RepoAIInsightService(
+            summaryRepository: GRDBAISummaryRepository(database: database),
+            readmeRepository: ReadmeRepository(database: database),
+            settings: settings,
+            keychain: keychain
+        )
+
+        let taskName = String.l10n("ai.taskName.summary")
+        #expect(throws: RepoAIInsightError.missingAPIKey(taskName)) {
+            try service.ensureGenerationClientsReady(includeSummary: true, includeTags: false)
+        }
+        let message = RepoAIInsightError.missingAPIKey(taskName).localizedDescription
+        #expect(message.contains(taskName))
+        // 旧万能句不再作为 missingAPIKey 的展示文案。
+        #expect(message != String.l10n("ai.insight.error.missingAPIKey"))
     }
 
     private func makeSettings(
@@ -1076,7 +1145,7 @@ private final class SelectiveBatchAIInsightProvider: BatchAIInsightProviding {
                   !alreadyFailedRepoIDs.contains(repo.id) {
             // 每个仓库只失败一次（永久错误不消耗重试次数），重试后走成功路径。
             alreadyFailedRepoIDs.insert(repo.id)
-            throw RepoAIInsightError.missingAPIKey
+            throw RepoAIInsightError.missingAPIKey(String.l10n("ai.taskName.tagRecommendation"))
         }
         return RepoAIInsightGeneration(
             insight: RepoAIInsight(

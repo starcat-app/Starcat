@@ -78,13 +78,15 @@ struct DiagnosticsTests {
     @Test("单仓摘要缺少 API Key 时直接展示配置文案")
     func userFacingErrorMapsMissingAPIKey() {
         let error = UserFacingError.map(
-            RepoAIInsightError.missingAPIKey,
+            RepoAIInsightError.missingAPIKey(String.l10n("ai.taskName.summary")),
             operation: String.l10n("diagnostics.operation.generateAIInsight"),
             service: "AI"
         )
 
         #expect(error.title == String.l10n("error.user.aiConfiguration.title"))
-        #expect(error.message == String.l10n("ai.insight.error.missingAPIKey"))
+        #expect(
+            error.message == RepoAIInsightError.missingAPIKey(String.l10n("ai.taskName.summary")).localizedDescription
+        )
         #expect(!error.shouldRecordDiagnostic)
     }
 

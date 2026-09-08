@@ -22,16 +22,17 @@ import CryptoKit
 import Foundation
 
 enum RepoAIInsightError: Error, LocalizedError, Equatable, Sendable {
-    case missingAPIKey
+    /// API Key 缺失；关联值为任务显示名（摘要 / 标签推荐等），避免一律说成「再生成摘要」。
+    case missingAPIKey(String)
     case missingProvider(String)
     case invalidJSON
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey:
-            return String.l10n("ai.insight.error.missingAPIKey")
+        case .missingAPIKey(let task):
+            return String(format: String.l10n("ai.insight.error.missingAPIKeyFormat"), task)
         case .missingProvider(let task):
-            return String(format: String.l10n("ai.insight.error.missingProviderFormat"), task)
+            return String(format: String.l10n("ai.insight.error.missingTaskProviderFormat"), task)
         case .invalidJSON:
             return String.l10n("ai.insight.error.invalidJSON")
         }
@@ -1346,7 +1347,7 @@ final class RepoAIInsightService {
         let apiKey = try keychain.loadAIKey(forProvider: profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !apiKey.isEmpty || profile.provider.allowsEmptyAPIKey else {
-            throw RepoAIInsightError.missingAPIKey
+            throw RepoAIInsightError.missingAPIKey(taskName)
         }
         let model = task.resolvedModelName.nilIfBlank ?? fallbackModel
 

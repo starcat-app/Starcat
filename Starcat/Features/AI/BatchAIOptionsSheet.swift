@@ -127,7 +127,8 @@ struct BatchAIOptionsSheet: View {
                         icon: "tag",
                         title: "batchAI.generateTags.action.tags",
                         subtitle: "batchAI.generateTags.action.tags.desc",
-                        isSelected: true,
+                        // 与 options.actions 对齐；写死 true 会掩盖「标签未进 actions」的预检异常。
+                        isSelected: options.actions.contains(.tags),
                         isDisabled: true,
                         onToggle: {}
                     )
@@ -139,6 +140,7 @@ struct BatchAIOptionsSheet: View {
         .frame(width: 640, height: 424, alignment: .top)
         .background(panelBackground)
         .overlay(panelBorder)
+        .onAppear(perform: ensureTagsActionSelected)
     }
 
     private var sessionPanel: some View {
@@ -341,8 +343,8 @@ struct BatchAIOptionsSheet: View {
     // MARK: - 辅助
 
     private var selectedActionCount: Int {
-        // 自动应用只是建议落库策略，不应计入 AI 实际执行的任务数量。
-        1 + (options.actions.contains(.summary) ? 1 : 0)
+        // 只统计 options.actions，避免写死「标签 = 1」与真实预检集合脱节。
+        options.actions.count
     }
 
     private var estimatedMinutes: Int {
@@ -355,11 +357,28 @@ struct BatchAIOptionsSheet: View {
     }
 
     private func toggleAction(_ action: BatchAIAction) {
-        if options.actions.contains(action) {
-            options.actions.remove(action)
-        } else {
-            options.actions.insert(action)
+        // 生成标签是手动批量整理的固定主任务，不允许从 actions 里摘掉。
+        guard action != .tags else {
+            ensureTagsActionSelected()
+            return
         }
+        // 显式 copy-assign：Binding 嵌套 Set 的 in-place mutate 在部分宿主下可能丢写回。
+        var actions = options.actions
+        if actions.contains(action) {
+            actions.remove(action)
+        } else {
+            actions.insert(action)
+        }
+        actions.insert(.tags)
+        options.actions = actions
+    }
+
+    /// 打开配置页时保证 `.tags` 在预检集合里，与「标签固定开启」的产品语义一致。
+    private func ensureTagsActionSelected() {
+        guard !options.actions.contains(.tags) else { return }
+        var actions = options.actions
+        actions.insert(.tags)
+        options.actions = actions
     }
 
     private func percentString(_ v: Double) -> String {
