@@ -188,6 +188,7 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
             // Window Scene 声明的标题按系统 bundle 语言解析，不跟随 App 内语言设置；
             // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
             .navigationTitle(windowTitle)
+            .toolbar(removing: .title)
             .frame(
                 minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
                 minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
@@ -212,7 +213,7 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
                 }
             }
             // 与主窗口相同：让原生 Sidebar 表面贯穿 window toolbar，包住交通灯。
-            .starcatWindowToolbarChrome()
+            .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
             .onAppear {
                 KnowledgeRAGWorkspaceWindowController.registerActiveViewModel(viewModel)
             }
