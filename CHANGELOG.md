@@ -24,6 +24,7 @@ Starcat 1.6.1 focuses on issues found after the 1.6.0 release across interface l
 - Semantic search feedback: Restores search status and the index refresh action.
 - Agent sidebar performance: Fixes sustained lag after expanding the left sidebar.
 - AI model list freeze: Configuring large provider catalogs no longer freezes the main thread when toggling or expanding models; the list scrolls and loads in pages.
+- Empty README refresh: The footer refresh control stays available with no README, and reopening the repository queries GitHub again so a newly added README can appear.
 
 ## 1.6.0
 
