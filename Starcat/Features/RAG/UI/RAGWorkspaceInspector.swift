@@ -196,7 +196,12 @@ struct RAGWorkspaceInspector: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
+        // 只阻止右侧 Inspector 的底色侵入窗口 Toolbar；左栏和中栏的背景贯穿
+        // 仍由窗口根视图负责，不能在这里改动全局 Toolbar chrome。
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.26),
+            ignoresSafeAreaEdges: []
+        )
         .onChange(of: viewModel.selectedCitation?.id) { _, _ in
             // 换引用时关掉旧全文，避免 popover 挂在错误分片上。
             isCitationChunkPopoverPresented = false

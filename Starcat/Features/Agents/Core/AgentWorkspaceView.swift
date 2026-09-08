@@ -905,7 +905,12 @@ struct AgentWorkspaceView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.26))
+        // 右栏不参与窗口内容向 Toolbar 的背景贯穿；否则 Inspector 的底色会越过
+        // Toolbar 下边界顶到窗口顶部。左栏和中栏仍保留现有贯穿行为。
+        .background(
+            Color(nsColor: .controlBackgroundColor).opacity(0.26),
+            ignoresSafeAreaEdges: []
+        )
     }
 
     // MARK: - Composer
