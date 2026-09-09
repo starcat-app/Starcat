@@ -231,6 +231,24 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.sidebarLanguageStats == stats, "内存列表重算后仍应复用同一组语言计数")
     }
 
+    @Test("智能集合选中后标签计数可用；缓存命中回写不能冲成占位符")
+    func smartCollectionSidebarTagCountsSurviveCacheHitReload() async throws {
+        let (vm, _) = try await makeFacetSUT()
+        // insertRepo 的 topics 为 NULL → topicsArray 空 → 命中 needsReview。
+        vm.selectSidebarFromUser(.smartCollection(.needsReview))
+        await vm.awaitPendingListReloadForTesting()
+        await vm.reloadItems()
+        await vm.refreshSidebarFacetCounts()
+
+        let counts = try #require(vm.sidebarTagCounts)
+        #expect(!counts.isEmpty, "需要复查集合内应能统计到标签数字，不能是 nil 占位")
+
+        // 未过期缓存命中会 loadFromCache → applyView no-op / 相同 ID rawItems 回写；
+        // 这些路径不得再抬高 derivedRevision，否则侧栏会一直停在「—」。
+        await vm.reloadItems()
+        #expect(vm.sidebarTagCounts == counts, "缓存命中回写后不得把标签数字冲成 —")
+    }
+
     @Test("主导航和 GitHub 分组清理局部筛选，保留全局条件；无标签范围只禁用标签筛选")
     func sidebarNavigationResetsOnlyLocalFilters() async throws {
         let (vm, _) = try await makeFacetSUT()
@@ -262,6 +280,12 @@ struct HomeViewModelFilterSortTests {
         vm.selectSidebarFromUser(.smartCollection(.noTags))
         #expect(!vm.canFilterByTags)
         #expect(vm.sidebarTagCounts == ["mac": 1, "tool": 3], "无标签智能集合沿用相同展示口径")
+
+        vm.selectSidebarFromUser(.smartCollectionsHome)
+        #expect(!vm.canFilterByTags, "智能集合首页尚未选卡片，标签只展示不筛选")
+        #expect(vm.sidebarTagCounts == ["mac": 1, "tool": 3], "首页置灰时仍展示全账号 Star 标签总量，不能空墙")
+        vm.toggleSelectedTag("mac")
+        #expect(vm.selectedTagIds.isEmpty)
     }
 
     @Test("全局语言只清理互斥的局部语言，全部语言不清全局条件")

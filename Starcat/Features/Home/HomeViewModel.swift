@@ -278,8 +278,18 @@ final class HomeViewModel {
     /// W4-4 D2：原始 fetch 结果（未经 filter / sort）。
     /// `items` 是 rawItems 的派生 — sort / filter 改变时只需重跑 `applyView()` 而不必重 fetch。
     /// 私有：不暴露给 UI，保持单向流: rawItems → applyView → items → UI。
+    ///
+    /// 分面 revision 只在 **ID 序列真变** 时递增：SWR 后台拉到相同批次时仍会
+    /// `rawItems = fetched`，若无条件 +1，内存路径（智能集合等）的
+    /// `sidebarTagCounts` 会立刻变成 nil，标签墙长期停在「—」。
     private var rawItems: [Repo] = [] {
-        didSet { sidebarFacetDerivedRevision &+= 1 }
+        didSet {
+            let unchanged = oldValue.count == rawItems.count
+                && zip(oldValue, rawItems).allSatisfy { $0.id == $1.id }
+            if !unchanged {
+                sidebarFacetDerivedRevision &+= 1
+            }
+        }
     }
 
     /// 当前详情选中的 repo **ID**（不是 Repo 值）。
@@ -600,9 +610,15 @@ final class HomeViewModel {
     /// 仅用于数字区域的宽度上界，不作为当前筛选计数展示。
     private(set) var sidebarTagCountUpperBounds: [String: Int] = [:]
 
-    /// 未分类的定义就是没有标签，因此禁用标签过滤，而不是偷偷改到全部仓库。
+    /// 当前范围不允许用标签筛选时禁用交互，但仍展示全账号 Star 标签总量（置灰），
+    /// 避免「智能集合首页 / 未分类」误显示成空墙或全 0。
     var canFilterByTags: Bool {
-        selection != .untagged && selection != .smartCollection(.noTags)
+        switch selection {
+        case .untagged, .smartCollectionsHome, .smartCollection(.noTags):
+            return false
+        default:
+            return true
+        }
     }
 
     /// SwiftUI task(id:) 会取消上一请求；返回时再核对身份，拦住不响应取消的数据库读取。
@@ -2873,9 +2889,6 @@ final class HomeViewModel {
             AppLog.ui.notice("[switch-cat] T5 bg fetch done +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
             #endif
 
-            self.isLoading = false
-            self.isRefreshing = false
-
             switch outcome {
             case .success(let result):
                 let fetched = result.repos
@@ -2928,6 +2941,7 @@ final class HomeViewModel {
                 if idsIdentical && statusIdentical && libraryIdentical && wikiIdentical && !mustReapplyView {
                     // 静默更新底层引用（rawItems / statusMap 是 private 属性，不参与视图重建）。
                     // 不动 items / itemsRevision → 不触发 SwiftUI re-render，避免第二波动画。
+                    // ID 序列未变时 rawItems.didSet 不再抬高分面 revision，侧栏数字可保留。
                     self.rawItems = fetched
                     self.statusMap = fetchedStatusMap
                     self.libraryStateMap = fetchedLibraryStateMap
@@ -2950,8 +2964,13 @@ final class HomeViewModel {
                     AppLog.ui.notice("[switch-cat] T6 applyView done after bg fetch +\(Self.msSinceT0, format: .fixed(precision: 1))ms")
                     #endif
                 }
+                // 等 rawItems / applyView 落定后再关 loading，避免分面任务对着旧候选集算完又被冲掉。
+                self.isLoading = false
+                self.isRefreshing = false
             case .failure(let error):
                 self.semanticHitMap = [:]
+                self.isLoading = false
+                self.isRefreshing = false
                 let friendly = UserFacingError.map(
                     error,
                     operation: String.l10n("diagnostics.operation.loadStars"),
@@ -3480,11 +3499,6 @@ final class HomeViewModel {
         resetPage: Bool = true,
         preservingSidebarLanguageCounts: Bool = false
     ) {
-        // 语言分面本来就排除左侧单选语言；仅这一个条件变化时，旧语言数字仍然有效。
-        // 其他调用继续递增 revision，避免数据或外部事实变化后复用过期计数。
-        if !preservingSidebarLanguageCounts {
-            sidebarFacetDerivedRevision &+= 1
-        }
         let wasDeepScrolledToEnd = !resetPage && !hasMore && items.count > Self.pageSize
         let newFilteredSorted = computeFilteredSorted()
         visibleRepoTotalCount = newFilteredSorted.count
@@ -3498,7 +3512,15 @@ final class HomeViewModel {
             if let id = selectedRepoID, !newFilteredSorted.contains(where: { $0.id == id }) {
                 selectedRepoID = nil
             }
+            // 不要在 no-op 时抬高 derivedRevision：loadFromCache / 重复 applyView
+            // 否则会冲掉智能集合等内存路径刚算好的标签数字，侧栏停在「—」。
             return
+        }
+
+        // 语言分面本来就排除左侧单选语言；仅这一个条件变化时，旧语言数字仍然有效。
+        // 真正改了可见列表才递增，避免无意义失效。
+        if !preservingSidebarLanguageCounts {
+            sidebarFacetDerivedRevision &+= 1
         }
 
         filteredSorted = newFilteredSorted
