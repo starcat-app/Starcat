@@ -59,11 +59,16 @@ struct SingleLineTextField: NSViewRepresentable {
         if textField.placeholderString != prompt {
             textField.placeholderString = prompt
         }
-        let shouldFocus = focus?.wrappedValue == true
-        if shouldFocus, textField.window?.firstResponder !== textField.currentEditor() {
-            DispatchQueue.main.async { textField.window?.makeFirstResponder(textField) }
-        } else if !shouldFocus, textField.window?.firstResponder === textField.currentEditor() {
-            textField.window?.makeFirstResponder(nil)
+        // focus 未传入（nil）时不管理焦点，字段自管 firstResponder；否则每次输入触发
+        // updateNSView 都会命中 `else if !shouldFocus`（shouldFocus 恒 false），把正在
+        // 编辑的字段强制 makeFirstResponder(nil) → 输入一个字符就丢焦点。
+        if let focus {
+            let shouldFocus = focus.wrappedValue
+            if shouldFocus, textField.window?.firstResponder !== textField.currentEditor() {
+                DispatchQueue.main.async { textField.window?.makeFirstResponder(textField) }
+            } else if !shouldFocus, textField.window?.firstResponder === textField.currentEditor() {
+                textField.window?.makeFirstResponder(nil)
+            }
         }
     }
 
