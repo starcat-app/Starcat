@@ -431,6 +431,42 @@ struct BatchAIQueueServiceTests {
         #expect(service.options == nil)
     }
 
+    @Test("批量应用合并 onTagsChanged，结束后 isApplying 为 false")
+    func bulkApplyCoalescesTagsChangedNotification() async throws {
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let database = try InMemoryDatabaseManager()
+        let tagRepository = GRDBTagRepository(database: database)
+        let repoTagRepository = GRDBRepoTagRepository(database: database)
+        let service = makeService(
+            insightProvider: provider,
+            database: database,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository
+        )
+        var first = Repo.makeMinimal(owner: "acme", name: "lock-first")
+        first.id = 530
+        var second = Repo.makeMinimal(owner: "acme", name: "lock-second")
+        second.id = 531
+        try await database.insertRepoFixture(id: first.id, owner: "acme", name: "lock-first")
+        try await database.insertRepoFixture(id: second.id, owner: "acme", name: "lock-second")
+        var options = BatchAIQueueOptions()
+        options.actions = [.tags]
+
+        #expect(service.start(repos: [first, second], options: options))
+        await waitUntilStopped(service)
+        service.selectAllTagReviewRepositories()
+
+        var tagsChangedCount = 0
+        service.onTagsChanged = { tagsChangedCount += 1 }
+        await service.applySelectedTagReviewRepositories()
+
+        // 旧实现每仓成功都回调一次；会话级合并后整批只应刷新 Sidebar 一次。
+        #expect(tagsChangedCount == 1)
+        #expect(!service.isApplyingSuggestedTags)
+        #expect(service.jobs.allSatisfy { $0.tagReviewState == .applied })
+        #expect(service.selectedTagReviewRepositoryCount == 0)
+    }
+
     @Test("摘要上下文开关作为本次任务参数传给 Provider")
     func summaryContextOverridesAreForwardedPerRun() async throws {
         let provider = ImmediateBatchAIInsightProvider(suggestions: [])
@@ -1315,7 +1351,6 @@ private final class ConcurrentBatchAIInsightProvider: BatchAIInsightProviding {
                 strengths: [],
                 risks: [],
                 minimalExample: nil,
-                // 并发测试需要一个可完成的标签结果；空建议现在属于业务失败。
                 suggestedTags: includeTags
                     ? [AITagSuggestion(name: "Test", confidence: 0.9, reason: "test fixture")]
                     : [],

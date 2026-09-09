@@ -111,6 +111,16 @@ final class BatchAIQueueService {
     /// 本轮是否已有标签落库，退出 runLoop 时据此合并一次 Sidebar 刷新。
     private var hasPendingTagsChangedNotification: Bool = false
 
+    /// 底栏「应用选中项」/ 批量落库重试的会话级锁。
+    ///
+    /// 不能只靠「当前是否有 `.applying` 行」派生：串行多仓时仓 A 刚变 `applied`、仓 B
+    /// 尚未进入 `applying` 会出现一帧 `isApplyingSuggestedTags == false`，底栏按钮反复
+    /// 启用/禁用形成闪烁。整批期间保持 true，结束再清。
+    private var isBulkApplyingSuggestedTags: Bool = false
+
+    /// 整批应用开始时冻结的「已选 N 个」快照；避免 `.applying` 被排除出有效选择后数字连跳。
+    private var frozenTagReviewSelectionCount: Int?
+
     // MARK: - 依赖（按 AppDependencies 装配顺序注入）
 
     private let insightService: any BatchAIInsightProviding
@@ -206,7 +216,11 @@ final class BatchAIQueueService {
     }
 
     var selectedTagReviewRepositoryCount: Int {
-        effectiveSelectedRepoIDsForTagApplication.count
+        // 整批应用中展示开批时的勾选数，避免每仓进入 applying / 完成后底栏数字闪跳。
+        if let frozenTagReviewSelectionCount {
+            return frozenTagReviewSelectionCount
+        }
+        return effectiveSelectedRepoIDsForTagApplication.count
     }
 
     var selectedTagReviewTagCount: Int {
@@ -217,8 +231,10 @@ final class BatchAIQueueService {
     }
 
     /// 标签正在写入数据库时不能丢弃会话，否则 UI 状态虽已清空，异步写入仍可能继续完成。
+    /// 含会话级整批锁：覆盖串行多仓间隙，防止底栏按钮闪烁。
     var isApplyingSuggestedTags: Bool {
-        jobs.contains { job in
+        if isBulkApplyingSuggestedTags { return true }
+        return jobs.contains { job in
             if case .applying = job.tagReviewState { true } else { false }
         }
     }
@@ -517,6 +533,8 @@ final class BatchAIQueueService {
         accountResetRequested = false
         silent = false
         hasPendingTagsChangedNotification = false
+        isBulkApplyingSuggestedTags = false
+        frozenTagReviewSelectionCount = nil
         sharedTagLibrary = nil
         initialTagCanonicalKeys = nil
         pendingTagCreationsByCanonicalKey = [:]
@@ -621,6 +639,9 @@ final class BatchAIQueueService {
             if case .failed = job.tagReviewState { return job.repoId }
             return nil
         }
+        // 与底栏批量应用同一会话锁，避免串行落库间隙底栏/重试按钮闪烁。
+        beginBulkTagApplication(selectionCount: nil)
+        defer { endBulkTagApplication() }
         for repoID in reviewFailureRepoIDs {
             guard !Task.isCancelled else { return }
             await applySelectedSuggestedTags(repoId: repoID)
@@ -803,6 +824,8 @@ final class BatchAIQueueService {
                 else { return nil }
                 return job.repoId
             }
+            beginBulkTagApplication(selectionCount: nil)
+            defer { endBulkTagApplication() }
             for repoID in reviewFailureRepoIDs {
                 guard !Task.isCancelled else { return }
                 await applySelectedSuggestedTags(repoId: repoID)
@@ -892,7 +915,12 @@ final class BatchAIQueueService {
             jobs[finalIndex].tagReviewState = .applied
             selectedRepoIDsForTagApplication.remove(repoId)
             try await persistJob(repoID: repoId)
-            onTagsChanged?()
+            // 整批应用中只记 pending，结束时合并一次 Sidebar 刷新，避免每仓触发整窗抖动。
+            if isBulkApplyingSuggestedTags {
+                hasPendingTagsChangedNotification = true
+            } else {
+                onTagsChanged?()
+            }
         } catch {
             guard let finalIndex = jobs.firstIndex(where: { $0.repoId == repoId }) else { return }
             jobs[finalIndex].tagReviewState = .failed(BatchAIFailure(error: error))
@@ -905,15 +933,31 @@ final class BatchAIQueueService {
     /// 标签可能需要按 canonical key 创建；串行复用单仓应用路径可以避免多个仓库同时创建同名标签，
     /// 同时每完成一个仓库就即时更新该行。单仓失败会保留勾选并继续处理其余仓库。
     func applySelectedTagReviewRepositories() async {
+        guard !isBulkApplyingSuggestedTags else { return }
         let selectedRepoIDs = effectiveSelectedRepoIDsForTagApplication
         guard !selectedRepoIDs.isEmpty else { return }
         let orderedRepoIDs = jobs
             .map(\.repoId)
             .filter { selectedRepoIDs.contains($0) }
+        beginBulkTagApplication(selectionCount: selectedRepoIDs.count)
+        defer { endBulkTagApplication() }
         for repoId in orderedRepoIDs {
             guard !Task.isCancelled else { return }
             await applySelectedSuggestedTags(repoId: repoId)
         }
+    }
+
+    /// 打开整批落库会话锁；`selectionCount` 非 nil 时冻结底栏「已选 N 个」。
+    private func beginBulkTagApplication(selectionCount: Int?) {
+        isBulkApplyingSuggestedTags = true
+        frozenTagReviewSelectionCount = selectionCount
+    }
+
+    /// 关闭整批落库会话锁，并合并发布本批产生的标签变更通知。
+    private func endBulkTagApplication() {
+        isBulkApplyingSuggestedTags = false
+        frozenTagReviewSelectionCount = nil
+        notifyTagsChangedIfNeeded()
     }
 
     // MARK: - 主循环
