@@ -11,6 +11,7 @@
 //
 
 import SwiftUI
+import ThinkingOrbsKit
 
 struct BatchAITagReviewRow: View {
     let job: BatchAIJob
@@ -211,7 +212,58 @@ struct BatchAITagReviewRow: View {
         }
     }
 
+    @ViewBuilder
     private func tagChip(_ suggestion: AITagSuggestion) -> some View {
+        // 成功 Tab 合并了 `.applied`（人工确认后）与 `.notRequired`（自动应用完成）：
+        // 两者都不应再显示勾选圆圈；待确认 / 失败重试仍走可选芯片。
+        if usesAppliedTagChipStyle {
+            appliedTagChip(suggestion)
+        } else {
+            selectableTagChip(suggestion)
+        }
+    }
+
+    /// 与 `BatchAIQueuePresentationStore.primaryState` 的 completed 口径对齐。
+    private var usesAppliedTagChipStyle: Bool {
+        switch job.tagReviewState {
+        case .applied, .notRequired:
+            true
+        case .pending, .applying, .failed, .ignored:
+            false
+        }
+    }
+
+    /// 已应用芯片：无选择控件，柔和绿底适配明暗主题（对齐同模块 statusPill 的 green.opacity）。
+    private func appliedTagChip(_ suggestion: AITagSuggestion) -> some View {
+        let fill = Color.green.opacity(colorScheme == .dark ? 0.22 : 0.14)
+        let stroke = Color.green.opacity(colorScheme == .dark ? 0.45 : 0.35)
+
+        return HStack(spacing: 5) {
+            Text(verbatim: suggestion.name)
+                .lineLimit(1)
+                .foregroundStyle(.primary)
+            Text(
+                suggestion.confidence,
+                format: .percent.precision(.fractionLength(0)).locale(locale)
+            )
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            if let availabilityKey = availabilityTitleKey(for: suggestion) {
+                Text(availabilityKey)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(interfaceScale.font(.captionStrong))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(fill, in: Capsule())
+        .overlay(Capsule().stroke(stroke, lineWidth: 1))
+        .help(suggestion.name)
+    }
+
+    /// 待确认 / 失败重试：保留圆圈勾选与 accent 选中态。
+    private func selectableTagChip(_ suggestion: AITagSuggestion) -> some View {
         let isSelected = job.selectedSuggestedTagIDs.contains(suggestion.id)
         let shape = RoundedRectangle(cornerRadius: 6)
         let fill = isSelected
@@ -379,8 +431,16 @@ struct BatchAITagReviewRow: View {
                 Image(systemName: "circle")
                     .foregroundStyle(.secondary)
             case .processing:
-                ProgressView()
-                    .controlSize(.small)
+                // AI 生成中（5 并行）用小号思考球替换系统小菊花；
+                // displaySize 把 .px20 几何缩到 16pt，塞进外层 16×16 的状态图标框。
+                ThinkingOrb(
+                    state: .working,
+                    size: .px20,
+                    theme: .auto,
+                    paused: reduceMotion,
+                    displaySize: 16
+                )
+                .accessibilityHidden(true)
             case .completed:
                 Image(systemName: completedStatusSymbol)
                     .foregroundStyle(completedStatusColor)

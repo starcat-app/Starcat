@@ -977,6 +977,12 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2026 Jakub Antalik",
             url: URL(string: "https://github.com/Jakubantalik/Libraries")
         ),
+        AboutDependency(
+            name: "ThinkingOrbsKit",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 Jakub Antalik",
+            url: URL(string: "https://github.com/Jakubantalik/Libraries.dev")
+        ),
     ]
 
     // MARK: Direct-only 依赖

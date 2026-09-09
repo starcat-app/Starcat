@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import ThinkingOrbsKit
 
 struct BatchAIWorkspacePreflightContext {
     let scope: BatchAIRepositoryScope
@@ -36,6 +37,7 @@ struct BatchAIWorkspaceView: View {
     @State private var showDiscardConfirmation = false
     @State private var reviewFilter: BatchAIResultFilter = .actionable
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     /// 预检要读 AI 任务配置；挂上 dependencies 后，设置页改完 Provider / Key 再回工作区会刷新按钮态。
     @Environment(AppDependencies.self) private var dependencies
 
@@ -293,12 +295,36 @@ struct BatchAIWorkspaceView: View {
     }
 
     private var statusPill: some View {
-        Label(statusTitle, systemImage: statusIcon)
-            .font(interfaceScale.font(.captionStrong))
-            .foregroundStyle(statusTint)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(statusTint.opacity(0.18), in: .capsule)
+        HStack(spacing: 5) {
+            if showsThinkingOrb {
+                // running 态用思考球替换 sparkles 图标；其余态仍用 SF Symbol。
+                // 思考球内部只读系统 accessibilityReduceMotion，不读 starcatReduceMotion
+                //（后者还 OR 了「设置→关闭应用内动画」），所以把偏好通过 paused 传进去补全兜底。
+                ThinkingOrb(
+                    state: .composing,
+                    size: .px20,
+                    theme: .auto,
+                    paused: reduceMotion
+                )
+                // 思考球自带 a11y 标签「Composing…」，与本地化 statusTitle 重复，
+                // 从无障碍树隐藏，让 Text(statusTitle) 作为唯一状态表述。
+                .accessibilityHidden(true)
+            } else {
+                Image(systemName: statusIcon)
+            }
+            Text(statusTitle)
+        }
+        .font(interfaceScale.font(.captionStrong))
+        .foregroundStyle(statusTint)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(statusTint.opacity(0.18), in: .capsule)
+    }
+
+    /// running 且未在取消中才显示思考球。取消中 isRunning 仍为 true
+    /// （isCancelling = cancelRequested && isRunning），必须排除，否则停止态也会画成球。
+    private var showsThinkingOrb: Bool {
+        service.isRunning && !service.isCancelling
     }
 
     private var tagSelectionSummary: String {

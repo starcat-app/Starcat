@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import ThinkingOrbsKit
 
 struct GitHubStarListAIGroupingSheet: View {
     let session: GitHubStarListAIGroupingSession
@@ -16,6 +17,7 @@ struct GitHubStarListAIGroupingSheet: View {
     let onClose: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
@@ -131,12 +133,26 @@ struct GitHubStarListAIGroupingSheet: View {
             Spacer()
             // 开始页没有分析任务，不展示暂停/进行中 pill，避免和原型里误放到预览稿的状态抢标题。
             if presentation.snapshot.totalCount > 0 {
-                Label(progressTitleKey, systemImage: progressStatusIcon)
-                    .font(interfaceScale.font(.captionStrong))
-                    .foregroundStyle(progressStatusTint)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(progressStatusTint.opacity(0.18), in: .capsule)
+                HStack(spacing: 5) {
+                    if showsThinkingOrb {
+                        // running 态用思考球替换 sparkles 图标；其余态仍用 SF Symbol。
+                        ThinkingOrb(
+                            state: .composing,
+                            size: .px20,
+                            theme: .auto,
+                            paused: reduceMotion
+                        )
+                        .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: progressStatusIcon)
+                    }
+                    Text(progressTitleKey)
+                }
+                .font(interfaceScale.font(.captionStrong))
+                .foregroundStyle(progressStatusTint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(progressStatusTint.opacity(0.18), in: .capsule)
                 AIOrganizationTaskControls(
                     isRunning: session.isRunning,
                     isPaused: session.isPaused,
@@ -499,6 +515,11 @@ struct GitHubStarListAIGroupingSheet: View {
         presentation.snapshot.availableLists.filter {
             !$0.instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+    }
+
+    /// running 且未在应用/暂停中才显示思考球（对齐 progressStatusIcon 的 if-else 优先级）。
+    private var showsThinkingOrb: Bool {
+        session.isRunning && !session.isApplying && !session.isPaused
     }
 
     private var progressTitleKey: LocalizedStringKey {

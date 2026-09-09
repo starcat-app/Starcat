@@ -88,6 +88,10 @@ packages:
   # 本地 Vendor 的 line beam 搜索框。来源见 ThirdParty/BorderBeamKit/VENDOR.md。
   BorderBeamKit:
     path: ThirdParty/BorderBeamKit
+  # ThinkingOrbsKit：上游 SPM 尚未发布，AI 标签整理窗口使用本地 Vendor 的
+  # 思考球加载动画。来源见 ThirdParty/ThinkingOrbsKit/VENDOR.md。
+  ThinkingOrbsKit:
+    path: ThirdParty/ThinkingOrbsKit
 
 targets:
   Starcat:
@@ -178,6 +182,7 @@ targets:
         product: MCP
       - package: Aptabase
       - package: BorderBeamKit
+      - package: ThinkingOrbsKit
       - target: StarcatWidgets
     # 在所有 build phase 跑完之后、codesign 之前执行：
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
@@ -307,6 +312,7 @@ targets:
       - package: Aptabase
       - package: Sparkle
       - package: BorderBeamKit
+      - package: ThinkingOrbsKit
       - target: StarcatDirectWidgets
     postBuildScripts:
       - name: "Copy Changelog Resource"

@@ -9,6 +9,7 @@
 //
 
 import SwiftUI
+import ThinkingOrbsKit
 
 struct GitHubStarListAIGroupingResultList: View, Equatable {
     let items: [GitHubStarListAIReviewItem]
@@ -171,6 +172,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     let onRetryAutomaticallyIgnored: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
 
     /// 复选框 16 + 间距 8 + Logo 26 + 间距 10，确保建议与操作始终从状态文案列开始。
@@ -529,9 +531,15 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
                 .foregroundStyle(.red)
                 .accessibilityLabel("githubStarLists.aiGrouping.status.failed")
         } else if item.status == .analyzing {
-            Image(systemName: "sparkles")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("githubStarLists.aiGrouping.status.processing")
+            // AI 分析中用小号思考球替换静态 sparkles；「处理中」文字由 statusLabel 承担。
+            ThinkingOrb(
+                state: .working,
+                size: .px20,
+                theme: .auto,
+                paused: reduceMotion,
+                displaySize: 16
+            )
+            .accessibilityHidden(true)
         } else if item.hasActionableSuggestions {
             Image(systemName: "sparkles")
                 .foregroundStyle(.tint)
@@ -561,8 +569,6 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
             Text("githubStarLists.aiGrouping.filter.applyFailed")
         } else if item.status == .failed {
             Text("githubStarLists.aiGrouping.filter.analysisFailed")
-        } else if item.status == .analyzing {
-            Text("githubStarLists.aiGrouping.status.processing")
         } else if item.isNoMatch {
             Text("githubStarLists.aiGrouping.status.noMatch")
         }
@@ -571,7 +577,7 @@ private struct GitHubStarListAIGroupingResultRow: View, Equatable {
     @ViewBuilder
     private var statusDetail: some View {
         if item.status == .analyzing {
-            Text("githubStarLists.aiGrouping.status.processing")
+            Text("batchAI.panel.row.processing")
         } else if item.status == .queued || item.status == .stopped {
             Text(item.status == .stopped
                 ? LocalizedStringKey("batchAI.panel.paused")
