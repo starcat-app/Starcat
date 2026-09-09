@@ -257,7 +257,7 @@ struct BatchAIOptionsSheet: View {
         }
     }
 
-    /// 右侧「每仓库标签」可编辑区间；改完即时写回 Settings，与标签分类设置同源。
+    /// 右侧「每仓库标签」区间：短芯片 + popover，即时写回 Settings，与标签分类设置同源。
     private var tagSuggestionCountEditor: some View {
         HStack(spacing: 8) {
             Image(systemName: "slider.horizontal.3")
@@ -268,50 +268,17 @@ struct BatchAIOptionsSheet: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .layoutPriority(1)
             Spacer(minLength: 4)
-            TextField(
-                "",
-                value: tagSuggestionMinCountBinding,
-                format: .number.grouping(.never)
-            )
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .frame(width: 40)
-            Text(verbatim: "–")
-                .foregroundStyle(.secondary)
-            TextField(
-                "",
-                value: tagSuggestionMaxCountBinding,
-                format: .number.grouping(.never)
-            )
-            .textFieldStyle(.roundedBorder)
-            .multilineTextAlignment(.trailing)
-            .frame(width: 40)
+            AITagSuggestionCountRangeControl(
+                minimum: settings.aiTagSuggestionMinCount,
+                maximum: settings.aiTagSuggestionMaxCount,
+                style: .compact
+            ) { minimum, maximum in
+                settings.applyAITagSuggestionCounts(minimum: minimum, maximum: maximum)
+            }
+            .layoutPriority(0)
         }
-    }
-
-    private var tagSuggestionMinCountBinding: Binding<Int> {
-        Binding(
-            get: { settings.aiTagSuggestionMinCount },
-            set: { newValue in
-                settings.applyAITagSuggestionCounts(
-                    minimum: newValue,
-                    maximum: settings.aiTagSuggestionMaxCount
-                )
-            }
-        )
-    }
-
-    private var tagSuggestionMaxCountBinding: Binding<Int> {
-        Binding(
-            get: { settings.aiTagSuggestionMaxCount },
-            set: { newValue in
-                settings.applyAITagSuggestionCounts(
-                    minimum: settings.aiTagSuggestionMinCount,
-                    maximum: newValue
-                )
-            }
-        )
     }
 
     private var panelBackground: some View {
