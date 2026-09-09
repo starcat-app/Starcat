@@ -33,29 +33,32 @@ import Foundation
 /// `@MainActor @Observable final class`，且 service 本身就是 `@MainActor`。
 @MainActor
 protocol ReadmeTranslationRepositoryProtocol {
-    /// 查找指定 owner/repo + 目标语言 + 翻译方式的最新翻译；未命中返 nil。
+    /// 查找指定 owner/repo + 目标语言 + 翻译方式 + 引擎的最新翻译；未命中返 nil。
     /// **副作用**：实现内可能更新 lastAccessedAt（mtime），用于 LRU。
     func find(
         owner: String,
         repo: String,
         targetLanguage: String,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine
     ) async throws -> ReadmeTranslation?
 
-    /// 写入翻译产物（PK 等价于 `(owner, repo, targetLanguage, mode)`，重复 key 覆盖）。
+    /// 写入翻译产物（PK 等价于 `(owner, repo, targetLanguage, mode, engine)`，重复 key 覆盖）。
     func upsert(
         _ translation: ReadmeTranslation,
         owner: String,
         repo: String,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine
     ) async throws
 
-    /// 删除指定 owner/repo 在某语言和方式下的翻译（当前 UI 未接，保留协议方法）。
+    /// 删除指定 owner/repo 在某语言、方式和引擎下的翻译（当前 UI 未接，保留协议方法）。
     func delete(
         owner: String,
         repo: String,
         targetLanguage: String,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine
     ) async throws
 
     /// 删除指定 owner/repo 的所有语言译文（CASCADE 等价；当前业务无人调，保留协议方法）。
@@ -63,4 +66,52 @@ protocol ReadmeTranslationRepositoryProtocol {
 
     /// 清掉全部翻译缓存（设置页"清除翻译缓存"按钮入口）。
     func deleteEverything() async throws
+}
+
+extension ReadmeTranslationRepositoryProtocol {
+    /// 历史调用默认按 AI 引擎路径，避免旧测试/调用方全部改签名。
+    func find(
+        owner: String,
+        repo: String,
+        targetLanguage: String,
+        mode: ReadmeTranslationMode = .segmented
+    ) async throws -> ReadmeTranslation? {
+        try await find(
+            owner: owner,
+            repo: repo,
+            targetLanguage: targetLanguage,
+            mode: mode,
+            engine: .ai
+        )
+    }
+
+    func upsert(
+        _ translation: ReadmeTranslation,
+        owner: String,
+        repo: String,
+        mode: ReadmeTranslationMode = .segmented
+    ) async throws {
+        try await upsert(
+            translation,
+            owner: owner,
+            repo: repo,
+            mode: mode,
+            engine: .ai
+        )
+    }
+
+    func delete(
+        owner: String,
+        repo: String,
+        targetLanguage: String,
+        mode: ReadmeTranslationMode = .segmented
+    ) async throws {
+        try await delete(
+            owner: owner,
+            repo: repo,
+            targetLanguage: targetLanguage,
+            mode: mode,
+            engine: .ai
+        )
+    }
 }

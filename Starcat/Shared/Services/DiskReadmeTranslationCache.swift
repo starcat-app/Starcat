@@ -118,7 +118,7 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
 
     // MARK: - ReadmeTranslationRepositoryProtocol
 
-    /// 查 `<owner>/<repo>/<targetLanguage>[.full].json`；命中时同时 `touch` mtime。
+    /// 查 `<owner>/<repo>/<targetLanguage>[.full][.system].json`；命中时同时 `touch` mtime。
     ///
     /// **为什么不存 lastAccessedAt 字段**：那样每次命中都要重写 ~300B JSON，IO 浪费；
     /// 用文件 mtime 表达"最近访问"是 POSIX 标准做法，0 解析成本。
@@ -126,13 +126,15 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         owner: String,
         repo: String,
         targetLanguage: String,
-        mode: ReadmeTranslationMode = .segmented
+        mode: ReadmeTranslationMode = .segmented,
+        engine: ReadmeTranslationEngine = .ai
     ) async throws -> ReadmeTranslation? {
         let metadataURL = try metadataFile(
             owner: owner,
             repo: repo,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
         guard fileManager.fileExists(atPath: metadataURL.path) else { return nil }
 
@@ -172,12 +174,13 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         _ translation: ReadmeTranslation,
         owner: String,
         repo: String,
-        mode: ReadmeTranslationMode = .segmented
+        mode: ReadmeTranslationMode = .segmented,
+        engine: ReadmeTranslationEngine = .ai
     ) async throws {
         let dir = try projectDirectory(owner: owner, repo: repo)
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let cacheName = translation.targetLanguage + mode.cacheFileSuffix
+        let cacheName = translation.targetLanguage + mode.cacheFileSuffix + engine.cacheFileInfix
         let metadataURL = dir.appendingPathComponent("\(cacheName).json")
         let metadataData = try encoder.encode(translation)
         try metadataData.write(to: metadataURL, options: .atomic)
@@ -195,13 +198,15 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         owner: String,
         repo: String,
         targetLanguage: String,
-        mode: ReadmeTranslationMode = .segmented
+        mode: ReadmeTranslationMode = .segmented,
+        engine: ReadmeTranslationEngine = .ai
     ) async throws {
         let metadataURL = try metadataFile(
             owner: owner,
             repo: repo,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
         try? fileManager.removeItem(at: metadataURL)
         try? fileManager.removeItem(at: metadataURL.deletingPathExtension().appendingPathExtension("html"))
@@ -432,10 +437,11 @@ final class DiskReadmeTranslationCache: ReadmeTranslationRepositoryProtocol {
         owner: String,
         repo: String,
         targetLanguage: String,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine
     ) throws -> URL {
         try assertSafePathComponent(targetLanguage)
-        let cacheName = targetLanguage + mode.cacheFileSuffix
+        let cacheName = targetLanguage + mode.cacheFileSuffix + engine.cacheFileInfix
         return try projectDirectory(owner: owner, repo: repo)
             .appendingPathComponent("\(cacheName).json")
     }

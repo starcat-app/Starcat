@@ -324,7 +324,8 @@ private final class HangingReadmeTranslationServiceStub: ReadmeTranslationServic
         owner: String,
         repo: String,
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine
     ) async throws -> ReadmeTranslation? {
         if parkedOwners.contains(owner) {
             await withCheckedContinuation { continuation in

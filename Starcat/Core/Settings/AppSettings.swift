@@ -1214,6 +1214,11 @@ final class AppSettings {
         didSet { persist(key: Keys.readmeTranslationMode, value: readmeTranslationMode.rawValue) }
     }
 
+    /// 详情页主「翻译」按钮与菜单当前选中的引擎（系统 / AI …）。
+    var readmeTranslationEngine: ReadmeTranslationEngine {
+        didSet { persist(key: Keys.readmeTranslationEngine, value: readmeTranslationEngine.rawValue) }
+    }
+
     /// Undo Star 历史保留天数（2026-07-05）。-1 = 永久不删。
     var undoStarRetentionDays: Int {
         didSet { defaults.set(undoStarRetentionDays, forKey: Keys.undoStarRetentionDays) }
@@ -1990,6 +1995,10 @@ final class AppSettings {
         self.readmeTranslationMode = translationModeRaw
             .flatMap(ReadmeTranslationMode.init(rawValue:))
             ?? .segmented
+        let translationEngineRaw = defaults.string(forKey: Keys.readmeTranslationEngine)
+        self.readmeTranslationEngine = translationEngineRaw
+            .flatMap(ReadmeTranslationEngine.init(rawValue:))
+            ?? .system
 
         let retentionDays = defaults.integer(forKey: Keys.undoStarRetentionDays)
         self.undoStarRetentionDays = retentionDays == 0 ? 7 : retentionDays  // 首次默认 7 天
@@ -2283,6 +2292,7 @@ final class AppSettings {
         snakeStyle = SnakeStyle.default
         readmeTranslationLanguage = .auto
         readmeTranslationMode = .segmented
+        readmeTranslationEngine = .system
         disableAnimations = false
         hideDockIcon = false
         spotlightSearchEnabled = false
@@ -2735,6 +2745,7 @@ final class AppSettings {
         static let snakeStyle = "settings.contribution.snakeStyle"  // HOM-SNAKE-MODES
         static let readmeTranslationLanguage = "settings.readme.translation.language"  // HOM-68
         static let readmeTranslationMode = "settings.readme.translation.mode.v1"
+        static let readmeTranslationEngine = "settings.readme.translation.engine.v1"
         static let undoStarRetentionDays = "settings.undoStar.retentionDays"  // 2026-07-05
         static let isProUser = "settings.pro.isProUser"  // HOM-151
         static let disableAnimations = "settings.general.disableAnimations.v1"  // 2026-06-15
@@ -2845,6 +2856,7 @@ final class AppSettings {
             snakeStyle,
             readmeTranslationLanguage,
             readmeTranslationMode,
+            readmeTranslationEngine,
             isProUser,
             disableAnimations,
             hideDockIcon,

@@ -288,7 +288,8 @@ struct RepoDetailWindowContent: View {
                 repo: repo,
                 sourceHtml: nil,
                 targetLanguage: dependencies.settings.effectiveReadmeTranslationLanguage,
-                mode: dependencies.settings.readmeTranslationMode
+                mode: dependencies.settings.readmeTranslationMode,
+                engine: dependencies.settings.readmeTranslationEngine
             )
         }
     }

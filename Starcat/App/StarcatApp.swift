@@ -341,6 +341,10 @@ struct StarcatApp: App {
                 .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
                 .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
+                // 系统翻译 Session 必须挂在存活的 SwiftUI 树上；零尺寸宿主不占布局。
+                .background {
+                    SystemTranslationSessionHost(broker: SystemTranslationSessionBroker.shared)
+                }
         }
         .starcatMCPPairingApprovalPresenter(store: dependencies.mcpDeviceStore)
         .task {
