@@ -247,6 +247,13 @@ struct GitHubStarListAIReviewItem: Identifiable, Equatable, Sendable {
 
     static func ordered(_ lhs: Self, _ rhs: Self) -> Bool {
         if lhs.sortRank != rhs.sortRank { return lhs.sortRank < rhs.sortRank }
+        if lhs.reviewState == .pendingAnalysis {
+            let lhsIsAnalyzing = lhs.status == .analyzing
+            let rhsIsAnalyzing = rhs.status == .analyzing
+            // 待处理可能有数千项；必须先展示当前 Worker 正在分析的仓库，
+            // 否则它们会被仓库名排序埋在等待队列中，用户无法确认正在处理谁。
+            if lhsIsAnalyzing != rhsIsAnalyzing { return lhsIsAnalyzing }
+        }
         if lhs.finishedAt != rhs.finishedAt {
             // 待确认建议按生成完成时间正序追加，避免后完成的结果不断插到列表顶部。
             if lhs.sortRank == 2 {

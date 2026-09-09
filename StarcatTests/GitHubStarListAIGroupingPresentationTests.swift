@@ -68,6 +68,17 @@ struct GitHubStarListAIGroupingPresentationTests {
         #expect(ordered.map(\.id) == [firstCompleted.id, laterCompleted.id])
     }
 
+    @Test("处理中仓库排在等待和暂停项之前")
+    func analyzingRepositoriesStayAtTop() {
+        let queued = makeItem(id: 1, status: .queued)
+        let stopped = makeItem(id: 2, status: .stopped)
+        let analyzing = makeItem(id: 9, status: .analyzing)
+
+        let ordered = [queued, stopped, analyzing].sorted(by: GitHubStarListAIReviewItem.ordered)
+
+        #expect(ordered.map(\.id) == [analyzing.id, queued.id, stopped.id])
+    }
+
     @Test("搜索同时覆盖仓库名、建议分组和当前分组")
     func searchesRepositoryAndGroups() {
         let item = makeItem(
