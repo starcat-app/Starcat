@@ -2,7 +2,7 @@
 
 这里记录 Starcat Mac App Store 版本的重要变化。
 
-## 1.6.1-待发布
+## 1.6.1
 
 Starcat 1.6.1 重点修复 1.6.0 上线后发现的界面、筛选、搜索与授权问题，并完善 macOS 26 Liquid Glass、Star 历史和 AI 整理体验。
 
