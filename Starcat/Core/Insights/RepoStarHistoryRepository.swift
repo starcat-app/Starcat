@@ -147,6 +147,28 @@ struct StarHistorySnapshot: Equatable, Sendable {
     }
 }
 
+/// 未落库的公开 README 详情使用 owner/repo 作为缓存身份，避免为 ephemeral Repo 伪造
+/// `repos` 外键行；payload 仍保存 GitHub 官方周数据，日级点按当前 stars_count 重建。
+private struct PublicRepoStarHistoryRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
+    static let databaseTableName = "public_repo_star_history"
+
+    let owner: String
+    let repo: String
+    let payloadJSON: Data
+    let fetchedAt: String
+    let staleAfter: String
+    let responseETag: String?
+
+    enum CodingKeys: String, CodingKey {
+        case owner
+        case repo
+        case payloadJSON = "payload_json"
+        case fetchedAt = "fetched_at"
+        case staleAfter = "stale_after"
+        case responseETag = "response_etag"
+    }
+}
+
 actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     private static let fullHistoryValidationInterval: TimeInterval = 7 * 24 * 60 * 60
     private static let maximumHistoryPages = 100
@@ -158,7 +180,7 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     private let githubAppHistoryAPI: (any GitHubStarHistoryAPIProtocol)?
     private let now: @Sendable () -> Date
     /// 所有显示范围共享同一份完整周缓存，因此并发去重必须按 repo，而不是按 range。
-    private var refreshTasks: [Int64: Task<StarHistorySnapshot, Error>] = [:]
+    private var refreshTasks: [String: Task<StarHistorySnapshot, Error>] = [:]
 
     init(
         database: any DatabaseManaging,
@@ -192,6 +214,15 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     ) async throws -> StarHistorySnapshot {
         // 当前总数为零时产品不展示历史；连派生点和覆盖缓存也不读，旧缓存保留到未来重新获 Star。
         guard repo.starsCount > 0 else { return Self.zeroStarSnapshot(range: range) }
+        if Self.isPublicEphemeral(repo) {
+            let cachedHistory = try await loadPublicHistory(repo: repo)
+            return try await publicSnapshot(
+                repo: repo,
+                range: range,
+                cachedHistory: cachedHistory,
+                remoteState: .cached
+            )
+        }
         let cachedPoints = try await points(repoId: repo.id)
         return await snapshot(
             repo: repo,
@@ -230,10 +261,19 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
     ) async throws -> StarHistorySnapshot {
         // 放在 single-flight 之前，确保零 Star 调用既不创建请求，也不等待同仓旧任务后误显历史。
         guard repo.starsCount > 0 else { return Self.zeroStarSnapshot(range: range) }
-        if let task = refreshTasks[repo.id] {
+        let refreshKey = Self.refreshKey(for: repo)
+        if let task = refreshTasks[refreshKey] {
             let shared = try await task.value
             guard shared.range != range else { return shared }
             // 网络与落库共享，但范围筛选属于每个调用方自己的读模型。
+            if Self.isPublicEphemeral(repo) {
+                return try await publicSnapshot(
+                    repo: repo,
+                    range: range,
+                    cachedHistory: try await loadPublicHistory(repo: repo),
+                    remoteState: shared.remoteState
+                )
+            }
             return await snapshot(
                 repo: repo,
                 range: range,
@@ -251,9 +291,9 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
                 forceRefresh: forceRefresh
             )
         }
-        refreshTasks[repo.id] = task
+        refreshTasks[refreshKey] = task
         defer {
-            refreshTasks[repo.id] = nil
+            refreshTasks[refreshKey] = nil
         }
         return try await task.value
     }
@@ -263,6 +303,13 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         range: StarHistoryRange,
         forceRefresh: Bool
     ) async throws -> StarHistorySnapshot {
+        if Self.isPublicEphemeral(repo) {
+            return try await performPublicRefresh(
+                repo: repo,
+                range: range,
+                forceRefresh: forceRefresh
+            )
+        }
         let cachedPoints = try await points(repoId: repo.id)
         let project = try await projectRepository?.fetchProject(repoID: repo.id)
         // 私仓必须先有“我的项目”关系，避免把不可见仓库名发给公共 OAuth 路径。
@@ -381,6 +428,113 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         )
     }
 
+    /// Trending / Discovery / Weekly 的公开 repo 可能没有本地 `repos` 行，只能按稳定的
+    /// owner/repo 身份保存官方周数据；这样不会与 `repo_star_history_points` 的外键约束冲突。
+    private func performPublicRefresh(
+        repo: Repo,
+        range: StarHistoryRange,
+        forceRefresh: Bool
+    ) async throws -> StarHistorySnapshot {
+        let cachedHistory = try await loadPublicHistory(repo: repo)
+        if !forceRefresh, let cachedHistory, !cachedHistory.isStale(at: now()) {
+            return try await publicSnapshot(
+                repo: repo,
+                range: range,
+                cachedHistory: cachedHistory,
+                remoteState: .cached
+            )
+        }
+
+        guard let api = oauthHistoryAPI else {
+            return try await publicSnapshot(
+                repo: repo,
+                range: range,
+                cachedHistory: cachedHistory,
+                remoteState: .unavailable
+            )
+        }
+
+        do {
+            let fetchedAt = now()
+            let needsFullHistory = forceRefresh
+                || cachedHistory == nil
+                || fetchedAt.timeIntervalSince(
+                    cachedHistory?.value.fullHistoryValidatedAt ?? .distantPast
+                ) >= Self.fullHistoryValidationInterval
+
+            if !needsFullHistory, let cachedHistory {
+                do {
+                    let latest = try await api.starHistory(
+                        owner: repo.owner,
+                        repo: repo.name,
+                        page: 1,
+                        perPage: 30,
+                        ifNoneMatch: cachedHistory.responseETag
+                    )
+                    let mergedWeeks = try Self.mergeLatestWeeks(
+                        latest.value,
+                        into: cachedHistory.value.weeks
+                    )
+                    let payload = GitHubStarHistoryCachePayload(
+                        weeks: mergedWeeks,
+                        fullHistoryValidatedAt: cachedHistory.value.fullHistoryValidatedAt
+                    )
+                    try await storePublicHistory(
+                        repo: repo,
+                        payload: payload,
+                        fetchedAt: fetchedAt,
+                        etag: latest.etag
+                    )
+                    return try await publicSnapshot(
+                        repo: repo,
+                        range: range,
+                        cachedHistory: try await loadPublicHistory(repo: repo),
+                        remoteState: .fresh
+                    )
+                } catch NetworkError.notModified(let etag) {
+                    try await touchPublicHistory(
+                        repo: repo,
+                        fetchedAt: fetchedAt,
+                        responseETag: etag
+                    )
+                    return try await publicSnapshot(
+                        repo: repo,
+                        range: range,
+                        cachedHistory: try await loadPublicHistory(repo: repo),
+                        remoteState: .notModified
+                    )
+                }
+            }
+
+            let fetched = try await fetchCompleteOfficialHistory(repo: repo, api: api)
+            let payload = GitHubStarHistoryCachePayload(
+                weeks: fetched.weeks,
+                fullHistoryValidatedAt: fetchedAt
+            )
+            try await storePublicHistory(
+                repo: repo,
+                payload: payload,
+                fetchedAt: fetchedAt,
+                etag: fetched.firstPageETag
+            )
+            return try await publicSnapshot(
+                repo: repo,
+                range: range,
+                cachedHistory: try await loadPublicHistory(repo: repo),
+                remoteState: .fresh
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return try await publicSnapshot(
+                repo: repo,
+                range: range,
+                cachedHistory: cachedHistory,
+                remoteState: .stale(Self.historyError(from: error))
+            )
+        }
+    }
+
     /// GitHub App 项目优先使用 installation token；公开仓失败后才回退主 OAuth。
     private func historyAPICandidates(
         for project: UserProject?,
@@ -402,6 +556,144 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
             }
             return candidates
         }
+    }
+
+    private static func isPublicEphemeral(_ repo: Repo) -> Bool {
+        !repo.isPrivate && (repo.id <= 0 || repo.cachedAt == nil)
+    }
+
+    private static func refreshKey(for repo: Repo) -> String {
+        if isPublicEphemeral(repo) {
+            return "public:\(repo.owner.lowercased())/\(repo.name.lowercased())"
+        }
+        return "local:\(repo.id)"
+    }
+
+    private func loadPublicHistory(
+        repo: Repo
+    ) async throws -> RepositoryInsightsCachedValue<GitHubStarHistoryCachePayload>? {
+        let owner = repo.owner.lowercased()
+        let name = repo.name.lowercased()
+        let record = try await database.writer.read { db in
+            try PublicRepoStarHistoryRecord
+                .filter(Column("owner") == owner)
+                .filter(Column("repo") == name)
+                .fetchOne(db)
+        }
+        guard let record else { return nil }
+        guard let fetchedAt = ISO8601DateFormatter.shared.date(from: record.fetchedAt),
+              let staleAfter = ISO8601DateFormatter.shared.date(from: record.staleAfter)
+        else {
+            try await deletePublicHistory(owner: owner, repo: name)
+            return nil
+        }
+
+        do {
+            let payload = try JSONDecoder().decode(
+                GitHubStarHistoryCachePayload.self,
+                from: record.payloadJSON
+            )
+            return RepositoryInsightsCachedValue(
+                value: payload,
+                fetchedAt: fetchedAt,
+                staleAfter: staleAfter,
+                responseETag: record.responseETag,
+                defaultBranchSHA: nil
+            )
+        } catch {
+            // 单个公开仓库的历史 payload 损坏时只淘汰该条缓存，不能影响其它 README。
+            try await deletePublicHistory(owner: owner, repo: name)
+            return nil
+        }
+    }
+
+    private func storePublicHistory(
+        repo: Repo,
+        payload: GitHubStarHistoryCachePayload,
+        fetchedAt: Date,
+        etag: String?
+    ) async throws {
+        let record = PublicRepoStarHistoryRecord(
+            owner: repo.owner.lowercased(),
+            repo: repo.name.lowercased(),
+            payloadJSON: try JSONEncoder().encode(payload),
+            fetchedAt: ISO8601DateFormatter.shared.string(from: fetchedAt),
+            staleAfter: ISO8601DateFormatter.shared.string(
+                from: fetchedAt.addingTimeInterval(RepositoryInsightsDataset.starHistoryWeeks.timeToLive)
+            ),
+            responseETag: etag
+        )
+        try await database.writer.write { db in
+            try record.save(db)
+        }
+    }
+
+    private func touchPublicHistory(
+        repo: Repo,
+        fetchedAt: Date,
+        responseETag: String?
+    ) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE public_repo_star_history
+                    SET fetched_at = ?, stale_after = ?, response_etag = COALESCE(?, response_etag)
+                    WHERE owner = ? AND repo = ?
+                    """,
+                arguments: [
+                    ISO8601DateFormatter.shared.string(from: fetchedAt),
+                    ISO8601DateFormatter.shared.string(
+                        from: fetchedAt.addingTimeInterval(RepositoryInsightsDataset.starHistoryWeeks.timeToLive)
+                    ),
+                    responseETag,
+                    repo.owner.lowercased(),
+                    repo.name.lowercased()
+                ]
+            )
+        }
+    }
+
+    private func deletePublicHistory(owner: String, repo: String) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "DELETE FROM public_repo_star_history WHERE owner = ? AND repo = ?",
+                arguments: [owner, repo]
+            )
+        }
+    }
+
+    private func publicSnapshot(
+        repo: Repo,
+        range: StarHistoryRange,
+        cachedHistory: RepositoryInsightsCachedValue<GitHubStarHistoryCachePayload>?,
+        remoteState: StarHistoryRemoteState
+    ) async throws -> StarHistorySnapshot {
+        guard let cachedHistory else {
+            return await snapshot(
+                repo: repo,
+                range: range,
+                rawPoints: [],
+                remoteState: remoteState,
+                loadStoredCoverage: false
+            )
+        }
+        let points = try Self.officialPoints(
+            weeks: cachedHistory.value.weeks,
+            currentStars: repo.starsCount,
+            fetchedAt: cachedHistory.fetchedAt
+        )
+        return await snapshot(
+            repo: repo,
+            range: range,
+            rawPoints: points,
+            remoteState: remoteState,
+            coverageOverride: Self.coverage(
+                weeks: cachedHistory.value.weeks,
+                fetchedAt: cachedHistory.fetchedAt,
+                now: now()
+            ),
+            loadStoredCoverage: false
+        )
     }
 
     /// App → OAuth 仅对「换凭据可能成功」的失败开放，避免把契约错误打两遍。
@@ -670,14 +962,18 @@ actor GRDBRepoStarHistoryRepository: RepoStarHistoryRepositoryProtocol {
         repo: Repo,
         range: StarHistoryRange,
         rawPoints: [StarHistoryPoint],
-        remoteState: StarHistoryRemoteState
+        remoteState: StarHistoryRemoteState,
+        coverageOverride: StarHistoryCoverage? = nil,
+        loadStoredCoverage: Bool = true
     ) async -> StarHistorySnapshot {
-        let cachedCoverage = try? await insightsCache.load(
-            repoId: repo.id, dataset: .starHistoryCoverage, range: .all,
-            as: StarHistoryCoverage.self
-        )
+        let storedCoverage = loadStoredCoverage
+            ? try? await insightsCache.load(
+                repoId: repo.id, dataset: .starHistoryCoverage, range: .all,
+                as: StarHistoryCoverage.self
+            )
+            : nil
         // 旧缓存没有覆盖信息时仍可画曲线；只是不声称最后事件日就是采集水位。
-        let coverage = cachedCoverage?.value
+        let coverage = coverageOverride ?? storedCoverage?.value
         let matchingCoverage = coverage.flatMap { value in
             rawPoints.contains { $0.source == .githubHistory && $0.fetchedAt == value.generatedAt }
                 ? value : nil

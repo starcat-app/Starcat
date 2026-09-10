@@ -60,7 +60,8 @@ struct ActivityRepoDetailContent: View {
                 repo: repo,
                 translationVM: translationVM,
                 settings: settings
-            )
+            ),
+            starHistoryRepo: repo
         ) {
             readmeVM.reload(repo: repo, isLoggedIn: authSession.state.isAuthenticated)
         } onLogin: {

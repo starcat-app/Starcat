@@ -83,7 +83,8 @@ struct WeeklyDetailContent: View {
                     repo: repo,
                     translationVM: translationVM,
                     settings: settings
-                ) : nil
+                ) : nil,
+                starHistoryRepo: repo
             ) {
                 // HOM-201 P1-4（2026-06-14）:onRetry 是用户主动刷新(底部 cacheFooter 刷新按钮),
                 // 必须绕过 softTtl 短路,否则按 6h TTL 6 小时内会被忽略不刷新。

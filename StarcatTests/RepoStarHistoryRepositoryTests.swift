@@ -148,6 +148,52 @@ struct RepoStarHistoryRepositoryTests {
         #expect(restored.coverage == snapshot.coverage)
     }
 
+    @Test("未落库的公开 README 仓库按 owner/repo 使用官方历史缓存")
+    func publicEphemeralRepositoryUsesOwnerRepoCache() async throws {
+        let database = try InMemoryDatabaseManager()
+        let now = try #require(
+            ISO8601DateFormatter.shared.date(from: "2026-07-27T12:00:00.000Z")
+        )
+        let api = StubGitHubStarHistoryAPI(pages: [
+            1: .init(
+                weeks: [week("2026-07-26", days: [10, 10, 0, 0, 0, 0, 0])],
+                nextPage: nil,
+                etag: "\"ephemeral-v1\""
+            )
+        ])
+        let repository = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: api,
+            now: { now }
+        )
+        var repo = Repo.makeMinimal(owner: "Octo", name: "Public-README")
+        repo.id = 0
+        repo.starsCount = 20
+        repo.cachedAt = nil
+
+        let fresh = try await repository.refresh(
+            repo: repo,
+            range: .all,
+            forceRefresh: true
+        )
+
+        #expect(fresh.remoteState == .fresh)
+        #expect(fresh.points.count == 2)
+        #expect(fresh.points.last?.count == 20)
+        #expect(await api.requests().count == 1)
+
+        let reopened = GRDBRepoStarHistoryRepository(
+            database: database,
+            oauthHistoryAPI: StubGitHubStarHistoryAPI(pages: [:]),
+            now: { now.addingTimeInterval(60 * 60) }
+        )
+        let cached = try await reopened.cached(repo: repo, range: .all)
+
+        #expect(cached.remoteState == .cached)
+        #expect(cached.points.count == 2)
+        #expect(cached.points.last?.count == 20)
+    }
+
     @Test("AI 与洞察页并发刷新同一 Star 范围只请求一次")
     func concurrentConsumersShareStarHistoryRefresh() async throws {
         let database = try InMemoryDatabaseManager()

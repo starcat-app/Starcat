@@ -67,7 +67,8 @@ struct TrendingDetailContent: View {
                 repo: repo,
                 translationVM: translationVM,
                 settings: settings
-            ) : nil
+            ) : nil,
+            starHistoryRepo: repo
         ) {
             // README 重新加载走 trending 链路。
             //

@@ -119,6 +119,26 @@ enum DatabaseMigrations {
         registerV20(into: &migrator)
         registerV21(into: &migrator)
         registerV22(into: &migrator)
+        registerV23(into: &migrator)
+    }
+
+    // MARK: - v23-public-repo-star-history：公开 README 详情的官方历史缓存（2026-09-10）
+
+    /// Trending / Discovery / Weekly 详情中的公开仓库可能只是内存里的 ephemeral Repo，
+    /// 不允许为了缓存历史而伪造 `repos` 行。独立使用 owner/repo 主键，既保持外键边界，
+    /// 也让这些详情页能复用 GitHub 官方 API 的 ETag / 周数据缓存。
+    private static func registerV23(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v23-public-repo-star-history") { db in
+            try db.create(table: "public_repo_star_history") { table in
+                table.column("owner", .text).notNull()
+                table.column("repo", .text).notNull()
+                table.column("payload_json", .blob).notNull()
+                table.column("fetched_at", .text).notNull()
+                table.column("stale_after", .text).notNull()
+                table.column("response_etag", .text)
+                table.primaryKey(["owner", "repo"])
+            }
+        }
     }
 
     // MARK: - v22-ai-organization-drafts：恢复未确认的 AI 整理结果（2026-09-08）

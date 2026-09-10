@@ -171,7 +171,8 @@ private struct DiscoveryReadmeContent: View {
                 repo: repo,
                 translationVM: translationVM,
                 settings: settings
-            ) : nil
+            ) : nil,
+            starHistoryRepo: repo
         ) {
             readmeVM.loadTrending(
                 owner: repo.owner,

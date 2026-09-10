@@ -320,6 +320,11 @@ struct ReadmeStateView: View {
     /// 骨架是不透明的，保留内容不会被用户看到，也不会接收点击或进入辅助功能树。
     @State private var retainedReadmeDocument: PresentedReadmeDocument?
 
+    /// 非 Manage 的 README 详情页通过显式 repo 开启同一套 Star History DOM 状态机；
+    /// Manage 仍由 `ManageDetailContent` 持有，避免同一份 README 产生两个加载器。
+    @State private var readmeStarHistoryViewModel: ReadmeStarHistoryViewModel?
+    @State private var readmeStarHistoryTask: Task<Void, Never>?
+
     /// 主窗口各详情页共用一份翻译 VM。星标有 HomeView.selectedRepoID 的 prepare，
     /// 探索 / 活动 / 周刊没有；这里按当前仓 bind，避免 A 的译文和光圈留在 B 上。
     @Environment(ReadmeTranslationViewModel.self) private var sharedTranslationVM
@@ -335,6 +340,9 @@ struct ReadmeStateView: View {
     let starHistoryRenderState: ReadmeStarHistoryRenderState
     /// WebView 接近文档底部时的加载兜底；Manage 场景通常已在首帧预加载。
     let onApproachingBottom: () -> Void
+    /// 非 Manage README 详情页传入 repo 后，自动复用 Star History 加载与底部兜底。
+    /// nil 表示调用方自行提供 `starHistoryRenderState` / `onApproachingBottom`。
+    let starHistoryRepo: Repo?
     let onRetry: @MainActor @Sendable () -> Void
     /// 未登录用户点击"登录"按钮时的回调
     let onLogin: () -> Void
@@ -350,6 +358,7 @@ struct ReadmeStateView: View {
         translationControl: ReadmeTranslationControl? = nil,
         starHistoryRenderState: ReadmeStarHistoryRenderState = .empty,
         onApproachingBottom: @escaping () -> Void = {},
+        starHistoryRepo: Repo? = nil,
         onRetry: @escaping @MainActor @Sendable () -> Void,
         onLogin: @escaping () -> Void
     ) {
@@ -360,6 +369,7 @@ struct ReadmeStateView: View {
         self.translationControl = translationControl
         self.starHistoryRenderState = starHistoryRenderState
         self.onApproachingBottom = onApproachingBottom
+        self.starHistoryRepo = starHistoryRepo
         self.onRetry = onRetry
         self.onLogin = onLogin
     }
@@ -413,6 +423,12 @@ struct ReadmeStateView: View {
             reduceMotion ? nil : .easeOut(duration: ReadmeRevealTiming.contentRevealSeconds),
             value: showsReadmePlaceholder
         )
+        .task(id: readmeStarHistoryPreloadIdentity) {
+            await preloadReadmeStarHistoryIfNeeded()
+        }
+        .onDisappear {
+            cancelReadmeStarHistory()
+        }
         .toast(
             message: $translationToast,
             icon: "exclamationmark.triangle.fill",
@@ -752,8 +768,8 @@ struct ReadmeStateView: View {
                     translationSourceDocumentKey = documentKey
                     translationSourceSnapshot = snapshot
                 },
-                starHistoryRenderState: starHistoryRenderState,
-                onApproachingBottom: onApproachingBottom
+                starHistoryRenderState: effectiveStarHistoryRenderState,
+                onApproachingBottom: effectiveOnApproachingBottom
             )
             // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
             // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。
@@ -788,6 +804,70 @@ struct ReadmeStateView: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 非 Manage README 页面沿用同一份 cache-first / ETag / DOM 骨架逻辑。
+    /// Manage 已经在外层持有 ViewModel，因此只在显式传入 `starHistoryRepo` 时启用。
+    private var effectiveStarHistoryRenderState: ReadmeStarHistoryRenderState {
+        starHistoryRepo == nil
+            ? starHistoryRenderState
+            : (readmeStarHistoryViewModel?.renderState ?? .empty)
+    }
+
+    private var effectiveOnApproachingBottom: () -> Void {
+        starHistoryRepo == nil ? onApproachingBottom : startReadmeStarHistoryFallbackIfNeeded
+    }
+
+    /// 用 owner/repo 组成身份，而不是只用临时 Repo.id；Trending / Discovery 的 Repo
+    /// 可能是未落库的 ephemeral 对象，但同一公开仓库仍必须共享加载生命周期。
+    private var readmeStarHistoryPreloadIdentity: String? {
+        guard let repo = starHistoryRepo else { return nil }
+        return "\(repo.owner.lowercased())/\(repo.name.lowercased())|\(repo.id)|\(dependencies.databaseScopeRevision)|\(locale.identifier)"
+    }
+
+    private func preloadReadmeStarHistoryIfNeeded() async {
+        guard let repo = starHistoryRepo else {
+            readmeStarHistoryViewModel?.cancel()
+            return
+        }
+        guard repo.starsCount > 0 else {
+            readmeStarHistoryViewModel?.cancel()
+            return
+        }
+
+        let historyViewModel: ReadmeStarHistoryViewModel
+        if let readmeStarHistoryViewModel {
+            historyViewModel = readmeStarHistoryViewModel
+        } else {
+            let created = ReadmeStarHistoryViewModel(
+                repository: dependencies.repoStarHistoryRepository,
+                projectVisibilityProvider: { repoID in
+                    (try? await dependencies.userProjectRepository.fetchProject(repoID: repoID))?.visibility
+                }
+            )
+            readmeStarHistoryViewModel = created
+            historyViewModel = created
+        }
+
+        await historyViewModel.loadIfNeeded(
+            repo: repo,
+            databaseScopeRevision: dependencies.databaseScopeRevision,
+            locale: locale
+        )
+    }
+
+    private func startReadmeStarHistoryFallbackIfNeeded() {
+        guard starHistoryRepo?.starsCount ?? 0 > 0 else { return }
+        readmeStarHistoryTask?.cancel()
+        readmeStarHistoryTask = Task {
+            await preloadReadmeStarHistoryIfNeeded()
+        }
+    }
+
+    private func cancelReadmeStarHistory() {
+        readmeStarHistoryTask?.cancel()
+        readmeStarHistoryTask = nil
+        readmeStarHistoryViewModel?.cancel()
     }
 
     @ViewBuilder
