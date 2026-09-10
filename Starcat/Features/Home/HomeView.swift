@@ -1493,7 +1493,8 @@ struct HomeView: View {
                 repo: nil,
                 sourceHtml: nil,
                 targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                mode: settings.readmeTranslationMode
+                mode: settings.readmeTranslationMode,
+                engine: settings.readmeTranslationEngine
             )
         }
     }
@@ -1519,7 +1520,8 @@ struct HomeView: View {
                 repo: nil,
                 sourceHtml: nil,
                 targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                mode: settings.readmeTranslationMode
+                mode: settings.readmeTranslationMode,
+                engine: settings.readmeTranslationEngine
             )
         }
     }

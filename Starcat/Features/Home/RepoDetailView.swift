@@ -679,7 +679,8 @@ struct ReadmeStateView: View {
                 repo: nil,
                 sourceHtml: nil,
                 targetLanguage: language,
-                mode: mode
+                mode: mode,
+                engine: settings.readmeTranslationEngine
             )
             return
         }
@@ -693,7 +694,8 @@ struct ReadmeStateView: View {
             repo: control.repo,
             sourceHtml: html,
             targetLanguage: language,
-            mode: mode
+            mode: mode,
+            engine: settings.readmeTranslationEngine
         )
     }
 
@@ -1081,7 +1083,8 @@ struct ReadmeTranslationFooterButton: View {
                         sourceHtml: sourceHtml,
                         sourceSegments: selectedSourceSegments,
                         targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                        mode: settings.readmeTranslationMode
+                        mode: settings.readmeTranslationMode,
+                        engine: settings.readmeTranslationEngine
                     )
                 }
             } label: {
@@ -1171,10 +1174,32 @@ struct ReadmeTranslationFooterButton: View {
         return "readme.translate.tooltip.translate"
     }
 
-    /// 右侧 chevron 下拉菜单：切换目标语言、重新翻译。
+    /// 右侧 chevron 下拉菜单：引擎 / 方式 / 语言 / 重新翻译。
     /// 不放更多按钮：footer 已足够小，再加按钮会和右边的刷新图标抢空间。
+    @State private var availableEngines: [ReadmeTranslationEngine] = []
+
     private var languageMenu: some View {
         Menu {
+            if !availableEngines.isEmpty {
+                Picker(selection: Binding(
+                    get: { settings.readmeTranslationEngine },
+                    set: { settings.readmeTranslationEngine = $0 }
+                )) {
+                    ForEach(availableEngines) { engine in
+                        Label(
+                            LocalizedStringKey(engine.displayNameKey),
+                            systemImage: engine.systemImage
+                        )
+                        .tag(engine)
+                    }
+                } label: {
+                    Text("readme.translate.menu.engine")
+                }
+                .pickerStyle(.inline)
+
+                Divider()
+            }
+
             Picker(selection: Binding(
                 get: { settings.readmeTranslationMode },
                 set: { settings.readmeTranslationMode = $0 }
@@ -1213,7 +1238,8 @@ struct ReadmeTranslationFooterButton: View {
                     sourceHtml: sourceHtml,
                     sourceSegments: selectedSourceSegments,
                     targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                    mode: settings.readmeTranslationMode
+                    mode: settings.readmeTranslationMode,
+                    engine: settings.readmeTranslationEngine
                 )
             } label: {
                 Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
@@ -1240,6 +1266,26 @@ struct ReadmeTranslationFooterButton: View {
         .frame(width: 18)
         .focusEffectDisabled()
         .help("readme.translate.menu.tooltip")
+        .task(id: settings.effectiveReadmeTranslationLanguage) {
+            await refreshAvailableEngines()
+        }
+    }
+
+    @MainActor
+    private func refreshAvailableEngines() async {
+        let available = await ReadmeTranslationEngineAvailability.availableEngines(
+            targetLanguage: settings.effectiveReadmeTranslationLanguage,
+            settings: settings,
+            keychain: KeychainManager.shared
+        )
+        availableEngines = available
+        let resolved = ReadmeTranslationEngineAvailability.resolvedDefault(
+            current: settings.readmeTranslationEngine,
+            available: available
+        )
+        if resolved != settings.readmeTranslationEngine, !available.isEmpty {
+            settings.readmeTranslationEngine = resolved
+        }
     }
 }
 

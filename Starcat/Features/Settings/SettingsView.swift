@@ -111,6 +111,8 @@ struct SettingsView: View {
         /// 2026-09-06 新增：权限类配置（OAuth scope、数据贡献）独立成页。
         case privacy
         case ai
+        /// README 翻译服务（系统 MT 等）；AI 翻译配置仍在 ai tab。
+        case translation
         case mcp
         /// 2026-06-08 新增：第三方 / 自建后端服务的 URL 配置。
         case services
@@ -131,6 +133,7 @@ struct SettingsView: View {
             case .pro:          return "Pro"
             case .privacy:      return "settings.privacy.title"
             case .ai:           return "settings.ai.title"
+            case .translation:  return "settings.translation.title"
             case .mcp:          return "settings.mcp.title"
             case .services:     return "settings.services.title"
             case .integrations: return "settings.integrations.title"
@@ -152,6 +155,7 @@ struct SettingsView: View {
             case .pro:          return "crown.fill"
             case .privacy:      return "lock.shield"
             case .ai:           return "sparkles"
+            case .translation:  return "character.bubble"
             case .mcp:          return "point.3.connected.trianglepath.dotted"
             case .services:     return "network"
             case .integrations: return "puzzlepiece.extension"
@@ -309,6 +313,7 @@ struct SettingsView: View {
 
             Section("settings.sidebar.group.intelligence") {
                 settingsSidebarRow(.ai)
+                settingsSidebarRow(.translation)
                 settingsSidebarRow(.mcp)
                 settingsSidebarRow(.services)
                 settingsSidebarRow(.integrations)
@@ -379,6 +384,8 @@ struct SettingsView: View {
             privacyTab
         case .ai:
             AISettingsTab()
+        case .translation:
+            TranslationSettingsTab()
         case .mcp:
             MCPSettingsTab()
         case .services:
@@ -495,6 +502,8 @@ struct SettingsView: View {
             return SettingsLocation(tab: .privacy)
         case "ai", "ai.chat", "ai.embedding", "ai.repoContext":
             return SettingsLocation(tab: .ai, target: target == "ai" ? nil : target)
+        case "translation":
+            return SettingsLocation(tab: .translation)
         case "mcp":
             return SettingsLocation(tab: .mcp)
         case "services":

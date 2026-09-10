@@ -58,13 +58,16 @@ struct ReadmeTranslationRequest: Sendable {
     var sourceSegments: [ReadmeSourceSegment]
     var targetLanguage: ReadmeTranslationLanguage
     var mode: ReadmeTranslationMode
+    /// 运行时引擎；决定走系统翻译还是 AI，并隔离磁盘缓存。
+    var engine: ReadmeTranslationEngine
 
     init(
         repo: Repo,
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         self.init(
             cacheOwner: repo.owner,
@@ -73,7 +76,8 @@ struct ReadmeTranslationRequest: Sendable {
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -84,7 +88,8 @@ struct ReadmeTranslationRequest: Sendable {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         self.cacheOwner = cacheOwner
         self.cacheRepo = cacheRepo
@@ -93,6 +98,7 @@ struct ReadmeTranslationRequest: Sendable {
         self.sourceSegments = sourceSegments
         self.targetLanguage = targetLanguage
         self.mode = mode
+        self.engine = engine
     }
 }
 
@@ -110,7 +116,8 @@ protocol ReadmeTranslationServiceProtocol: AnyObject {
         owner: String,
         repo: String,
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine
     ) async throws -> ReadmeTranslation?
 
     func isCacheFresh(cached: ReadmeTranslation, sourceHtml: String) -> Bool
@@ -158,13 +165,15 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
         owner: String,
         repo: String,
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode = .segmented
+        mode: ReadmeTranslationMode = .segmented,
+        engine: ReadmeTranslationEngine = .ai
     ) async throws -> ReadmeTranslation? {
         try await translationRepository.find(
             owner: owner,
             repo: repo,
             targetLanguage: targetLanguage.rawValue,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -238,7 +247,10 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
             throw ReadmeTranslationError.alreadyInTargetLanguage
         }
 
-        try entitlementGate?.requirePro(.readmeTranslation)
+        // AI 路径保留既有 Pro 门控；系统翻译一期不做门控（产品确认 C）。
+        if request.engine == .ai {
+            try entitlementGate?.requirePro(.readmeTranslation)
+        }
 
         let documentHash = Self.hash(trimmedSource)
         let coverage = Self.coverage(
@@ -248,7 +260,7 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
         )
         var record = Self.makeRecord(
             request: request,
-            model: cached?.model ?? "",
+            model: cached?.model ?? request.engine.cacheModelToken,
             documentHash: documentHash,
             translatedByHash: translatedByHash,
             isComplete: coverage.isComplete
@@ -269,11 +281,115 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
                 record,
                 owner: request.cacheOwner,
                 repo: request.cacheRepo,
-                mode: request.mode
+                mode: request.mode,
+                engine: request.engine
             )
             return record
         }
 
+        switch request.engine {
+        case .system:
+            return try await translateWithSystem(
+                request: request,
+                uniqueSources: uniqueSources,
+                toTranslate: toTranslate,
+                skippedHashes: skippedHashes,
+                documentHash: documentHash,
+                translatedByHash: &translatedByHash,
+                onBatch: onBatch
+            )
+        case .ai:
+            return try await translateWithAI(
+                request: request,
+                uniqueSources: uniqueSources,
+                toTranslate: toTranslate,
+                skippedHashes: skippedHashes,
+                documentHash: documentHash,
+                translatedByHash: &translatedByHash,
+                onBatch: onBatch
+            )
+        }
+    }
+
+    /// 系统翻译：复用切批与增量回填，会话走 `SystemTranslationSessionBroker`。
+    private func translateWithSystem(
+        request: ReadmeTranslationRequest,
+        uniqueSources: [ReadmeSourceSegment],
+        toTranslate: [ReadmeSourceSegment],
+        skippedHashes: Set<String>,
+        documentHash: String,
+        translatedByHash: inout [String: String],
+        onBatch: BatchProgressHandler?
+    ) async throws -> ReadmeTranslation {
+        let model = ReadmeTranslationEngine.system.cacheModelToken
+        let batches = Self.makeBatches(toTranslate)
+        var record = Self.makeRecord(
+            request: request,
+            model: model,
+            documentHash: documentHash,
+            translatedByHash: translatedByHash,
+            isComplete: false
+        )
+
+        for batch in batches {
+            try Task.checkCancellation()
+            let responses = try await SystemTranslationSessionBroker.shared.translateBatch(
+                items: batch.map { ($0.sourceHash, $0.text) },
+                targetLanguage: request.targetLanguage
+            )
+            var batchTranslated: [ReadmeTranslatedSegment] = []
+            for response in responses {
+                let hash = response.clientIdentifier
+                    ?? Self.hash(response.sourceText)
+                let text = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                batchTranslated.append(
+                    ReadmeTranslatedSegment(sourceHash: hash, translatedText: text)
+                )
+            }
+            // 按请求顺序兜底：若 clientIdentifier 丢失，仍按 batch 下标对齐。
+            if batchTranslated.count != batch.count {
+                batchTranslated = zip(batch, responses).map { source, response in
+                    ReadmeTranslatedSegment(
+                        sourceHash: source.sourceHash,
+                        translatedText: response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+                }
+            }
+            Self.merge(batchTranslated, into: &translatedByHash)
+            let progress = Self.coverage(
+                uniqueSources: uniqueSources,
+                translatedByHash: translatedByHash,
+                skippedHashes: skippedHashes
+            )
+            record = Self.makeRecord(
+                request: request,
+                model: model,
+                documentHash: documentHash,
+                translatedByHash: translatedByHash,
+                isComplete: progress.isComplete
+            )
+            try await persistAndPublish(
+                record,
+                request: request,
+                sourceSegments: request.sourceSegments,
+                completedCount: progress.count,
+                totalCount: uniqueSources.count,
+                onBatch: onBatch
+            )
+        }
+        return record
+    }
+
+    private func translateWithAI(
+        request: ReadmeTranslationRequest,
+        uniqueSources: [ReadmeSourceSegment],
+        toTranslate: [ReadmeSourceSegment],
+        skippedHashes: Set<String>,
+        documentHash: String,
+        translatedByHash: inout [String: String],
+        onBatch: BatchProgressHandler?
+    ) async throws -> ReadmeTranslation {
         let task = settings.aiTranslationTask
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel)
         let parameters = settings.effectiveParameters(for: task)
@@ -305,7 +421,7 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
             translatedByHash: translatedByHash,
             skippedHashes: skippedHashes
         )
-        record = Self.makeRecord(
+        var record = Self.makeRecord(
             request: request,
             model: model,
             documentHash: documentHash,
@@ -399,7 +515,8 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
             record,
             owner: request.cacheOwner,
             repo: request.cacheRepo,
-            mode: request.mode
+            mode: request.mode,
+            engine: request.engine
         )
         onBatch?(
             renderedTranslations(from: record, matching: sourceSegments),

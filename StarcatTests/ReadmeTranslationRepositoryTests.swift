@@ -184,6 +184,45 @@ struct ReadmeTranslationRepositoryTests {
         #expect(cache.itemCount == 2)
     }
 
+    @Test("同仓库同语言的系统与 AI 缓存互相隔离")
+    func translationEnginesCoexist() async throws {
+        let (cache, root) = try makeIsolatedCache()
+        defer { cleanup(root) }
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "AI 译文"),
+            owner: "octo",
+            repo: "demo",
+            mode: .segmented,
+            engine: .ai
+        )
+        try await cache.upsert(
+            makeTranslation(lang: "zh-Hans", text: "系统译文"),
+            owner: "octo",
+            repo: "demo",
+            mode: .segmented,
+            engine: .system
+        )
+
+        let ai = try await cache.find(
+            owner: "octo",
+            repo: "demo",
+            targetLanguage: "zh-Hans",
+            mode: .segmented,
+            engine: .ai
+        )
+        let system = try await cache.find(
+            owner: "octo",
+            repo: "demo",
+            targetLanguage: "zh-Hans",
+            mode: .segmented,
+            engine: .system
+        )
+
+        #expect(ai?.segments.first?.translatedText == "AI 译文")
+        #expect(system?.segments.first?.translatedText == "系统译文")
+        #expect(cache.itemCount == 2)
+    }
+
     @Test("不同 (owner,repo) 互不干扰")
     func differentReposIsolated() async throws {
         let (cache, root) = try makeIsolatedCache()

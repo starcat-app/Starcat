@@ -72,7 +72,8 @@ final class ReadmeTranslationViewModel {
         repo: Repo?,
         sourceHtml: String?,
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         prepare(
             identity: repo.map { Self.readmeIdentity(for: $0) },
@@ -80,7 +81,8 @@ final class ReadmeTranslationViewModel {
             cacheRepo: repo?.name,
             sourceHtml: sourceHtml,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -90,7 +92,8 @@ final class ReadmeTranslationViewModel {
         cacheRepo: String?,
         sourceHtml: String?,
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         currentTask?.cancel()
         currentTask = nil
@@ -131,7 +134,8 @@ final class ReadmeTranslationViewModel {
                     owner: cacheOwner,
                     repo: cacheRepo,
                     targetLanguage: requestedLanguage,
-                    mode: requestedMode
+                    mode: requestedMode,
+                    engine: engine
                 )
                 guard self.isCurrentGeneration(
                     identity: requestedIdentity,
@@ -188,7 +192,8 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         toggleTranslation(
             identity: Self.readmeIdentity(for: repo),
@@ -198,7 +203,8 @@ final class ReadmeTranslationViewModel {
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -210,7 +216,8 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         if case .showingTranslation = displayMode {
             displayMode = .showingOriginal
@@ -232,6 +239,7 @@ final class ReadmeTranslationViewModel {
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
             mode: mode,
+            engine: engine,
             force: false
         )
     }
@@ -245,7 +253,8 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         guard case .showingTranslation = displayMode, !isTranslating else { return }
         let done = Set(renderState.translations.map(\.id))
@@ -263,6 +272,7 @@ final class ReadmeTranslationViewModel {
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
             mode: mode,
+            engine: engine,
             force: false
         )
     }
@@ -272,7 +282,8 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         regenerate(
             identity: Self.readmeIdentity(for: repo),
@@ -282,7 +293,8 @@ final class ReadmeTranslationViewModel {
             sourceHtml: sourceHtml,
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -294,7 +306,8 @@ final class ReadmeTranslationViewModel {
         sourceHtml: String,
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         startTranslation(
             identity: identity,
@@ -305,6 +318,7 @@ final class ReadmeTranslationViewModel {
             sourceSegments: sourceSegments,
             targetLanguage: targetLanguage,
             mode: mode,
+            engine: engine,
             force: true
         )
     }
@@ -367,6 +381,7 @@ final class ReadmeTranslationViewModel {
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
         mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine,
         force: Bool
     ) {
         let pending = TranslationSourceLanguageGate.segmentsNeedingTranslation(
@@ -398,6 +413,7 @@ final class ReadmeTranslationViewModel {
                 sourceSegments: sourceSegments,
                 targetLanguage: targetLanguage,
                 mode: mode,
+                engine: engine,
                 force: force
             )
         }
@@ -412,6 +428,7 @@ final class ReadmeTranslationViewModel {
         sourceSegments: [ReadmeSourceSegment],
         targetLanguage: ReadmeTranslationLanguage,
         mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine,
         force: Bool
     ) async {
         let requestedIdentity = identity
@@ -423,7 +440,8 @@ final class ReadmeTranslationViewModel {
                 owner: cacheOwner,
                 repo: cacheRepo,
                 targetLanguage: targetLanguage,
-                mode: mode
+                mode: mode,
+                engine: engine
             )
             guard isCurrentGeneration(
                 identity: requestedIdentity,
@@ -464,7 +482,8 @@ final class ReadmeTranslationViewModel {
                     sourceHtml: sourceHtml,
                     sourceSegments: sourceSegments,
                     targetLanguage: targetLanguage,
-                    mode: mode
+                    mode: mode,
+                    engine: engine
                 ),
                 cached: cached,
                 onBatch: { [weak self] rendered, completed, total in
