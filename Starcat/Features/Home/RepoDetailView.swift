@@ -979,6 +979,16 @@ struct ReadmeStateView: View {
         .padding(.vertical, 6)
         .foregroundStyle(.secondary)
         .background(.bar)
+        // 状态栏高度受系统字体和右侧按钮组合影响。只测量、不参与布局，避免 AI
+        // child window 继续用固定间距而覆盖状态栏；没有 footer 的状态分支不会上报值。
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: RepoDetailAIOverlayBottomInsetPreference.self,
+                    value: proxy.size.height
+                )
+            }
+        }
     }
 
     private var readmeRefreshButton: some View {

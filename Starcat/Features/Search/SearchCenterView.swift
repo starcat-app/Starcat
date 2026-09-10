@@ -117,7 +117,6 @@ struct SearchCenterView: View {
             // 去掉 scale 弹入：Spotlight / 命令面板典型是淡入 + 轻微位移，scale 容易显得「弹」。
             .transition(reduceMotion ? .opacity : .opacity)
         }
-        .defaultCursorShield()
         .sheet(item: $remoteDetailCandidate) { candidate in
             // 把 sort 模式一并传入：仅在 bestMatch 时才渲染匹配度，否则
             // score 字段对当前结果排序无解释力（按 stars / forks / updated

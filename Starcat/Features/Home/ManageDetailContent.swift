@@ -418,3 +418,16 @@ struct RepoDetailAIOverlayTopInsetPreference: PreferenceKey {
         value = max(value, nextValue())
     }
 }
+
+/// README 状态栏的实际高度，由 `ReadmeStateView` 上报给详情 Scaffold。
+///
+/// AI child window 的底边必须停在状态栏上沿；状态栏包含动态字体、垂直 padding
+/// 和不同状态下的按钮组合，不能用一个固定常量近似。没有 README 状态栏的详情模式
+/// 保持默认值 0，由 AI 面板继续使用自己的兼容兜底间距。
+struct RepoDetailAIOverlayBottomInsetPreference: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}

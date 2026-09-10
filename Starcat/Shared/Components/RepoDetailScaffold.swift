@@ -230,6 +230,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Manage 详情 README / 洞察切换行高度。其它场景保持 0，AI 浮层用原来的 16pt 顶距。
     @State private var aiOverlayTopChromeInset: CGFloat = 0
 
+    /// README 状态栏真实高度。AI 浮层底边贴在状态栏上沿，而不是覆盖状态栏。
+    @State private var aiOverlayBottomChromeInset: CGFloat = 0
+
     /// 当前 repo 的真实知识库状态。
     ///
     /// 状态从 `repo_notes.library_state` 读取；点击成功写库后才更新，避免把 ❤️ 做成
@@ -364,13 +367,18 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         guard aiOverlayTopChromeInset != newValue else { return }
                         aiOverlayTopChromeInset = newValue
                     }
+                    .onPreferenceChange(RepoDetailAIOverlayBottomInsetPreference.self) { newValue in
+                        guard aiOverlayBottomChromeInset != newValue else { return }
+                        aiOverlayBottomChromeInset = newValue
+                    }
                     .overlay(alignment: .bottom) {
                         if isRepositoryAIAvailable {
                             // 所有 repo-backed 详情共用同一个底部 AI 主入口；独立窗口
                             // 仍只能从该面板内部的“在独立窗口中打开”派生。
                             RepoAIFloatingOverlay(
                                 repo: repo,
-                                topChromeInset: aiOverlayTopChromeInset
+                                topChromeInset: aiOverlayTopChromeInset,
+                                bottomChromeInset: aiOverlayBottomChromeInset
                             )
                         }
                     }

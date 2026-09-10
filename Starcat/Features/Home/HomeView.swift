@@ -351,25 +351,37 @@ struct HomeView: View {
         .overlayPreferenceValue(GettingStartedAnchorPreferenceKey.self) { anchors in
             gettingStartedOverlay(anchors: anchors)
         }
-        .overlay {
-            if searchCenterViewModel.isPresented {
-                SearchCenterView(
-                    viewModel: searchCenterViewModel,
-                    languages: viewModel.languageStats,
-                    onOpenCandidate: openSearchCandidate,
-                    onOpenURL: openSearchRepositoryURL,
-                    onCopyURL: copySearchRepositoryURL,
-                    onOpenAI: openSearchRepositoryAI,
-                    onToggleStar: toggleSearchRepositoryStar,
-                    isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) },
-                    isGitHubAuthenticated: authSession.state.isAuthenticated
-                )
-                .environment(viewModel)
-                .zIndex(100)
+        .onChange(of: searchCenterViewModel.isPresented) { _, isPresented in
+            if isPresented {
+                presentSearchCenterWindow()
+            } else {
+                SearchCenterWindowController.dismiss()
             }
         }
-        // 弹出/关闭：纯淡入淡出，贴近 Spotlight / 命令面板；不再叠加 scale 弹入。
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.20), value: searchCenterViewModel.isPresented)
+        )
+    }
+
+    /// 把全局搜索放进覆盖主窗口内容区的 child window，避免它和详情 README 共用 cursor rect。
+    ///
+    /// 搜索 ViewModel 仍由 HomeView 持有；窗口控制器只保留 hosting tree 和几何关系，
+    /// 这样点击遮罩、Esc、打开详情等现有路径仍然只通过 `isPresented` 驱动。
+    private func presentSearchCenterWindow() {
+        SearchCenterWindowController.present(
+            content: SearchCenterView(
+                viewModel: searchCenterViewModel,
+                languages: viewModel.languageStats,
+                onOpenCandidate: openSearchCandidate,
+                onOpenURL: openSearchRepositoryURL,
+                onCopyURL: copySearchRepositoryURL,
+                onOpenAI: openSearchRepositoryAI,
+                onToggleStar: toggleSearchRepositoryStar,
+                isStarred: { dependencies.starredRegistry.contains(ghRepoId: $0) },
+                isGitHubAuthenticated: authSession.state.isAuthenticated
+            )
+            // AppKit child window 不会自动继承 WindowGroup 的 environment；必须复用主窗口
+            // 同一套注入链，否则搜索结果的详情、收藏和命令路由会在运行时丢失依赖。
+            .appHostEnvironment(dependencies, homeViewModel: viewModel),
+            reduceMotion: reduceMotion
         )
     }
 

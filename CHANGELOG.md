@@ -2,6 +2,12 @@
 
 Release notes for the Mac App Store edition of Starcat.
 
+## 1.6.2-待发布
+
+### Fixes
+
+- AI panel cursor isolation: Prevents the AI summary and global search panels from inheriting cursor behavior from README or main-window content underneath.
+
 ## 1.6.1
 
 Starcat 1.6.1 focuses on issues found after the 1.6.0 release across interface layout, filtering, search, and authorization, while refining macOS 26 Liquid Glass, Star history, and AI organization.

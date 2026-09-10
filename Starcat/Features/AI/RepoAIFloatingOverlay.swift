@@ -2,26 +2,25 @@
 //  RepoAIFloatingOverlay.swift
 //  Starcat
 //
-//  README 详情页内的 AI 对话浮层入口。
+//  README 详情页内的 AI 对话入口。
 //
 //  设计约束：
-//  - 这是 AI 摘要 / 对话的主承载面板；快捷键、搜索和详情入口都先展开这里。
+//  - 这是 AI 摘要 / 对话的主承载入口；实际内容放在详情区域上的 child NSPanel 中。
 //  - 独立 AI 窗口是本面板的附属展示形态，只能由“在独立窗口中打开”继续进入，
 //    不能与底部面板并列成为外部主入口。
-//  - 浮层只在右侧详情页区域内展开 / 最大化，避免跨列覆盖 repo 列表或 sidebar。
+//  - child panel 只在右侧详情页区域内展开 / 最大化，避免跨列覆盖 repo 列表或 sidebar。
 //  - 展开态宽度按详情区 70% 比例缩放（硬顶 720）。高度从详情 body 底边往上铺；
 //    Manage 详情有 README / 洞察切换行时，顶边贴在该行底部分隔线下方，不能盖住 tab。
 //    其他场景没有切换行，继续留 16pt 顶距。最大化态再铺满宽度。
 //  - 点击外部不自动关闭；AI 流式输出时误关会打断阅读，所以关闭必须是显式动作。
 //
 
-import AppKit
 import SwiftUI
 
-/// Inline AI 浮层高度：从详情 body 底边往上铺，顶边停在 README / 洞察切换行下方。
+/// Inline AI 浮层高度：从 README 状态栏上沿往上铺，顶边停在 README / 洞察切换行下方。
 ///
-/// Overlay 挂在整个 body 上（含切换行）。Manage 详情通过 PreferenceKey 上报切换行高度；
-/// Trending / Weekly / Activity 没有这条切换行，`topChromeInset == 0`，继续留 16pt 顶距。
+/// Overlay 挂在整个 body 上（含切换行和 README 状态栏）。Manage 详情通过 PreferenceKey
+/// 上报切换行和状态栏高度；没有对应 chrome 的场景继续使用兼容兜底间距。
 enum RepoAIOverlayLayout {
     static let panelBottomInset: CGFloat = 34
     static let fallbackTopInset: CGFloat = 16
@@ -31,11 +30,12 @@ enum RepoAIOverlayLayout {
     static func panelHeight(
         availableHeight: CGFloat,
         topChromeInset: CGFloat,
+        bottomChromeInset: CGFloat = panelBottomInset,
         isMaximized: Bool
     ) -> CGFloat {
         let topInset = topChromeInset > 0 ? topChromeInset : fallbackTopInset
         let minHeight = isMaximized ? maximizedMinHeight : panelMinHeight
-        return max(minHeight, availableHeight - panelBottomInset - topInset)
+        return max(minHeight, availableHeight - bottomChromeInset - topInset)
     }
 }
 
@@ -44,76 +44,67 @@ struct RepoAIFloatingOverlay: View {
     let repo: Repo
     /// Manage 详情 README / 洞察切换行高度；其它场景保持 0。
     var topChromeInset: CGFloat = 0
+    /// README 状态栏高度；为 0 时使用 `RepoAIOverlayLayout.panelBottomInset` 兼容旧场景。
+    var bottomChromeInset: CGFloat = 0
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var presentation: Presentation = .collapsed
-    @State private var escapeKeyMonitor: Any?
+    @State private var isInlinePanelPresented = false
+    @State private var isInlinePanelOpening = false
+    @State private var anchorReference = RepoAIInlineWindowAnchorReference()
+    @State private var inlineViewportSize: CGSize = .zero
     @State private var autoGenerateSummaryOnOpen = false
-
-    private enum Presentation: Equatable {
-        case collapsed
-        case expanded
-        case maximized
-
-        var isPanelVisible: Bool {
-            self != .collapsed
-        }
-    }
 
     private enum Metrics {
         static let horizontalInset: CGFloat = 24
         static let collapsedBottomInset: CGFloat = 0
-        static let panelBottomInset = RepoAIOverlayLayout.panelBottomInset
         static let collapsedHitHeight: CGFloat = 28
         static let collapsedHitWidth: CGFloat = 112
         static let collapsedHandleHeight: CGFloat = 4
         static let collapsedHandleWidth: CGFloat = 78
-        /// 展开态相对详情区可用宽的比例；主窗口放大时浮层跟着变宽。
-        static let expandedWidthRatio: CGFloat = 0.70
-        /// 展开态宽度硬顶，避免超宽详情区把对话面板拉得过散。
-        static let expandedMaxWidth: CGFloat = 720
-        /// 最大化态左右额外内缩；无 tab 行时高度也复用这个值作顶距。
-        static let maximizedInset = RepoAIOverlayLayout.fallbackTopInset
-        static let cornerRadius: CGFloat = 18
-        static let panelMinWidth: CGFloat = 320
-        static let panelMinHeight = RepoAIOverlayLayout.panelMinHeight
-        static let maximizedMinHeight = RepoAIOverlayLayout.maximizedMinHeight
     }
 
     var body: some View {
         GeometryReader { proxy in
-            // VStack + Spacer：面板上方的空白不参与 hit testing，
-            // README / 洞察 tab 才能点到。ZStack 铺满时 GeometryReader 会把点击吃掉。
+            // child window 打开后主窗口这里只保留锚点和空白布局，不再渲染 AI 面板本体；
+            // 因此 README / 洞察 tab 仍可在 child window 之外正常接收事件。
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
-                if presentation.isPanelVisible {
-                    panel(in: proxy.size)
-                        .transition(panelTransition)
-                } else {
+                if !isInlinePanelPresented {
                     collapsedBar
                         .frame(
                             width: min(proxy.size.width - Metrics.horizontalInset * 2, Metrics.collapsedHitWidth),
                             height: Metrics.collapsedHitHeight
                         )
-                        .transition(collapsedTransition)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.horizontal, Metrics.horizontalInset)
-            .padding(.bottom, bottomInset)
-            .animation(overlayAnimation, value: presentation)
+            .padding(.bottom, Metrics.collapsedBottomInset)
+            .onAppear {
+                updateInlineViewport(proxy.size)
+            }
+            .onChange(of: proxy.size) { _, newSize in
+                // 旧版面板直接读取 `proxy.size`，README 滚动导致 Hero 折叠时会自然变高。
+                // child window 不会自动订阅 SwiftUI 的 layout proposal，必须把同一份
+                // viewport 变化显式转发给 AppKit，否则面板会停留在打开时的高度。
+                updateInlineViewport(newSize)
+            }
         }
-        .allowsHitTesting(true)
+        .background {
+            // 这个 NSView 只测量详情区域并转换成 screen 坐标，不能参与鼠标命中；
+            // AI 内容本体在独立 child window 中渲染，避免与 README 共用 cursor rect。
+            RepoAIInlineWindowAnchor(reference: anchorReference)
+                .allowsHitTesting(false)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineGenerateSummaryRequested)) { notification in
             handleExternalSummaryRequest(notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: .repoAIInlineOpenRequested)) { notification in
             guard let repoID = notification.userInfo?["repoId"] as? Repo.ID,
                   repoID == repo.id else { return }
-            presentation = .expanded
+            openInlinePanel(autoGenerateSummary: false)
         }
         .onAppear {
             consumePendingInlinePresentationIfNeeded()
@@ -121,15 +112,30 @@ struct RepoAIFloatingOverlay: View {
         .onChange(of: homeViewModel.pendingInlineAIPresentationRepoID) { _, _ in
             consumePendingInlinePresentationIfNeeded()
         }
-        .onExitCommand {
-            guard presentation.isPanelVisible else { return }
-            presentation = .collapsed
+        .onChange(of: topChromeInset) { _, newInset in
+            // tab 行高度可能在 README / Hero 布局完成后才测量出来；不能只在 child
+            // window 创建时捕获一次，否则面板顶边会停在旧位置。
+            RepoAIInlineWindowController.updateAnchor(
+                reference: anchorReference,
+                availableSize: inlineViewportSize,
+                topChromeInset: newInset,
+                bottomChromeInset: bottomChromeInset
+            )
         }
-        .onChange(of: presentation.isPanelVisible) { _, isVisible in
-            isVisible ? installEscapeKeyMonitor() : removeEscapeKeyMonitor()
+        .onChange(of: bottomChromeInset) { _, newInset in
+            // 状态栏第一次完成布局或字体发生变化后，立即把 child window 移到状态栏上沿。
+            RepoAIInlineWindowController.updateAnchor(
+                reference: anchorReference,
+                availableSize: inlineViewportSize,
+                bottomChromeInset: newInset
+            )
+        }
+        .onExitCommand {
+            guard isInlinePanelPresented || isInlinePanelOpening else { return }
+            RepoAIInlineWindowController.dismiss()
         }
         .onDisappear {
-            removeEscapeKeyMonitor()
+            RepoAIInlineWindowController.dismiss()
         }
         // repo 切换时直接清空临时会话与展示状态，确保新问题只绑定当前 repo。
         .id(repo.id)
@@ -143,13 +149,13 @@ struct RepoAIFloatingOverlay: View {
     private func consumePendingInlinePresentationIfNeeded() {
         guard homeViewModel.pendingInlineAIPresentationRepoID == repo.id else { return }
         homeViewModel.pendingInlineAIPresentationRepoID = nil
-        presentation = .expanded
+        openInlinePanel(autoGenerateSummary: false)
     }
 
     private var collapsedBar: some View {
         Button {
             NotificationCenter.default.post(name: .gettingStartedDidOpenAI, object: nil)
-            presentation = .expanded
+            openInlinePanel(autoGenerateSummary: false)
         } label: {
             Capsule(style: .continuous)
                 // 用 primary 语义色适配明暗主题：浅色下是深色横条，深色下自动反转为浅色横条。
@@ -164,74 +170,98 @@ struct RepoAIFloatingOverlay: View {
         .help("ai.assistant.inline.collapsed.help")
     }
 
-    private func panel(in availableSize: CGSize) -> some View {
-        let isMaximized = presentation == .maximized
-        let width = panelWidth(in: availableSize, isMaximized: isMaximized)
-        let height = panelHeight(in: availableSize, isMaximized: isMaximized)
-
-        return RepoAIWindowContentView(
-            repo: repo,
-            autoGenerateSummaryOnOpen: autoGenerateSummaryOnOpen,
-            respondsToInlineGenerateRequests: true,
-            onClose: {
-                autoGenerateSummaryOnOpen = false
-                presentation = .collapsed
-            },
-            onInlineResizeTapped: togglePanelSize,
-            onOpenDetachedWindow: openDetachedWindow,
-            isInlineMaximized: isMaximized
-        )
-        .frame(width: width, height: height)
-        // 深色不用 `.regularMaterial` 采样 README：暗底 vibrancy 会把整块面板染成近黑紫。
-        // 与内容层共用 `StarcatSurface.panel`，浮层是实色工具面板而不是玻璃黑洞。
-        .background(
-            StarcatSurface.panel(colorScheme: colorScheme),
-            in: RoundedRectangle(cornerRadius: Metrics.cornerRadius, style: .continuous)
-        )
-        .defaultCursorShield()
-        .shadow(color: .black.opacity(0.18), radius: 22, x: 0, y: 12)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func panelWidth(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
-        let usableWidth = max(Metrics.panelMinWidth, availableSize.width - Metrics.horizontalInset * 2)
-        if isMaximized {
-            return max(Metrics.panelMinWidth, usableWidth - Metrics.maximizedInset * 2)
-        }
-        // 展开态随详情区变宽：比例取宽，再夹在 [min, min(usable, hardMax)] 之间。
-        let proportionalWidth = usableWidth * Metrics.expandedWidthRatio
-        return min(usableWidth, Metrics.expandedMaxWidth, max(Metrics.panelMinWidth, proportionalWidth))
-    }
-
-    private func panelHeight(in availableSize: CGSize, isMaximized: Bool) -> CGFloat {
-        // hero 折叠时 GeometryReader 变高，浮层跟着长高；有 tab 行时扣掉实测高度。
-        RepoAIOverlayLayout.panelHeight(
-            availableHeight: availableSize.height,
+    /// 保存 SwiftUI 详情区的真实 viewport，并把它作为 child window 的几何源同步过去。
+    ///
+    /// 锚点 view 只能提供 screen 坐标，不能可靠代表 SwiftUI 的 layout proposal；后者
+    /// 才是旧版面板计算高度和 Hero 折叠位置时使用的值。这里还通过控制器内部合并更新，
+    /// 避免 README 滚动期间每一轮 layout 都同步调用一次 `setFrame`。
+    private func updateInlineViewport(_ size: CGSize) {
+        guard size != inlineViewportSize else { return }
+        inlineViewportSize = size
+        RepoAIInlineWindowController.updateAnchor(
+            reference: anchorReference,
+            availableSize: size,
             topChromeInset: topChromeInset,
-            isMaximized: isMaximized
+            bottomChromeInset: bottomChromeInset
         )
     }
 
-    private var bottomInset: CGFloat {
-        presentation.isPanelVisible ? Metrics.panelBottomInset : Metrics.collapsedBottomInset
-    }
+    /// 在详情锚点准备好后打开 child AI panel；窗口本体不再出现在主窗口 SwiftUI overlay。
+    private func openInlinePanel(autoGenerateSummary: Bool) {
+        guard !isInlinePanelPresented else { return }
+        guard !isInlinePanelOpening else {
+            // 外部“生成摘要”请求可能紧跟在打开请求之后到达；保留这份意图，
+            // 避免首帧锚点重试期间把自动生成动作静默丢掉。
+            autoGenerateSummaryOnOpen = autoGenerateSummaryOnOpen || autoGenerateSummary
+            return
+        }
+        autoGenerateSummaryOnOpen = autoGenerateSummary
+        isInlinePanelOpening = true
 
-    private func togglePanelSize() {
-        presentation = presentation == .maximized ? .expanded : .maximized
-    }
-
-    private func openDetachedWindow() {
-        let detachedRepo = repo
-        autoGenerateSummaryOnOpen = false
-        presentation = .collapsed
         DispatchQueue.main.async {
-            // 独立窗口只从底部面板内部派生；它与 inline panel 共享内容 View，
-            // 但保留独立窗口生命周期，便于用户脱离详情布局持续对话或并排比较。
-            RepoAIWindowController.show(
-                repo: detachedRepo,
-                dependencies: dependencies,
-                homeViewModel: homeViewModel
-            )
+            attemptOpenInlinePanel(remainingRetries: 8)
+        }
+    }
+
+    /// 等待锚点真正进入主窗口后再创建 child window。
+    ///
+    /// 详情 repo 切换和首帧布局期间，`NSViewRepresentable` 可能已经创建了 NSView，
+    /// 但它暂时还没有 `window`。直接以这个 view 创建 child window 会失败并让用户
+    /// 看到“点了没有反应”；这里最多等待 8 个主线程布局周期，确保首帧拿到详情区域
+    /// 坐标。等待失败时恢复横条，不使用整主窗口作为错误定位兜底。
+    private func attemptOpenInlinePanel(remainingRetries: Int) {
+        guard isInlinePanelOpening else { return }
+
+        guard let anchorView = anchorReference.view,
+              anchorView.window != nil,
+              anchorView.bounds.width > 1,
+              anchorView.bounds.height > 1 else {
+            guard remainingRetries > 0 else {
+                finishInlinePanelOpening(didPresent: false)
+                return
+            }
+            DispatchQueue.main.async {
+                attemptOpenInlinePanel(remainingRetries: remainingRetries - 1)
+            }
+            return
+        }
+
+        let didPresent = presentInlinePanel(
+            anchorView: anchorView,
+            anchorFrame: anchorReference.lastValidScreenFrame
+        )
+        finishInlinePanelOpening(didPresent: didPresent)
+    }
+
+    /// 创建 AI child window；定位和父窗口都必须来自详情锚点，避免不同主窗口几何混用。
+    private func presentInlinePanel(anchorView: NSView?, anchorFrame: NSRect?) -> Bool {
+        RepoAIInlineWindowController.present(
+            repo: repo,
+            dependencies: dependencies,
+            homeViewModel: homeViewModel,
+            anchorView: anchorView,
+            anchorFrame: anchorFrame,
+            availableSize: inlineViewportSize,
+            autoGenerateSummaryOnOpen: autoGenerateSummaryOnOpen,
+            topChromeInset: topChromeInset,
+            bottomChromeInset: bottomChromeInset,
+            reduceMotion: reduceMotion,
+            onDismiss: {
+                isInlinePanelPresented = false
+                isInlinePanelOpening = false
+                autoGenerateSummaryOnOpen = false
+            }
+        )
+    }
+
+    /// 将控制器返回值统一映射回 SwiftUI 打开状态，确保所有失败路径都能恢复横条。
+    private func finishInlinePanelOpening(didPresent: Bool) {
+        if didPresent {
+            isInlinePanelPresented = true
+            isInlinePanelOpening = false
+        } else {
+            isInlinePanelOpening = false
+            autoGenerateSummaryOnOpen = false
         }
     }
 
@@ -239,45 +269,8 @@ struct RepoAIFloatingOverlay: View {
         guard let repoID = notification.userInfo?["repoId"] as? Repo.ID, repoID == repo.id else { return }
         // Browser Plugin 的“生成摘要”必须先落到详情页底部面板；附属独立窗口
         // 只能由用户在面板内主动选择，外部动作不能越级打开。
-        // 若面板尚未创建，先记录 auto-generate 意图，展开后由 RepoAIWindowContentView 的 task 消费。
-        autoGenerateSummaryOnOpen = true
-        if presentation == .collapsed {
-            presentation = .expanded
-        }
-    }
-
-    private func installEscapeKeyMonitor() {
-        guard escapeKeyMonitor == nil else { return }
-        // `onExitCommand` 依赖 SwiftUI 焦点；AI 输入框底层是 AppKit NSTextView，
-        // 焦点进入输入框后 Esc 可能不会回到 SwiftUI。展开期间用本地 keyDown 监听兜底。
-        escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 53 else { return event }
-            presentation = .collapsed
-            return nil
-        }
-    }
-
-    private func removeEscapeKeyMonitor() {
-        guard let escapeKeyMonitor else { return }
-        NSEvent.removeMonitor(escapeKeyMonitor)
-        self.escapeKeyMonitor = nil
-    }
-
-    private var overlayAnimation: Animation? {
-        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86)
-    }
-
-    private var panelTransition: AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        return .asymmetric(
-            insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .bottom)),
-            removal: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.98, anchor: .bottom))
-        )
-    }
-
-    private var collapsedTransition: AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        return .opacity.combined(with: .scale(scale: 0.96, anchor: .bottom))
+        // child window 的 root view 直接接收该意图，打开后由其 task 消费生成请求。
+        openInlinePanel(autoGenerateSummary: true)
     }
 }
 
