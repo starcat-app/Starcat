@@ -1358,12 +1358,43 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 return span;
             }
 
+            // 用两帧 requestAnimationFrame 让初始透明度先交给浏览器绘制，再移除状态类。
+            // 不能用 offsetWidth 强制刷新布局：README 可能包含大量段落，同步 reflow 会把
+            // 翻译批次变成主线程长任务。这里的 class 只改变 opacity / transform，不改变布局。
+            var pendingTranslationAnimationResets = [];
+            var translationAnimationResetScheduled = false;
+
+            function scheduleTranslationAnimationReset(element, className) {
+                for (var index = 0; index < pendingTranslationAnimationResets.length; index += 1) {
+                    var pending = pendingTranslationAnimationResets[index];
+                    if (pending.element === element && pending.className === className) {
+                        return;
+                    }
+                }
+                pendingTranslationAnimationResets.push({ element: element, className: className });
+                if (translationAnimationResetScheduled) { return; }
+                translationAnimationResetScheduled = true;
+
+                window.requestAnimationFrame(function() {
+                    window.requestAnimationFrame(function() {
+                        var pendingResets = pendingTranslationAnimationResets;
+                        pendingTranslationAnimationResets = [];
+                        translationAnimationResetScheduled = false;
+                        for (var resetIndex = 0; resetIndex < pendingResets.length; resetIndex += 1) {
+                            var reset = pendingResets[resetIndex];
+                            if (reset.element) {
+                                reset.element.classList.remove(reset.className);
+                            }
+                        }
+                    });
+                });
+            }
+
             function playSegmentedEntrance(element, id, animate) {
                 if (hasAnimatedTranslation(id)) { return; }
                 if (animate) {
-                    // 强制重排后再加 class，避免刚插入的节点吃不到 animationstart。
-                    void element.offsetWidth;
                     element.classList.add('is-entering');
+                    scheduleTranslationAnimationReset(element, 'is-entering');
                 }
                 markAnimatedTranslation(id);
             }
@@ -1371,8 +1402,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             function playFullCrossfade(wrapper, id, animate) {
                 if (!wrapper || hasAnimatedTranslation(id)) { return; }
                 if (animate) {
-                    void wrapper.offsetWidth;
                     wrapper.classList.add('is-crossfading');
+                    scheduleTranslationAnimationReset(wrapper, 'is-crossfading');
                 }
                 markAnimatedTranslation(id);
             }
@@ -1752,26 +1783,26 @@ private enum ReadmeTranslationDOM {
     .starcat-readme-translation[hidden] {
         display: none;
     }
-    /* 分段：新译文第一次出现时 fade + 轻微上移。同一段再次显示不加重播。 */
+    /* 只动画合成属性；不能动画高度、间距或字号，否则翻译批次会反复触发布局。 */
+    .starcat-readme-translation {
+        transition: opacity 180ms ease-out, transform 180ms ease-out;
+    }
+    /* 分段：新译文轻微淡入并上移 3px。同一段再次显示不重播。 */
     .starcat-readme-translation.is-entering {
-        animation: starcat-readme-segment-enter 180ms ease-out both;
+        opacity: 0;
+        transform: translateY(3px);
     }
-    /* 全文：同位置替换，只做短淡入，模拟 crossfade，禁止位移以免正文晃。 */
+    /* 全文：文本替换时只降低透明度，不移动正文，避免视觉晃动和布局动画。 */
+    .starcat-readme-full-target {
+        transition: opacity 160ms ease-out;
+    }
     .starcat-readme-full-target.is-crossfading {
-        animation: starcat-readme-full-crossfade 160ms ease-out both;
-    }
-    @keyframes starcat-readme-segment-enter {
-        from { opacity: 0; transform: translateY(6px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes starcat-readme-full-crossfade {
-        from { opacity: 0; }
-        to { opacity: 1; }
+        opacity: 0.58;
     }
     @media (prefers-reduced-motion: reduce) {
         .starcat-readme-translation.is-entering,
         .starcat-readme-full-target.is-crossfading {
-            animation: none;
+            transition: none;
         }
     }
     """

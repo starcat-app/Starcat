@@ -241,4 +241,26 @@ struct ReadmeWebViewTests {
         #expect(script.contains("host.hidden = false;"))
         #expect(!script.contains("location.reload"))
     }
+
+    @Test("README 翻译过渡不强制同步布局")
+    func translationAnimation_avoidsForcedLayoutReads() throws {
+        let script = ReadmeWebView.readmeEnhancementScript
+        let animationStart = try #require(script.range(of: "function scheduleTranslationAnimationReset"))
+        let animationEnd = try #require(
+            script.range(
+                of: "window.starcatApplyReadmeTranslations = function",
+                range: animationStart.lowerBound..<script.endIndex
+            )
+        )
+        let animationScript = script[animationStart.lowerBound..<animationEnd.lowerBound]
+        let document = ReadmeWebView.assembleDocument(fragment: "<p>Hello</p>", isDark: false)
+
+        // 翻译批次可能包含大量段落，禁止用 offsetWidth 这类同步布局读取来启动动画。
+        #expect(!animationScript.contains("offsetWidth"))
+        #expect(animationScript.contains("window.requestAnimationFrame(function()"))
+        #expect(document.contains("transition: opacity 180ms ease-out, transform 180ms ease-out;"))
+        #expect(document.contains("transition: opacity 160ms ease-out;"))
+        #expect(!document.contains("@keyframes starcat-readme-segment-enter"))
+        #expect(!document.contains("@keyframes starcat-readme-full-crossfade"))
+    }
 }
