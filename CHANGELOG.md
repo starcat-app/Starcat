@@ -4,8 +4,19 @@ Release notes for the Mac App Store edition of Starcat.
 
 ## 1.6.2-待发布
 
+### New
+
+- README translation services: Switch among System, Google, and AI translation; System uses macOS on-device translation, while Google works without a key through the public web endpoint.
+- Google Translation configuration: An optional API key enables official Google Cloud Translation; credentials are stored in Keychain and managed in Translation Services settings.
+
+### Improvements
+
+- README translation workflow: The detail-page menu and Settings share one default-engine selection; caches are isolated per engine, and comparison/full translation incrementally fills in results with a lightweight transition.
+- README Star history: Activity, Explore, Trending, and Weekly README details now share the official Star history view with cache reuse and on-demand loading.
+
 ### Fixes
 
+- Translation error reporting: Reports System, Google, and AI service failures separately instead of presenting System Translation failures as AI access errors.
 - AI panel cursor isolation: Prevents the AI summary and global search panels from inheriting cursor behavior from README or main-window content underneath.
 
 ## 1.6.1
