@@ -161,13 +161,15 @@ final class ReadmeTranslationViewModel {
         to language: ReadmeTranslationLanguage,
         repo: Repo?,
         sourceHtml: String?,
-        mode: ReadmeTranslationMode
+        mode: ReadmeTranslationMode,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         prepare(
             repo: repo,
             sourceHtml: sourceHtml,
             targetLanguage: language,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -175,13 +177,15 @@ final class ReadmeTranslationViewModel {
         to mode: ReadmeTranslationMode,
         repo: Repo?,
         sourceHtml: String?,
-        targetLanguage: ReadmeTranslationLanguage
+        targetLanguage: ReadmeTranslationLanguage,
+        engine: ReadmeTranslationEngine = .ai
     ) {
         prepare(
             repo: repo,
             sourceHtml: sourceHtml,
             targetLanguage: targetLanguage,
-            mode: mode
+            mode: mode,
+            engine: engine
         )
     }
 
@@ -543,17 +547,30 @@ final class ReadmeTranslationViewModel {
             isTranslating = false
             currentTask = nil
             presentPaywallIfNeeded(error)
+            let translationService: String
+            let diagnosticCategory: String
+            switch engine {
+            case .system:
+                translationService = String.l10n("readme.translate.engine.system")
+                diagnosticCategory = "system-translation"
+            case .google:
+                translationService = String.l10n("readme.translate.engine.google")
+                diagnosticCategory = "google-translation"
+            case .ai:
+                translationService = "AI"
+                diagnosticCategory = "ai"
+            }
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.translateReadme"),
-                service: "AI"
+                service: translationService
             )
             errorMessage = friendly.message
             translationErrorKind = classifyError(error)
             friendly.record(
-                category: "ai",
+                category: diagnosticCategory,
                 operation: "readmeTranslation.perform",
-                service: "ai-provider"
+                service: translationService
             )
         }
     }

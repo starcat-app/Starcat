@@ -92,4 +92,16 @@ struct TranslationSourceLanguageGateTests {
         )
         #expect(remaining.map(\.id) == ["en"])
     }
+
+    @Test("长英文样本可解析为 Apple Translation 的明确源语言")
+    func detectsEnglishSourceLanguage() {
+        #expect(
+            TranslationSourceLanguageGate.detectedLanguage(from: english) == .english
+        )
+    }
+
+    @Test("过短样本不猜源语言")
+    func doesNotGuessShortSourceLanguage() {
+        #expect(TranslationSourceLanguageGate.detectedLanguage(from: "README") == nil)
+    }
 }

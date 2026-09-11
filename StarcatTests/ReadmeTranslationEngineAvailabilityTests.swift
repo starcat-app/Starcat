@@ -32,7 +32,7 @@ struct ReadmeTranslationEngineAvailabilityTests {
             keychain: keychain,
             systemChecker: FixedSystemChecker(supported: false)
         )
-        #expect(none.isEmpty)
+        #expect(none == [.google])
 
         let systemOnly = await ReadmeTranslationEngineAvailability.availableEngines(
             targetLanguage: .simplifiedChinese,
@@ -40,7 +40,7 @@ struct ReadmeTranslationEngineAvailabilityTests {
             keychain: keychain,
             systemChecker: FixedSystemChecker(supported: true)
         )
-        #expect(systemOnly == [.system])
+        #expect(systemOnly == [.system, .google])
 
         let providerID = settings.aiTranslationTask.providerID
         try keychain.storeAIKey("sk-test", forProvider: providerID)
@@ -50,7 +50,7 @@ struct ReadmeTranslationEngineAvailabilityTests {
             keychain: keychain,
             systemChecker: FixedSystemChecker(supported: true)
         )
-        #expect(both == [.system, .ai])
+        #expect(both == [.system, .google, .ai])
     }
 
     @Test("resolvedDefault falls back to first available")

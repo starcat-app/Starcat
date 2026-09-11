@@ -5,7 +5,7 @@
 //  README 运行时翻译引擎（与「在哪里配置」解耦）。
 //
 //  为什么独立枚举：
-//  - 详情页菜单要聚合「系统 / AI」等当前可用引擎，切换写回设置；
+//  - 详情页菜单要聚合「系统 / Google / AI」等当前可用引擎，切换写回设置；
 //  - AI 的 Provider/Prompt 仍在 AI 设置；系统与外接 MT 在「翻译服务」设置；
 //  - 磁盘缓存必须按引擎隔离，避免 AI 译文与系统译文互相覆盖。
 //
@@ -18,7 +18,8 @@ enum ReadmeTranslationEngine: String, CaseIterable, Identifiable, Codable, Senda
     case system
     /// 现有 AI 翻译任务（配置在 AI 设置）。
     case ai
-    // 二期：google / aliyun / baidu
+    /// Google Translate：有 Key 时走 Cloud Translation，没有 Key 时走公开网页接口。
+    case google
 
     var id: String { rawValue }
 
@@ -27,6 +28,7 @@ enum ReadmeTranslationEngine: String, CaseIterable, Identifiable, Codable, Senda
         switch self {
         case .system: return "readme.translate.engine.system"
         case .ai: return "readme.translate.engine.ai"
+        case .google: return "readme.translate.engine.google"
         }
     }
 
@@ -35,6 +37,7 @@ enum ReadmeTranslationEngine: String, CaseIterable, Identifiable, Codable, Senda
         switch self {
         case .system: return "laptopcomputer"
         case .ai: return "sparkles"
+        case .google: return "globe"
         }
     }
 
@@ -43,6 +46,7 @@ enum ReadmeTranslationEngine: String, CaseIterable, Identifiable, Codable, Senda
         switch self {
         case .system: return "system"
         case .ai: return "ai"
+        case .google: return "google"
         }
     }
 
@@ -51,6 +55,7 @@ enum ReadmeTranslationEngine: String, CaseIterable, Identifiable, Codable, Senda
         switch self {
         case .ai: return ""
         case .system: return ".system"
+        case .google: return ".google"
         }
     }
 }

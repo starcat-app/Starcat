@@ -259755,6 +259755,22 @@
         }
       }
     },
+    "readme.translate.engine.google" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译"
+          }
+        }
+      }
+    },
     "readme.translate.engine.system" : {
       "localizations" : {
         "en" : {
@@ -259767,6 +259783,134 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统翻译"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.emptyResponse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation returned no translated text."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译没有返回译文。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.invalidResponse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation returned an invalid response."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译返回了无效响应。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.invalidURL" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation request URL is invalid."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译请求地址无效。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.malformedResponse" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation returned malformed data."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译返回的数据格式无效。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.rateLimited" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation is temporarily rate limited."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译暂时受到限流。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.requestTooLarge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The text is too large for Google Translation."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文本过长，无法使用 Google 翻译。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.serverFormat" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation request failed (HTTP %d)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译请求失败（HTTP %d）。"
+          }
+        }
+      }
+    },
+    "readme.translate.google.error.unauthorized" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation credentials were rejected."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译凭据无效。"
           }
         }
       }
@@ -260370,13 +260514,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "分段翻译"
+            "value" : "对比翻译"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "分段翻譯"
+            "value" : "對比翻譯"
           }
         }
       }
@@ -395126,6 +395270,134 @@
         }
       }
     },
+    "settings.translation.google.apiKey.hide" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏 API Key"
+          }
+        }
+      }
+    },
+    "settings.translation.google.apiKey.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Cloud Translation API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Cloud Translation API Key"
+          }
+        }
+      }
+    },
+    "settings.translation.google.apiKey.save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存 API Key"
+          }
+        }
+      }
+    },
+    "settings.translation.google.apiKey.show" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show API Key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 API Key"
+          }
+        }
+      }
+    },
+    "settings.translation.google.cloudMode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API key: Google Cloud Translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已填写 Key：Google Cloud Translation"
+          }
+        }
+      }
+    },
+    "settings.translation.google.description" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Google Translation for README files. An API key enables the official Cloud Translation path; without one, Starcat uses the public web endpoint."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于 README 翻译。填写 API Key 使用官方 Cloud Translation；不填写时使用公开网页接口。"
+          }
+        }
+      }
+    },
+    "settings.translation.google.openConsole" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Google Cloud Console"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Google Cloud Console"
+          }
+        }
+      }
+    },
+    "settings.translation.google.publicMode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No key: public web endpoint"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未填写 Key：公开网页接口"
+          }
+        }
+      }
+    },
     "settings.translation.openAISettings" : {
       "localizations" : {
         "en" : {
@@ -395170,6 +395442,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "详情页菜单使用同一列表，切换会写回此处。不可用的服务不会显示。"
+          }
+        }
+      }
+    },
+    "settings.translation.section.google" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google Translation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 翻译"
+          }
+        }
+      }
+    },
+    "settings.translation.section.google.footer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With an API key, Starcat uses Google Cloud Translation. Without one, it uses the public Google Translate web endpoint, which may be rate limited."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "填写 API Key 后使用 Google Cloud Translation；不填写时使用 Google 翻译公开网页接口，可能受到限流。"
           }
         }
       }

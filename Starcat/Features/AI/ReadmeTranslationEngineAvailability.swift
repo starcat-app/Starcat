@@ -49,7 +49,7 @@ struct AppleSystemTranslationAvailabilityChecker: SystemTranslationAvailabilityC
 
 enum ReadmeTranslationEngineAvailability {
 
-    /// 当前可展示的引擎（顺序：系统 → AI，便于菜单稳定）。
+    /// 当前可展示的引擎（顺序：系统 → Google → AI，便于菜单稳定）。
     @MainActor
     static func availableEngines(
         targetLanguage: ReadmeTranslationLanguage,
@@ -61,6 +61,8 @@ enum ReadmeTranslationEngineAvailability {
         if await systemChecker.isSupported(target: targetLanguage.resolved()) {
             result.append(.system)
         }
+        // Google 无 Key 也有公开网页通道，因此不因为用户尚未配置凭据而隐藏。
+        result.append(.google)
         if isAIConfigured(settings: settings, keychain: keychain) {
             result.append(.ai)
         }

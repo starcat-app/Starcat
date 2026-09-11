@@ -219,6 +219,21 @@ struct ReadmeTranslationServiceStaticTests {
         #expect(batches.flatMap { $0 }.map(\.id) == segments.map(\.id))
     }
 
+    @Test("systemSourceSample：部分缓存重试仍使用完整源片段检测语言")
+    func systemSourceSampleUsesCompleteSources() {
+        let allSources = [
+            ReadmeSourceSegment(id: "intro", text: "This is an English introduction."),
+            ReadmeSourceSegment(id: "install", text: "Install with npm install."),
+            ReadmeSourceSegment(id: "table", text: "| API | Value |"),
+            ReadmeSourceSegment(id: "code", text: "```swift\nlet value = 1\n```")
+        ]
+
+        #expect(
+            ReadmeTranslationService.systemSourceSample(from: allSources)
+                == allSources.map(\.text).joined(separator: "\n")
+        )
+    }
+
     @Test("后续批次并发上限固定为 4")
     func concurrentBatchLimitIsFour() {
         #expect(ReadmeTranslationService.maxConcurrentBatchCount == 4)

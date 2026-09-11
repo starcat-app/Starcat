@@ -90,6 +90,19 @@ struct DiagnosticsTests {
         #expect(!error.shouldRecordDiagnostic)
     }
 
+    @Test("系统翻译错误不再显示为访问 AI 失败")
+    func userFacingErrorMapsSystemTranslationSeparately() {
+        let error = UserFacingError.map(
+            SystemTranslationError.sessionUnavailable,
+            operation: String.l10n("diagnostics.operation.translateReadme"),
+            service: "系统翻译"
+        )
+
+        #expect(error.message == String.l10n("readme.translate.error.systemSession"))
+        #expect(!error.message.contains("在访问 AI 时失败"))
+        #expect(error.title == String.l10n("readme.translate.engine.system"))
+    }
+
     @Test("本地数据库错误会进入开发者诊断")
     func userFacingDatabaseErrorRequiresDiagnostic() {
         let error = UserFacingError.map(

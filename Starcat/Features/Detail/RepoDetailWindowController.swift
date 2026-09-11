@@ -267,6 +267,12 @@ struct RepoDetailWindowContent: View {
         .environment(translationVM)
         .modifier(RepoShareHost())
         .appHostEnvironment(dependencies, homeViewModel: homeViewModel)
+        // AppKit 自建窗口不在 StarcatApp 的主 SwiftUI 树内，因此保留一个备用宿主，
+        // 让主窗口关闭后仍能翻译。Broker 会在主窗口和详情窗口之间选出唯一 owner，
+        // 不会让多个 `.translationTask` 同时持有同一份 Translation Configuration。
+        .background {
+            SystemTranslationSessionHost(broker: SystemTranslationSessionBroker.shared)
+        }
         // 触发首次 README 加载 + 翻译态准备。
         //
         // 为什么需要这个 task：主窗 (`HomeView`) 的初次 README 加载是在

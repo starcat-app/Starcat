@@ -44,6 +44,25 @@ enum TranslationSourceLanguageGate {
         segments.filter { !shouldSkipTranslation(text: $0.text, target: target) }
     }
 
+    /// 从 README 样本文本解析一个可传给 Apple Translation 的明确源语言。
+    ///
+    /// TranslationSession 在准备语言包时不能依赖 `source: nil` 猜测语言；但 README
+    /// 可能包含代码、链接和多语种短句，因此只接受足够长且达到高置信度的主语言。
+    /// 解析失败时由调用方展示可恢复的系统翻译错误，不把不确定的语言硬编码成英语。
+    static func detectedLanguage(from text: String) -> ReadmeTranslationLanguage? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 12 else { return nil }
+
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(trimmed)
+        guard let dominant = recognizer.dominantLanguage,
+              let mapped = mappedLanguage(from: dominant)
+        else { return nil }
+
+        let confidence = recognizer.languageHypotheses(withMaximum: 1)[dominant] ?? 0
+        return confidence >= minimumConfidence ? mapped : nil
+    }
+
     /// 只接受能一一对上 `ReadmeTranslationLanguage` 的 NLLanguage。
     /// `NLLanguage` 的笼统 `zh`（不分简繁）对不上 zh-Hans / zh-Hant，返回 nil 以免误杀简繁转换。
     static func mappedLanguage(from language: NLLanguage) -> ReadmeTranslationLanguage? {

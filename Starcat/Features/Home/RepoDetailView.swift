@@ -709,7 +709,8 @@ struct ReadmeStateView: View {
             to: newLanguage.resolved(),
             repo: control.repo,
             sourceHtml: html,
-            mode: settings.readmeTranslationMode
+            mode: settings.readmeTranslationMode,
+            engine: settings.readmeTranslationEngine
         )
     }
 
@@ -723,7 +724,8 @@ struct ReadmeStateView: View {
             to: newMode,
             repo: control.repo,
             sourceHtml: html,
-            targetLanguage: settings.effectiveReadmeTranslationLanguage
+            targetLanguage: settings.effectiveReadmeTranslationLanguage,
+            engine: settings.readmeTranslationEngine
         )
     }
 

@@ -8,7 +8,7 @@
 //  - 接收 WebView 已提取的可见文本段落，不再把整份 HTML 交给模型；
 //  - 先翻译一个小批次尽快首屏回填，再以最多 4 路并发完成后续批次；
 //  - 每完成一批立即写入磁盘，因此用户取消后下次可以从未完成段落继续；
-//  - 以“源文本指纹 → 译文”保存产物，并按翻译方式隔离缓存。
+//  - 以“源文本指纹 → 译文”保存产物，并按翻译方式和引擎隔离缓存。
 //
 //  关键约束：
 //  - AI 只处理纯文本和稳定 id，不拥有 HTML；标签、链接、图片与代码结构不会被模型改坏；
@@ -20,6 +20,9 @@
 
 import CryptoKit
 import Foundation
+#if canImport(Translation)
+@preconcurrency import Translation
+#endif
 
 /// README 翻译错误。
 enum ReadmeTranslationError: Error, LocalizedError, Equatable {
@@ -100,6 +103,12 @@ struct ReadmeTranslationRequest: Sendable {
         self.mode = mode
         self.engine = engine
     }
+}
+
+/// Google 后续批次的结果，保留批次索引以便异步完成后安全对齐源段落。
+private struct GoogleBatchResult: Sendable {
+    let index: Int
+    let translations: [String]
 }
 
 /// 每批译文回填回调。提到文件级是为了让 VM 协议和 Service 共用同一签名。
@@ -258,7 +267,7 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
             translatedByHash: translatedByHash,
             skippedHashes: skippedHashes
         )
-        var record = Self.makeRecord(
+        let record = Self.makeRecord(
             request: request,
             model: cached?.model ?? request.engine.cacheModelToken,
             documentHash: documentHash,
@@ -295,7 +304,7 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
                 toTranslate: toTranslate,
                 skippedHashes: skippedHashes,
                 documentHash: documentHash,
-                translatedByHash: &translatedByHash,
+                translatedByHash: translatedByHash,
                 onBatch: onBatch
             )
         case .ai:
@@ -308,21 +317,41 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
                 translatedByHash: &translatedByHash,
                 onBatch: onBatch
             )
+        case .google:
+            return try await translateWithGoogle(
+                request: request,
+                uniqueSources: uniqueSources,
+                toTranslate: toTranslate,
+                skippedHashes: skippedHashes,
+                documentHash: documentHash,
+                translatedByHash: translatedByHash,
+                onBatch: onBatch
+            )
         }
     }
 
-    /// 系统翻译：复用切批与增量回填，会话走 `SystemTranslationSessionBroker`。
+    /// 系统翻译：复用切批与增量回填；一个 README 只创建一次系统 Session。
     private func translateWithSystem(
         request: ReadmeTranslationRequest,
         uniqueSources: [ReadmeSourceSegment],
         toTranslate: [ReadmeSourceSegment],
         skippedHashes: Set<String>,
         documentHash: String,
-        translatedByHash: inout [String: String],
+        translatedByHash: [String: String],
         onBatch: BatchProgressHandler?
     ) async throws -> ReadmeTranslation {
         let model = ReadmeTranslationEngine.system.cacheModelToken
         let batches = Self.makeBatches(toTranslate)
+        // 源语言检测必须基于完整源文档，而不是仅基于缓存未命中的片段。
+        // 部分缓存重试时，剩余片段可能恰好都是标题、代码或表格内容，
+        // 这会让 Apple Translation 无法可靠识别语言，导致“对比翻译”直接失败。
+        let sourceSample = Self.systemSourceSample(from: uniqueSources)
+        guard let sourceLanguage = TranslationSourceLanguageGate.detectedLanguage(from: sourceSample) else {
+            // Apple Translation 的 prepareTranslation() 需要明确源语言；样本不足或混杂时
+            // 不猜英语，避免生成错误语言包并把失败伪装成正文翻译失败。
+            throw SystemTranslationError.sessionUnavailable
+        }
+        var translatedByHash = translatedByHash
         var record = Self.makeRecord(
             request: request,
             model: model,
@@ -331,54 +360,219 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
             isComplete: false
         )
 
-        for batch in batches {
-            try Task.checkCancellation()
-            let responses = try await SystemTranslationSessionBroker.shared.translateBatch(
-                items: batch.map { ($0.sourceHash, $0.text) },
-                targetLanguage: request.targetLanguage
-            )
-            var batchTranslated: [ReadmeTranslatedSegment] = []
-            for response in responses {
-                let hash = response.clientIdentifier
-                    ?? Self.hash(response.sourceText)
-                let text = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { continue }
-                batchTranslated.append(
-                    ReadmeTranslatedSegment(sourceHash: hash, translatedText: text)
+        let batchResponses = try await SystemTranslationSessionBroker.shared.translateBatches(
+            batches: batches.map { batch in
+                batch.map { ($0.sourceHash, $0.text) }
+            },
+            sourceLanguage: sourceLanguage,
+            targetLanguage: request.targetLanguage,
+            onBatch: { [self] responses, batchIndex in
+                try Task.checkCancellation()
+                let batch = batches[batchIndex]
+                let batchTranslated = Self.systemTranslatedSegments(
+                    responses: responses,
+                    source: batch
+                )
+                Self.merge(batchTranslated, into: &translatedByHash)
+                let progress = Self.coverage(
+                    uniqueSources: uniqueSources,
+                    translatedByHash: translatedByHash,
+                    skippedHashes: skippedHashes
+                )
+                record = Self.makeRecord(
+                    request: request,
+                    model: model,
+                    documentHash: documentHash,
+                    translatedByHash: translatedByHash,
+                    isComplete: progress.isComplete
+                )
+                try await persistAndPublish(
+                    record,
+                    request: request,
+                    sourceSegments: request.sourceSegments,
+                    completedCount: progress.count,
+                    totalCount: uniqueSources.count,
+                    onBatch: onBatch
                 )
             }
-            // 按请求顺序兜底：若 clientIdentifier 丢失，仍按 batch 下标对齐。
-            if batchTranslated.count != batch.count {
-                batchTranslated = zip(batch, responses).map { source, response in
-                    ReadmeTranslatedSegment(
-                        sourceHash: source.sourceHash,
-                        translatedText: response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        // 正常情况下所有批次都通过 onBatch 回填；数量不一致时不要静默生成残缺缓存。
+        guard batchResponses.count == batches.count else {
+            throw SystemTranslationError.sessionUnavailable
+        }
+
+        return record
+    }
+
+    /// Google 翻译：有 Key 走 Cloud v2，无 Key 走公开网页接口。
+    ///
+    /// Cloud 接口可以一次携带多个 `q`，公开接口则由客户端逐条请求；两者都复用
+    /// README 现有的首批优先、增量落盘和有界并发语义。公开接口只允许两路并发，
+    /// 这是刻意保守的限流边界，避免“无 Key 可用”变成“整篇被 Google 拒绝”。
+    private func translateWithGoogle(
+        request: ReadmeTranslationRequest,
+        uniqueSources: [ReadmeSourceSegment],
+        toTranslate: [ReadmeSourceSegment],
+        skippedHashes: Set<String>,
+        documentHash: String,
+        translatedByHash: [String: String],
+        onBatch: BatchProgressHandler?
+    ) async throws -> ReadmeTranslation {
+        let apiKey = (try? keychain.loadServiceAPIKey(forService: GoogleTranslationClient.keychainServiceID))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = GoogleTranslationClient(apiKey: apiKey)
+        let model = client.route == .cloud ? "google-cloud" : "google-public"
+        let batches = Self.makeBatches(toTranslate)
+        let firstBatch = batches[0]
+        let firstTranslations = try await client.translate(
+            texts: firstBatch.map(\.text),
+            targetLanguage: request.targetLanguage
+        )
+        try Task.checkCancellation()
+        var translatedByHash = translatedByHash
+        Self.merge(
+            try Self.googleTranslatedSegments(firstTranslations, source: firstBatch),
+            into: &translatedByHash
+        )
+
+        var progress = Self.coverage(
+            uniqueSources: uniqueSources,
+            translatedByHash: translatedByHash,
+            skippedHashes: skippedHashes
+        )
+        var record = Self.makeRecord(
+            request: request,
+            model: model,
+            documentHash: documentHash,
+            translatedByHash: translatedByHash,
+            isComplete: progress.isComplete
+        )
+        try await persistAndPublish(
+            record,
+            request: request,
+            sourceSegments: request.sourceSegments,
+            completedCount: progress.count,
+            totalCount: uniqueSources.count,
+            onBatch: onBatch
+        )
+
+        let remainingBatches = Array(batches.dropFirst())
+        guard !remainingBatches.isEmpty else { return record }
+
+        try await withThrowingTaskGroup(of: GoogleBatchResult.self) { group in
+            let maxConcurrentCount = 2
+            let initialCount = min(maxConcurrentCount, remainingBatches.count)
+            for index in 0..<initialCount {
+                Self.addGoogleTask(
+                    group: &group,
+                    index: index,
+                    batch: remainingBatches[index],
+                    client: client,
+                    targetLanguage: request.targetLanguage
+                )
+            }
+
+            var nextIndex = initialCount
+            while let result = try await group.next() {
+                try Task.checkCancellation()
+                let batch = remainingBatches[result.index]
+                Self.merge(
+                    try Self.googleTranslatedSegments(result.translations, source: batch),
+                    into: &translatedByHash
+                )
+                progress = Self.coverage(
+                    uniqueSources: uniqueSources,
+                    translatedByHash: translatedByHash,
+                    skippedHashes: skippedHashes
+                )
+                record = Self.makeRecord(
+                    request: request,
+                    model: model,
+                    documentHash: documentHash,
+                    translatedByHash: translatedByHash,
+                    isComplete: progress.isComplete
+                )
+                try await persistAndPublish(
+                    record,
+                    request: request,
+                    sourceSegments: request.sourceSegments,
+                    completedCount: progress.count,
+                    totalCount: uniqueSources.count,
+                    onBatch: onBatch
+                )
+
+                if nextIndex < remainingBatches.count {
+                    Self.addGoogleTask(
+                        group: &group,
+                        index: nextIndex,
+                        batch: remainingBatches[nextIndex],
+                        client: client,
+                        targetLanguage: request.targetLanguage
                     )
+                    nextIndex += 1
                 }
             }
-            Self.merge(batchTranslated, into: &translatedByHash)
-            let progress = Self.coverage(
-                uniqueSources: uniqueSources,
-                translatedByHash: translatedByHash,
-                skippedHashes: skippedHashes
+        }
+
+        return record
+    }
+
+    private nonisolated static func addGoogleTask(
+        group: inout ThrowingTaskGroup<GoogleBatchResult, any Error>,
+        index: Int,
+        batch: [ReadmeSourceSegment],
+        client: GoogleTranslationClient,
+        targetLanguage: ReadmeTranslationLanguage
+    ) {
+        group.addTask {
+            let translations = try await client.translate(
+                texts: batch.map(\.text),
+                targetLanguage: targetLanguage
             )
-            record = Self.makeRecord(
-                request: request,
-                model: model,
-                documentHash: documentHash,
-                translatedByHash: translatedByHash,
-                isComplete: progress.isComplete
-            )
-            try await persistAndPublish(
-                record,
-                request: request,
-                sourceSegments: request.sourceSegments,
-                completedCount: progress.count,
-                totalCount: uniqueSources.count,
-                onBatch: onBatch
+            return GoogleBatchResult(index: index, translations: translations)
+        }
+    }
+
+    private nonisolated static func googleTranslatedSegments(
+        _ translations: [String],
+        source: [ReadmeSourceSegment]
+    ) throws -> [ReadmeTranslatedSegment] {
+        guard translations.count == source.count else {
+            throw GoogleTranslationError.malformedResponse
+        }
+        return zip(source, translations).compactMap { source, translation in
+            let trimmed = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return ReadmeTranslatedSegment(
+                sourceHash: source.sourceHash,
+                translatedText: trimmed
             )
         }
-        return record
+    }
+
+    /// 把系统 Session 响应对齐到请求段落；Apple 偶发不返回 clientIdentifier 时按顺序兜底。
+    private nonisolated static func systemTranslatedSegments(
+        responses: [TranslationSession.Response],
+        source: [ReadmeSourceSegment]
+    ) -> [ReadmeTranslatedSegment] {
+        var translated: [ReadmeTranslatedSegment] = []
+        for response in responses {
+            let hash = response.clientIdentifier ?? Self.hash(response.sourceText)
+            let text = response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            translated.append(
+                ReadmeTranslatedSegment(sourceHash: hash, translatedText: text)
+            )
+        }
+
+        guard translated.count != source.count else { return translated }
+        return zip(source, responses).map { item, response in
+            ReadmeTranslatedSegment(
+                sourceHash: item.sourceHash,
+                translatedText: response.targetText.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
     }
 
     private func translateWithAI(
@@ -558,6 +752,19 @@ final class ReadmeTranslationService: ReadmeTranslationServiceProtocol {
             result.append(takeBatch(from: &remaining, maxCount: 10, maxCharacters: 3_500))
         }
         return result
+    }
+
+    /// 生成系统翻译的源语言检测样本。
+    ///
+    /// 源样本从完整的去重源片段生成，不能随着缓存命中情况变化；否则同一份
+    /// README 在首次翻译和部分缓存重试时可能得到不同的语言检测结果。
+    nonisolated static func systemSourceSample(
+        from sources: [ReadmeSourceSegment]
+    ) -> String {
+        sources
+            .prefix(4)
+            .map(\.text)
+            .joined(separator: "\n")
     }
 
     private nonisolated static func takeBatch(
