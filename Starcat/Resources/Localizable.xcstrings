@@ -127903,6 +127903,23 @@
         }
       }
     },
+    "gettingStarted.step.repoHomepage.nameDetail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the project name to open its GitHub project page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击项目名，打开 GitHub 项目主页。"
+          }
+        }
+      }
+    },
     "gettingStarted.step.repoHomepage.title" : {
       "localizations" : {
         "ar" : {

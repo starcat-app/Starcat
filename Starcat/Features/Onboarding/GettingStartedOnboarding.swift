@@ -251,7 +251,7 @@ struct GettingStartedChecklistView: View {
             GettingStartedStep(
                 id: .openRepoHomepage,
                 title: "gettingStarted.step.repoHomepage.title",
-                detail: "gettingStarted.step.repoHomepage.detail",
+                detail: "gettingStarted.step.repoHomepage.nameDetail",
                 systemImage: "arrow.up.forward.app",
                 actionTitle: "gettingStarted.step.repoHomepage.action",
                 isAvailable: hasSelectedRepo,

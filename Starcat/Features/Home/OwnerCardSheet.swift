@@ -2,7 +2,7 @@
 //  OwnerCardSheet.swift
 //  Starcat
 //
-//  仓库详情页 hero 区点击 owner 名弹出的真实资料卡容器。
+//  仓库详情页 hero 区点击 Logo 或关注胶囊弹出的真实资料卡容器。
 //
 //  本视图负责加载 GitHub 公开资料、社交账号与贡献数据；关注状态由详情页传入并双向同步，
 //  避免打开卡片时重复请求。数据交给 OwnerCardView 展示：明亮主题使用 A，黑暗主题使用 B。

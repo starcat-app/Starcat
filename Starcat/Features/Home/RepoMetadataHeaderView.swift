@@ -74,10 +74,14 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     /// OpenSSF 是公开安全信号，所有详情页可见；Repo Health 是 Manage 专属 Pro 能力，
     /// 由 Scaffold 通过 `showsRepoHealthEntry` 明确放行。
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var showOpenSSFScoreSheet = false
     @State private var showRepoHealthSheet = false
     @State private var paywallContext: ProPaywallContext?
+    // Logo 与关注胶囊共用同一张卡片和关注状态，避免打开卡片时重复查询。
+    @State private var showOwnerCard = false
+    @State private var isFollowingOwner: Bool?
 
     init(
         repo: Repo,
@@ -140,15 +144,26 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
+        .sheet(isPresented: $showOwnerCard) {
+            OwnerCardSheet(ownerLogin: repo.owner, isFollowing: $isFollowingOwner)
+                .appSheetRootEnvironment(dependencies)
+        }
+        .task(id: repo.owner) {
+            await loadOwnerFollowing(owner: repo.owner)
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            RepoMetadataAvatarButton(repo: repo)
+            RepoMetadataAvatarButton(repo: repo) {
+                showOwnerCard = true
+            }
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 8) {
-                    RepoFullNameCopyButton(repo: repo)
+                    RepoFullNameTitleView(repo: repo, isFollowingOwner: isFollowingOwner) {
+                        showOwnerCard = true
+                    }
 
                     OpenSSFInlineBadge(repo: repo) {
                         showOpenSSFScoreSheet = true
@@ -173,6 +188,16 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
             Spacer()
             trailingActions
+        }
+    }
+
+    /// 切换 owner 时清空旧状态；已取消的查询不能覆盖新 owner 的关注状态。
+    private func loadOwnerFollowing(owner: String) async {
+        isFollowingOwner = nil
+        guard authSession.state.isAuthenticated else { return }
+        if let following = try? await dependencies.ownerFollowService.isFollowing(login: owner),
+           !Task.isCancelled {
+            isFollowingOwner = following
         }
     }
 
@@ -457,79 +482,73 @@ private struct RepoDetailHeaderSourceBadgeView: View {
 
 /// 详情 hero 的 `owner/repo` 标题：拆成 owner + repo 两段，视觉拼接成一个完整名称。
 ///
-/// - owner 段（`RepoOwnerSegment`）：点击弹 owner 卡片，并带关注胶囊；
-/// - repo 段：点击把整个 fullName 写入剪贴板（保留旧「点全名复制」行为）。
-///
-/// 为什么拆分：dong4j 2026-09-02 要求 owner 名单独可点、弹 owner 卡片，同时 repo 名
-/// 仍保留复制语义。绿勾始终占 14pt、未复制时透明，避免 1.5s 反馈把同行徽章挤开。
-private struct RepoFullNameCopyButton: View {
+/// 两段名称分别打开 GitHub owner 主页和项目页；应用内资料卡由 Logo / 关注胶囊打开。
+private struct RepoFullNameTitleView: View {
     let repo: Repo
+    let isFollowingOwner: Bool?
+    let onOpenOwnerCard: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         HStack(spacing: 0) {
-            RepoOwnerSegment(owner: repo.owner)
+            RepoOwnerSegment(
+                owner: repo.owner,
+                isFollowing: isFollowingOwner,
+                onOpenOwnerCard: onOpenOwnerCard
+            )
 
             Text(verbatim: "/")
                 .font(interfaceScale.font(.workspaceTitle))
                 .foregroundStyle(.secondary)
 
-            repoCopySegment
+            repoLinkSegment
         }
         .frame(minWidth: 0, alignment: .leading)
     }
 
-    /// repo 名段：点击复制整个 fullName，绿勾在行末。
-    private var repoCopySegment: some View {
-        CopyFeedbackButton(
-            providesContent: { repo.fullName },
-            tooltip: "repo.hero.copyName"
-        ) { didCopy in
-            HStack(spacing: 6) {
-                Text(verbatim: repo.name)
-                    .font(interfaceScale.font(.workspaceTitle))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(.primary)
-                    // Button 默认按 intrinsic width 布局，长仓库名会把同行徽章挤出
-                    // hero；minWidth 0 才允许在 HStack 里按尾部截断。
-                    .frame(minWidth: 0, alignment: .leading)
-
-                Image(systemName: "checkmark.circle.fill")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                    .foregroundStyle(.green)
-                    .opacity(didCopy ? 1 : 0)
-                    .frame(width: 14, height: 14)
-                    .accessibilityHidden(!didCopy)
+    /// 项目名承接原 Logo 的主页动作与引导锚点，确保引导指向真实的外链入口。
+    private var repoLinkSegment: some View {
+        Button {
+            if let url = RepoExternalLinks.repo(repo) {
+                NotificationCenter.default.post(name: .gettingStartedDidOpenRepoHomepage, object: nil)
+                NSWorkspace.shared.open(url)
             }
+        } label: {
+            Text(verbatim: repo.name)
+                .font(interfaceScale.font(.workspaceTitle))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(.primary)
+                // Button 默认按 intrinsic width 布局，长仓库名会把同行徽章挤出
+                // hero；minWidth 0 才允许在 HStack 里按尾部截断。
+                .frame(minWidth: 0, alignment: .leading)
         }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
         .pressableHover(scale: 1.0)
         .frame(minWidth: 0, alignment: .leading)
-        .accessibilityLabel(Text("repo.hero.copyName"))
+        .gettingStartedAnchor(.repoHomepage)
+        .help("repo.openOnGithub")
+        .accessibilityLabel(Text("repo.openOnGithub"))
         .accessibilityValue(Text(verbatim: repo.fullName))
     }
 }
 
-/// hero `owner/repo` 的 owner 段：owner 名 + 关注胶囊，点击弹 owner 卡片。
+/// hero `owner/repo` 的 owner 段：名称打开 GitHub 主页，关注胶囊打开应用内资料卡。
 ///
-/// 关注胶囊是纯状态展示（不可点击，关注操作在 `OwnerCardSheet` 内）：已关注显示绿色
-/// 「已关注」、未关注显示淡色「关注」、未登录不显示（无法判断关注状态）。isFollowing
-/// 在挂载时按需查询（登录态才查；公开 owner 的 profile 无需登录）。
+/// 已关注显示纯状态胶囊，未关注显示卡片入口；状态由 Hero 共享，卡片内操作后同步更新。
 private struct RepoOwnerSegment: View {
     let owner: String
+    let isFollowing: Bool?
+    let onOpenOwnerCard: () -> Void
 
-    @Environment(AppDependencies.self) private var dependencies
-    @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-
-    @State private var showOwnerCard = false
-    @State private var isFollowing: Bool?
 
     var body: some View {
         HStack(spacing: 6) {
             Button {
-                showOwnerCard = true
+                NSWorkspace.shared.open(GitHubURLs.userProfile(login: owner))
             } label: {
                 Text(verbatim: owner)
                     .font(interfaceScale.font(.workspaceTitle))
@@ -540,7 +559,7 @@ private struct RepoOwnerSegment: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .pressableHover(scale: 1.0)
-            .help("repo.owner.card.help")
+            .help("search.detail.action.openOwner")
 
             if let isFollowing {
                 if isFollowing {
@@ -548,9 +567,7 @@ private struct RepoOwnerSegment: View {
                     followingBadge(true)
                 } else {
                     // 未关注：「关注」胶囊是可点击入口，点击弹 owner 卡片完成关注。
-                    Button {
-                        showOwnerCard = true
-                    } label: {
+                    Button(action: onOpenOwnerCard) {
                         followingBadge(false)
                     }
                     .buttonStyle(.plain)
@@ -559,14 +576,6 @@ private struct RepoOwnerSegment: View {
                     .help("repo.owner.card.help")
                 }
             }
-        }
-        .sheet(isPresented: $showOwnerCard) {
-            // 详情页已经完成关注状态查询，直接共享给卡片，避免打开时重复请求 GitHub。
-            OwnerCardSheet(ownerLogin: owner, isFollowing: $isFollowing)
-                .appSheetRootEnvironment(dependencies)
-        }
-        .task(id: owner) {
-            await loadFollowing()
         }
     }
 
@@ -590,27 +599,15 @@ private struct RepoOwnerSegment: View {
                 .fill((following ? Color.green : Color.secondary).opacity(0.12))
         }
     }
-
-    private func loadFollowing() async {
-        // Repo 切换时先清空旧 owner 状态，避免卡片短暂复用上一位 owner 的结果。
-        isFollowing = nil
-        guard authSession.state.isAuthenticated else { return }
-        if let following = try? await dependencies.ownerFollowService.isFollowing(login: owner) {
-            isFollowing = following
-        }
-    }
 }
 
+/// Logo 只负责打开 owner 资料卡；卡片与关注状态由共同父视图持有。
 struct RepoMetadataAvatarButton: View {
     let repo: Repo
+    let onOpenOwnerCard: () -> Void
 
     var body: some View {
-        Button {
-            if let url = RepoExternalLinks.repo(repo) {
-                NotificationCenter.default.post(name: .gettingStartedDidOpenRepoHomepage, object: nil)
-                NSWorkspace.shared.open(url)
-            }
-        } label: {
+        Button(action: onOpenOwnerCard) {
             RemoteAvatar(
                 urlString: RepoAvatarURL.from(owner: repo.owner),
                 size: 64
@@ -619,8 +616,9 @@ struct RepoMetadataAvatarButton: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
-        .gettingStartedAnchor(.repoHomepage)
-        .help("repo.openOnGithub")
+        .help("repo.owner.card.help")
+        .accessibilityLabel(Text("repo.owner.card.help"))
+        .accessibilityValue(Text(verbatim: repo.owner))
     }
 }
 
