@@ -37,9 +37,13 @@ struct GitHubStarListSidebarRow: View {
                     privateShieldBadge
                 }
 
-                if isHovered {
-                    editButton
-                }
+                // 编辑按钮常驻占位、只切换透明度：hover 显隐不再改变行布局，
+                // 鼠标划过时标题不会因布局抖动而乱晃。未 hover 时关掉 hit testing，
+                // 点行空白仍能正常选中（等价于原来"不进视图树"不抢选中的意图）。
+                editButton
+                    .opacity(isHovered ? 1 : 0)
+                    .allowsHitTesting(isHovered)
+                    .accessibilityHidden(!isHovered)
 
                 Spacer(minLength: 4)
 
