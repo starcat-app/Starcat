@@ -374,7 +374,13 @@ final class StarActionService {
             baseline = try await repoRepository.findById(ghRepoId)?.starsCount
         }
 
-        try await apiClient.unstar(owner: owner, repo: name)
+        do {
+            try await apiClient.unstar(owner: owner, repo: name)
+        } catch NetworkError.notFound {
+            // 仓库已在 GitHub 侧删除（404）：unstar 的目标状态（未 star）本来就已达成，
+            // 继续执行本地 markUnstarred，否则已删库的仓库在 Starcat 里永远取消不掉。
+            AppLog.sync.info("unstar 目标仓库已不存在（404），仅更新本地状态：\(owner, privacy: .public)/\(name, privacy: .public)")
+        }
         try await repoRepository.markUnstarred(repoId: ghRepoId, userID: userID)
 
         registry._remove(ghRepoId)
