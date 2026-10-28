@@ -187,6 +187,126 @@ struct ReadmeAssetURLRewriterTests {
             == rawBase + "logo.png")
     }
 
+    // MARK: - picture 图片候选地址
+
+    @Test("diagram-design 的深浅色 Hero 与 GIF 候选地址全部重写")
+    func rewrite_diagramDesignPictures() {
+        // 使用实际缓存的结构：img 已修好，深浅色 source 仍为相对路径。
+        let rawBase = "https://raw.githubusercontent.com/cathrynlavery/diagram-design/HEAD/"
+        let html = #"""
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/hero/hero-dark.webp">
+          <img alt="Diagram Design" src="https://raw.githubusercontent.com/cathrynlavery/diagram-design/HEAD/docs/hero/hero-light.webp">
+        </picture>
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/hero/demo.gif">
+          <source media="(prefers-color-scheme: light)" srcset="docs/hero/demo-light.gif">
+          <img src="https://raw.githubusercontent.com/cathrynlavery/diagram-design/HEAD/docs/hero/demo.gif" width="900">
+        </picture>
+        """#
+        let expected = html
+            .replacingOccurrences(of: #"srcset="docs/"#, with: #"srcset="\#(rawBase)docs/"#)
+
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "cathrynlavery", repo: "diagram-design")
+
+        #expect(result == expected)
+        #expect(ReadmeAssetURLRewriter.rewrite(in: result, owner: "cathrynlavery", repo: "diagram-design") == result)
+    }
+
+    @Test("picture 的多候选密度描述符、逗号路径与空白保持原样")
+    func rewrite_pictureDensityCandidates() {
+        let html = #"""
+        <picture><source type="image/webp" srcset="images/small,wide.webp 1x,
+          ./images/large.webp 2x, https://cdn.example.com/hero.webp?x=1&amp;y=2 3x"></picture>
+        """#
+        let expected = #"""
+        <picture><source type="image/webp" srcset="https://raw.githubusercontent.com/alice/foo/HEAD/images/small,wide.webp 1x,
+          https://raw.githubusercontent.com/alice/foo/HEAD/images/large.webp 2x, https://cdn.example.com/hero.webp?x=1&amp;y=2 3x"></picture>
+        """#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("picture 的宽度描述符与 sizes 不变")
+    func rewrite_pictureWidthCandidates() {
+        let html = #"<picture><source sizes="(max-width: 600px) 100vw, 600px" srcset="small.webp 480w, large.webp 1200w"></picture>"#
+        let expected = #"<picture><source sizes="(max-width: 600px) 100vw, 600px" srcset="https://raw.githubusercontent.com/alice/foo/HEAD/small.webp 480w, https://raw.githubusercontent.com/alice/foo/HEAD/large.webp 1200w"></picture>"#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("picture 中的 GitHub 根路径 raw 地址与无描述符候选正确重写")
+    func rewrite_pictureRootRawCandidates() {
+        let html = #"<picture><source srcset="/other/repo/raw/main/dark.webp, light.webp"></picture>"#
+        let expected = #"<picture><source srcset="https://raw.githubusercontent.com/other/repo/main/dark.webp, https://raw.githubusercontent.com/alice/foo/HEAD/light.webp"></picture>"#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("picture 相对候选遵循子目录 README 且重复处理不变")
+    func rewrite_pictureSubdirectoryReadme() {
+        let html = #"""
+        <div data-path=".github/README.md">
+          <picture><source srcset="img/dark.webp?x=1&amp;y=2"></picture>
+        </div>
+        """#
+        let expected = html.replacingOccurrences(
+            of: #"srcset="img/"#,
+            with: #"srcset="https://raw.githubusercontent.com/alice/foo/HEAD/.github/img/"#
+        )
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo")
+
+        #expect(result == expected)
+        #expect(ReadmeAssetURLRewriter.rewrite(in: result, owner: "alice", repo: "foo") == result)
+    }
+
+    @Test("picture 中 data URI 的逗号不被误当成候选分隔符")
+    func rewrite_pictureDataURICandidate() {
+        let html = #"<picture><source srcset="data:image/png;base64,AAAA 1x, large.png 2x"></picture>"#
+        let expected = #"<picture><source srcset="data:image/png;base64,AAAA 1x, https://raw.githubusercontent.com/alice/foo/HEAD/large.png 2x"></picture>"#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("picture 中绝对地址、协议相对地址与未知协议保持原样")
+    func rewrite_pictureAbsoluteCandidatesUnchanged() {
+        let html = #"<picture><source srcset="https://cdn.example.com/a,b.webp 1x, //cdn.example.com/b.webp 2x, blob:example 3x"></picture>"#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == html)
+    }
+
+    @Test("picture 中无法可靠识别的候选描述符保持原样")
+    func rewrite_pictureUnknownDescriptorsUnchanged() {
+        let html = #"<picture><source srcset="small.webp 1x, large.webp calc(2, 3)"></picture>"#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == html)
+    }
+
+    @Test("picture 外的 source、视频音频和普通链接不进入图片候选重写")
+    func rewrite_pictureSourcesDoNotChangeOtherMedia() {
+        let html = #"""
+        <source srcset="standalone.webp">
+        <video controls><source src="movie.mp4" srcset="video.webp"></video>
+        <audio controls><source src="sound.mp3"></audio>
+        <a href="docs/hero/demo.gif">Download</a>
+        <picture><source srcset="dark.webp"></picture>
+        """#
+        let expected = html.replacingOccurrences(
+            of: #"srcset="dark.webp""#,
+            with: #"srcset="https://raw.githubusercontent.com/alice/foo/HEAD/dark.webp""#
+        )
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("缺少仓库身份时 picture 相对候选保持原样")
+    func rewrite_pictureWithoutRepositoryUnchanged() {
+        let html = #"<picture><source srcset="dark.webp"><img src="light.webp"></picture>"#
+
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: nil, repo: "foo") == html)
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: nil) == html)
+    }
+
     // MARK: - camo 代理图片回源（2026-09-18）
 
     @Test("camo 图片改写回 data-canonical-src 原始地址")

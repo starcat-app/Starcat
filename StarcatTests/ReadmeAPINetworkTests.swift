@@ -195,6 +195,43 @@ struct ReadmeAPINetworkTests {
         #expect(cached?.renderedHtml?.contains(expected) == true)
     }
 
+    @Test("缓存读取与 304 刷新都修复 picture 候选地址并持久化", arguments: [false, true])
+    func cachedPictureSourcesAreRepaired(refresh: Bool) async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        // 模拟旧缓存：img 已是直链，source 仍保留相对路径。不能依赖服务端返回新 HTML。
+        let oldHTML = #"""
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/hero/demo.gif">
+          <img src="https://raw.githubusercontent.com/alice/foo/HEAD/docs/hero/demo.gif" width="900">
+        </picture>
+        """#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let repaired: Readme?
+        if refresh {
+            guard case let .notModified(readme) = await api.refreshReadme(for: repo) else {
+                Issue.record("期望 304 使用本地缓存修复 picture 地址")
+                return
+            }
+            repaired = readme
+        } else {
+            repaired = try await api.cachedReadme(for: repo)
+        }
+
+        let expected = oldHTML.replacingOccurrences(
+            of: #"srcset="docs/"#,
+            with: #"srcset="https://raw.githubusercontent.com/alice/foo/HEAD/docs/"#
+        )
+        #expect(repaired?.renderedHtml == expected)
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml == expected)
+        let secondRead = try await api.cachedReadme(for: repo)
+        #expect(secondRead?.renderedHtml == expected)
+    }
+
     @Test("refreshReadme: 304 命中时修复子目录 README 旧缓存里的错误 raw HEAD 路径")
     func refresh304RepairsCachedSubdirectoryReadmeRawImage() async throws {
         let (api, mock, repo, readmeRepo, _) = try await makeAPI()

@@ -1059,35 +1059,71 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             function enhanceImage(image) {
                 if (image.dataset.readmeEnhanced === 'true') { return; }
                 image.dataset.readmeEnhanced = 'true';
-                image.dataset.readmeZoomable = 'true';
+                var loadingTimer;
+
+                function clearLoading() {
+                    window.clearTimeout(loadingTimer);
+                    image.classList.remove('readme-image-loading', 'readme-image-loading-height', 'readme-image-loading-width');
+                }
+
+                // 延迟显示以免缓存图闪烁；直接画在 img 背景上，不包裹 picture /
+                // 链接，也不改 src，避免破坏主题换源或重新下载大 GIF。
+                function showLoading() {
+                    if (image.complete) { return; }
+                    var width = parseFloat(image.getAttribute('width'));
+                    var height = parseFloat(image.getAttribute('height'));
+                    if (width <= 96 || height <= 48) { return; }
+                    // GitHub 自定义 themed-picture 也常用于无尺寸 hero 图；把它纳入
+                    // 独立图判断，避免落到远处外层 div 后被误判成普通行内图。
+                    var container = image.closest('p, div, td, li, figure, themed-picture');
+                    var standalone = container && container.querySelectorAll('img').length === 1
+                        && container.textContent.trim() === '';
+                    if (!(width >= 160 || height >= 96 || standalone)) { return; }
+                    var bounds = image.getBoundingClientRect();
+                    // 未知尺寸的独立正文图只在等待期借用少量空间；结算后完全交还
+                    // 原始布局。明确的小图和徽章组不扩高，已声明的尺寸也不覆盖。
+                    if ((standalone || width >= 160) && !height && !image.style.height && bounds.height < 48) {
+                        image.classList.add('readme-image-loading-height');
+                    }
+                    if (standalone && !width && !image.style.width && bounds.width < 160) {
+                        image.classList.add('readme-image-loading-width');
+                    }
+                    image.classList.add('readme-image-loading');
+                }
 
                 function markLoaded() {
+                    clearLoading();
                     image.classList.remove('readme-image-failed');
                     image.classList.add('readme-image-loaded');
+                    image.dataset.readmeZoomable = 'true';
                 }
 
                 // 加载失败也必须解除隐形：渐显样式把未标记的图片钉在 opacity:0，
                 // 失败图片若停留该状态，用户看到的是"图片凭空消失"而不是破图 /
                 // alt 文案。失败同时撤掉放大光标与点击预览，避免点开一张裂图。
                 function markFailed() {
+                    clearLoading();
+                    image.classList.remove('readme-image-loaded');
                     image.classList.add('readme-image-failed');
                     image.removeAttribute('data-readme-zoomable');
                 }
 
+                // 持续监听，picture 换源后仍能从失败恢复；缓存命中则立即结算。
+                image.addEventListener('load', markLoaded);
+                image.addEventListener('error', markFailed);
                 if (image.complete) {
                     // complete 且 naturalWidth 为 0 说明加载已经结束且失败
                     //（404 / 解码错误 / camo 偶发 429-503），load 事件不会再触发，
                     // 必须在这里直接结算，不能等永远不会来的事件。
                     if (image.naturalWidth > 0) { markLoaded(); } else { markFailed(); }
                 } else {
-                    image.addEventListener('load', markLoaded, { once: true });
-                    image.addEventListener('error', markFailed, { once: true });
+                    loadingTimer = window.setTimeout(showLoading, 150);
                 }
 
                 image.addEventListener('click', function(event) {
                     event.preventDefault();
                     event.stopPropagation();
-                    if (image.classList.contains('readme-image-failed')) { return; }
+                    if (!image.classList.contains('readme-image-loaded')) { return; }
                     openImagePreview(image);
                 });
             }
@@ -2242,6 +2278,8 @@ enum ReadmeCSS {
         --blockquote-border: #d0d7de;
         --image-preview-bg: rgba(246, 248, 250, 0.86);
         --image-preview-shadow: rgba(31, 35, 40, 0.24);
+        --image-loading-bg: rgba(31, 35, 40, 0.06);
+        --image-loading-highlight: rgba(255, 255, 255, 0.65);
     }
     body.dark {
         --bg: #0d1117;
@@ -2255,6 +2293,8 @@ enum ReadmeCSS {
         --blockquote-border: rgba(255, 255, 255, 0.14);
         --image-preview-bg: rgba(13, 17, 23, 0.88);
         --image-preview-shadow: rgba(0, 0, 0, 0.42);
+        --image-loading-bg: rgba(255, 255, 255, 0.08);
+        --image-loading-highlight: rgba(255, 255, 255, 0.09);
     }
     /*
      * 背景刻意设为 transparent：
@@ -2372,23 +2412,43 @@ enum ReadmeCSS {
         opacity: 1;
         transition: opacity 180ms ease, filter 180ms ease, transform 180ms ease;
     }
-    body.readme-js-ready .markdown-body img[data-readme-zoomable="true"] {
+    /* markdown-body 已挂在 body 本身；正文 article 是稳定边界，不能依赖 GitHub
+       再包一层同名 class。预览层直接挂 body，必须排除在正文加载状态之外。 */
+    body.readme-js-ready > article img[data-readme-zoomable="true"] {
         cursor: zoom-in;
     }
-    body.readme-js-ready .markdown-body img:not(.readme-image-loaded) {
+    body.readme-js-ready > article img:not(.readme-image-loaded) {
         opacity: 0;
         filter: blur(6px);
         transform: translateY(2px);
     }
-    body.readme-js-ready .markdown-body img.readme-image-loaded {
+    body.readme-js-ready > article img.readme-image-loaded {
         opacity: 1;
         filter: blur(0);
         transform: translateY(0);
     }
+    /* 加载态必须覆盖旧渐显的 opacity:0，否则背景占位也会一起隐形。
+       背景不遮挡 WebKit 已解码的渐进内容，load / error 后由脚本撤掉。 */
+    body.readme-js-ready > article img.readme-image-loading {
+        opacity: 1;
+        filter: none;
+        transform: none;
+        background-color: var(--image-loading-bg);
+        background-image: linear-gradient(100deg, transparent 30%, var(--image-loading-highlight) 50%, transparent 70%);
+        background-size: 240% 100%;
+        animation: readme-image-loading 1.6s ease-in-out infinite;
+        transition: none;
+    }
+    .markdown-body img.readme-image-loading-height { min-height: 120px; }
+    .markdown-body img.readme-image-loading-width { width: min(100%, 320px); }
+    @keyframes readme-image-loading {
+        from { background-position: 100% 0; }
+        to { background-position: -100% 0; }
+    }
     /* 失败图片必须与"未标记"区分：未标记=等待渐显，失败=立即显示（WebKit 会
        退化渲染 alt 文案），否则加载失败表现为整张图凭空消失。放在 loaded 规则
        之后，与 :not(.readme-image-loaded) 隐藏规则同特异性时由源顺序取胜。 */
-    body.readme-js-ready .markdown-body img.readme-image-failed {
+    body.readme-js-ready > article img.readme-image-failed {
         opacity: 1;
         filter: none;
         transform: none;
@@ -2432,6 +2492,10 @@ enum ReadmeCSS {
         box-shadow: 0 18px 60px var(--image-preview-shadow);
     }
     @media (prefers-reduced-motion: reduce) {
+        body.readme-js-ready > article img.readme-image-loading {
+            animation: none;
+            background-image: none;
+        }
         .markdown-body img,
         .readme-image-preview {
             transition: none;

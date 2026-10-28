@@ -14,6 +14,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Improvements
 
+- README image loading: Shows a theme-aware placeholder while large images and GIFs load, then displays the image when ready to avoid long blank areas.
 - Settings redesign: Reorganizes configuration groups and navigation, unifies page headers, separators, and action layouts, removes repetitive descriptions, and brings account, privacy, and Pro benefits into a clearer structure.
 - Insights header layout: Reduces empty space above both columns and keeps card heights aligned with their content.
 - Business icons: Insights icons now match the main window, while similar-repository recommendations, embedding models, and CodeFlow are easier to distinguish.
@@ -32,6 +33,7 @@ Release notes for the Mac App Store edition of Starcat.
 - AI organization tabs: Repository grouping and tag organization tabs keep a stable size as counts change, without shifting when switching states.
 - License filter popover: Keeps its size and options stable during repeated selections and clearing, while results and counts continue to update.
 - Middle-column menus: Sort, trending period, and notification filters now show a single dropdown arrow.
+- README images: Fixes missing images and GIFs in some light/dark theme picture sources.
 
 ## 1.9.0
 

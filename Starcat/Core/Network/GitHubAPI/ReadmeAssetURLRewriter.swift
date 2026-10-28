@@ -32,7 +32,7 @@
 //  - 该规则与 owner/repo 无关，在「owner/repo 缺失」保守短路之前执行。
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  图片策略（与原 ReadmeWebView 实现一致，**仅是位置迁移**）
+//  图片策略
 //  ────────────────────────────────────────────────────────────────────────────
 //
 //  触发原因：GitHub HTML render 端点对原生 HTML `<img>` 不做 URL 重写，
@@ -47,6 +47,8 @@
 //    - HEAD 自动指向 default branch，无需额外查询 default branch
 //    - GitHub HTML 外层 `data-path=".github/README.md"` 表示本文档位于 `.github/`
 //      目录，`img/logo.png` 必须解析到 `.github/img/logo.png`，不能按仓库根拼接
+//  - `<picture>` 内 `<source srcset>` 的相对候选复用上述地址规则；仅替换 URL，
+//    保留 media / type / sizes、候选描述符与原始空白，不触碰其它媒体的 source
 //  - owner/repo 缺失 → 直接原样返回（保守，宁可坏图不要错重写）
 //
 //  视频策略（GitHub Issue #107，2026-08-22）：
@@ -92,7 +94,13 @@ enum ReadmeAssetURLRewriter {
             rawRoot: rawRoot,
             documentDirectory: documentDirectory
         )
-        return rewriteGitHubVideoSources(in: imageRewritten)
+        let pictureRewritten = rewritePictureSourceSets(
+            in: imageRewritten,
+            rawBase: rawBase,
+            rawRoot: rawRoot,
+            documentDirectory: documentDirectory
+        )
+        return rewriteGitHubVideoSources(in: pictureRewritten)
     }
 
     /// 把 GitHub camo 代理的 `<img src>` / `<source srcset>` 改写回 `data-canonical-src`
@@ -239,6 +247,116 @@ enum ReadmeAssetURLRewriter {
             cursor = m.range.location + m.range.length
         }
         result += nsHtml.substring(from: cursor)
+        return result
+    }
+
+    /// 只补齐 picture 图片候选，不让同名 source 标签把视频 / 音频带入图片地址规则。
+    ///
+    /// 深浅色 picture 会优先使用 source，即使 img.src 已是正确直链，漏改 source
+    /// 仍会裂图。按文档逆序替换标签，避免前面的字符串长度变化使后续匹配区间失效。
+    private static func rewritePictureSourceSets(
+        in html: String,
+        rawBase: String,
+        rawRoot: String,
+        documentDirectory: String
+    ) -> String {
+        guard let pictureRegex = try? NSRegularExpression(
+            pattern: #"<picture\b[^>]*>.*?</picture\s*>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ),
+              let sourceRegex = try? NSRegularExpression(
+                pattern: #"<source\b[^>]*>"#,
+                options: [.caseInsensitive]
+              )
+        else { return html }
+
+        let nsHtml = html as NSString
+        let pictures = pictureRegex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+        var result = html
+        for picture in pictures.reversed() {
+            for source in sourceRegex.matches(in: html, range: picture.range).reversed() {
+                let tag = nsHtml.substring(with: source.range)
+                guard let srcset = attributeValue(named: "srcset", inTag: tag) else { continue }
+                let rewritten = rewritePictureSourceSet(
+                    srcset,
+                    rawBase: rawBase,
+                    rawRoot: rawRoot,
+                    documentDirectory: documentDirectory
+                )
+                guard rewritten != srcset, let range = Range(source.range, in: result) else { continue }
+                result.replaceSubrange(range, with: replaceAttributeValue(named: "srcset", inTag: tag, with: rewritten))
+            }
+        }
+        return result
+    }
+
+    /// 按 URL token 与描述符读取 srcset，仅替换相对 URL 的字符区间。
+    ///
+    /// 不能直接 split(",")：data URI 和普通 URL 路径也能含逗号。URL 先读到 ASCII
+    /// 空白，尾逗号才结束无描述符候选；否则读取后面的 1x / 480w 等描述符。
+    /// 不认识的描述符保留整串，避免只修好前半段却破坏候选选择。绝对 URL 不补目录，
+    /// 使缓存每次读取重跑此函数仍保持幂等；HTML 的 &amp; 等转义直接按原字符保留。
+    private static func rewritePictureSourceSet(
+        _ srcset: String,
+        rawBase: String,
+        rawRoot: String,
+        documentDirectory: String
+    ) -> String {
+        let whitespace: Set<Character> = [" ", "\t", "\n", "\r", "\u{0C}"]
+        var cursor = srcset.startIndex
+        var replacements: [(Range<String.Index>, String)] = []
+
+        while cursor < srcset.endIndex {
+            while cursor < srcset.endIndex, whitespace.contains(srcset[cursor]) || srcset[cursor] == "," {
+                cursor = srcset.index(after: cursor)
+            }
+            guard cursor < srcset.endIndex else { break }
+
+            let urlStart = cursor
+            while cursor < srcset.endIndex, !whitespace.contains(srcset[cursor]) {
+                cursor = srcset.index(after: cursor)
+            }
+            var urlEnd = cursor
+            while urlEnd > urlStart, srcset[srcset.index(before: urlEnd)] == "," {
+                urlEnd = srcset.index(before: urlEnd)
+            }
+            if urlEnd == cursor {
+                let descriptorStart = cursor
+                while cursor < srcset.endIndex, srcset[cursor] != "," {
+                    cursor = srcset.index(after: cursor)
+                }
+                let descriptor = srcset[descriptorStart..<cursor].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !descriptor.isEmpty {
+                    if descriptor.hasSuffix("w"), let width = Int(descriptor.dropLast()), width > 0 {
+                        // 宽度描述符保留原文，仅校验其属于可安全处理的单候选形式。
+                    } else if descriptor.hasSuffix("x"),
+                              let density = Double(descriptor.dropLast()), density.isFinite, density >= 0 {
+                        // 密度描述符与原候选绑定，不参与 URL 拼接。
+                    } else {
+                        return srcset
+                    }
+                }
+            }
+
+            let url = String(srcset[urlStart..<urlEnd])
+            guard !url.isEmpty, !url.hasPrefix("//"), !url.hasPrefix("#"),
+                  URL(string: url)?.scheme == nil
+            else { continue }
+            let rewritten = rewriteOne(
+                url,
+                rawBase: rawBase,
+                rawRoot: rawRoot,
+                documentDirectory: documentDirectory
+            )
+            if rewritten != url {
+                replacements.append((urlStart..<urlEnd, rewritten))
+            }
+        }
+
+        var result = srcset
+        for (range, url) in replacements.reversed() {
+            result.replaceSubrange(range, with: url)
+        }
         return result
     }
 
