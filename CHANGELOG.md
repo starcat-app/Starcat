@@ -34,6 +34,7 @@ Release notes for the Mac App Store edition of Starcat.
 - License filter popover: Keeps its size and options stable during repeated selections and clearing, while results and counts continue to update.
 - Middle-column menus: Sort, trending period, and notification filters now show a single dropdown arrow.
 - README images: Fixes missing images and GIFs in some light/dark theme picture sources.
+- README attachment images: Fixes images disappearing after temporary links expire, with existing cached pages repaired automatically.
 
 ## 1.9.0
 

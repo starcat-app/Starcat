@@ -139,6 +139,65 @@ struct ReadmeAssetURLRewriterTests {
         #expect(result == html)
     }
 
+    @Test("真实 README 签名图片还原稳定附件入口并保持幂等", arguments: [
+        "60738984/646132383-2cd4a6ec-eb1e-4b45-8627-a76442ea3874.png",
+        "507615/465824706-74ad0b4a-e086-4955-8edd-9f2cff31aee8.png",
+        "507615/465824705-d4bcb7c1-42c7-4c0f-b130-1193a931f9f7.png"
+    ])
+    func rewrite_githubSignedImageURL(path: String) {
+        // 保留现场文件路径，签名使用离线占位，避免测试依赖外网或持久化访问参数。
+        let source = "https://private-user-images.githubusercontent.com/\(path)?jwt=expired&amp;other=1"
+        let uuid = String(path.dropLast(4).suffix(36))
+        let stableURL = "https://github.com/user-attachments/assets/\(uuid)"
+        let html = #"<a href="https://example.com/details"><img data-canonical-src="\#(source)" src="\#(source)" width="900" alt="preview"></a>"#
+        let expected = html.replacingOccurrences(of: source, with: stableURL)
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo")
+
+        #expect(result == expected)
+        #expect(ReadmeAssetURLRewriter.rewrite(in: result, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("camo 回源后继续修复签名图片，且无需仓库身份")
+    func rewrite_camoSignedImageWithoutRepository() {
+        let source = "https://private-user-images.githubusercontent.com/507615/465824706-74ad0b4a-e086-4955-8edd-9f2cff31aee8.png?jwt=expired"
+        let html = #"<img src="https://camo.githubusercontent.com/abc/def" data-canonical-src="\#(source)">"#
+        let stableURL = "https://github.com/user-attachments/assets/74ad0b4a-e086-4955-8edd-9f2cff31aee8"
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: nil, repo: nil)
+
+        #expect(result == #"<img src="\#(stableURL)" data-canonical-src="\#(stableURL)">"#)
+    }
+
+    @Test("picture 签名候选保留描述符、空白和其它绝对候选")
+    func rewrite_signedPictureCandidates() {
+        let source = "https://private-user-images.githubusercontent.com/507615/465824705-d4bcb7c1-42c7-4c0f-b130-1193a931f9f7.png?jwt=expired"
+        let stableURL = "https://github.com/user-attachments/assets/d4bcb7c1-42c7-4c0f-b130-1193a931f9f7"
+        let html = """
+        <picture><source media="(prefers-color-scheme: dark)" srcset="  \(source) 1x,\thttps://example.com/large.png 2x  "><img src="https://example.com/fallback.png"></picture>
+        """
+        let expected = html.replacingOccurrences(of: source, with: stableURL)
+        let result = ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo")
+
+        #expect(result == expected)
+        #expect(ReadmeAssetURLRewriter.rewrite(in: result, owner: "alice", repo: "foo") == expected)
+    }
+
+    @Test("未知签名图片和其它主机保持原样", arguments: [
+        "https://private-user-images.githubusercontent.com/123/unknown.png?jwt=expired",
+        "https://private-user-images.githubusercontent.com.evil.example/123/456-74ad0b4a-e086-4955-8edd-9f2cff31aee8.png?jwt=expired",
+        "https://cdn.example.com/123/456-74ad0b4a-e086-4955-8edd-9f2cff31aee8.png?jwt=expired"
+    ])
+    func rewrite_unknownSignedImageUnchanged(source: String) {
+        let html = #"<picture><source srcset="\#(source) 1x"><img src="\#(source)"></picture><a href="\#(source)">original</a>"#
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == html)
+    }
+
+    @Test("附件修复不修改普通链接与非资源属性")
+    func rewrite_signedImagePreservesOtherAttributes() {
+        let source = "https://private-user-images.githubusercontent.com/507615/465824705-d4bcb7c1-42c7-4c0f-b130-1193a931f9f7.png?jwt=expired"
+        let html = #"<a href="\#(source)"><img src="https://example.com/preview.png" data-src="\#(source)"></a>"#
+        #expect(ReadmeAssetURLRewriter.rewrite(in: html, owner: "alice", repo: "foo") == html)
+    }
+
     // MARK: - rewriteOne (单个 src)
 
     @Test("不带 ./ 前缀的相对路径也能正确处理")
