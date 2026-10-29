@@ -137,6 +137,7 @@ struct ReadmeWebView: View {
     var onApproachingBottom: () -> Void = {}
 
     @Environment(AppSettings.self) private var settings
+    @Environment(AuthSession.self) private var authSession
     @State private var scrollToTopRequestID = 0
     @State private var isFindBarVisible = false
     @State private var findQuery = ""
@@ -148,6 +149,7 @@ struct ReadmeWebView: View {
     var body: some View {
         ReadmeWebContentView(
             htmlFragment: htmlFragment,
+            accountID: authSession.state.user?.id,
             documentID: documentID,
             baseURL: baseURL,
             onScrollReportChange: handleScrollReport,
@@ -164,6 +166,7 @@ struct ReadmeWebView: View {
             markdownLinkRepositoryName: markdownLinkRepositoryName,
             onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
         )
+        .id(authSession.state.user?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {
             if isFindBarVisible {
@@ -314,6 +317,7 @@ struct ReadmeWebView: View {
 
 private struct ReadmeWebContentView: NSViewRepresentable {
     let htmlFragment: String
+    let accountID: Int64?
     let documentID: String?
     let baseURL: URL?
     var onScrollReportChange: (RepoDetailScrollReport) -> Void
@@ -341,6 +345,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         PerformanceTracer.shared.mark(.readmeWebViewCreated)
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(
+            ReadmeAttachmentImageSchemeHandler(accountID: accountID),
+            forURLScheme: ReadmeAttachmentImageURL.scheme
+        )
         // GitHub README HTML 已是静态结构，不需要页面脚本。这里仍允许 WebKit 执行
         // app-owned user script（见 installScrollReportingScript），页面脚本由我们注入的
         // CSP `script-src 'none'` 禁掉，兼顾滚动回调和攻击面控制。
@@ -513,7 +521,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         <style>\(css)</style>
         </head>
         <body class="\(bodyClass)">
-        <article>\(fragment)</article>
+        <article>\(ReadmeAssetURLRewriter.rewriteAttachmentImagesForDisplay(in: fragment))</article>
         <div id="starcat-readme-star-history" data-starcat-owned="true" hidden></div>
         </body>
         </html>

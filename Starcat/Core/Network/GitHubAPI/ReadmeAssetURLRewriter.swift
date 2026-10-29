@@ -302,6 +302,47 @@ enum ReadmeAssetURLRewriter {
         rawRoot: String,
         documentDirectory: String
     ) -> String {
+        rewriteSourceSet(srcset) { url in
+            if let stableURL = stableGitHubAttachmentURL(from: url) { return stableURL }
+            guard !url.isEmpty, !url.hasPrefix("//"), !url.hasPrefix("#"),
+                  URL(string: url)?.scheme == nil else { return url }
+            return rewriteOne(url, rawBase: rawBase, rawRoot: rawRoot, documentDirectory: documentDirectory)
+        }
+    }
+
+    /// 仅展示时路由附件图片；数据库始终保留可在外部打开的 HTTPS 地址。
+    ///
+    /// 在 WebKit 解析 HTML 前替换，避免 document-end 再换 src 导致同图发两次网络请求。
+    /// picture 作为完整块处理，所以视频 / 音频的 source 不会误入图片加载器。
+    static func rewriteAttachmentImagesForDisplay(in html: String) -> String {
+        guard let blocks = try? NSRegularExpression(
+            pattern: #"<picture\b[^>]*>.*?</picture\s*>|<img\b[^>]*>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ),
+              let tags = try? NSRegularExpression(pattern: #"<(?:img|source)\b[^>]*>"#, options: [.caseInsensitive])
+        else { return html }
+        let nsHTML = html as NSString
+        var result = html
+        for block in blocks.matches(in: html, range: NSRange(location: 0, length: nsHTML.length)).reversed() {
+            for match in tags.matches(in: html, range: block.range).reversed() {
+                var tag = nsHTML.substring(with: match.range)
+                if tag.lowercased().hasPrefix("<img"), let src = attributeValue(named: "src", inTag: tag) {
+                    tag = replaceAttributeValue(named: "src", inTag: tag, with: ReadmeAttachmentImageURL.cachedSource(src))
+                }
+                if let srcset = attributeValue(named: "srcset", inTag: tag) {
+                    tag = replaceAttributeValue(
+                        named: "srcset", inTag: tag,
+                        with: rewriteSourceSet(srcset, transform: ReadmeAttachmentImageURL.cachedSource)
+                    )
+                }
+                if let range = Range(match.range, in: result) { result.replaceSubrange(range, with: tag) }
+            }
+        }
+        return result
+    }
+
+    /// IO 规范化与展示路由共用候选解析，避免两套逗号 / 描述符规则逐渐漂移。
+    private static func rewriteSourceSet(_ srcset: String, transform: (String) -> String) -> String {
         let whitespace: Set<Character> = [" ", "\t", "\n", "\r", "\u{0C}"]
         var cursor = srcset.startIndex
         var replacements: [(Range<String.Index>, String)] = []
@@ -339,20 +380,7 @@ enum ReadmeAssetURLRewriter {
             }
 
             let url = String(srcset[urlStart..<urlEnd])
-            // 签名候选也是绝对地址，必须先于「绝对地址不补目录」的短路处理。
-            if let stableURL = stableGitHubAttachmentURL(from: url) {
-                replacements.append((urlStart..<urlEnd, stableURL))
-                continue
-            }
-            guard !url.isEmpty, !url.hasPrefix("//"), !url.hasPrefix("#"),
-                  URL(string: url)?.scheme == nil
-            else { continue }
-            let rewritten = rewriteOne(
-                url,
-                rawBase: rawBase,
-                rawRoot: rawRoot,
-                documentDirectory: documentDirectory
-            )
+            let rewritten = transform(url)
             if rewritten != url {
                 replacements.append((urlStart..<urlEnd, rewritten))
             }
@@ -429,7 +457,7 @@ enum ReadmeAssetURLRewriter {
     }
 
     /// GitHub 的签名附件 path 会保留原 UUID；只在 host 与 UUID 都准确时重写。
-    private static func stableGitHubAttachmentURL(from source: String) -> String? {
+    static func stableGitHubAttachmentURL(from source: String) -> String? {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               url.host?.lowercased() == "private-user-images.githubusercontent.com"

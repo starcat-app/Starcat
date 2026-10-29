@@ -14,6 +14,7 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### Improvements
 
+- GitHub attachment caching: Saves loaded README images and GIFs locally for faster repeat viewing, with storage included in image-cache statistics and cleanup.
 - README image loading: Shows a theme-aware placeholder while large images and GIFs load, then displays the image when ready to avoid long blank areas.
 - Settings redesign: Reorganizes configuration groups and navigation, unifies page headers, separators, and action layouts, removes repetitive descriptions, and brings account, privacy, and Pro benefits into a clearer structure.
 - Insights header layout: Reduces empty space above both columns and keeps card heights aligned with their content.
