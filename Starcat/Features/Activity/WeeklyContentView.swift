@@ -94,7 +94,10 @@ struct WeeklyContentView: View {
             syncExternalLanguage(to: model)
             model.changeLicenseFilter(to: settings.licenseFilter)
             async let libraryLoad: Void = reloadLibraryStateMap()
-            await model.loadInitialIfNeeded()
+            if model.hiddenSources != settings.exploreCatalogPreferences.hiddenWeeklySources {
+                clearWeeklyDetailSelection()
+            }
+            await model.loadForPresentation(hiddenSources: settings.exploreCatalogPreferences.hiddenWeeklySources)
             await libraryLoad
             guard !Task.isCancelled else { return }
             await Task.yield()
@@ -1065,6 +1068,20 @@ final class WeeklyContentViewModel {
 
     // MARK: - Public
 
+    /// 父容器复用模型时也要在入场加载前同步偏好；离开周刊期间的设置变化没有 onChange 接收者。
+    func loadForPresentation(hiddenSources: Set<String>) async {
+        if updateHiddenSources(to: hiddenSources), dataSource == .local {
+            // 已加载的模型不能命中 loadInitialIfNeeded 的提前返回，也不要异步排队另一轮 reload。
+            if usesPagedCache {
+                await reloadCachedPage(bumpRevision: true)
+            } else {
+                await applyFiltersLocally(bumpRevision: true, showSkeletonOnMiss: true)
+            }
+            return
+        }
+        await loadInitialIfNeeded()
+    }
+
     /// 首次进入页面调用；如果已有数据就跳过，避免重新进入时把缓存丢掉。
     ///
     /// R-06.4 SWR 入场流程：
@@ -1254,7 +1271,13 @@ final class WeeklyContentViewModel {
 
     /// 偏好变化立即废弃在途页与旧派生身份；菜单重置不能绕过这层长期约束。
     func changeHiddenSources(to sources: Set<String>) {
-        guard sources != hiddenSources else { return }
+        guard updateHiddenSources(to: sources) else { return }
+        reapplyFilters()
+    }
+
+    /// 只失效旧结果，由调用者选择等待入场加载或响应实时变更，避免同时启动两条加载链路。
+    private func updateHiddenSources(to sources: Set<String>) -> Bool {
+        guard sources != hiddenSources else { return false }
         hiddenSources = sources
         if hiddenSources.contains(selectedSource.rawValue) { selectedSource = .all }
         _ = bumpGeneration()
@@ -1267,7 +1290,7 @@ final class WeeklyContentViewModel {
         // 因此要同步结束旧 loading，避免新列表已发布却仍禁用刷新和分页。
         isLoading = false
         isLoadingMore = false
-        reapplyFilters()
+        return true
     }
 
     func changeCoverage(to newValue: WeeklySourceCoverageFilter) {
@@ -1561,6 +1584,12 @@ final class WeeklyContentViewModel {
             total = 0
             hasMore = false
         }
+        // 入场任务随视图离开而取消时也要结束 loading；新代次的加载状态不能被旧任务清掉。
+        defer {
+            if showSkeletonOnMiss, derivationGeneration == localDerivationGeneration {
+                isLoading = false
+            }
+        }
 
         let source = bulkAllItems
         let sourceFilter = selectedSource
@@ -1603,9 +1632,6 @@ final class WeeklyContentViewModel {
               !Task.isCancelled else { return }
         storePreparedSnapshot(filtered, for: key)
         publishPreparedLocalSnapshot(filtered, bumpRevision: bumpRevision)
-        if showSkeletonOnMiss {
-            isLoading = false
-        }
     }
 
     private func publishPreparedLocalSnapshot(

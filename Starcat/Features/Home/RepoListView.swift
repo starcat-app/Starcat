@@ -1511,7 +1511,8 @@ struct RepoListView: View {
                 api: dependencies.weeklyAPI,
                 selectionService: dependencies.weeklySelectionService,
                 languageStore: dependencies.weeklyLanguageStore,
-                bulkRepository: dependencies.weeklyBulkRepository
+                bulkRepository: dependencies.weeklyBulkRepository,
+                hiddenSources: settings.exploreCatalogPreferences.hiddenWeeklySources
             )
         }
     }
