@@ -16,6 +16,35 @@ import Testing
 @Suite("AppSettings")
 struct AppSettingsTests {
 
+    @Test("探索内容默认全开，持久化后保留选择，重置列表不清除长期偏好")
+    func exploreContentPreferencesPersistIndependently() {
+        let defaults = makeIsolatedDefaults()
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.exploreCatalogPreferences.visibleGroupIDs == ExploreCatalogPreferences.groupIDs)
+        var preferences = ExploreCatalogPreferences()
+        preferences.hiddenModes = ["discover", "awesome"]
+        preferences.hiddenDiscoverTopics = ["ai"]
+        preferences.hiddenDiscoverPlatforms = ["macos"]
+        preferences.hiddenWeeklySources = ["weekly", "zread"]
+        settings.exploreCatalogPreferences = preferences
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.exploreCatalogPreferences == preferences)
+        restored.resetListPreferences(login: "dong4j")
+        #expect(restored.exploreCatalogPreferences == preferences)
+        #expect(preferences.isGroupEnabled("linuxDo"), "Linux.do 不继承普通发现的显隐")
+        #expect(preferences.weeklyQuerySources(availableCodes: ["weekly", "discovery", "new-source"]) == ["discovery", "new-source"])
+    }
+
+    @Test("探索偏好损坏时恢复默认；全分类被隐藏时至少保留发现")
+    func invalidExploreContentPreferencesFallBack() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set(Data("invalid".utf8), forKey: AppSettings.Keys.exploreCatalogPreferences)
+        #expect(AppSettings(defaults: defaults).exploreCatalogPreferences == ExploreCatalogPreferences())
+        let preferences = ExploreCatalogPreferences(hiddenModes: Set(ExploreCatalogPreferences.groupIDs))
+        #expect(preferences.visibleGroupIDs == ["discover"])
+        #expect(ExploreCatalogPreferences().weeklyQuerySources(availableCodes: ["weekly"]) == nil)
+    }
+
     /// 给每个测试一个独立 suite 名，避免相互污染。
     private func makeIsolatedDefaults() -> UserDefaults {
         let suiteName = "test.starcat.appsettings.\(UUID().uuidString)"

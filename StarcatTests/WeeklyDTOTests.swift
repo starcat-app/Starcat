@@ -264,6 +264,25 @@ struct WeeklyFeedListResultTests {
 @Suite("WeeklyAPI source filter", .serialized)
 struct WeeklyAPISourceFilterTests {
 
+    @Test("全部来源发送偏好白名单，多值参数与来源单选保持交集")
+    func fetchReposSendsEnabledSourceScope() async throws {
+        URLProtocolStub.reset()
+        let api = WeeklyAPI(
+            baseURL: URL(string: "https://weekly.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        URLProtocolStub.requestHandler = { request in
+            (weeklyHTTPResponse(200, request.url!), Self.listFixtureBody())
+        }
+        _ = try await api.fetchRepos(query: WeeklyFeedQuery(allowedSources: ["discovery", "hellogithub"]))
+        _ = try await api.fetchRepos(query: WeeklyFeedQuery(source: .discovery, allowedSources: ["discovery", "hellogithub"]))
+        let values = URLProtocolStub.receivedRequests.compactMap { request in
+            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "source" }?.value
+        }
+        #expect(values == ["discovery,hellogithub", "discovery"])
+    }
+
     @Test("fetchRepos: 非全部来源时发送 source query")
     func fetchReposSendsSourceQuery() async throws {
         URLProtocolStub.reset()

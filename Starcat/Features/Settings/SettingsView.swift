@@ -486,6 +486,8 @@ struct SettingsView: View {
                                keywords: ["主题", "浅色", "深色", "theme", "appearance", "font", "字号"]),
             SettingsSearchItem("general.language", titleKey: "settings.general.language", tab: .general,
                                keywords: ["语言", "locale", "language"]),
+            SettingsSearchItem("general.explore", titleKey: "settings.explore.content.title", tab: .general,
+                               keywords: ["探索", "周刊", "来源", "分类", "explore", "weekly", "source", "Hacker News", "Linux.do", "Awesome"]),
             SettingsSearchItem("notifications", titleKey: "settings.notifications.title", tab: .notifications,
                                keywords: ["通知", "notification", "提醒"]),
             SettingsSearchItem("shortcuts", titleKey: "settings.general.shortcuts", tab: .shortcuts,

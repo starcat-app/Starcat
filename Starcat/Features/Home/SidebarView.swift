@@ -53,6 +53,7 @@ typealias ExploreSidebarIconStyle = SidebarSemanticIconStyle
 
 struct SidebarView: View {
 
+    @Environment(AppSettings.self) private var settings
     @Environment(HomeViewModel.self) private var viewModel
     @Environment(AuthSession.self) private var authSession
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -228,6 +229,15 @@ struct SidebarView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await dependencies.linuxDoStore.refreshProvenance() } }
+        }
+        .task(id: "\(dependencies.databaseScopeRevision):\(settings.exploreCatalogPreferences.hiddenWeeklySources.sorted())") {
+            // 首帧 bulk meta 可能尚未落盘；nil 时保留旧值，等 Weekly 列表加载后由
+            // applyTotal 补写，不要把未知误展示成 0。
+            let hidden = settings.exploreCatalogPreferences.hiddenWeeklySources
+            if let total = await dependencies.weeklyBulkRepository.cachedTotal(excludingSources: hidden),
+               !Task.isCancelled {
+                dependencies.weeklySelectionService.applyTotal(total)
+            }
         }
         .sheet(isPresented: $showLoginSheet) {
             GithubAuthView()
@@ -1111,9 +1121,8 @@ struct SidebarView: View {
     @ViewBuilder
     private var exploreModeSidebarContent: some View {
         Section("nav.trending") {
-            ForEach(ExploreMode.allCases) { mode in
-                exploreModeRow(mode)
-                if mode == .weekly {
+            ForEach(settings.exploreCatalogPreferences.visibleGroupIDs, id: \.self) { id in
+                if id == "linuxDo" {
                     exploreSelectableRow(
                         selection: .linuxDo,
                         count: dependencies.linuxDoStore.provenance?.payload.origins?.count ?? 0
@@ -1121,6 +1130,8 @@ struct SidebarView: View {
                         // 社区来源使用单气泡，复用分类字号与字重，避免独立缩放造成笔画不一致。
                         exploreSidebarBusinessIcon(.linuxDo, color: .indigo)
                     } title: { Text(verbatim: "Linux.do") }
+                } else if let mode = ExploreMode(rawValue: id) {
+                    exploreModeRow(mode)
                 }
             }
         }
@@ -1239,7 +1250,9 @@ struct SidebarView: View {
             exploreTopicRow(nil)
 
             if exploreTopicsExpanded {
-                ForEach(dependencies.exploreCatalogStore.displayTopics) { topic in
+                ForEach(dependencies.exploreCatalogStore.displayTopics.filter {
+                    !settings.exploreCatalogPreferences.hiddenDiscoverTopics.contains($0.code)
+                }) { topic in
                     exploreTopicRow(topic)
                         .transition(Self.disclosureRowTransition)
                 }
@@ -1252,7 +1265,9 @@ struct SidebarView: View {
             explorePlatformRow(nil)
 
             if explorePlatformsExpanded {
-                ForEach(dependencies.exploreCatalogStore.displayPlatforms) { platform in
+                ForEach(dependencies.exploreCatalogStore.displayPlatforms.filter {
+                    !settings.exploreCatalogPreferences.hiddenDiscoverPlatforms.contains($0.code)
+                }) { platform in
                     explorePlatformRow(platform)
                         .transition(Self.disclosureRowTransition)
                 }

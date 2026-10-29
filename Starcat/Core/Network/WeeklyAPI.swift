@@ -292,7 +292,7 @@ actor WeeklyAPI {
         if let language = query.language, !language.isEmpty {
             queryItems.append(URLQueryItem(name: "lang", value: language))
         }
-        if let source = query.source.queryValue {
+        if let source = query.source.queryValue ?? query.allowedSources?.joined(separator: ",") {
             queryItems.append(URLQueryItem(name: "source", value: source))
         }
         components?.queryItems = queryItems

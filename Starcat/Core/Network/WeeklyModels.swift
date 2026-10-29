@@ -80,7 +80,7 @@ struct WeeklySourceFilter: Identifiable, Hashable, Sendable {
     static let discovery = WeeklySourceFilter(source: .discovery, title: nil)
     static let helloGitHub = WeeklySourceFilter(source: .helloGitHub, title: nil)
     static let aiIntelligence = WeeklySourceFilter(source: .aiIntelligence, title: nil)
-    static let defaultFilters: [WeeklySourceFilter] = [.all, .weekly, .zread, .discovery]
+    static let defaultFilters: [WeeklySourceFilter] = [.all, .weekly, .zread, .discovery, .helloGitHub, .aiIntelligence]
 
     let source: WeeklySource?
     private let title: String?
@@ -609,6 +609,8 @@ struct WeeklyFeedQuery: Equatable, Sendable {
     let order: WeeklyFeedOrder
     let page: Int
     let pageSize: Int
+    /// “全部”仍受长期偏好约束；非 nil 时通过后端现有 source 多值参数表达。
+    let allowedSources: [String]?
 
     init(
         source: WeeklySourceFilter = .all,
@@ -616,7 +618,8 @@ struct WeeklyFeedQuery: Equatable, Sendable {
         sort: WeeklyFeedSort = .defaultOrder,
         order: WeeklyFeedOrder = .desc,
         page: Int = 1,
-        pageSize: Int = WeeklyAPI.defaultPageSize
+        pageSize: Int = WeeklyAPI.defaultPageSize,
+        allowedSources: [String]? = nil
     ) {
         self.source = source
         self.language = language
@@ -624,6 +627,7 @@ struct WeeklyFeedQuery: Equatable, Sendable {
         self.order = order
         self.page = page
         self.pageSize = pageSize
+        self.allowedSources = allowedSources
     }
 }
 

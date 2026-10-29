@@ -923,6 +923,11 @@ final class AppSettings {
         didSet { persistJSON(key: Keys.interestedLanguages, value: Self.normalizedLanguageList(interestedLanguages)) }
     }
 
+    /// 长期探索内容偏好，与当前列表筛选分开保存，重置列表不应取消用户的来源选择。
+    var exploreCatalogPreferences: ExploreCatalogPreferences {
+        didSet { persistJSON(key: Keys.exploreCatalogPreferences, value: exploreCatalogPreferences) }
+    }
+
     /// toolbar 全局语言筛选当前选中的语言。空数组表示不过滤语言。
     var globalFilterLanguages: [String] {
         didSet { persistJSON(key: Keys.globalFilterLanguages, value: Self.normalizedLanguageList(globalFilterLanguages)) }
@@ -1948,6 +1953,9 @@ final class AppSettings {
             key: Keys.interestedLanguages,
             defaults: defaults
         ).map(Self.normalizedLanguageList) ?? []
+        self.exploreCatalogPreferences = Self.decodeJSON(
+            ExploreCatalogPreferences.self, key: Keys.exploreCatalogPreferences, defaults: defaults
+        ) ?? ExploreCatalogPreferences()
         self.globalFilterLanguages = Self.decodeJSON(
             [String].self,
             key: Keys.globalFilterLanguages,
@@ -2450,6 +2458,7 @@ final class AppSettings {
         libraryFilter = .all
         repoLanguageFilter = .all
         interestedLanguages = []
+        exploreCatalogPreferences = ExploreCatalogPreferences()
         globalFilterLanguages = []
         globalFilterLicenses = []
         wikiAvailabilityFilter = .unknown
@@ -3086,6 +3095,7 @@ final class AppSettings {
         static let libraryFilter = "settings.libraryFilter"
         static let repoLanguageFilter = "settings.repoLanguageFilter"
         static let interestedLanguages = "settings.filters.interestedLanguages.v1"
+        static let exploreCatalogPreferences = "settings.explore.catalogPreferences.v1"
         static let globalFilterLanguages = "settings.filters.global.languages.v1"
         static let globalFilterLicenses = "settings.filters.global.licenses.v1"
         static let wikiAvailabilityFilter = "settings.filters.global.wikiAvailability.v1"
@@ -3212,6 +3222,7 @@ final class AppSettings {
             libraryFilter,
             repoLanguageFilter,
             interestedLanguages,
+            exploreCatalogPreferences,
             globalFilterLanguages,
             globalFilterLicenses,
             wikiAvailabilityFilter,

@@ -31,6 +31,7 @@ struct GeneralSettingsView: View {
 
             // 感兴趣语言是长期候选池，保持在 macOS 集成之后，不与显示语言混排。
             InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
+            ExploreCatalogSettingsSection()
 
             if DistributionChannel.current.isDirect {
                 directUpdateSection

@@ -847,9 +847,16 @@ struct HomeView: View {
             handleActivityCategoryChange(newCategory)
         }
         .onChange(of: selectedExploreMode) { _, mode in
+            reconcileExploreCatalogPreferences()
             commandRouter.activate(.list)
             persistListPreference(mode.rawValue, key: ListPreferenceKey.exploreMode)
             restoreExploreLanguagePreference(for: mode)
+        }
+        .onChange(of: settings.exploreCatalogPreferences, initial: true) { _, _ in
+            reconcileExploreCatalogPreferences()
+        }
+        .onChange(of: dependencies.linuxDoStore.selectedSource) { _, _ in
+            reconcileExploreCatalogPreferences()
         }
         .onChange(of: selectedTrendingLanguage) { _, language in
             persistListPreference(language.rawValue, key: ListPreferenceKey.trendingLanguage)
@@ -1934,9 +1941,11 @@ struct HomeView: View {
             await dependencies.exploreCatalogStore.reload()
         }
         Task {
-            await dependencies.weeklySelectionService.restoreCachedTotal(
-                from: dependencies.weeklyBulkRepository
-            )
+            let hidden = settings.exploreCatalogPreferences.hiddenWeeklySources
+            if let total = await dependencies.weeklyBulkRepository.cachedTotal(excludingSources: hidden),
+               hidden == settings.exploreCatalogPreferences.hiddenWeeklySources {
+                dependencies.weeklySelectionService.applyTotal(total)
+            }
         }
     }
 
@@ -2639,7 +2648,26 @@ struct HomeView: View {
         } else {
             selectedExploreMode = .discover
         }
+        reconcileExploreCatalogPreferences()
         restoreExploreLanguagePreference(for: selectedExploreMode, login: login)
+    }
+
+    /// 隐藏当前入口或恢复历史导航时，立即回退到第一个可见分组；Linux.do 虽复用
+    /// discover 内部路由，但其显隐必须独立判断，不能跟着“发现”一起被关闭。
+    private func reconcileExploreCatalogPreferences() {
+        let preferences = settings.exploreCatalogPreferences
+        let groupID = selectedExploreMode == .discover && dependencies.linuxDoStore.selectedSource == .linuxDo
+            ? "linuxDo" : selectedExploreMode.rawValue
+        if !preferences.isGroupEnabled(groupID), let first = preferences.visibleGroupIDs.first {
+            dependencies.linuxDoStore.selectedSource = first == "linuxDo" ? .linuxDo : .catalog
+            selectedExploreMode = ExploreMode(rawValue: first) ?? .discover
+        }
+        if let topic = selectedDiscoveryTopic, preferences.hiddenDiscoverTopics.contains(topic) {
+            selectedDiscoveryTopic = nil
+        }
+        if let platform = selectedDiscoveryPlatform, preferences.hiddenDiscoverPlatforms.contains(platform) {
+            selectedDiscoveryPlatform = nil
+        }
     }
 
     private func restoreExploreLanguagePreference(for mode: ExploreMode, login explicitLogin: String? = nil) {

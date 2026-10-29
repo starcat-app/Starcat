@@ -146,6 +146,86 @@ private func allowWeeklyFilterTaskToFinish() async {
 @Suite("WeeklyBulkRepository", .serialized)
 struct WeeklyBulkRepositoryTests {
 
+    @MainActor
+    @Test("来源偏好在 SQLite 分页与内存筛选中一致，多来源去重且计数独立于临时筛选")
+    func sourcePreferencesApplyBeforePagingAndInvalidateSnapshots() async throws {
+        let names = (0..<53).map { "owner/repo\($0)" }
+        let (repository, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: names.enumerated().map { ($0.element, $0.offset == 51 ? "Go" : "Swift", 1000 - $0.offset, "2026-06-15T10:00:00Z") },
+                sourcesByFullName: [
+                    names[50]: ["hellogithub"],
+                    names[51]: ["weekly", "hellogithub"],
+                    names[52]: ["future-source"]
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repository.fetchBulk()
+        let hidden: Set<String> = ["weekly", "zread", "discovery", "ai_intelligence"]
+        func query(_ page: Int) -> WeeklyBulkCacheQuery {
+            WeeklyBulkCacheQuery(source: .all, coverage: .all, hideArchived: false, hideForks: false,
+                                 starsFilter: .all, pushedRecency: .all, language: "", searchQuery: "",
+                                 sort: .defaultOrder, page: page, pageSize: 2, now: Date(), hiddenSources: hidden)
+        }
+        let first = try #require(await repository.cachedPage(query: query(1)))
+        let second = try #require(await repository.cachedPage(query: query(2)))
+        #expect(first.filteredTotal == 3)
+        #expect(first.catalogTotal == 3)
+        #expect(first.items.count == 2)
+        #expect(second.items.count == 1)
+        #expect(Set((first.items + second.items).map(\.fullName)) == Set(names.suffix(3)))
+        #expect(await repository.cachedTotal(excludingSources: hidden) == 3)
+
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let selection = WeeklySelectionService()
+        let model = WeeklyContentViewModel(api: api, selectionService: selection,
+                                           languageStore: WeeklyLanguageStore(api: api),
+                                           bulkRepository: repository, hiddenSources: hidden)
+        await model.loadInitialIfNeeded()
+        #expect(model.total == 3)
+        #expect(selection.total == 3)
+        #expect(!model.availableSourceFilters.contains(.weekly))
+        model.changeSource(to: .weekly)
+        #expect(model.selectedSource == .all, "不能通过旧筛选入口绕过长期偏好")
+        model.changeSource(to: .helloGitHub)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 2)
+        #expect(selection.total == 3)
+        await model.reload()
+        #expect(model.total == 2, "bulk 内存路径与 SQLite 的来源范围一致")
+        #expect(selection.total == 3)
+
+        model.changeHiddenSources(to: [])
+        await allowWeeklyFilterTaskToFinish()
+        model.changeSource(to: .all)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 53)
+        model.changeHiddenSources(to: hidden)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 3, "不能复用未包含来源偏好的 prepared snapshot")
+        // 让一次新范围派生先开始，再快速回到准备好的范围；取消后的 loading 不能残留。
+        model.changeHiddenSources(to: hidden.union(["future-source"]))
+        await Task.yield()
+        model.changeHiddenSources(to: hidden)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 3)
+        #expect(!model.isLoading)
+        model.changeSource(to: .helloGitHub)
+        await allowWeeklyFilterTaskToFinish()
+        model.changeHiddenSources(to: hidden.union(["hellogithub"]))
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.selectedSource == .all)
+        #expect(model.items.map(\.fullName) == [names[52]], "未来新来源默认启用")
+        model.changeHiddenSources(to: hidden.union(["hellogithub", "future-source"]))
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.items.isEmpty)
+        #expect(model.total == 0)
+        #expect(selection.total == 0)
+        model.resetFilters()
+        #expect(model.hiddenSources == hidden.union(["hellogithub", "future-source"]))
+    }
+
     // MARK: - 工厂
 
     private func makeRepository(
