@@ -2,7 +2,7 @@
 //  AwesomeSourceCard.swift
 //  Starcat
 //
-//  来源选择 Sheet 的固定三列卡片：上半 GitHub OG + 语言色条，下半只说明清单内项目数。
+//  来源选择 Sheet 的固定两列卡片：上半 GitHub OG + 语言色条，下半只说明清单内项目数。
 //
 //  OG 由客户端按仓库全名拼 CDN URL；加载中用居中小 Logo，禁止把头像拉满 banner。
 //  不展示来源仓库自身的 Stars / Issues / 语言胶囊：选 Awesome 关心的是清单里有多少项目。
@@ -46,7 +46,7 @@ struct AwesomeSourceCard: View {
     private static let ogReplaceBlurOutDuration: TimeInterval = 0.24
     @State private var ogRevealBlur: CGFloat = Self.ogReplaceBlurRadius
 
-    /// 160pt 在三列约 320pt 宽时接近 GitHub OG 的 2:1。
+    /// 保持原有图片和卡片高度；窗口减为两列时不缩小文字与操作区。
     private let ogHeight: CGFloat = 160
     private let cardHeight: CGFloat = 222
     private let languageBarHeight: CGFloat = 6

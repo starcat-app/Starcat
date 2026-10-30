@@ -12,6 +12,16 @@ import Testing
 @Suite("Awesome Store")
 struct AwesomeStoreTests {
 
+    @Test("Awesome 来源管理与 AI 整理共用 840 × 560 固定画布")
+    @MainActor
+    func sourceManagerUsesCompactOrganizationCanvas() {
+        // 只校验几何契约，不创建窗口或依赖桌面状态。
+        let size = AwesomeSourceManagerWindowController.contentSize
+        #expect(size == AIOrganizationLayout.windowSize)
+        #expect(size.width == 840)
+        #expect(size.height == 560)
+    }
+
     @Test("后台加载不弹来源选择，用户点击才弹出且完成后停止弹出")
     @MainActor
     func firstSetupOnlyCompletesFromDoneAction() async throws {
