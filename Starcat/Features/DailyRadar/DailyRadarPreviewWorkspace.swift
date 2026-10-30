@@ -175,7 +175,9 @@ struct DailyRadarPreviewWorkspace: View {
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
                         }
-                        VStack(spacing: 0) {
+                        // 历史行必须直接位于惰性容器中。若包在普通 VStack 里，
+                        // SwiftUI 会一次实体化整页行，尾部 onAppear 会连环触发下一页。
+                        LazyVStack(spacing: 0) {
                             ForEach(Array(olderStories.enumerated()), id: \.element.id) { index, item in
                                 Button { openStory(item) } label: {
                                     HStack(spacing: 16) {

@@ -141,6 +141,24 @@ struct DailyRadarClientTests {
         #expect(model.nextCursor == nil)
     }
 
+    @Test @MainActor func historyPaginationUsesBoundedPagesAndDeduplicatesCursorResults() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        fixture.state.mutate { $0.hasPage = true }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+
+        // SwiftUI 可能在同一渲染批次触发多个 onAppear；loading guard 必须保证只发一页请求。
+        let requestCount = fixture.state.requests.filter { $0.url?.path.hasSuffix("/reports") == true }.count
+        async let firstPage = model.loadMore()
+        async let secondPage = model.loadMore()
+        _ = await (firstPage, secondPage)
+        #expect(fixture.state.requests.filter { $0.url?.path.hasSuffix("/reports") == true }.count == requestCount + 1)
+        #expect(model.items.count == 12)
+        #expect(Set(model.items.map(\.id)).count == model.items.count)
+    }
+
     @Test func businessDateDoesNotDependOnSystemTimezone() {
         // 英文格式采用用户 Locale，业务时区仍固定为上海，不能显示成 10/27。
         let label = DailyRadarDateFormatting.label("2026-10-28", locale: Locale(identifier: "en_US"))
@@ -157,6 +175,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
         var notModified = false
         var error = false
         var hasNext = false
+        var hasPage = false
         var changeOnNext = false
         var requests: [URLRequest] = []
     }
@@ -176,9 +195,32 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
             }
             let status = values.error ? 503 : (values.notModified ? 304 : 200)
             let path = request.url!.path
-            let summary = """
-            {"id":"agents-radar:2026-10-29:ai-cli","revision":"\(values.revision)","edition_date":"\(values.day)","category":"ai-cli","period":"daily","title":"Report","summary":"Summary","reading_minutes":3,"cover":{"kind":"category","card_url":null,"hero_url":null,"fallback":"orbit","alt":"AI"},"related_project_count":0,"content_language":"en","available_languages":["en"]}
-            """
+            var summaries: [String] = []
+            if values.hasPage && hasCursor {
+                summaries = [
+                    "agents-radar:2026-10-28:ai-cli",
+                    "agents-radar:2026-10-27:ai-cli",
+                    "agents-radar:2026-10-26:ai-cli",
+                    "agents-radar:2026-10-25:ai-cli",
+                    "agents-radar:2026-10-24:ai-cli",
+                    "agents-radar:2026-10-23:ai-cli",
+                    "agents-radar:2026-10-22:ai-cli",
+                    "agents-radar:2026-10-21:ai-cli",
+                    "agents-radar:2026-10-20:ai-cli",
+                    "agents-radar:2026-10-19:ai-cli",
+                    "agents-radar:2026-10-18:ai-cli"
+                ].map { id in
+                    let day = String(id.suffix(10))
+                    return """
+                    {"id":"\(id)","revision":"\(values.revision)","edition_date":"\(day)","category":"ai-cli","period":"daily","title":"Report \(day)","summary":"Summary","reading_minutes":3,"cover":{"kind":"category","card_url":null,"hero_url":null,"fallback":"orbit","alt":"AI"},"related_project_count":0,"content_language":"en","available_languages":["en"]}
+                    """
+                }
+            } else {
+                summaries = ["""
+                {"id":"agents-radar:2026-10-29:ai-cli","revision":"\(values.revision)","edition_date":"\(values.day)","category":"ai-cli","period":"daily","title":"Report","summary":"Summary","reading_minutes":3,"cover":{"kind":"category","card_url":null,"hero_url":null,"fallback":"orbit","alt":"AI"},"related_project_count":0,"content_language":"en","available_languages":["en"]}
+                """]
+            }
+            let summary = summaries.joined(separator: ",")
             let payload: String
             if path.hasSuffix("/catalog") {
                 payload = """
@@ -190,7 +232,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
                 """
             } else if path.hasSuffix("/reports") {
                 payload = """
-                {"catalog_revision":"\(values.revision)","requested_language":"en","items":[\(summary)],"total":1,"next_cursor":\(values.hasNext ? "\"next\"" : "null"),"featured_id":"agents-radar:2026-10-29:ai-cli"}
+                {"catalog_revision":"\(values.revision)","requested_language":"en","items":[\(summary)],"total":12,"next_cursor":\((values.hasNext || values.hasPage) ? "\"next\"" : "null"),"featured_id":"agents-radar:2026-10-29:ai-cli"}
                 """
             } else {
                 payload = String(summary.dropLast()) + ",\"markdown\":\"# Report\",\"related_projects\":[],\"related_projects_status\":\"complete\"}"
