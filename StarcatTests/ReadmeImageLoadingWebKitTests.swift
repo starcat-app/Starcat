@@ -37,7 +37,7 @@ struct ReadmeImageLoadingWebKitTests {
         """) as? [Any]
         let info = try #require(state)
         #expect(info[0] as? String == "1")
-        #expect(info[1] as? String == (dark ? "rgba(255, 255, 255, 0.08)" : "rgba(31, 35, 40, 0.06)"))
+        #expect(info[1] as? String == (dark ? "rgba(255, 255, 255, 0.08)" : "rgba(31, 35, 40, 0.1)"))
         // 系统可能开启减少动态效果，此时占位必须静止但仍可见。
         let reduced = try await fixture.webView.evaluateJavaScript("matchMedia('(prefers-reduced-motion: reduce)').matches") as? Bool
         #expect(info[2] as? Bool == (reduced != true))

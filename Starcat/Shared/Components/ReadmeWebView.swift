@@ -2286,8 +2286,9 @@ enum ReadmeCSS {
         --blockquote-border: #d0d7de;
         --image-preview-bg: rgba(246, 248, 250, 0.86);
         --image-preview-shadow: rgba(31, 35, 40, 0.24);
-        --image-loading-bg: rgba(31, 35, 40, 0.06);
-        --image-loading-highlight: rgba(255, 255, 255, 0.65);
+        /* 浅色宿主上用灰色扫光拉开明暗差，避免白色高光融入页面背景。 */
+        --image-loading-bg: rgba(31, 35, 40, 0.10);
+        --image-loading-highlight: rgba(31, 35, 40, 0.08);
     }
     body.dark {
         --bg: #0d1117;
