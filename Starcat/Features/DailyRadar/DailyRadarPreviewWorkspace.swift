@@ -45,7 +45,9 @@ struct DailyRadarPreviewWorkspace: View {
 
                 if let story {
                     DailyRadarPreviewReader(
-                        story: story, detail: model.detail, failed: model.detailFailed,
+                        story: story, detail: model.detail,
+                        availableWidth: geometry.size.width,
+                        failed: model.detailFailed,
                         projectStore: projectStore,
                         retry: { Task { await model.open(story) } },
                         onClose: closeStory, onProject: openProject

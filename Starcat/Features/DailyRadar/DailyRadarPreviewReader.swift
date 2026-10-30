@@ -13,6 +13,7 @@ import AppKit
 struct DailyRadarPreviewReader: View {
     let story: DailyRadarReport
     let detail: DailyRadarReport?
+    let availableWidth: CGFloat
     let failed: Bool
     let projectStore: DailyRadarProjectStore
     let retry: () -> Void
@@ -114,8 +115,8 @@ struct DailyRadarPreviewReader: View {
                             ProgressView().frame(maxWidth: .infinity, minHeight: 120)
                         }
                     }
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .padding(.horizontal, 28)
+                    .frame(maxWidth: DailyRadarReaderLayout.contentMaxWidth(in: availableWidth), alignment: .leading)
+                    .padding(.horizontal, DailyRadarReaderLayout.horizontalPadding)
                     .padding(.vertical, 36)
                     .frame(maxWidth: .infinity)
                 }
@@ -141,5 +142,26 @@ struct DailyRadarPreviewReader: View {
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// 阅读区宽度策略独立出来，便于用测试锁定最小、自适应与超宽封顶行为。
+enum DailyRadarReaderLayout {
+    /// 小窗口下先比旧版 720pt 更宽，缓解日报表格拥挤；宽窗口按比例增长。
+    static let minimumContentWidth: CGFloat = 760
+    /// 与首页内容体系一致，超宽窗口不把正文行长无限拉长。
+    static let maximumContentWidth: CGFloat = 1120
+    static let horizontalPadding: CGFloat = 28
+
+    /// 中右联合区域的可用宽度是唯一输入；不假设侧栏、中栏或窗口固定尺寸。
+    static func contentMaxWidth(in availableWidth: CGFloat) -> CGFloat {
+        guard availableWidth.isFinite, availableWidth > 0 else { return minimumContentWidth }
+        let proportionalWidth = availableWidth * 0.84
+        let availableContentWidth = max(0, availableWidth - horizontalPadding * 2)
+        return min(
+            maximumContentWidth,
+            max(minimumContentWidth, proportionalWidth),
+            availableContentWidth
+        )
     }
 }

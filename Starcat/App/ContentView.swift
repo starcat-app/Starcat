@@ -96,6 +96,13 @@ struct ContentView: View {
         // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
+        .dailyRadarFullSizeWindowChrome(isEnabled: hidesDailyRadarWindowToolbar)
+        // fullSizeContentView 只放开 AppKit contentView；SwiftUI 仍会尊重 titlebar
+        // safe area。仅在日报覆盖期间忽略顶部 inset，普通三栏布局保持原状。
+        .ignoresSafeArea(
+            .container,
+            edges: hidesDailyRadarWindowToolbar ? .top : []
+        )
         .toolbarVisibility(
             firstRunOnboardingActive || hidesDailyRadarWindowToolbar ? .hidden : .visible,
             for: .windowToolbar
