@@ -163,6 +163,8 @@ struct HomeView: View {
 
     /// 每日热点独立于仓库 ExploreMode，避免把仓库筛选应用到文章目录。
     @State private var showsDailyRadarPreview = false
+    /// 由 ContentView 接管 window toolbar：DailyRadar 中右覆盖层需要从窗口顶部开始。
+    @State private var hidesDailyRadarWindowToolbar = false
 
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
@@ -320,6 +322,10 @@ struct HomeView: View {
 
     var body: some View {
         navigationWithLifecycle
+            .preference(
+                key: DailyRadarPreviewToolbarVisibilityPreference.self,
+                value: hidesDailyRadarWindowToolbar
+            )
             .background {
                 WorkspaceSceneWindowReader(reference: batchAIParentWindow, minimumContentSize: nil)
                     .frame(width: 0, height: 0)
@@ -422,6 +428,8 @@ struct HomeView: View {
                             readmeTranslationService: dependencies.readmeTranslationService,
                             onExit: { showsDailyRadarPreview = false }
                         )
+                        .onAppear { hidesDailyRadarWindowToolbar = true }
+                        .onDisappear { hidesDailyRadarWindowToolbar = false }
                             // overlay 不继承 baseNavigation 子树的环境，详情的显式 Star 操作需要此宿主。
                             .environment(viewModel)
                             .environment(\.layoutDirection, appContentLayoutDirection)

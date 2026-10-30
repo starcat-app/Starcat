@@ -18,6 +18,8 @@ struct ContentView: View {
     @State private var showDataContributionConsent = false
     @State private var dataContributionConsentDraft = false
     @State private var dataContributionPromptAccountID: Int64?
+    /// 每日热点覆盖中右栏时隐藏整窗 toolbar，让自定义头部从窗口顶部开始。
+    @State private var hidesDailyRadarWindowToolbar = false
 
     private let dataContributionPromptPreferences = DataContributionConsentPromptPreferences()
     /// 2026-06-15:用户「关闭应用内动画」开 + 系统「减少动态效果」开
@@ -87,11 +89,17 @@ struct ContentView: View {
             minHeight: MainWindowFrameDefaults.contentMinSize.height
         )
         .mainWindowFrameAutosave()
+        .onPreferenceChange(DailyRadarPreviewToolbarVisibilityPreference.self) { isPresented in
+            hidesDailyRadarWindowToolbar = isPresented
+        }
         // 让三栏内容背景延伸到 window toolbar 下方，避免 toolbar 的独立实色背景
         // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
-        .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
+        .toolbarVisibility(
+            firstRunOnboardingActive || hidesDailyRadarWindowToolbar ? .hidden : .visible,
+            for: .windowToolbar
+        )
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         // 2026-06-29：.onOpenURL 已移到 StarcatApp 顶层（更早注册 NSAppleEventManager，
         // 避免 view 还没 mount 时 URL event 丢失）。这里不再重复挂。
