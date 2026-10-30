@@ -43,6 +43,8 @@ private enum ExploreSidebarSelection: Hashable {
     case awesomeSource(String?)
     case linuxDo
     case linuxDoLanguage(String?)
+    /// 文章工作区独立于仓库分类筛选，保留用户原仓库选择。
+    case dailyRadarPreview
 }
 
 /// 探索侧栏图标色：未选中用语义色；明亮主题选中时跟系统蓝底反成白色。
@@ -122,6 +124,9 @@ struct SidebarView: View {
     ///
     /// 只传最终颜色而不传 `ActivityItem`，避免 Sidebar 需要理解 Activity 的详情模型。
     var currentActivityTintColor: Color?
+
+    /// 每日热点独立内容区的展示状态由主窗口持有。
+    @Binding var dailyRadarPreviewPresentation: Bool
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
@@ -273,9 +278,14 @@ struct SidebarView: View {
             }
             .appLocaleEnvironment()
         }
-        .sheet(isPresented: $awesomeStore.isSourceManagerPresented) {
-            AwesomeSourceManagerSheet(store: awesomeStore)
-                .appLocaleEnvironment()
+        .onChange(of: awesomeStore.isSourceManagerPresented) { _, isPresented in
+            if isPresented {
+                AwesomeSourceManagerWindowController.present(dependencies: dependencies) {
+                    awesomeStore.dismissSourceManager()
+                }
+            } else {
+                AwesomeSourceManagerWindowController.dismissIfPresented()
+            }
         }
         .onChange(of: hasAnyBackgroundTask) { _, hasTask in
             if !hasTask {
@@ -858,6 +868,7 @@ struct SidebarView: View {
 
     private var exploreSidebarSelectionBinding: Binding<ExploreSidebarSelection?> {
         Binding {
+            if dailyRadarPreviewPresentation { return .dailyRadarPreview }
             if let exploreListSelection,
                isExploreSelectionCurrent(exploreListSelection) {
                 return exploreListSelection
@@ -902,6 +913,8 @@ struct SidebarView: View {
 
     private func isExploreSelectionCurrent(_ selection: ExploreSidebarSelection) -> Bool {
         switch selection {
+        case .dailyRadarPreview:
+            return dailyRadarPreviewPresentation
         case .mode(let mode):
             return selectedExploreMode == mode && (mode != .discover || dependencies.linuxDoStore.selectedSource == .catalog)
         case .topic(let code):
@@ -930,6 +943,12 @@ struct SidebarView: View {
     }
 
     private func applyExploreSelection(_ selection: ExploreSidebarSelection) {
+        if selection == .dailyRadarPreview {
+            dailyRadarPreviewPresentation = true
+            return
+        }
+        // 同一已选模式也要能离开预览；不依赖 selectedExploreMode 的 onChange。
+        dailyRadarPreviewPresentation = false
         // 来源不是 topic；返回普通发现时恢复已有主题/平台筛选，不污染 Linux.do 目录。
         switch selection {
         case .linuxDo, .linuxDoLanguage(_):
@@ -938,6 +957,8 @@ struct SidebarView: View {
             dependencies.linuxDoStore.selectedSource = .catalog
         }
         switch selection {
+        case .dailyRadarPreview:
+            return
         case .mode(let mode):
             selectedExploreMode = mode
             if mode == .awesome {
@@ -994,7 +1015,9 @@ struct SidebarView: View {
         case .trending:
             List(selection: exploreSidebarSelectionBinding) {
                 exploreModeSidebarContent
-                exploreSidebarContent
+                if !dailyRadarPreviewPresentation {
+                    exploreSidebarContent
+                }
             }
             .listStyle(.sidebar)
             // 分类行自身挂有折叠/展开 transition；切 Explore mode 时不能复用
@@ -1121,6 +1144,11 @@ struct SidebarView: View {
     @ViewBuilder
     private var exploreModeSidebarContent: some View {
         Section("nav.trending") {
+            exploreSelectableRow(selection: .dailyRadarPreview, count: nil) {
+                exploreSidebarSystemIcon("newspaper", color: .indigo)
+            } title: {
+                Text("dailyRadar.title")
+            }
             ForEach(settings.exploreCatalogPreferences.visibleGroupIDs, id: \.self) { id in
                 if id == "linuxDo" {
                     exploreSelectableRow(
@@ -1591,6 +1619,7 @@ struct SidebarView: View {
     }
 
     private func selectRootPage(_ page: SidebarRootPage) {
+        dailyRadarPreviewPresentation = false
         guard selectedPage != page else { return }
         if let onSelectRootPage {
             onSelectRootPage(page)

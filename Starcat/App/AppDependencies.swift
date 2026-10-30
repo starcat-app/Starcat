@@ -280,6 +280,10 @@ final class AppDependencies {
     /// Weekly 多来源后端 API 客户端。
     /// 独立 actor，无需 GitHub OAuth；Explore 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
+    /// 日报与周刊共享服务配置，内容缓存保持独立；版本供工作区热更新身份使用。
+    let dailyRadarAPI: DailyRadarAPI
+    let dailyRadarRepository: DailyRadarRepository
+    private(set) var dailyRadarConfigurationRevision: UInt64 = 0
 
     /// Weekly UI 共享状态：sidebar 计数徽章 + HomeView 详情页路由共用。
     /// 详见 `WeeklySelectionService` 文件头注释。
@@ -1479,6 +1483,12 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
         )
         self.weeklyAPI = weeklyAPIInstance
+        let dailyRadarAPI = DailyRadarAPI(
+            baseURL: AppEndpoints.Weekly.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
+        )
+        self.dailyRadarAPI = dailyRadarAPI
+        self.dailyRadarRepository = DailyRadarRepository(api: dailyRadarAPI)
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
@@ -2097,6 +2107,9 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateBaseURL(target)
         case .weekly:
             await weeklyAPI.updateBaseURL(target)
+            await dailyRadarAPI.update(baseURL: target)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
@@ -2149,7 +2162,11 @@ final class AppDependencies {
         // 3) 推送到对应 actor 热更新
         switch service {
         case .trending: await trendingAPI.updateAPIKey(resolved)
-        case .weekly:   await weeklyAPI.updateAPIKey(resolved)
+        case .weekly:
+            await weeklyAPI.updateAPIKey(resolved)
+            await dailyRadarAPI.update(apiKey: resolved, replacesKey: true)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
         case .recommend: await recommendAPI.updateAPIKey(resolved)

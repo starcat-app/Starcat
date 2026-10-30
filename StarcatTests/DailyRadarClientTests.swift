@@ -1,0 +1,243 @@
+//
+//  DailyRadarClientTests.swift
+//  StarcatTests
+//
+//  日报网络/缓存/阅读安全离线回归。每个测试使用独立 host 与 Session，
+//  不共享 URLProtocolStub 全局处理器，也不连接生产服务。
+//
+
+import Foundation
+import Testing
+@testable import Starcat
+
+struct DailyRadarClientTests {
+    @Test func concurrentRequestsShareCacheAndQueryIdentityIncludesFilters() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        async let first = fixture.repository.fetch(DailyRadarCatalog.self, path: "/catalog", parameters: [])
+        async let second = fixture.repository.fetch(DailyRadarCatalog.self, path: "/catalog", parameters: [])
+        _ = try await (first, second)
+        #expect(fixture.state.requests.count == 1)
+        #expect(await fixture.repository.cached(
+            DailyRadarCatalog.self, path: "/catalog",
+            parameters: [.init(name: "language", value: "zh-Hans")]
+        ) == nil)
+    }
+
+    @Test func etag304PreservesBodyAndFailurePreservesSuccessTime() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let params: [URLQueryItem] = []
+        let first = try await fixture.repository.fetch(DailyRadarCatalog.self, path: "/catalog", parameters: params)
+        #expect(first.value.catalogRevision == "1")
+        fixture.state.mutate { $0.notModified = true }
+        let second = try await fixture.repository.fetch(DailyRadarCatalog.self, path: "/catalog", parameters: params, force: true)
+        #expect(second.value.catalogRevision == "1")
+        #expect(second.validatedAt >= first.validatedAt)
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "If-None-Match") == "\"1\"")
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "X-SC-Svc") == "weekly")
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer fixture")
+        fixture.state.mutate { $0.error = true }
+        do {
+            _ = try await fixture.repository.fetch(DailyRadarCatalog.self, path: "/catalog", parameters: params, force: true)
+            Issue.record("Expected network failure")
+        } catch {}
+        let restored = await fixture.repository.cached(DailyRadarCatalog.self, path: "/catalog", parameters: params)
+        #expect(restored?.validatedAt == second.validatedAt)
+        #expect(restored?.value.catalogRevision == "1")
+        await fixture.api.update(apiKey: "different", replacesKey: true)
+        #expect(await fixture.repository.cached(DailyRadarCatalog.self, path: "/catalog", parameters: params) == nil)
+    }
+
+    @Test @MainActor func automaticLatestFollowsNextEditionAndHistoryKeepsAllDates() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        #expect(model.edition == "2026-10-29")
+        #expect(model.items.count == 1)
+        fixture.state.mutate { $0.day = "2026-10-30"; $0.revision = "2" }
+        await model.reload(force: true)
+        #expect(model.edition == "2026-10-30")
+        model.selectedEdition = "2026-10-29"
+        await model.reload(force: true)
+        #expect(model.edition == "2026-10-29")
+        #expect(model.dates.first?.date == "2026-10-30")
+        let dateRequests = fixture.state.requests.filter { $0.url?.path.hasSuffix("/dates") == true }
+        #expect(dateRequests.allSatisfy { request in
+            !(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []).contains { $0.name == "date_to" }
+        })
+        model.selectedEdition = nil
+        await model.reload(force: true)
+        #expect(model.edition == "2026-10-30")
+        let selected = try #require(model.items.first)
+        await model.open(selected)
+        let oldIdentity = model.detail?.contentIdentity
+        fixture.state.mutate { $0.revision = "3" }
+        await model.reload(force: true)
+        #expect(model.detail?.contentIdentity == oldIdentity)
+        model.configure(repository: fixture.repository, scope: "two", locale: Locale(identifier: "en_US"))
+        #expect(model.items.isEmpty)
+        #expect(model.detail == nil)
+    }
+
+    @Test func safeMarkdownKeepsTablesAndFoldsWithoutExecutingSourceHTML() {
+        let input = """
+        # Report
+
+        | A | B |
+        |---|---|
+        | one | two |
+
+        <details>
+        <summary>Details</summary>
+        Hidden text
+        </details>
+
+        <script>alert(1)</script>
+
+        [unsafe](javascript:alert(1))
+        ![bad](file:///etc/passwd)
+
+        ```html
+        <img src=x onerror=alert(1)>
+        ```
+        """
+        let rendered = DailyRadarMarkdownRenderer.render(input)
+        #expect(rendered.contains("<table>"))
+        #expect(rendered.contains("<details>"))
+        #expect(rendered.contains("<summary>"))
+        #expect(!rendered.contains("<script>"))
+        #expect(!rendered.contains("href=\"javascript:"))
+        #expect(!rendered.contains("src=\"file:"))
+        #expect(!rendered.contains("<img src=x"))
+        #expect(rendered.contains("&lt;img"))
+        #expect(DailyRadarMarkdownRenderer.safeURL("file:///etc/passwd") == nil)
+        #expect(DailyRadarMarkdownRenderer.safeURL("https://user:pass@example.com/") == nil)
+    }
+
+    @Test @MainActor func changedCatalogRestartsPaginationAndAppendFailureNeedsExplicitRetry() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        fixture.state.mutate { $0.hasNext = true }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        fixture.state.mutate { $0.changeOnNext = true }
+        await model.loadMore()
+        #expect(model.catalog?.catalogRevision == "2")
+        #expect(model.items.count == 1)
+        #expect(!model.isLoadingMore)
+        fixture.state.mutate { $0.error = true }
+        await model.loadMore()
+        #expect(model.failed)
+        let countAfterFailure = fixture.state.requests.count
+        await model.loadMore()
+        #expect(fixture.state.requests.count == countAfterFailure)
+        fixture.state.mutate { $0.error = false; $0.hasNext = false }
+        await model.reload(force: true)
+        #expect(!model.failed)
+        #expect(model.nextCursor == nil)
+    }
+
+    @Test func businessDateDoesNotDependOnSystemTimezone() {
+        // 英文格式采用用户 Locale，业务时区仍固定为上海，不能显示成 10/27。
+        let label = DailyRadarDateFormatting.label("2026-10-28", locale: Locale(identifier: "en_US"))
+        #expect(label.contains("28"))
+        #expect(!label.contains("27"))
+    }
+}
+
+/// 同步 URLProtocol 回调使用锁保护状态；每个 host 绑定独立 fixture，不串扰并行测试。
+private final class DailyRadarFixtureState: @unchecked Sendable {
+    struct Values {
+        var day = "2026-10-29"
+        var revision = "1"
+        var notModified = false
+        var error = false
+        var hasNext = false
+        var changeOnNext = false
+        var requests: [URLRequest] = []
+    }
+    private let lock = NSLock()
+    private var values = Values()
+    var requests: [URLRequest] { lock.withLock { values.requests } }
+    func mutate(_ body: (inout Values) -> Void) { lock.withLock { body(&values) } }
+    func response(_ request: URLRequest) -> (HTTPURLResponse, Data) {
+        lock.withLock {
+            values.requests.append(request)
+            let hasCursor = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.contains(where: { $0.name == "cursor" }) == true
+            if hasCursor && values.changeOnNext {
+                values.changeOnNext = false
+                values.revision = "2"
+                let response = HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: "HTTP/1.1", headerFields: [:])!
+                return (response, Data(#"{"schema_version":1,"error":{"code":"CATALOG_CHANGED","message":"changed"}}"#.utf8))
+            }
+            let status = values.error ? 503 : (values.notModified ? 304 : 200)
+            let path = request.url!.path
+            let summary = """
+            {"id":"agents-radar:2026-10-29:ai-cli","revision":"\(values.revision)","edition_date":"\(values.day)","category":"ai-cli","period":"daily","title":"Report","summary":"Summary","reading_minutes":3,"cover":{"kind":"category","card_url":null,"hero_url":null,"fallback":"orbit","alt":"AI"},"related_project_count":0,"content_language":"en","available_languages":["en"]}
+            """
+            let payload: String
+            if path.hasSuffix("/catalog") {
+                payload = """
+                {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)"}
+                """
+            } else if path.hasSuffix("/dates") {
+                payload = """
+                {"catalog_revision":"\(values.revision)","dates":[{"date":"\(values.day)","count":1},{"date":"2026-10-29","count":1}],"latest_available_date":"\(values.day)"}
+                """
+            } else if path.hasSuffix("/reports") {
+                payload = """
+                {"catalog_revision":"\(values.revision)","requested_language":"en","items":[\(summary)],"total":1,"next_cursor":\(values.hasNext ? "\"next\"" : "null"),"featured_id":"agents-radar:2026-10-29:ai-cli"}
+                """
+            } else {
+                payload = String(summary.dropLast()) + ",\"markdown\":\"# Report\",\"related_projects\":[],\"related_projects_status\":\"complete\"}"
+            }
+            let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["ETag": "\"\(values.revision)\""])!
+            return (response, Data("{\"schema_version\":1,\"data\":\(payload)}".utf8))
+        }
+    }
+}
+
+private struct DailyRadarFixture {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let state = DailyRadarFixtureState()
+    let api: DailyRadarAPI
+    let repository: DailyRadarRepository
+    let host: String
+    init() {
+        host = "\(UUID().uuidString).invalid"
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DailyRadarTestProtocol.self]
+        let session = URLSession(configuration: configuration)
+        DailyRadarTestProtocol.register(state, host: host)
+        api = DailyRadarAPI(baseURL: URL(string: "https://\(host)")!, apiKey: "fixture", session: session)
+        repository = DailyRadarRepository(api: api, directory: directory)
+    }
+    func clean() {
+        DailyRadarTestProtocol.unregister(host: host)
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+private final class DailyRadarTestProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var handlers: [String: DailyRadarFixtureState] = [:]
+    static func register(_ state: DailyRadarFixtureState, host: String) { lock.withLock { handlers[host] = state } }
+    static func unregister(host: String) { _ = lock.withLock { handlers.removeValue(forKey: host) } }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let handler = Self.lock.withLock({ Self.handlers[request.url?.host ?? ""] }) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        let (response, data) = handler.response(request)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}

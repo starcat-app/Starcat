@@ -161,6 +161,9 @@ struct HomeView: View {
     /// Explore 页二级模块。内部仍挂在 SidebarRootPage.trending 下，用户可见文案已升级为「探索」。
     @State private var selectedExploreMode: ExploreMode = .discover
 
+    /// 每日热点独立于仓库 ExploreMode，避免把仓库筛选应用到文章目录。
+    @State private var showsDailyRadarPreview = false
+
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
 
@@ -338,10 +341,10 @@ struct HomeView: View {
                 sidebarColumn
                     .environment(\.layoutDirection, appContentLayoutDirection)
             } content: {
-                contentColumn
+                previewAwareContentColumn
                     .environment(\.layoutDirection, appContentLayoutDirection)
             } detail: {
-                detailColumn
+                previewAwareDetailColumn
                     .environment(\.layoutDirection, appContentLayoutDirection)
             }
             // macOS 15 的 NavigationSplitView 在 RTL 下会镜像三栏，但仍按 LTR 规则
@@ -356,7 +359,7 @@ struct HomeView: View {
     }
 
     private var navigationWithOverlays: AnyView {
-        AnyView(baseNavigation
+        AnyView(navigationWithDailyRadarPreview
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {
@@ -365,7 +368,9 @@ struct HomeView: View {
             }
         }
         .overlayPreferenceValue(GettingStartedAnchorPreferenceKey.self) { anchors in
-            gettingStartedOverlay(anchors: anchors)
+            if !isDailyRadarPreviewPresented {
+                gettingStartedOverlay(anchors: anchors)
+            }
         }
         .onChange(of: searchCenterViewModel.isPresented) { _, isPresented in
             if isPresented {
@@ -375,6 +380,60 @@ struct HomeView: View {
                 SearchCenterWindowController.dismiss()
             }
         }
+        )
+    }
+
+    /// 独立内容路由保持原仓库选择，退出后继续使用原有分栏状态。
+    private var isDailyRadarPreviewPresented: Bool {
+        showsDailyRadarPreview
+    }
+
+    private var dailyRadarPreviewPresentation: Binding<Bool> {
+        $showsDailyRadarPreview
+    }
+
+    @ViewBuilder
+    private var previewAwareContentColumn: some View {
+        contentColumn
+            .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
+                [.content: $0]
+            }
+    }
+
+    @ViewBuilder
+    private var previewAwareDetailColumn: some View {
+        detailColumn
+            .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
+                [.detail: $0]
+            }
+    }
+
+    /// 两栏跨越不同 NavigationSplitView 宿主，必须在共同父层解析锚点后合并。
+    /// 覆盖层不借用固定侧栏宽度，因而侧栏拖动 / 折叠时仍保留准确的左侧命中边界。
+    private var navigationWithDailyRadarPreview: AnyView {
+        AnyView(baseNavigation
+            .overlayPreferenceValue(DailyRadarPreviewColumnAnchors.self) { anchors in
+                GeometryReader { proxy in
+                    if showsDailyRadarPreview,
+                       let content = anchors[.content],
+                       let detail = anchors[.detail] {
+                        let bounds = proxy[content].union(proxy[detail])
+                        DailyRadarPreviewWorkspace(
+                            readmeTranslationService: dependencies.readmeTranslationService,
+                            onExit: { showsDailyRadarPreview = false }
+                        )
+                            // overlay 不继承 baseNavigation 子树的环境，详情的显式 Star 操作需要此宿主。
+                            .environment(viewModel)
+                            .environment(\.layoutDirection, appContentLayoutDirection)
+                            .frame(width: bounds.width, height: bounds.height)
+                            .clipped()
+                            .position(x: bounds.midX, y: bounds.midY)
+                    }
+                }
+            }
+            .onChange(of: selectedSidebarPage) { _, _ in
+                showsDailyRadarPreview = false
+            }
         )
     }
 
@@ -1302,7 +1361,8 @@ struct HomeView: View {
             // 2026-06-11 D-29：weekly 分类没有 selectedActivityItem，单独走 weekly project 语言色派生路径,
             // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
             // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
-            currentActivityTintColor: derivedActivityTintColor
+            currentActivityTintColor: derivedActivityTintColor,
+            dailyRadarPreviewPresentation: dailyRadarPreviewPresentation
         )
         .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
     }
@@ -1310,8 +1370,14 @@ struct HomeView: View {
     @ViewBuilder
     private var contentColumn: some View {
         ZStack(alignment: .topLeading) {
-            contentColumnBody
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            if isDailyRadarPreviewPresented {
+                // 移除底层交互树而非仅遮挡：避免 README / 列表继续接收快捷键与 AX 焦点。
+                // 主窗口持有的 ViewModel 与仓库选择不受影响，退出预览后继续使用。
+                Color.clear.accessibilityHidden(true)
+            } else {
+                contentColumnBody
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
         .navigationSplitViewColumnWidth(
@@ -1416,8 +1482,12 @@ struct HomeView: View {
     @ViewBuilder
     private var detailColumn: some View {
         ZStack(alignment: .topLeading) {
-            detailColumnBody
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            if isDailyRadarPreviewPresented {
+                Color.clear.accessibilityHidden(true)
+            } else {
+                detailColumnBody
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
         .modifier(RepoShareHost())
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
