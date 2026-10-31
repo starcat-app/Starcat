@@ -271,7 +271,6 @@ struct DailyRadarPreviewWorkspace: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 8)
-            contentLanguageMenu
             DailyRadarEditionCalendarPicker(
                 availableDates: model.availableDates,
                 selectedDate: model.selectedEdition,
@@ -282,26 +281,6 @@ struct DailyRadarPreviewWorkspace: View {
                 onSelect: { model.selectedEdition = $0 }
             )
         }
-    }
-
-    private var contentLanguageMenu: some View {
-        Menu {
-            Button { model.allowsFallback = true } label: { Text("dailyRadar.allTopics") }
-            ForEach(["zh-Hans", "en"], id: \.self) { language in
-                Button {
-                    model.contentLanguage = language
-                    model.allowsFallback = false
-                } label: {
-                    Text(verbatim: locale.localizedString(forIdentifier: language) ?? language)
-                }
-            }
-        } label: {
-            Text(verbatim: String(format: String.l10n("dailyRadar.contentLanguage"), locale: locale, locale.localizedString(forIdentifier: model.contentLanguage) ?? model.contentLanguage))
-                .lineLimit(1)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
     }
 
     private func columns(width: CGFloat) -> [GridItem] {

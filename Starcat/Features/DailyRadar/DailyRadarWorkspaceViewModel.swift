@@ -28,15 +28,14 @@ final class DailyRadarWorkspaceViewModel {
     var category: String?
     private(set) var edition: String?
     var selectedEdition: String?
-    var contentLanguage = "en"
-    var allowsFallback = true
+    private(set) var contentLanguage = "en"
     var scope = ""
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var detailGeneration: UInt64 = 0
     @ObservationIgnored private var repository: DailyRadarRepository?
 
     var categoryPeriod: String { catalog?.categories.first(where: { $0.id == category })?.period ?? "daily" }
-    var identity: String { "\(scope)|\(category ?? "")|\(selectedEdition ?? "latest")|\(contentLanguage)|\(allowsFallback)" }
+    var identity: String { "\(scope)|\(category ?? "")|\(selectedEdition ?? "latest")|\(contentLanguage)" }
     var featured: DailyRadarReport? { items.first(where: { $0.id == featuredID }) ?? items.first }
     var stories: [DailyRadarReport] { items.filter { $0.editionDate == edition } }
     var olderStories: [DailyRadarReport] { items.filter { $0.editionDate != edition } }
@@ -54,17 +53,18 @@ final class DailyRadarWorkspaceViewModel {
     }
     var availableDates: Set<String> { Set(dates.map(\.date)) }
     private var query: DailyRadarQuery {
-        .init(category: category, period: categoryPeriod, language: contentLanguage, fallback: allowsFallback, dateTo: selectedEdition)
+        .init(category: category, period: categoryPeriod, language: contentLanguage, fallback: false, dateTo: selectedEdition)
     }
 
     /// 账户/服务身份不同先清理可观察状态，避免新请求开始前露出上一会话内容。
     func configure(repository: DailyRadarRepository, scope: String, locale: Locale) {
         self.repository = repository
-        guard self.scope != scope else { return }
+        let requestedLanguage = locale.language.languageCode?.identifier == "zh" ? "zh-Hans" : "en"
+        guard self.scope != scope || self.contentLanguage != requestedLanguage else { return }
         generation &+= 1
         detailGeneration &+= 1
         self.scope = scope
-        contentLanguage = locale.language.languageCode?.identifier == "zh" ? "zh-Hans" : "en"
+        contentLanguage = requestedLanguage
         catalog = nil
         dates = []
         items = []
@@ -90,7 +90,7 @@ final class DailyRadarWorkspaceViewModel {
         var base = query
         let catalogParameters = [
             URLQueryItem(name: "language", value: contentLanguage),
-            URLQueryItem(name: "fallback", value: allowsFallback ? "true" : "false")
+            URLQueryItem(name: "fallback", value: "false")
         ]
         if items.isEmpty,
            let cached = await repository.cached(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters) {

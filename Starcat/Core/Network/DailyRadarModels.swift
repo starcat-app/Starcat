@@ -13,7 +13,7 @@ struct DailyRadarQuery: Hashable, Sendable {
     var category: String?
     var period = "daily"
     var language = "en"
-    var fallback = true
+    var fallback = false
     var dateFrom: String?
     var dateTo: String?
     var catalogRevision: String?

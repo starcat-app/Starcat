@@ -55,6 +55,12 @@ struct DailyRadarClientTests {
         let model = DailyRadarWorkspaceViewModel()
         model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
         await model.reload()
+        let catalogRequests = fixture.state.requests.filter { $0.url?.path.hasSuffix("/catalog") == true }
+        #expect(catalogRequests.allSatisfy { request in
+            let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            return queryItems.contains { $0.name == "language" && $0.value == "en" } &&
+                queryItems.contains { $0.name == "fallback" && $0.value == "false" }
+        })
         #expect(model.edition == "2026-10-31")
         #expect(model.items.count == 1)
         // 选择历史期次后 reload 是异步身份切换；edition 仍代表旧首屏，
@@ -90,6 +96,25 @@ struct DailyRadarClientTests {
         model.configure(repository: fixture.repository, scope: "two", locale: Locale(identifier: "en_US"))
         #expect(model.items.isEmpty)
         #expect(model.detail == nil)
+    }
+
+    @Test @MainActor func contentLanguageFollowsAppLocaleAndNeverFallsBack() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        #expect(model.contentLanguage == "en")
+        // locale 变化复用同一个模型时也必须重新加载，不能继续读旧语言缓存。
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "zh_CN"))
+        #expect(model.contentLanguage == "zh-Hans")
+        await model.reload()
+        let requests = fixture.state.requests.filter { !$0.url!.path.contains("/reports/") }
+        #expect(!requests.isEmpty)
+        #expect(requests.allSatisfy { request in
+            let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            return queryItems.contains { $0.name == "language" && $0.value == "zh-Hans" } &&
+                queryItems.contains { $0.name == "fallback" && $0.value == "false" }
+        })
     }
 
     @Test @MainActor func adjacentEditionNavigationSkipsUnavailableDates() async throws {
