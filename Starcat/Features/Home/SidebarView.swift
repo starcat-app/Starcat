@@ -43,6 +43,7 @@ private enum ExploreSidebarSelection: Hashable {
     case awesomeSource(String?)
     case linuxDo
     case linuxDoLanguage(String?)
+    case dailyRadarCategory(String?)
     /// 文章工作区独立于仓库分类筛选，保留用户原仓库选择。
     case dailyRadarPreview
 }
@@ -127,6 +128,9 @@ struct SidebarView: View {
 
     /// 每日热点独立内容区的展示状态由主窗口持有。
     @Binding var dailyRadarPreviewPresentation: Bool
+
+    /// 与右侧覆盖层共享的每日热点目录/分类状态；左栏不创建第二套请求。
+    @Bindable var dailyRadarModel: DailyRadarWorkspaceViewModel
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
@@ -868,7 +872,9 @@ struct SidebarView: View {
 
     private var exploreSidebarSelectionBinding: Binding<ExploreSidebarSelection?> {
         Binding {
-            if dailyRadarPreviewPresentation { return .dailyRadarPreview }
+            if dailyRadarPreviewPresentation {
+                return dailyRadarModel.category.map(ExploreSidebarSelection.dailyRadarCategory) ?? .dailyRadarPreview
+            }
             if let exploreListSelection,
                isExploreSelectionCurrent(exploreListSelection) {
                 return exploreListSelection
@@ -915,6 +921,8 @@ struct SidebarView: View {
         switch selection {
         case .dailyRadarPreview:
             return dailyRadarPreviewPresentation
+        case .dailyRadarCategory(let id):
+            return dailyRadarPreviewPresentation && dailyRadarModel.category == id
         case .mode(let mode):
             return selectedExploreMode == mode && (mode != .discover || dependencies.linuxDoStore.selectedSource == .catalog)
         case .topic(let code):
@@ -945,6 +953,7 @@ struct SidebarView: View {
     private func applyExploreSelection(_ selection: ExploreSidebarSelection) {
         if selection == .dailyRadarPreview {
             dailyRadarPreviewPresentation = true
+            dailyRadarModel.selectCategory(nil)
             return
         }
         // 同一已选模式也要能离开预览；不依赖 selectedExploreMode 的 onChange。
@@ -959,6 +968,9 @@ struct SidebarView: View {
         switch selection {
         case .dailyRadarPreview:
             return
+        case .dailyRadarCategory(let id):
+            dailyRadarPreviewPresentation = true
+            dailyRadarModel.selectCategory(id)
         case .mode(let mode):
             selectedExploreMode = mode
             if mode == .awesome {
@@ -1017,6 +1029,8 @@ struct SidebarView: View {
                 exploreModeSidebarContent
                 if !dailyRadarPreviewPresentation {
                     exploreSidebarContent
+                } else {
+                    dailyRadarSidebarContent
                 }
             }
             .listStyle(.sidebar)
@@ -1038,6 +1052,59 @@ struct SidebarView: View {
                 insightsSidebarContent
             }
             .listStyle(.sidebar)
+        }
+    }
+
+    @ViewBuilder
+    private var dailyRadarSidebarContent: some View {
+        Section {
+            dailyRadarCategoryRow(nil)
+            ForEach(visibleDailyRadarCategories) { category in
+                dailyRadarCategoryRow(category)
+            }
+        } header: {
+            Text("explore.sidebar.categories")
+        }
+    }
+
+    /// 二级目录与设置页共用同一隐藏集合；后端新增分类默认进入列表。
+    private var visibleDailyRadarCategories: [DailyRadarCatalog.Category] {
+        settings.exploreCatalogPreferences.visibleDailyRadarCategories(dailyRadarModel.availableCategories)
+    }
+
+    private func dailyRadarCategoryRow(_ category: DailyRadarCatalog.Category?) -> some View {
+        let id = category?.id
+        return exploreSelectableRow(selection: .dailyRadarCategory(id), count: nil) {
+            exploreSidebarSystemIcon(
+                dailyRadarCategorySystemImage(for: id),
+                color: .secondary
+            )
+        } title: {
+            if let category {
+                Text(verbatim: category.title)
+                    .lineLimit(1)
+            } else {
+                Text("dailyRadar.allTopics")
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// 服务端分类 ID 当前稳定；未知动态分类保留通用图标，避免后端扩展造成空图标。
+    private func dailyRadarCategorySystemImage(for id: String?) -> String {
+        switch id {
+        case nil: return "square.grid.2x2"
+        case "ai-cli": return "terminal"
+        case "ai-agents": return "person.2"
+        case "ai-infra": return "server.rack"
+        case "ai-web": return "safari"
+        case "ai-trending": return "chart.line.uptrend.xyaxis"
+        case "ai-hn": return "bubble.left.and.bubble.right"
+        case "ai-ph": return "rocket"
+        case "ai-arxiv": return "doc.text.magnifyingglass"
+        case "ai-hf": return "brain"
+        case "ai-community": return "person.3"
+        default: return "circle.fill"
         }
     }
 
@@ -1144,10 +1211,12 @@ struct SidebarView: View {
     @ViewBuilder
     private var exploreModeSidebarContent: some View {
         Section("nav.trending") {
-            exploreSelectableRow(selection: .dailyRadarPreview, count: nil) {
-                exploreSidebarSystemIcon("newspaper", color: .indigo)
-            } title: {
-                Text("dailyRadar.title")
+            if settings.exploreCatalogPreferences.isGroupEnabled("dailyRadar") {
+                exploreSelectableRow(selection: .dailyRadarPreview, count: nil) {
+                    exploreSidebarSystemIcon("newspaper", color: .indigo)
+                } title: {
+                    Text("dailyRadar.title")
+                }
             }
             ForEach(settings.exploreCatalogPreferences.visibleGroupIDs, id: \.self) { id in
                 if id == "linuxDo" {

@@ -41,6 +41,18 @@ final class DailyRadarWorkspaceViewModel {
     var stories: [DailyRadarReport] { items.filter { $0.editionDate == edition } }
     var olderStories: [DailyRadarReport] { items.filter { $0.editionDate != edition } }
     var availableCategories: [DailyRadarCatalog.Category] { catalog?.categories ?? [] }
+    /// 目录日期已按业务日期排序；查找相邻期次必须跳过断更，而不是简单加减一天。
+    /// 日期切换会先更新 selectedEdition、再由身份驱动异步 reload，因此这里必须
+    /// 优先使用用户刚选择的日期，否则连续点击会按旧 edition 计算出错误目标。
+    var previousEdition: String? {
+        guard let currentEdition = selectedEdition ?? edition else { return nil }
+        return dates.first(where: { $0.date < currentEdition })?.date
+    }
+    var nextEdition: String? {
+        guard let currentEdition = selectedEdition ?? edition else { return nil }
+        return dates.last(where: { $0.date > currentEdition })?.date
+    }
+    var availableDates: Set<String> { Set(dates.map(\.date)) }
     private var query: DailyRadarQuery {
         .init(category: category, period: categoryPeriod, language: contentLanguage, fallback: allowsFallback, dateTo: selectedEdition)
     }
@@ -150,6 +162,20 @@ final class DailyRadarWorkspaceViewModel {
         category = id
         edition = nil
         selectedEdition = nil
+    }
+
+    func selectEarlierEdition() {
+        // 直接从当前选择计算目标，避免在同一个调用里依赖可观察计算属性，
+        // 保证用户在异步 reload 完成前连续点击也始终只前进一期。
+        let currentEdition = selectedEdition ?? edition
+        guard let target = dates.first(where: { $0.date < (currentEdition ?? "") })?.date else { return }
+        selectedEdition = target
+    }
+
+    func selectLaterEdition() {
+        let currentEdition = selectedEdition ?? edition
+        guard let target = dates.last(where: { $0.date > (currentEdition ?? "") })?.date else { return }
+        selectedEdition = target
     }
 
     /// 打开时捕获摘要修订，不从 latest 指针追随后台更新。

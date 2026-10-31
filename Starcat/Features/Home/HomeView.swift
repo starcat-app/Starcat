@@ -163,6 +163,8 @@ struct HomeView: View {
 
     /// 每日热点独立于仓库 ExploreMode，避免把仓库筛选应用到文章目录。
     @State private var showsDailyRadarPreview = false
+    /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
+    @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
     /// 由 ContentView 接管 window toolbar：DailyRadar 中右覆盖层需要从窗口顶部开始。
     @State private var hidesDailyRadarWindowToolbar = false
 
@@ -426,6 +428,7 @@ struct HomeView: View {
                         let bounds = proxy[content].union(proxy[detail])
                         DailyRadarPreviewWorkspace(
                             readmeTranslationService: dependencies.readmeTranslationService,
+                            model: dailyRadarModel,
                             onExit: { showsDailyRadarPreview = false }
                         )
                         .onAppear { hidesDailyRadarWindowToolbar = true }
@@ -921,6 +924,7 @@ struct HomeView: View {
         }
         .onChange(of: settings.exploreCatalogPreferences, initial: true) { _, _ in
             reconcileExploreCatalogPreferences()
+            reconcileDailyRadarPreferences()
         }
         .onChange(of: dependencies.linuxDoStore.selectedSource) { _, _ in
             reconcileExploreCatalogPreferences()
@@ -1370,7 +1374,8 @@ struct HomeView: View {
             // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
             // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
             currentActivityTintColor: derivedActivityTintColor,
-            dailyRadarPreviewPresentation: dailyRadarPreviewPresentation
+            dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
+            dailyRadarModel: dailyRadarModel
         )
         .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
     }
@@ -2745,6 +2750,20 @@ struct HomeView: View {
         }
         if let platform = selectedDiscoveryPlatform, preferences.hiddenDiscoverPlatforms.contains(platform) {
             selectedDiscoveryPlatform = nil
+        }
+    }
+
+    /// 一级入口被隐藏时退出文章覆盖层；当前二级分类被隐藏时回到“全部主题”。
+    private func reconcileDailyRadarPreferences() {
+        let preferences = settings.exploreCatalogPreferences
+        guard preferences.isGroupEnabled("dailyRadar") else {
+            if showsDailyRadarPreview { showsDailyRadarPreview = false }
+            return
+        }
+        if let category = dailyRadarModel.category,
+           !preferences.visibleDailyRadarCategories(dailyRadarModel.availableCategories)
+            .contains(where: { $0.id == category }) {
+            dailyRadarModel.selectCategory(nil)
         }
     }
 

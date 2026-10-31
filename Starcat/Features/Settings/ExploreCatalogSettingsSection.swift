@@ -18,6 +18,7 @@ struct ExploreCatalogSettingsSection: View {
     /// 展开是临时编辑状态；只保留一个分组，避免两个目录同时撑长通用设置。
     @State private var expandedGroup: String?
     @State private var weeklySources: [WeeklySourceDescriptor] = []
+    @State private var dailyRadarCategories: [DailyRadarCatalog.Category] = []
 
     private var sourceFilters: [WeeklySourceFilter] {
         weeklySources.isEmpty
@@ -73,6 +74,20 @@ struct ExploreCatalogSettingsSection: View {
             guard !Task.isCancelled else { return }
             weeklySources = sources
         }
+        .task(id: "\(dependencies.databaseScopeRevision):\(dependencies.dailyRadarConfigurationRevision)") {
+            // 设置页只读目录缓存，不为了展示偏好配置触发 bulk 下载。
+            let parameters = [
+                URLQueryItem(name: "language", value: "en"),
+                URLQueryItem(name: "fallback", value: "true")
+            ]
+            let cached = await dependencies.dailyRadarRepository.cached(
+                DailyRadarCatalog.self,
+                path: "\(DailyRadarWorkspaceViewModel.root)/catalog",
+                parameters: parameters
+            )
+            guard !Task.isCancelled else { return }
+            dailyRadarCategories = cached?.value.categories ?? []
+        }
     }
 
     /// 展开标题与复选框是相邻的独立点击区，避免点击勾选时同时折叠。
@@ -83,7 +98,7 @@ struct ExploreCatalogSettingsSection: View {
             .disabled(enabled && settings.exploreCatalogPreferences.visibleGroupIDs.count == 1)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                if id == "discover" || id == "weekly" {
+                if id == "discover" || id == "weekly" || id == "dailyRadar" {
                     toggle.labelsHidden()
                     Button {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
@@ -167,6 +182,14 @@ struct ExploreCatalogSettingsSection: View {
             return String(format: String.l10n("settings.explore.content.discoveryCountFmt"),
                           locale: locale, topics, platforms)
         }
+        if id == "dailyRadar" {
+            let categories = dailyRadarCategories.filter {
+                !settings.exploreCatalogPreferences.hiddenDailyRadarCategories.contains($0.id)
+            }.count
+            guard !dailyRadarCategories.isEmpty else { return String.l10n("settings.explore.content.sourceCountUnavailable") }
+            return String(format: String.l10n("settings.explore.content.sourceCountFmt"),
+                          locale: locale, categories, dailyRadarCategories.count)
+        }
         let sources = sourceFilters.filter { !preferences.hiddenWeeklySources.contains($0.rawValue) }.count
         return String(format: String.l10n("settings.explore.content.sourceCountFmt"),
                       locale: locale, sources, sourceFilters.count)
@@ -234,11 +257,30 @@ struct ExploreCatalogSettingsSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        } else if id == "dailyRadar" {
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 16, alignment: .leading)],
+                          alignment: .leading, spacing: 8) {
+                    ForEach(dailyRadarCategories) { category in
+                        Toggle(isOn: childBinding(category.id, in: \.hiddenDailyRadarCategories,
+                                                  available: dailyRadarCategories.map(\.id))) {
+                            Text(verbatim: category.title).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(isLastChild(category.id, in: \.hiddenDailyRadarCategories,
+                                              available: dailyRadarCategories.map(\.id)))
+                    }
+                }
+                Text("settings.explore.content.dailyRadarHint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
     private func groupTitle(_ id: String) -> String {
-        id == "linuxDo" ? "Linux.do" : ExploreMode(rawValue: id)?.localizedTitle ?? id
+        id == "linuxDo" ? "Linux.do" : ExploreMode(rawValue: id)?.localizedTitle ?? String.l10n("dailyRadar.title")
     }
 
     /// 最后一项保留选中并置灰，让约束在点击前可见。

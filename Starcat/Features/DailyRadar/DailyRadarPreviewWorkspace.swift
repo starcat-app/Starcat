@@ -12,24 +12,32 @@ import SwiftUI
 /// 在主窗口中右联合区域内运行的日报工作区。
 struct DailyRadarPreviewWorkspace: View {
     let onExit: () -> Void
+    @Bindable var model: DailyRadarWorkspaceViewModel
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(\.starcatReduceMotion) private var reduceMotion
-    @State private var model = DailyRadarWorkspaceViewModel()
     @State private var project: DailyRadarReport.Project?
     @State private var projectStore = DailyRadarProjectStore()
     @State private var translationVM: ReadmeTranslationViewModel
+    /// 历史区默认收起，避免长目录把首屏专题挤出可视区域。
+    @State private var isHistoryExpanded = false
     @FocusState private var workspaceFocused: Bool
 
     /// 翻译状态独立于主窗口原选中仓库；宿主在文章与项目往返时保持稳定。
-    init(readmeTranslationService: ReadmeTranslationService, onExit: @escaping () -> Void) {
+    init(
+        readmeTranslationService: ReadmeTranslationService,
+        model: DailyRadarWorkspaceViewModel,
+        onExit: @escaping () -> Void
+    ) {
+        self.model = model
         self.onExit = onExit
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
     }
 
     private var stories: [DailyRadarReport] { model.stories }
     private var olderStories: [DailyRadarReport] { model.olderStories }
+    private var hasHistory: Bool { !olderStories.isEmpty || model.nextCursor != nil }
     private var story: DailyRadarReport? { model.selection }
     private var workspaceScope: String {
         "\(dependencies.databaseScopeRevision)|\(dependencies.dailyRadarConfigurationRevision)|\(locale.identifier)"
@@ -139,7 +147,6 @@ struct DailyRadarPreviewWorkspace: View {
                 // 历史行不实体化，也不会用 onAppear 提前触发下一页。
                 LazyVStack(alignment: .leading, spacing: 24) {
                     heading
-                    filters
                     if model.failed {
                         HStack {
                             Label("error.loadFailed", systemImage: "exclamationmark.triangle")
@@ -168,49 +175,65 @@ struct DailyRadarPreviewWorkspace: View {
                             .frame(minHeight: 200)
                     }
 
-                    if !olderStories.isEmpty {
-                        HStack {
-                            Text("dailyRadar.history")
-                                .font(scale.font(size: 17, weight: .semibold))
-                            Spacer()
-                            Image(systemName: "clock")
-                                .foregroundStyle(.secondary)
-                                .accessibilityHidden(true)
+                    if hasHistory {
+                        Button {
+                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                                isHistoryExpanded.toggle()
+                            }
+                        } label: {
+                            HStack {
+                                Text("dailyRadar.history")
+                                    .font(scale.font(size: 17, weight: .semibold))
+                                Spacer()
+                                Image(systemName: isHistoryExpanded ? "chevron.down" : "chevron.forward")
+                                    .font(scale.font(size: 12, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 20, height: 20)
+                                    .accessibilityHidden(true)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .accessibilityValue(Text(isHistoryExpanded
+                                                 ? "settings.general.disclosure.expanded"
+                                                 : "settings.general.disclosure.collapsed"))
                         // 历史行必须直接位于惰性容器中。若包在普通 VStack 里，
                         // SwiftUI 会一次实体化整页行，尾部 onAppear 会连环触发下一页。
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(olderStories.enumerated()), id: \.element.id) { index, item in
-                                Button { openStory(item) } label: {
-                                    HStack(spacing: 16) {
-                                        DailyRadarCoverView(cover: item.cover)
-                                            .frame(width: 88, height: 56)
-                                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                                            .accessibilityHidden(true)
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            Text(verbatim: item.title.replacingOccurrences(of: "\n", with: ""))
-                                                .font(scale.font(size: 14, weight: .medium))
-                                                .lineLimit(1)
-                                            Text(verbatim: DailyRadarDateFormatting.label(item.editionDate, locale: locale))
-                                                .font(scale.font(size: 11))
+                        if isHistoryExpanded {
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(olderStories.enumerated()), id: \.element.id) { index, item in
+                                    Button { openStory(item) } label: {
+                                        HStack(spacing: 16) {
+                                            DailyRadarCoverView(cover: item.cover)
+                                                .frame(width: 88, height: 56)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                .accessibilityHidden(true)
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                Text(verbatim: item.title.replacingOccurrences(of: "\n", with: ""))
+                                                    .font(scale.font(size: 14, weight: .medium))
+                                                    .lineLimit(1)
+                                                Text(verbatim: DailyRadarDateFormatting.label(item.editionDate, locale: locale))
+                                                    .font(scale.font(size: 11))
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer(minLength: 8)
+                                            Image(systemName: "chevron.forward")
                                                 .foregroundStyle(.secondary)
                                         }
-                                        Spacer(minLength: 8)
-                                        Image(systemName: "chevron.forward")
-                                            .foregroundStyle(.secondary)
+                                        .padding(.vertical, 12)
+                                        .contentShape(Rectangle())
                                     }
-                                    .padding(.vertical, 12)
-                                    .contentShape(Rectangle())
+                                    .buttonStyle(.plain)
+                                    .focusEffectDisabled()
+                                    .automaticListPagination(
+                                        appearingIndex: index, visibleItemCount: olderStories.count,
+                                        loadedItemCount: model.items.count, hasMore: model.nextCursor != nil,
+                                        isLoading: model.isLoading || model.isLoadingMore || model.failed,
+                                        identity: model.identity
+                                    ) { await model.loadMore() }
+                                    if item.id != olderStories.last?.id { Divider() }
                                 }
-                                .buttonStyle(.plain)
-                                .focusEffectDisabled()
-                                .automaticListPagination(
-                                    appearingIndex: index, visibleItemCount: olderStories.count,
-                                    loadedItemCount: model.items.count, hasMore: model.nextCursor != nil,
-                                    isLoading: model.isLoading || model.isLoadingMore || model.failed,
-                                    identity: model.identity
-                                ) { await model.loadMore() }
-                                if item.id != olderStories.last?.id { Divider() }
                             }
                         }
                     }
@@ -229,7 +252,7 @@ struct DailyRadarPreviewWorkspace: View {
             .id(model.identity)
             .automaticListPaginationFill(
                 visibleItemCount: olderStories.count, loadedItemCount: model.items.count,
-                hasMore: model.nextCursor != nil,
+                hasMore: isHistoryExpanded && model.nextCursor != nil,
                 isLoading: model.isLoading || model.isLoadingMore || model.failed,
                 identity: model.identity
             ) { await model.loadMore() }
@@ -248,65 +271,37 @@ struct DailyRadarPreviewWorkspace: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 8)
-            Menu {
-                Button("dailyRadar.featured") { model.selectedEdition = nil }
-                ForEach(model.dates) { edition in
-                    Button { model.selectedEdition = edition.date } label: {
-                        Text(verbatim: DailyRadarDateFormatting.label(edition.date, locale: locale))
-                    }
-                }
-            } label: {
-                Label("dailyRadar.history", systemImage: "calendar")
-                    .labelStyle(.iconOnly)
-                    .frame(width: 28, height: 28)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("dailyRadar.history")
+            contentLanguageMenu
+            DailyRadarEditionCalendarPicker(
+                availableDates: model.availableDates,
+                selectedDate: model.selectedEdition,
+                // 每个主题有自己的最新出刊日；dates[0] 可能属于其他主题，
+                // 不能拿来当作当前筛选的“本期精选”。
+                latestDate: model.edition,
+                onSelectLatest: { model.selectedEdition = nil },
+                onSelect: { model.selectedEdition = $0 }
+            )
         }
     }
 
-    private var filters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                topicButton(nil)
-                ForEach(model.availableCategories) { value in topicButton(value) }
-                Menu {
-                    Button { model.allowsFallback = true } label: { Text("dailyRadar.allTopics") }
-                    ForEach(["zh-Hans", "en"], id: \.self) { language in
-                        Button {
-                            model.contentLanguage = language
-                            model.allowsFallback = false
-                        } label: {
-                            Text(verbatim: locale.localizedString(forIdentifier: language) ?? language)
-                        }
-                    }
+    private var contentLanguageMenu: some View {
+        Menu {
+            Button { model.allowsFallback = true } label: { Text("dailyRadar.allTopics") }
+            ForEach(["zh-Hans", "en"], id: \.self) { language in
+                Button {
+                    model.contentLanguage = language
+                    model.allowsFallback = false
                 } label: {
-                    Text(verbatim: locale.localizedString(forIdentifier: model.contentLanguage) ?? model.contentLanguage)
-                        .lineLimit(1)
+                    Text(verbatim: locale.localizedString(forIdentifier: language) ?? language)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
             }
-        }
-    }
-
-    private func topicButton(_ value: DailyRadarCatalog.Category?) -> some View {
-        Button { model.selectCategory(value?.id) } label: {
-            Text(verbatim: value?.title ?? String.l10n("dailyRadar.allTopics"))
-                .font(scale.font(size: 12, weight: model.category == value?.id ? .semibold : .regular))
-                .foregroundStyle(.primary)
+        } label: {
+            Text(verbatim: String(format: String.l10n("dailyRadar.contentLanguage"), locale: locale, locale.localizedString(forIdentifier: model.contentLanguage) ?? model.contentLanguage))
                 .lineLimit(1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(model.category == value?.id ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04), in: Capsule())
-                .overlay(Capsule().strokeBorder(model.category == value?.id ? Color.accentColor.opacity(0.25) : .clear))
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .accessibilityAddTraits(model.category == value?.id ? .isSelected : [])
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     private func columns(width: CGFloat) -> [GridItem] {

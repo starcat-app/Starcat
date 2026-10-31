@@ -26,12 +26,17 @@ struct AppSettingsTests {
         preferences.hiddenDiscoverTopics = ["ai"]
         preferences.hiddenDiscoverPlatforms = ["macos"]
         preferences.hiddenWeeklySources = ["weekly", "zread"]
+        preferences.hiddenDailyRadarCategories = ["ai-cli"]
         settings.exploreCatalogPreferences = preferences
         let restored = AppSettings(defaults: defaults)
         #expect(restored.exploreCatalogPreferences == preferences)
         restored.resetListPreferences(login: "dong4j")
         #expect(restored.exploreCatalogPreferences == preferences)
         #expect(preferences.isGroupEnabled("linuxDo"), "Linux.do 不继承普通发现的显隐")
+        #expect(preferences.visibleDailyRadarCategories([
+            .init(id: "ai-cli", title: "AI CLI", period: "daily"),
+            .init(id: "ai-agents", title: "AI Agents", period: "daily")
+        ]).map(\.id) == ["ai-agents"])
         #expect(preferences.weeklyQuerySources(availableCodes: ["weekly", "discovery", "new-source"]) == ["discovery", "new-source"])
     }
 

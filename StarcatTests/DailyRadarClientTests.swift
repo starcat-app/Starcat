@@ -55,11 +55,21 @@ struct DailyRadarClientTests {
         let model = DailyRadarWorkspaceViewModel()
         model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
         await model.reload()
-        #expect(model.edition == "2026-10-29")
+        #expect(model.edition == "2026-10-31")
         #expect(model.items.count == 1)
-        fixture.state.mutate { $0.day = "2026-10-30"; $0.revision = "2" }
+        // 选择历史期次后 reload 是异步身份切换；edition 仍代表旧首屏，
+        // 相邻期次计算必须立即跟随 selectedEdition，支持连续点击导航。
+        model.selectedEdition = "2026-10-29"
+        #expect(model.previousEdition == "2026-10-24")
+        #expect(model.nextEdition == "2026-10-31")
+        fixture.state.mutate {
+            $0.day = "2026-10-30"
+            $0.dates = ["2026-10-30", "2026-10-29", "2026-10-24"]
+            $0.revision = "2"
+        }
         await model.reload(force: true)
-        #expect(model.edition == "2026-10-30")
+        // selectedEdition 已固定历史期次，不能被 latest 指针覆盖。
+        #expect(model.edition == "2026-10-29")
         model.selectedEdition = "2026-10-29"
         await model.reload(force: true)
         #expect(model.edition == "2026-10-29")
@@ -80,6 +90,23 @@ struct DailyRadarClientTests {
         model.configure(repository: fixture.repository, scope: "two", locale: Locale(identifier: "en_US"))
         #expect(model.items.isEmpty)
         #expect(model.detail == nil)
+    }
+
+    @Test @MainActor func adjacentEditionNavigationSkipsUnavailableDates() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        #expect(model.availableDates == Set(["2026-10-31", "2026-10-29", "2026-10-24"]))
+        #expect(model.dates.map(\.date) == ["2026-10-31", "2026-10-29", "2026-10-24"])
+        #expect(model.edition == "2026-10-31")
+        model.selectEarlierEdition()
+        #expect(model.selectedEdition == "2026-10-29")
+        #expect(model.previousEdition == "2026-10-24")
+        model.selectLaterEdition()
+        #expect(model.selectedEdition == "2026-10-31")
+        #expect(model.nextEdition == nil)
     }
 
     @Test func safeMarkdownKeepsTablesAndFoldsWithoutExecutingSourceHTML() {
@@ -170,7 +197,8 @@ struct DailyRadarClientTests {
 /// 同步 URLProtocol 回调使用锁保护状态；每个 host 绑定独立 fixture，不串扰并行测试。
 private final class DailyRadarFixtureState: @unchecked Sendable {
     struct Values {
-        var day = "2026-10-29"
+        var day = "2026-10-31"
+        var dates = ["2026-10-31", "2026-10-29", "2026-10-24"]
         var revision = "1"
         var notModified = false
         var error = false
@@ -227,8 +255,13 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
                 {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)"}
                 """
             } else if path.hasSuffix("/dates") {
+                // joined 已负责去掉最后一个元素后的分隔符，不能再 dropLast，
+                // 否则会截断最后一个日期对象导致 /dates 响应 JSON 非法。
+                let editionJSON = values.dates
+                    .map { "{\"date\":\"\($0)\",\"count\":1}" }
+                    .joined(separator: ",")
                 payload = """
-                {"catalog_revision":"\(values.revision)","dates":[{"date":"\(values.day)","count":1},{"date":"2026-10-29","count":1}],"latest_available_date":"\(values.day)"}
+                {"catalog_revision":"\(values.revision)","dates":[\(editionJSON)],"latest_available_date":"\(values.day)"}
                 """
             } else if path.hasSuffix("/reports") {
                 payload = """
