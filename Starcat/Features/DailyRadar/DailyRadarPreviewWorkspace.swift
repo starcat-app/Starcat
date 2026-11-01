@@ -178,9 +178,11 @@ struct DailyRadarPreviewWorkspace: View {
                                 }
                             }
                         }
-                    } else if model.isLoading && model.items.isEmpty {
-                        // 首屏加载：镜像真实「精选大卡 + 卡片网格」的骨架，
-                        // 配色与动画复用中栏 Repo 卡片骨架的共享组件。
+                    } else if model.isLoading && stories.isEmpty {
+                        // 加载中且没有可展示的本期内容：显示骨架。用 stories 而非
+                        // items 判断——切分类/切期次后 items 虽被 reload 清空，但
+                        // publish 当期缺失（如后端断更）时 items 可能只有往期条目，
+                        // 此时同样应保持骨架而不是闪「暂无匹配专题」。
                         DailyRadarSkeletonView(width: width)
                     } else if !model.failed || !model.items.isEmpty {
                         ContentUnavailableView("dailyRadar.empty", systemImage: "newspaper")
@@ -262,6 +264,8 @@ struct DailyRadarPreviewWorkspace: View {
             }
             // 只有筛选变化才重置首页滚动；打开/关闭阅读不会改变此身份。
             .id(model.identity)
+            // 筛选切换时旧页面淡出、新页面淡入，替代生硬的整树跳变。
+            .transition(reduceMotion ? .identity : .opacity)
             .automaticListPaginationFill(
                 visibleItemCount: olderStories.count, loadedItemCount: model.items.count,
                 hasMore: isHistoryExpanded && model.nextCursor != nil,
@@ -269,6 +273,10 @@ struct DailyRadarPreviewWorkspace: View {
                 identity: model.identity
             ) { await model.loadMore() }
         }
+        // 筛选身份变化（.id 重建）与当期内容到达（骨架→内容、期次切换）都走
+        // 同一套轻量淡入淡出；分页追加不改变这两个值，不受动画影响。
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.identity)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.edition)
     }
 
     private var heading: some View {

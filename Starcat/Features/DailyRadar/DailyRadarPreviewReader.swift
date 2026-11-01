@@ -112,7 +112,9 @@ struct DailyRadarPreviewReader: View {
                                 Button("action.retry", action: retry)
                             }
                         } else {
-                            ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+                            // 正文加载骨架：封面/标题/摘要来自列表即时数据不参与占位，
+                            // 只有等 detail 异步到达的 markdown 正文区用镜像骨架。
+                            DailyRadarReaderSkeleton()
                         }
                     }
                     .frame(maxWidth: DailyRadarReaderLayout.contentMaxWidth(in: availableWidth), alignment: .leading)
@@ -142,6 +144,42 @@ struct DailyRadarPreviewReader: View {
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// 正文加载骨架：镜像日报 markdown「段落 + 榜单表格」的排版节奏，
+/// 配色与 shimmer 复用中栏 Repo 卡片骨架的共享组件
+/// （SkeletonPalette / SkeletonBlock / SkeletonAnimatedPhase，见
+/// SkeletonPlaceholderSupport.swift），保证全 App 骨架观感一致。
+///
+/// 关键约束：
+/// - reduceMotion 时 phase 恒 0（由 SkeletonAnimatedPhase 处理），只剩静态占位。
+/// - 纯展示：accessibilityHidden + 不接收点击，不进入辅助功能树。
+private struct DailyRadarReaderSkeleton: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        SkeletonAnimatedPhase { phase in
+            VStack(alignment: .leading, spacing: 14) {
+                // 引导段三行，末行收窄模拟段尾。
+                SkeletonBlock(height: 13, cornerRadius: 4, phase: phase, palette: palette)
+                SkeletonBlock(height: 13, cornerRadius: 4, phase: phase, phaseOffset: 0.06, palette: palette)
+                SkeletonBlock(height: 13, cornerRadius: 4, phase: phase, phaseOffset: 0.12, palette: palette)
+                    .frame(maxWidth: 340, alignment: .leading)
+                // 日报核心的榜单表格块：整块占位，圆角对齐 markdown 表格容器。
+                SkeletonBlock(height: 132, cornerRadius: 12, phase: phase, phaseOffset: 0.18, palette: palette)
+                SkeletonBlock(height: 13, cornerRadius: 4, phase: phase, phaseOffset: 0.24, palette: palette)
+                SkeletonBlock(height: 13, cornerRadius: 4, phase: phase, phaseOffset: 0.30, palette: palette)
+                    .frame(maxWidth: 260, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, minHeight: 240, alignment: .top)
+        }
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private var palette: SkeletonPalette {
+        SkeletonPalette.forColorScheme(colorScheme)
     }
 }
 

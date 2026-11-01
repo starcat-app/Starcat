@@ -257,6 +257,34 @@ struct DailyRadarClientTests {
         #expect(model.category == "ai-cli")
     }
 
+    @Test @MainActor func switchingCategoryClearsStaleItemsButSameIdentityFailureKeepsContent() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        #expect(!model.items.isEmpty)
+        // 切分类后新身份的首屏加载失败：旧分类残留必须已被清理。残留 items 会
+        // 同时挡住磁盘缓存路径与首屏骨架，让加载窗口只显示「暂无匹配专题」空态。
+        fixture.state.mutate { $0.error = true }
+        model.selectCategory("ai-cli")
+        // SWR：切分类保留旧当期内容与 edition，等缓存/网络无缝替换，不闪骨架。
+        #expect(model.edition == "2026-10-31")
+        await model.reload(force: true)
+        #expect(model.failed)
+        #expect(model.items.isEmpty)
+        #expect(model.edition == nil)
+        // 同身份刷新成功后恢复内容；再次同身份失败则保留已发布内容（SWR，不闪骨架）。
+        fixture.state.mutate { $0.error = false }
+        await model.reload(force: true)
+        #expect(!model.failed)
+        #expect(!model.items.isEmpty)
+        fixture.state.mutate { $0.error = true }
+        await model.reload(force: true)
+        #expect(model.failed)
+        #expect(!model.items.isEmpty)
+    }
+
     @Test func businessDateDoesNotDependOnSystemTimezone() {
         // 英文格式采用用户 Locale，业务时区仍固定为上海，不能显示成 10/27。
         let label = DailyRadarDateFormatting.label("2026-10-28", locale: Locale(identifier: "en_US"))

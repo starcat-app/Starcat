@@ -32,6 +32,8 @@ final class DailyRadarWorkspaceViewModel {
     var scope = ""
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var detailGeneration: UInt64 = 0
+    /// 最近一次 publish 所属的筛选身份；用于识别「当前数据属于旧分类/旧期次」。
+    @ObservationIgnored private var publishedIdentity: String?
     @ObservationIgnored private var repository: DailyRadarRepository?
 
     var categoryPeriod: String { catalog?.categories.first(where: { $0.id == category })?.period ?? "daily" }
@@ -88,12 +90,15 @@ final class DailyRadarWorkspaceViewModel {
         failed = false
     }
 
-    /// 首次先显示磁盘，随后条件重验证；CATALOG_CHANGED 只有限重试一次。
+    /// SWR 时序：身份变化先读磁盘快照，命中即无缝替换（不闪骨架、保留旧内容
+    /// 到新内容就位）；未命中才清空进入骨架态。同身份刷新跳过快照直接网络重验证。
+    /// CATALOG_CHANGED 只有限重试一次。
     func reload(force: Bool = false) async {
         guard let repository else { return }
         generation &+= 1
         let token = generation
         let expectedIdentity = identity
+        let isStaleContent = publishedIdentity != expectedIdentity
         isLoading = true
         isLoadingMore = false
         failed = false
@@ -103,22 +108,34 @@ final class DailyRadarWorkspaceViewModel {
             URLQueryItem(name: "language", value: contentLanguage),
             URLQueryItem(name: "fallback", value: "false")
         ]
-        if items.isEmpty,
-           let cached = await repository.cached(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters) {
-            guard generation == token, identity == expectedIdentity else { return }
-            catalog = cached.value
-            base.catalogRevision = cached.value.catalogRevision
-            base.dateTo = nil
-            if let cachedDates = await repository.cached(DailyRadarDates.self, path: "\(Self.root)/dates", parameters: base.parameters),
-               generation == token, identity == expectedIdentity {
-                base.dateTo = selectedEdition ?? cachedDates.value.latestAvailableDate
-                if
-               let page = await repository.cached(DailyRadarPage.self, path: "\(Self.root)/reports", parameters: base.parameters),
-               cachedDates.value.catalogRevision == page.value.catalogRevision,
-               generation == token, identity == expectedIdentity {
-                publish(catalog: cached.value, dates: cachedDates.value, page: page.value, edition: base.dateTo)
+        // 磁盘快照优先：首次加载与身份切换都尝试命中；同身份手动刷新内容已在屏，
+        // 跳过快照避免无意义的重复解码。
+        if !force || isStaleContent {
+            if let cached = await repository.cached(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters) {
+                guard generation == token, identity == expectedIdentity else { return }
+                catalog = cached.value
+                base.catalogRevision = cached.value.catalogRevision
+                base.dateTo = nil
+                if let cachedDates = await repository.cached(DailyRadarDates.self, path: "\(Self.root)/dates", parameters: base.parameters),
+                   generation == token, identity == expectedIdentity {
+                    base.dateTo = selectedEdition ?? cachedDates.value.latestAvailableDate
+                    if
+                   let page = await repository.cached(DailyRadarPage.self, path: "\(Self.root)/reports", parameters: base.parameters),
+                   cachedDates.value.catalogRevision == page.value.catalogRevision,
+                   generation == token, identity == expectedIdentity {
+                    publish(catalog: cached.value, dates: cachedDates.value, page: page.value, edition: base.dateTo)
+                    }
                 }
             }
+        }
+        // 快照未命中且内容仍属于旧身份：此刻才清空进入骨架态。快照命中时
+        // publish 已无缝替换，不能再清；首次加载本就无内容，清理只是兜底。
+        if publishedIdentity != expectedIdentity {
+            items = []
+            total = 0
+            nextCursor = nil
+            featuredID = nil
+            edition = nil
         }
         for attempt in 0...1 {
             do {
@@ -171,12 +188,14 @@ final class DailyRadarWorkspaceViewModel {
 
     func selectCategory(_ id: String?) {
         category = id
-        edition = nil
         selectedEdition = nil
         // 切换分类即离开当前阅读会话：详情面板必须随列表一起重置，
         // 避免新分类首页之上还浮着旧报告详情。close 内部递增 detailGeneration，
         // 与在途详情拉取天然互斥，晚到响应不会污染新状态。
         close()
+        // edition 有意保留旧值：reload 会先读新分类磁盘缓存，命中即无缝替换
+        // （不闪骨架）；此时旧当期内容继续展示属于 SWR 语义，加载指示由
+        // 刷新按钮承担。缓存未命中时才由 reload 清空进入骨架态。
     }
 
     func selectEarlierEdition() {
@@ -238,5 +257,6 @@ final class DailyRadarWorkspaceViewModel {
         self.nextCursor = page.nextCursor
         self.featuredID = page.featuredID
         self.edition = edition
+        publishedIdentity = identity
     }
 }
