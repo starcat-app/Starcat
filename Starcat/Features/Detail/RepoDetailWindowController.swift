@@ -248,6 +248,9 @@ struct RepoDetailWindowContent: View {
             viewData: viewData,
             starHelpKey: "repo.unstar",
             showsRepoHealthEntry: true,
+            // Issues 入口（2026-11-01）：独立详情窗与主窗 Manage 详情同构开放；
+            // 私有仓库在 Scaffold 内再隐藏。
+            showsIssuesEntry: true,
             onStarTapped: { cleanupScope in
                 // 推荐窗里的 star 点击：本地已 star → 触发 unstar。
                 // StarredRegistry @Observable 变更会自动驱动主窗 list + 主窗 hero

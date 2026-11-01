@@ -542,6 +542,17 @@ enum AppEndpoints {
                 "/orgs/\(organization)/issues"
             }
 
+            /// `GET/POST /repos/{owner}/{repo}/issues` —— 仓库 Issue 列表 / 新建 Issue。
+            /// 与组织 Issue 同一 schema：GitHub 会把 Pull Request 混在列表响应里，
+            /// 端点封装层必须按 `pull_request` 字段排除。
+            static func repoIssues(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)/issues"
+            }
+
+            /// `GET /search/issues` —— Issue 全局搜索（精确计数与关键词兜底共用）。
+            /// 限流独立于普通 REST（登录用户约 30 次/分钟），只允许低频调用。
+            static let searchIssues = "/search/issues"
+
             /// `GET /repos/{owner}/{repo}/security-advisories` —— 仓库安全公告列表。
             ///
             /// Activity PR-3（2026-06-17）：仅扫「最近 30 天有 push」的 starred repo 子集

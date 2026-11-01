@@ -248,6 +248,32 @@ protocol GitHubAPIClientProtocol: Sendable {
         perPage: Int
     ) async throws -> APIResponse<[GitHubOrganizationIssue]>
 
+    // MARK: - Repo Issues（详情页 Issues 浮层，2026-11-01）
+
+    /// 拉取单仓库一页 Issue（`sort=updated`）；实现方必须排除 Pull Request。
+    func repoIssues(
+        owner: String,
+        repo: String,
+        state: GitHubRepoIssueState,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<[GitHubRepoIssue]>
+
+    /// `/search/issues`。`query` 由调用方拼完整限定词（`repo:` + `is:issue` 必须带上）。
+    func searchIssues(
+        query: String,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepoIssueSearchResult>
+
+    /// `POST /repos/{owner}/{repo}/issues`。公开仓 `public_repo` 即可；私仓可能 404。
+    func createRepoIssue(
+        owner: String,
+        repo: String,
+        title: String,
+        body: String?
+    ) async throws -> GitHubRepoIssue
+
     // MARK: - Security Advisories（Activity 公告与关注 PR-3，2026-06-17）
 
     /// 拉取单个仓库的 Security Advisory 列表（可能为空数组）。
@@ -440,6 +466,33 @@ extension GitHubAPIClientProtocol {
         perPage: Int
     ) async throws -> APIResponse<[GitHubOrganizationIssue]> {
         throw NetworkError.clientError(statusCode: 501, message: "Organization Issues is not implemented by this client")
+    }
+
+    func repoIssues(
+        owner: String,
+        repo: String,
+        state: GitHubRepoIssueState,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<[GitHubRepoIssue]> {
+        throw NetworkError.clientError(statusCode: 501, message: "Repo Issues is not implemented by this client")
+    }
+
+    func searchIssues(
+        query: String,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepoIssueSearchResult> {
+        throw NetworkError.clientError(statusCode: 501, message: "Issue search is not implemented by this client")
+    }
+
+    func createRepoIssue(
+        owner: String,
+        repo: String,
+        title: String,
+        body: String?
+    ) async throws -> GitHubRepoIssue {
+        throw NetworkError.clientError(statusCode: 501, message: "Create repo issue is not implemented by this client")
     }
 
     func forkRelation(owner: String, repo: String, restFallback: Bool) async throws -> GitHubForkRelation {

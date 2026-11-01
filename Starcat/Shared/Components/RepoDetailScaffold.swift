@@ -177,6 +177,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// OpenSSF 入口，避免把 Pro 私人功能暴露到公共发现页。
     let showsRepoHealthEntry: Bool
 
+    /// 是否显示「Issues」入口（列表浮层 + 新建 Issue）。
+    ///
+    /// 产品约束（2026-11-01 与 dong4j 确认）：仅星标详情（主窗 Manage + 独立详情窗）开放，
+    /// Trending / Activity / Weekly 不显示。私有仓库在入口处再按 `repo.isPrivate` 隐藏：
+    /// `public_repo` scope 管不到私仓，进了浮层也只会 404。
+    let showsIssuesEntry: Bool
+
     /// Manage 详情传入时展示语言分布分割线；其它详情场景保持 nil，不加载语言数据。
     let onLanguageTapped: ((String) -> Void)?
 
@@ -250,6 +257,14 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
     @State private var proPaywallContext: ProPaywallContext?
 
+    /// Issues 列表浮层展示状态（`showsIssuesEntry` 开启时入口才可见）。
+    @State private var showsIssuesPopover = false
+    /// 新建 Issue Sheet 展示状态。点击「新建」先收起列表浮层，再打开本 Sheet。
+    @State private var showsNewIssueSheet = false
+    /// Issues 浮层数据层。懒创建（首次点击入口时）以拿到 Environment 里的 apiClient；
+    /// 跨浮层开关保活，切换仓库由 `prepare(owner:repo:)` 复位。
+    @State private var repoIssuesVM: RepoIssuesViewModel?
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -301,6 +316,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         showsRepoHealthEntry: Bool = false,
+        showsIssuesEntry: Bool = false,
         onLanguageTapped: ((String) -> Void)? = nil,
         showsContributorsStat: Bool = true,
         topBanner: String? = nil,
@@ -313,6 +329,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
         self.showsRepoHealthEntry = showsRepoHealthEntry
+        self.showsIssuesEntry = showsIssuesEntry
         self.onLanguageTapped = onLanguageTapped
         self.showsContributorsStat = showsContributorsStat
         self.topBanner = topBanner
@@ -328,6 +345,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         showsRepoHealthEntry: Bool = false,
+        showsIssuesEntry: Bool = false,
         onLanguageTapped: ((String) -> Void)? = nil,
         showsContributorsStat: Bool = true,
         topBanner: String? = nil,
@@ -340,6 +358,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             fallbackAccentColor: fallbackAccentColor,
             starHelpKey: starHelpKey,
             showsRepoHealthEntry: showsRepoHealthEntry,
+            showsIssuesEntry: showsIssuesEntry,
             onLanguageTapped: onLanguageTapped,
             showsContributorsStat: showsContributorsStat,
             topBanner: topBanner,
@@ -475,6 +494,16 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 }
             )
         }
+        .sheet(isPresented: $showsNewIssueSheet) {
+            NewIssueSheet(
+                repo: repo,
+                client: dependencies.apiClient,
+                onCreated: { issue in
+                    // 提交成功：VM 重载列表并高亮新 issue；下次打开浮层即生效。
+                    repoIssuesVM?.issueDidCreate(issue)
+                }
+            )
+        }
         .toast(
             message: $detailToastMessage,
             icon: detailToastIcon,
@@ -494,6 +523,10 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             wikiLinks = []
             recommendationVM.clear()
             showsRecommendations = false
+            // 切仓库时收起 Issues 浮层 / 新建 Sheet；VM 保留实例，
+            // 下次打开由 `prepare(owner:repo:)` 复位到新仓库。
+            showsIssuesPopover = false
+            showsNewIssueSheet = false
             aiOverlayTopChromeInset = 0
             libraryState = .outsideLibrary
             isLibraryOperationInFlight = false
@@ -927,6 +960,39 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         }
                     )
                     .appLocaleEnvironment()
+                }
+            }
+            // Issues 入口（2026-11-01）：仅星标详情（showsIssuesEntry）且公开仓库显示。
+            // 位置：推荐之后、知识库之前，避免挤占知识库 / 分享的既有位置。
+            // 未登录点击走登录 sheet（同 Wiki / 推荐按钮模式）；VM 首次点击时创建
+            // （Environment 的 apiClient 只在事件回调里可靠拿到），跨浮层开关保活。
+            if showsIssuesEntry,
+               !repo.isPrivate,
+               !repo.owner.isEmpty,
+               !repo.name.isEmpty {
+                RepoIssuesEntryButton(openIssuesCount: repo.openIssuesCount) {
+                    guard dependencies.authSession.state.isAuthenticated else {
+                        dependencies.authSession.requestLoginSheet()
+                        return
+                    }
+                    if repoIssuesVM == nil {
+                        repoIssuesVM = RepoIssuesViewModel(client: dependencies.apiClient)
+                    }
+                    showsIssuesPopover = true
+                }
+                .popover(isPresented: $showsIssuesPopover, arrowEdge: .bottom) {
+                    if let issuesVM = repoIssuesVM {
+                        RepoIssuesPopover(
+                            repo: repo,
+                            viewModel: issuesVM,
+                            onNewIssue: {
+                                // 设计要求：先收起列表浮层，再打开新建 Sheet。
+                                showsIssuesPopover = false
+                                showsNewIssueSheet = true
+                            }
+                        )
+                        .appLocaleEnvironment()
+                    }
                 }
             }
             if canShowLibraryToggle(for: repo) {

@@ -114,6 +114,8 @@ struct RepoDetailView: View {
                     // 未 star 显示「star」。从 `Repo.isStarred` 直接派生(同 trailingActions)。
                     starHelpKey: repo.isStarred ? "repo.unstar" : "repo.star",
                     showsRepoHealthEntry: ProjectPrivacyPolicy.allowsPublicService(for: repo),
+                    // Issues 入口（2026-11-01）：仅星标详情开放；私有仓库在 Scaffold 内再隐藏。
+                    showsIssuesEntry: true,
                     onLanguageTapped: { language in
                         viewModel.toggleTemporaryLanguageFilterFromDetail(language)
                     },
