@@ -43,11 +43,18 @@ struct GitHubNotificationIssueSummaryButton: View {
             let composerFrame = proxy[composerAnchor]
             let dividerFrame = proxy[dividerAnchor]
             let trailingInset = max(16, proxy.size.width - composerFrame.maxX)
-            // 水平内收保持不变；按钮底边离真实分割线上缘 8pt，不再用输入框推测线的位置。
+            // 按钮右边缘与面板右边缘对齐；底边离真实分割线上缘 8pt，不再用输入框推测线的位置。
             let launcherBottomInset = max(0, proxy.size.height - dividerFrame.minY + 8)
             // 面板底边固定在入口上方，保留 32pt 按钮与两侧各 8pt 的间距。
             let panelBottomInset = max(0, proxy.size.height - dividerFrame.minY + 48)
             ZStack(alignment: .bottomTrailing) {
+                // ESC 关闭面板：keyboardShortcut 走 window 命令层，不要求面板持有焦点
+                // （正文 WebView 通常是 first responder，onExitCommand 收不到）。
+                // 面板未打开时禁用，ESC 落回详情页 handleEscape 的 composer 收起语义。
+                Button(action: dismiss) { EmptyView() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(!isPresented)
+                    .accessibilityHidden(true)
                 GitHubNotificationIssueSummaryResizablePanel(
                     isPresented: isPresented,
                     width: min(420, max(0, proxy.size.width - 32)),
@@ -69,7 +76,7 @@ struct GitHubNotificationIssueSummaryButton: View {
                 .padding(.trailing, trailingInset)
                 .padding(.bottom, panelBottomInset)
                 launcher(session: session)
-                    .padding(.trailing, trailingInset + 12)
+                    .padding(.trailing, trailingInset)
                     .padding(.bottom, launcherBottomInset)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -107,7 +114,15 @@ struct GitHubNotificationIssueSummaryButton: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(isHovered || isPresented ? Color.accentColor : Color.secondary)
                 .frame(width: 32, height: 32)
+                // macOS 26 的 glassEffect 会忽略 legacyMaterial 参数，纯玻璃叠在正文上几乎隐形；
+                // 垫一层随明暗主题的底色并复用面板同款描边，让按钮成为面板的视觉延伸。
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.9), in: Circle())
                 .starcatInteractiveGlassSurface(.thinMaterial, in: Circle())
+                .overlay {
+                    Circle()
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
                 .overlay(alignment: .topTrailing) {
                     if session.isGenerating {
                         Circle()
