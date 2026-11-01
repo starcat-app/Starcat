@@ -70,15 +70,45 @@ struct RepoIssuesWorkspaceViewModelTests {
         #expect(cache.load(repoFullName: "example/repo")?.body == "New input")
     }
 
+    @Test("创建成功后再次新建，第二份草稿仍能保存并在重开后恢复")
+    func secondDraftAfterSuccessfulCreationPersists() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = DiskIssueDraftCache(rootOverride: root)
+        let client = MockGitHubAPIClient()
+        let created = makeIssue(id: 3)
+        client.createRepoIssueHandler = { _, _, _, _ in created }
+        let vm = makeViewModel(draftCache: cache, apiClient: client)
+
+        vm.startCreating()
+        vm.createTitle = "First issue"
+        vm.createBody = "Submitted body"
+        vm.flushCreateDraft()
+        await vm.createIssue()
+        #expect(cache.load(repoFullName: "example/repo") == nil)
+
+        vm.startCreating()
+        #expect(vm.createTitle.isEmpty)
+        vm.createTitle = "Second draft"
+        vm.createBody = "Keep this body"
+        vm.flushCreateDraft()
+        let reopened = makeViewModel(draftCache: DiskIssueDraftCache(rootOverride: root))
+        reopened.startCreating()
+        #expect(reopened.createTitle == "Second draft")
+        #expect(reopened.createBody == "Keep this body")
+    }
+
     /// 每个测试独占状态和依赖，不使用应用数据库或进程级共享 store。
     private func makeViewModel(
         threadRepository: (any GitHubNotificationThreadRepositoryProtocol)? = nil,
-        draftCache: DiskIssueDraftCache? = nil
+        draftCache: DiskIssueDraftCache? = nil,
+        apiClient: (any GitHubAPIClientProtocol)? = nil
     ) -> RepoIssuesWorkspaceViewModel {
         RepoIssuesWorkspaceViewModel(
             repo: makeRepo(),
             listViewModel: RepoIssuesViewModel(client: MockGitHubAPIClient()),
             threadRepository: threadRepository,
+            apiClient: apiClient,
             draftCache: draftCache ?? DiskIssueDraftCache(
                 rootOverride: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             )

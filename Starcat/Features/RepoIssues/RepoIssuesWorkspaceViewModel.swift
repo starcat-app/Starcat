@@ -102,6 +102,8 @@ final class RepoIssuesWorkspaceViewModel {
     }
 
     func startCreating() {
+        // 成功标记只保护刚提交完的清空操作；再次新建必须恢复本轮草稿的保存能力。
+        hasCreatedIssue = false
         loadCreateDraftIfNeeded()
         detailGeneration &+= 1
         paneMode = .create
