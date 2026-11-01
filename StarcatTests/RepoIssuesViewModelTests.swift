@@ -373,6 +373,115 @@ struct RepoIssuesViewModelTests {
 
     // MARK: - 共享缓存（SWR）
 
+    @Test("旧仓库首屏晚到不能覆盖新仓库或污染其共享缓存")
+    func lateFirstPageKeepsRepositoryIdentity() async {
+        let mock = MockGitHubAPIClient()
+        let store = RepoIssuesSharedStore()
+        let gate = RepoIssuesResponseGate<APIResponse<[GitHubRepoIssue]>>()
+        let firstResponse = listResponse([makeIssue(id: 1, number: 1, title: "repo A")])
+        let secondResponse = listResponse([makeIssue(id: 2, number: 2, title: "repo B")])
+        mock.repoIssuesHandler = { _, repo, _, _, _ in
+            if repo == "A" { return try await gate.response() }
+            return secondResponse
+        }
+        let vm = RepoIssuesViewModel(client: mock, store: store)
+        vm.prepare(owner: "example", repo: "A")
+        let oldLoad = Task { await vm.loadFirstPage() }
+        await gate.waitUntilRequested()
+        vm.prepare(owner: "example", repo: "B")
+        await vm.loadFirstPage()
+        await gate.finish(.success(firstResponse))
+        await oldLoad.value
+
+        #expect(vm.issues.first?.title == "repo B")
+        let cached = await store.page(owner: "example", repo: "B", state: .open)
+        #expect(cached?.value.issues.first?.title == "repo B")
+    }
+
+    @Test("旧仓库请求失败不能清空新仓库已加载的数据")
+    func lateFirstPageFailureKeepsNewRepository() async {
+        let mock = MockGitHubAPIClient()
+        let gate = RepoIssuesResponseGate<APIResponse<[GitHubRepoIssue]>>()
+        let current = listResponse([makeIssue(id: 2, number: 2, title: "repo B")])
+        mock.repoIssuesHandler = { _, repo, _, _, _ in
+            if repo == "A" { return try await gate.response() }
+            return current
+        }
+        let vm = RepoIssuesViewModel(client: mock)
+        vm.prepare(owner: "example", repo: "A")
+        let oldLoad = Task { await vm.loadFirstPage() }
+        await gate.waitUntilRequested()
+        vm.prepare(owner: "example", repo: "B")
+        await vm.loadFirstPage()
+        await gate.finish(.failure(NetworkError.notFound))
+        await oldLoad.value
+
+        #expect(vm.issues.first?.title == "repo B")
+        #expect(vm.errorMessage == nil)
+    }
+
+    @Test("旧仓库分页晚到不能追加到新仓库列表")
+    func latePaginationKeepsNewRepository() async {
+        let mock = MockGitHubAPIClient()
+        let gate = RepoIssuesResponseGate<APIResponse<[GitHubRepoIssue]>>()
+        let firstPage = listResponse([makeIssue(id: 1, number: 1, title: "repo A")], nextPage: 2)
+        let oldPage = listResponse([makeIssue(id: 3, number: 3, title: "old next page")])
+        let current = listResponse([makeIssue(id: 2, number: 2, title: "repo B")])
+        mock.repoIssuesHandler = { _, repo, _, page, _ in
+            if repo == "B" { return current }
+            if page == 1 { return firstPage }
+            return try await gate.response()
+        }
+        let vm = RepoIssuesViewModel(client: mock)
+        vm.prepare(owner: "example", repo: "A")
+        await vm.loadFirstPage()
+        let oldLoad = Task { await vm.loadMoreIfNeeded() }
+        await gate.waitUntilRequested()
+        vm.prepare(owner: "example", repo: "B")
+        await vm.loadFirstPage()
+        await gate.finish(.success(oldPage))
+        await oldLoad.value
+
+        #expect(vm.issues.map(\.number) == [2])
+        #expect(!vm.isLoadingMore)
+    }
+
+    @Test("旧仓库计数晚到不能覆盖新仓库或污染其计数缓存")
+    func lateCountsKeepRepositoryIdentity() async {
+        let mock = MockGitHubAPIClient()
+        let store = RepoIssuesSharedStore()
+        let gate = RepoIssuesResponseGate<APIResponse<GitHubRepoIssueSearchResult>>()
+        let oldCount = countResponse(1)
+        let newCount = countResponse(20)
+        mock.searchIssuesHandler = { query, _, _ in
+            if query.contains("repo:example/A") && query.contains("is:open") {
+                return try await gate.response()
+            }
+            return newCount
+        }
+        let vm = RepoIssuesViewModel(client: mock, store: store)
+        vm.prepare(owner: "example", repo: "A")
+        let oldLoad = Task { await vm.refreshCountsIfNeeded() }
+        await gate.waitUntilRequested()
+        vm.prepare(owner: "example", repo: "B")
+        await vm.refreshCountsIfNeeded()
+        await gate.finish(.success(oldCount))
+        await oldLoad.value
+
+        #expect(vm.openCount == 20)
+        #expect(vm.closedCount == 20)
+        let cached = await store.counts(owner: "example", repo: "B")
+        #expect(cached?.value.openCount == 20)
+    }
+
+    private func countResponse(_ count: Int) -> APIResponse<GitHubRepoIssueSearchResult> {
+        APIResponse(
+            value: GitHubRepoIssueSearchResult(totalCount: count, items: []),
+            linkHeader: LinkHeader(nextPage: nil, lastPage: nil),
+            rateLimit: .empty, statusCode: 200, etag: nil
+        )
+    }
+
     private func makeEnvWithStore()
         -> (vm: RepoIssuesViewModel, mock: MockGitHubAPIClient, store: RepoIssuesSharedStore) {
         let mock = MockGitHubAPIClient()
@@ -532,5 +641,29 @@ struct RepoIssuesViewModelTests {
         let writtenBack = await staleStore.counts(owner: "starcat-app", repo: "Starcat")
         #expect(writtenBack?.value.openCount == 99)
         #expect(writtenBack?.value.closedCount == 98)
+    }
+}
+
+/// 用 continuation 固定响应顺序；请求可以忽略取消，确保 VM 自身的身份守卫真正生效。
+private actor RepoIssuesResponseGate<Value: Sendable> {
+    private var requested = false
+    private var requestWaiter: CheckedContinuation<Void, Never>?
+    private var responseWaiter: CheckedContinuation<Value, Error>?
+
+    func waitUntilRequested() async {
+        if requested { return }
+        await withCheckedContinuation { requestWaiter = $0 }
+    }
+
+    func response() async throws -> Value {
+        requested = true
+        requestWaiter?.resume()
+        requestWaiter = nil
+        return try await withCheckedThrowingContinuation { responseWaiter = $0 }
+    }
+
+    func finish(_ result: Result<Value, Error>) {
+        responseWaiter?.resume(with: result)
+        responseWaiter = nil
     }
 }

@@ -90,7 +90,10 @@ final class RepoIssuesViewModel {
     private let perPage = 30
     private var currentPage = 0
     private var nextPage: Int?
-    private var listTask: Task<Void, Never>?
+    /// 仓库与列表各自保留版本，A → B → A 也不能接回第一次 A 的在途响应。
+    private var repositoryGeneration: UInt64 = 0
+    private var listGeneration: UInt64 = 0
+    private var searchGeneration: UInt64 = 0
     private var searchDebounceTask: Task<Void, Never>?
     private var highlightClearTask: Task<Void, Never>?
 
@@ -117,7 +120,7 @@ final class RepoIssuesViewModel {
     // MARK: - 列表加载
 
     func loadFirstPageIfNeeded() async {
-        guard issues.isEmpty, !isLoading, listTask == nil else { return }
+        guard issues.isEmpty, !isLoading else { return }
         // SWR：共享缓存命中即渲染（含过期），过期后台校准；未命中才走网络首屏。
         if await applyCachedPageIfAvailable(for: stateFilter) { return }
         await loadFirstPage()
@@ -127,35 +130,39 @@ final class RepoIssuesViewModel {
     /// 失败时保留缓存数据，不清空不报错（区别于首次加载的失败提示）。
     func loadFirstPage(isRevalidation: Bool = false) async {
         guard !owner.isEmpty, !repoName.isEmpty else { return }
+        let requestedOwner = owner
+        let requestedRepo = repoName
         let requestedState = stateFilter
-        listTask?.cancel()
+        listGeneration &+= 1
+        let generation = listGeneration
         isLoading = true
+        isLoadingMore = false
         errorMessage = nil
         defer {
-            isLoading = false
-            listTask = nil
+            if listGeneration == generation { isLoading = false }
         }
         do {
             let response = try await client.repoIssues(
-                owner: owner,
-                repo: repoName,
+                owner: requestedOwner,
+                repo: requestedRepo,
                 state: requestedState,
                 page: 1,
                 perPage: perPage
             )
-            // 结果对请求时的状态永远有效，先回写共享缓存（即使用户已切走，别的窗口还能用）。
+            guard listGeneration == generation, !Task.isCancelled else { return }
+            // 回写固定的请求仓库；await store 期间仍可能切仓库，不能读取可变 owner/repoName。
             await store.storePage(
                 RepoIssuesPageSnapshot(
                     issues: response.value,
                     nextPage: response.linkHeader.nextPage,
                     fetchedAt: Date()
                 ),
-                owner: owner,
-                repo: repoName,
+                owner: requestedOwner,
+                repo: requestedRepo,
                 state: requestedState
             )
-            // 等待期间用户可能已切到另一状态：过期响应只进缓存，不再覆盖当前 UI。
-            guard stateFilter == requestedState else { return }
+            // 缓存写入也会挂起，回到 UI 前必须再次确认请求仍属于当前列表。
+            guard listGeneration == generation else { return }
             issues = response.value
             currentPage = 1
             nextPage = response.linkHeader.nextPage
@@ -163,8 +170,9 @@ final class RepoIssuesViewModel {
         } catch is CancellationError {
             return
         } catch {
+            guard listGeneration == generation, !Task.isCancelled else { return }
             AppLog.network.error(
-                "Repo issues: first page failed repo=\(self.owner)/\(self.repoName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "Repo issues: first page failed repo=\(requestedOwner)/\(requestedRepo, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
             if isRevalidation {
                 // SWR 后台校准失败：保留已展示的缓存数据，不打断浏览也不弹错误。
@@ -178,16 +186,21 @@ final class RepoIssuesViewModel {
 
     func loadMoreIfNeeded() async {
         guard hasMore, !isLoading, !isLoadingMore, let page = nextPage else { return }
+        let requestedOwner = owner
+        let requestedRepo = repoName
+        let requestedState = stateFilter
+        let generation = listGeneration
         isLoadingMore = true
-        defer { isLoadingMore = false }
+        defer { if listGeneration == generation { isLoadingMore = false } }
         do {
             let response = try await client.repoIssues(
-                owner: owner,
-                repo: repoName,
-                state: stateFilter,
+                owner: requestedOwner,
+                repo: requestedRepo,
+                state: requestedState,
                 page: page,
                 perPage: perPage
             )
+            guard listGeneration == generation, !Task.isCancelled else { return }
             // 去重保护：GitHub 翻页期间 issue 被 update 会导致跨页重复。
             let knownIDs = Set(issues.map(\.id))
             issues.append(contentsOf: response.value.filter { !knownIDs.contains($0.id) })
@@ -197,6 +210,7 @@ final class RepoIssuesViewModel {
         } catch is CancellationError {
             return
         } catch {
+            guard listGeneration == generation, !Task.isCancelled else { return }
             AppLog.network.error(
                 "Repo issues: load more failed page=\(page) error=\(error.localizedDescription, privacy: .public)"
             )
@@ -209,6 +223,13 @@ final class RepoIssuesViewModel {
 
     func setStateFilter(_ newState: GitHubRepoIssueState) {
         guard stateFilter != newState else { return }
+        // 同步失效旧请求，不能等异步缓存查询结束后才切断旧分页 / 搜索回调。
+        listGeneration &+= 1
+        searchGeneration &+= 1
+        searchDebounceTask?.cancel()
+        isLoading = false
+        isLoadingMore = false
+        isRemoteSearching = false
         stateFilter = newState
         remoteSearchResults = nil
         remoteSearchErrorMessage = nil
@@ -218,8 +239,9 @@ final class RepoIssuesViewModel {
     /// 切换筛选：命中共享缓存即时渲染；未命中才清空旧状态列表走网络，
     /// 避免上一状态的行串进新筛选（清空后由骨架接管）。
     private func loadFirstPageForNewState(_ newState: GitHubRepoIssueState) async {
+        let generation = repositoryGeneration
         if await applyCachedPageIfAvailable(for: newState) { return }
-        guard stateFilter == newState else { return }
+        guard repositoryGeneration == generation, stateFilter == newState else { return }
         issues = []
         currentPage = 0
         nextPage = nil
@@ -229,9 +251,11 @@ final class RepoIssuesViewModel {
 
     /// 用共享缓存快照立即渲染；已过期时顺带后台校准。返回是否命中。
     private func applyCachedPageIfAvailable(for state: GitHubRepoIssueState) async -> Bool {
-        guard let cached = await store.page(owner: owner, repo: repoName, state: state) else {
-            return false
-        }
+        let generation = listGeneration
+        let cached = await store.page(owner: owner, repo: repoName, state: state)
+        // 已离开这个筛选也视为处理完毕，防止调用方继续替新仓库发出旧任务的请求。
+        guard listGeneration == generation, stateFilter == state, !Task.isCancelled else { return true }
+        guard let cached else { return false }
         issues = cached.value.issues
         currentPage = 1
         nextPage = cached.value.nextPage
@@ -245,6 +269,8 @@ final class RepoIssuesViewModel {
     /// 搜索框变化：客户端过滤即时生效；过滤为空且有关键词 → debounce 后远程兜底。
     func searchTextChanged() {
         searchDebounceTask?.cancel()
+        searchGeneration &+= 1
+        isRemoteSearching = false
         let query = normalizedSearchText
         if query.isEmpty {
             remoteSearchResults = nil
@@ -262,26 +288,30 @@ final class RepoIssuesViewModel {
 
     private func runRemoteSearch(query: String) async {
         guard !query.isEmpty else { return }
+        let requestedOwner = owner
+        let requestedRepo = repoName
+        let requestedState = stateFilter
+        let generation = searchGeneration
         isRemoteSearching = true
         remoteSearchErrorMessage = nil
-        defer { isRemoteSearching = false }
+        defer { if searchGeneration == generation { isRemoteSearching = false } }
         do {
             let response = try await client.searchIssues(
-                query: Self.searchQuery(owner: owner, repo: repoName, state: stateFilter, keyword: query),
+                query: Self.searchQuery(owner: requestedOwner, repo: requestedRepo, state: requestedState, keyword: query),
                 page: 1,
                 perPage: perPage
             )
             // 兜底结果可能已经过期（用户又改了关键词 / 换了筛选），只在仍匹配当前输入时落地。
-            guard normalizedSearchText == query else { return }
+            guard searchGeneration == generation, normalizedSearchText == query, !Task.isCancelled else { return }
             remoteSearchResults = response.value.items
             remoteSearchTotalCount = response.value.totalCount
         } catch is CancellationError {
             return
         } catch {
+            guard searchGeneration == generation, normalizedSearchText == query, !Task.isCancelled else { return }
             AppLog.network.warning(
-                "Repo issues: remote search failed repo=\(self.owner)/\(self.repoName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "Repo issues: remote search failed repo=\(requestedOwner)/\(requestedRepo, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
-            guard normalizedSearchText == query else { return }
             remoteSearchResults = nil
             remoteSearchErrorMessage = Self.listErrorMessage(error)
         }
@@ -291,7 +321,10 @@ final class RepoIssuesViewModel {
     func refreshCountsIfNeeded() async {
         guard openCount == nil && closedCount == nil, !isCountLoading else { return }
         guard !owner.isEmpty, !repoName.isEmpty else { return }
-        if let cached = await store.counts(owner: owner, repo: repoName) {
+        let generation = repositoryGeneration
+        let cached = await store.counts(owner: owner, repo: repoName)
+        guard repositoryGeneration == generation, !Task.isCancelled else { return }
+        if let cached {
             openCount = cached.value.openCount
             closedCount = cached.value.closedCount
             guard cached.isStale else { return }
@@ -301,21 +334,25 @@ final class RepoIssuesViewModel {
 
     /// Search API 拉双计数并回写共享缓存；失败保持 nil（UI 只显示文字），下次打开重试。
     private func fetchCounts() async {
+        let requestedOwner = owner
+        let requestedRepo = repoName
+        let generation = repositoryGeneration
         isCountLoading = true
-        defer { isCountLoading = false }
+        defer { if repositoryGeneration == generation { isCountLoading = false } }
         async let openResponse = try? client.searchIssues(
-            query: Self.searchQuery(owner: owner, repo: repoName, state: .open, keyword: nil),
+            query: Self.searchQuery(owner: requestedOwner, repo: requestedRepo, state: .open, keyword: nil),
             page: 1,
             perPage: 1
         )
         async let closedResponse = try? client.searchIssues(
-            query: Self.searchQuery(owner: owner, repo: repoName, state: .closed, keyword: nil),
+            query: Self.searchQuery(owner: requestedOwner, repo: requestedRepo, state: .closed, keyword: nil),
             page: 1,
             perPage: 1
         )
         let (open, closed) = await (openResponse, closedResponse)
-        openCount = open?.value.totalCount
-        closedCount = closed?.value.totalCount
+        guard repositoryGeneration == generation, !Task.isCancelled else { return }
+        let openCount = open?.value.totalCount
+        let closedCount = closed?.value.totalCount
         if let openCount, let closedCount {
             await store.storeCounts(
                 RepoIssuesCountSnapshot(
@@ -323,10 +360,13 @@ final class RepoIssuesViewModel {
                     closedCount: closedCount,
                     fetchedAt: Date()
                 ),
-                owner: owner,
-                repo: repoName
+                owner: requestedOwner,
+                repo: requestedRepo
             )
         }
+        guard repositoryGeneration == generation else { return }
+        self.openCount = openCount
+        self.closedCount = closedCount
     }
 
     // MARK: - 新建 Issue
@@ -349,8 +389,11 @@ final class RepoIssuesViewModel {
     // MARK: - 私有工具
 
     private func reset() {
-        listTask?.cancel()
+        repositoryGeneration &+= 1
+        listGeneration &+= 1
+        searchGeneration &+= 1
         searchDebounceTask?.cancel()
+        highlightClearTask?.cancel()
         issues = []
         currentPage = 0
         nextPage = nil
@@ -366,6 +409,7 @@ final class RepoIssuesViewModel {
         remoteSearchErrorMessage = nil
         openCount = nil
         closedCount = nil
+        isCountLoading = false
         highlightIssueNumber = nil
     }
 
