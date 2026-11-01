@@ -90,6 +90,9 @@ struct SidebarView: View {
     @State private var explorePlatformsExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
     @State private var activityCategoriesExpanded: Bool = true
+    /// 日报来源品牌 logo 的选中态判断；与 `LanguageIconView` 的白底托盘同口径。
+    @Environment(\.backgroundProminence) private var sidebarBackgroundProminence
+    @Environment(\.colorScheme) private var sidebarColorScheme
 
     @Binding var selectedPage: SidebarRootPage
     @Binding var selectedExploreMode: ExploreMode
@@ -1075,10 +1078,14 @@ struct SidebarView: View {
     private func dailyRadarCategoryRow(_ category: DailyRadarCatalog.Category?) -> some View {
         let id = category?.id
         return exploreSelectableRow(selection: .dailyRadarCategory(id), count: nil) {
-            exploreSidebarSystemIcon(
-                dailyRadarCategorySystemImage(for: id),
-                color: .secondary
-            )
+            if let id, let brandAssetName = dailyRadarBrandAssetName(for: id) {
+                dailyRadarBrandIcon(assetName: brandAssetName)
+            } else {
+                exploreSidebarSystemIcon(
+                    dailyRadarCategorySystemImage(for: id),
+                    color: .secondary
+                )
+            }
         } title: {
             if let category {
                 Text(verbatim: category.title)
@@ -1091,21 +1098,56 @@ struct SidebarView: View {
     }
 
     /// 服务端分类 ID 当前稳定；未知动态分类保留通用图标，避免后端扩展造成空图标。
+    /// 有品牌 logo 的来源（ai-hn / ai-ph / ai-arxiv / ai-hf）不走本表，
+    /// 在 `dailyRadarBrandAssetName` 里解析为彩色资产。图标语义对齐服务端
+    /// `dailyradar` 目录命名（AI Official = 官方公告，AI Open Source = 开源项目分支），
+    /// Community / Archive 选窄符号避免行宽抖动。
     private func dailyRadarCategorySystemImage(for id: String?) -> String {
         switch id {
         case nil: return "square.grid.2x2"
         case "ai-cli": return "terminal"
         case "ai-agents": return "person.2"
         case "ai-infra": return "server.rack"
-        case "ai-web": return "safari"
-        case "ai-trending": return "chart.line.uptrend.xyaxis"
-        case "ai-hn": return "bubble.left.and.bubble.right"
-        case "ai-ph": return "rocket"
-        case "ai-arxiv": return "doc.text.magnifyingglass"
-        case "ai-hf": return "brain"
-        case "ai-community": return "person.3"
+        case "ai-web": return "megaphone"
+        case "ai-trending": return "arrow.triangle.branch"
+        case "ai-community": return "text.bubble"
+        case "ai-weekly": return "newspaper"
+        case "ai-monthly": return "archivebox"
         default: return "circle.fill"
         }
+    }
+
+    /// 有官方 logo 的日报来源改用品牌彩色图标：HN / Product Hunt / arXiv / Hugging Face
+    /// 的方形或字母形 SF Symbol 近似图辨识度差，彩色品牌 mark 一眼可认。
+    /// 素材放在 `WeeklySources`（与周刊来源共用），Simple Icons（CC0）矢量已登记开源致谢。
+    private func dailyRadarBrandAssetName(for id: String) -> String? {
+        switch id {
+        case "ai-hn": return "WeeklySources/hackernews"
+        case "ai-ph": return "WeeklySources/producthunt"
+        case "ai-arxiv": return "WeeklySources/arxiv"
+        case "ai-hf": return "WeeklySources/huggingface"
+        default: return nil
+        }
+    }
+
+    /// 品牌来源 logo：14pt 画布与「发现」语言 Devicon 同尺寸；选中蓝底不反白
+    /// （反白会丢品牌色），沿用 `LanguageIconView` 的白底托盘把彩色 logo「托」出来。
+    private func dailyRadarBrandIcon(assetName: String) -> some View {
+        let canvas: CGFloat = 14
+        let needsPedestal = sidebarBackgroundProminence == .increased && sidebarColorScheme == .light
+        let logoSize: CGFloat = needsPedestal ? max(canvas - 3, canvas * 0.72) : canvas
+        return ZStack {
+            if needsPedestal {
+                Circle()
+                    .fill(Color.white)
+            }
+            Image(assetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: logoSize, height: logoSize)
+        }
+        .frame(width: canvas, height: canvas)
+        .accessibilityHidden(true)
     }
 
     /// 洞察主题继续使用系统 Sidebar selection，不手绘选中背景。

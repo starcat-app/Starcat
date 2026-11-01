@@ -1016,6 +1016,12 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/devicons/devicon")
         ),
         AboutDependency(
+            name: "Simple Icons",
+            license: "CC0 1.0",
+            copyright: "Copyright (c) Simple Icons contributors",
+            url: URL(string: "https://github.com/simple-icons/simple-icons")
+        ),
+        AboutDependency(
             name: "GitHub Linguist",
             license: "MIT",
             copyright: "Copyright (c) 2017 GitHub, Inc.",
