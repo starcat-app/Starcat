@@ -14,6 +14,8 @@ Release notes for the Mac App Store edition of Starcat.
 - Daily Radar: A new reading workspace for daily reports, browsable by topic categories with edition calendar navigation, per-category badges, and source branding; reports follow the app language.
 - Summary replay: Successful issue summaries are saved locally, so reopening the same issue after relaunch replays the summary and shows when it was generated.
 - Explore & Weekly source filters: Filter explore categories and Weekly by source preference, remembered across restarts.
+- Issues popover: Browse a repository's issues from the detail header with search by title or number, open/closed filters, scroll pagination, and precise non-PR counts, with one-tap access on GitHub.
+- Create issues: Submit new issues from the popover with an auto-focused title, Markdown editing and preview, and per-repo drafts that survive relaunch.
 
 ### Improvements
 
@@ -24,12 +26,14 @@ Release notes for the Mac App Store edition of Starcat.
 - Business icons: Insights icons now match the main window, while similar-repository recommendations, embedding models, and CodeFlow are easier to distinguish.
 - Background task overview: Expand the status panel's task list to see each task's state and available workspace links or stop controls; idle cards are disabled and no longer open tag organization.
 - Background organization entry: After closing repository grouping or tag organization, the middle column keeps showing the current phase and processed counts, with direct access to the task or results.
-- Localized organization status: Task states and actions cover all 18 interface languages, stay on one line in narrow columns, and show their full text on hover.
+- Localized organization status: Task states and actions cover all 17 interface languages, stay on one line in narrow columns, and show their full text on hover.
 - License filter chips: Match sidebar tags with wrapping, content-sized height, and bounded scrolling; colors distinguish license obligation types, with full names and category notes on hover.
 - Summary panel polish: The launcher button highlights existing summaries in blue, the panel closes with Esc, and body scrolling no longer collides with the scrollbar.
 - File download window: The toolbar uses the repository owner's avatar with type-specific file icons.
 - Awesome source manager: The canvas keeps a fixed size, so operations no longer shift the layout.
 - Awesome sort menu: Shares the unified menu styling with other middle-column lists.
+- License card: License badges in repository details and search now share one obligation-colored card listing rights and duties, with the official reference a tap away.
+- Language support: Removes the Arabic interface language; the other 17 languages remain fully localized.
 
 ### Fixes
 
