@@ -187,6 +187,49 @@ struct RepoIssuesAPITests {
         #expect(result.value.items.first?.number == 7)
     }
 
+    @Test("连续纯 PR 页会继续读取到 Issue，并保留实际下一页游标")
+    func skipsPullRequestOnlyPages() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            let page = query?.first(where: { $0.name == "page" })?.value ?? "1"
+            let nextPage = page == "1" ? 2 : page == "2" ? 3 : 4
+            let headers = ["Link": "<https://api.test.invalid/repos/example/repo/issues?page=\(nextPage)>; rel=\"next\""]
+            let body = page == "3" ? self.issueListJSON : self.pullRequestOnlyJSON
+            return (self.response(200, url: request.url!, headers: headers), body)
+        }
+
+        let result = try await client.repoIssues(owner: "example", repo: "repo", state: .open, page: 1, perPage: 30)
+
+        #expect(result.value.map(\.number) == [12, 13])
+        #expect(result.linkHeader.nextPage == 4)
+        #expect(URLProtocolStub.receivedRequests.count == 3)
+    }
+
+    @Test("只有 PR 且到达末页时才返回真正的空 Issue 列表")
+    func pullRequestOnlyLastPageEndsPagination() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            let page = query?.first(where: { $0.name == "page" })?.value
+            let headers = page == "1"
+                ? ["Link": "<https://api.test.invalid/repos/example/repo/issues?page=2>; rel=\"next\""]
+                : [:]
+            return (self.response(200, url: request.url!, headers: headers), self.pullRequestOnlyJSON)
+        }
+
+        let result = try await client.repoIssues(owner: "example", repo: "repo", state: .open, page: 1, perPage: 30)
+
+        #expect(result.value.isEmpty)
+        #expect(result.linkHeader.nextPage == nil)
+        #expect(URLProtocolStub.receivedRequests.count == 2)
+    }
+
+    /// 最小的纯 PR 原始响应，保留真实端点会返回的 pull_request 标识。
+    private var pullRequestOnlyJSON: Data {
+        Data(#"[{"id":1003,"number":14,"title":"Pull request","state":"open","html_url":"https://github.com/example/repo/pull/14","labels":[],"comments":0,"pull_request":{}}]"#.utf8)
+    }
+
     @Test("新建 Issue 走 POST 到仓库 issues 路径并解析返回的 issue")
     func createPostsAndParses() async throws {
         let client = makeClient()

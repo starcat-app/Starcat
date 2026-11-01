@@ -56,7 +56,7 @@ struct GitHubRepoIssueSearchResult: Equatable, Sendable {
 extension GitHubAPIClient {
 
     /// 拉取单仓库一页 Issue。`sort=updated&direction=desc` 与浮层「按最新更新」展示一致；
-    /// 分页由调用方跟随返回的 `linkHeader.nextPage` 继续。
+    /// 纯 PR 页会在边界内继续读取，分页由调用方跟随最终返回的 `linkHeader.nextPage` 继续。
     func repoIssues(
         owner: String,
         repo: String,
@@ -67,25 +67,35 @@ extension GitHubAPIClient {
         precondition(page >= 1, "page must be >= 1")
         precondition(perPage >= 1 && perPage <= 100, "perPage must be in [1, 100]")
 
-        let response: APIResponse<[GitHubRepoIssueDTO]> = try await get(
-            path: AppEndpoints.GitHubREST.Paths.repoIssues(owner: owner, repo: repo),
-            queryItems: [
-                URLQueryItem(name: "state", value: state.rawValue),
-                URLQueryItem(name: "sort", value: "updated"),
-                URLQueryItem(name: "direction", value: "desc"),
-                URLQueryItem(name: "page", value: String(page)),
-                URLQueryItem(name: "per_page", value: String(perPage))
-            ]
-        )
+        var requestedPage = page
+        while true {
+            try Task.checkCancellation()
+            let response: APIResponse<[GitHubRepoIssueDTO]> = try await get(
+                path: AppEndpoints.GitHubREST.Paths.repoIssues(owner: owner, repo: repo),
+                queryItems: [
+                    URLQueryItem(name: "state", value: state.rawValue),
+                    URLQueryItem(name: "sort", value: "updated"),
+                    URLQueryItem(name: "direction", value: "desc"),
+                    URLQueryItem(name: "page", value: String(requestedPage)),
+                    URLQueryItem(name: "per_page", value: String(perPage))
+                ]
+            )
 
-        let issues = response.value.compactMap(Self.repoIssue(from:))
-        return APIResponse(
-            value: issues,
-            linkHeader: response.linkHeader,
-            rateLimit: response.rateLimit,
-            statusCode: response.statusCode,
-            etag: response.etag
-        )
+            let issues = response.value.compactMap(Self.repoIssue(from:))
+            // GitHub 的一页可能全是 PR。若把过滤后的空页交给 UI，就没有 Issue 行
+            // 能触发下一次分页，只能错误显示空仓库；必须读到 Issue 或真正的末页。
+            if issues.isEmpty, let nextPage = response.linkHeader.nextPage, nextPage > requestedPage {
+                requestedPage = nextPage
+                continue
+            }
+            return APIResponse(
+                value: issues,
+                linkHeader: response.linkHeader,
+                rateLimit: response.rateLimit,
+                statusCode: response.statusCode,
+                etag: response.etag
+            )
+        }
     }
 
     /// `/search/issues`。`query` 由调用方拼完整限定词（`repo:owner/name is:issue is:open ...`），

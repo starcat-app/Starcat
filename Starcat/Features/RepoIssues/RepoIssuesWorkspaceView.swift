@@ -271,7 +271,7 @@ struct RepoIssuesWorkspaceContent: View {
                             hasMore: viewModel.listViewModel.hasMore,
                             isLoading: viewModel.listViewModel.isLoading
                                 || viewModel.listViewModel.isLoadingMore,
-                            identity: "repo-issues-\(viewModel.repo.fullName)"
+                            identity: "repo-issues-\(viewModel.repo.fullName)|\(viewModel.listViewModel.stateFilter.rawValue)|\(viewModel.listViewModel.normalizedSearchText)"
                         ) {
                             await viewModel.listViewModel.loadMoreIfNeeded()
                         }
