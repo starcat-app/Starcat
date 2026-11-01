@@ -1096,7 +1096,7 @@ struct SidebarView: View {
             }
         } title: {
             if let category {
-                Text(verbatim: category.title)
+                Text(verbatim: category.localizedTitle)
                     .lineLimit(1)
             } else {
                 Text("dailyRadar.allTopics")

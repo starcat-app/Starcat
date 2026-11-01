@@ -59,6 +59,42 @@ struct DailyRadarCatalog: Decodable, Sendable {
     }
 }
 
+extension DailyRadarCatalog.Category {
+
+    /// 分类展示名：按 id 走 Catalog（`dailyRadar.category.<id>`），未收录 id 回退
+    /// 服务端 title。服务端 title 只有英文基准（weekly-api `Categories` 表），
+    /// 各语言文案由客户端 Catalog 提供。
+    var localizedTitle: String {
+        Self.localizedTitle(for: id, fallback: title)
+    }
+
+    /// 只有分类 id 的场景（如 `DailyRadarReport.category`）用这个；
+    /// id 未收录时回退 fallback，调用方不传则显示 id 原文（与旧行为一致）。
+    static func localizedTitle(for id: String, fallback: String? = nil) -> String {
+        String.l10n("dailyRadar.category.\(id)", defaultValue: fallback ?? id)
+    }
+}
+
+/// 设置页在本地还没有 catalog 缓存时的静态回退清单；
+/// 与 weekly-api `internal/dailyradar/model.go` 的 `Categories` 单一信任源同步维护，
+/// 后端新增分类时这里同步补一条（设置区先展示，首次拉取后以服务端为准）。
+extension DailyRadarCatalog {
+    static let fallbackCategories: [Category] = [
+        .init(id: "ai-cli", title: "AI CLI", period: "daily"),
+        .init(id: "ai-agents", title: "AI Agents", period: "daily"),
+        .init(id: "ai-infra", title: "AI Infrastructure", period: "daily"),
+        .init(id: "ai-web", title: "AI Official", period: "daily"),
+        .init(id: "ai-trending", title: "AI Open Source", period: "daily"),
+        .init(id: "ai-hn", title: "Hacker News", period: "daily"),
+        .init(id: "ai-ph", title: "Product Hunt", period: "daily"),
+        .init(id: "ai-arxiv", title: "ArXiv", period: "daily"),
+        .init(id: "ai-hf", title: "Hugging Face", period: "weekly"),
+        .init(id: "ai-community", title: "Community", period: "daily"),
+        .init(id: "ai-weekly", title: "AI Weekly Archive", period: "weekly"),
+        .init(id: "ai-monthly", title: "AI Monthly Archive", period: "monthly"),
+    ]
+}
+
 struct DailyRadarDates: Decodable, Sendable {
     struct Edition: Decodable, Sendable, Identifiable {
         let date: String

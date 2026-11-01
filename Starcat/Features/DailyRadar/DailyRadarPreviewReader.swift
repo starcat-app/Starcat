@@ -52,7 +52,7 @@ struct DailyRadarPreviewReader: View {
                     VStack(alignment: .leading, spacing: 28) {
                         VStack(alignment: .leading, spacing: 16) {
                             HStack(spacing: 10) {
-                                Text(verbatim: story.category)
+                                Text(verbatim: DailyRadarCatalog.Category.localizedTitle(for: story.category))
                                 Text("·")
                                 Text(verbatim: DailyRadarDateFormatting.label(story.editionDate, locale: locale))
                             }

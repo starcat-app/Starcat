@@ -60,7 +60,7 @@ struct DailyRadarStoryCard: View {
 
                 if !featured {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(verbatim: story.category)
+                        Text(verbatim: DailyRadarCatalog.Category.localizedTitle(for: story.category))
                             .font(scale.font(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

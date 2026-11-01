@@ -176540,6 +176540,258 @@
         }
       }
     },
+    "dailyRadar.category.ai-agents" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "OpenClaw" } }
+      }
+    },
+    "dailyRadar.category.ai-arxiv" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "ArXiv" } }
+      }
+    },
+    "dailyRadar.category.ai-cli" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI-Tools" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "AI CLI" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Herramientas CLI" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Outils CLI" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Alat CLI" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Strumenti CLI" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI ツール" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI 도구" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI-tools" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Narzędzia CLI" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ferramentas de CLI" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI-инструменты" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI araçları" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI-інструменти" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Công cụ CLI" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI 工具" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "CLI 工具" } }
+      }
+    },
+    "dailyRadar.category.ai-community" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Tech-Community" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Community" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Comunidad tech" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Communauté tech" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Komunitas teknologi" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Comunità tech" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "テックコミュニティ" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "테크 커뮤니티" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Tech-community" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Społeczności techniczne" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Comunidade tech" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Tech-сообщества" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Teknoloji toplulukları" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Tech-спільноти" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Cộng đồng công nghệ" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "技术社区" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "技術社區" } }
+      }
+    },
+    "dailyRadar.category.ai-hf" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Hugging Face" } }
+      }
+    },
+    "dailyRadar.category.ai-hn" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Hacker News" } }
+      }
+    },
+    "dailyRadar.category.ai-infra" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Infrastruktur" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "AI Infrastructure" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Infraestructura" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Infrastructure" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Infrastruktur" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Infrastruttura" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "インフラ" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "인프라" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Infrastructuur" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Infrastruktura" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Infraestrutura" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Инфраструктура" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Altyapı" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Інфраструктура" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hạ tầng" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "基础设施" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "基礎設施" } }
+      }
+    },
+    "dailyRadar.category.ai-monthly" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Monatsrückblick" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "AI Monthly Archive" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Resumen mensual" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Revue mensuelle" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Rangkuman bulanan" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Rassegna mensile" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "月間レポート" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "월간 리포트" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Maandoverzicht" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Przegląd miesiąca" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Resumo mensal" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Месячный дайджест" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Aylık bülten" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Місячний огляд" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tổng hợp tháng" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "生态月报" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "生態月報" } }
+      }
+    },
+    "dailyRadar.category.ai-ph" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Product Hunt" } }
+      }
+    },
+    "dailyRadar.category.ai-trending" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Open-Source-Trends" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "AI Open Source" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Tendencias open source" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Tendances open source" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tren open source" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Trend open source" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "オープンソース動向" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "오픈소스 트렌드" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Open-sourcetrends" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Trendy open source" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Tendências de open source" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Тренды открытого кода" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Açık kaynak trendleri" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Тренди відкритого коду" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xu hướng mã nguồn mở" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "开源趋势" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "開源趨勢" } }
+      }
+    },
+    "dailyRadar.category.ai-web" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Offizielle Berichte" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "AI Official" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Informes oficiales" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Rapports officiels" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Laporan resmi" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Report ufficiali" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "公式レポート" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "공식 보고서" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Officiële rapporten" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Oficjalne raporty" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Relatórios oficiais" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Официальные отчёты" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Resmi raporlar" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Офіційні звіти" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Báo cáo chính thức" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "官方报告" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "官方報告" } }
+      }
+    },
+    "dailyRadar.category.ai-weekly" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Wochenrückblick" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "AI Weekly Archive" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Resumen semanal" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Revue hebdomadaire" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Rangkuman mingguan" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Rassegna settimanale" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "週間レポート" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "주간 리포트" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Weekoverzicht" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Przegląd tygodnia" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Resumo semanal" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Недельный дайджест" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Haftalık bülten" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Тижневий огляд" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tổng hợp tuần" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "生态周报" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "生態週報" } }
+      }
+    },
     "dailyRadar.close" : {
       "localizations" : {
         "en" : {

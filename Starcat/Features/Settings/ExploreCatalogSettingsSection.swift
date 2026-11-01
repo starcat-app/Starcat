@@ -86,7 +86,9 @@ struct ExploreCatalogSettingsSection: View {
                 parameters: parameters
             )
             guard !Task.isCancelled else { return }
-            dailyRadarCategories = cached?.value.categories ?? []
+            // 无缓存（从未打开过每日热点）也展示完整分类开关；
+            // 回退清单与后端 Categories 同步维护，拉取后以服务端 catalog 为准。
+            dailyRadarCategories = cached?.value.categories ?? DailyRadarCatalog.fallbackCategories
         }
     }
 
@@ -264,7 +266,7 @@ struct ExploreCatalogSettingsSection: View {
                     ForEach(dailyRadarCategories) { category in
                         Toggle(isOn: childBinding(category.id, in: \.hiddenDailyRadarCategories,
                                                   available: dailyRadarCategories.map(\.id))) {
-                            Text(verbatim: category.title).fixedSize(horizontal: false, vertical: true)
+                            Text(verbatim: category.localizedTitle).fixedSize(horizontal: false, vertical: true)
                         }
                         .toggleStyle(.checkbox)
                         .disabled(isLastChild(category.id, in: \.hiddenDailyRadarCategories,
