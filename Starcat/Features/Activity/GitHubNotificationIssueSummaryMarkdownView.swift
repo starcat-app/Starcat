@@ -45,6 +45,9 @@ struct GitHubNotificationIssueSummaryMarkdownView: View {
         .defaultScrollAnchor(session.isGenerating ? .bottom : .top, for: .initialOffset)
         // 完成态调整面板高度只改变阅读视口，不能再被 sizeChanges 的底部锚点拉走。
         .defaultScrollAnchor(session.isGenerating && tail.isFollowing ? .bottom : nil, for: .sizeChanges)
+        // 正文在内容层内缩，给贴着 ScrollView 右缘的滚动指示条让出 gutter，
+        // 指示条不再压住每行末尾的文字。
+        .contentMargins(.trailing, 10, for: .scrollContent)
         .onScrollPhaseChange { _, phase in tail.updatePhase(phase) }
         .onChange(of: session.isGenerating) { _, isGenerating in
             if isGenerating { tail.resumeFollowing() }
