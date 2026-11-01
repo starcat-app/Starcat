@@ -69,12 +69,13 @@ struct RepoFileBrowserSheet: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image("github")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-                .foregroundStyle(.primary)
+            // 顶栏身份用仓库 owner 头像；来源缺字段时兜底 `github.com/{owner}.png`
+            // （GitHub 官方头像端点，RemoteAvatar 已按域名注入 size 参数并走 Kingfisher 缓存）。
+            RemoteAvatar(
+                urlString: target.ownerAvatar ?? "https://github.com/\(target.owner).png",
+                size: 28,
+                showBorder: false
+            )
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(verbatim: target.fullName)
@@ -304,7 +305,7 @@ struct RepoFileBrowserSheet: View {
 
     private var previewHeader: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: viewModel.previewImageData == nil ? "doc.text" : "photo")
+            Image(systemName: previewedFileIconName)
                 .font(.title3)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
@@ -433,7 +434,7 @@ struct RepoFileBrowserSheet: View {
         VStack(spacing: 16) {
             if let file = viewModel.previewedFile {
                 VStack(spacing: 8) {
-                    Image(systemName: viewModel.previewImageData == nil ? "doc.text.fill" : "photo.fill")
+                    Image(systemName: previewedFileIconName)
                         .font(.system(size: 44))
                         .foregroundStyle(.secondary)
                     Text(verbatim: file.name)
@@ -506,6 +507,12 @@ struct RepoFileBrowserSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
+    }
+
+    /// 预览 header 与右侧详情大图标共用：按文件名取类型图标，未选中时退回默认 doc。
+    private var previewedFileIconName: String {
+        guard let file = viewModel.previewedFile else { return "doc.text" }
+        return RepoFileTypeIcon.symbolName(forFileName: file.name)
     }
 
     private var inspectorType: String {
@@ -695,7 +702,7 @@ private struct RepoFileTreeRow: View {
             viewModel.reveal(node)
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "doc.text")
+                Image(systemName: RepoFileTypeIcon.symbolName(forFileName: node.name))
                     .foregroundStyle(.secondary)
                 Text(verbatim: node.name)
                     .lineLimit(1)

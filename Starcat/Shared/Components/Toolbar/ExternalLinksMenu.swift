@@ -268,7 +268,8 @@ private struct FileDownloadMenuSection: View {
                     fullName: selection.fullName,
                     ref: selection.gitRef,
                     summary: selection.summary,
-                    isPrivate: selection.isPrivate
+                    isPrivate: selection.isPrivate,
+                    ownerAvatar: selection.ownerAvatar
                 )
             )
         } label: {
