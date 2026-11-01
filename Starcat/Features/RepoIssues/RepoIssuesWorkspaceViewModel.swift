@@ -70,6 +70,8 @@ final class RepoIssuesWorkspaceViewModel {
     private(set) var selectedIssue: GitHubRepoIssue?
     /// 「取消新建」的回跳目标；每次用户主动选中 Issue 时更新。
     private var lastSelectedIssue: GitHubRepoIssue?
+    /// 选中与新建共用一个版本：数据库读取可以晚到，不能让旧会话重新接管评论目标。
+    @ObservationIgnored private var detailGeneration: UInt64 = 0
 
     var isCreating: Bool { paneMode == .create }
 
@@ -78,10 +80,13 @@ final class RepoIssuesWorkspaceViewModel {
     var detailItem: ActivityItem?
 
     func select(_ issue: GitHubRepoIssue) {
+        detailGeneration &+= 1
+        let generation = detailGeneration
+        if selectedIssue?.id != issue.id { detailItem = nil }
         selectedIssue = issue
         lastSelectedIssue = issue
         paneMode = .detail
-        Task { await materializeDetail(for: issue) }
+        Task { await materializeDetail(for: issue, generation: generation) }
     }
 
     /// 列表落地后自动选中第一条（交互契约：打开工作台即有内容可看）。
@@ -93,13 +98,14 @@ final class RepoIssuesWorkspaceViewModel {
     }
 
     func startCreating() {
+        detailGeneration &+= 1
         paneMode = .create
         // 左侧取消选中高亮：渲染层以 `isCreating` 为准，selectedIssue 保留供回跳。
     }
 
     func cancelCreating() {
         paneMode = .detail
-        selectedIssue = lastSelectedIssue
+        if let lastSelectedIssue { select(lastSelectedIssue) }
         createErrorMessage = nil
     }
 
@@ -107,27 +113,33 @@ final class RepoIssuesWorkspaceViewModel {
 
     /// 把工作台选中的 Issue 物化成 thread 记录并构建详情项。
     /// 幂等：upsert 按 subject_api_url 复用既有记录（含组织同步已建过的行）。
-    private func materializeDetail(for issue: GitHubRepoIssue) async {
-        guard let threadRepository else { return }
+    private func materializeDetail(for issue: GitHubRepoIssue, generation: UInt64) async {
+        guard let threadRepository, detailGeneration == generation else { return }
         try? await threadRepository.upsertOrganizationIssues(
             [makeOrganizationIssue(from: issue)],
             credentialSource: .primaryOAuth,
             fetchedAt: ISO8601DateFormatter.shared.string(from: Date())
         )
-        await reloadDetailItem(for: issue)
+        await reloadDetailItem(for: issue, generation: generation)
     }
 
     /// 重建详情项：hydrate / 发表评论后 inbox 会发 `.githubNotificationInboxDidChange`，
     /// 由工作台监听后调用，保证右栏拿到最新 comments / state。
     func reloadDetailAfterInboxChange() async {
         guard !isCreating, let issue = selectedIssue else { return }
-        await reloadDetailItem(for: issue)
+        let generation = detailGeneration
+        await reloadDetailItem(for: issue, generation: generation)
+        guard detailGeneration == generation, selectedIssue?.id == issue.id else { return }
         await syncRowCommentsCount(for: issue)
     }
 
-    private func reloadDetailItem(for issue: GitHubRepoIssue) async {
-        guard let threadRepository else { return }
+    private func reloadDetailItem(for issue: GitHubRepoIssue, generation: UInt64) async {
+        guard let threadRepository, detailGeneration == generation,
+              selectedIssue?.id == issue.id, !isCreating else { return }
         let record = await fetchThreadRecord(for: issue, using: threadRepository)
+        // MainActor 不保证 await 前后的选中身份不变；同一 Issue 再次选中也属于新一轮请求。
+        guard !Task.isCancelled, detailGeneration == generation,
+              selectedIssue?.id == issue.id, !isCreating else { return }
         detailItem = record.map { makeDetailItem(from: $0) }
     }
 
@@ -514,7 +526,7 @@ final class RepoIssuesWorkspaceViewModel {
             await listViewModel.loadFirstPage()
             autoSelectFirstIssueIfNeeded()
             if let issue = selectedIssue {
-                await reloadDetailItem(for: issue)
+                await reloadDetailItem(for: issue, generation: detailGeneration)
             }
         }
     }
