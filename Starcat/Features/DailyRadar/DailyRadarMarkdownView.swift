@@ -46,8 +46,16 @@ enum DailyRadarMarkdownRenderer {
         case let image as Markdown.Image:
             guard let raw = image.source, let url = safeURL(raw), url.scheme == "https" else { return escape(image.plainText) }
             return "<img src=\"\(escape(url.absoluteString))\" alt=\"\(escape(image.plainText))\">"
-        case is Markdown.Table: return "<div class=\"table\"><table>\(children())</table></div>"
-        case is Markdown.Table.Head: return "<thead><tr>\(children())</tr></thead>"
+        case let table as Markdown.Table:
+            let className = isFourColumnMetadataTable(table) ? " class=\"metadata\"" : ""
+            return "<div class=\"table\"><table\(className)>\(children())</table></div>"
+        case let head as Markdown.Table.Head:
+            // 表头使用真实 th：浏览器可按列语义计算宽度，也便于辅助技术识别表头。
+            let cells = head.children.compactMap { $0 as? Markdown.Table.Cell }
+                // Cell 的通用分支会包一层 td；表头需要直接聚合内部内容，避免 th 中嵌套 td。
+                .map { "<th>\($0.children.map { renderNode($0) }.joined())</th>" }
+                .joined()
+            return "<thead><tr>\(cells)</tr></thead>"
         case is Markdown.Table.Body: return "<tbody>\(children())</tbody>"
         case is Markdown.Table.Row: return "<tr>\(children())</tr>"
         case is Markdown.Table.Cell: return "<td>\(children())</td>"
@@ -55,6 +63,32 @@ enum DailyRadarMarkdownRenderer {
         case let html as InlineHTML: return safeHTML(html.rawHTML)
         default: return children()
         }
+    }
+
+    /// 日报里常见“主体 + 两个短指标 + Summary”的四列表；项目表与文章表都使用同一布局规则。
+    /// 自动布局会被长 Summary 挤压成“R-e-a-c-t-i-o-n-s”这类竖排字符；固定比例和最小宽度能保持短指标列可读。
+    private static func isFourColumnMetadataTable(_ table: Markdown.Table) -> Bool {
+        guard let head = table.child(at: 0) as? Markdown.Table.Head else { return false }
+        // Table.Head 的直接子节点就是 Cell；这里不能套 Row，否则所有表头都会被误判为空。
+        let cells = head.children.compactMap { $0 as? Markdown.Table.Cell }
+        guard cells.count == 4 else { return false }
+        // Cell 不能单独调用 format()：swift-markdown 要求表格作为整体格式化，单独格式化会触发 fatal error。
+        let headers = cells.map { $0.plainText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let hasSummary = headers.last?.contains("summary") == true ||
+            headers.last?.contains("摘要") == true ||
+            headers.last?.contains("说明") == true
+        let hasSubject = headers.first?.contains("project") == true ||
+            headers.first?.contains("article") == true ||
+            headers.first?.contains("项目") == true ||
+            headers.first?.contains("文章") == true
+        let shortMetricHeaders = [
+            "lang", "language", "stars", "reactions", "comments",
+            "语言", "星标", "星数", "反应", "评论"
+        ]
+        let hasShortMetrics = headers.dropFirst().dropLast().contains { header in
+            shortMetricHeaders.contains { header.contains($0) }
+        }
+        return hasSummary && hasSubject && hasShortMetrics
     }
 
     /// 未知标签成为可读文字，所有属性丢弃；源脚本、事件、iframe、SVG 永不执行。
@@ -120,7 +154,7 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
         let document = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline'; script-src 'nonce-\(session)'; base-uri 'none'; form-action 'none'">
-        <style>html{color-scheme:\(dark ? "dark" : "light");overflow:hidden}body{margin:0;font:\(scale.scaled(16))px -apple-system;line-height:1.75;color:\(dark ? "#f5f5f7" : "#1d1d1f");overflow-wrap:anywhere}main{display:flow-root}h1,h2,h3{line-height:1.35;margin:1.5em 0 .6em}p{margin:.8em 0}a{color:#007aff}img{max-width:100%;height:auto}pre,.table{overflow-x:auto;max-width:100%}pre{padding:16px;background:\(dark ? "#2c2c2e" : "#f5f5f7");border-radius:8px}code{font:0.88em ui-monospace,monospace}table{border-collapse:collapse;width:100%}td,th{padding:8px 12px;border:1px solid \(dark ? "#444" : "#ddd")}blockquote{margin-left:0;padding-left:16px;border-left:3px solid #888}summary{cursor:pointer}details{padding:10px 0}</style></head>
+        <style>html{color-scheme:\(dark ? "dark" : "light");overflow:hidden}body{margin:0;font:\(scale.scaled(16))px -apple-system;line-height:1.75;color:\(dark ? "#f5f5f7" : "#1d1d1f");overflow-wrap:anywhere}main{display:flow-root}h1,h2,h3{line-height:1.35;margin:1.5em 0 .6em}p{margin:.8em 0}a{color:#007aff}img{max-width:100%;height:auto}pre,.table{overflow-x:auto;max-width:100%}pre{padding:16px;background:\(dark ? "#2c2c2e" : "#f5f5f7");border-radius:8px}code{font:0.88em ui-monospace,monospace}table{border-collapse:collapse;width:100%}td,th{padding:8px 12px;border:1px solid \(dark ? "#444" : "#ddd");text-align:left;vertical-align:top}table.metadata{table-layout:fixed;min-width:720px}table.metadata th:nth-child(1),table.metadata td:nth-child(1){width:26%}table.metadata th:nth-child(2),table.metadata td:nth-child(2){width:13%}table.metadata th:nth-child(3),table.metadata td:nth-child(3){width:13%}table.metadata th:nth-child(4),table.metadata td:nth-child(4){width:48%}table.metadata th:nth-child(2),table.metadata th:nth-child(3),table.metadata td:nth-child(2),table.metadata td:nth-child(3){overflow-wrap:normal;word-break:normal}blockquote{margin-left:0;padding-left:16px;border-left:3px solid #888}summary{cursor:pointer}details{padding:10px 0}</style></head>
         <body><main>\(html)</main><script nonce="\(session)">const content=document.querySelector("main");const send=()=>window.webkit.messageHandlers.dailyHeight.postMessage({session:"\(session)",height:Math.ceil(content.getBoundingClientRect().height)});new ResizeObserver(send).observe(content);window.addEventListener("load",send);document.addEventListener("toggle",send,true);send();</script></body></html>
         """
         webView.loadHTMLString(document, baseURL: nil)

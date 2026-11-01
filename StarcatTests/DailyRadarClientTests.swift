@@ -154,6 +154,14 @@ struct DailyRadarClientTests {
         |---|---|
         | one | two |
 
+        | Project | Lang | Stars | Summary |
+        |---|---|---|---|
+        | [owner/repo](https://github.com/owner/repo) | Python | 1,234 | A repository |
+
+        | Article | Reactions | Comments | Summary |
+        |---|---|---|---|
+        | [An article](https://dev.to/example/article) | 59 | 11 | A community article |
+
         <details>
         <summary>Details</summary>
         Hidden text
@@ -170,6 +178,10 @@ struct DailyRadarClientTests {
         """
         let rendered = DailyRadarMarkdownRenderer.render(input)
         #expect(rendered.contains("<table>"))
+        // 项目表和文章表共用元信息布局，避免 Reactions/Comments 被长 Summary 挤成逐字换行。
+        #expect(rendered.components(separatedBy: "<table class=\"metadata\">").count == 3)
+        #expect(rendered.contains("<th>Project</th><th>Lang</th><th>Stars</th><th>Summary</th>"))
+        #expect(rendered.contains("<th>Article</th><th>Reactions</th><th>Comments</th><th>Summary</th>"))
         #expect(rendered.contains("<details>"))
         #expect(rendered.contains("<summary>"))
         #expect(!rendered.contains("<script>"))
