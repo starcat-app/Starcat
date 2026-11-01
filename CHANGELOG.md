@@ -11,6 +11,9 @@ Release notes for the Mac App Store edition of Starcat.
 - Linux.do discovery: Browse verified open-source projects promoted on Linux.do, see provenance badges across repository lists, and open original discussions from repository details.
 - Quick search across lists: Expand the middle-column search field to quickly find repositories and activity items across Manage, Explore, Trending, Weekly, Awesome, Linux.do, notifications, and Undo Star.
 - Repository license filters: Select multiple licenses in the main window and combine them with other filters, with consistent pagination, project counts, and cached results.
+- Daily Radar: A new reading workspace for daily reports, browsable by topic categories with edition calendar navigation, per-category badges, and source branding; reports follow the app language.
+- Summary replay: Successful issue summaries are saved locally, so reopening the same issue after relaunch replays the summary and shows when it was generated.
+- Explore & Weekly source filters: Filter explore categories and Weekly by source preference, remembered across restarts.
 
 ### Improvements
 
@@ -23,6 +26,10 @@ Release notes for the Mac App Store edition of Starcat.
 - Background organization entry: After closing repository grouping or tag organization, the middle column keeps showing the current phase and processed counts, with direct access to the task or results.
 - Localized organization status: Task states and actions cover all 18 interface languages, stay on one line in narrow columns, and show their full text on hover.
 - License filter chips: Match sidebar tags with wrapping, content-sized height, and bounded scrolling; colors distinguish license obligation types, with full names and category notes on hover.
+- Summary panel polish: The launcher button highlights existing summaries in blue, the panel closes with Esc, and body scrolling no longer collides with the scrollbar.
+- File download window: The toolbar uses the repository owner's avatar with type-specific file icons.
+- Awesome source manager: The canvas keeps a fixed size, so operations no longer shift the layout.
+- Awesome sort menu: Shares the unified menu styling with other middle-column lists.
 
 ### Fixes
 
@@ -36,6 +43,8 @@ Release notes for the Mac App Store edition of Starcat.
 - Middle-column menus: Sort, trending period, and notification filters now show a single dropdown arrow.
 - README images: Fixes missing images and GIFs in some light/dark theme picture sources.
 - README attachment images: Fixes images disappearing after temporary links expire, with existing cached pages repaired automatically.
+- AI reply panel: The AI reply panel no longer leaves a gap between its bottom edge and the status bar.
+- Awesome filter bar: The filter bar is realigned to the left-search, right-actions layout.
 
 ## 1.9.0
 
