@@ -34,6 +34,7 @@ Release notes for the Mac App Store edition of Starcat.
 - Awesome sort menu: Shares the unified menu styling with other middle-column lists.
 - License card: License badges in repository details and search now share one obligation-colored card listing rights and duties, with the official reference a tap away.
 - Language support: Removes the Arabic interface language; the other 17 languages remain fully localized.
+- Daily Radar categories: Category names in the sidebar, reader, and settings follow the interface language, with per-category content toggles in Settings.
 
 ### Fixes
 
