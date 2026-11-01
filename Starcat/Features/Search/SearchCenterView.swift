@@ -2701,9 +2701,14 @@ private struct SearchRemoteRepoDetailView: View {
             if isCurrentSortBestMatch, let score = candidate.remoteExtras.score {
                 scoreBadge(score: score)
             }
-            if let license = repo.license, !license.isEmpty {
-                licenseBadge(license: license)
-            }
+            // License 胶囊（2026-11-01 统一改版）：与详情 Hero 区同一组件。
+            // 无 license 的仓库也显示灰色"待确认"胶囊（原来整颗隐藏），
+            // 类别解析与说明卡交互全部由组件内部处理。
+            LicenseKnowledgeCapsule(
+                rawLicense: repo.license,
+                owner: repo.owner,
+                repoName: repo.name
+            )
 
             SheetCloseButton(
                 action: { dismiss() },
@@ -2764,18 +2769,6 @@ private struct SearchRemoteRepoDetailView: View {
         .padding(.vertical, 3)
         .background(Color.orange.opacity(0.12), in: Capsule())
         .help("search.detail.score.tooltip")
-    }
-
-    private func licenseBadge(license: String) -> some View {
-        // license 是 GitHub 返回的 SPDX id 或 license name（例如 "MIT" / "Apache-2.0"），
-        // 是数据，不是 UI 文案，必须 verbatim。
-        Text(verbatim: license)
-            .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(Color.secondary.opacity(0.10), in: Capsule())
-            .help("search.detail.license.tooltip")
     }
 
     // MARK: - State badges (archived / fork / template / disabled)

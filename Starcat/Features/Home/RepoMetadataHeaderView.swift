@@ -216,11 +216,6 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        // 原始展示文本：去空白，空串归一成 N/A（与可点分支共用，避免两处文案漂移）。
-        let licenseText = repo.license.flatMap { value in
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        } ?? "N/A"
         HStack(spacing: 10) {
             if repo.isArchived {
                 RepoBadgeChip(text: "repo.archived", systemImage: "archivebox", tint: .orange)
@@ -228,30 +223,15 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             if repo.isPrivate {
                 RepoBadgeChip(text: "repo.private", systemImage: "lock.fill", tint: .purple)
             }
-            // License chip：标准 SPDX 时整颗可点，跳 GitHub license 概览页
-            // （与仓库页侧栏 license 胶囊同一目标）；N/A / Other 等无法构造
-            // 合法链接的场景保持纯展示。
-            if let licenseURL = RepoExternalLinks.license(repo) {
-                Button {
-                    NSWorkspace.shared.open(licenseURL)
-                } label: {
-                    RepoRawBadgeChip(
-                        text: licenseText,
-                        businessIcon: .license,
-                        tint: .secondary
-                    )
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pressableHover()
-                .help("repo.license.openHelp")
-            } else {
-                RepoRawBadgeChip(
-                    text: licenseText,
-                    businessIcon: .license,
-                    tint: .secondary
-                )
-            }
+            // License 胶囊（2026-11-01 改版）：带义务类别配色，点击展开说明卡，
+            // 原"整颗直跳 GitHub license 页"的入口移入卡底部"查看项目 LICENSE"。
+            // 解析 / 配色 / 兜底（N/A、NOASSERTION、多重许可）统一在组件内处理；
+            // 无 license 的仓库也显示灰色"待确认"胶囊（原 N/A 纯文本已删除）。
+            LicenseKnowledgeCapsule(
+                rawLicense: repo.license,
+                owner: repo.owner,
+                repoName: repo.name
+            )
             // fork 来源不再单独占第三行，也不再用灰色 Fork 胶囊占位。
             // 有 parent 时接到 license 后面，点名字打开上游。
             if repo.isFork {
@@ -260,7 +240,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
             }
         }
         .lineLimit(1)
-        .frame(minHeight: 18, maxHeight: 18, alignment: .leading)
+        // License 胶囊固定 24pt（设计稿 24-26pt），行高随之从 18 放宽到 24。
+        .frame(minHeight: 24, maxHeight: 24, alignment: .center)
     }
 
     @ViewBuilder
@@ -1149,23 +1130,6 @@ private extension Repo {
     /// ephemeral 展示对象，不能拿来建快照。
     var hasLocalHealthCacheBacking: Bool {
         id > 0 && cachedAt != nil
-    }
-}
-
-private struct RepoRawBadgeChip: View {
-    let text: String
-    let businessIcon: BusinessIcon.Symbol
-    let tint: Color
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
-
-    var body: some View {
-        HStack(spacing: 3) {
-            BusinessIcon(businessIcon, pointSize: 11 * interfaceScale.multiplier)
-            Text(verbatim: text).font(interfaceScale.font(.captionSmall))
-        }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(tint.opacity(0.15), in: Capsule())
-        .foregroundStyle(tint)
     }
 }
 
