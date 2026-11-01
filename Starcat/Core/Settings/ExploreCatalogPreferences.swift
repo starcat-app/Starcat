@@ -46,3 +46,16 @@ struct ExploreCatalogPreferences: Codable, Equatable, Sendable {
         return availableCodes.filter { !hiddenWeeklySources.contains($0) }.sorted()
     }
 }
+
+extension ExploreCatalogPreferences {
+    /// 新分类偏好不能让旧版整个 JSON 解码失败，否则已隐藏的来源和分类都会恢复默认。
+    /// 放在 extension 中保留原有 memberwise initializer；只有新增字段缺失时采用空集。
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        hiddenModes = try container.decode(Set<String>.self, forKey: .hiddenModes)
+        hiddenDiscoverTopics = try container.decode(Set<String>.self, forKey: .hiddenDiscoverTopics)
+        hiddenDiscoverPlatforms = try container.decode(Set<String>.self, forKey: .hiddenDiscoverPlatforms)
+        hiddenWeeklySources = try container.decode(Set<String>.self, forKey: .hiddenWeeklySources)
+        hiddenDailyRadarCategories = try container.decodeIfPresent(Set<String>.self, forKey: .hiddenDailyRadarCategories) ?? []
+    }
+}

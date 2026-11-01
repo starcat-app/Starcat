@@ -50,6 +50,26 @@ struct AppSettingsTests {
         #expect(ExploreCatalogPreferences().weeklyQuerySources(availableCodes: ["weekly"]) == nil)
     }
 
+    @Test("新增每日热点偏好后仍保留旧版保存的隐藏分类和来源")
+    func legacyExplorePreferencesKeepSelections() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set(
+            #"{"hiddenModes":["weekly"],"hiddenDiscoverTopics":["ai"],"hiddenDiscoverPlatforms":["macos"],"hiddenWeeklySources":["zread"]}"#,
+            forKey: AppSettings.Keys.exploreCatalogPreferences
+        )
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.exploreCatalogPreferences.hiddenModes == ["weekly"])
+        #expect(settings.exploreCatalogPreferences.hiddenDiscoverTopics == ["ai"])
+        #expect(settings.exploreCatalogPreferences.hiddenDiscoverPlatforms == ["macos"])
+        #expect(settings.exploreCatalogPreferences.hiddenWeeklySources == ["zread"])
+        #expect(settings.exploreCatalogPreferences.hiddenDailyRadarCategories.isEmpty)
+
+        settings.exploreCatalogPreferences.hiddenDailyRadarCategories = ["ai-cli"]
+        let restored = AppSettings(defaults: defaults)
+        #expect(restored.exploreCatalogPreferences == settings.exploreCatalogPreferences)
+    }
+
     /// 给每个测试一个独立 suite 名，避免相互污染。
     private func makeIsolatedDefaults() -> UserDefaults {
         let suiteName = "test.starcat.appsettings.\(UUID().uuidString)"
