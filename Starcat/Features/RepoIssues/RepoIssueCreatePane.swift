@@ -152,7 +152,8 @@ struct RepoIssueCreatePane: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .disabled(!viewModel.canGenerateIssue)
+                // 生成中同一个入口承担取消操作，不能套用“允许开始生成”的禁用条件。
+                .disabled(!viewModel.isGeneratingIssue && !viewModel.canGenerateIssue)
                 .help(String.l10n(
                     viewModel.isGeneratingIssue
                         ? "repo.issues.create.stopGenerate"
