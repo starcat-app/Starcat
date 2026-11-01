@@ -21,6 +21,9 @@ struct GitHubNotificationDetailView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedItem: ActivityItem?
+    /// 顶部语言色光晕开关：活动-Issues 详情页保留；RepoIssues 工作台复用本组件时关闭
+    /// （渐变属于活动详情页的设计语言，工作台详情页不携带，2026-11-01 dong4j 决策）。
+    var showsHeroTint: Bool = true
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
     @State private var isDoneHelpPresented = false
@@ -83,7 +86,8 @@ struct GitHubNotificationDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 语言色光晕挂在会话详情根上，和账本 / Manage 详情同一套；工具行走透明才能透出来。
-        .detailHeroTintBackground(tint: item.accentColor)
+        // RepoIssues 工作台复用时经 showsHeroTint=false 整体关闭。
+        .detailHeroTintBackground(tint: item.accentColor, opacity: showsHeroTint ? 1 : 0)
         // 标题进系统导航栏，和中栏「活动 > 通知」同一层；横线上方只留仓库名。
         .navigationTitle(item.title)
         .navigationSubtitle(navigationSubtitle(item))
@@ -1407,7 +1411,7 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
 
     private var editBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            GitHubNotificationCommentTextEditor(
+            ImagePasteTextEditor(
                 text: $editDraft,
                 placeholder: GitHubNotificationMapper.copy(
                     locale,
@@ -2374,11 +2378,11 @@ private struct GitHubNotificationCommentComposer: View {
     }
 
     private var composerMinHeight: CGFloat {
-        ceil(composerLineHeight * 3 + GitHubNotificationCommentNSTextView.contentInset.height * 2)
+        ceil(composerLineHeight * 3 + ImagePasteTextView.contentInset.height * 2)
     }
 
     private var composerCollapsedMaxHeight: CGFloat {
-        ceil(composerLineHeight * 8 + GitHubNotificationCommentNSTextView.contentInset.height * 2)
+        ceil(composerLineHeight * 8 + ImagePasteTextView.contentInset.height * 2)
     }
 
     private var composerEditorHeight: CGFloat {
@@ -2404,7 +2408,7 @@ private struct GitHubNotificationCommentComposer: View {
                 }
                 .padding(8)
             } else {
-                GitHubNotificationCommentTextEditor(
+                ImagePasteTextEditor(
                     text: $draft,
                     placeholder: GitHubNotificationMapper.copy(
                         locale,
@@ -2881,252 +2885,6 @@ private struct GitHubNotificationCommentComposer: View {
             }
         }
         return error.localizedDescription
-    }
-}
-
-/// 评论输入必须走 NSTextView：SwiftUI `TextEditor` + overlay `Text` 的 placeholder
-/// 和 insertion point 不在同一坐标系。测高对齐 RAG `AICommandTextEditor`：
-/// usedRect + inset，由外层按 3 行下限 / 8 行上限钳制，超出后内部滚动。
-private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    var isEditable: Bool = true
-    let maximumHeight: CGFloat
-    var shouldBecomeFirstResponder: Bool = false
-    let onHeightChange: (CGFloat) -> Void
-    var onEditingChange: ((Bool) -> Void)? = nil
-    /// 撰写态 first responder 在 NSTextView，Esc 不会回到 SwiftUI，这里回传是否已处理。
-    var onEscape: (() -> Bool)? = nil
-    /// 剪贴板有图时拦截 Cmd+V，先插入占位再异步上传。
-    var onPasteImage: ((GitHubClipboardImage.Payload, String) -> Void)? = nil
-    var onPasteImageError: ((GitHubUserAttachmentError) -> Void)? = nil
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = GitHubNotificationCommentScrollView()
-        let textView = GitHubNotificationCommentNSTextView()
-        textView.delegate = context.coordinator
-        textView.string = text
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .labelColor
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.textContainerInset = GitHubNotificationCommentNSTextView.contentInset
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.placeholder = placeholder
-        textView.setAccessibilityLabel(placeholder)
-        textView.onPasteImage = context.coordinator.parent.onPasteImage
-        textView.onPasteImageError = context.coordinator.parent.onPasteImageError
-
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.onMeasuredHeight = { [coordinator = context.coordinator] height in
-            coordinator.parent.onHeightChange(height)
-        }
-        scrollView.maximumHeight = maximumHeight
-        // 等容器拿到宽度后再测 usedRect，避免首帧按单行高度跳动。
-        DispatchQueue.main.async {
-            context.coordinator.reportHeight(for: textView)
-        }
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        context.coordinator.parent = self
-        guard let textView = scrollView.documentView as? GitHubNotificationCommentNSTextView else { return }
-        if let commentScroll = scrollView as? GitHubNotificationCommentScrollView {
-            commentScroll.onMeasuredHeight = { [coordinator = context.coordinator] height in
-                coordinator.parent.onHeightChange(height)
-            }
-            commentScroll.maximumHeight = maximumHeight
-        }
-        textView.placeholder = placeholder
-        textView.setAccessibilityLabel(placeholder)
-        textView.onPasteImage = context.coordinator.parent.onPasteImage
-        textView.onPasteImageError = context.coordinator.parent.onPasteImageError
-        textView.isEditable = isEditable
-        textView.isSelectable = true
-        if textView.string != text {
-            textView.string = text
-            textView.needsDisplay = true
-            // 手打字走 textDidChange，glyph 已经按当前宽度折行。
-            // AI 流式写 draft 只进这里，立刻测高会把整段当成一行，框就停在 3 行。
-            scrollView.layoutSubtreeIfNeeded()
-            context.coordinator.reportHeight(for: textView)
-            DispatchQueue.main.async {
-                context.coordinator.reportHeight(for: textView)
-            }
-        }
-        if shouldBecomeFirstResponder {
-            context.coordinator.focusIfNeeded(textView, in: scrollView)
-        } else {
-            context.coordinator.didRequestFocus = false
-        }
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: GitHubNotificationCommentTextEditor
-        var didRequestFocus = false
-
-        init(parent: GitHubNotificationCommentTextEditor) {
-            self.parent = parent
-        }
-
-        func focusIfNeeded(_ textView: NSTextView, in scrollView: NSScrollView) {
-            guard !didRequestFocus else { return }
-            didRequestFocus = true
-            DispatchQueue.main.async {
-                scrollView.window?.makeFirstResponder(textView)
-            }
-        }
-
-        func textDidBeginEditing(_ notification: Notification) {
-            parent.onEditingChange?(true)
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            parent.onEditingChange?(false)
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? GitHubNotificationCommentNSTextView else { return }
-            parent.text = textView.string
-            textView.needsDisplay = true
-            reportHeight(for: textView)
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else { return false }
-            // 输入法候选未上屏时 Esc 应只取消拼音，不能收评论框。
-            if textView.hasMarkedText() { return false }
-            return parent.onEscape?() ?? false
-        }
-
-        func reportHeight(for textView: NSTextView) {
-            guard let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
-            if let scrollView = textView.enclosingScrollView {
-                let width = scrollView.contentSize.width
-                if width <= 1 { return }
-                if abs(textView.frame.width - width) >= 0.5 {
-                    textView.setFrameSize(NSSize(width: width, height: max(textView.frame.height, 1)))
-                }
-            }
-            layoutManager.ensureLayout(for: textContainer)
-            let usedHeight = layoutManager.usedRect(for: textContainer).height
-            let height = min(
-                ceil(usedHeight + GitHubNotificationCommentNSTextView.contentInset.height * 2),
-                parent.maximumHeight
-            )
-            parent.onHeightChange(height)
-        }
-    }
-}
-
-private final class GitHubNotificationCommentScrollView: NSScrollView {
-    /// SwiftUI 侧的高度上限，layout 里测高后回传，让 AI 写入也能把外框撑开。
-    var maximumHeight: CGFloat = 0
-    var onMeasuredHeight: ((CGFloat) -> Void)?
-    private var lastReportedHeight: CGFloat = 0
-
-    /// 空白处也能点进输入：textView 至少铺满当前 SwiftUI 框；内容更高时再长高，交给滚动。
-    override func layout() {
-        super.layout()
-        guard let textView = documentView as? NSTextView else { return }
-        let width = contentSize.width
-        let minHeight = contentSize.height
-        var used = minHeight
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
-            layoutManager.ensureLayout(for: textContainer)
-            used = ceil(
-                layoutManager.usedRect(for: textContainer).height
-                    + textView.textContainerInset.height * 2
-            )
-        }
-        let height = max(minHeight, used)
-        textView.minSize = NSSize(width: 0, height: minHeight)
-        if abs(textView.frame.width - width) >= 0.5 || abs(textView.frame.height - height) >= 0.5 {
-            textView.setFrameSize(NSSize(width: width, height: height))
-        }
-        let reported = maximumHeight > 0 ? min(used, maximumHeight) : used
-        guard abs(reported - lastReportedHeight) >= 0.5 else { return }
-        lastReportedHeight = reported
-        onMeasuredHeight?(reported)
-    }
-}
-
-private final class GitHubNotificationCommentNSTextView: NSTextView {
-    static let contentInset = NSSize(width: 8, height: 8)
-    var placeholder = ""
-    var onPasteImage: ((GitHubClipboardImage.Payload, String) -> Void)?
-    var onPasteImageError: ((GitHubUserAttachmentError) -> Void)?
-
-    /// 有图就走 GitHub 附件上传；不要让 NSTextView 把图嵌成附件（importsGraphics 已关）。
-    override func paste(_ sender: Any?) {
-        guard isEditable else {
-            super.paste(sender)
-            return
-        }
-        let pasteboard = NSPasteboard.general
-        // 只认 PNG / TIFF 字节。网页复制常同时带文字和预览图，不能靠 NSImage(pasteboard:) 抢粘贴。
-        let hasImage = pasteboard.data(forType: .png) != nil
-            || pasteboard.data(forType: .tiff) != nil
-        guard hasImage else {
-            super.paste(sender)
-            return
-        }
-        guard let payload = GitHubClipboardImage.payload(from: pasteboard) else {
-            onPasteImageError?(.imageTooLarge)
-            return
-        }
-        guard let onPasteImage else {
-            super.paste(sender)
-            return
-        }
-        let placeholder = GitHubUserAttachment.uploadingPlaceholder(
-            fileName: payload.fileName,
-            token: UUID().uuidString
-        )
-        let inserted = GitHubUserAttachment.insertBlock(
-            placeholder,
-            into: string,
-            selectedUTF16: selectedRange()
-        )
-        let fullRange = NSRange(location: 0, length: (string as NSString).length)
-        if shouldChangeText(in: fullRange, replacementString: inserted.text) {
-            string = inserted.text
-            setSelectedRange(inserted.selectedUTF16)
-            didChangeText()
-        }
-        onPasteImage(payload, placeholder)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard string.isEmpty, !placeholder.isEmpty else { return }
-        placeholder.draw(
-            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
-            withAttributes: [
-                .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.placeholderTextColor
-            ]
-        )
     }
 }
 

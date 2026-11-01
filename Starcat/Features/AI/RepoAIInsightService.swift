@@ -1413,6 +1413,36 @@ final class RepoAIInsightService {
         return GitHubNotificationCommentAI.sanitizeComment(raw)
     }
 
+    /// 新建 Issue：按用户粗略描述 + 仓库 Issue 模板生成规范正文（流式）。
+    /// 与通知评论框同一 Chat 任务与门禁（`ensureGitHubCommentReady`）。
+    func generateIssueDraft(
+        pack: GitHubIssueComposerPack,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        try ensureGitHubCommentReady()
+        let task = settings.resolvedAITask(settings.aiChatTask)
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.chat")
+        )
+        let params = task.parameters
+        let request = GitHubIssueComposerAI.makeRequest(
+            pack: pack,
+            model: model,
+            parameters: params
+        )
+        let raw = try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: { snapshot in
+                onDelta(GitHubIssueComposerAI.sanitizeIssueDraft(snapshot))
+            }
+        )
+        return GitHubIssueComposerAI.sanitizeIssueDraft(raw)
+    }
+
     /// 纯请求构造器，便于单测精确验证笔记与 README 的边界。
     static func makeRepoNoteRequest(
         readmeMarkdown: String,

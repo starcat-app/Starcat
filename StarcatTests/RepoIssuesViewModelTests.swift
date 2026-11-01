@@ -58,6 +58,20 @@ struct RepoIssuesViewModelTests {
 
     // MARK: - 列表 / 分页
 
+    @Test("未 prepare（仓库为空）时加载静默 no-op，不发请求也不报错")
+    func loadWithoutPrepareIsNoop() async {
+        let mock = MockGitHubAPIClient()
+        let vm = RepoIssuesViewModel(client: mock)
+
+        await vm.loadFirstPageIfNeeded()
+        await vm.refreshCountsIfNeeded()
+
+        #expect(mock.repoIssuesCalls.isEmpty)
+        #expect(mock.searchIssuesCalls.isEmpty)
+        #expect(vm.issues.isEmpty)
+        #expect(vm.errorMessage == nil)
+    }
+
     @Test("首屏加载并按 Link 头判断 hasMore")
     func firstPageLoads() async throws {
         let (vm, mock) = makeEnv()
@@ -355,5 +369,168 @@ struct RepoIssuesViewModelTests {
 
         #expect(vm.issues.count == 1)
         #expect(vm.errorMessage == nil) // 加载更多失败不打断已展示内容
+    }
+
+    // MARK: - 共享缓存（SWR）
+
+    private func makeEnvWithStore()
+        -> (vm: RepoIssuesViewModel, mock: MockGitHubAPIClient, store: RepoIssuesSharedStore) {
+        let mock = MockGitHubAPIClient()
+        let store = RepoIssuesSharedStore()
+        let vm = RepoIssuesViewModel(client: mock, store: store)
+        vm.prepare(owner: "starcat-app", repo: "Starcat")
+        return (vm, mock, store)
+    }
+
+    @Test("共享缓存新鲜命中：直接渲染首屏，不发网络请求")
+    func freshCacheSeedsWithoutNetwork() async {
+        let (vm, mock, store) = makeEnvWithStore()
+        let snapshot = RepoIssuesPageSnapshot(
+            issues: [makeIssue(id: 1, number: 5, title: "cached")],
+            nextPage: nil,
+            fetchedAt: Date()
+        )
+        await store.storePage(snapshot, owner: "starcat-app", repo: "Starcat", state: .open)
+
+        await vm.loadFirstPageIfNeeded()
+
+        #expect(vm.issues.first?.title == "cached")
+        #expect(vm.hasMore == false)
+        #expect(mock.repoIssuesCalls.isEmpty)
+    }
+
+    @Test("共享缓存过期命中：先渲染旧数据再后台校准为新数据")
+    func staleCacheSeedsThenRevalidates() async {
+        // TTL 0 → 刚写入的快照立即过期，模拟「上次会话留下的旧数据」。
+        let staleStore = RepoIssuesSharedStore(timeToLive: 0)
+        await staleStore.storePage(
+            RepoIssuesPageSnapshot(
+                issues: [makeIssue(id: 1, number: 5, title: "stale")],
+                nextPage: nil,
+                fetchedAt: Date()
+            ),
+            owner: "starcat-app", repo: "Starcat", state: .open
+        )
+        let mock = MockGitHubAPIClient()
+        mock.repoIssuesHandler = { _, _, _, _, _ in
+            self.listResponse([self.makeIssue(id: 2, number: 6, title: "fresh")])
+        }
+        let staleVM = RepoIssuesViewModel(client: mock, store: staleStore)
+        staleVM.prepare(owner: "starcat-app", repo: "Starcat")
+        await staleVM.loadFirstPageIfNeeded()
+
+        #expect(mock.repoIssuesCalls.count == 1) // 过期才校准
+        #expect(staleVM.issues.first?.title == "fresh")
+        #expect(staleVM.errorMessage == nil)
+    }
+
+    @Test("SWR 校准失败保留已展示的缓存数据，不弹错误")
+    func revalidationFailureKeepsCachedData() async {
+        // TTL 0 → 命中即过期，确保真的走到校准分支。
+        let staleStore = RepoIssuesSharedStore(timeToLive: 0)
+        await staleStore.storePage(
+            RepoIssuesPageSnapshot(
+                issues: [makeIssue(id: 1, number: 5, title: "stale")],
+                nextPage: nil,
+                fetchedAt: Date()
+            ),
+            owner: "starcat-app", repo: "Starcat", state: .open
+        )
+        let mock = MockGitHubAPIClient()
+        mock.repoIssuesHandler = { _, _, _, _, _ in
+            throw NetworkError.transport(underlying: URLError(.timedOut))
+        }
+        let staleVM = RepoIssuesViewModel(client: mock, store: staleStore)
+        staleVM.prepare(owner: "starcat-app", repo: "Starcat")
+
+        await staleVM.loadFirstPageIfNeeded()
+
+        #expect(staleVM.issues.first?.title == "stale")
+        #expect(staleVM.errorMessage == nil)
+    }
+
+    @Test("首屏成功后回写共享缓存；切走再切回不再打网络")
+    func firstPageWritesBackToSharedStore() async {
+        let (vm, mock, store) = makeEnvWithStore()
+        mock.repoIssuesHandler = { _, _, _, _, _ in
+            self.listResponse([self.makeIssue(id: 1, number: 5, title: "a")], nextPage: 2)
+        }
+
+        await vm.loadFirstPageIfNeeded()
+        #expect(mock.repoIssuesCalls.count == 1)
+
+        let cached = await store.page(owner: "starcat-app", repo: "Starcat", state: .open)
+        #expect(cached?.value.issues.first?.number == 5)
+        #expect(cached?.value.nextPage == 2)
+
+        // 新 VM（模拟重开窗口）命中同一份缓存。
+        let secondVM = RepoIssuesViewModel(client: mock, store: store)
+        secondVM.prepare(owner: "starcat-app", repo: "Starcat")
+        await secondVM.loadFirstPageIfNeeded()
+        #expect(secondVM.issues.first?.number == 5)
+        #expect(mock.repoIssuesCalls.count == 1)
+    }
+
+    @Test("切到无缓存的状态清空旧列表走网络；切回有缓存状态即时渲染")
+    func stateSwitchPrefersCache() async throws {
+        let (vm, mock, store) = makeEnvWithStore()
+        mock.repoIssuesHandler = { _, _, state, _, _ in
+            self.listResponse([self.makeIssue(id: Int64(state.rawValue.count), number: 1, title: "\(state.rawValue)-1")])
+        }
+
+        await vm.loadFirstPageIfNeeded() // open 走网络并写缓存
+        #expect(mock.repoIssuesCalls.count == 1)
+
+        vm.setStateFilter(.closed) // closed 无缓存：清空 + 网络
+        // setStateFilter 内部用 fire-and-forget Task 调 loadFirstPage，等待其完成。
+        try await Task.sleep(nanoseconds: 200_000_000)
+        #expect(mock.repoIssuesCalls.count == 2)
+        #expect(vm.issues.first?.title == "closed-1")
+
+        vm.setStateFilter(.open) // open 有缓存：即时渲染，不再请求
+        try await Task.sleep(nanoseconds: 200_000_000)
+        #expect(mock.repoIssuesCalls.count == 2)
+        #expect(vm.issues.first?.title == "open-1")
+    }
+
+    @Test("计数优先取共享缓存；过期才重新请求并回写")
+    func countsHydrateFromSharedStore() async {
+        let (vm, mock, store) = makeEnvWithStore()
+        await store.storeCounts(
+            RepoIssuesCountSnapshot(openCount: 7, closedCount: 19, fetchedAt: Date()),
+            owner: "starcat-app", repo: "Starcat"
+        )
+        mock.searchIssuesHandler = { query, _, _ in
+            let isOpen = query.contains("is:open")
+            return APIResponse(
+                value: GitHubRepoIssueSearchResult(totalCount: isOpen ? 99 : 98, items: []),
+                linkHeader: LinkHeader(nextPage: nil, lastPage: nil),
+                rateLimit: .empty,
+                statusCode: 200,
+                etag: nil
+            )
+        }
+
+        await vm.refreshCountsIfNeeded()
+        #expect(vm.openCount == 7)
+        #expect(vm.closedCount == 19)
+        #expect(mock.searchIssuesCalls.isEmpty)
+
+        // 新 VM 过期缓存 → 先渲染旧值再校准，并把新值回写缓存。
+        let staleStore = RepoIssuesSharedStore(timeToLive: 0)
+        await staleStore.storeCounts(
+            RepoIssuesCountSnapshot(openCount: 7, closedCount: 19, fetchedAt: Date()),
+            owner: "starcat-app", repo: "Starcat"
+        )
+        let vm2 = RepoIssuesViewModel(client: mock, store: staleStore)
+        vm2.prepare(owner: "starcat-app", repo: "Starcat")
+        await vm2.refreshCountsIfNeeded()
+        #expect(vm2.openCount == 99)
+        #expect(vm2.closedCount == 98)
+        #expect(mock.searchIssuesCalls.count == 2)
+
+        let writtenBack = await staleStore.counts(owner: "starcat-app", repo: "Starcat")
+        #expect(writtenBack?.value.openCount == 99)
+        #expect(writtenBack?.value.closedCount == 98)
     }
 }

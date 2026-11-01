@@ -8,13 +8,15 @@
 //  关键约束：
 //  - VM 放在 `RepoDetailScaffold` 的 @State 上，跨浮层开关保活；切换仓库走
 //    `prepare(owner:repo:)` 复位（key 未变时 no-op，避免重复清状态）。
+//  - 首屏 / 计数走 `RepoIssuesSharedStore` 进程内缓存（stale-while-revalidate，TTL 15
+//    分钟）：命中即渲染（含过期），过期后台校准；未命中才全量拉取。App 侧注入
+//    `.shared` 让角标与多次打开浮层共享；测试默认注入独立实例，互不污染。
 //  - 搜索策略（2026-11-01 与 dong4j 确认）：先对已加载页做客户端过滤（标题包含 /
 //    编号精确匹配）；过滤为空且有关键词时，debounce 后走 `/search/issues` 兜底一次。
-//    兜底结果单独存放（`remoteSearchResults`），不与分页列表混写。
+//    兜底结果单独存放（`remoteSearchResults`），不与分页列表混写，也不进共享缓存。
 //  - 未解决/已关闭计数走 `/search/issues` per_page=1 取 `total_count`（不含 PR，
 //    比本地 `open_issues_count` 准）；失败时保持 nil，UI 不显示数字。
-//  - `/search/issues` 限流独立（约 30 次/分钟），所以计数每仓库只拉一次并在内存缓存，
-//    搜索兜底有 debounce，不随键入逐字请求。
+//  - `/search/issues` 限流独立（约 30 次/分钟），所以计数每仓库只拉一次并进共享缓存。
 //
 
 import Foundation
@@ -83,6 +85,8 @@ final class RepoIssuesViewModel {
     private var owner = ""
     private var repoName = ""
     private let client: any GitHubAPIClientProtocol
+    /// 首屏 / 计数的 SWR 缓存。默认独立实例（测试隔离）；App 侧显式注入 `.shared`。
+    private let store: RepoIssuesSharedStore
     private let perPage = 30
     private var currentPage = 0
     private var nextPage: Int?
@@ -90,8 +94,12 @@ final class RepoIssuesViewModel {
     private var searchDebounceTask: Task<Void, Never>?
     private var highlightClearTask: Task<Void, Never>?
 
-    init(client: any GitHubAPIClientProtocol) {
+    init(
+        client: any GitHubAPIClientProtocol,
+        store: RepoIssuesSharedStore = RepoIssuesSharedStore()
+    ) {
         self.client = client
+        self.store = store
     }
 
     /// 仓库变化时由 Scaffold 调用；key 未变 no-op，变了整体复位。
@@ -110,11 +118,16 @@ final class RepoIssuesViewModel {
 
     func loadFirstPageIfNeeded() async {
         guard issues.isEmpty, !isLoading, listTask == nil else { return }
+        // SWR：共享缓存命中即渲染（含过期），过期后台校准；未命中才走网络首屏。
+        if await applyCachedPageIfAvailable(for: stateFilter) { return }
         await loadFirstPage()
     }
 
-    func loadFirstPage() async {
+    /// 首屏加载。`isRevalidation = true` 表示共享缓存已渲染、这次只是后台校准：
+    /// 失败时保留缓存数据，不清空不报错（区别于首次加载的失败提示）。
+    func loadFirstPage(isRevalidation: Bool = false) async {
         guard !owner.isEmpty, !repoName.isEmpty else { return }
+        let requestedState = stateFilter
         listTask?.cancel()
         isLoading = true
         errorMessage = nil
@@ -126,10 +139,23 @@ final class RepoIssuesViewModel {
             let response = try await client.repoIssues(
                 owner: owner,
                 repo: repoName,
-                state: stateFilter,
+                state: requestedState,
                 page: 1,
                 perPage: perPage
             )
+            // 结果对请求时的状态永远有效，先回写共享缓存（即使用户已切走，别的窗口还能用）。
+            await store.storePage(
+                RepoIssuesPageSnapshot(
+                    issues: response.value,
+                    nextPage: response.linkHeader.nextPage,
+                    fetchedAt: Date()
+                ),
+                owner: owner,
+                repo: repoName,
+                state: requestedState
+            )
+            // 等待期间用户可能已切到另一状态：过期响应只进缓存，不再覆盖当前 UI。
+            guard stateFilter == requestedState else { return }
             issues = response.value
             currentPage = 1
             nextPage = response.linkHeader.nextPage
@@ -140,6 +166,10 @@ final class RepoIssuesViewModel {
             AppLog.network.error(
                 "Repo issues: first page failed repo=\(self.owner)/\(self.repoName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
+            if isRevalidation {
+                // SWR 后台校准失败：保留已展示的缓存数据，不打断浏览也不弹错误。
+                return
+            }
             errorMessage = Self.listErrorMessage(error)
             issues = []
             hasMore = false
@@ -182,7 +212,34 @@ final class RepoIssuesViewModel {
         stateFilter = newState
         remoteSearchResults = nil
         remoteSearchErrorMessage = nil
-        Task { await loadFirstPage() }
+        Task { await loadFirstPageForNewState(newState) }
+    }
+
+    /// 切换筛选：命中共享缓存即时渲染；未命中才清空旧状态列表走网络，
+    /// 避免上一状态的行串进新筛选（清空后由骨架接管）。
+    private func loadFirstPageForNewState(_ newState: GitHubRepoIssueState) async {
+        if await applyCachedPageIfAvailable(for: newState) { return }
+        guard stateFilter == newState else { return }
+        issues = []
+        currentPage = 0
+        nextPage = nil
+        hasMore = false
+        await loadFirstPage()
+    }
+
+    /// 用共享缓存快照立即渲染；已过期时顺带后台校准。返回是否命中。
+    private func applyCachedPageIfAvailable(for state: GitHubRepoIssueState) async -> Bool {
+        guard let cached = await store.page(owner: owner, repo: repoName, state: state) else {
+            return false
+        }
+        issues = cached.value.issues
+        currentPage = 1
+        nextPage = cached.value.nextPage
+        hasMore = cached.value.nextPage != nil
+        if cached.isStale {
+            await loadFirstPage(isRevalidation: true)
+        }
+        return true
     }
 
     /// 搜索框变化：客户端过滤即时生效；过滤为空且有关键词 → debounce 后远程兜底。
@@ -230,10 +287,20 @@ final class RepoIssuesViewModel {
         }
     }
 
-    /// 打开浮层时刷新两个精确计数；每仓库内存缓存一次，成功后不重复拉。
+    /// 打开浮层时刷新两个精确计数；共享缓存命中（含过期）先回填给角标，过期再校准。
     func refreshCountsIfNeeded() async {
         guard openCount == nil && closedCount == nil, !isCountLoading else { return }
         guard !owner.isEmpty, !repoName.isEmpty else { return }
+        if let cached = await store.counts(owner: owner, repo: repoName) {
+            openCount = cached.value.openCount
+            closedCount = cached.value.closedCount
+            guard cached.isStale else { return }
+        }
+        await fetchCounts()
+    }
+
+    /// Search API 拉双计数并回写共享缓存；失败保持 nil（UI 只显示文字），下次打开重试。
+    private func fetchCounts() async {
         isCountLoading = true
         defer { isCountLoading = false }
         async let openResponse = try? client.searchIssues(
@@ -249,6 +316,17 @@ final class RepoIssuesViewModel {
         let (open, closed) = await (openResponse, closedResponse)
         openCount = open?.value.totalCount
         closedCount = closed?.value.totalCount
+        if let openCount, let closedCount {
+            await store.storeCounts(
+                RepoIssuesCountSnapshot(
+                    openCount: openCount,
+                    closedCount: closedCount,
+                    fetchedAt: Date()
+                ),
+                owner: owner,
+                repo: repoName
+            )
+        }
     }
 
     // MARK: - 新建 Issue
@@ -331,4 +409,41 @@ final class RepoIssuesViewModel {
         }
         return String.l10n("repo.issues.error.generic", defaultValue: "Issues 加载失败，请稍后再试")
     }
+
+    // MARK: - 工作台联动
+
+    /// 工作台详情页发表评论成功后（inbox 变更）同步左栏对应行的评论数。
+    /// GitHubRepoIssue 是 let 结构，整行重建。
+    func updateCommentsCount(issueID: Int64, count: Int) {
+        guard let index = issues.firstIndex(where: { $0.id == issueID }) else { return }
+        let old = issues[index]
+        guard old.commentsCount != count else { return }
+        issues[index] = GitHubRepoIssue(
+            id: old.id,
+            number: old.number,
+            title: old.title,
+            state: old.state,
+            body: old.body,
+            htmlURL: old.htmlURL,
+            authorLogin: old.authorLogin,
+            labels: old.labels,
+            commentsCount: count,
+            createdAt: old.createdAt,
+            updatedAt: old.updatedAt,
+            closedAt: old.closedAt
+        )
+    }
+
+#if DEBUG
+    /// SwiftUI Preview 专用：跳过网络直接填充列表（不参与生产路径）。
+    func seedPreviewIssues(_ previewIssues: [GitHubRepoIssue], openCount: Int? = nil, closedCount: Int? = nil) {
+        issues = previewIssues
+        currentPage = 1
+        nextPage = nil
+        hasMore = false
+        isLoading = false
+        self.openCount = openCount
+        self.closedCount = closedCount
+    }
+#endif
 }

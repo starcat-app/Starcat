@@ -99,6 +99,9 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     /// `/search/issues` mock handler（精确计数与关键词兜底共用）。
     var searchIssuesHandler: ((_ query: String, _ page: Int, _ perPage: Int) async throws -> APIResponse<GitHubRepoIssueSearchResult>)?
     /// 新建 Issue mock handler。
+
+    var issueTemplatesHandler: ((_ owner: String, _ repo: String) async throws -> [GitHubIssueTemplate])?
+
     var createRepoIssueHandler: ((_ owner: String, _ repo: String, _ title: String, _ body: String?) async throws -> GitHubRepoIssue)?
 
     // MARK: - 调用记录（供断言用）
@@ -517,6 +520,11 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.createRepoIssueHandler 未设置")
         }
         return try await handler(owner, repo, title, body)
+    }
+
+    func issueTemplates(owner: String, repo: String) async throws -> [GitHubIssueTemplate] {
+        guard let handler = issueTemplatesHandler else { return [] }
+        return try await handler(owner, repo)
     }
 }
 
