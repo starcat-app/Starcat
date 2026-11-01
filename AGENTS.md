@@ -432,7 +432,7 @@ Section {
 
 > 单一信任源：[`docs/5-规范/国际化-规范.md`](docs/5-规范/国际化-规范.md) + [`docs/5-规范/i18n-军规.md`](docs/5-规范/i18n-军规.md)
 > 关键 7 条：`String.l10n` / `Text("key")` / `.appLocaleEnvironment()` / locale 注入 / `Localizable.xcstrings` 命名 `{section}.{subsection}.{component}` / 目录编辑必须保持 `"key" : value` 并禁止整文件格式化 / **Catalog 禁止 StrReplace/ApplyPatch 与 JSON 重排写回；只允许 Xcode 或经验证的按行插入（diff 只能新增）**。
-> **全语言交付（2026-10-21 起强制）**：新增或修改国际化文案后，必须同步完成当前全部支持语言（现为 18 种）的配置与校验；禁止只补中英文、复制英语冒充翻译，或把英语兜底当成国际化完成。语言集合以 `AppLocale`（排除 `system`）与 `supports/starcat-localization/locales.json` 为准；提交前核对本次全部 key 的语言覆盖、占位符、编译资源和长文案布局。AI 初稿与人工审核状态必须如实保留，未验收部分明确报告。
+> **全语言交付（2026-10-21 起强制）**：新增或修改国际化文案后，必须同步完成当前全部支持语言（现为 17 种）的配置与校验；禁止只补中英文、复制英语冒充翻译，或把英语兜底当成国际化完成。语言集合以 `AppLocale`（排除 `system`）与 `supports/starcat-localization/locales.json` 为准；提交前核对本次全部 key 的语言覆盖、占位符、编译资源和长文案布局。AI 初稿与人工审核状态必须如实保留，未验收部分明确报告。
 > 自检：提交前 `rg "String\(localized:"` 与 `rg "NSLocalizedString"` 应只命中注释。
 
 ### 问题处理

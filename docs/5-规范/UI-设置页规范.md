@@ -156,7 +156,7 @@ HStack {
 - 图标按钮必须提供 tooltip 与 accessibility label；图标本身不能是唯一语义来源。
 - 普通文本/图标禁止 `.tertiary`，详见 [`UI-颜色规范.md`](UI-颜色规范.md)。
 - 使用系统语义色、系统控件与 `.grouped` Form，保证明暗主题下的对比度；不额外铺设纯黑背景或高饱和渐变。
-- 所有新增或修改文案遵循 [`国际化-规范.md`](国际化-规范.md)：覆盖全部支持语言（当前 18 种，以 `AppLocale` 排除 `system` 后与 `supports/starcat-localization/locales.json` 核对），key 使用 `{section}.{subsection}.{component}`。AI 初稿保留 `needs_review`，英语兜底不算译文完成。
+- 所有新增或修改文案遵循 [`国际化-规范.md`](国际化-规范.md)：覆盖全部支持语言（当前 17 种，以 `AppLocale` 排除 `system` 后与 `supports/starcat-localization/locales.json` 核对），key 使用 `{section}.{subsection}.{component}`。AI 初稿保留 `needs_review`，英语兜底不算译文完成。
 - 由设置页打开的 sheet / popover 根视图必须注入 `.appLocaleEnvironment()`，不能依赖浮层自动继承主页面语言。
 
 ## 8. 新增或调整设置页的验收清单
