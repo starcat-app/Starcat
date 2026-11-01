@@ -66,19 +66,31 @@ struct DailyRadarClientTests {
         // 选择历史期次后 reload 是异步身份切换；edition 仍代表旧首屏，
         // 相邻期次计算必须立即跟随 selectedEdition，支持连续点击导航。
         model.selectedEdition = "2026-10-29"
+        // 固定当前 edition 后，当前期与往期必须按日期划分；fixture 首页是 10-29。
+        #expect(model.stories.map(\.editionDate) == ["2026-10-31"])
+        #expect(model.olderStories.isEmpty)
         #expect(model.previousEdition == "2026-10-24")
         #expect(model.nextEdition == "2026-10-31")
         fixture.state.mutate {
             $0.day = "2026-10-30"
             $0.dates = ["2026-10-30", "2026-10-29", "2026-10-24"]
             $0.revision = "2"
+            // 模拟服务端 date_to 分页：所选日期是当前期，列表里还带有更早期次。
+            $0.historyDates = ["2026-10-29", "2026-10-24"]
         }
         await model.reload(force: true)
         // selectedEdition 已固定历史期次，不能被 latest 指针覆盖。
         #expect(model.edition == "2026-10-29")
-        model.selectedEdition = "2026-10-29"
+        // 历史首屏必须把等于所选日期的项作为当前期，严格更早的项作为往期。
+        model.selectedEdition = "2026-10-15"
+        fixture.state.mutate {
+            $0.dates = ["2026-10-30", "2026-10-29", "2026-10-24", "2026-10-15", "2026-10-14"]
+            $0.historyDates = ["2026-10-15", "2026-10-14"]
+        }
         await model.reload(force: true)
-        #expect(model.edition == "2026-10-29")
+        #expect(model.edition == "2026-10-15")
+        #expect(model.stories.map(\.editionDate) == ["2026-10-15"])
+        #expect(model.olderStories.map(\.editionDate) == ["2026-10-14"])
         #expect(model.dates.first?.date == "2026-10-30")
         let dateRequests = fixture.state.requests.filter { $0.url?.path.hasSuffix("/dates") == true }
         #expect(dateRequests.allSatisfy { request in
@@ -229,6 +241,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
         var error = false
         var hasNext = false
         var hasPage = false
+        var historyDates: [String]? = nil
         var changeOnNext = false
         var requests: [URLRequest] = []
     }
@@ -248,6 +261,8 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
             }
             let status = values.error ? 503 : (values.notModified ? 304 : 200)
             let path = request.url!.path
+            let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let dateTo = queryItems.first { $0.name == "date_to" }?.value
             var summaries: [String] = []
             if values.hasPage && hasCursor {
                 summaries = [
@@ -269,9 +284,21 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
                     """
                 }
             } else {
+                // 显式提供历史列表时模拟 date_to 语义，避免测试把“未按日期过滤”的
+                // fixture 行为误当成服务端契约。
+                let historyDates = (path.hasSuffix("/reports") && hasCursor == false)
+                    ? dateTo.flatMap { _ in values.historyDates }
+                    : nil
                 summaries = ["""
                 {"id":"agents-radar:2026-10-29:ai-cli","revision":"\(values.revision)","edition_date":"\(values.day)","category":"ai-cli","period":"daily","title":"Report","summary":"Summary","reading_minutes":3,"cover":{"kind":"category","card_url":null,"hero_url":null,"fallback":"orbit","alt":"AI"},"related_project_count":0,"content_language":"en","available_languages":["en"]}
-                """]
+                """].map { payload in
+                    guard let historyDates else { return payload }
+                    return historyDates.map { day in
+                        payload
+                            .replacingOccurrences(of: "agents-radar:2026-10-29:ai-cli", with: "agents-radar:\(day):ai-cli")
+                            .replacingOccurrences(of: "\"edition_date\":\"\(values.day)\"", with: "\"edition_date\":\"\(day)\"")
+                    }.joined(separator: ",")
+                }
             }
             let summary = summaries.joined(separator: ",")
             let payload: String

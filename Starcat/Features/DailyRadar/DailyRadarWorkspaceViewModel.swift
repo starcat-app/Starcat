@@ -37,8 +37,16 @@ final class DailyRadarWorkspaceViewModel {
     var categoryPeriod: String { catalog?.categories.first(where: { $0.id == category })?.period ?? "daily" }
     var identity: String { "\(scope)|\(category ?? "")|\(selectedEdition ?? "latest")|\(contentLanguage)" }
     var featured: DailyRadarReport? { items.first(where: { $0.id == featuredID }) ?? items.first }
-    var stories: [DailyRadarReport] { items.filter { $0.editionDate == edition } }
-    var olderStories: [DailyRadarReport] { items.filter { $0.editionDate != edition } }
+    /// 当前筛选期次必须严格按日期判断。选择历史日期时接口返回的首页可能就是
+    /// 该日期前最近一期；不能用 `!=` 判断“往期”，否则会把同一期前的内容误当作当前期。
+    var stories: [DailyRadarReport] {
+        guard let edition else { return [] }
+        return items.filter { $0.editionDate == edition }
+    }
+    var olderStories: [DailyRadarReport] {
+        guard let edition else { return [] }
+        return items.filter { $0.editionDate < edition }
+    }
     var availableCategories: [DailyRadarCatalog.Category] { catalog?.categories ?? [] }
     /// 目录日期已按业务日期排序；查找相邻期次必须跳过断更，而不是简单加减一天。
     /// 日期切换会先更新 selectedEdition、再由身份驱动异步 reload，因此这里必须
