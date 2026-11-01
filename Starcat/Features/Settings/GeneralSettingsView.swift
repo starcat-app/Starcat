@@ -368,28 +368,41 @@ struct GeneralSettingsView: View {
         let updateController = dependencies.directUpdateController
 
         return Section {
-            Picker("settings.pro.direct.updates.channel", selection: Binding(
-                get: { updateController.updateChannel },
-                set: { updateController.selectUpdateChannel($0) }
-            )) {
-                Text("settings.general.updates.channel.stable")
-                    .tag(DirectUpdateChannel.stable)
-                Text("settings.general.updates.channel.preview")
-                    .tag(DirectUpdateChannel.development)
-            }
-
-            if updateController.updateChannel == .development {
-                Text("settings.general.updates.channel.preview.help")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
             Toggle("settings.pro.direct.updates.autoCheck", isOn: Binding(
                 get: { updateController.automaticallyChecksForUpdates },
                 set: { updateController.automaticallyChecksForUpdates = $0 }
             ))
             .disabled(!updateController.isConfigured)
+
+            // 「更新通道」Picker 收敛为单个开关：用户心智是「愿不愿意先收预览版」，
+            // 不需要在两条轨道间做选择。后端双 feed 结构不变——开即 development
+            // appcast（内含正式条目），关即正式 appcast；偏好 key 也不变，存量
+            // 「预览」用户天然映射为开关打开。切换仍走 selectUpdateChannel，保留
+            // 「立即检查一次」行为；关开关不会降级，要等下一个构建号更高的正式版。
+            // 两个 l10n key 暂未入 catalog（国际化批量任务冻结期，禁止改 xcstrings），
+            // 先用 defaultValue 兜底，key 补录后自动接管。
+            Toggle(isOn: Binding(
+                get: { updateController.updateChannel == .development },
+                set: { includePreview in
+                    updateController.selectUpdateChannel(includePreview ? .development : .stable)
+                }
+            )) {
+                Text(String.l10n(
+                    "settings.pro.direct.updates.includePreview",
+                    defaultValue: "Include preview updates"
+                ))
+            }
+            .disabled(!updateController.isConfigured)
+
+            if updateController.updateChannel == .development {
+                Text(String.l10n(
+                    "settings.pro.direct.updates.includePreview.help",
+                    defaultValue: "Preview updates may include unfinished or unstable features. Turning this off will not downgrade the installed version."
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
 
             Toggle("settings.pro.direct.updates.autoDownload", isOn: Binding(
                 get: { updateController.automaticallyDownloadsUpdates },
