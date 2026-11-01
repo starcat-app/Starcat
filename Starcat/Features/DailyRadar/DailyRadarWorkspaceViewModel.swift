@@ -170,6 +170,10 @@ final class DailyRadarWorkspaceViewModel {
         category = id
         edition = nil
         selectedEdition = nil
+        // 切换分类即离开当前阅读会话：详情面板必须随列表一起重置，
+        // 避免新分类首页之上还浮着旧报告详情。close 内部递增 detailGeneration，
+        // 与在途详情拉取天然互斥，晚到响应不会污染新状态。
+        close()
     }
 
     func selectEarlierEdition() {
