@@ -72689,13 +72689,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ が追加したラベル:"
+            "value" : "%@ が追加した"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@님이 추가한 레이블:"
+            "value" : "%@님이 추가한"
           }
         },
         "de" : {
@@ -72707,13 +72707,13 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ a ajouté l’étiquette"
+            "value" : "%@ a ajouté"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ añadió la etiqueta"
+            "value" : "%@ añadió la"
           }
         },
         "pt-BR" : {
@@ -72725,25 +72725,25 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ ha aggiunto l'etichetta"
+            "value" : "%@ ha aggiunto"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ добавил(а) метку"
+            "value" : "%@ добавил(а)"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ voegde het label"
+            "value" : "%@ voegde het"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ dodał etykietę"
+            "value" : "%@ dodał"
           }
         },
         "uk" : {
@@ -72779,13 +72779,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 添加了标签"
+            "value" : "%@ 添加了"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 新增了標籤"
+            "value" : "%@ 新增了"
           }
         }
       }
@@ -72814,7 +72814,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "label"
+            "value" : "l’étiquette"
           }
         },
         "es" : {
@@ -72832,7 +72832,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "etichetta"
+            "value" : "l'etichetta"
           }
         },
         "ru" : {
@@ -73438,13 +73438,13 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ が削除したラベル:"
+            "value" : "%@ が削除した"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@님이 제거한 레이블:"
+            "value" : "%@님이 제거한"
           }
         },
         "de" : {
@@ -73456,13 +73456,13 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ a supprimé l’étiquette"
+            "value" : "%@ a supprimé"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ eliminó la etiqueta"
+            "value" : "%@ eliminó la"
           }
         },
         "pt-BR" : {
@@ -73474,25 +73474,25 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ ha rimosso l'etichetta"
+            "value" : "%@ ha rimosso"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ удалил(а) метку"
+            "value" : "%@ удалил(а)"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ verwijderde het label"
+            "value" : "%@ verwijderde het"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ usunął etykietę"
+            "value" : "%@ usunął"
           }
         },
         "uk" : {
@@ -73528,13 +73528,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 移除了标签"
+            "value" : "%@ 移除了"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 移除了標籤"
+            "value" : "%@ 移除了"
           }
         }
       }
@@ -73563,7 +73563,7 @@
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "label"
+            "value" : "l’étiquette"
           }
         },
         "es" : {
@@ -73581,7 +73581,7 @@
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "etichetta"
+            "value" : "l'etichetta"
           }
         },
         "ru" : {
