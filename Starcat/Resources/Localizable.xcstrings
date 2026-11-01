@@ -160310,6 +160310,48 @@
         }
       }
     },
+    "cache.issueDraft.error.applicationSupportUnavailable" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Auf den Application-Support-Ordner kann nicht zugegriffen werden" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Application Support is unavailable" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se puede acceder a la carpeta Application Support" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible d'accéder au dossier Application Support" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak dapat mengakses folder Application Support" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile accedere alla cartella Application Support" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "アプリケーションサポートフォルダにアクセスできません" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "응용 프로그램 지원 폴더에 접근할 수 없습니다" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Geen toegang tot de Application Support-map" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brak dostępu do folderu Application Support" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível acessar a pasta Application Support" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Нет доступа к папке Application Support" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Application Support klasörüne erişilemiyor" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Немає доступу до папки Application Support" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể truy cập thư mục Application Support" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法访问应用支持目录" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法存取應用程式支援目錄" } }
+      }
+    },
+    "cache.issueDraft.error.unsafePathComponentFormat" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Unsicherer Cache-Pfad: %@" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Unsafe cache path: %@" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Ruta de caché no segura: %@" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Chemin de cache non sécurisé : %@" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Jalur cache tidak aman: %@" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Percorso cache non sicuro: %@" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "安全でないキャッシュパス：%@" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "안전하지 않은 캐시 경로: %@" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Onveilig cachepad: %@" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Niebezpieczna ścieżka pamięci podręcznej: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Caminho de cache não seguro: %@" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Небезопасный путь кэша: %@" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Güvenli olmayan önbellek yolu: %@" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Небезпечний шлях кешу: %@" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đường dẫn bộ nhớ đệm không an toàn: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "不安全的缓存路径：%@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "不安全的快取路徑：%@" } }
+      }
+    },
     "cache.issueTimeline.error.applicationSupportUnavailable" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -175092,6 +175134,27 @@
             "value" : "取消"
           }
         }
+      }
+    },
+    "common.clear" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Löschen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Clear" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Borrar" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Effacer" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Bersihkan" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Cancella" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "クリア" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "지우기" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wissen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wyczyść" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Limpar" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Очистить" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Temizle" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Очистити" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xóa" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "清空" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "清除" } }
       }
     },
     "common.close" : {
@@ -407855,6 +407918,825 @@
         }
       }
     },
+    "repo.issues.entry.title" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } }
+      }
+    },
+    "repo.issues.entry.help" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues ansehen & erstellen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "View & create issues" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Ver y crear issues" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Consulter et créer des issues" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Lihat & buat Issue" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Visualizza e crea issue" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue の表示と作成" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue 보기 및 생성" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues bekijken & maken" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wyświetl i utwórz Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ver e criar issues" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Просмотр и создание Issue" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue görüntüle ve oluştur" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перегляд і створення Issue" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xem và tạo Issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "查看并新建 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "檢視並建立 Issue" } }
+      }
+    },
+    "repo.issues.popover.title" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues" } }
+      }
+    },
+    "repo.issues.popover.newIssue" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Neues Issue" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "New Issue" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Nueva issue" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Nouvelle issue" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue Baru" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Nuova issue" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue を作成" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "새 Issue" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nieuw issue" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nowe Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Nova issue" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Новая задача" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Yeni Issue" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Нова задача" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue mới" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "新建 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "新增 Issue" } }
+      }
+    },
+    "repo.issues.search.placeholder" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Titel oder Issue-Nummer suchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Search titles or issue #" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Buscar por título o número de issue" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Rechercher par titre ou numéro d'issue" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Cari judul atau nomor Issue" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Cerca per titolo o numero di issue" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "タイトルまたは Issue 番号を検索" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "제목 또는 Issue 번호 검색" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zoek op titel of issuenummer" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Szukaj w tytułach lub numerach Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Buscar por título ou número da issue" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Поиск по названию или номеру Issue" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Başlığa veya Issue numarasına göre ara" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Пошук за назвою або номером Issue" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tìm theo tiêu đề hoặc số Issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "搜索标题或 Issue 编号" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "搜尋標題或 Issue 編號" } }
+      }
+    },
+    "repo.issues.filter.open" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Offen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Open" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Abiertas" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Ouvertes" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Terbuka" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Aperte" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "オープン" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "열림" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Open" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Otwarte" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Abertas" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Открытые" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Açık" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Відкриті" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đang mở" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "未解决" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "開啟" } }
+      }
+    },
+    "repo.issues.filter.closed" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Geschlossen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Closed" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Cerradas" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Fermées" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Ditutup" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Chiuse" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "クローズ済み" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "닫힘" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Gesloten" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zamknięte" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Fechadas" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Закрытые" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Kapalı" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Закриті" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã đóng" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已关闭" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已關閉" } }
+      }
+    },
+    "repo.issues.sort.updated" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Zuletzt aktualisiert" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Recently updated" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Actualizadas recientemente" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Mises à jour récemment" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Terbaru diperbarui" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Aggiornate di recente" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "最近の更新" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "최근 업데이트" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Recent bijgewerkt" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Ostatnio aktualizowane" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Atualizadas recentemente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Недавно обновлённые" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Yakında güncellenen" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Нещодавно оновлені" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Cập nhật gần đây" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "最新更新" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "最近更新" } }
+      }
+    },
+    "repo.issues.empty.noIssues" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Noch keine Issues" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "No issues yet" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Aún no hay issues" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Aucune issue pour le moment" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Belum ada Issue" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ancora nessuna issue" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue はまだありません" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "아직 Issue가 없습니다" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nog geen issues" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brak Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ainda não há issues" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Пока нет задач" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Henüz Issue yok" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Ще немає задач" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Chưa có Issue nào" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "还没有 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "還沒有 Issue" } }
+      }
+    },
+    "repo.issues.empty.noResults" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Keine passenden Issues" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "No matching issues" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No hay issues coincidentes" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Aucune issue correspondante" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak ada Issue yang cocok" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Nessuna issue corrispondente" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "一致する Issue がありません" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "일치하는 Issue가 없습니다" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Geen passende issues" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brak pasujących Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Nenhuma issue correspondente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Подходящих задач нет" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Eşleşen Issue yok" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Немає відповідних задач" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không có Issue khớp" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "没有匹配的 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "沒有符合的 Issue" } }
+      }
+    },
+    "repo.issues.error.retry" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Retry" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Reintentar" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Réessayer" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Coba lagi" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Riprova" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "再試行" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "재시도" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Opnieuw proberen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Ponów" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Tentar novamente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Повторить" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Yeniden dene" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Повторити" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Thử lại" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "重试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "重試" } }
+      }
+    },
+    "repo.issues.error.notFound" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Auf die Issues dieses Repos kann nicht zugegriffen werden (evtl. privates Repo oder Issues deaktiviert)" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Can't access this repo's issues (private repo or issues disabled?)" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se puede acceder a las issues de este repositorio (¿repositorio privado o issues desactivados?)" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible d'accéder aux issues de ce dépôt (dépôt privé ou issues désactivées ?)" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak dapat mengakses Issue repo ini (mungkin repo privat atau Issues dimatikan)" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile accedere alle issue di questo repository (repository privato o issue disattivate?)" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "このリポジトリの Issue にアクセスできません（プライベートリポジトリか、Issue が無効の可能性）" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이 저장소의 Issue에 접근할 수 없습니다(비공개 저장소이거나 Issues가 비활성화되었을 수 있습니다)" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Geen toegang tot de issues van deze repo (misschien privérepo of issues uitgeschakeld)" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brak dostępu do Issue tego repozytorium (może prywatne repozytorium lub wyłączone Issues)" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível acessar as issues deste repositório (repositório privado ou issues desativados?)" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Нет доступа к задачам этого репозитория (возможно, приватный репозиторий или задачи отключены)" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu deponun Issue'larına erişilemiyor (özel depo veya Issues kapalı olabilir)" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Немає доступу до задач цього репозиторію (можливо, приватний репозиторій або задачі вимкнено)" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể truy cập Issue của repo này (có thể là repo riêng tư hoặc đã tắt Issues)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法访问该仓库的 Issues（可能是私有仓库或已关闭 Issues）" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法存取此倉庫的 Issues（可能是私有倉庫或已關閉 Issues）" } }
+      }
+    },
+    "repo.issues.error.forbidden" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Auf die Issues dieses Repos kann nicht zugegriffen werden (evtl. privates Repo oder fehlende Berechtigung)" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Can't access this repo's issues (private repo or insufficient permissions?)" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se puede acceder a las issues de este repositorio (¿repositorio privado o permisos insuficientes?)" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible d'accéder aux issues de ce dépôt (dépôt privé ou permissions insuffisantes ?)" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak dapat mengakses Issue repo ini (mungkin repo privat atau izin tidak cukup)" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile accedere alle issue di questo repository (repository privato o permessi insufficienti?)" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "このリポジトリの Issue にアクセスできません（プライベートリポジトリか権限不足の可能性）" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이 저장소의 Issue에 접근할 수 없습니다(비공개 저장소이거나 권한이 부족할 수 있습니다)" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Geen toegang tot de issues van deze repo (misschien privérepo of onvoldoende rechten)" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brak dostępu do Issue tego repozytorium (może prywatne repozytorium lub brak uprawnień)" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível acessar as issues deste repositório (repositório privado ou permissões insuficientes?)" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Нет доступа к задачам этого репозитория (возможно, приватный репозиторий или недостаточно прав)" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu deponun Issue'larına erişilemiyor (özel depo veya yetersiz izin olabilir)" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Немає доступу до задач цього репозиторію (можливо, приватний репозиторій або недостатньо прав)" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể truy cập Issue của repo này (có thể là repo riêng tư hoặc thiếu quyền)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法访问该仓库的 Issues（可能是私有仓库或权限不足）" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法存取此倉庫的 Issues（可能是私有倉庫或權限不足）" } }
+      }
+    },
+    "repo.issues.error.rateLimited" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub-Ratenlimit erreicht. Bitte später erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub rate limit reached. Try again later." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Se alcanzó el límite de solicitudes de GitHub. Inténtalo más tarde" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Limite de requêtes GitHub atteinte. Réessayez plus tard" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Batas permintaan GitHub tercapai. Coba lagi nanti" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Limite di richieste GitHub raggiunto. Riprova più tardi" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub のレート制限に達しました。しばらくしてからもう一度お試しください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub-snelheidslimiet bereikt. Probeer het later opnieuw" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Osiągnięto limit żądań GitHub. Spróbuj ponownie później" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Limite de solicitações do GitHub atingido. Tente novamente mais tarde" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Достигнут лимит запросов GitHub. Повторите позже" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub istek sınırına ulaşıldı. Daha sonra tekrar deneyin" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Досягнуто ліміт запитів GitHub. Повторіть пізніше" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đạt giới hạn yêu cầu GitHub. Vui lòng thử lại sau" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 请求频率受限，请稍后再试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 請求頻率受限，請稍後再試" } }
+      }
+    },
+    "repo.issues.error.unauthorized" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Sitzung abgelaufen. Bitte erneut bei GitHub anmelden" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Session expired. Sign in to GitHub again." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "La sesión ha caducado. Vuelve a iniciar sesión en GitHub" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Session expirée. Reconnectez-vous à GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sesi berakhir. Masuk kembali ke GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Sessione scaduta. Accedi di nuovo a GitHub" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ログイン状態の有効期限が切れました。GitHub に再度ログインしてください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "로그인 세션이 만료되었습니다. GitHub에 다시 로그인해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sessie verlopen. Meld opnieuw aan bij GitHub" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sesja wygasła. Zaloguj się ponownie do GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Sessão expirada. Entre novamente no GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Сессия истекла. Войдите в GitHub заново" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Oturum süresi doldu. GitHub'da yeniden oturum açın" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Сесію завершено. Увійдіть до GitHub знову" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "登录状态已失效，请重新登录 GitHub" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "登入狀態已失效，請重新登入 GitHub" } }
+      }
+    },
+    "repo.issues.error.generic" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues konnten nicht geladen werden. Bitte später erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Couldn't load issues. Try again later." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se pudieron cargar las issues. Inténtalo más tarde" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible de charger les issues. Réessayez plus tard" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Gagal memuat Issues. Coba lagi nanti" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile caricare le issue. Riprova più tardi" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue を読み込めませんでした。しばらくしてからもう一度お試しください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kon issues niet laden. Probeer het later opnieuw" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie udało się wczytać Issue. Spróbuj ponownie później" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível carregar as issues. Tente novamente mais tarde" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось загрузить задачи. Повторите позже" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues yüklenemedi. Daha sonra tekrar deneyin" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося завантажити задачі. Повторіть пізніше" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể tải Issues. Vui lòng thử lại sau" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues 加载失败，请稍后再试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Issues 載入失敗，請稍後再試" } }
+      }
+    },
+    "repo.issues.footer.openInGitHub" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Auf GitHub öffnen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Open in GitHub" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Abrir en GitHub" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Ouvrir dans GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Buka di GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Apri in GitHub" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub で開く" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub에서 열기" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Openen op GitHub" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Otwórz w GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Abrir no GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Открыть на GitHub" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub'da aç" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Відкрити на GitHub" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Mở trên GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "在 GitHub 中打开" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "在 GitHub 中開啟" } }
+      }
+    },
+    "repo.issues.footer.remoteResultFormat" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ Treffer" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ matches" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ coincidencias" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ correspondances" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ kecocokan" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ corrispondenze" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ 件が一致" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%@개 일치" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ overeenkomsten" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Łącznie trafień: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ correspondências" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Всего совпадений: %@" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ eşleşme" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Всього збігів: %@" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%@ kết quả khớp" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "共 %@ 条匹配" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "共 %@ 筆符合" } }
+      }
+    },
+    "repo.issues.footer.loadedFormat" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%d von %d geladen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Loaded %d of %d" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%d de %d cargadas" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%d chargées sur %d" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%d dari %d dimuat" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%d caricate su %d" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%d / %d 件を読み込み済み" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%d / %d개 로드됨" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%d van %d geladen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wczytano %d z %d" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%d de %d carregadas" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Загружено %d из %d" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%d / %d yüklendi" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Завантажено %d з %d" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã tải %d / %d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已加载 %d / 共 %d" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已載入 %d / 共 %d" } }
+      }
+    },
+    "repo.issues.footer.loadedCountFormat" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%d geladen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Loaded %d" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%d cargadas" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%d chargées" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%d dimuat" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%d caricate" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%d 件を読み込み済み" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%d개 로드됨" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%d geladen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wczytano: %d" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%d carregadas" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Загружено: %d" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%d yüklendi" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Завантажено: %d" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã tải %d" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已加载 %d 条" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已載入 %d 筆" } }
+      }
+    },
+    "repo.issues.sheet.title" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Neues Issue" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "New Issue" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Nueva issue" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Nouvelle issue" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue Baru" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Nuova issue" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue を作成" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "새 Issue" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nieuw issue" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nowe Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Nova issue" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Новая задача" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Yeni Issue" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Нова задача" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue mới" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "新建 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "新增 Issue" } }
+      }
+    },
+    "repo.issues.sheet.submitTo" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Senden an" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Submit to" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Enviar a" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Envoyer à" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Kirim ke" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Invia a" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "送信先" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "제출 대상" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Verzenden aan" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wyślij do" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Enviar para" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Отправить в" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Gönderilecek depo" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Надіслати до" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Gửi tới" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "提交到" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "提交至" } }
+      }
+    },
+    "repo.issues.sheet.titleLabel" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Titel" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Title" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Título" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Titre" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Judul" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Titolo" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "タイトル" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "제목" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Titel" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Tytuł" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Título" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Заголовок" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Başlık" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Заголовок" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tiêu đề" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "标题" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "標題" } }
+      }
+    },
+    "repo.issues.sheet.titlePlaceholder" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Problem oder Vorschlag kurz beschreiben" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Briefly describe the problem or suggestion" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Describe brevemente el problema o sugerencia" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Décrivez brièvement le problème ou la suggestion" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Jelaskan masalah atau saran secara singkat" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Descrivi brevemente il problema o il suggerimento" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "問題や提案を簡潔に記述してください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "문제나 제안을 간결하게 설명해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Beschrijf het probleem of voorstel kort" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Krótko opisz problem lub sugestię" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Descreva resumidamente o problema ou sugestão" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Кратко опишите проблему или предложение" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorunu veya öneriyi kısaca açıklayın" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Коротко опишіть проблему чи пропозицію" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Mô tả ngắn gọn vấn đề hoặc đề xuất" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "简明描述这个问题或建议" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "簡明描述這個問題或建議" } }
+      }
+    },
+    "repo.issues.sheet.bodyLabel" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Beschreibung" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Description" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Descripción" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Description" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Deskripsi" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Descrizione" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "説明" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "설명" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Beschrijving" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Opis" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Descrição" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Описание" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Açıklama" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Опис" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Mô tả" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "描述" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "描述" } }
+      }
+    },
+    "repo.issues.sheet.tabEdit" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Bearbeiten" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Edit" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Editar" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Modifier" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Edit" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Modifica" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "編集" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "편집" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Bewerk" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Edycja" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Editar" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Правка" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Düzenle" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Редагувати" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Soạn" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "编辑" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "編輯" } }
+      }
+    },
+    "repo.issues.sheet.tabPreview" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vorschau" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Preview" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Vista previa" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Aperçu" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pratinjau" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Anteprima" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "プレビュー" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "미리보기" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Voorbeeld" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Podgląd" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Pré-visualizar" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Просмотр" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Önizleme" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перегляд" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xem trước" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "预览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "預覽" } }
+      }
+    },
+    "repo.issues.sheet.bodyPlaceholder" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue beschreiben. Markdown wird unterstützt…" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Describe this issue. Markdown supported…" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Describe esta issue. Se admite Markdown…" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Décrivez cette issue. Markdown pris en charge…" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Jelaskan Issue ini. Mendukung Markdown…" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Descrivi questa issue. Supporto Markdown…" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue を記述してください（Markdown 対応）…" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이 Issue를 설명해 주세요. Markdown을 지원합니다…" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Beschrijf deze issue. Markdown ondersteund…" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Opisz to Issue. Obsługa Markdown…" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Descreva esta issue. Compatível com Markdown…" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Опишите задачу. Поддерживается Markdown…" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu Issue'yu açıklayın. Markdown desteklenir…" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Опишіть цю задачу. Підтримується Markdown…" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Mô tả Issue này. Hỗ trợ Markdown…" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "描述这个 Issue，支持 Markdown…" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "描述這個 Issue，支援 Markdown…" } }
+      }
+    },
+    "repo.issues.sheet.emptyPreview" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Nichts zum Anzeigen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Nothing to preview yet" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Nada que previsualizar todavía" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Rien à afficher pour l'instant" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Belum ada yang bisa dipratinjau" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Niente da visualizzare per ora" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "プレビューできる内容がありません" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "미리볼 내용이 없습니다" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nog niets te bekijken" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie ma jeszcze czego podglądać" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Nada para visualizar ainda" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Пока нечего показывать" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Henüz önizlenecek bir şey yok" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Поки немає чого переглядати" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Chưa có nội dung để xem trước" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "暂无内容可预览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "尚無內容可預覽" } }
+      }
+    },
+    "repo.issues.sheet.markdownHint" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown unterstützt" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown supported" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Se admite Markdown" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown pris en charge" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Mendukung Markdown" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Supporto Markdown" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown 対応" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown 지원" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown ondersteund" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Obsługa Markdown" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Compatível com Markdown" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Поддерживается Markdown" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Markdown desteklenir" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Підтримується Markdown" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hỗ trợ Markdown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "支持 Markdown" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "支援 Markdown" } }
+      }
+    },
+    "repo.issues.sheet.draftSaved" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Entwurf automatisch gespeichert" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Draft saved" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Borrador guardado automáticamente" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Brouillon enregistré automatiquement" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Draf tersimpan otomatis" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Bozza salvata automaticamente" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "下書きを自動保存しました" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "초안이 자동 저장되었습니다" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Concept automatisch opgeslagen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Szkic zapisany automatycznie" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Rascunho salvo automaticamente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Черновик сохранён автоматически" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Taslak otomatik kaydedildi" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Чернетку збережено автоматично" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã tự động lưu bản nháp" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "草稿已自动保存" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "草稿已自動儲存" } }
+      }
+    },
+    "repo.issues.sheet.cancel" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Abbrechen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Cancel" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Cancelar" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Annuler" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Batal" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Annulla" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "キャンセル" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "취소" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Annuleer" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Anuluj" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Cancelar" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Отмена" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İptal" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Скасувати" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hủy" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "取消" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "取消" } }
+      }
+    },
+    "repo.issues.sheet.submit" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue senden" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Submit Issue" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Enviar issue" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Envoyer l'issue" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Kirim Issue" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Invia issue" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue を送信" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue 제출" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue verzenden" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wyślij Issue" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Enviar issue" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Отправить задачу" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue gönder" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Надіслати задачу" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Gửi Issue" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "提交 Issue" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "提交 Issue" } }
+      }
+    },
+    "repo.issues.sheet.error.notFound" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue in diesem Repo kann nicht erstellt werden (evtl. privates Repo oder Issues deaktiviert)" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Can't create an issue in this repo (private repo or issues disabled?)" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se puede crear una issue en este repositorio (¿repositorio privado o issues desactivados?)" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible de créer une issue dans ce dépôt (dépôt privé ou issues désactivées ?)" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak dapat membuat Issue di repo ini (mungkin repo privat atau Issues dimatikan)" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile creare una issue in questo repository (repository privato o issue disattivate?)" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "このリポジトリで Issue を作成できません（プライベートリポジトリか、Issue が無効の可能性）" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이 저장소에서 Issue를 만들 수 없습니다(비공개 저장소이거나 Issues가 비활성화되었을 수 있습니다)" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kan geen issue maken in deze repo (misschien privérepo of issues uitgeschakeld)" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie można utworzyć Issue w tym repozytorium (może prywatne repozytorium lub wyłączone Issues)" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível criar uma issue neste repositório (repositório privado ou issues desativados?)" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось создать задачу в этом репозитории (возможно, приватный репозиторий или задачи отключены)" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu depoda Issue oluşturulamıyor (özel depo veya Issues kapalı olabilir)" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося створити задачу в цьому репозиторії (можливо, приватний репозиторій або задачі вимкнено)" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể tạo Issue trong repo này (có thể là repo riêng tư hoặc đã tắt Issues)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法在该仓库创建 Issue（可能是私有仓库或已关闭 Issues）" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法在此倉庫建立 Issue（可能是私有倉庫或已關閉 Issues）" } }
+      }
+    },
+    "repo.issues.sheet.error.forbidden" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue in diesem Repo kann nicht erstellt werden (evtl. privates Repo oder fehlende Berechtigung)" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Can't create an issue in this repo (private repo or insufficient permissions?)" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se puede crear una issue en este repositorio (¿repositorio privado o permisos insuficientes?)" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible de créer une issue dans ce dépôt (dépôt privé ou permissions insuffisantes ?)" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tidak dapat membuat Issue di repo ini (mungkin repo privat atau izin tidak cukup)" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile creare una issue in questo repository (repository privato o permessi insufficienti?)" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "このリポジトリで Issue を作成できません（プライベートリポジトリか権限不足の可能性）" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이 저장소에서 Issue를 만들 수 없습니다(비공개 저장소이거나 권한이 부족할 수 있습니다)" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kan geen issue maken in deze repo (misschien privérepo of onvoldoende rechten)" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie można utworzyć Issue w tym repozytorium (może prywatne repozytorium lub brak uprawnień)" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível criar uma issue neste repositório (repositório privado ou permissões insuficientes?)" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось создать задачу в этом репозитории (возможно, приватный репозиторий или недостаточно прав)" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu depoda Issue oluşturulamıyor (özel depo veya yetersiz izin olabilir)" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося створити задачу в цьому репозиторії (можливо, приватний репозиторій або недостатньо прав)" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể tạo Issue trong repo này (có thể là repo riêng tư hoặc thiếu quyền)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "无法在该仓库创建 Issue（可能是私有仓库或权限不足）" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "無法在此倉庫建立 Issue（可能是私有倉庫或權限不足）" } }
+      }
+    },
+    "repo.issues.sheet.error.validation" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub hat die Übermittlung abgelehnt. Bitte Titel und Beschreibung prüfen und erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub rejected this submission. Check the title and body, then retry." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub rechazó este envío. Revisa el título y la descripción, e inténtalo de nuevo" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub a refusé cet envoi. Vérifiez le titre et la description, puis réessayez" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub menolak pengiriman ini. Periksa judul dan deskripsi, lalu coba lagi" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub ha rifiutato l'invio. Controlla titolo e descrizione, poi riprova" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub に送信を拒否されました。タイトルと本文を確認してやり直してください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub이 제출을 거부했습니다. 제목과 본문을 확인한 후 다시 시도해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub heeft deze inzending geweigerd. Controleer titel en beschrijving en probeer opnieuw" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub odrzucił tę wysyłkę. Sprawdź tytuł i opis, a następnie ponów" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "O GitHub rejeitou este envio. Verifique o título e a descrição e tente novamente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub отклонил отправку. Проверьте заголовок и описание, затем повторите" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub bu gönderiyi reddetti. Başlığı ve açıklamayı kontrol edip tekrar deneyin" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub відхилив надсилання. Перевірте заголовок і опис, потім повторіть" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub đã từ chối lần gửi này. Hãy kiểm tra tiêu đề và mô tả rồi thử lại" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 拒绝了这次提交，请检查标题与描述后重试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 拒絕了這次提交，請檢查標題與描述後重試" } }
+      }
+    },
+    "repo.issues.sheet.error.unauthorized" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Sitzung abgelaufen. Bitte erneut bei GitHub anmelden" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Session expired. Sign in to GitHub again." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "La sesión ha caducado. Vuelve a iniciar sesión en GitHub" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Session expirée. Reconnectez-vous à GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sesi berakhir. Masuk kembali ke GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Sessione scaduta. Accedi di nuovo a GitHub" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "ログイン状態の有効期限が切れました。GitHub に再度ログインしてください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "로그인 세션이 만료되었습니다. GitHub에 다시 로그인해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sessie verlopen. Meld opnieuw aan bij GitHub" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sesja wygasła. Zaloguj się ponownie do GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Sessão expirada. Entre novamente no GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Сессия истекла. Войдите в GitHub заново" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Oturum süresi doldu. GitHub'da yeniden oturum açın" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Сесію завершено. Увійдіть до GitHub знову" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "登录状态已失效，请重新登录 GitHub" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "登入狀態已失效，請重新登入 GitHub" } }
+      }
+    },
+    "repo.issues.sheet.error.rateLimited" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub-Ratenlimit erreicht. Bitte später erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub rate limit reached. Try again later." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Se alcanzó el límite de solicitudes de GitHub. Inténtalo más tarde" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Limite de requêtes GitHub atteinte. Réessayez plus tard" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Batas permintaan GitHub tercapai. Coba lagi nanti" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Limite di richieste GitHub raggiunto. Riprova più tardi" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub のレート制限に達しました。しばらくしてからもう一度お試しください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub-snelheidslimiet bereikt. Probeer het later opnieuw" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Osiągnięto limit żądań GitHub. Spróbuj ponownie później" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Limite de solicitações do GitHub atingido. Tente novamente mais tarde" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Достигнут лимит запросов GitHub. Повторите позже" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub istek sınırına ulaşıldı. Daha sonra tekrar deneyin" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Досягнуто ліміт запитів GitHub. Повторіть пізніше" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đạt giới hạn yêu cầu GitHub. Vui lòng thử lại sau" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 请求频率受限，请稍后再试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 請求頻率受限，請稍後再試" } }
+      }
+    },
+    "repo.issues.sheet.error.generic" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue konnte nicht gesendet werden. Bitte später erneut versuchen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Couldn't submit the issue. Try again later." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se pudo enviar la issue. Inténtalo más tarde" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossible d'envoyer l'issue. Réessayez plus tard" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Gagal mengirim Issue. Coba lagi nanti" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Impossibile inviare l'issue. Riprova più tardi" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue を送信できませんでした。しばらくしてからもう一度お試しください" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue를 제출하지 못했습니다. 잠시 후 다시 시도해 주세요" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kon issue niet verzenden. Probeer het later opnieuw" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie udało się wysłać Issue. Spróbuj ponownie później" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível enviar a issue. Tente novamente mais tarde" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось отправить задачу. Повторите позже" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue gönderilemedi. Daha sonra tekrar deneyin" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося надіслати задачу. Повторіть пізніше" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể gửi Issue. Vui lòng thử lại sau" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue 提交失败，请稍后再试" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Issue 提交失敗，請稍後再試" } }
+      }
+    },
     "repo.notes.ai.apply" : {
       "localizations" : {
         "de" : {
@@ -564496,6 +565378,48 @@
             "value" : "自動下載更新"
           }
         }
+      }
+    },
+    "settings.pro.direct.updates.includePreview" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vorschau-Updates einschließen" } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Include preview updates" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Incluir actualizaciones preview" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Inclure les mises à jour preview" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sertakan pembaruan pratinjau" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Includi aggiornamenti preview" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "プレリリース版の更新を含める" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "프리릴리스 업데이트 포함" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Voorbeeldupdates opnemen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Uwzględnij aktualizacje podglądowe" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Incluir atualizações preview" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Включать предварительные обновления" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Önizleme güncellemelerini dahil et" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Включати попередні оновлення" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Bao gồm bản cập nhật preview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "包含预览版更新" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "包含預覽版更新" } }
+      }
+    },
+    "settings.pro.direct.updates.includePreview.help" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vorschau-Updates können unfertige oder instabile Funktionen enthalten. Das Deaktivieren installiert keine ältere Version." } },
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Preview updates may include unfinished or unstable features. Turning this off will not downgrade the installed version." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Las actualizaciones preview pueden incluir funciones inacabadas o inestables. Desactivarlas no instala una versión anterior." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Les mises à jour preview peuvent inclure des fonctions inachevées ou instables. Les désactiver n'installe pas de version antérieure." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pembaruan pratinjau dapat memuat fitur yang belum selesai atau tidak stabil. Mematikan tidak akan menurunkan versi yang terpasang." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Gli aggiornamenti preview possono includere funzioni incomplete o instabili. La disattivazione non installa una versione precedente." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "プレリリース版には未完成または不安定な機能が含まれる場合があります。オフにしてもインストール済みのバージョンはダウングレードされません。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "프리릴리스 업데이트에는 미완성 또는 불안정한 기능이 포함될 수 있습니다. 끄더라도 설치된 버전이 다운그레이드되지 않습니다." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Voorbeeldupdates kunnen onafgemaakte of onstabiele functies bevatten. Uitschakelen installeert geen oudere versie." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Aktualizacje podglądowe mogą zawierać niedokończone lub niestabilne funkcje. Wyłączenie nie obniży zainstalowanej wersji." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "As atualizações preview podem incluir recursos inacabados ou instáveis. Desativar não instala uma versão anterior." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Предварительные обновления могут содержать незавершённые или нестабильные функции. Отключение не откатит установленную версию." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Önizleme güncellemeleri tamamlanmamış veya kararsız özellikler içerebilir. Kapatmak yüklü sürümü düşürmez." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Попередні оновлення можуть містити незавершені чи нестабільні функції. Вимкнення не відкотить встановлену версію." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Bản cập nhật preview có thể chứa tính năng chưa hoàn thiện hoặc không ổn định. Tắt đi sẽ không hạ cấp phiên bản đã cài." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "预览版可能包含未完成或不稳定的功能；关闭后不会降级已安装的版本。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "預覽版可能包含未完成或不穩定的功能；關閉後不會降級已安裝的版本。" } }
       }
     },
     "settings.pro.direct.updates.check" : {
