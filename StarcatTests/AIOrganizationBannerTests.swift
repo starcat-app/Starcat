@@ -87,7 +87,6 @@ struct AIOrganizationBannerTests {
             kind: kind, repositoryCount: 2_000_000_000, state: state, canStart: false,
             onStart: {}, onShowPanel: {}
         ).environment(\.locale, appLocale.effectiveLocale)
-            .environment(\.layoutDirection, appLocale.effectiveLayoutDirection)
             .environment(\.starcatInterfaceScale, scale)
             .environment(\.starcatReduceMotion, true))
         renderer.proposedSize = ProposedViewSize(width: width, height: nil)

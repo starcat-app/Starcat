@@ -84,7 +84,6 @@ struct InsightsColumnHeaderTests {
                     }
                     .padding(.horizontal, 16)
                     .environment(\.locale, locale.effectiveLocale)
-                    .environment(\.layoutDirection, locale.effectiveLayoutDirection)
                     let naturalSize = try measuredSize(content.fixedSize(horizontal: false, vertical: true), width: width)
                     let headerSize = try measuredSize(InsightsColumnHeader(height: 64) { content }, width: width)
                     #expect(headerSize.width <= width)

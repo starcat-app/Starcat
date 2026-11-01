@@ -625,7 +625,7 @@ struct ReadmeTranslationLanguageTests {
     func rawValuesAreBcp47() {
         let expectedIdentifiers: Set<String> = [
             "en", "zh-Hans", "zh-Hant", "ja", "ko", "de", "fr", "es", "pt-BR",
-            "it", "ru", "nl", "pl", "uk", "tr", "vi", "id", "ar",
+            "it", "ru", "nl", "pl", "uk", "tr", "vi", "id",
         ]
         let concreteIdentifiers = Set(
             ReadmeTranslationLanguage.allCases

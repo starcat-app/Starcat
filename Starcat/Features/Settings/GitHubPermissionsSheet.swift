@@ -57,7 +57,6 @@ struct GitHubPermissionsSheet: View {
                         Text(verbatim: scope)
                             .font(.body.monospaced())
                             .foregroundStyle(.primary)
-                            .environment(\.layoutDirection, .leftToRight)
                         Text(descriptionKey(for: scope))
                             .font(.caption)
                             .foregroundStyle(.secondary)

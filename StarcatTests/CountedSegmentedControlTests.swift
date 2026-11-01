@@ -23,7 +23,7 @@ struct CountedSegmentedControlTests {
         return try #require(renderer.nsImage).size
     }
 
-    @Test("计数跨位数与分组符不改变标签宽度", arguments: ["en", "zh-Hans", "de", "fr", "hi-IN", "ar"], InterfaceScale.allCases)
+    @Test("计数跨位数与分组符不改变标签宽度", arguments: ["en", "zh-Hans", "de", "fr", "hi-IN"], InterfaceScale.allCases)
     func labelReservesLocalizedTotal(localeID: String, scale: InterfaceScale) throws {
         let locale = Locale(identifier: localeID)
         let baseline = try size(of: CountedSegmentLabel(title: "batchAI.panel.counter.pendingReview", count: 0, totalCount: 1_495)

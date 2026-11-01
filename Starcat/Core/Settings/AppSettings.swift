@@ -629,7 +629,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     case turkish = "tr"
     case vietnamese = "vi"
     case indonesian = "id"
-    case arabic = "ar"
 
     var id: String { rawValue }
 
@@ -671,8 +670,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
                 localized = "Tự động"
             case .indonesian:
                 localized = "Otomatis"
-            case .arabic:
-                localized = "تلقائي"
             }
             return localized
         case .simplifiedChinese:  return "简体中文"
@@ -692,7 +689,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .turkish:            return "Türkçe"
         case .vietnamese:         return "Tiếng Việt"
         case .indonesian:         return "Bahasa Indonesia"
-        case .arabic:             return "العربية"
         }
     }
 
@@ -734,7 +730,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .turkish:            return "Turkish"
         case .vietnamese:         return "Vietnamese"
         case .indonesian:         return "Indonesian"
-        case .arabic:             return "Arabic"
         }
     }
 
@@ -821,8 +816,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
             return .vietnamese
         case "id":
             return .indonesian
-        case "ar":
-            return .arabic
         default:
             return .english
         }

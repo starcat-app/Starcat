@@ -87,7 +87,6 @@ struct ReadmeTranslationLanguageDefaultsTests {
         ("tr-TR", ReadmeTranslationLanguage.turkish),
         ("vi-VN", ReadmeTranslationLanguage.vietnamese),
         ("id-ID", ReadmeTranslationLanguage.indonesian),
-        ("ar-SA", ReadmeTranslationLanguage.arabic),
     ])
     func supportedIdentifiers(
         identifier: String,

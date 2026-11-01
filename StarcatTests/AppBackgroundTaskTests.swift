@@ -136,7 +136,6 @@ struct AppBackgroundTaskTests {
                                                  canCancel: true, opensWindow: true)
                     let view = AppBackgroundTaskRow(task: task, onOpen: {}, onCancel: {})
                         .environment(\.locale, locale.effectiveLocale)
-                        .environment(\.layoutDirection, locale.effectiveLayoutDirection)
                         .environment(\.starcatInterfaceScale, scale)
                     let size = try measuredSize(view, width: width)
                     #expect(size.width <= width)

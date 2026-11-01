@@ -32,8 +32,6 @@ struct AppBackgroundTaskRow: View {
                         Text(verbatim: detail)
                             .monospacedDigit()
                             .help(Text(verbatim: detail))
-                            // 仅分数局部 LTR，Arabic 状态与标题仍继承 RTL；数字按界面 locale 格式化。
-                            .environment(\.layoutDirection, isNumericProgress ? .leftToRight : layoutDirection)
                     }
                 }
                 .font(interfaceScale.font(.caption))
@@ -79,9 +77,4 @@ struct AppBackgroundTaskRow: View {
         .accessibilityElement(children: .contain)
     }
 
-    @Environment(\.layoutDirection) private var layoutDirection
-    private var isNumericProgress: Bool {
-        if case .progress = task.detail { return true }
-        return false
-    }
 }

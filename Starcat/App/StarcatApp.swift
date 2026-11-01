@@ -351,7 +351,6 @@ struct StarcatApp: App {
         LaunchSplashContainer {
             ContentView()
                 .environment(\.locale, localeStore.selection.effectiveLocale)
-                .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
                 .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
                 // 系统翻译 Session 必须挂在存活的 SwiftUI 树上；零尺寸宿主不占布局。
@@ -411,7 +410,6 @@ struct StarcatApp: App {
     private var settingsRoot: some View {
         SettingsView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
-            .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
             .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
             .id(localeStore.selection.rawValue)
     }

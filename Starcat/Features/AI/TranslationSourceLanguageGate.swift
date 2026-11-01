@@ -103,7 +103,6 @@ enum TranslationSourceLanguageGate {
         case .turkish: return .turkish
         case .vietnamese: return .vietnamese
         case .indonesian: return .indonesian
-        case .arabic: return .arabic
         default: return nil
         }
     }

@@ -49,8 +49,6 @@ struct ShortcutRecorderView: View {
                         onCapture: capture
                     )
                 }
-                // 快捷键符号顺序与界面阅读方向无关，RTL 下也保持修饰键在主键之前。
-                .environment(\.layoutDirection, .leftToRight)
 
             if shortcut != defaultShortcut {
                 // 恢复入口仍只在键位改过后出现；独占命中区，避免覆盖短组合或触发底下的录制层。

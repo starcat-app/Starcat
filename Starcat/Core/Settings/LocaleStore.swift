@@ -39,7 +39,7 @@ import Observation
 
 /// 用户可选的应用显示语言。
 ///
-/// 暴露 App 实际维护的 18 种语言 + “跟随系统”。语言 identifier 必须与
+/// 暴露 App 实际维护的 17 种语言 + “跟随系统”。语言 identifier 必须与
 /// `supports/starcat-localization/locales.json` 保持一致，避免设置项、Catalog
 /// 和 AI 输出语言三者发生漂移。
 enum AppLocale: String, CaseIterable, Identifiable, Sendable {
@@ -79,8 +79,6 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
     case vietnamese = "vi"
     /// 强制印度尼西亚语
     case indonesian = "id"
-    /// 强制阿拉伯语
-    case arabic = "ar"
 
     var id: String { rawValue }
 
@@ -116,7 +114,6 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         case .turkish:             return LocalizedStringKey("Türkçe")
         case .vietnamese:          return LocalizedStringKey("Tiếng Việt")
         case .indonesian:          return LocalizedStringKey("Bahasa Indonesia")
-        case .arabic:              return LocalizedStringKey("العربية")
         }
     }
 
@@ -132,17 +129,6 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         // 非 system case 的 rawValue 全部是 locales.json 中的 BCP-47 identifier，
         // 保持二者一致可避免 Catalog、设置选项和 AI 输出语言发生漂移。
         return Locale(identifier: rawValue)
-    }
-
-    /// SwiftUI 子树使用的书写方向。
-    ///
-    /// 仅注入 `\.locale` 不足以保证应用内运行时切换为 Arabic 后整棵视图树立即
-    /// 镜像；显式同步 `\.layoutDirection`，让主窗口、sheet、popover 和 AppKit
-    /// hosting window 走同一条 RTL 路径。`.system` 仍依据系统当前语言判断。
-    var effectiveLayoutDirection: LayoutDirection {
-        effectiveLocale.language.characterDirection == .rightToLeft
-            ? .rightToLeft
-            : .leftToRight
     }
 
     /// 发给 LLM 的输出语言名。
@@ -184,7 +170,6 @@ enum AppLocale: String, CaseIterable, Identifiable, Sendable {
         case "tr": return "Turkish"
         case "vi": return "Vietnamese"
         case "id": return "Indonesian"
-        case "ar": return "Arabic"
         default:   return "English"
         }
     }
@@ -226,7 +211,7 @@ final class LocaleStore {
 
 // MARK: - SwiftUI environment helper
 
-/// 把 `LocaleStore.shared` 的当前选择注入子树的 locale 与书写方向 environment。
+/// 把 `LocaleStore.shared` 的当前选择注入子树的 locale environment。
 ///
 /// **为什么需要这道 modifier**：Starcat 有 3 处 SwiftUI 子树**不**在
 /// `StarcatApp.WindowGroup` scene tree 里——AI 助手浮窗（`RepoAIWindowController`）、
@@ -257,6 +242,10 @@ final class LocaleStore {
 /// - `AboutWindowController`（AppKit NSWindow）
 /// - `ShareCardSheet`（SwiftUI sheet,2026-06-16 补挂）
 /// - 新增的 sheet / popover：在根 view body 最外层挂一次
+///
+/// **RTL 说明（2026-11-01）**：阿拉伯语已从支持语言中移除，剩余 17 种语言全部
+/// LTR，`\.layoutDirection` 注入随之删除；系统语言本身是 RTL（如系统阿语）时，
+/// SwiftUI 默认仍会按系统方向镜像，与本 modifier 无关。
 private struct AppLocaleEnvironmentModifier: ViewModifier {
 
     @State private var localeStore = LocaleStore.shared
@@ -264,17 +253,16 @@ private struct AppLocaleEnvironmentModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.locale, localeStore.selection.effectiveLocale)
-            .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
             .id(localeStore.selection.rawValue)
     }
 }
 
 extension View {
 
-    /// 订阅 `LocaleStore.shared` 并把当前 locale 与书写方向注入子树。
+    /// 订阅 `LocaleStore.shared` 并把当前 locale 注入子树。
     ///
     /// 用于 AppKit 自建的独立 NSWindow / NSPanel hosting root，以及 macOS 上不会
-    /// 稳定继承父 scene locale / layoutDirection 的 sheet、popover 根视图。
+    /// 稳定继承父 scene locale 的 sheet、popover 根视图。
     func appLocaleEnvironment() -> some View {
         modifier(AppLocaleEnvironmentModifier())
     }
