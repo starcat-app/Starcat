@@ -1077,7 +1077,15 @@ struct SidebarView: View {
 
     private func dailyRadarCategoryRow(_ category: DailyRadarCatalog.Category?) -> some View {
         let id = category?.id
-        return exploreSelectableRow(selection: .dailyRadarCategory(id), count: nil) {
+        // 计数徽标：具体分类取该分类报告总数；「全部主题」行保持无数字。
+        // catalog 未加载或旧后端无计数字段时为 nil，徽标自动隐藏。
+        let count: Int?
+        if let id {
+            count = dailyRadarModel.categoryCounts[id]
+        } else {
+            count = nil
+        }
+        return exploreSelectableRow(selection: .dailyRadarCategory(id), count: count) {
             if let id, let brandAssetName = dailyRadarBrandAssetName(for: id) {
                 dailyRadarBrandIcon(assetName: brandAssetName)
             } else {
@@ -1254,7 +1262,7 @@ struct SidebarView: View {
     private var exploreModeSidebarContent: some View {
         Section("nav.trending") {
             if settings.exploreCatalogPreferences.isGroupEnabled("dailyRadar") {
-                exploreSelectableRow(selection: .dailyRadarPreview, count: nil) {
+                exploreSelectableRow(selection: .dailyRadarPreview, count: dailyRadarModel.totalCount) {
                     exploreSidebarSystemIcon("newspaper", color: .indigo)
                 } title: {
                     Text("dailyRadar.title")

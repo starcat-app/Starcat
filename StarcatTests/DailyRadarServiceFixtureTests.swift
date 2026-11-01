@@ -24,6 +24,9 @@ struct DailyRadarServiceFixtureTests {
         #expect(dates.catalogRevision == catalog.catalogRevision)
         #expect(page.catalogRevision == catalog.catalogRevision)
         #expect(catalog.latestAvailableDate == "2026-10-28")
+        // 侧边栏计数徽标契约：按请求语言去重后的分类计数与父级总数。
+        #expect(catalog.categoryCounts?["ai-cli"] == 1)
+        #expect(catalog.totalCount == 1)
         #expect(dates.dates.first?.date == report.editionDate)
         #expect(dates.dates.first?.count == 1)
         #expect(page.total == 1)

@@ -223,6 +223,28 @@ struct DailyRadarClientTests {
         #expect(Set(model.items.map(\.id)).count == model.items.count)
     }
 
+    @Test @MainActor func sidebarCountsFollowCatalogAndSelectCategoryClosesDetail() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        // 侧边栏计数徽标来自 catalog 计数字段；catalog 未加载时必须为空而非崩溃。
+        #expect(model.categoryCounts.isEmpty)
+        #expect(model.totalCount == nil)
+        await model.reload()
+        #expect(model.categoryCounts == ["ai-cli": 12])
+        #expect(model.totalCount == 12)
+        // 打开报告后切换分类必须关闭详情面板，避免旧详情浮在新分类列表之上。
+        let selected = try #require(model.items.first)
+        await model.open(selected)
+        #expect(model.selection?.id == selected.id)
+        #expect(model.detail != nil)
+        model.selectCategory("ai-cli")
+        #expect(model.selection == nil)
+        #expect(model.detail == nil)
+        #expect(model.category == "ai-cli")
+    }
+
     @Test func businessDateDoesNotDependOnSystemTimezone() {
         // 英文格式采用用户 Locale，业务时区仍固定为上海，不能显示成 10/27。
         let label = DailyRadarDateFormatting.label("2026-10-28", locale: Locale(identifier: "en_US"))
@@ -303,8 +325,9 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
             let summary = summaries.joined(separator: ",")
             let payload: String
             if path.hasSuffix("/catalog") {
+                // 计数与 /reports 的 total=12 语义保持一致，供侧边栏徽标断言使用。
                 payload = """
-                {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)"}
+                {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":12},"total_count":12}
                 """
             } else if path.hasSuffix("/dates") {
                 // joined 已负责去掉最后一个元素后的分隔符，不能再 dropLast，

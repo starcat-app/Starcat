@@ -38,6 +38,7 @@ struct DailyRadarQuery: Hashable, Sendable {
 }
 
 /// 目录及日期均携带版本，跨请求版本不同必须重新开始分页。
+/// 计数字段为可选解码：旧版后端不返回时保持 nil，侧边栏徽标随之隐藏。
 struct DailyRadarCatalog: Decodable, Sendable {
     struct Category: Decodable, Sendable, Identifiable {
         let id: String
@@ -48,9 +49,13 @@ struct DailyRadarCatalog: Decodable, Sendable {
     let categories: [Category]
     let availableLanguages: [String]
     let latestAvailableDate: String?
+    /// 按请求语言去重后的各分类报告总数（覆盖全部期次，不按 period 过滤）。
+    let categoryCounts: [String: Int]?
+    let totalCount: Int?
     enum CodingKeys: String, CodingKey {
         case catalogRevision = "catalog_revision", categories
         case availableLanguages = "available_languages", latestAvailableDate = "latest_available_date"
+        case categoryCounts = "category_counts", totalCount = "total_count"
     }
 }
 

@@ -48,6 +48,9 @@ final class DailyRadarWorkspaceViewModel {
         return items.filter { $0.editionDate < edition }
     }
     var availableCategories: [DailyRadarCatalog.Category] { catalog?.categories ?? [] }
+    /// 侧边栏计数徽标数据源：catalog 未加载或旧后端无计数字段时为空，徽标隐藏。
+    var categoryCounts: [String: Int] { catalog?.categoryCounts ?? [:] }
+    var totalCount: Int? { catalog?.totalCount }
     /// 目录日期已按业务日期排序；查找相邻期次必须跳过断更，而不是简单加减一天。
     /// 日期切换会先更新 selectedEdition、再由身份驱动异步 reload，因此这里必须
     /// 优先使用用户刚选择的日期，否则连续点击会按旧 edition 计算出错误目标。
