@@ -59,9 +59,10 @@ struct RepoIssuesWorkspaceView: View {
                 // 必须 prepare 复位到当前仓库，否则 loadFirstPage 的空仓库守卫静默返回
                 //（表现为「还没有 Issue / 已加载 0 条」且无任何报错）。
                 viewModel.listViewModel.prepare(owner: repo.owner, repo: repo.name)
+                // 本地草稿先恢复；网络慢或用户提前关闭时也不能用空表单覆盖它。
+                viewModel.loadCreateDraftIfNeeded()
                 await viewModel.listViewModel.loadFirstPageIfNeeded()
                 await viewModel.listViewModel.refreshCountsIfNeeded()
-                viewModel.loadCreateDraftIfNeeded()
                 viewModel.autoSelectFirstIssueIfNeeded()
             }
             .onDisappear {

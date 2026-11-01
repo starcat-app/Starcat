@@ -46,6 +46,8 @@ final class RepoIssuesWorkspaceViewModel {
     private let apiClient: (any GitHubAPIClientProtocol)?
     /// AI 生成（与通知评论框同一 Chat 任务与门禁）。
     private let aiService: RepoAIInsightService?
+    /// 测试注入独立缓存，不能读取或删除用户 Application Support 下的真实草稿。
+    private let draftCache: DiskIssueDraftCache
 
     /// Preview 专用：不接 inbox / thread 仓库 / apiClient / aiService，详情项直接由种子状态注入。
     init(
@@ -54,7 +56,8 @@ final class RepoIssuesWorkspaceViewModel {
         inbox: GitHubNotificationInboxService? = nil,
         threadRepository: (any GitHubNotificationThreadRepositoryProtocol)? = nil,
         apiClient: (any GitHubAPIClientProtocol)? = nil,
-        aiService: RepoAIInsightService? = nil
+        aiService: RepoAIInsightService? = nil,
+        draftCache: DiskIssueDraftCache = .shared
     ) {
         self.repo = repo
         self.listViewModel = listViewModel
@@ -62,6 +65,7 @@ final class RepoIssuesWorkspaceViewModel {
         self.threadRepository = threadRepository
         self.apiClient = apiClient
         self.aiService = aiService
+        self.draftCache = draftCache
     }
 
     // MARK: - 右栏模式 / 选中
@@ -98,6 +102,7 @@ final class RepoIssuesWorkspaceViewModel {
     }
 
     func startCreating() {
+        loadCreateDraftIfNeeded()
         detailGeneration &+= 1
         paneMode = .create
         // 左侧取消选中高亮：渲染层以 `isCreating` 为准，selectedIssue 保留供回跳。
@@ -257,11 +262,11 @@ final class RepoIssuesWorkspaceViewModel {
     /// 上传中的粘贴图片数：>0 时禁用「创建 Issue」，避免 `starcat-upload:` 占位符发出。
     private(set) var uploadingImageCount = 0
     private var hasCreatedIssue = false
+    /// 关闭可能早于 .task 执行，尚未恢复的空表单不能反向删除磁盘草稿。
+    private var hasLoadedCreateDraft = false
     private var createDraftDebounceTask: Task<Void, Never>?
 
     var isUploadingImage: Bool { uploadingImageCount > 0 }
-
-    private var draftCache: DiskIssueDraftCache { .shared }
 
     var trimmedCreateTitle: String {
         createTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -272,7 +277,8 @@ final class RepoIssuesWorkspaceViewModel {
     }
 
     func loadCreateDraftIfNeeded() {
-        guard !hasCreatedIssue else { return }
+        guard !hasLoadedCreateDraft, !hasCreatedIssue else { return }
+        hasLoadedCreateDraft = true
         if let snapshot = draftCache.load(repoFullName: repo.fullName) {
             createTitle = snapshot.title
             createBody = snapshot.body
@@ -290,7 +296,7 @@ final class RepoIssuesWorkspaceViewModel {
     }
 
     private func persistCreateDraftNow() {
-        guard !hasCreatedIssue else { return }
+        guard hasLoadedCreateDraft, !hasCreatedIssue else { return }
         draftCache.upsert(repoFullName: repo.fullName, title: createTitle, body: createBody)
     }
 

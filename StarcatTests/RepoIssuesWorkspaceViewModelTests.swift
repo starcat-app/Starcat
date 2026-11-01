@@ -39,14 +39,49 @@ struct RepoIssuesWorkspaceViewModelTests {
         #expect(vm.selectedIssue?.id == 2)
     }
 
+    @Test("关闭早于草稿恢复时保留已有磁盘内容")
+    func closingBeforeRestoreKeepsDraft() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = DiskIssueDraftCache(rootOverride: root)
+        cache.upsert(repoFullName: "example/repo", title: "Saved title", body: "Saved body")
+        let vm = makeViewModel(draftCache: cache)
+
+        vm.flushCreateDraft()
+        #expect(cache.load(repoFullName: "example/repo")?.title == "Saved title")
+        vm.loadCreateDraftIfNeeded()
+        #expect(vm.createBody == "Saved body")
+    }
+
+    @Test("开始编辑即恢复草稿，后续初始化不能覆盖用户新输入")
+    func creatingRestoresDraftOnlyOnce() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = DiskIssueDraftCache(rootOverride: root)
+        cache.upsert(repoFullName: "example/repo", title: "Saved title", body: "Saved body")
+        let vm = makeViewModel(draftCache: cache)
+
+        vm.startCreating()
+        #expect(vm.createTitle == "Saved title")
+        vm.createBody = "New input"
+        vm.loadCreateDraftIfNeeded()
+        #expect(vm.createBody == "New input")
+        vm.flushCreateDraft()
+        #expect(cache.load(repoFullName: "example/repo")?.body == "New input")
+    }
+
     /// 每个测试独占状态和依赖，不使用应用数据库或进程级共享 store。
     private func makeViewModel(
-        threadRepository: (any GitHubNotificationThreadRepositoryProtocol)? = nil
+        threadRepository: (any GitHubNotificationThreadRepositoryProtocol)? = nil,
+        draftCache: DiskIssueDraftCache? = nil
     ) -> RepoIssuesWorkspaceViewModel {
         RepoIssuesWorkspaceViewModel(
             repo: makeRepo(),
             listViewModel: RepoIssuesViewModel(client: MockGitHubAPIClient()),
-            threadRepository: threadRepository
+            threadRepository: threadRepository,
+            draftCache: draftCache ?? DiskIssueDraftCache(
+                rootOverride: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            )
         )
     }
 
