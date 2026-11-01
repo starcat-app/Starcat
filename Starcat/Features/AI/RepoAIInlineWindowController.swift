@@ -402,9 +402,14 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
             ? availableSize
             : anchorFrame.size
         let size = panelSize(for: layoutSize, isMaximized: maximized)
+        // 屏幕坐标系 y 向上，origin.y 是面板底边：底边必须钉在「锚点底边 + 状态栏
+        // 高度」上才能贴住 README 状态栏上沿；顶边由高度公式（锚点高 − 底部状态栏
+        // − 顶部切换行）自然落到切换行分隔线下方。旧写法把底部 inset 扣在锚点
+        // maxY 上，经高度减法抵消后落到底边的是切换行高度，面板整体抬高，
+        // 底边与状态栏之间留出一条缝。
         let desiredOrigin = NSPoint(
             x: anchorFrame.midX - size.width / 2,
-            y: anchorFrame.maxY - effectiveBottomChromeInset - size.height
+            y: anchorFrame.minY + effectiveBottomChromeInset
         )
         return clampedPanelFrame(
             origin: desiredOrigin,
