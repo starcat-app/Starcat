@@ -20,7 +20,9 @@ struct DailyRadarPreviewWorkspace: View {
     @State private var project: DailyRadarReport.Project?
     @State private var projectStore = DailyRadarProjectStore()
     @State private var translationVM: ReadmeTranslationViewModel
-    /// 历史区默认收起，避免长目录把首屏专题挤出可视区域。
+    /// 历史区折叠态：初始与分类切换时按规则重置——总分类「全部主题」目录最长，
+    /// 默认收起避免把首屏专题挤出可视区域；子分类报告少，默认展开方便回看。
+    /// 同分类内手动切换不受影响（见 body 内 onChange）。
     @State private var isHistoryExpanded = false
     @FocusState private var workspaceFocused: Bool
 
@@ -102,6 +104,14 @@ struct DailyRadarPreviewWorkspace: View {
         .task(id: model.identity) {
             guard !model.scope.isEmpty else { return }
             await model.reload()
+        }
+        // 往期内容默认展开规则：仅「每日热点」总分类下默认折叠，选中子分类时
+        // 默认展开。initial 覆盖挂载入口（父级 / 子分类进入时 category 已就绪），
+        // onChange 覆盖已挂载时的分类切换。
+        .onChange(of: model.category, initial: true) { _, newCategory in
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                isHistoryExpanded = newCategory != nil
+            }
         }
         .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.32), value: model.selection?.contentIdentity)
         .onExitCommand(perform: goBack)
