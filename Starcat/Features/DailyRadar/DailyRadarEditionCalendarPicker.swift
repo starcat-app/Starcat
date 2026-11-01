@@ -81,7 +81,7 @@ struct DailyRadarEditionCalendarPicker: View {
         VStack(spacing: 0) {
             Button {
                 onSelectLatest()
-                isPresented = false
+                dismiss()
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkle")
@@ -99,10 +99,15 @@ struct DailyRadarEditionCalendarPicker: View {
             Divider()
                 .padding(.horizontal, 8)
 
-            if showsYearMonthPicker {
-                yearMonthPicker
-            } else {
+            // 月历与年月选择保留两棵视图，只切换可见性，避免在同一个
+            // Popover host 中结构性替换根内容并反复更新 AppKit 约束。
+            ZStack {
                 monthCalendar
+                    .opacity(showsYearMonthPicker ? 0 : 1)
+                    .allowsHitTesting(!showsYearMonthPicker)
+                yearMonthPicker
+                    .opacity(showsYearMonthPicker ? 1 : 0)
+                    .allowsHitTesting(showsYearMonthPicker)
             }
 
             Divider()
@@ -114,15 +119,17 @@ struct DailyRadarEditionCalendarPicker: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
         }
-        .frame(width: 284)
-        .fixedSize()
+        .frame(width: 284, height: 352)
+        .clipped()
         .onAppear {
             if displayedMonth == nil {
                 displayedMonth = anchorDate
             }
         }
-        .onChange(of: anchorDate) { _, newAnchor in
-            displayedMonth = newAnchor
+        .onChange(of: isPresented) { _, isShown in
+            guard isShown else { return }
+            // 打开时一次性定位，不在打开期间跟随外部日期变化重置 Popover 状态。
+            displayedMonth = anchorDate
             showsYearMonthPicker = false
         }
     }
@@ -248,7 +255,7 @@ struct DailyRadarEditionCalendarPicker: View {
         let isSelected = key == selectedDate || (selectedDate == nil && key == latestDate)
         return Button {
             onSelect(key)
-            isPresented = false
+            dismiss()
         } label: {
             Text(verbatim: String(businessCalendar.component(.day, from: date)))
                 .font(scale.font(size: 12, weight: isSelected ? .semibold : .regular))
@@ -326,6 +333,14 @@ struct DailyRadarEditionCalendarPicker: View {
         formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate("yMMMM")
         return formatter.string(from: month)
+    }
+
+    /// 选择会触发父级数据和 Popover 内容同时更新；关闭放到下一个 runloop，
+    /// 避免选择、状态重置与关闭在同一个 AppKit 布局事务里竞争。
+    private func dismiss() {
+        Task { @MainActor in
+            isPresented = false
+        }
     }
 
     private func moveMonth(_ direction: Int) {
