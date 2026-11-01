@@ -109,6 +109,10 @@ struct AwesomeView: View {
             .labelsHidden()
             .frame(width: 130)
 
+            // 与其它中栏一致：Spacer 让搜索 / 筛选靠左，同步 / 多选靠右。
+            Spacer()
+                .layoutPriority(AdaptiveToolbarStatusText.spacerPriority)
+
             SyncIconButton(
                 isRefreshing: store.isRefreshing,
                 disabled: store.isRefreshing,
@@ -123,7 +127,8 @@ struct AwesomeView: View {
             )
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        .padding(.vertical, 9)
+        .padding(.top, ManageListFilterBarMetrics.topPadding)
+        .padding(.bottom, ManageListFilterBarMetrics.bottomPadding)
     }
 
     /// 切换 Awesome 数据源时不能沿用上一个来源的搜索条件，避免新列表看起来像空数据。
