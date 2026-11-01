@@ -179,7 +179,9 @@ struct DailyRadarPreviewWorkspace: View {
                             }
                         }
                     } else if model.isLoading && model.items.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity, minHeight: 200)
+                        // 首屏加载：镜像真实「精选大卡 + 卡片网格」的骨架，
+                        // 配色与动画复用中栏 Repo 卡片骨架的共享组件。
+                        DailyRadarSkeletonView(width: width)
                     } else if !model.failed || !model.items.isEmpty {
                         ContentUnavailableView("dailyRadar.empty", systemImage: "newspaper")
                             .frame(minHeight: 200)
