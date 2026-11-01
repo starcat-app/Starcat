@@ -25,6 +25,11 @@ final class GitHubNotificationIssueSummarySession {
     private(set) var errorMessage: String?
     private(set) var needsSettings = false
     private(set) var context: GitHubNotificationIssueSummary.Context?
+    /// 最近一次成功总结的时刻；磁盘恢复的会话携带快照时间，供 footer 展示。
+    private(set) var generatedAt: Date?
+
+    /// 生成成功后的落盘回调，由 Store 注入真实缓存（测试可置 nil 保持密闭）。
+    @ObservationIgnored var persistenceHook: (@MainActor (Source, GitHubNotificationIssueSummary.Context, String, Date) -> Void)?
 
     @ObservationIgnored private var source: Source?
     @ObservationIgnored private var generationTask: Task<Void, Never>?
@@ -60,6 +65,7 @@ final class GitHubNotificationIssueSummarySession {
         wasInterrupted = false
         errorMessage = nil
         needsSettings = false
+        generatedAt = nil
         isGenerating = true
         let requestID = UUID()
         generationID = requestID
@@ -86,6 +92,12 @@ final class GitHubNotificationIssueSummarySession {
                 isGenerating = false
                 generationTask = nil
                 generationID = nil
+                // 只有成功完成才落盘；中断 / 失败的半截正文不能伪装成「上次总结」。
+                if hasContent, let source, let context {
+                    let finishedAt = Date()
+                    generatedAt = finishedAt
+                    persistenceHook?(source, context, markdownBuffer.text, finishedAt)
+                }
             } catch {
                 guard generationID == requestID, !Task.isCancelled else { return }
                 flushMarkdownPresentation()
@@ -149,6 +161,37 @@ final class GitHubNotificationIssueSummarySession {
         wasInterrupted = false
         errorMessage = nil
         needsSettings = false
+        generatedAt = nil
+    }
+
+    /// 从磁盘快照恢复上次成功总结。只在会话仍为空时生效：用户点开面板瞬间可能
+    /// 已触发新一轮生成，晚到的恢复不得覆盖进行中的任务。
+    /// context 只回放统计位（评论数 / 事件数 / 截断标记），prompt 全文恢复不了也不需要。
+    func restore(from snapshot: IssueSummaryCacheSnapshot) {
+        guard source == nil, !isGenerating, !hasContent else { return }
+        source = Source(
+            title: snapshot.title,
+            payload: snapshot.payload,
+            timeline: snapshot.timeline,
+            language: snapshot.language
+        )
+        context = GitHubNotificationIssueSummary.Context(
+            text: "",
+            includedCommentCount: snapshot.contextStats.includedCommentCount,
+            availableCommentCount: snapshot.contextStats.availableCommentCount,
+            includedEventCount: snapshot.contextStats.includedEventCount,
+            availableEventCount: snapshot.contextStats.availableEventCount,
+            isTruncated: snapshot.contextStats.isTruncated
+        )
+        markdownBuffer = GitHubNotificationIssueSummaryMarkdownBuffer()
+        markdownBuffer.reconcileFinalText(snapshot.markdown)
+        if let restoredSnapshot = markdownBuffer.flush() { streamingPresentation = restoredSnapshot }
+        completedMarkdown = markdownBuffer.text
+        hasContent = !markdownBuffer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        wasInterrupted = false
+        errorMessage = nil
+        needsSettings = false
+        generatedAt = snapshot.generatedAt
     }
 
     /// 原始 token 只进入非观察 buffer；大 burst 也不能越过 8Hz 的发布上限。
@@ -177,7 +220,8 @@ final class GitHubNotificationIssueSummarySession {
     }
 
     /// 固定本轮输入来源与输出语言，不随页面当前选择偷偷切换。
-    private struct Source: Equatable, Sendable {
+    /// internal：持久化 hook 的签名由 Store 注入时引用；磁盘快照按字段平铺存储。
+    struct Source: Equatable, Sendable {
         let title: String
         let payload: ActivityNotificationPayload
         let timeline: [GitHubNotificationIssueTimelineItem]

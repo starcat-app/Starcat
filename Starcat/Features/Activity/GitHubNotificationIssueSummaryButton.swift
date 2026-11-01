@@ -43,10 +43,10 @@ struct GitHubNotificationIssueSummaryButton: View {
             let composerFrame = proxy[composerAnchor]
             let dividerFrame = proxy[dividerAnchor]
             let trailingInset = max(16, proxy.size.width - composerFrame.maxX)
-            // 按钮右边缘与面板右边缘对齐；底边离真实分割线上缘 8pt，不再用输入框推测线的位置。
-            let launcherBottomInset = max(0, proxy.size.height - dividerFrame.minY + 8)
-            // 面板底边固定在入口上方，保留 32pt 按钮与两侧各 8pt 的间距。
-            let panelBottomInset = max(0, proxy.size.height - dividerFrame.minY + 48)
+            // 按钮右边缘与面板右边缘对齐，底边紧贴真实分割线上缘，不再用输入框推测线的位置。
+            let launcherBottomInset = max(0, proxy.size.height - dividerFrame.minY)
+            // 面板底边固定在入口上方：32pt 按钮高 + 8pt 面板与按钮的间距。
+            let panelBottomInset = max(0, proxy.size.height - dividerFrame.minY + 40)
             ZStack(alignment: .bottomTrailing) {
                 // ESC 关闭面板：keyboardShortcut 走 window 命令层，不要求面板持有焦点
                 // （正文 WebView 通常是 first responder，onExitCommand 收不到）。
@@ -82,6 +82,14 @@ struct GitHubNotificationIssueSummaryButton: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             // 不能加全屏背景或 contentShape：面板外的正文、评论仍需正常点击和滚动。
         }
+        // 挂载即异步回放磁盘快照，赶在用户点开面板之前；restore 内部带「会话仍为空」
+        // 守卫，与点击触发的生成竞态时晚到的恢复自动让位，不会覆盖进行中的任务。
+        .task(id: "\(payload.threadId)|\(language)") {
+            let session = session
+            guard !session.hasStarted, !session.isGenerating, !session.hasContent else { return }
+            guard let snapshot = DiskIssueSummaryCache.shared.load(payload: payload, language: language) else { return }
+            session.restore(from: snapshot)
+        }
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
                 .appLocaleEnvironment()
@@ -110,13 +118,21 @@ struct GitHubNotificationIssueSummaryButton: View {
                 if !session.hasStarted { startGeneration() }
             }
         } label: {
+            // 中断后的半截正文也算「已有总结」：面板确实展示了可读内容。
+            let hasSummary = session.hasContent
             Image(systemName: "sparkles")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isHovered || isPresented ? Color.accentColor : Color.secondary)
+                .foregroundStyle(hasSummary || isHovered || isPresented ? Color.accentColor : Color.secondary)
                 .frame(width: 32, height: 32)
-                // macOS 26 的 glassEffect 会忽略 legacyMaterial 参数，纯玻璃叠在正文上几乎隐形；
-                // 垫一层随明暗主题的底色并复用面板同款描边，让按钮成为面板的视觉延伸。
-                .background(Color(nsColor: .controlBackgroundColor).opacity(0.9), in: Circle())
+                // macOS 26 的 glassEffect 会忽略 legacyMaterial 参数，纯玻璃叠在正文上几乎隐形。
+                // 底色同时承担状态标识：中性玻璃 = 尚无总结；accent 淡底 = 已有总结
+                // （生成完成或磁盘恢复回放），两种底色都随明暗主题自适应。
+                .background(
+                    hasSummary
+                        ? AnyShapeStyle(Color.accentColor.opacity(0.16))
+                        : AnyShapeStyle(Color(nsColor: .controlBackgroundColor).opacity(0.9)),
+                    in: Circle()
+                )
                 .starcatInteractiveGlassSurface(.thinMaterial, in: Circle())
                 .overlay {
                     Circle()

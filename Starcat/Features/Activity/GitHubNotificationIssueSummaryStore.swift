@@ -2,8 +2,10 @@
 //  GitHubNotificationIssueSummaryStore.swift
 //  Starcat
 //
-//  应用级 Issue 总结会话缓存。只持有本次进程的任务和结果，不写数据库或磁盘，
-//  因此面板关闭 / 切帖与生成任务解耦；切换账号则立即取消并清空全部旧会话。
+//  应用级 Issue 总结会话缓存。内存里只持有本次进程的任务和结果，
+//  因此面板关闭 / 切帖与生成任务解耦；成功完成的总结经注入的
+//  DiskIssueSummaryCache 落盘，重启后面板可回放，切换账号仍清空全部内存会话
+//  （磁盘快照按公开 Issue 内容派生，跨账号共享，与 timeline 缓存同理）。
 //
 
 import Foundation
@@ -12,9 +14,15 @@ import Foundation
 @MainActor
 final class GitHubNotificationIssueSummaryStore {
     private static let retainedSessionLimit = 12
+    /// 成功总结的落盘出口；nil（默认，测试密闭）时退回纯内存行为。
+    private let persistenceCache: DiskIssueSummaryCache?
     private var scopeRevision: UInt64?
     private var sessions: [Key: GitHubNotificationIssueSummarySession] = [:]
     private var accessOrder: [Key] = []
+
+    init(persistenceCache: DiskIssueSummaryCache? = nil) {
+        self.persistenceCache = persistenceCache
+    }
 
     /// 同一账号、Issue 和输出语言复用同一对象；重新打开面板不会重新请求模型。
     func session(threadId: String, scopeRevision: UInt64, language: String) -> GitHubNotificationIssueSummarySession {
@@ -25,6 +33,21 @@ final class GitHubNotificationIssueSummaryStore {
             session = existing
         } else {
             session = GitHubNotificationIssueSummarySession()
+            if let persistenceCache {
+                // 直接对属性赋值以获得完整类型上下文；经 Optional.map 推导嵌套闭包
+                // 会让类型检查器超时（实测 Failed to produce diagnostic）。
+                session.persistenceHook = { source, context, markdown, generatedAt in
+                    persistenceCache.save(
+                        title: source.title,
+                        payload: source.payload,
+                        timeline: source.timeline,
+                        language: source.language,
+                        context: context,
+                        markdown: markdown,
+                        generatedAt: generatedAt
+                    )
+                }
+            }
             sessions[key] = session
         }
         accessOrder.removeAll { $0 == key }

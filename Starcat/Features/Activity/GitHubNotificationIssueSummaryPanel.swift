@@ -144,6 +144,8 @@ struct GitHubNotificationIssueSummaryPanel: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            } else if let generatedAt = session.generatedAt, session.hasContent {
+                generatedAtFooterLabel(generatedAt)
             }
             Spacer(minLength: 0)
             if needsSettings {
@@ -158,5 +160,20 @@ struct GitHubNotificationIssueSummaryPanel: View {
             }
         }
         .controlSize(.small)
+    }
+
+    /// 左下角展示上次总结时间（与「重新总结」同排、左对齐）：相对时间扫一眼可读，
+    /// hover 给出精确时刻；生成中 / 停止状态优先占用该位置。
+    private func generatedAtFooterLabel(_ generatedAt: Date) -> some View {
+        let relative = generatedAt.formatted(.relative(presentation: .named).locale(locale))
+        return Text(verbatim: String(
+            format: String.l10n("activity.issueSummary.generatedAt"),
+            locale: locale,
+            relative
+        ))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .help(generatedAt.formatted(.dateTime.locale(locale).year().month().day().hour().minute()))
     }
 }

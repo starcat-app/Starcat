@@ -155,6 +155,80 @@ struct GitHubNotificationIssueSummarySessionTests {
         #expect(!session.matchesSource(title: "Issue", payload: original, timeline: [], language: "English"))
     }
 
+    @Test("成功总结经注入缓存落盘，失败与中断不落盘")
+    func successfulGenerationPersistsButFailuresDoNot() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("starcat-issue-summary-hook-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = GitHubNotificationIssueSummaryStore(persistenceCache: DiskIssueSummaryCache(rootOverride: root))
+        let session = store.session(threadId: "166", scopeRevision: 1, language: "Chinese")
+        session.start(title: "Issue", payload: payload(), timeline: [], language: "Chinese") { _, _ in
+            "落盘的总结"
+        }
+        await settle { !session.isGenerating }
+        #expect(session.generatedAt != nil)
+        let snapshot = try #require(
+            DiskIssueSummaryCache(rootOverride: root).load(payload: payload(), language: "Chinese")
+        )
+        #expect(snapshot.markdown == "落盘的总结")
+        // ISO8601 落盘是秒级精度，与内存里的完成时刻允许小于 1 秒的编码误差。
+        #expect(abs(snapshot.generatedAt.timeIntervalSince(session.generatedAt ?? .distantPast)) < 1)
+        #expect(snapshot.title == "Issue")
+
+        // 失败不落盘。
+        let failed = store.session(threadId: "404", scopeRevision: 1, language: "Chinese")
+        failed.start(title: "Issue", payload: payload(), timeline: [], language: "Chinese") { _, _ in
+            throw AIClientError.responseTruncated
+        }
+        await settle { !failed.isGenerating }
+
+        // 中断不落盘。
+        let interrupted = store.session(threadId: "405", scopeRevision: 1, language: "Chinese")
+        let probe = GeneratorProbe()
+        interrupted.start(title: "Issue", payload: payload(), timeline: [], language: "Chinese", generator: probe.generate)
+        await settle { probe.isWaiting }
+        probe.emit("半截")
+        interrupted.stop()
+        #expect(interrupted.wasInterrupted)
+
+        // 同一 cache key 下只有成功那次的正文；失败 / 中断都不能伪装成「上次总结」。
+        let reloaded = DiskIssueSummaryCache(rootOverride: root)
+        #expect(reloaded.load(payload: payload(), language: "Chinese")?.markdown == "落盘的总结")
+    }
+
+    @Test("restore 回放磁盘快照；已有内容或生成中时晚到快照让位")
+    func restoreReplaysSnapshotAndYieldsToLiveSession() async throws {
+        let session = GitHubNotificationIssueSummarySession()
+        let generatedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        session.restore(from: snapshot(markdown: "缓存恢复的总结", generatedAt: generatedAt))
+        #expect(session.markdown == "缓存恢复的总结")
+        #expect(session.completedMarkdown == "缓存恢复的总结")
+        #expect(session.hasContent)
+        #expect(!session.isGenerating)
+        #expect(session.generatedAt == generatedAt)
+        #expect(session.context?.includedCommentCount == 4)
+        #expect(session.context?.isTruncated == false)
+        #expect(session.errorMessage == nil)
+        #expect(session.matchesSource(title: "Issue", payload: payload(), timeline: [], language: "Chinese"))
+
+        // 已有内容（含恢复结果）时，晚到的另一份快照不得覆盖。
+        session.restore(from: snapshot(markdown: "另一份", generatedAt: generatedAt.addingTimeInterval(60)))
+        #expect(session.markdown == "缓存恢复的总结")
+
+        // 生成进行中时晚到的快照不得覆盖，也不得打断任务。
+        let generating = GitHubNotificationIssueSummarySession()
+        let probe = GeneratorProbe()
+        generating.start(title: "Issue", payload: payload(), timeline: [], language: "Chinese", generator: probe.generate)
+        await settle { probe.isWaiting }
+        generating.restore(from: snapshot(markdown: "晚到的缓存", generatedAt: generatedAt))
+        #expect(generating.isGenerating)
+        #expect(generating.generatedAt == nil)
+        probe.finish("生成结果")
+        await settle { !generating.isGenerating }
+        #expect(generating.markdown == "生成结果")
+        #expect(generating.generatedAt != nil)
+    }
+
     /// 上下文准备在并发执行器运行，等待用短 deadline 而非固定 yield 次数，避免机器调度差异。
     private func settle(until condition: () -> Bool) async {
         let deadline = ContinuousClock.now.advanced(by: .seconds(3))
@@ -170,6 +244,28 @@ struct GitHubNotificationIssueSummarySessionTests {
             threadId: "166", reason: "mention", chip: .mention, subjectType: "Issue", subjectNumber: 166,
             repositoryFullName: "starcat-app/Starcat", actorLogin: "reader", authorLogin: "author",
             authorCreatedAt: nil, excerpt: excerpt, comments: [], people: []
+        )
+    }
+
+    private func snapshot(markdown: String, generatedAt: Date) -> IssueSummaryCacheSnapshot {
+        IssueSummaryCacheSnapshot(
+            formatVersion: IssueSummaryCacheSnapshot.currentFormatVersion,
+            owner: "starcat-app",
+            repo: "Starcat",
+            number: 166,
+            language: "Chinese",
+            generatedAt: generatedAt,
+            markdown: markdown,
+            title: "Issue",
+            payload: payload(),
+            timeline: [],
+            contextStats: .init(
+                includedCommentCount: 4,
+                availableCommentCount: 6,
+                includedEventCount: 2,
+                availableEventCount: 2,
+                isTruncated: false
+            )
         )
     }
 }

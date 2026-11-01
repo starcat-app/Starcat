@@ -191,7 +191,8 @@ final class AppDependencies {
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
     /// Issue 总结由应用持有；收起面板或切帖只结束展示，不取消请求或丢失本次结果。
-    let githubIssueSummaryStore = GitHubNotificationIssueSummaryStore()
+    /// 成功总结落盘 DiskIssueSummaryCache，重启后可回放（派生数据，不入库）。
+    let githubIssueSummaryStore = GitHubNotificationIssueSummaryStore(persistenceCache: .shared)
     /// 单仓 AI 摘要的进程内会话表。按 repo 保留生成 Task 与 UI 状态，切换详情不取消。
     let repoAIInsightSessionStore: RepoAIInsightSessionStore
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
