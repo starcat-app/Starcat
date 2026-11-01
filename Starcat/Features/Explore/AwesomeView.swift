@@ -100,14 +100,14 @@ struct AwesomeView: View {
                 .frame(maxWidth: 180)
             }
 
-            Picker("awesome.sort.title", selection: $sort) {
-                ForEach(AwesomeSortOption.allCases) { option in
-                    Text(option.titleKey).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .frame(width: 130)
+            // 与其它中栏共用 UnifiedSortMenu：fixedSize 紧贴内容，避免原生 Picker
+            // 定宽后按钮在 frame 内居中、拉大与搜索图标的视觉间距。
+            UnifiedSortMenu(
+                selection: $sort,
+                options: AwesomeSortOption.allCases,
+                displayName: { $0.titleKey },
+                systemImage: { $0.systemImage }
+            )
 
             // 与其它中栏一致：Spacer 让搜索 / 筛选靠左，同步 / 多选靠右。
             Spacer()
@@ -614,6 +614,15 @@ private enum AwesomeSortOption: String, CaseIterable, Identifiable, Hashable {
         case .stars: return "awesome.sort.stars"
         case .updated: return "awesome.sort.updated"
         case .name: return "awesome.sort.name"
+        }
+    }
+    // 与 ExploreSortOption 同款图标，保证排序菜单在全 App 内视觉一致。
+    var systemImage: String {
+        switch self {
+        case .original: return "list.bullet"
+        case .stars: return "star.fill"
+        case .updated: return "clock.arrow.circlepath"
+        case .name: return "a.square"
         }
     }
 }
