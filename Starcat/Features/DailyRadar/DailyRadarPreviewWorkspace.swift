@@ -219,7 +219,8 @@ struct DailyRadarPreviewWorkspace: View {
                                 ForEach(Array(olderStories.enumerated()), id: \.element.id) { index, item in
                                     Button { openStory(item) } label: {
                                         HStack(spacing: 16) {
-                                            DailyRadarCoverView(cover: item.cover)
+                                            DailyRadarCoverView(cover: item.cover,
+                                                                category: item.category, seed: item.id)
                                                 .frame(width: 88, height: 56)
                                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                                 .accessibilityHidden(true)

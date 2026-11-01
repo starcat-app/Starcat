@@ -33,7 +33,7 @@ struct DailyRadarServiceFixtureTests {
         #expect(page.featuredID == report.id)
         #expect(page.nextCursor == nil)
         #expect(report.cover.cardURL == nil)
-        #expect(report.cover.assetName == "DailyRadarOrbitCover")
+        #expect(report.cover.fallback == "orbit")
         #expect(report.markdown == nil)
     }
 

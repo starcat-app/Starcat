@@ -130,7 +130,6 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
         let heroURL: URL?
         let fallback: String
         let alt: String
-        var assetName: String { fallback == "studio" ? "DailyRadarStudioCover" : "DailyRadarOrbitCover" }
         enum CodingKeys: String, CodingKey {
             case kind, cardURL = "card_url", heroURL = "hero_url", fallback, alt
         }
@@ -177,7 +176,6 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
         ISO8601DateFormatter().date(from: "\(editionDate)T12:00:00+08:00") ?? .distantPast
     }
     var minutes: Int { readingMinutes }
-    var darkCover: Bool { cover.fallback != "studio" }
     var contentIdentity: String { "\(id)|\(contentLanguage)|\(revision)" }
     enum CodingKeys: String, CodingKey {
         case id, revision, editionDate = "edition_date", category, period, title, summary

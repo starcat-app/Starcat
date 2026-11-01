@@ -43,7 +43,8 @@ struct DailyRadarPreviewReader: View {
             ScrollView {
                 VStack(spacing: 0) {
                     GeometryReader { geometry in
-                        DailyRadarCoverView(cover: story.cover, hero: true)
+                        DailyRadarCoverView(cover: story.cover, category: story.category,
+                                            seed: story.id, hero: true)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }

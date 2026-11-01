@@ -22,14 +22,19 @@ struct DailyRadarStoryCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
                     GeometryReader { geometry in
-                        DailyRadarCoverView(cover: story.cover, hero: featured)
+                        // featured 大卡左侧叠标题/摘要：程序化封面主体右移避让文字区；
+                        // 普通卡/阅读页 hero 文字不压封面，保持居中。
+                        DailyRadarCoverView(cover: story.cover, category: story.category,
+                                            seed: story.id, hero: featured,
+                                            textSafeLeading: featured ? 0.38 : 0)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }
                     .accessibilityHidden(true)
 
                     if featured {
-                        // 封面上的文字固定采用深色语义环境，与图片暗部保持稳定对比。
+                        // 封面（AI 图与程序化兜底）统一深色调，文字固定深色语义
+                        // 环境（白字），与图片暗部保持稳定对比，不再依赖 fallback 字段。
                         VStack(alignment: .leading, spacing: 14) {
                             Text("dailyRadar.featured")
                                 .font(scale.font(size: 12, weight: .semibold))
@@ -53,7 +58,7 @@ struct DailyRadarStoryCard: View {
                         .padding(28)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .foregroundStyle(.primary)
-                        .environment(\.colorScheme, story.darkCover ? .dark : .light)
+                        .environment(\.colorScheme, .dark)
                     }
                 }
                 .frame(height: featured ? scale.scaled(320) : 160)
