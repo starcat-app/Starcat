@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）准备组织 Go 安全修复，更新 SQLite 备份 helper 和跨仓 Go 工具链约定。 | `待审查`；本地验证通过，未推送、发布或操作生产数据。 | 等待确认集成范围；进入稳定主线后再同步 `dev`。 |
+| `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct 预览版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.2-dev.N`；新增变更不得回写已公开的 `v1.9.0` / `v1.9.1` tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-10-23 从 `dev` fast-forward 到 `9d4cc2c2` 并打出 Direct `v1.9.1`（仅 Direct 渠道，App Store 未发布）。 | 保持稳定；下一版本验收后再从 `dev` 提升，打包、上传和发布须另行授权。 |
