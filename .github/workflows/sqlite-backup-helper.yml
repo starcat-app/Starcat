@@ -1,0 +1,48 @@
+name: SQLite backup helper
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'supports/scripts/sqlite-backup-helper/**'
+      - '.github/workflows/sqlite-backup-helper.yml'
+  pull_request:
+    paths:
+      - 'supports/scripts/sqlite-backup-helper/**'
+      - '.github/workflows/sqlite-backup-helper.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    defaults:
+      run:
+        working-directory: supports/scripts/sqlite-backup-helper
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: supports/scripts/sqlite-backup-helper/go.mod
+          cache-dependency-path: supports/scripts/sqlite-backup-helper/go.sum
+      - name: Verify modules and formatting
+        run: |
+          go mod verify
+          test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race ./...
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: Build Linux helpers
+        run: |
+          # Cross-compile only; never invoke the production backup script in CI.
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "$RUNNER_TEMP/sqlite-backup-helper-amd64" .
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o "$RUNNER_TEMP/sqlite-backup-helper-arm64" .

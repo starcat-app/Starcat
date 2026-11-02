@@ -16,7 +16,7 @@
 **特殊项目约束：**
 
 - `starcat-recsys-trainer` 是私有 Python 3.12 + uv 离线管道，以项目 `README.md` 和 `docs/使用说明.md` 为准；按建立需求暂不创建 CI workflow，本地变更必须执行 `make check`。
-- `starcat-collection-api` 是私有 Go 1.25 独立服务，**不可**导入 `starcat-api` Gateway；它与 Trainer 之间只允许 Admin Key 保护的 Pull 导出。
+- `starcat-collection-api` 是私有 Go 独立服务，使用下文统一的安全工具链基线，**不可**导入 `starcat-api` Gateway；它与 Trainer 之间只允许 Admin Key 保护的 Pull 导出。
 
 `supports/` 下的 `.github`、官网、文档、API、CLI、插件、Homebrew 和本地化目录均可能是独立 Git 仓库。**修改前**先在目标目录运行 `git status -sb` 并核对 remote；不要把多个独立仓库的改动混成主仓库提交。
 
@@ -72,7 +72,7 @@
 
 ## 通用技术栈
 
-- **Go 1.25.0** — 六个业务 API、独立 Collection API、`starcat-api-kit` 与 `starcat-api` 的 go.mod 统一
+- **Go 1.26.10** — 六个业务 API、独立 API、`starcat-api-kit`、`starcat-api` 与 SQLite 备份 helper 的最低构建版本；使用仍受官方支持且包含安全补丁的工具链
 - **net/http** — 标准库 HTTP 服务,无第三方框架
 - **godotenv** — `github.com/joho/godotenv`,从 `.env` 文件加载环境变量(2026-06-09 R-01 起统一,详见 §R-01 配置规范)
 - **modernc.org/sqlite** — 有状态 API 使用 SQLite(R-01 起 sharing 也改 SQLite,详见对应方案)
@@ -80,24 +80,29 @@
 - **Fly.io** — 当前为 6 个业务独立 App；目标为 `starcat-api` 聚合 App，license 和 collection 继续独立
 - **GitHub Actions** — CI(`go vet` + `gofmt` + 编译 + 单测) + CD(fly deploy) + Release(多平台二进制 + GitHub Release),三个 workflow 串联: `go.yml` 成功 → `fly-deploy.yml` + `release.yml` 并行跑
 
-### Go 版本一致性（2026-06-08 起）
+### Go 版本一致性（2026-11-02 安全基线）
 
-**6 个可聚合 API + Collection API 必须保持 Go directive 一致**（统一为 `go 1.25.0`）：
+**6 个可聚合 API + Collection API 必须保持 Go directive 一致**（统一为 `go 1.26.10`）。共享 kit、聚合单元、history / license API 与 SQLite 备份 helper 使用同一最低构建版本：
 
-| 项目 | go.mod | workflows/go.yml |
+| 项目 | go.mod | CI 的 Go 版本来源 |
 |------|--------|-----------------|
-| starcat-sharing-api | `go 1.25.0` | `go-version: [1.25]` |
-| starcat-trending-api | `go 1.25.0` | `go-version: [1.25]` |
-| starcat-weekly-api | `go 1.25.0` | `go-version: [1.25]` |
-| starcat-wiki-api | `go 1.25.0` | `go-version: [1.25]` |
-| starcat-recommend-api | `go 1.25.0` | `go-version: [1.25]` |
-| starcat-discovery-api | `go 1.25.0` | `go-version: [1.25]` |
-| starcat-collection-api | `go 1.25.0` | `go-version-file: go.mod` |
+| starcat-sharing-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-trending-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-weekly-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-wiki-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-recommend-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-discovery-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-collection-api | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-history-api / starcat-license-api / starcat-api-kit | `go 1.26.10` | `go-version-file: go.mod` |
+| starcat-api | `go 1.26.10` | `go-version-file: starcat-api/go.mod` |
+| scripts/sqlite-backup-helper | `go 1.26.10` | `go-version-file: supports/scripts/sqlite-backup-helper/go.mod` |
+
+CI 与 Release 从模块文件选择 Go，使用 `GOTOOLCHAIN=local`；Go API Docker builder 固定为 `golang:1.26.10-alpine`，同样禁用自动工具链切换。`govulncheck` 固定工具版本（当前 v1.9.0），读取实时漏洞数据库；区分符号可达、仅导入和仅依赖记录，不能将扫描通过视为绝对安全保证。
 
 **禁止行为：**
 
 - ❌ 只升级某一个可聚合 API 的 Go 版本（六个需同步）；Collection 也必须继续使用同一 Go directive
-- ❌ 升级 Go 后忘了同步 `workflows/go.yml` 的矩阵版本
+- ❌ 升级 Go 后遗漏 CI / Release 的模块版本来源或 Docker builder 版本
 - ❌ 升级 Go 后没跑 `go build ./... && go vet ./...` 验证
 
 ### Module path 与 import 规范
@@ -194,10 +199,10 @@ go build ./... && go vet ./...
 ```bash
 # 1. 升级本地 Go toolchain(https://go.dev/dl/)
 # 2. 同步修改所有 API 项目的 go.mod:
-#    go X.Y.0
-# 3. 同步修改所有 API 项目的 .github/workflows/go.yml:
-#    go-version: [X.Y]
-# 4. 每个项目跑:
+#    go X.Y.Z（受支持且包含安全修复的补丁版本）
+# 3. CI / Release 用 go-version-file 读取模块；同步 Docker builder 补丁版本，
+#    CI 与 Docker 均设置 GOTOOLCHAIN=local。
+# 4. 每个项目跑测试、竞态检查、govulncheck，并验证构建与静态检查：
 cd starcat-sharing-api && go mod tidy && go build ./... && go vet ./...
 cd ../starcat-trending-api && go mod tidy && go build ./... && go vet ./...
 cd ../starcat-weekly-api && go mod tidy && go build ./... && go vet ./...
@@ -506,4 +511,4 @@ ghp_xxx****abcd
 
 ---
 
-*最后更新: 2026-06-30(补齐 recommend / discovery 服务清单与新增 API 脚本同步规范)*
+*最后更新: 2026-11-02（统一受支持的 Go 安全基线、模块版本来源与 CI 漏洞检查）*
