@@ -24,9 +24,19 @@ jobs:
       run:
         working-directory: supports/scripts/sqlite-backup-helper
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
+      - name: Checkout helper source
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Export only this module. Optional App skill gitlinks have no
+          # .gitmodules mapping and make a full checkout's auth cleanup fail.
+          source_repo="$(mktemp -d "${RUNNER_TEMP}/sqlite-backup-source.XXXXXX")"
+          git init --bare "$source_repo"
+          git -C "$source_repo" remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git -C "$source_repo" fetch --no-tags --filter=blob:none --depth=1 origin "$GITHUB_SHA"
+          test "$(git -C "$source_repo" rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          git -C "$source_repo" archive --format=tar FETCH_HEAD supports/scripts/sqlite-backup-helper | tar -xf -
       - uses: actions/setup-go@v7
         with:
           go-version-file: supports/scripts/sqlite-backup-helper/go.mod
