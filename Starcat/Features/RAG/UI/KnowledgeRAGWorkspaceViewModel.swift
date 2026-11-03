@@ -729,6 +729,24 @@ final class KnowledgeRAGWorkspaceViewModel {
             scheduleComposerContextUsageRefresh()
         }
     }
+
+    /// Composer 模型菜单按服务商配置分组：组顺序跟随设置页服务商顺序（与设置页
+    /// AITaskModelPicker 一致），组内沿用 `availableModels` 的名称排序。
+    /// 与 `availableModels` 读同一份缓存快照，只在菜单因配置变化重新求值时计算，开销可忽略。
+    var groupedAvailableModels: [RAGModelMenuGroup] {
+        var modelsByProviderID = Dictionary(grouping: availableModels, by: \.providerID)
+        var groups: [RAGModelMenuGroup] = []
+        for profile in dependencies.settings.aiProviderProfiles {
+            guard let models = modelsByProviderID.removeValue(forKey: profile.id), !models.isEmpty else { continue }
+            groups.append(RAGModelMenuGroup(id: profile.id, title: profile.displayName, models: models))
+        }
+        // 防御：模型快照与设置快照短暂不一致（profile 已删但模型缓存未刷新）时，
+        // 用 providerID 兜底成组追加在末尾，避免菜单悄悄丢模型。
+        for (providerID, models) in modelsByProviderID.sorted(by: { $0.key < $1.key }) {
+            groups.append(RAGModelMenuGroup(id: providerID, title: providerID, models: models))
+        }
+        return groups
+    }
     var inferenceBackend: RAGInferenceBackend {
         let configuredBackend = dependencies.settings.ragInferenceBackend
         return RAGInferenceBackend.available(using: dependencies.distributionGate)

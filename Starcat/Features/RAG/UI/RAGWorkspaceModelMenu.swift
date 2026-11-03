@@ -7,6 +7,14 @@
 
 import SwiftUI
 
+/// 模型菜单的分组单元：`id` 是 provider profile ID，`title` 用配置展示名。
+/// 同一服务商可建多个 profile（不同 baseURL / 不同账号），分组必须按 profile 而不是服务商枚举。
+struct RAGModelMenuGroup: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let models: [AIModelDescriptor]
+}
+
 /// 独立观察模型配置的菜单。
 ///
 /// 回答时间线和会话骨架更新不应让 AppKit 重新生成模型菜单项；只有模型配置、当前选择
@@ -20,10 +28,17 @@ struct RAGWorkspaceModelMenu: View {
         Menu {
             // inline Picker 让系统只给当前 selection 打勾；模型数组由 ViewModel 缓存，
             // 设置未变化时不会在每次会话切换中重新过滤、排序并生成菜单身份。
+            // 分组标题是服务商配置名（用户数据，verbatim 展示，不进 i18n Catalog）。
             Picker("", selection: $viewModel.selectedModelID) {
-                ForEach(viewModel.availableModels) { model in
-                    modelPickerLabel(model)
-                        .tag(Optional(model.id))
+                ForEach(viewModel.groupedAvailableModels) { group in
+                    Section {
+                        ForEach(group.models) { model in
+                            modelPickerLabel(model)
+                                .tag(Optional(model.id))
+                        }
+                    } header: {
+                        Text(verbatim: group.title)
+                    }
                 }
             }
             .labelsHidden()
