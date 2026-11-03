@@ -2,8 +2,8 @@
 //  DailyRadarMarkdownView.swift
 //  Starcat
 //
-//  日报专用安全 Markdown 适配：AST 只输出允许元素，源 HTML 只保留
-//  details/summary/br。WebView 自适应高度并转交滚轮，整篇继续使用原生单滚动。
+//  日报专用安全 Markdown 适配：AST 与来源 HTML 只输出允许的展示元素。
+//  WebView 自适应高度，纵向滚动交给原生宿主，宽表保留局部横向滚动。
 //
 
 import SwiftUI
@@ -58,9 +58,17 @@ enum DailyRadarMarkdownRenderer {
             return "<thead><tr>\(cells)</tr></thead>"
         case is Markdown.Table.Body: return "<tbody>\(children())</tbody>"
         case is Markdown.Table.Row: return "<tr>\(children())</tr>"
-        case is Markdown.Table.Cell: return "<td>\(children())</td>"
-        case let html as HTMLBlock: return safeHTML(html.rawHTML)
-        case let html as InlineHTML: return safeHTML(html.rawHTML)
+        case let cell as Markdown.Table.Cell:
+            // 数字不可继承正文的 anywhere 换行，否则窄列会把 548 排成三行。
+            let value = cell.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let numeric = value.range(
+                of: #"^[+-]?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.[0-9]+)?%?$"#,
+                options: .regularExpression
+            ) != nil
+            let className = numeric ? " class=\"numeric\"" : ""
+            return "<td\(className)>\(repairedDiscussionLink(in: cell) ?? children())</td>"
+        case let html as HTMLBlock: return DailyRadarSafeHTML.render(html.rawHTML)
+        case let html as InlineHTML: return DailyRadarSafeHTML.render(html.rawHTML)
         default: return children()
         }
     }
@@ -77,38 +85,36 @@ enum DailyRadarMarkdownRenderer {
         let hasSummary = headers.last?.contains("summary") == true ||
             headers.last?.contains("摘要") == true ||
             headers.last?.contains("说明") == true
-        let hasSubject = headers.first?.contains("project") == true ||
-            headers.first?.contains("article") == true ||
-            headers.first?.contains("项目") == true ||
-            headers.first?.contains("文章") == true
         let shortMetricHeaders = [
-            "lang", "language", "stars", "reactions", "comments",
-            "语言", "星标", "星数", "反应", "评论"
+            "lang", "language", "stars", "reactions", "comments", "score", "votes",
+            "语言", "星标", "星数", "反应", "评论", "票数", "评分", "得分"
         ]
         let hasShortMetrics = headers.dropFirst().dropLast().contains { header in
             shortMetricHeaders.contains { header.contains($0) }
         }
-        return hasSummary && hasSubject && hasShortMetrics
+        return hasSummary && hasShortMetrics
     }
 
-    /// 未知标签成为可读文字，所有属性丢弃；源脚本、事件、iframe、SVG 永不执行。
-    private static func safeHTML(_ raw: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "<[^>]*>") else { return escape(raw) }
-        let source = raw as NSString
-        var end = 0
-        var result = ""
-        for match in regex.matches(in: raw, range: NSRange(location: 0, length: source.length)) {
-            result += escape(source.substring(with: NSRange(location: end, length: match.range.location - end)))
-            let token = source.substring(with: match.range).lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            switch token {
-            case "<details>", "<details open>": result += token
-            case "</details>", "<summary>", "</summary>", "<br>", "<br/>", "<br />": result += token
-            default: result += escape(source.substring(with: match.range))
-            }
-            end = match.range.location + match.range.length
-        }
-        result += escape(source.substring(from: end))
-        return result
+    /// 部分来源把“· discuss”误写进主链接的圆括号；仅修复表格中明确的三节点结构。
+    /// 不全局替换 Markdown，避免误改代码、正常括号 URL 或普通段落中的原始文字。
+    private static func repairedDiscussionLink(in cell: Markdown.Table.Cell) -> String? {
+        let nodes = Array(cell.children)
+        guard nodes.count == 3, let prefix = nodes[0] as? Markdown.Text,
+              let discussion = nodes[1] as? Markdown.Link,
+              let suffix = nodes[2] as? Markdown.Text, suffix.string == ")",
+              let rawDiscussion = discussion.destination, let discussionURL = safeURL(rawDiscussion),
+              let expression = try? NSRegularExpression(
+                pattern: #"^\[([^\[\]\n]+)\]\((https?://\S+)[\t ]+([·•])[\t ]+$"#
+              ) else { return nil }
+        let source = prefix.string as NSString
+        guard let match = expression.firstMatch(
+            in: prefix.string, range: NSRange(location: 0, length: source.length)
+        ), let url = safeURL(source.substring(with: match.range(at: 2))) else { return nil }
+        let title = escape(source.substring(with: match.range(at: 1)))
+        let separator = source.substring(with: match.range(at: 3))
+        let discussionTitle = discussion.children.map { renderNode($0) }.joined()
+        return "<a href=\"\(escape(url.absoluteString))\">\(title)</a> \(separator) " +
+            "<a href=\"\(escape(discussionURL.absoluteString))\">\(discussionTitle)</a>"
     }
 
     static func safeURL(_ raw: String) -> URL? {
@@ -154,7 +160,28 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
         let document = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline'; script-src 'nonce-\(session)'; base-uri 'none'; form-action 'none'">
-        <style>html{color-scheme:\(dark ? "dark" : "light");overflow:hidden}body{margin:0;font:\(scale.scaled(16))px -apple-system;line-height:1.75;color:\(dark ? "#f5f5f7" : "#1d1d1f");overflow-wrap:anywhere}main{display:flow-root}h1,h2,h3{line-height:1.35;margin:1.5em 0 .6em}p{margin:.8em 0}a{color:#007aff}img{max-width:100%;height:auto}pre,.table{overflow-x:auto;max-width:100%}pre{padding:16px;background:\(dark ? "#2c2c2e" : "#f5f5f7");border-radius:8px}code{font:0.88em ui-monospace,monospace}table{border-collapse:collapse;width:100%}td,th{padding:8px 12px;border:1px solid \(dark ? "#444" : "#ddd");text-align:left;vertical-align:top}table.metadata{table-layout:fixed;min-width:720px}table.metadata th:nth-child(1),table.metadata td:nth-child(1){width:26%}table.metadata th:nth-child(2),table.metadata td:nth-child(2){width:13%}table.metadata th:nth-child(3),table.metadata td:nth-child(3){width:13%}table.metadata th:nth-child(4),table.metadata td:nth-child(4){width:48%}table.metadata th:nth-child(2),table.metadata th:nth-child(3),table.metadata td:nth-child(2),table.metadata td:nth-child(3){overflow-wrap:normal;word-break:normal}blockquote{margin-left:0;padding-left:16px;border-left:3px solid #888}summary{cursor:pointer}details{padding:10px 0}</style></head>
+        <style>
+        html{color-scheme:\(dark ? "dark" : "light");overflow:hidden}
+        body{margin:0;font:\(scale.scaled(16))px -apple-system;line-height:1.75;color:\(dark ? "#f5f5f7" : "#1d1d1f");overflow-wrap:anywhere}
+        main{display:flow-root}
+        h1,h2,h3{line-height:1.35;margin:1.5em 0 .6em}
+        p{margin:.8em 0}a{color:#007aff}img{max-width:100%;height:auto}
+        pre,.table{overflow-x:auto;max-width:100%}
+        pre{padding:16px;background:\(dark ? "#2c2c2e" : "#f5f5f7");border-radius:8px}
+        code{font:0.88em ui-monospace,monospace}
+        table{border-collapse:collapse;width:100%}
+        td,th{padding:8px 12px;border:1px solid \(dark ? "#444" : "#ddd");text-align:left;vertical-align:top}
+        th,td.numeric{white-space:nowrap;overflow-wrap:normal;word-break:normal}
+        /* 最小宽度随正文字号缩放，窄视口局部横滚，不牺牲指标列和长英文表头。 */
+        table.metadata{table-layout:fixed;min-width:52em}
+        table.metadata th:nth-child(1),table.metadata td:nth-child(1){width:26%}
+        table.metadata th:nth-child(2),table.metadata td:nth-child(2){width:13%}
+        table.metadata th:nth-child(3),table.metadata td:nth-child(3){width:13%}
+        table.metadata th:nth-child(4),table.metadata td:nth-child(4){width:48%}
+        table.metadata th:nth-child(2),table.metadata th:nth-child(3),table.metadata td:nth-child(2),table.metadata td:nth-child(3){overflow-wrap:normal;word-break:normal}
+        blockquote{margin-left:0;padding-left:16px;border-left:3px solid #888}
+        summary{cursor:pointer}details{padding:10px 0}
+        </style></head>
         <body><main>\(html)</main><script nonce="\(session)">const content=document.querySelector("main");const send=()=>window.webkit.messageHandlers.dailyHeight.postMessage({session:"\(session)",height:Math.ceil(content.getBoundingClientRect().height)});new ResizeObserver(send).observe(content);window.addEventListener("load",send);document.addEventListener("toggle",send,true);send();</script></body></html>
         """
         webView.loadHTMLString(document, baseURL: nil)
@@ -166,9 +193,15 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "dailyHeight")
     }
 
-    /// WebKit 内部滚动交给文章宿主，避免正文与原生项目列表形成两个纵向滚动区。
+    /// 纵向交给文章宿主；横向留给 WebKit 命中表格或代码块的局部滚动区。
     final class PassthroughWebView: WKWebView {
-        override func scrollWheel(with event: NSEvent) { nextResponder?.scrollWheel(with: event) }
+        override func scrollWheel(with event: NSEvent) {
+            if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) {
+                super.scrollWheel(with: event)
+            } else {
+                nextResponder?.scrollWheel(with: event)
+            }
+        }
     }
 
     @MainActor
@@ -189,7 +222,13 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
                 self.parent.height = height
             }
         }
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // 与 WKNavigationDelegate 的主线程回调签名一致，确保安全链接由宿主处理，
+        // 而不是因可选协议方法未匹配而直接在日报 WebView 内打开外部页面。
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor action: WKNavigationAction,
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
+        ) {
             if action.navigationType == .other, action.request.url?.absoluteString == "about:blank" {
                 decisionHandler(.allow)
             } else if action.navigationType == .linkActivated,
