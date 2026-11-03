@@ -53,10 +53,8 @@ struct ReleaseAssetRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: ReleaseAssetIcon.systemName(for: asset.name))
+            BusinessIcon(source: ReleaseAssetIcon.iconSource(for: asset.name), pointSize: layout == .compact ? 16 : 18)
                 .foregroundStyle(.secondary)
-                .font(interfaceScale.font(layout == .compact ? .caption : .iconSmall))
-                .frame(width: layout == .compact ? 16 : 18)
 
             if layout == .compact {
                 Text(verbatim: asset.name)
@@ -319,14 +317,15 @@ private struct ReleaseAssetDownloadToastModifier: ViewModifier {
 // MARK: - Icon helper
 
 enum ReleaseAssetIcon {
-    static func systemName(for filename: String) -> String {
+    /// Release 资产类型图标：dmg 硬盘 / pkg 软件包 / 压缩包 / Windows 显示器 / Linux 终端 / app 窗口。
+    static func iconSource(for filename: String) -> BusinessIcon.Source {
         let lower = filename.lowercased()
-        if lower.hasSuffix(".dmg") { return "internaldrive" }
-        if lower.hasSuffix(".pkg") { return "shippingbox.fill" }
-        if lower.hasSuffix(".zip") || lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") { return "doc.zipper" }
-        if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return "pc" }
-        if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return "terminal" }
-        if lower.hasSuffix(".app") { return "macwindow" }
-        return "doc"
+        if lower.hasSuffix(".dmg") { return .business(.storage) }
+        if lower.hasSuffix(".pkg") { return .business(.packageAsset) }
+        if lower.hasSuffix(".zip") || lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") { return .business(.fileArchive) }
+        if lower.hasSuffix(".exe") || lower.hasSuffix(".msi") { return .business(.monitor) }
+        if lower.hasSuffix(".deb") || lower.hasSuffix(".rpm") || lower.hasSuffix(".appimage") { return .business(.terminal) }
+        if lower.hasSuffix(".app") { return .business(.appWindow) }
+        return .business(.file)
     }
 }

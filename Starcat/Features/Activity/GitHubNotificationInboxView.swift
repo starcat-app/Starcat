@@ -761,7 +761,7 @@ private struct GitHubNotificationSegmentMenu: View {
                     Label {
                         Text(verbatim: item.displayTitle(locale: locale))
                     } icon: {
-                        Image(systemName: item.systemImage)
+                        BusinessIcon(source: item.iconSource, pointSize: 15, weight: .medium)
                     }
                     .tag(item)
                 }

@@ -106,7 +106,7 @@ struct AwesomeView: View {
                 selection: $sort,
                 options: AwesomeSortOption.allCases,
                 displayName: { $0.titleKey },
-                systemImage: { $0.systemImage }
+                iconSource: { $0.iconSource }
             )
 
             // 与其它中栏一致：Spacer 让搜索 / 筛选靠左，同步 / 多选靠右。
@@ -617,12 +617,12 @@ private enum AwesomeSortOption: String, CaseIterable, Identifiable, Hashable {
         }
     }
     // 与 ExploreSortOption 同款图标，保证排序菜单在全 App 内视觉一致。
-    var systemImage: String {
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .original: return "list.bullet"
-        case .stars: return "star.fill"
-        case .updated: return "clock.arrow.circlepath"
-        case .name: return "a.square"
+        case .original: return .business(.metadata)
+        case .stars: return .business(.stars)
+        case .updated: return .business(.recentUpdate)
+        case .name: return .business(.sortAZ)
         }
     }
 }

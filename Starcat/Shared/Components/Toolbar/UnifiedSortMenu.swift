@@ -51,8 +51,8 @@ protocol ListSortDriver: AnyObject {
     /// 选项的本地化显示名（Label.title 用）。
     func displayName(for option: Option) -> LocalizedStringKey
 
-    /// 选项的 SF Symbol 名（Label.icon 用）。
-    func systemImage(for option: Option) -> String
+    /// 选项的图标来源（Label.icon 用）。
+    func iconSource(for option: Option) -> BusinessIcon.Source
 }
 
 extension ListSortDriver where Option.AllCases == [Option] {
@@ -63,14 +63,14 @@ extension ListSortDriver where Option.AllCases == [Option] {
 
 /// 通用排序菜单。toolbar primaryAction 槽内调用。
 ///
-/// 调用方典型用法：
+/// 调用方典型用法（排序枚举已迁移 iconSource 时）：
 /// ```swift
 /// @Bindable var vm = viewModel
 /// UnifiedSortMenu(
 ///     selection: $vm.sortOption,
 ///     options: RepoSortOption.allCases,
 ///     displayName: { $0.displayName },
-///     systemImage: { $0.systemImage }
+///     iconSource: { $0.iconSource }
 /// )
 /// ```
 struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
@@ -78,8 +78,41 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
     @Binding var selection: Option
     let options: [Option]
     let displayName: (Option) -> LocalizedStringKey
-    let systemImage: (Option) -> String
+    /// 菜单项图标来源：排序语义图形（推荐 / 热门 / 时间等）统一走 Lucide 业务资产；
+    /// 尚未迁移的枚举经兼容 init 以 `.system` 传入，两种来源在同一菜单内不会混用。
+    let iconSource: (Option) -> BusinessIcon.Source
     var dividerBefore: (Option) -> Bool = { _ in false }
+
+    init(
+        selection: Binding<Option>,
+        options: [Option],
+        displayName: @escaping (Option) -> LocalizedStringKey,
+        iconSource: @escaping (Option) -> BusinessIcon.Source,
+        dividerBefore: @escaping (Option) -> Bool = { _ in false }
+    ) {
+        self._selection = selection
+        self.options = options
+        self.displayName = displayName
+        self.iconSource = iconSource
+        self.dividerBefore = dividerBefore
+    }
+
+    /// 兼容仍持 SF 字符串的排序枚举（Weekly / Activity / Trending 等），后续迁移后移除。
+    init(
+        selection: Binding<Option>,
+        options: [Option],
+        displayName: @escaping (Option) -> LocalizedStringKey,
+        systemImage: @escaping (Option) -> String,
+        dividerBefore: @escaping (Option) -> Bool = { _ in false }
+    ) {
+        self.init(
+            selection: selection,
+            options: options,
+            displayName: displayName,
+            iconSource: { .system(systemImage($0)) },
+            dividerBefore: dividerBefore
+        )
+    }
 
     var body: some View {
         Menu {
@@ -91,7 +124,12 @@ struct UnifiedSortMenu<Option: Hashable & Identifiable>: View {
                     Label {
                         Text(displayName(opt))
                     } icon: {
-                        Image(systemName: systemImage(opt))
+                        // 菜单项图标约 12pt；资产画布自带留白，放大约一档做光学匹配。
+                        BusinessIcon(
+                            source: iconSource(opt),
+                            pointSize: iconSource(opt).isAsset ? 15 : 12,
+                            weight: .medium
+                        )
                     }
                     .tag(opt)
                 }
@@ -143,8 +181,8 @@ final class ManageSortDriver: ListSortDriver {
         option.displayName
     }
 
-    func systemImage(for option: RepoSortOption) -> String {
-        option.systemImage
+    func iconSource(for option: RepoSortOption) -> BusinessIcon.Source {
+        option.iconSource
     }
 }
 
@@ -183,21 +221,21 @@ final class WeeklySortDriver: ListSortDriver {
         }
     }
 
-    func systemImage(for option: WeeklyFeedSort) -> String {
+    func iconSource(for option: WeeklyFeedSort) -> BusinessIcon.Source {
         switch option {
-        case .defaultOrder: return "sparkles"
-        case .starsDesc:    return "star.fill"
-        case .starsAsc:     return "star"
+        case .defaultOrder: return .business(.thumbsUp)
+        case .starsDesc:    return .business(.stars)
+        case .starsAsc:     return .business(.stars)
         case .updatedDesc, .updatedAsc:
-            return "clock.arrow.circlepath"
+            return .business(.recentUpdate)
         case .createdDesc:
-            return "calendar.badge.plus"
+            return .business(.calendarPlus)
         case .createdAsc:
-            return "calendar"
+            return .business(.calendarDays)
         case .nameAsc:
-            return "a.square"
+            return .business(.sortAZ)
         case .nameDesc:
-            return "z.square"
+            return .business(.sortZA)
         }
     }
 }

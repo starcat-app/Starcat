@@ -90,7 +90,7 @@ struct LinuxDoView: View {
                 ),
                 options: [.recommended, .stars],
                 displayName: { $0 == .recommended ? "linuxdo.catalog.recentPromotion" : $0.titleKey },
-                systemImage: { $0 == .recommended ? "clock" : $0.systemImage }
+                iconSource: { $0 == .recommended ? .business(.recentUpdate) : $0.iconSource }
             )
 
             Spacer()

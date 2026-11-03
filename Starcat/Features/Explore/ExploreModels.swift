@@ -224,26 +224,31 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable, Sendable {
         }
     }
 
-    var systemImage: String {
+    /// 排序图标来源；原先推荐/热门/发布共用 sparkles，现按语义拆分（推荐 thumbs-up、热门 flame、发布 rocket）。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .recommended, .popular, .release:
-            return "sparkles"
+        case .recommended:
+            return .business(.thumbsUp)
+        case .popular:
+            return .business(.popular)
+        case .release:
+            return .business(.releases)
         case .stars:
-            return "star.fill"
+            return .business(.stars)
         case .starsAscending:
-            return "star"
+            return .business(.stars)
         case .activity:
-            return "flame"
+            return .business(.trending)
         case .releaseDate, .releaseDateAscending:
-            return "tag"
+            return .business(.tags)
         case .updated, .updatedAscending:
-            return "clock.arrow.circlepath"
+            return .business(.recentUpdate)
         case .created, .createdAscending:
-            return self == .created ? "calendar.badge.plus" : "calendar"
+            return self == .created ? .business(.calendarPlus) : .business(.calendarDays)
         case .nameAsc:
-            return "a.square"
+            return .business(.sortAZ)
         case .nameDesc:
-            return "z.square"
+            return .business(.sortZA)
         }
     }
 

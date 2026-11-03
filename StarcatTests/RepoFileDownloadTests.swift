@@ -116,31 +116,31 @@ struct RepoFileTreeBuilderTests {
 @Suite("RepoFileTypeIcon")
 struct RepoFileTypeIconTests {
 
-    private static let code = "chevron.left.forwardslash.chevron.right"
+    private static let code = BusinessIcon.Source.business(.codeContext)
 
     @Test("常见扩展名映射到对应类型图标，大小写不敏感")
     func mapsCommonExtensions() {
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "eslint.config.js") == Self.code)
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "main.SWIFT") == Self.code)
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "README.md") == "doc.richtext")
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "logo.png") == "photo")
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "dist.tar.gz") == "doc.zipper")
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "alert.mp3") == "waveform")
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "demo.mov") == "film")
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "eslint.config.js") == Self.code)
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "main.SWIFT") == Self.code)
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "README.md") == .business(.file))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "logo.png") == .business(.image))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "dist.tar.gz") == .business(.fileArchive))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "alert.mp3") == .business(.audio))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "demo.mov") == .business(.video))
     }
 
     @Test("dotfile 取点号后的整段当扩展名，无扩展名走整名匹配")
     func mapsDotfilesAndBareNames() {
-        #expect(RepoFileTypeIcon.symbolName(forFileName: ".gitignore") == Self.code)
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "Makefile") == Self.code)
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "Dockerfile") == Self.code)
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "LICENSE") == "doc.richtext")
+        #expect(RepoFileTypeIcon.iconSource(forFileName: ".gitignore") == Self.code)
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "Makefile") == Self.code)
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "Dockerfile") == Self.code)
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "LICENSE") == .business(.file))
     }
 
     @Test("未知类型退回默认 doc 图标")
     func fallsBackToDefault() {
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "data.unknownext") == "doc.text")
-        #expect(RepoFileTypeIcon.symbolName(forFileName: "") == "doc.text")
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "data.unknownext") == .business(.file))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "") == .business(.file))
     }
 }
 

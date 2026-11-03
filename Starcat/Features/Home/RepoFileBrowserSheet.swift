@@ -305,8 +305,7 @@ struct RepoFileBrowserSheet: View {
 
     private var previewHeader: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: previewedFileIconName)
-                .font(.title3)
+            BusinessIcon(source: previewedFileIcon, pointSize: 24)
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: viewModel.previewedFile?.name ?? "")
@@ -434,8 +433,7 @@ struct RepoFileBrowserSheet: View {
         VStack(spacing: 16) {
             if let file = viewModel.previewedFile {
                 VStack(spacing: 8) {
-                    Image(systemName: previewedFileIconName)
-                        .font(.system(size: 44))
+                    BusinessIcon(source: previewedFileIcon, pointSize: 48)
                         .foregroundStyle(.secondary)
                     Text(verbatim: file.name)
                         .font(.title3.weight(.semibold))
@@ -509,10 +507,10 @@ struct RepoFileBrowserSheet: View {
         .padding(.bottom, 16)
     }
 
-    /// 预览 header 与右侧详情大图标共用：按文件名取类型图标，未选中时退回默认 doc。
-    private var previewedFileIconName: String {
-        guard let file = viewModel.previewedFile else { return "doc.text" }
-        return RepoFileTypeIcon.symbolName(forFileName: file.name)
+    /// 预览 header 与右侧详情大图标共用：按文件名取类型图标，未选中时退回默认文档。
+    private var previewedFileIcon: BusinessIcon.Source {
+        guard let file = viewModel.previewedFile else { return .business(.file) }
+        return RepoFileTypeIcon.iconSource(forFileName: file.name)
     }
 
     private var inspectorType: String {
@@ -702,7 +700,7 @@ private struct RepoFileTreeRow: View {
             viewModel.reveal(node)
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: RepoFileTypeIcon.symbolName(forFileName: node.name))
+                BusinessIcon(source: RepoFileTypeIcon.iconSource(forFileName: node.name), pointSize: 15)
                     .foregroundStyle(.secondary)
                 Text(verbatim: node.name)
                     .lineLimit(1)

@@ -1714,7 +1714,7 @@ struct RepoListView: View {
                     selection: sortOption,
                     options: RepoSortOption.manageOptions,
                     displayName: { $0.displayName },
-                    systemImage: { $0.systemImage },
+                    iconSource: { $0.iconSource },
                     dividerBefore: { $0.isManageSpecificSort && $0 == RepoSortOption.manageOptions.first(where: \.isManageSpecificSort) }
                 )
 

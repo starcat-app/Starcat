@@ -45,27 +45,27 @@ struct RepoFileBrowserTarget: Equatable, Sendable {
 
 /// 文件树行、预览 header、右侧详情三处共用的「文件名 → SF Symbol」映射。
 ///
-/// 为什么只做纯字符串映射：不 import SwiftUI，单测直接断言 symbol 名；
+/// 为什么只做纯 Source 映射：不渲染视图，单测直接断言 iconSource；
 /// 图标颜色统一交给调用方维持 `.secondary` 单色，符合 UI 颜色规范。
 /// macOS 的 `pathExtension` 会把 `.gitignore` 这类 dotfile 判成无扩展名，
 /// 所以手动按最后一个 `.` 切，点号在最前时整名当作扩展名 key。
 enum RepoFileTypeIcon {
 
-    static func symbolName(forFileName name: String) -> String {
+    static func iconSource(forFileName name: String) -> BusinessIcon.Source {
         let lowered = name.lowercased()
         if let dot = lowered.lastIndex(of: ".") {
             let ext = lowered[lowered.index(after: dot)...]
             if let symbol = byExtension[String(ext)] { return symbol }
         }
-        return byBareName[lowered] ?? "doc.text"
+        return byBareName[lowered] ?? .business(.file)
     }
 
-    private static let code = "chevron.left.forwardslash.chevron.right"
+    private static let code = BusinessIcon.Source.business(.codeContext)
 
-    private static let byExtension: [String: String] = [
+    private static let byExtension: [String: BusinessIcon.Source] = [
         // 文档
-        "md": "doc.richtext", "markdown": "doc.richtext", "txt": "doc.richtext",
-        "rtf": "doc.richtext", "rst": "doc.richtext", "adoc": "doc.richtext", "pdf": "doc.richtext",
+        "md": .business(.file), "markdown": .business(.file), "txt": .business(.file),
+        "rtf": .business(.file), "rst": .business(.file), "adoc": .business(.file), "pdf": .business(.file),
         // 代码与配置
         "swift": code, "py": code, "js": code, "jsx": code, "ts": code, "tsx": code,
         "go": code, "rs": code, "rb": code, "php": code, "java": code, "kt": code, "kts": code,
@@ -78,27 +78,27 @@ enum RepoFileTypeIcon {
         "cfg": code, "conf": code, "env": code, "lock": code, "proto": code, "graphql": code,
         "gitignore": code, "gitattributes": code, "editorconfig": code, "dockerignore": code,
         // 图片
-        "png": "photo", "jpg": "photo", "jpeg": "photo", "gif": "photo",
-        "webp": "photo", "svg": "photo", "ico": "photo", "bmp": "photo",
-        "tiff": "photo", "heic": "photo", "avif": "photo",
+        "png": .business(.image), "jpg": .business(.image), "jpeg": .business(.image), "gif": .business(.image),
+        "webp": .business(.image), "svg": .business(.image), "ico": .business(.image), "bmp": .business(.image),
+        "tiff": .business(.image), "heic": .business(.image), "avif": .business(.image),
         // 压缩包
-        "zip": "doc.zipper", "tar": "doc.zipper", "gz": "doc.zipper", "tgz": "doc.zipper",
-        "bz2": "doc.zipper", "xz": "doc.zipper", "7z": "doc.zipper", "rar": "doc.zipper",
+        "zip": .business(.fileArchive), "tar": .business(.fileArchive), "gz": .business(.fileArchive), "tgz": .business(.fileArchive),
+        "bz2": .business(.fileArchive), "xz": .business(.fileArchive), "7z": .business(.fileArchive), "rar": .business(.fileArchive),
         // 音频
-        "mp3": "waveform", "wav": "waveform", "aac": "waveform",
-        "flac": "waveform", "ogg": "waveform", "m4a": "waveform",
+        "mp3": .business(.audio), "wav": .business(.audio), "aac": .business(.audio),
+        "flac": .business(.audio), "ogg": .business(.audio), "m4a": .business(.audio),
         // 视频
-        "mp4": "film", "mov": "film", "avi": "film", "mkv": "film", "webm": "film", "m4v": "film",
+        "mp4": .business(.video), "mov": .business(.video), "avi": .business(.video), "mkv": .business(.video), "webm": .business(.video), "m4v": .business(.video),
     ]
 
     /// 无扩展名的常见仓库文件（LICENSE / Makefile 这类），按整名匹配。
-    private static let byBareName: [String: String] = [
+    private static let byBareName: [String: BusinessIcon.Source] = [
         "dockerfile": code,
         "makefile": code,
-        "license": "doc.richtext",
-        "licence": "doc.richtext",
-        "readme": "doc.richtext",
-        "changelog": "doc.richtext",
+        "license": .business(.file),
+        "licence": .business(.file),
+        "readme": .business(.file),
+        "changelog": .business(.file),
     ]
 }
 

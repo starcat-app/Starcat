@@ -33,23 +33,20 @@ struct DailyRadarCategoryIcon: View {
                         .frame(width: logoSize, height: logoSize)
                 }
                 .frame(width: canvas, height: canvas)
-            } else {
-                Group {
-                    if isSidebar {
-                        // frame 只限定占位；侧栏符号须像品牌 logo 一样等比缩放，避免随字体放大后溢出。
-                        Image(systemName: systemImage)
-                            .resizable()
-                            .scaledToFit()
-                    } else {
-                        Image(systemName: systemImage)
-                    }
-                }
+            } else if let symbol {
                 // 分类色是用户确认的识别色；文字仍沿用 primary/secondary。
                 // 侧栏选中反白交给系统背景语义，不能用 selection binding 猜测。
-                .foregroundStyle(isSidebar
-                    ? AnyShapeStyle(SidebarSemanticIconStyle(semanticColor: color))
-                    : AnyShapeStyle(color))
-                .frame(width: canvas, height: canvas)
+                BusinessIcon(symbol, pointSize: canvas)
+                    .foregroundStyle(isSidebar
+                        ? AnyShapeStyle(SidebarSemanticIconStyle(semanticColor: color))
+                        : AnyShapeStyle(color))
+            } else {
+                // 未知分类保留中性圆点（SF）。
+                Image(systemName: "circle.fill")
+                    .foregroundStyle(isSidebar
+                        ? AnyShapeStyle(SidebarSemanticIconStyle(semanticColor: color))
+                        : AnyShapeStyle(color))
+                    .frame(width: canvas, height: canvas)
             }
         }
         .accessibilityHidden(true)
@@ -66,19 +63,19 @@ struct DailyRadarCategoryIcon: View {
         }
     }
 
-    /// 总览标题用报纸，侧栏「全部主题」沿用网格；其余分类保持已有符号。
-    private var systemImage: String {
+    /// 总览标题用报纸，侧栏「全部主题」沿用网格；其余分类对齐注册表业务图形。
+    private var symbol: BusinessIcon.Symbol? {
         switch categoryID {
-        case nil: return isSidebar ? "square.grid.2x2" : "newspaper"
-        case "ai-cli": return "terminal"
-        case "ai-agents": return "person.2"
-        case "ai-infra": return "server.rack"
-        case "ai-web": return "megaphone"
-        case "ai-trending": return "arrow.triangle.branch"
-        case "ai-community": return "text.bubble"
-        case "ai-weekly": return "newspaper"
-        case "ai-monthly": return "archivebox"
-        default: return "circle.fill"
+        case nil: return isSidebar ? .layoutGrid : .weekly
+        case "ai-cli": return .terminal
+        case "ai-agents": return .following
+        case "ai-infra": return .services
+        case "ai-web": return .announcement
+        case "ai-trending": return .alternatives
+        case "ai-community": return .linuxDo
+        case "ai-weekly": return .weekly
+        case "ai-monthly": return .archive
+        default: return nil
         }
     }
 
