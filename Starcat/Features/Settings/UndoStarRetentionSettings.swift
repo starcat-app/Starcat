@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  数据与存储页的 Undo Star 历史保留设置：天数草稿与永久保留共用原配置。
-//  缩短保留期仍先确认，再调用原清理调度器；输入过程中不写配置或删除历史。
+//  缩短保留期仍先确认，再调用原清理调度器；「立即删除」为全量清空；输入过程中不写配置或删除历史。
 //
 
 import SwiftUI
@@ -106,7 +106,9 @@ struct UndoStarRetentionSettings: View {
         .alert("settings.undoStar.deleteNowTitle", isPresented: $showDeleteNowConfirm) {
             Button("settings.undoStar.deleteNowCancel", role: .cancel) {}
             Button("settings.undoStar.deleteNowConfirm", role: .destructive) {
-                Task { await dependencies.undoStarCleanupScheduler.cleanupNow() }
+                // 全量清空，与旁边「已保留 N 个」计数语义一致；cleanupNow 只删过期记录，
+                // 保留期内的记录删不掉，会让用户误以为按钮失效。
+                Task { await dependencies.undoStarCleanupScheduler.deleteAllNow() }
             }
         } message: {
             Text("settings.undoStar.deleteNowMessage")

@@ -612839,103 +612839,103 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Löscht Stern-Rückgängig-Datensätze, die älter als der aktuelle Aufbewahrungszeitraum sind"
+            "value" : "Gesamte aufbewahrte Stern-Rückgängig-Historie sofort löschen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Delete undo star records older than the current retention period"
+            "value" : "Delete all retained undo star history now"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar registros de deshacer estrella anteriores al período de retención actual"
+            "value" : "Eliminar ahora todo el historial retenido de deshacer estrella"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supprimer les enregistrements d'annulation d'étoile plus anciens que la période de conservation actuelle"
+            "value" : "Supprimer immédiatement tout l'historique d'annulation d'étoile conservé"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hapus catatan undo star yang lebih lama dari periode retensi saat ini"
+            "value" : "Hapus seluruh riwayat undo star yang disimpan sekarang"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina i record di stella annullata più vecchi del periodo di conservazione corrente"
+            "value" : "Elimina subito tutta la cronologia di stelle annullate conservata"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在の保持期間より古いアンドゥスター記録を削除します"
+            "value" : "保持中のアンドゥスター記録をすべて即時削除します"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "현재 보존 기간보다 오래된 실행 취소 별표 기록 삭제"
+            "value" : "보존 중인 실행 취소 별표 기록을 모두 즉시 삭제"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verwijder ongedaan maak-ster-records ouder dan de huidige bewaarperiode"
+            "value" : "Alle bewaarde ongedaan maak-ster-records nu verwijderen"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usuń rekordy cofnięcia gwiazdki starsze niż bieżący okres przechowywania"
+            "value" : "Natychmiast usuń całą zachowaną historię cofnięcia gwiazdki"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Excluir registros de desfazer estrela mais antigos que o período de retenção atual"
+            "value" : "Excluir agora todo o histórico retido de desfazer estrela"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Удалить записи отмены звёзд, старше текущего срока хранения"
+            "value" : "Немедленно удалить всю сохранённую историю отмены звёзд"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçerli saklama süresinden daha eski geri alma yıldızı kayıtlarını sil"
+            "value" : "Saklanan tüm geri alma yıldızı geçmişini hemen sil"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Видалити записи скасування зірок, старіші за поточний термін зберігання"
+            "value" : "Негайно видалити всю збережену історію скасування зірок"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Xóa các bản ghi sao hoàn tác cũ hơn thời gian lưu giữ hiện tại"
+            "value" : "Xóa ngay toàn bộ lịch sử sao hoàn tác đang lưu giữ"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按当前保留时间删除过期 Unstar 记录"
+            "value" : "立即删除全部已保留的 Unstar 记录"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除超過目前保留期限的取消星號記錄"
+            "value" : "立即刪除全部已保留的取消星號記錄"
           }
         }
       }
@@ -613160,103 +613160,103 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle Stern-Rückgängig-Datensätze, die älter als der aktuelle Aufbewahrungszeitraum sind, werden endgültig gelöscht."
+            "value" : "Alle aufbewahrten Stern-Rückgängig-Datensätze werden endgültig gelöscht. Dies kann nicht rückgängig gemacht werden."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "All undo star records older than the current retention period will be permanently deleted."
+            "value" : "All retained undo star records will be permanently deleted. This cannot be undone."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todos los registros de deshacer estrella anteriores al período de retención actual se eliminarán permanentemente."
+            "value" : "Todos los registros de deshacer estrella retenidos se eliminarán permanentemente. Esta acción no se puede deshacer."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tous les enregistrements d'annulation d'étoile plus anciens que la période de conservation actuelle seront définitivement supprimés."
+            "value" : "Tous les enregistrements d'annulation d'étoile conservés seront définitivement supprimés. Cette action est irréversible."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Semua catatan undo star yang lebih lama dari periode retensi saat ini akan dihapus secara permanen."
+            "value" : "Semua catatan undo star yang disimpan akan dihapus secara permanen. Tindakan ini tidak dapat dibatalkan."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tutti i record di stella annullata più vecchi del periodo di conservazione corrente verranno eliminati definitivamente."
+            "value" : "Tutti i record di stella annullata conservati verranno eliminati definitivamente. Questa azione non può essere annullata."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在の保持期間より古いすべてのアンドゥスター記録が完全に削除されます。"
+            "value" : "保持中のすべてのアンドゥスター記録が完全に削除されます。この操作は取り消せません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "현재 보존 기간보다 오래된 모든 실행 취소 별표 기록이 영구적으로 삭제됩니다."
+            "value" : "보존 중인 모든 실행 취소 별표 기록이 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Alle ongedaan maak-ster-records ouder dan de huidige bewaarperiode worden permanent verwijderd."
+            "value" : "Alle bewaarde ongedaan maak-ster-records worden permanent verwijderd. Dit kan niet ongedaan worden gemaakt."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wszystkie rekordy cofnięcia gwiazdki starsze niż bieżący okres przechowywania zostaną trwale usunięte."
+            "value" : "Wszystkie zachowane rekordy cofnięcia gwiazdki zostaną trwale usunięte. Tej operacji nie można cofnąć."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todos os registros de desfazer estrela mais antigos que o período de retenção atual serão permanentemente excluídos."
+            "value" : "Todos os registros de desfazer estrela retidos serão excluídos permanentemente. Esta ação não pode ser desfeita."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Все записи отмены звёзд, старше текущего срока хранения, будут безвозвратно удалены."
+            "value" : "Все сохранённые записи отмены звёзд будут безвозвратно удалены. Это действие нельзя отменить."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Geçerli saklama süresinden daha eski tüm geri alma yıldızı kayıtları kalıcı olarak silinecek."
+            "value" : "Saklanan tüm geri alma yıldızı kayıtları kalıcı olarak silinecek. Bu işlem geri alınamaz."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Усі записи скасування зірок, старіші за поточний термін зберігання, буде остаточно видалено."
+            "value" : "Усі збережені записи скасування зірок буде остаточно видалено. Цю дію неможливо скасувати."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tất cả các bản ghi sao hoàn tác cũ hơn thời gian lưu giữ hiện tại sẽ bị xóa vĩnh viễn."
+            "value" : "Tất cả bản ghi sao hoàn tác đang lưu giữ sẽ bị xóa vĩnh viễn. Hành động này không thể hoàn tác."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "超过当前保留时间的所有 Unstar 记录将被永久删除。"
+            "value" : "所有已保留的 Unstar 记录将被永久删除，此操作不可撤销。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "超過目前保留期限的所有取消星號記錄將被永久刪除。"
+            "value" : "所有已保留的取消星號記錄將被永久刪除，此操作無法復原。"
           }
         }
       }
