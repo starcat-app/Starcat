@@ -5,41 +5,15 @@
 //  starcat-recommend-api 客户端。
 //
 //  本 actor 和 TrendingAPI / WeeklyAPI / WikiAPI 同款：独立持有 baseURL 与 API Key,
-//  设置页修改后通过 update 方法热生效。客户端只消费 Starcat 推荐契约, 不感知 SimRepo/Qdrant。
+//  设置页修改后通过 update 方法热生效。双渠道只消费 Starcat 自研 v2 推荐契约。
 //
 
 import Foundation
 
-/// Starcat 推荐客户端使用的服务端契约。
-///
-/// v1 和 v2 只在路由与数据来源上不同，返回卡片 DTO 保持兼容。显式建模可以避免
-/// 本地 Direct 验证为了切换服务而复制整套客户端或推荐 UI。
-enum RecommendationAPIContract: Sendable {
-    case simRepoV1
-    case trainedV2
-
-    var repositoriesPath: String {
-        switch self {
-        case .simRepoV1: AppEndpoints.Recommend.Paths.simRepoRecommendations
-        case .trainedV2: AppEndpoints.Recommend.Paths.trainedRecommendations
-        }
-    }
-
-    /// 缓存作用域只需要区分 HTTP 契约，不包含 API Key 等敏感信息。
-    var cacheKey: String {
-        switch self {
-        case .simRepoV1: "simrepo-v1"
-        // display_score 是一次展示语义迁移；升级作用域让旧 v12 磁盘快照自然 miss，
-        // 避免用户继续看到 raw co-star score，且无需手动清理整个推荐缓存。
-        case .trainedV2: "trained-v2-display-score-v1"
-        }
-    }
-}
-
 /// 缓存快照向推荐服务重验证后的结果。
 ///
-/// `.unsupported` 只用于仍走 SimRepo v1 的兼容路径；自研 v2 必须明确区分 304 与新页面，
-/// 否则调用方无法判断应保留缓存还是覆盖为新模型结果。
+/// `.unsupported` 供不实现重验证的协议测试替身使用；正式客户端统一使用 v2，
+/// 明确区分 304 与新页面，才能正确保留缓存或覆盖为新模型结果。
 enum RecommendationRevalidationResult: Sendable {
     case unsupported
     case notModified
@@ -48,22 +22,21 @@ enum RecommendationRevalidationResult: Sendable {
 
 actor RecommendAPI {
     private static let timeout: TimeInterval = 30
+    /// 保持既有 Direct 自研缓存身份，并与已发布 App Store 的第三方快照隔离。
+    private static let cacheKey = "trained-v2-display-score-v1"
 
     private var baseURL: URL
     private var apiKey: String?
     private let session: URLSession
     private let decoder: JSONDecoder
-    private let contract: RecommendationAPIContract
 
     init(
         baseURL: URL,
         apiKey: String? = nil,
-        contract: RecommendationAPIContract = .simRepoV1,
         session: URLSession? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
-        self.contract = contract
 
         if let session {
             self.session = session
@@ -94,15 +67,14 @@ actor RecommendAPI {
 
     /// 用缓存快照里的模型版本重验证自研推荐第一页。
     ///
-    /// v2 的 ETag 由不可变 ServingBundle 版本和分页参数共同组成；模型未变化时服务端
-    /// 直接返回 304，不读取 SQLite 或传输推荐正文。v1 保持原 TTL 策略，不增加请求。
+    /// ETag 由实际 Bundle / 源内容版本和分页参数组成；服务端固定快照后返回 304，
+    /// 不传输未变化的推荐正文，两个分发渠道使用完全相同的契约。
     func revalidateRecommendations(
         repoID: Int64,
         limit: Int,
         offset: Int,
         cachedModelVersion: String?
     ) async throws -> RecommendationRevalidationResult {
-        guard case .trainedV2 = contract else { return .unsupported }
         let entityTag = cachedModelVersion.flatMap {
             Self.recommendationEntityTag(modelVersion: $0, repoID: repoID, limit: limit, offset: offset)
         }
@@ -124,7 +96,7 @@ actor RecommendAPI {
             throw StarcatEnvelopeNetworkError.invalidURL
         }
 
-        let path = "\(contract.repositoriesPath)/\(repoID)/recommendations"
+        let path = "\(AppEndpoints.Recommend.Paths.trainedRecommendations)/\(repoID)/recommendations"
         let endpoint = AppEndpoints.appendPath(path, to: baseURL)
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         components?.queryItems = [
@@ -205,8 +177,8 @@ actor RecommendAPI {
     /// 返回当前服务地址与契约组成的稳定缓存作用域。
     ///
     /// 设置页可热切换 URL；缓存若只按 repoID 命中，会把本地模型结果误当成线上
-    /// SimRepo 结果。作用域不包含 API Key，既能隔离服务又不会把凭据写入磁盘。
+    /// 其他服务结果。作用域不包含 API Key，既能隔离服务又不会把凭据写入磁盘。
     func recommendationCacheScope() async -> String {
-        "\(contract.cacheKey)|\(baseURL.absoluteString)"
+        "\(Self.cacheKey)|\(baseURL.absoluteString)"
     }
 }

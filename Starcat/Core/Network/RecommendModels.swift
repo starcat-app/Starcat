@@ -83,7 +83,7 @@ struct RepoRecommendationPage: Decodable, Sendable, Equatable {
     let source: String
     let fallback: Bool
     let repoID: Int64
-    /// v1 SimRepo 不返回该字段；v2 用它标识当前原子激活的 ServingBundle。
+    /// 标识活动 ServingBundle / 源内容快照；可空以便解码缺少版本的旧缓存。
     let modelVersion: String?
     let items: [RepoRecommendationItem]
     let hasMore: Bool

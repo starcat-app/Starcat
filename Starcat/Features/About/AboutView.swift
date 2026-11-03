@@ -1075,13 +1075,6 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright 2020 OpenSSF Scorecard Authors",
             url: URL(string: "https://github.com/ossf/scorecard")
         ),
-        AboutDependency(
-            name: "SimRepo",
-            license: "MIT / GPL-3.0",
-            copyright: "Copyright (c) Mubelotix — similar-repo recommendations via starcat-recommend-api",
-            url: URL(string: "https://github.com/Mubelotix/SimRepo")
-        ),
-
         // MARK: Starcat 支撑服务 / 浏览器插件
         //
         // supports/ 下的独立 API 与浏览器插件虽然不是 App 内 SPM 依赖，但已经作为 Starcat
