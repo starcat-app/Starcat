@@ -2547,7 +2547,8 @@ final class KnowledgeRAGWorkspaceViewModel {
             } catch is CancellationError {
                 // 工具栏暂停已经把 builder 打成 idle；这里不能再把取消写成工作台错误。
             } catch {
-                errorMessage = error.localizedDescription
+                // 保留向量化错误类型，弹窗才能引导检查服务并隐藏不适用的反馈入口
+                presentWorkspaceError(error)
             }
             await KnowledgeRAGIndexRefreshPresentation.waitForMinimumDuration(startedAt: startedAt, clock: clock)
             isIndexing = false

@@ -10,9 +10,14 @@ import SwiftUI
 
 /// 中栏与详情栏顶栏尺寸契约：两边分割线必须落在同一水平线。
 enum InsightsColumnChrome {
-    /// 容纳「标题 + 最多两行副标题」与详情栏右侧分段控件；两侧共用同一高度对齐分割线。
-    static let headerHeight: CGFloat = 84
-    static let headerVerticalPadding: CGFloat = 12
+    static let minimumHeaderHeight: CGFloat = 64
+    static let headerVerticalPadding: CGFloat = 8
+    static let contentTopPadding: CGFloat = 10
+
+    /// 取当前自然高度而不是历史最大值，窗口变宽或切回短文案后才能重新收紧。
+    static func headerHeight(fitting contentHeight: CGFloat) -> CGFloat {
+        max(minimumHeaderHeight, ceil(contentHeight))
+    }
 }
 
 /// 洞察中心中栏：当前主题的摘要和可下钻问题集合。
@@ -21,6 +26,7 @@ struct InsightsListView: View {
     @Binding var topic: InsightsTopic
     @Binding var selection: InsightsSelection
     let snapshot: MyInsightsSnapshot
+    var headerHeight: CGFloat = InsightsColumnChrome.minimumHeaderHeight
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -50,6 +56,7 @@ struct InsightsListView: View {
                     }
                 }
                 .listStyle(.inset)
+                .contentMargins(.top, 6, for: .scrollContent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .id(topic)
                 .detailContentTransition()
@@ -71,26 +78,26 @@ struct InsightsListView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(topic.titleKey)
-                    .font(interfaceScale.font(.panelTitle))
-                    .lineLimit(1)
-                Text(topic.subtitleKey)
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    // 分类说明允许两行完整展示；顶栏高度与详情栏共用契约，避免分割线错位。
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .contentTransition(reduceMotion ? .identity : .opacity)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topic)
+        InsightsColumnHeader(height: headerHeight) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(topic.titleKey)
+                        .font(interfaceScale.font(.panelTitle))
+                        .lineLimit(1)
+                    Text(topic.subtitleKey)
+                        .font(interfaceScale.font(.caption))
+                        .foregroundStyle(.secondary)
+                        // 保留两行说明，由共享顶栏按实际高度扩展，不通过缩小文字挤进固定高度。
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .contentTransition(reduceMotion ? .identity : .opacity)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: topic)
 
-            Spacer(minLength: 12)
+                Spacer(minLength: 12)
+            }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
-        .frame(height: InsightsColumnChrome.headerHeight, alignment: .topLeading)
     }
 
     @ViewBuilder

@@ -22,4 +22,16 @@ enum QuickSearchTextMatcher {
             candidate?.localizedCaseInsensitiveContains(term) == true
         }
     }
+
+    /// 空查询必须在派生候选文本前直接返回：时间线字段会解码评论和清理 Markdown，
+    /// 若先构造候选再让 `matches` 返回 true，正常滚动也会重复处理所有已加载正文。
+    static func filter<Element>(
+        _ elements: [Element],
+        query: String,
+        candidates: (Element) -> [String?]
+    ) -> [Element] {
+        let term = normalized(query)
+        guard !term.isEmpty else { return elements }
+        return elements.filter { matches(term, candidates: candidates($0)) }
+    }
 }

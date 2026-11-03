@@ -89,17 +89,14 @@ struct AIModelParametersPopover: View {
                 }
             }
             Spacer()
-            // icon-only：文案留给 accessibility + .help，避免挤占模型名行宽。
-            Button {
-                onReset()
-            } label: {
-                Label("settings.ai.modelParams.resetDefault", systemImage: "arrow.counterclockwise")
-                    .labelStyle(.iconOnly)
-            }
+            ResetIconButton(
+                help: hasOverride
+                    ? Text("settings.ai.modelParams.resetHelp.activeFormat \(model.capability.displayName)")
+                    : Text("settings.ai.modelParams.resetHelp.empty"),
+                action: onReset
+            )
             .disabled(!hasOverride)
-            .help(hasOverride
-                  ? Text("settings.ai.modelParams.resetHelp.activeFormat \(model.capability.displayName)")
-                  : Text("settings.ai.modelParams.resetHelp.empty"))
+            .accessibilityLabel(Text("settings.ai.modelParams.resetDefault"))
         }
     }
 

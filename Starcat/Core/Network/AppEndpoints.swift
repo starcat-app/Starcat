@@ -236,8 +236,6 @@ enum AppEndpoints {
         }
 
         enum Paths {
-            /// `GET /api/v1/repos/{repo_id}/recommendations?limit=&offset=` —— SimRepo 推荐。
-            static let simRepoRecommendations = "/api/v1/repos"
             /// `GET /api/v2/repos/{repo_id}/recommendations?limit=&offset=` —— 自研 Bundle 推荐。
             static let trainedRecommendations = "/api/v2/repos"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点。
@@ -542,6 +540,17 @@ enum AppEndpoints {
                 "/orgs/\(organization)/issues"
             }
 
+            /// `GET/POST /repos/{owner}/{repo}/issues` —— 仓库 Issue 列表 / 新建 Issue。
+            /// 与组织 Issue 同一 schema：GitHub 会把 Pull Request 混在列表响应里，
+            /// 端点封装层必须按 `pull_request` 字段排除。
+            static func repoIssues(owner: String, repo: String) -> String {
+                "/repos/\(owner)/\(repo)/issues"
+            }
+
+            /// `GET /search/issues` —— Issue 全局搜索（精确计数与关键词兜底共用）。
+            /// 限流独立于普通 REST（登录用户约 30 次/分钟），只允许低频调用。
+            static let searchIssues = "/search/issues"
+
             /// `GET /repos/{owner}/{repo}/security-advisories` —— 仓库安全公告列表。
             ///
             /// Activity PR-3（2026-06-17）：仅扫「最近 30 天有 push」的 starred repo 子集
@@ -665,6 +674,8 @@ enum AppEndpoints {
         enum Paths {
             /// `POST /v1/systemone` —— 唯一推理端点:state + questions → 类型化答案。
             static let systemOne = "/v1/systemone"
+            /// `GET /v1/models` —— 当前原生 Key 可访问的模型列表。
+            static let models = "/v1/models"
         }
 
         static func url(_ path: String) -> URL {

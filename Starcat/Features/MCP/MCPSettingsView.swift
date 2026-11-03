@@ -26,6 +26,13 @@ struct MCPSettingsTab: View {
         @Bindable var mcpService = dependencies.mcpService
 
         return Form {
+            SettingsPageIntroduction(
+                title: "settings.mcp.title",
+                systemImage: BusinessIcon.Symbol.mcp.rawValue,
+                description: "settings.mcp.introduction.description",
+                context: "settings.mcp.content.introduction.context"
+            )
+
             Section {
                 Toggle(isOn: Binding(
                     get: { settings.mcpServiceEnabled },
@@ -35,8 +42,8 @@ struct MCPSettingsTab: View {
                     }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.enabled.title")
-                        Text("settings.mcp.enabled.help")
+                        Text("settings.mcp.content.service.enabledTitle")
+                        Text("settings.mcp.content.service.enabledHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -56,8 +63,8 @@ struct MCPSettingsTab: View {
                     }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.remote.title")
-                        Text("settings.mcp.remote.help")
+                        Text("settings.mcp.content.service.remoteTitle")
+                        Text("settings.mcp.content.service.remoteHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -66,8 +73,8 @@ struct MCPSettingsTab: View {
 
                 Toggle(isOn: $settings.mcpExposePrivateNotes) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.privateNotes.title")
-                        Text("settings.mcp.privateNotes.help")
+                        Text("settings.mcp.content.service.notesTitle")
+                        Text("settings.mcp.content.service.notesHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -88,8 +95,8 @@ struct MCPSettingsTab: View {
             Section {
                 Toggle(isOn: $settings.mcpAllowLocalWrites) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.localWrites.title")
-                        Text("settings.mcp.localWrites.help")
+                        Text("settings.mcp.content.permissions.localTitle")
+                        Text("settings.mcp.content.permissions.localHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -98,8 +105,8 @@ struct MCPSettingsTab: View {
 
                 Toggle(isOn: $settings.mcpAllowGitHubStarWrites) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.githubStarWrites.title")
-                        Text("settings.mcp.githubStarWrites.help")
+                        Text("settings.mcp.content.permissions.starsTitle")
+                        Text("settings.mcp.content.permissions.starsHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -108,8 +115,8 @@ struct MCPSettingsTab: View {
 
                 Toggle(isOn: $settings.mcpAllowBatchWrites) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.batchWrites.title")
-                        Text("settings.mcp.batchOrganize.help")
+                        Text("settings.mcp.content.permissions.batchTitle")
+                        Text("settings.mcp.content.permissions.batchHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -119,8 +126,8 @@ struct MCPSettingsTab: View {
 
                 Toggle(isOn: $settings.mcpAllowDestructiveWrites) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.destructiveWrites.title")
-                        Text("settings.mcp.destructiveWrites.help")
+                        Text("settings.mcp.content.permissions.destructiveTitle")
+                        Text("settings.mcp.content.permissions.destructiveHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -136,9 +143,8 @@ struct MCPSettingsTab: View {
 
             Section {
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.agent",
-                    operation: "settings.mcp.agentSetup.execution.action.completeSetup",
-                    help: "settings.mcp.agentSetup.complete.help"
+                    title: "settings.mcp.content.quick.title",
+                    help: "settings.mcp.content.quick.help"
                 ) {
                     pairingCopyButton(
                         providesContent: { try mcpService.createCompleteAgentSetupInstruction() },
@@ -152,7 +158,7 @@ struct MCPSettingsTab: View {
                     systemImage: "checklist"
                 )
             } footer: {
-                Text("settings.mcp.agentSetup.complete.footer")
+                Text("settings.mcp.content.quick.footer")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -160,9 +166,8 @@ struct MCPSettingsTab: View {
 
             Section {
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.terminal",
-                    operation: "settings.mcp.agentSetup.execution.action.installCLI",
-                    help: "settings.mcp.agentSetup.cli.manual.help"
+                    title: "settings.mcp.content.setup.terminalTitle",
+                    help: "settings.mcp.content.cli.manualHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.cliInstallCommand },
@@ -171,9 +176,8 @@ struct MCPSettingsTab: View {
                 }
 
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.agent",
-                    operation: "settings.mcp.agentSetup.execution.action.installCLI",
-                    help: "settings.mcp.agentSetup.cli.agent.help"
+                    title: "settings.mcp.agentSetup.execution.context.agent",
+                    help: "settings.mcp.content.cli.agentHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.cliAgentInstallPrompt },
@@ -182,9 +186,8 @@ struct MCPSettingsTab: View {
                 }
 
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.terminal",
-                    operation: "settings.mcp.agentSetup.execution.action.verifyCLI",
-                    help: "settings.mcp.agentSetup.cli.verify.help"
+                    title: "settings.mcp.content.cli.verifyTitle",
+                    help: "settings.mcp.content.cli.verifyHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.cliVerificationCommand },
@@ -200,9 +203,8 @@ struct MCPSettingsTab: View {
 
             Section {
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.targetTerminal",
-                    operation: "settings.mcp.agentSetup.execution.action.pairDevice",
-                    help: "settings.mcp.agentSetup.pair.manual.help"
+                    title: "settings.mcp.content.setup.terminalTitle",
+                    help: "settings.mcp.content.pair.manualHelp"
                 ) {
                     pairingCopyButton(
                         providesContent: { try mcpService.createPairingCommand() },
@@ -212,9 +214,8 @@ struct MCPSettingsTab: View {
                 }
 
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.agent",
-                    operation: "settings.mcp.agentSetup.execution.action.pairDevice",
-                    help: "settings.mcp.agentSetup.pair.agent.help"
+                    title: "settings.mcp.agentSetup.execution.context.agent",
+                    help: "settings.mcp.content.pair.agentHelp"
                 ) {
                     pairingCopyButton(
                         providesContent: { try mcpService.createPairingAgentInstruction() },
@@ -228,7 +229,7 @@ struct MCPSettingsTab: View {
                     systemImage: "link.badge.plus"
                 )
             } footer: {
-                Text("settings.mcp.agentSetup.security.help")
+                Text("settings.mcp.content.pair.footer")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -236,9 +237,8 @@ struct MCPSettingsTab: View {
 
             Section {
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.mcp.claude.title",
-                    operation: "settings.mcp.agentSetup.execution.action.mcpConfig",
-                    help: "settings.mcp.agentSetup.mcp.claude.help"
+                    title: "settings.mcp.agentSetup.mcp.claude.title",
+                    help: "settings.mcp.content.client.claudeHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.claudeMCPConfiguration },
@@ -247,9 +247,8 @@ struct MCPSettingsTab: View {
                 }
 
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.mcp.codex.title",
-                    operation: "settings.mcp.agentSetup.execution.action.mcpConfig",
-                    help: "settings.mcp.agentSetup.mcp.codex.help"
+                    title: "settings.mcp.agentSetup.mcp.codex.title",
+                    help: "settings.mcp.content.client.codexHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.codexMCPConfiguration },
@@ -258,9 +257,8 @@ struct MCPSettingsTab: View {
                 }
 
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.agent",
-                    operation: "settings.mcp.agentSetup.execution.action.configureMCP",
-                    help: "settings.mcp.agentSetup.mcp.agent.help"
+                    title: "settings.mcp.agentSetup.execution.context.agent",
+                    help: "settings.mcp.content.client.agentHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.mcpAgentSetupPrompt },
@@ -269,11 +267,11 @@ struct MCPSettingsTab: View {
                 }
             } header: {
                 SettingsSectionHeader(
-                    "settings.mcp.agentSetup.mcp.title",
+                    "settings.mcp.content.client.title",
                     systemImage: "server.rack"
                 )
             } footer: {
-                Text("settings.mcp.agentSetup.mcp.configuration.help")
+                Text("settings.mcp.content.client.footer")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -281,9 +279,8 @@ struct MCPSettingsTab: View {
 
             Section {
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.terminal",
-                    operation: "settings.mcp.agentSetup.execution.action.installSkill",
-                    help: "settings.mcp.agentSetup.skill.manual.help"
+                    title: "settings.mcp.content.skill.manualTitle",
+                    help: "settings.mcp.content.skill.manualHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.skillManualInstall },
@@ -292,9 +289,8 @@ struct MCPSettingsTab: View {
                 }
 
                 setupActionRow(
-                    executionContext: "settings.mcp.agentSetup.execution.context.agent",
-                    operation: "settings.mcp.agentSetup.execution.action.installSkill",
-                    help: "settings.mcp.agentSetup.skill.agent.help"
+                    title: "settings.mcp.agentSetup.execution.context.agent",
+                    help: "settings.mcp.content.skill.agentHelp"
                 ) {
                     setupCopyButton(
                         content: { mcpService.skillAgentInstallPrompt },
@@ -335,13 +331,6 @@ struct MCPSettingsTab: View {
                         systemImage: "laptopcomputer.and.iphone"
                     )
                 }
-            }
-
-            Section {
-                Text("settings.mcp.proOnly.help")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
@@ -417,21 +406,14 @@ struct MCPSettingsTab: View {
     /// 设置页动作保持“说明在左、独立按钮在右”的统一密度；复制状态与剪贴板写入由
     /// `CopyFeedbackButton` 负责，避免每一行各自维护反馈计时器。
     private func setupActionRow<Action: View>(
-        executionContext: LocalizedStringKey,
-        operation: LocalizedStringKey,
+        title: LocalizedStringKey,
         help: LocalizedStringKey,
         @ViewBuilder action: () -> Action
     ) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                // 把执行位置放在动作前面，用户无需先阅读说明即可区分终端命令、
-                // Agent 提示词与客户端配置，避免把复制内容粘贴到错误的位置。
-                HStack(spacing: 0) {
-                    Text(executionContext)
-                    Text(verbatim: " · ")
-                    Text(operation)
-                }
-                .accessibilityElement(children: .combine)
+                // 分组已说明操作目的，行标题只区分执行方式，避免重复安装或配置名称。
+                Text(title)
                 Text(help)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -533,7 +515,7 @@ private struct MCPPortEditorRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("settings.mcp.port")
+                Text("settings.mcp.content.service.portTitle")
 
                 Spacer()
 
@@ -560,7 +542,7 @@ private struct MCPPortEditorRow: View {
                     }
                     .frame(width: Self.fieldWidth)
                     .focused($isPortFieldFocused)
-                    .accessibilityLabel(Text("settings.mcp.port"))
+                    .accessibilityLabel(Text("settings.mcp.content.service.portTitle"))
                     .onChange(of: portDraft) { _, newValue in
                         let hadInvalidChars = newValue.contains { !$0.isNumber }
                         let filtered = String(newValue.filter(\.isNumber).prefix(5))
@@ -586,7 +568,7 @@ private struct MCPPortEditorRow: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("settings.mcp.port.hint")
+                Text("settings.mcp.content.service.portHelp")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

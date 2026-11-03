@@ -177,6 +177,13 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// OpenSSF 入口，避免把 Pro 私人功能暴露到公共发现页。
     let showsRepoHealthEntry: Bool
 
+    /// 是否显示「Issues」入口（列表浮层 + 新建 Issue）。
+    ///
+    /// 产品约束（2026-11-01 与 dong4j 确认）：仅星标详情（主窗 Manage + 独立详情窗）开放，
+    /// Trending / Activity / Weekly 不显示。私有仓库在入口处再按 `repo.isPrivate` 隐藏：
+    /// `public_repo` scope 管不到私仓，进了浮层也只会 404。
+    let showsIssuesEntry: Bool
+
     /// Manage 详情传入时展示语言分布分割线；其它详情场景保持 nil，不加载语言数据。
     let onLanguageTapped: ((String) -> Void)?
 
@@ -250,6 +257,24 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
     /// Pro 付费墙展示上下文。Wiki / 推荐入口在已登录但非 Pro 时弹出付费墙。
     @State private var proPaywallContext: ProPaywallContext?
 
+    /// Issues VM 懒创建（幂等）：`.task` 挂载预创建 + 点击兜底共用。
+    /// 跨工作台开关保活；切换仓库由 `prepare(owner:repo:)` 复位。
+    private func ensureRepoIssuesVMIfNeeded() {
+        guard showsIssuesEntry, repoIssuesVM == nil else { return }
+        repoIssuesVM = RepoIssuesViewModel(
+            client: dependencies.apiClient,
+            store: .shared
+        )
+    }
+
+    /// Issues 工作台（左列表 + 右详情/新建 大模态）展示状态（`showsIssuesEntry` 开启时入口才可见）。
+    @State private var showsIssuesWorkspace = false
+    /// Issues 工作台数据层。挂载时预创建（`.task`，Environment 在 task 阶段可靠），
+    /// 跨窗口开关保活，切换仓库由 `prepare(owner:repo:)` 复位。
+    /// 为什么不能等首次点击再创建：VM 写入与 popover/sheet 内容求值同事务时，
+    /// 内容可能先于 VM 写入求值 → 空内容的小圆圈浮层（2026-11-01 dong4j 反馈）。
+    @State private var repoIssuesVM: RepoIssuesViewModel?
+
     // v2.2 修订（2026-06-16, dong4j）：原 `@State private var showSecurityScoreSheet`
     // 已下沉到 `RepoMetadataHeaderView` —— OpenSSF 入口图标从右上 trailing actions
     // 迁移到 hero `full_name` 同行，sheet state 跟随入口本地化，不再由 Scaffold 维护。
@@ -301,6 +326,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         showsRepoHealthEntry: Bool = false,
+        showsIssuesEntry: Bool = false,
         onLanguageTapped: ((String) -> Void)? = nil,
         showsContributorsStat: Bool = true,
         topBanner: String? = nil,
@@ -313,6 +339,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         self.fallbackAccentColor = fallbackAccentColor
         self.starHelpKey = starHelpKey
         self.showsRepoHealthEntry = showsRepoHealthEntry
+        self.showsIssuesEntry = showsIssuesEntry
         self.onLanguageTapped = onLanguageTapped
         self.showsContributorsStat = showsContributorsStat
         self.topBanner = topBanner
@@ -328,6 +355,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         fallbackAccentColor: Color = .accentColor,
         starHelpKey: LocalizedStringKey = "repo.unstar",
         showsRepoHealthEntry: Bool = false,
+        showsIssuesEntry: Bool = false,
         onLanguageTapped: ((String) -> Void)? = nil,
         showsContributorsStat: Bool = true,
         topBanner: String? = nil,
@@ -340,6 +368,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             fallbackAccentColor: fallbackAccentColor,
             starHelpKey: starHelpKey,
             showsRepoHealthEntry: showsRepoHealthEntry,
+            showsIssuesEntry: showsIssuesEntry,
             onLanguageTapped: onLanguageTapped,
             showsContributorsStat: showsContributorsStat,
             topBanner: topBanner,
@@ -481,6 +510,11 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             iconColor: detailToastIconColor,
             bottomPadding: detailToastBottomPadding
         )
+        .task(id: repo.id) {
+            // Issues VM 挂载即预创建（修复首次点击时空 popover/圆圈：Environment 在
+            // task 阶段可靠拿到，点击时只剩单一状态写入，无内容求值竞态）。
+            ensureRepoIssuesVMIfNeeded()
+        }
         .onChange(of: repo.id) { _, _ in
             // 新仓库直接恢复展开，不能沿用上一仓库的折叠进度播放弹簧动画。
             var transaction = Transaction(animation: nil)
@@ -494,6 +528,9 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             wikiLinks = []
             recommendationVM.clear()
             showsRecommendations = false
+            // 切仓库时收起 Issues 工作台；VM 保留实例，
+            // 下次打开由 `prepare(owner:repo:)` 复位到新仓库。
+            showsIssuesWorkspace = false
             aiOverlayTopChromeInset = 0
             libraryState = .outsideLibrary
             isLibraryOperationInFlight = false
@@ -927,6 +964,36 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         }
                     )
                     .appLocaleEnvironment()
+                }
+            }
+            // Issues 工作台入口（2026-11-01）：仅星标详情（showsIssuesEntry）且公开仓库显示。
+            // 角标计数：工作台打开过一次后用 Search API 精确值（不含 PR）——本地
+            // `openIssuesCount` 含 PR，会出现「角标 1、面板 0 条」的口径错位（PR-only 仓库）；
+            // 未打开过工作台时仍用本地值兜底。
+            if showsIssuesEntry,
+               !repo.isPrivate,
+               !repo.owner.isEmpty,
+               !repo.name.isEmpty {
+                RepoIssuesEntryButton(openIssuesCount: repoIssuesVM?.openCount ?? repo.openIssuesCount) {
+                    guard dependencies.authSession.state.isAuthenticated else {
+                        dependencies.authSession.requestLoginSheet()
+                        return
+                    }
+                    ensureRepoIssuesVMIfNeeded()
+                    showsIssuesWorkspace = true
+                }
+                .sheet(isPresented: $showsIssuesWorkspace) {
+                    if let issuesVM = repoIssuesVM {
+                        RepoIssuesWorkspaceView(
+                            repo: repo,
+                            listViewModel: issuesVM,
+                            inbox: dependencies.githubNotificationInboxService,
+                            threadRepository: dependencies.githubNotificationThreadRepository,
+                            apiClient: dependencies.apiClient,
+                            aiService: dependencies.repoAIInsightService
+                        )
+                        .appLocaleEnvironment()
+                    }
                 }
             }
             if canShowLibraryToggle(for: repo) {

@@ -428,7 +428,7 @@ enum AIClientError: Error, LocalizedError, Equatable, Sendable {
         case .modelListRequestFailed(let message):
             return String(format: String.l10n("ai.client.error.modelListRequestFailedFormat"), message)
         case .authenticationRejected:
-            return String.l10n("ai.client.error.authenticationRejected")
+            return String.l10n("ai.client.error.authenticationRejected.modelsSettings")
         case .rateLimited:
             return String.l10n("ai.client.error.rateLimited")
         case .paymentRequired:
@@ -512,17 +512,17 @@ enum AIEmbeddingError: Error, LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .missingProvider:
-            return String.l10n("ai.embedding.error.missingProvider")
+            return String.l10n("ai.embedding.error.missingProvider.modelsSettings")
         case .providerUnavailable:
-            return String.l10n("ai.embedding.error.providerUnavailable")
+            return String.l10n("ai.embedding.error.providerUnavailable.modelsSettings")
         case .missingAPIKey:
-            return String.l10n("ai.embedding.error.missingAPIKey")
+            return String.l10n("ai.embedding.error.missingAPIKey.modelsSettings")
         case .missingModel:
-            return String.l10n("ai.embedding.error.missingModel")
+            return String.l10n("ai.embedding.error.missingModel.modelsSettings")
         case .incompatibleModel(let model):
-            return String(format: String.l10n("ai.embedding.error.incompatibleModelFormat"), model)
+            return String(format: String.l10n("ai.embedding.error.incompatibleModelFormat.modelsSettings"), model)
         case .authenticationRejected:
-            return String.l10n("ai.embedding.error.authenticationRejected")
+            return String.l10n("ai.embedding.error.authenticationRejected.modelsSettings")
         case .rateLimited:
             return String.l10n("ai.embedding.error.rateLimited")
         case .modelRequestRejected:

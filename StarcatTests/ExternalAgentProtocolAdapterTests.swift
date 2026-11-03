@@ -350,13 +350,20 @@ struct ExternalAgentProtocolAdapterTests {
         let fixture = try CodexRuntimeDirectoryFixture(layout: .standaloneWithoutHost)
         defer { fixture.cleanup() }
 
-        #expect(throws: CodexRuntimeInstallationError.codeModeHostNotFound(
-            fixture.executableURL.deletingLastPathComponent()
-                .appendingPathComponent("codex-code-mode-host").path
-        )) {
+        // 缺失文件无法解析符号链接；只规范化已存在的父目录，并另外校验缺失的 Host 文件名。
+        // 这样目录枚举返回 /private/var、临时目录 URL 使用 /var 时仍验证的是同一目标。
+        let expectedDirectoryPath = fixture.executableURL.deletingLastPathComponent()
+            .resolvingSymlinksInPath().path
+        #expect {
             _ = try CodexRuntimeInstallationResolver(
                 executableResolver: ExternalAgentExecutableResolver(environment: [:])
             ).resolve(configuredPath: fixture.rootURL.path)
+        } throws: { error in
+            guard let installationError = error as? CodexRuntimeInstallationError,
+                  case .codeModeHostNotFound(let path) = installationError else { return false }
+            let hostURL = URL(fileURLWithPath: path)
+            return hostURL.lastPathComponent == "codex-code-mode-host"
+                && hostURL.deletingLastPathComponent().resolvingSymlinksInPath().path == expectedDirectoryPath
         }
     }
 

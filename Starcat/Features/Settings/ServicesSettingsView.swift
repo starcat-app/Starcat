@@ -7,16 +7,15 @@
 //  设计要点：
 //  - 用户可以为每个 `ThirdPartyService` 填入自部署后的 URL，留空 = 走 fly.io 生产默认值。
 //  - 校验只做格式（http/https + host 非空），不发网络请求；「测试」走 `/api/v1/ping` 探测。
-//  - 进入 Tab 时并发对全部服务各跑一次 ping（与手动点「测试」同逻辑），结果落在各卡片 Test 行左侧。
+//  - 进入 Tab 时并发探测已保存的连接；手动「测试并保存」验证当前草稿，反馈均在操作行左侧。
 //  - intro 行右侧汇总 pill 由全部 ping 聚合；点击跳转公开状态页（Better Stack status page）。
 //  - 修改后**热生效**——通过 `AppDependencies.setServiceURL(_:for:)` 同时写
 //    `AppSettings.customServiceURLs` 持久化 + 推送到对应 API actor `updateBaseURL`。
 //  - 整页用 `ThirdPartyService.allCases` 自动渲染，新增服务时无需改本视图代码。
 //
 //  关键约束：
-//  - 编辑状态走 `@State` 草稿（`draftURLs` / `draftAPIKeys`），**点「测试」时统一落盘**
-//    （R-03 2026-06-11 dong4j 拍板：保存合并进测试按钮）。
-//  - `serviceHealthChecker` 结果缓存在 `healthResults` 里，仅当前会话有效。
+//  - 手动「测试并保存」成功后才提交草稿；进入页面的自动检测只验证，不保存。
+//  - 编辑立即废弃旧请求，保存期间禁用编辑，避免端点和凭据来自不同输入版本。
 //
 
 import SwiftUI
@@ -29,13 +28,21 @@ struct ServicesSettingsTab: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
 
-    @State private var draftURLs: [String: String] = [:]
-    @State private var draftAPIKeys: [String: String] = [:]
-    @State private var revealAPIKey: [String: Bool] = [:]
-    @State private var healthResults: [String: HealthCheckOutcome] = [:]
-    /// 正在进行 ping 的服务 id（支持进入页并发探测全部服务）。
-    @State private var probingServiceIDs: Set<String> = []
-    @State private var savingServiceID: String?
+    @State private var connections = Dictionary(uniqueKeysWithValues:
+        ThirdPartyService.allCases.map { ($0.id, ServiceConnectionSettingsModel(service: $0)) }
+    )
+
+    private var healthResults: [String: HealthCheckOutcome] {
+        connections.compactMapValues { $0.test.result }
+    }
+
+    private var probingServiceIDs: Set<String> {
+        Set(connections.filter { $0.value.test.isTesting }.map(\.key))
+    }
+
+    private func connection(for service: ThirdPartyService) -> ServiceConnectionSettingsModel {
+        connections[service.id]!
+    }
 
     private var testableServices: [ThirdPartyService] {
         ThirdPartyService.allCases.filter { service in
@@ -53,6 +60,13 @@ struct ServicesSettingsTab: View {
 
     var body: some View {
         Form {
+            SettingsPageIntroduction(
+                title: "settings.navigation.item.customServices",
+                systemImage: BusinessIcon.Symbol.services.rawValue,
+                description: "settings.services.introduction.description",
+                context: "settings.services.introduction.context"
+            )
+
             Section {
                 HStack(alignment: .center) {
                     Text("settings.services.intro")
@@ -76,6 +90,9 @@ struct ServicesSettingsTab: View {
             loadDrafts()
             await testAllConnections()
         }
+        .onDisappear {
+            for model in connections.values { model.test.invalidate() }
+        }
     }
 
     // MARK: - Per-service Section
@@ -83,7 +100,8 @@ struct ServicesSettingsTab: View {
     @ViewBuilder
     private func serviceSection(for service: ThirdPartyService) -> some View {
         let validation = ThirdPartyService.validate(draft(for: service))
-        let isProbing = probingServiceIDs.contains(service.id)
+        let test = connection(for: service).test
+        let isProbing = test.isTesting
 
         Section {
             // 说明与「自托管」同行：左文案、右跳转，避免每个服务卡片顶部多占一行。
@@ -104,26 +122,28 @@ struct ServicesSettingsTab: View {
             }
             .padding(.vertical, 2)
 
-            serviceLabeledFieldRow(labelKey: "settings.services.url") {
+            SettingsConnectionFieldRow(title: "settings.services.url") {
                 SingleLineTextField(
                     text: Binding(
                         get: { draft(for: service) },
-                        set: { newValue in draftURLs[service.id] = newValue }
+                        set: { newValue in
+                            connection(for: service).draftURL = newValue
+                        }
                     ),
                     prompt: String.l10n("settings.services.url.placeholder"),
-                    onSubmit: { Task { await testConnection(for: service) } }
+                    onSubmit: { Task { await testConnection(for: service, savesOnSuccess: true) } }
                 )
                 .frame(height: ServiceFieldLayout.fieldHeight)
                 .accessibilityLabel(Text("settings.services.url"))
-            } trailingIcon: {
-                serviceFieldIconButton(
-                    systemName: "arrow.counterclockwise",
-                    helpKey: "settings.services.reset.help",
-                    disabled: !hasCustomURL(for: service) && draft(for: service).isEmpty
-                        && !hasCustomAPIKey(for: service) && apiKeyDraft(for: service).isEmpty
+            } trailing: {
+                ResetIconButton(
+                    help: Text("settings.services.reset.help"),
+                    showsSuccessFeedback: false
                 ) {
                     Task { await reset(service: service) }
                 }
+                .disabled(!hasCustomURL(for: service) && draft(for: service).isEmpty
+                    && !hasCustomAPIKey(for: service) && apiKeyDraft(for: service).isEmpty)
             }
 
             apiKeyRow(for: service)
@@ -132,12 +152,14 @@ struct ServicesSettingsTab: View {
             // 状态左 + Test 右（与设置页操作按钮惯例一致）。
             HStack {
                 if isProbing {
-                    HStack(spacing: 4) {
-                        ProgressView().controlSize(.small)
-                        Text("settings.services.summary.checking")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    ProgressView().controlSize(.small)
+                    Text("settings.services.summary.checking")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let message = test.errorMessage {
+                    Label(message, systemImage: "xmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 } else if let outcome = healthResults[service.id] {
                     ServiceHealthOutcomeLabel(
                         outcome: outcome,
@@ -146,20 +168,13 @@ struct ServicesSettingsTab: View {
                 }
                 Spacer()
                 Button {
-                    Task { await testConnection(for: service) }
+                    Task { await testConnection(for: service, savesOnSuccess: true) }
                 } label: {
-                    HStack(spacing: 4) {
-                        if isProbing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "network")
-                                .font(SettingsIconMetrics.standardGlyph)
-                        }
-                        Text("settings.services.testConnection")
-                    }
+                    Text("settings.connection.testAndSave")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
+                .fixedSize()
                 .disabled(isProbing || !validation.canPersist)
             }
         } header: {
@@ -168,30 +183,15 @@ struct ServicesSettingsTab: View {
                 iconSource: service.iconSource
             )
         }
+        .disabled(test.isSaving)
     }
 
-    @ViewBuilder
     private func apiKeyRow(for service: ThirdPartyService) -> some View {
-        let isReveal = revealAPIKey[service.id] ?? false
-
-        serviceLabeledFieldRow(labelKey: "settings.services.apiKey") {
-            SingleLineTextField(
-                text: apiKeyBinding(for: service),
-                isSecure: !isReveal,
-                prompt: String.l10n("settings.services.apiKey.placeholder"),
-                onSubmit: { Task { await testConnection(for: service) } }
-            )
-            .id(isReveal)
-            .frame(height: ServiceFieldLayout.fieldHeight)
-            .accessibilityLabel(Text("settings.services.apiKey"))
-        } trailingIcon: {
-            serviceFieldIconButton(
-                systemName: isReveal ? "eye.slash" : "eye",
-                helpKey: isReveal ? "settings.services.apiKey.hide" : "settings.services.apiKey.reveal"
-            ) {
-                revealAPIKey[service.id] = !isReveal
-            }
-        }
+        SettingsAPIKeyField(
+            title: "settings.services.apiKey", text: apiKeyBinding(for: service),
+            prompt: Text("settings.services.apiKey.placeholder")
+        )
+        .onSubmit { Task { await testConnection(for: service, savesOnSuccess: true) } }
     }
 
     /// 校验 / 当前生效 URL caption（ping 结果在底部 Test 行展示）。
@@ -234,75 +234,21 @@ struct ServicesSettingsTab: View {
     // MARK: - Field Row Layout
 
     private enum ServiceFieldLayout {
-        static let labelWidth: CGFloat = 72
-        static let fieldMaxWidth: CGFloat = 340
         static let fieldHeight: CGFloat = 22
-        static let iconSlotSize: CGFloat = 28
-        static let rowSpacing: CGFloat = 8
-    }
-
-    @ViewBuilder
-    private func serviceLabeledFieldRow<Field: View, Trailing: View>(
-        labelKey: LocalizedStringKey,
-        @ViewBuilder field: () -> Field,
-        @ViewBuilder trailingIcon: () -> Trailing
-    ) -> some View {
-        HStack(alignment: .center, spacing: ServiceFieldLayout.rowSpacing) {
-            Text(labelKey)
-                .font(.body)
-                .frame(width: ServiceFieldLayout.labelWidth, alignment: .leading)
-            field()
-                // 详情栏会随 Sidebar 拖拽变窄；输入列保留稳定上限，但必须能让出空间，
-                // 否则固定 340pt 会把尾部操作图标挤出 Section 的可用宽度。
-                .frame(maxWidth: ServiceFieldLayout.fieldMaxWidth)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            trailingIcon()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private func serviceFieldIconButton(
-        systemName: String,
-        helpKey: LocalizedStringKey,
-        disabled: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(SettingsIconMetrics.standardGlyph)
-                .frame(
-                    width: ServiceFieldLayout.iconSlotSize,
-                    height: ServiceFieldLayout.iconSlotSize
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(.secondary)
-        .disabled(disabled)
-        .help(Text(helpKey))
-        .accessibilityLabel(Text(helpKey))
     }
 
     // MARK: - Actions
 
     private func loadDrafts() {
-        var loadedURLs: [String: String] = [:]
-        var loadedKeys: [String: String] = [:]
         for service in ThirdPartyService.allCases {
-            loadedURLs[service.id] = settings.customServiceURL(for: service) ?? ""
-            loadedKeys[service.id] = settings.customServiceAPIKey(for: service) ?? ""
-        }
-        if draftURLs.isEmpty {
-            draftURLs = loadedURLs
-        }
-        if draftAPIKeys.isEmpty {
-            draftAPIKeys = loadedKeys
+            connection(for: service).load(
+                url: settings.customServiceURL(for: service),
+                apiKey: settings.customServiceAPIKey(for: service)
+            )
         }
     }
 
-    /// 进入 Tab 时对全部可探测服务并发跑一次 ping（等同用户逐一点「测试」）。
+    /// 进入 Tab 时并发检测草稿，但绝不隐式保存；只有手动操作才有提交权限。
     private func testAllConnections() async {
         await withTaskGroup(of: Void.self) { group in
             for service in testableServices {
@@ -313,145 +259,69 @@ struct ServicesSettingsTab: View {
         }
     }
 
-    private func save(
-        service: ThirdPartyService,
-        validation: ServiceURLValidation,
-        clearHealthResult: Bool = true
-    ) async {
-        guard validation.canPersist else { return }
-        savingServiceID = service.id
-        defer { savingServiceID = nil }
-
-        let urlToPersist: URL?
-        switch validation {
-        case .valid(let url):
-            let normalized = service.normalizedBaseURL(url)
-            urlToPersist = normalized
-            draftURLs[service.id] = normalized.absoluteString
-        case .empty:
-            urlToPersist = nil
-        case .invalid:
-            return
-        }
-
-        await dependencies.setServiceURL(urlToPersist, for: service)
-        if clearHealthResult {
-            healthResults[service.id] = nil
-        }
-    }
-
     private func reset(service: ThirdPartyService) async {
-        savingServiceID = service.id
-        defer { savingServiceID = nil }
-        await dependencies.resetServiceURL(for: service)
-        await dependencies.resetServiceAPIKey(for: service)
-        draftURLs[service.id] = ""
-        draftAPIKeys[service.id] = ""
-        healthResults[service.id] = nil
-        // 重置回内置服务后立刻 re-probe，否则汇总 pill 会因缺一项结果卡在 Checking。
-        await testConnection(for: service)
-    }
-
-    private func saveAPIKey(for service: ThirdPartyService, clearHealthResult: Bool = true) async {
-        savingServiceID = service.id
-        defer { savingServiceID = nil }
-        let trimmed = apiKeyDraft(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
-        await dependencies.setServiceAPIKey(trimmed.isEmpty ? nil : trimmed, for: service)
-        if clearHealthResult {
-            healthResults[service.id] = nil
+        let succeeded = await connection(for: service).reset { url, key in
+            try await saveConnection(url: url, key: key, for: service)
         }
+        if succeeded { await testConnection(for: service) }
     }
 
     private func testConnection(
         for service: ThirdPartyService,
-        retryTransientNetworkError: Bool = false
+        retryTransientNetworkError: Bool = false,
+        savesOnSuccess: Bool = false
     ) async {
-        probingServiceIDs.insert(service.id)
-        defer { probingServiceIDs.remove(service.id) }
-
-        let validation = ThirdPartyService.validate(draft(for: service))
-        let baseURL: URL
-        switch validation {
-        case .valid(let url):
-            baseURL = service.normalizedBaseURL(url)
-        case .empty:
-            baseURL = service.productionURL
-        case .invalid:
-            return
-        }
-
-        if validation.canPersist, isDraftDirty(for: service) {
-            await save(service: service, validation: validation, clearHealthResult: false)
-        }
-        if isAPIKeyDraftDirty(for: service) {
-            await saveAPIKey(for: service, clearHealthResult: false)
-        }
-
-        let trimmedDraftKey = apiKeyDraft(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
-        let probeKey: String?
-        if !trimmedDraftKey.isEmpty {
-            probeKey = trimmedDraftKey
-        } else if let saved = settings.customServiceAPIKey(for: service), !saved.isEmpty {
-            probeKey = saved
-        } else {
-            probeKey = StarcatAPIKeyDefaults.productionKeyOrNil(for: service)
-        }
-
-        var outcome = await dependencies.serviceHealthChecker.check(
-            service: service,
-            baseURL: baseURL,
-            apiKey: probeKey
+        await connection(for: service).testConnection(
+            savesOnSuccess: savesOnSuccess,
+            retriesTransientError: retryTransientNetworkError,
+            probe: { service, url, key in
+                await dependencies.serviceHealthChecker.check(service: service, baseURL: url, apiKey: key)
+            },
+            save: { url, key in
+                try await saveConnection(url: url, key: key, for: service)
+            }
         )
+    }
 
-        // 只给进入设置页的自动检测一次轻量重试：fly.io 冷启动 / TLS 抖动 / timeout
-        // 常见于首轮并发探测；手动测试仍保持单次请求，避免用户等待时间被隐式拉长。
-        if retryTransientNetworkError, outcome.shouldRetryForAutomaticProbe, !Task.isCancelled {
-            outcome = await dependencies.serviceHealthChecker.check(
-                service: service,
-                baseURL: baseURL,
-                apiKey: probeKey
-            )
+    /// 先确认凭据确实保存，再修改 URL；Keychain 失败不能把网络成功当成保存成功。
+    private func saveConnection(url: URL?, key: String?, for service: ThirdPartyService) async throws {
+        await dependencies.setServiceAPIKey(key, for: service)
+        guard settings.customServiceAPIKey(for: service) == key else {
+            throw ServiceSaveError.credentials
         }
+        await dependencies.setServiceURL(url, for: service)
+    }
 
-        guard !outcome.isCancelledProbe, !Task.isCancelled else { return }
-        healthResults[service.id] = outcome
+    private enum ServiceSaveError: LocalizedError {
+        case credentials
+        var errorDescription: String? { String.l10n("settings.externalSearch.apiKey.saveFailed") }
     }
 
     // MARK: - Helpers
 
     private func draft(for service: ThirdPartyService) -> String {
-        draftURLs[service.id] ?? ""
+        connection(for: service).draftURL
     }
 
     private func hasCustomURL(for service: ThirdPartyService) -> Bool {
         settings.customServiceURL(for: service) != nil
     }
 
-    private func isDraftDirty(for service: ThirdPartyService) -> Bool {
-        let persisted = settings.customServiceURL(for: service) ?? ""
-        let draftValue = draft(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
-        return persisted != draftValue
-    }
-
     private func apiKeyDraft(for service: ThirdPartyService) -> String {
-        draftAPIKeys[service.id] ?? ""
+        connection(for: service).draftAPIKey
     }
 
     private func apiKeyBinding(for service: ThirdPartyService) -> Binding<String> {
         Binding(
-            get: { draftAPIKeys[service.id] ?? "" },
-            set: { newValue in draftAPIKeys[service.id] = newValue }
+            get: { connection(for: service).draftAPIKey },
+            set: { newValue in
+                connection(for: service).draftAPIKey = newValue
+            }
         )
     }
 
     private func hasCustomAPIKey(for service: ThirdPartyService) -> Bool {
         settings.customServiceAPIKey(for: service) != nil
-    }
-
-    private func isAPIKeyDraftDirty(for service: ThirdPartyService) -> Bool {
-        let persisted = settings.customServiceAPIKey(for: service) ?? ""
-        let draftValue = apiKeyDraft(for: service).trimmingCharacters(in: .whitespacesAndNewlines)
-        return persisted != draftValue
     }
 
     private func colorForOutcome(_ outcome: HealthCheckOutcome) -> Color {

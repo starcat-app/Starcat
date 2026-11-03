@@ -94,13 +94,16 @@ struct AIOrganizationReviewFooter: View {
         HStack(spacing: 10) {
             if canDiscard {
                 Button(discardTitle, role: .destructive, action: onDiscard)
+                    .help(Text(discardTitle))
             }
 
             if showsApplyActions, showsSelectionControls {
                 Button("batchAI.panel.review.selectAllRepositories", action: onSelectAll)
                     .disabled(!canSelectAll || isApplying)
+                    .help("batchAI.panel.review.selectAllRepositories")
                 Button("batchAI.panel.review.clearRepositorySelection", action: onClearSelection)
                     .disabled(!canClearSelection || isApplying)
+                    .help("batchAI.panel.review.clearRepositorySelection")
             }
 
             Spacer()
@@ -110,6 +113,7 @@ struct AIOrganizationReviewFooter: View {
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .help(Text(verbatim: selectionSummary))
 
                 if let bulkActionTitle {
                     Button(bulkActionTitle, action: onBulkAction)
@@ -122,8 +126,9 @@ struct AIOrganizationReviewFooter: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
-        .frame(height: 58)
+        .lineLimit(1)
+        .controlSize(.regular)
+        .padding(.horizontal, 14)
+        .frame(height: AIOrganizationLayout.footerHeight)
     }
 }

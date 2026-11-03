@@ -101,7 +101,9 @@ final class RAGStreamingPlainTextSession {
 
     /// SwiftUI 可能复用空的 NSTextView 且不走 makeNSView；storage 空而 session 有字时必须再写入。
     func attachIfNeeded(_ textView: NSTextView, pinsToBottom: Bool) {
-        let alreadyShowing = self.textView === textView && (textView.textStorage?.length ?? 0) > 0
+        // 空 session 的空视图已经同步，无需在每次状态刷新时重写空 storage、重新定位滚动。
+        let alreadyShowing = self.textView === textView
+            && ((textView.textStorage?.length ?? 0) > 0 || text.isEmpty)
         guard !alreadyShowing else { return }
         attach(textView, pinsToBottom: pinsToBottom)
     }
@@ -241,7 +243,7 @@ struct RAGStreamingPlainTextView: NSViewRepresentable {
             session.attachIfNeeded(textView, pinsToBottom: pinsToBottom)
         }
         let width = max(scrollView.contentSize.width, scrollView.bounds.width)
-        if width > 0 {
+        if width > 0, textView.textContainer?.containerSize.width != width {
             textView.textContainer?.containerSize = NSSize(
                 width: width,
                 height: CGFloat.greatestFiniteMagnitude
@@ -322,13 +324,9 @@ struct RAGStreamingPlainTextView: NSViewRepresentable {
         return scrollView
     }
 
-    /// 字号没变时不要重设 font，否则 AppKit 会把已有文本刷回主色。
+    /// 低频状态刷新也不应重设相同外观，否则 AppKit 会对已有文本再次应用整段属性。
     private func applyReasoningAppearanceIfNeeded(to textView: NSTextView, font: NSFont) {
-        guard textView.font?.pointSize != font.pointSize else {
-            textView.textColor = .secondaryLabelColor
-            textView.typingAttributes = RAGStreamingPlainTextMetrics.textAttributes(font: font)
-            return
-        }
+        guard textView.font?.pointSize != font.pointSize || textView.textColor != .secondaryLabelColor else { return }
         Self.applyReasoningAppearance(to: textView, font: font)
         let storage = textView.textStorage
         let length = storage?.length ?? 0

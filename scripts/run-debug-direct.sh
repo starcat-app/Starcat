@@ -47,6 +47,27 @@ case "${1:-}" in
     ;;
 esac
 
+# 编译日志可能很大，写入临时文件而不是占用内存；退出时清理，避免重复构建堆积日志。
+COMMAND_LOG="$(mktemp "${TMPDIR:-/tmp}/starcat-direct-build.XXXXXX")"
+trap 'rm -f "$COMMAND_LOG"' EXIT
+
+# 成功时只保留调用处的阶段提示；失败时完整回放 stdout / stderr，保留编译上下文。
+# 只包装外部命令，避免 if 条件抑制 shell 函数内部的 errexit，改变原来的失败行为。
+run_with_failure_log() {
+  local stage="$1"
+  shift
+  local exit_code
+
+  if "$@" >"$COMMAND_LOG" 2>&1; then
+    return 0
+  else
+    exit_code=$?
+    printf 'ERROR: %s失败（exit code: %s），完整日志如下：\n' "$stage" "$exit_code" >&2
+    cat "$COMMAND_LOG" >&2
+    return "$exit_code"
+  fi
+}
+
 # Direct 日常调试固定使用稳定版 Xcode，避免系统当前选中 Xcode Beta 时继承其
 # 未安装的可选 Metal Toolchain。必须在关闭现有 App 前完成前置检查，否则一次
 # 工具链配置错误也会中断正在运行的调试实例。
@@ -138,13 +159,13 @@ if [ "$RUN_MODE" = "run" ]; then
 fi
 
 echo "==> 生成 Xcode 工程..."
-xcodegen generate
+run_with_failure_log "生成 Xcode 工程" xcodegen generate
 
 echo "==> 构建 StarcatDirect Debug（Direct / 非 App Store 模式）..."
 # STARCAT_BUILD_VERSION_OVERRIDE 必须与 CURRENT_PROJECT_VERSION 同值：宿主和 Widget 的
 # postBuildScripts 都会跑 bump-version.sh，该脚本优先用 BUILD_OVERRIDE 改写产物
 # CFBundleVersion，不传就会被改回 git commit count，与下面的产物校验冲突。
-xcodebuild \
+run_with_failure_log "构建 StarcatDirect Debug" xcodebuild \
   -scheme StarcatDirect \
   -configuration Debug \
   -sdk macosx \

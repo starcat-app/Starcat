@@ -94,7 +94,10 @@ struct WeeklyContentView: View {
             syncExternalLanguage(to: model)
             model.changeLicenseFilter(to: settings.licenseFilter)
             async let libraryLoad: Void = reloadLibraryStateMap()
-            await model.loadInitialIfNeeded()
+            if model.hiddenSources != settings.exploreCatalogPreferences.hiddenWeeklySources {
+                clearWeeklyDetailSelection()
+            }
+            await model.loadForPresentation(hiddenSources: settings.exploreCatalogPreferences.hiddenWeeklySources)
             await libraryLoad
             guard !Task.isCancelled else { return }
             await Task.yield()
@@ -141,6 +144,10 @@ struct WeeklyContentView: View {
         .onChange(of: viewModel.total, initial: true) { _, total in onRepoCountChange(total) }
         .onChange(of: settings.licenseFilter) { _, filter in
             viewModel.changeLicenseFilter(to: filter)
+        }
+        .onChange(of: settings.exploreCatalogPreferences.hiddenWeeklySources) { _, sources in
+            clearWeeklyDetailSelection()
+            viewModel.changeHiddenSources(to: sources)
         }
         .onChange(of: viewModel.itemsRevision) { _, _ in
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
@@ -629,7 +636,8 @@ struct WeeklyContentView: View {
             api: dependencies.weeklyAPI,
             selectionService: dependencies.weeklySelectionService,
             languageStore: dependencies.weeklyLanguageStore,
-            bulkRepository: dependencies.weeklyBulkRepository
+            bulkRepository: dependencies.weeklyBulkRepository,
+            hiddenSources: settings.exploreCatalogPreferences.hiddenWeeklySources
         )
         viewModel = model
         return model
@@ -918,12 +926,23 @@ final class WeeklyContentViewModel {
     }
     /// bulk v2 返回并持久化的固定来源目录；UI 筛选不再枚举硬编码渠道。
     private(set) var sourceDescriptors: [WeeklySourceDescriptor] = []
+    private(set) var hiddenSources: Set<String>
+
+    private var sourcePreferences: ExploreCatalogPreferences {
+        ExploreCatalogPreferences(hiddenWeeklySources: hiddenSources)
+    }
 
     var availableSourceFilters: [WeeklySourceFilter] {
-        guard !sourceDescriptors.isEmpty else { return WeeklySourceFilter.defaultFilters }
-        return [.all] + sourceDescriptors
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .map(WeeklySourceFilter.init(descriptor:))
+        let filters = sourceDescriptors.isEmpty ? WeeklySourceFilter.defaultFilters :
+            [.all] + sourceDescriptors.sorted { $0.sortOrder < $1.sortOrder }.map(WeeklySourceFilter.init(descriptor:))
+        return filters.filter { !hiddenSources.contains($0.rawValue) }
+    }
+
+    private var allowedQuerySources: [String]? {
+        let codes = sourceDescriptors.isEmpty
+            ? WeeklySourceFilter.defaultFilters.compactMap(\.queryValue)
+            : sourceDescriptors.map(\.code)
+        return sourcePreferences.weeklyQuerySources(availableCodes: codes)
     }
 
     var filterSummaryTitle: String {
@@ -1030,21 +1049,38 @@ final class WeeklyContentViewModel {
         let interestedLanguages: String
         let searchQuery: String
         let licenseFilter: RepoLicenseFilter
+        let hiddenSources: Set<String>
     }
 
     init(
         api: WeeklyAPI,
         selectionService: WeeklySelectionService? = nil,
         languageStore: WeeklyLanguageStore,
-        bulkRepository: WeeklyBulkRepository
+        bulkRepository: WeeklyBulkRepository,
+        hiddenSources: Set<String> = []
     ) {
         self.api = api
         self.selectionService = selectionService
         self.languageStore = languageStore
         self.bulkRepository = bulkRepository
+        self.hiddenSources = hiddenSources
     }
 
     // MARK: - Public
+
+    /// 父容器复用模型时也要在入场加载前同步偏好；离开周刊期间的设置变化没有 onChange 接收者。
+    func loadForPresentation(hiddenSources: Set<String>) async {
+        if updateHiddenSources(to: hiddenSources), dataSource == .local {
+            // 已加载的模型不能命中 loadInitialIfNeeded 的提前返回，也不要异步排队另一轮 reload。
+            if usesPagedCache {
+                await reloadCachedPage(bumpRevision: true)
+            } else {
+                await applyFiltersLocally(bumpRevision: true, showSkeletonOnMiss: true)
+            }
+            return
+        }
+        await loadInitialIfNeeded()
+    }
 
     /// 首次进入页面调用；如果已有数据就跳过，避免重新进入时把缓存丢掉。
     ///
@@ -1199,7 +1235,8 @@ final class WeeklyContentViewModel {
                     source: selectedSource,
                     language: selectedLanguage.isEmpty ? nil : selectedLanguage,
                     sort: selectedSort,
-                    page: nextPage
+                    page: nextPage,
+                    allowedSources: allowedQuerySources
                 )
             )
             guard myGen == generation else { return }
@@ -1209,7 +1246,9 @@ final class WeeklyContentViewModel {
             page = result.page
             total = result.total
             hasMore = result.hasMore
-            selectionService?.applyTotal(result.total)
+            if selectedSource == .all, selectedLanguage.isEmpty {
+                selectionService?.applyTotal(result.total)
+            }
         } catch {
             guard myGen == generation else { return }
             let friendly = UserFacingError.map(
@@ -1224,9 +1263,34 @@ final class WeeklyContentViewModel {
     }
 
     func changeSource(to newValue: WeeklySourceFilter) {
+        guard !hiddenSources.contains(newValue.rawValue) else { return }
         guard newValue != selectedSource else { return }
         selectedSource = newValue
         reapplyFilters()
+    }
+
+    /// 偏好变化立即废弃在途页与旧派生身份；菜单重置不能绕过这层长期约束。
+    func changeHiddenSources(to sources: Set<String>) {
+        guard updateHiddenSources(to: sources) else { return }
+        reapplyFilters()
+    }
+
+    /// 只失效旧结果，由调用者选择等待入场加载或响应实时变更，避免同时启动两条加载链路。
+    private func updateHiddenSources(to sources: Set<String>) -> Bool {
+        guard sources != hiddenSources else { return false }
+        hiddenSources = sources
+        if hiddenSources.contains(selectedSource.rawValue) { selectedSource = .all }
+        _ = bumpGeneration()
+        localFilterTask?.cancel()
+        localDerivationGeneration &+= 1
+        replaceVisibleItems(with: [])
+        total = 0
+        hasMore = false
+        // 旧派生任务可能正在显示骨架；回切到已准备的快照不会再走 miss 的收尾，
+        // 因此要同步结束旧 loading，避免新列表已发布却仍禁用刷新和分页。
+        isLoading = false
+        isLoadingMore = false
+        return true
     }
 
     func changeCoverage(to newValue: WeeklySourceCoverageFilter) {
@@ -1374,13 +1438,22 @@ final class WeeklyContentViewModel {
         let myGen = generation  // 由调用方先 bumpGeneration（loadInitialIfNeeded 不需 bump）
         loadError = nil
 
+        // 空白名单不能发送空 source：后端会将其解释为全量，导致关闭的来源重新出现。
+        if allowedQuerySources?.isEmpty == true {
+            replaceVisibleItems(with: [])
+            total = 0
+            hasMore = false
+            selectionService?.applyTotal(0)
+            return
+        }
         do {
             let result = try await api.fetchRepos(
                 query: WeeklyFeedQuery(
                     source: selectedSource,
                     language: selectedLanguage.isEmpty ? nil : selectedLanguage,
                     sort: selectedSort,
-                    page: 1
+                    page: 1,
+                    allowedSources: allowedQuerySources
                 )
             )
             guard myGen == generation else { return }
@@ -1392,7 +1465,9 @@ final class WeeklyContentViewModel {
             itemsRevision += 1
             loadError = nil
             cacheWarning = nil
-            selectionService?.applyTotal(result.total)
+            if selectedSource == .all, selectedLanguage.isEmpty {
+                selectionService?.applyTotal(result.total)
+            }
         } catch {
             guard myGen == generation else { return }
             let friendly = UserFacingError.map(
@@ -1509,6 +1584,12 @@ final class WeeklyContentViewModel {
             total = 0
             hasMore = false
         }
+        // 入场任务随视图离开而取消时也要结束 loading；新代次的加载状态不能被旧任务清掉。
+        defer {
+            if showSkeletonOnMiss, derivationGeneration == localDerivationGeneration {
+                isLoading = false
+            }
+        }
 
         let source = bulkAllItems
         let sourceFilter = selectedSource
@@ -1521,6 +1602,7 @@ final class WeeklyContentViewModel {
         let interestedLanguages = Set(self.interestedLanguages.map { $0.lowercased() })
         let searchQuery = quickSearchQuery
         let license = licenseFilter
+        let preferences = sourcePreferences
         let sort = selectedSort
         let now = Date()
         localDerivationCountForTesting &+= 1
@@ -1537,6 +1619,7 @@ final class WeeklyContentViewModel {
                 interestedLanguages: interestedLanguages,
                 searchQuery: searchQuery,
                 licenseFilter: license,
+                sourcePreferences: preferences,
                 sort: sort,
                 now: now
             )
@@ -1549,9 +1632,6 @@ final class WeeklyContentViewModel {
               !Task.isCancelled else { return }
         storePreparedSnapshot(filtered, for: key)
         publishPreparedLocalSnapshot(filtered, bumpRevision: bumpRevision)
-        if showSkeletonOnMiss {
-            isLoading = false
-        }
     }
 
     private func publishPreparedLocalSnapshot(
@@ -1568,10 +1648,8 @@ final class WeeklyContentViewModel {
         if bumpRevision {
             itemsRevision += 1
         }
-        // Sidebar 徽章始终展示 Weekly 全量，不受语言 / source / 其他筛选影响。
-        // filtered.count = 当前筛选后的可见数量（如选中某语言可能只有 800），
-        // bulkAllItems.count = 后端 bulk 全量（可能是 3000+）。
-        selectionService?.applyTotal(bulkAllItems.count)
+        // 徽章只跟随长期来源偏好，不叠加语言、来源单选或搜索等临时筛选。
+        selectionService?.applyTotal(bulkAllItems.lazy.filter(sourcePreferences.includesWeeklyItem).count)
     }
 
     private func makePreparedSnapshotKey(now: Date = Date()) -> WeeklyPreparedSnapshotKey {
@@ -1595,7 +1673,8 @@ final class WeeklyContentViewModel {
             sourceRevision: bulkSourceRevision,
             interestedLanguages: interestedKey,
             searchQuery: quickSearchQuery,
-            licenseFilter: licenseFilter
+            licenseFilter: licenseFilter,
+            hiddenSources: hiddenSources
         )
     }
 
@@ -1638,6 +1717,7 @@ final class WeeklyContentViewModel {
         interestedLanguages: Set<String>,
         searchQuery: String,
         licenseFilter: RepoLicenseFilter,
+        sourcePreferences: ExploreCatalogPreferences,
         sort: WeeklyFeedSort,
         now: Date
     ) -> [WeeklyFeedItem] {
@@ -1646,7 +1726,8 @@ final class WeeklyContentViewModel {
 
         for (index, item) in source.enumerated() {
             if index.isMultiple(of: 64), Task.isCancelled { return [] }
-            guard sourceFilter.matches(item), coverageFilter.matches(item),
+            guard sourcePreferences.includesWeeklyItem(item),
+                  sourceFilter.matches(item), coverageFilter.matches(item),
                   licenseFilter.matches(item.card.licenseSpdx) else { continue }
             if hideArchived, item.card.isArchived { continue }
             if hideForks, item.card.isFork { continue }
@@ -1723,7 +1804,8 @@ final class WeeklyContentViewModel {
             page: page,
             pageSize: Self.localPageSize,
             now: Date(),
-            licenseFilter: licenseFilter
+            licenseFilter: licenseFilter,
+            hiddenSources: hiddenSources
         )
     }
 

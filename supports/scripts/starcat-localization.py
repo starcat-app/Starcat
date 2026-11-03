@@ -64,6 +64,15 @@ KNOWN_STATES = frozenset(
         "signed-off",
     }
 )
+# xcstrings stringUnit.state → XLIFF trans-unit target state。
+# 两套词汇只有 needs_review 拼法不同；导出 source 基线（en/zh-Hans）时必须换算，
+# 否则 Xcode 正常写入的 needs_review 单元会让 build_xliff 的校验直接失败。
+XLIFF_STATE_MAP = {
+    "needs_review": "needs-review-translation",
+    "translated": "translated",
+    "final": "final",
+    "new": "new",
+}
 PRINTF_TOKEN_RE = re.compile(r"%%|%(?:\d+\$)?(?:lld|ld|@|d|f)")
 BRACE_TOKEN_RE = re.compile(r"\{[A-Za-z][A-Za-z0-9_]*\}")
 PROPERTY_LINE_RE = re.compile(r'^(\s*)"((?:\\.|[^"\\])*)":', re.MULTILINE)
@@ -641,7 +650,11 @@ def localized_state(entry: dict[str, Any], locale: str) -> str:
     localizations = entry.get("localizations", {})
     unit = string_unit(localizations.get(locale))
     if unit and isinstance(unit.get("state"), str):
-        return unit["state"]
+        # xcstrings 与 XLIFF 的状态词汇不同：xcstrings 的 needs_review 对应
+        # XLIFF 的 needs-review-translation。直接透传会在 build_xliff 的
+        # KNOWN_STATES 校验处崩掉导出（2026-11-01 首次被 866 个 needs_review
+        # 的 en/zh-Hans 单元触发）。
+        return XLIFF_STATE_MAP.get(unit["state"], unit["state"])
     return "needs-translation"
 
 

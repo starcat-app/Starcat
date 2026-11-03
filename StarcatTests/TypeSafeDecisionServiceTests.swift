@@ -92,6 +92,64 @@ struct TypeSafeClientTests {
         #expect(criteria["false"] as? String == "no")
     }
 
+    @Test("模型列表使用原生 GET 端点和 Bearer Key，按 name 解码")
+    func modelListContract() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            self.response(for: request, status: 200, body: """
+            {"models":[
+              {"name":"jev-latest","description":"stable","release_date":"2026-10-01"},
+              {"name":"jev-preview"}
+            ]}
+            """)
+        }
+        let models = try await client.listModels(apiKey: " native-test ")
+        #expect(models == ["jev-latest", "jev-preview"])
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.url?.absoluteString == "https://typesafe.test.invalid/v1/models")
+        #expect(request.httpMethod == "GET")
+        #expect(request.httpBody == nil)
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer native-test")
+    }
+
+    @Test("模型列表拒绝空 Key，未发出请求")
+    func modelListRejectsMissingKey() async {
+        let client = makeClient()
+        await #expect(throws: TypeSafeClientError.missingAPIKey) {
+            _ = try await client.listModels(apiKey: " \n ")
+        }
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
+    }
+
+    @Test("模型列表认证失败保持领域错误")
+    func modelListRejectsInvalidKey() async {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            self.response(for: request, status: 401, body: "{}")
+        }
+        await #expect(throws: TypeSafeClientError.unauthorized) {
+            _ = try await client.listModels(apiKey: "invalid-test")
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("模型列表结构错误不能伪装为空列表成功")
+    func modelListRejectsMalformedResponse() async {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            self.response(for: request, status: 200, body: #"{"models":[{"id":"missing-name"}]}"#)
+        }
+        do {
+            _ = try await client.listModels(apiKey: "test")
+            Issue.record("Expected decoding failure")
+        } catch {
+            guard let clientError = error as? TypeSafeClientError, case .decoding = clientError else {
+                Issue.record("Expected TypeSafeClientError.decoding, got \(error)")
+                return
+            }
+        }
+    }
+
     @Test("OpenRouter fallback 使用 Decisions 路径与独立 Jev 模型命名空间")
     func openRouterDecisionContract() async throws {
         let client = makeClient()

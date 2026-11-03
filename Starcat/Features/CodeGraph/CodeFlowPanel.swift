@@ -13,7 +13,6 @@ struct CodeFlowPanel: View {
     @State private var viewModel: CodeFlowViewModel
     @State private var showsDetails: Bool
     @State private var isDetailsHeaderHovered = false
-    @State private var paywallContext: ProPaywallContext?
     private let repo: Repo
 
     init(repo: Repo) {
@@ -58,14 +57,10 @@ struct CodeFlowPanel: View {
         }
         .frame(width: 520)
         .task {
-            guard requireCodeFlowAccess() else { return }
             // sheet host 复用时 `@State` ViewModel 不会随 init 参数重建；
             // 每次展示都以当前 sheet item 的 repo 重新校准，避免 A/B 仓库串台。
             viewModel.refreshRepo(repo: repo)
             await viewModel.prepare()
-        }
-        .sheet(item: $paywallContext) { context in
-            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .onDisappear { viewModel.cancel() }
         .onChange(of: viewModel.state) { _, state in
@@ -184,13 +179,11 @@ struct CodeFlowPanel: View {
             if isRunning { Button("common.cancel") { viewModel.cancel() } }
             if viewModel.storedProject != nil, !isRunning {
                 Button("codeFlow.action.regenerate") {
-                    guard requireCodeFlowAccess() else { return }
                     viewModel.regenerate(maximumArchiveBytes: configuredMaximumArchiveBytes)
                 }
                     .disabled(!viewModel.canGenerate)
             }
             Button(actionTitle) {
-                guard requireCodeFlowAccess() else { return }
                 viewModel.start(maximumArchiveBytes: configuredMaximumArchiveBytes)
             }
                 .buttonStyle(.borderedProminent)
@@ -356,18 +349,6 @@ struct CodeFlowPanel: View {
             Image(systemName: "arrow.right.circle.fill").foregroundStyle(Color.accentColor)
         case .failed:
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-        }
-    }
-
-    /// 面板内二次校验：防止 Pro 过期后仍能通过已打开 sheet 继续生成。
-    @discardableResult
-    private func requireCodeFlowAccess() -> Bool {
-        do {
-            try dependencies.entitlementGate.requirePro(.codeFlow)
-            return true
-        } catch {
-            paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
-            return false
         }
     }
 }

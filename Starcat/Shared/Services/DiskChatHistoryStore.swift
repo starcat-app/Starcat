@@ -22,11 +22,13 @@
 import Foundation
 import GRDB
 import Observation
+import Darwin
 
 /// 对话历史存储错误。
 enum DiskChatHistoryStoreError: LocalizedError {
     case applicationSupportUnavailable
     case invalidPathComponent(String)
+    case migrationUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -34,6 +36,8 @@ enum DiskChatHistoryStoreError: LocalizedError {
             return String.l10n("store.chatHistory.error.applicationSupportUnavailable")
         case .invalidPathComponent(let value):
             return String(format: String.l10n("store.chatHistory.error.invalidPathComponentFormat"), value)
+        case .migrationUnavailable:
+            return String.l10n("settings.storage.refinement.invalidHistory")
         }
     }
 }
@@ -78,6 +82,17 @@ private protocol ChatHistoryStorageBackend: AnyObject {
     func deleteAllForRepo(owner: String, repo: String) throws
     func deleteEverything() throws
     func lruSweep() throws
+    var suspendsRetention: Bool { get set }
+    func migrationLocations() throws -> [ChatHistoryLocation]
+    func migrationSession(at location: ChatHistoryLocation) throws -> ChatSession
+    func closeForMigration() throws
+}
+
+/// 迁移必须保留仓库归属；不能仅按 UUID 合并不同仓库下的记录。
+private struct ChatHistoryLocation: Hashable {
+    let owner: String
+    let repo: String
+    let id: UUID
 }
 
 /// AI 对话历史存储 facade（线程：所有公开方法 `@MainActor`）。
@@ -90,8 +105,22 @@ final class DiskChatHistoryStore {
     /// 每次「加载更早消息」的页大小。JSON 后端也用它作为 chunk 大小。
     nonisolated static let messagesPerChunk = 20
 
-    private let backend: ChatHistoryStorageBackend
-    let storageKind: ChatHistoryStorageKind
+    private var backend: ChatHistoryStorageBackend
+    private(set) var storageKind: ChatHistoryStorageKind
+    private(set) var isMigrating = false
+    private let fileManager: FileManager
+    private let rootOverride: URL?
+    private var activeReads = 0
+    private var isPublishingMigration = false
+    private var migrationWrites: [MigrationWrite] = []
+
+    /// 迁移逐会话让出主线程时，正常写入仍先落原后端，再在发布前重放到目标。
+    private enum MigrationWrite {
+        case save(String, String, UUID)
+        case delete(String, String, UUID)
+        case deleteRepo(String, String)
+        case deleteAll
+    }
 
     var totalBytes: Int64 { backend.totalBytes }
     var sessionCount: Int { backend.sessionCount }
@@ -102,8 +131,16 @@ final class DiskChatHistoryStore {
         rootOverride: URL? = nil,
         storageKind: ChatHistoryStorageKind = .jsonFiles
     ) {
-        self.storageKind = storageKind
-        switch storageKind {
+        self.fileManager = fileManager
+        self.rootOverride = rootOverride
+        // 发布目录与活动后端标记原子交换；即使偏好写入前进程退出，下次也能打开正确的数据。
+        let root = rootOverride ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+            .appendingPathComponent("chat-history", isDirectory: true)
+        let marker = root.flatMap { try? String(contentsOf: $0.appendingPathComponent(".active-storage"), encoding: .utf8) }
+        let resolvedKind = marker.flatMap(ChatHistoryStorageKind.init(rawValue:)) ?? storageKind
+        self.storageKind = resolvedKind
+        switch resolvedKind {
         case .jsonFiles:
             self.backend = JSONChatHistoryStorageBackend(fileManager: fileManager, rootOverride: rootOverride)
         case .sqlite:
@@ -121,7 +158,10 @@ final class DiskChatHistoryStore {
     }
 
     func listSessionsAsync(owner: String, repo: String) async throws -> [ChatSessionSummary] {
-        try await backend.listSessionsAsync(owner: owner, repo: repo)
+        await waitForMigrationPublication()
+        activeReads += 1
+        defer { activeReads -= 1 }
+        return try await backend.listSessionsAsync(owner: owner, repo: repo)
     }
 
     func loadSession(owner: String, repo: String, sessionId: UUID) throws -> ChatSession? {
@@ -129,35 +169,225 @@ final class DiskChatHistoryStore {
     }
 
     func loadSessionAsync(owner: String, repo: String, sessionId: UUID) async throws -> ChatSession? {
-        try await backend.loadSessionAsync(owner: owner, repo: repo, sessionId: sessionId)
+        await waitForMigrationPublication()
+        activeReads += 1
+        defer { activeReads -= 1 }
+        return try await backend.loadSessionAsync(owner: owner, repo: repo, sessionId: sessionId)
     }
 
     func loadSessionTailAsync(owner: String, repo: String, sessionId: UUID, tailCount: Int) async throws -> ChatSessionPage? {
-        try await backend.loadSessionTailAsync(owner: owner, repo: repo, sessionId: sessionId, tailCount: tailCount)
+        await waitForMigrationPublication()
+        activeReads += 1
+        defer { activeReads -= 1 }
+        return try await backend.loadSessionTailAsync(owner: owner, repo: repo, sessionId: sessionId, tailCount: tailCount)
     }
 
     func loadMessagesAsync(owner: String, repo: String, sessionId: UUID, start: Int, end: Int) async throws -> [ChatMessage] {
-        try await backend.loadMessagesAsync(owner: owner, repo: repo, sessionId: sessionId, start: start, end: end)
+        await waitForMigrationPublication()
+        activeReads += 1
+        defer { activeReads -= 1 }
+        return try await backend.loadMessagesAsync(owner: owner, repo: repo, sessionId: sessionId, start: start, end: end)
     }
 
     func saveSession(owner: String, repo: String, session: ChatSession) throws {
         try backend.saveSession(owner: owner, repo: repo, session: session)
+        if isMigrating { migrationWrites.append(.save(owner, repo, session.id)) }
     }
 
     func deleteSession(owner: String, repo: String, sessionId: UUID) throws {
         try backend.deleteSession(owner: owner, repo: repo, sessionId: sessionId)
+        if isMigrating { migrationWrites.append(.delete(owner, repo, sessionId)) }
     }
 
     func deleteAllForRepo(owner: String, repo: String) throws {
         try backend.deleteAllForRepo(owner: owner, repo: repo)
+        if isMigrating { migrationWrites.append(.deleteRepo(owner, repo)) }
     }
 
     func deleteEverything() throws {
         try backend.deleteEverything()
+        if isMigrating { migrationWrites.append(.deleteAll) }
     }
 
     func lruSweep() throws {
         try backend.lruSweep()
+    }
+
+    private func waitForMigrationPublication() async {
+        while isPublishingMigration { await Task.yield() }
+    }
+
+    private func makeBackend(kind: ChatHistoryStorageKind, root: URL) -> ChatHistoryStorageBackend {
+        switch kind {
+        case .jsonFiles: return JSONChatHistoryStorageBackend(fileManager: fileManager, rootOverride: root)
+        case .sqlite: return SQLiteChatHistoryStorageBackend(fileManager: fileManager, rootOverride: root)
+        }
+    }
+
+    /// 在独立目录合并并逐条回读，最后原子交换整个目录，不逐文件覆盖线上历史。
+    ///
+    /// 迁移期间禁用 LRU，避免格式变化或目标端已有数据使旧对话在导入中被淘汰。
+    /// 所有源端写入都在原端成功后排队；发布前等待旧异步读取结束，并无挂起地重放、切换。
+    /// 失败不修改活动后端及偏好，损坏历史也不会走普通加载路径的自动删除逻辑。
+    func migrate(to kind: ChatHistoryStorageKind) async throws {
+        guard !isMigrating else { throw DiskChatHistoryStoreError.migrationUnavailable }
+        guard kind != storageKind else { return }
+        guard let root = rootOverride ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+            .appendingPathComponent("chat-history", isDirectory: true) else {
+            throw DiskChatHistoryStoreError.applicationSupportUnavailable
+        }
+        isMigrating = true
+        backend.suspendsRetention = true
+        let originalKind = storageKind
+        let stage = root.deletingLastPathComponent()
+            .appendingPathComponent(".chat-history-migration-\(UUID().uuidString)", isDirectory: true)
+        var didCloseSource = false
+        var didExchange = false
+        defer {
+            backend.suspendsRetention = false
+            isPublishingMigration = false
+            isMigrating = false
+            migrationWrites.removeAll()
+        }
+        let destination = makeBackend(kind: kind, root: root)
+        let staged = makeBackend(kind: kind, root: stage)
+        staged.suspendsRetention = true
+        var locations: [UUID: ChatHistoryLocation] = [:]
+        var importedSourceIDs = Set<UUID>()
+
+        func writeAndVerify(_ session: ChatSession, at location: ChatHistoryLocation) throws {
+            var persisted = session
+            for index in persisted.messages.indices { persisted.messages[index].isStreaming = false }
+            try staged.saveSession(owner: location.owner, repo: location.repo, session: persisted)
+            guard try staged.migrationSession(at: location) == persisted else {
+                throw DiskChatHistoryStoreError.migrationUnavailable
+            }
+            locations[location.id] = location
+        }
+
+        func importSource(_ session: ChatSession, at location: ChatHistoryLocation) throws {
+            if let existingLocation = locations[location.id],
+               !importedSourceIDs.contains(location.id) {
+                let existing = try staged.migrationSession(at: existingLocation)
+                if existingLocation != location || existing != session {
+                    // 保留原 UUID 给正在打开的源会话；目标端的不同版本另存一份，绝不静默覆盖。
+                    let copy = ChatSession(
+                        title: existing.title, createdAt: existing.createdAt, updatedAt: existing.updatedAt,
+                        messages: existing.messages, carriedOverSummary: existing.carriedOverSummary
+                    )
+                    try writeAndVerify(copy, at: ChatHistoryLocation(owner: existingLocation.owner, repo: existingLocation.repo, id: copy.id))
+                }
+                if existingLocation != location {
+                    try staged.deleteSession(owner: existingLocation.owner, repo: existingLocation.repo, sessionId: existingLocation.id)
+                }
+            }
+            importedSourceIDs.insert(location.id)
+            try writeAndVerify(session, at: location)
+        }
+
+        do {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            try fileManager.createDirectory(at: stage, withIntermediateDirectories: true)
+            for location in try destination.migrationLocations() {
+                try Task.checkCancellation()
+                try writeAndVerify(destination.migrationSession(at: location), at: location)
+                await Task.yield()
+            }
+            try destination.closeForMigration()
+            let sourceLocations = try backend.migrationLocations()
+            // JSON 可容纳跨仓库的相同 UUID，SQLite 主键不能；此类异常先停止，保留原数据。
+            guard Set(sourceLocations.map(\.id)).count == sourceLocations.count else {
+                throw DiskChatHistoryStoreError.migrationUnavailable
+            }
+            for location in sourceLocations {
+                try Task.checkCancellation()
+                // 用户在让出主线程期间删除的会话由写日志处理，不应当作损坏数据。
+                let wasDeleted = migrationWrites.reduce(false) { deleted, write in
+                    switch write {
+                    case .save(let owner, let repo, let id)
+                        where owner == location.owner && repo == location.repo && id == location.id: return false
+                    case .delete(let owner, let repo, let id)
+                        where owner == location.owner && repo == location.repo && id == location.id: return true
+                    case .deleteRepo(let owner, let repo)
+                        where owner == location.owner && repo == location.repo: return true
+                    case .deleteAll: return true
+                    default: return deleted
+                    }
+                }
+                if wasDeleted { continue }
+                try importSource(backend.migrationSession(at: location), at: location)
+                await Task.yield()
+            }
+            isPublishingMigration = true
+            while activeReads > 0 {
+                try Task.checkCancellation()
+                await Task.yield()
+            }
+            try Task.checkCancellation()
+            // 这里开始不再挂起；回复完成后的最后一次保存不会落到已经关闭的旧库。
+            let finalSourceLocations = Set(try backend.migrationLocations())
+            for write in migrationWrites {
+                switch write {
+                case .save(let owner, let repo, let id):
+                    let location = ChatHistoryLocation(owner: owner, repo: repo, id: id)
+                    if finalSourceLocations.contains(location) {
+                        // 迁移的是源端实际保存的最终版本，不再用落盘前的内存对象；
+                        // 否则 Date 的纪元转换精度可能让回读校验误判失败。
+                        try importSource(backend.migrationSession(at: location), at: location)
+                    }
+                case .delete(let owner, let repo, let id):
+                    try staged.deleteSession(owner: owner, repo: repo, sessionId: id)
+                    locations.removeValue(forKey: id)
+                case .deleteRepo(let owner, let repo):
+                    try staged.deleteAllForRepo(owner: owner, repo: repo)
+                    locations = locations.filter { $0.value.owner != owner || $0.value.repo != repo }
+                case .deleteAll:
+                    try staged.deleteEverything()
+                    locations.removeAll()
+                }
+            }
+            guard Set(try staged.migrationLocations()) == Set(locations.values) else {
+                throw DiskChatHistoryStoreError.migrationUnavailable
+            }
+            try fileManager.createDirectory(at: stage, withIntermediateDirectories: true)
+            try Data(kind.rawValue.utf8).write(to: stage.appendingPathComponent(".active-storage"), options: .atomic)
+            try staged.closeForMigration()
+            try backend.closeForMigration()
+            didCloseSource = true
+            // macOS 的目录交换是单次原子操作，进程退出不会留下半个目标目录或丢失原目录。
+            guard renameatx_np(AT_FDCWD, stage.path, AT_FDCWD, root.path, UInt32(RENAME_SWAP)) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            didExchange = true
+            let replacement = makeBackend(kind: kind, root: root)
+            guard Set(try replacement.migrationLocations()) == Set(locations.values) else {
+                try replacement.closeForMigration()
+                throw DiskChatHistoryStoreError.migrationUnavailable
+            }
+            backend = replacement
+            backend.reload()
+            storageKind = kind
+            // 校验、发布全部成功后才回收旧目录；它在失败或交换前始终完整保留。
+            try? fileManager.removeItem(at: stage)
+        } catch {
+            try? destination.closeForMigration()
+            try? staged.closeForMigration()
+            if didExchange {
+                guard renameatx_np(AT_FDCWD, stage.path, AT_FDCWD, root.path, UInt32(RENAME_SWAP)) == 0 else {
+                    // 原目录仍在 stage；活动标记可保证重启读到已发布的目标，不能删除任何一端。
+                    backend = makeBackend(kind: kind, root: root)
+                    storageKind = kind
+                    throw error
+                }
+            }
+            if didCloseSource {
+                backend = makeBackend(kind: originalKind, root: root)
+                backend.reload()
+            }
+            try? fileManager.removeItem(at: stage)
+            throw error
+        }
     }
 }
 
@@ -203,6 +433,7 @@ private enum ChatHistoryJSONCoding {
 private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
     private let maxTotalBytes: Int64 = 100 * 1024 * 1024
+    var suspendsRetention = false
 
     private(set) var totalBytes: Int64 = 0
     private(set) var sessionCount: Int = 0
@@ -390,7 +621,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
         saveCountSinceLastSweep += 1
         reload()
-        try maybeTriggerLRUSweep()
+        if !suspendsRetention { try maybeTriggerLRUSweep() }
     }
 
     func deleteSession(owner: String, repo: String, sessionId: UUID) throws {
@@ -420,6 +651,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
     }
 
     func lruSweep() throws {
+        guard !suspendsRetention else { return }
         let root = try rootURL()
         guard fileManager.fileExists(atPath: root.path) else { return }
 
@@ -447,6 +679,35 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
         cleanEmptyDirectories()
         saveCountSinceLastSweep = 0
         reload()
+    }
+
+    func closeForMigration() throws {}
+
+    /// 使用严格读盘而非 index 自愈；无法读出的会话必须阻止迁移，不能当作空历史跳过。
+    func migrationLocations() throws -> [ChatHistoryLocation] {
+        let root = try rootURL()
+        guard fileManager.fileExists(atPath: root.path) else { return [] }
+        var result: [ChatHistoryLocation] = []
+        for owner in try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) where owner.hasDirectoryPath {
+            for repo in try fileManager.contentsOfDirectory(at: owner, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) where repo.hasDirectoryPath {
+                for session in try fileManager.contentsOfDirectory(at: repo, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) where session.hasDirectoryPath {
+                    guard let id = UUID(uuidString: session.lastPathComponent) else { continue }
+                    result.append(ChatHistoryLocation(owner: owner.lastPathComponent, repo: repo.lastPathComponent, id: id))
+                }
+            }
+        }
+        return result
+    }
+
+    func migrationSession(at location: ChatHistoryLocation) throws -> ChatSession {
+        let dir = try sessionDirectory(owner: location.owner, repo: location.repo, sessionId: location.id)
+        let metadata = try decoder.decode(ChatSessionMetadata.self, from: Data(contentsOf: dir.appendingPathComponent("metadata.json")))
+        guard metadata.messageCount >= 0 else { throw DiskChatHistoryStoreError.migrationUnavailable }
+        let messages = try loadMessages(owner: location.owner, repo: location.repo, sessionId: location.id, range: 0..<metadata.messageCount)
+        guard metadata.id == location.id, messages.count == metadata.messageCount else {
+            throw DiskChatHistoryStoreError.migrationUnavailable
+        }
+        return metadata.makeSession(messages: messages)
     }
 
     @discardableResult
@@ -723,6 +984,7 @@ private final class JSONChatHistoryStorageBackend: ChatHistoryStorageBackend {
 private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
 
     private let maxTotalBytes: Int64 = 100 * 1024 * 1024
+    var suspendsRetention = false
 
     private(set) var totalBytes: Int64 = 0
     private(set) var sessionCount: Int = 0
@@ -890,7 +1152,7 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
     }
 
     func lruSweep() throws {
-        guard totalBytes > maxTotalBytes, let dbQueue else { return }
+        guard !suspendsRetention, totalBytes > maxTotalBytes, let dbQueue else { return }
         let dbURL = dbURL
         _ = try dbQueue.write { db in
             while Self.databaseFileSize(dbURL: dbURL) > maxTotalBytes {
@@ -908,6 +1170,29 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
             try db.execute(sql: "VACUUM")
         }
         reload()
+    }
+
+    func closeForMigration() throws {
+        try dbQueue?.close()
+    }
+
+    func migrationLocations() throws -> [ChatHistoryLocation] {
+        guard let dbQueue else { throw DiskChatHistoryStoreError.migrationUnavailable }
+        return try dbQueue.read { db in
+            try ChatSessionSQLRow.fetchAll(db).map { row in
+                guard let id = UUID(uuidString: row.id) else { throw DiskChatHistoryStoreError.migrationUnavailable }
+                return ChatHistoryLocation(owner: row.owner, repo: row.repo, id: id)
+            }
+        }
+    }
+
+    func migrationSession(at location: ChatHistoryLocation) throws -> ChatSession {
+        guard let session = try loadSession(owner: location.owner, repo: location.repo, sessionId: location.id),
+              let summary = try listSessions(owner: location.owner, repo: location.repo).first(where: { $0.id == location.id }),
+              session.messages.count == summary.messageCount else {
+            throw DiskChatHistoryStoreError.migrationUnavailable
+        }
+        return session
     }
 
     func reload() {

@@ -117,7 +117,7 @@ enum SemanticSearchError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return String.l10n("ai.semanticSearch.error.missingAPIKey")
+            return String.l10n("ai.semanticSearch.error.missingAPIKey.modelsSettings")
         case .noVectors:
             return String.l10n("ai.semanticSearch.error.noVectors")
         }

@@ -10,14 +10,14 @@ import SwiftUI
 
 /// 在设置页管理完整 Codex CLI 或独立 App Server 目录，但不接触 Codex 的登录凭据。
 ///
-/// 视觉对齐 CodeFlow 输出目录行：去掉 GroupBox 和刷新按钮。选择文件后会立刻复检；
-/// 路径行只保留短「选择」、重置、Finder；重置在「选择」前面，两个图标共用 15pt + 28pt。
+/// 折叠标题始终展示实际检测状态；路径、说明和重检操作收进展开内容，选择后仍立即复检。
 struct CodexRuntimeSettingsCard: View {
     @AppStorage(ExternalAgentRuntimePreferences.codexExecutablePathKey)
     private var customExecutablePath = ""
 
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedRuntimeDirectoryPath = ""
+    @State private var isExpanded = false
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -26,16 +26,11 @@ struct CodexRuntimeSettingsCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(verbatim: "Codex App Server")
-                    .font(.callout.weight(.semibold))
-                AgentRuntimeInfoButton(kind: .codex)
-                Spacer(minLength: 8)
-                AgentRuntimeStatusChip(status: status)
-            }
-
-            AgentRuntimePathRow(path: resolvedRuntimeDirectoryPath) {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            AgentRuntimePathRow(
+                caption: "settings.integration.tools.runtime.directory",
+                path: resolvedRuntimeDirectoryPath
+            ) {
                 AgentRuntimePathTrailingActions(
                     path: resolvedRuntimeDirectoryPath,
                     isDisabled: status.isChecking,
@@ -55,7 +50,22 @@ struct CodexRuntimeSettingsCard: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
+            HStack(spacing: 8) {
+                Spacer()
+                AgentRuntimeInfoButton(kind: .codex)
+                Button("settings.integration.agentRuntime.detectAgain", action: refresh)
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(status.isChecking)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(verbatim: "Codex App Server")
+                Spacer(minLength: 8)
+                AgentRuntimeStatusChip(status: status)
+            }
         }
+        .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "Codex App Server")))
         .task { refresh() }
     }
 

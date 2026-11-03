@@ -173,7 +173,7 @@ final class RepoShareTaskStore {
             let message: String
             switch error {
             case .missingAPIKey:
-                message = String.l10n("repo.share.error.missingAIConfig")
+                message = String.l10n("repo.share.error.missingAIConfig.modelsSettings")
             case .missingProvider, .invalidJSON:
                 message = error.localizedDescription
             }

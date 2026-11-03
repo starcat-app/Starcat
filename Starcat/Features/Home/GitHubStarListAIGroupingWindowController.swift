@@ -5,7 +5,7 @@
 //  AI 仓库分组审核工作区的固定尺寸 AppKit sheet 外壳。
 //
 //  SwiftUI `.sheet` 会先按内容反复计算 fitting size；该页面包含双栏、滚动区和动态文本，
-//  因而会把首次展示和关闭拖进主线程多轮布局。本控制器让 AppKit 先确定 960 × 640 的
+//  因而会把首次展示和关闭拖进主线程多轮布局。本控制器让 AppKit 先确定 840 × 560 的
 //  唯一几何尺寸，再把 SwiftUI 当作普通内容渲染，不让内容反向调整窗口。
 //
 
@@ -14,7 +14,7 @@ import SwiftUI
 
 /// AI 仓库分组审核窗口的固定几何规格。
 private enum GitHubStarListAIGroupingWindowMetrics {
-    static let contentSize = NSSize(width: 960, height: 640)
+    static let contentSize = AIOrganizationLayout.windowSize
 }
 
 /// 管理单个 AI 仓库分组 sheet 的创建、展示与释放。
@@ -65,7 +65,7 @@ final class GitHubStarListAIGroupingWindowController: NSWindowController, NSWind
             onClose: { closeAction?() }
         )
         .appHostEnvironment(dependencies)
-        // fullSizeContentView 的标题栏安全区不应再次压缩 640pt 内容，否则 SwiftUI 会为
+        // fullSizeContentView 的标题栏安全区不应再次压缩固定画布，否则 SwiftUI 会为
         // 被压缩后的根视图重新求 ideal height。自定义 header 已承担窗口顶部交互。
         .ignoresSafeArea(.container)
 

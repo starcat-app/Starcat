@@ -1,6 +1,7 @@
 # Starcat 推荐、数据贡献与 Star History 文档导航
 
 > 日期: 2026-08-31
+> 推荐范围补充: 2026-10-29；2.0.0 阶段方案见 23，其他链路仍按各自验收记录核对
 > 状态: 当前需求统一入口
 > 适用范围: Starcat macOS 客户端、本地数据平台、推荐训练服务、推荐查询服务、Star History 服务
 > 用途: 为后续开发者和 AI Agent 提供文档优先级、阅读顺序、代码入口与实施边界
@@ -15,11 +16,13 @@
 
 三条业务链路共用一套本地数据基础设施：BigQuery Raw 只在本地保存一份，History 和 Trainer 通过 Artifact URI 只读复用；云端只接收派生 History DB 和 Recommendation ServingBundle。
 
-当前线上推荐由 `starcat-recommend-api` 的 `/api/v1` 中转已获作者授权的 SimRepo 接口；该服务同时是长期统一推荐入口，已新增 `/api/v2` 读取自研 ServingBundle。普通公开仓库 Star History 已迁到聚合生产入口中的 `starcat-history-api`，Discovery 旧路径默认关闭，仅在一个稳定发布窗口内保留代码级回退能力。
+2026-10-29 主仓源码核对：Direct 推荐使用 `/api/v2` 自研 ServingBundle，App Store 仍使用 `/api/v1` SimRepo 契约；`starcat-recommend-api` 是长期统一推荐入口。本轮未读取生产 active Bundle，训练覆盖与质量不能仅凭路由切换判定达标。普通公开仓库 Star History 已迁到聚合生产入口中的 `starcat-history-api`，Discovery 旧路径默认关闭，仅在一个稳定发布窗口内保留代码级回退能力。
 
 2026-08-24 本机真实数据全链路结果见 [公开 Star 自研推荐全链路最终测试报告](公开Star自研推荐全链路最终测试报告.md)，交付收口见 [公开 Star 自研推荐全链路需求完成结果报告](公开Star自研推荐全链路需求完成结果报告.md)。需要在当前 `dev` 重新执行真实数据验证时，按 [本地推荐全链路验证指南](本地推荐全链路验证指南.md) 操作。
 
-2026-08-29 已记录 [全量 WatchEvent 推荐训练扩容实施方案](22-全量WatchEvent推荐训练扩容实施方案.md)。当前只等待 PushEvent 2016—2026 下载与完整性检查完成，不自动启动全量数据构建或训练。
+2026-08-29 已记录 [全量 WatchEvent 推荐训练扩容实施方案](22-全量WatchEvent推荐训练扩容实施方案.md)。该轮要求等待 PushEvent 2016—2026 下载与完整性检查完成，不自动启动全量数据构建或训练；实际数据就绪状态需重新核对。
+
+2026-10-29 确认 [2.0.0 推荐系统收口方案](23-2.0.0推荐系统收口方案.md)：基于同一套自研底座提供“为你推荐”和详情页相似项目。重点是覆盖扩容、质量评估、多种子候选补取、完整本地排除与第三方替换；这是待实施范围，不代表个性化页面或定期重训已交付。
 
 当前实施与目标后端拆分为：
 
@@ -31,15 +34,16 @@ supports/starcat-history-api      接收本地 History Delta/Snapshot 并提供�
 本地数据平台                     唯一保存 BigQuery Raw，负责 Catalog、分析和派生产物发布
 ```
 
-不再创建 `starcat-recsys-api`。自研服务达到质量、稳定性和迁移门槛后，只删除 `starcat-recommend-api` 内的 SimRepo Provider 及对应密钥；统一 Recommend 服务继续保留。History 仍按独立方案迁移 Discovery 路径。
+不再创建 `starcat-recsys-api`。自研服务达到质量、稳定性和迁移门槛后，已发布客户端仍使用的 v1 URL 与响应契约保留、内部改用自研数据，再删除 `starcat-recommend-api` 内的 SimRepo Provider 及对应密钥；统一 Recommend 服务继续保留。History 仍按独立方案迁移 Discovery 路径。
 
 ## 2. 当前状态与目标架构
 
 ```mermaid
 flowchart TB
     subgraph Current[当前已实现]
-        A[Starcat 推荐 UI] --> B[starcat-recommend-api]
-        B --> C[SimRepo]
+        A[Starcat 推荐 UI 按渠道选择契约] --> B[starcat-recommend-api]
+        B -->|App Store v1| C[SimRepo]
+        B -->|Direct v2| C2[自研 ServingBundle]
         D[Starcat Star History UI] --> E[本地快照]
         D --> F[starcat-history-api]
         F --> G[History Serving DB]
@@ -74,7 +78,7 @@ flowchart TB
 
 1. **已发布事实和项目硬性规范**：`AGENTS.md`、开发前问题清单、当前代码、数据库 migration。
 2. **当前权威详细设计**：61、62、63、66。
-3. **当前实现基线**：相似仓库推荐正式方案、50-Star History 整体方案。
+3. **版本范围与当前实现基线**：23 定义 2.0.0 推荐阶段范围、实施顺序与验收；相似仓库推荐正式方案、50-Star History 整体方案记录各自基线。23 不替代 61/66 的底层契约，阶段取舍按开发前问题清单 §5.18 的补充决议处理。
 4. **历史总体方案、调研与早期草案**：60、16～21，用于理解背景和备选方案，不能覆盖新设计。
 5. **功能实现总览**：只用于确认项目进度；没有 dong4j 单独授权时禁止修改。
 
@@ -91,6 +95,7 @@ flowchart TB
 | 20 | [Repo Research Agent 设计方案](20-Repo-Research-Agent-设计方案.md) | 推荐系统的上层消费场景之一 | 把推荐候选接入项目调研 Agent 时 |
 | 21 | [自研相似仓库推荐算法草案](21-自研相似仓库推荐算法-设计方案.md) | 早期多路召回总体草案，固定权重和服务边界已被 61 修订 | 回顾备选算法、表结构和演进背景时 |
 | 22 | [全量 WatchEvent 推荐训练扩容实施方案](22-全量WatchEvent推荐训练扩容实施方案.md) | 记录当前实测规模、PushEvent 前置门禁、全量 Silver 构建、单机资源保护和下一模型验收 | PushEvent 下载完成后实施全量训练扩容时 |
+| 23 | [2.0.0 推荐系统收口方案](23-2.0.0推荐系统收口方案.md) | 定义个性化与详情两入口、完整本地排除、候选分页、质量门禁和 SimRepo 退出条件 | 实施 2.0.0 推荐时先确定阶段范围，再读 61/66 与 22 |
 | 指南 | [本地推荐全链路验证指南](本地推荐全链路验证指南.md) | 使用真实 Star 主库复现 Collection、Trainer、Recommend v2 和 Direct UI 全链路 | 在 `dev` 本地重跑完整链路、排查跨服务问题时 |
 | 指南 | [WatchEvent 与 Star History 每日增量运维指南](WatchEvent与Star-History每日增量运维指南.md) | 记录 UTC 昨日补数、History Delta 追赶、LaunchAgent 调度和失败恢复 | 补齐历史缺口或维护每日增量链路时 |
 
@@ -230,7 +235,8 @@ Mubelotix/simrepo
 阅读顺序：
 
 ```text
-61-自研仓库推荐系统
+23-2.0.0 推荐阶段范围与验收
+    → 61-自研仓库推荐系统
     → 66-本地数据湖与云端 Serving 同步
     → 22-全量 WatchEvent 推荐训练扩容实施方案
     → 60-推荐快照 DTO 与删除边界
@@ -245,12 +251,13 @@ Mubelotix/simrepo
 阅读顺序：
 
 ```text
-61-在线 API、Serving、SLO、灰度
+23-2.0.0 多仓查询、分页与迁移边界
+    → 61-在线 API、Serving、SLO、灰度
     → 当前相似仓库推荐实施方案
     → 当前 RecommendModels
 ```
 
-`starcat-recommend-api` 的 v2 Provider 只读已发布模型和 Serving DB，不能读取匿名快照原始表，也不能在请求进程内训练；v1 SimRepo 路径保持原契约。
+`starcat-recommend-api` 的 v2 Provider 只读已发布模型和 Serving DB，不能读取匿名快照原始表，也不能在请求进程内训练。v1 保持已发布契约；2.0.0 达标后内部改用自研数据，不将 SimRepo 保留为永久回退。
 
 ### 8.5 开发独立 Star History 服务
 

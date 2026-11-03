@@ -870,8 +870,7 @@ enum ReleaseNotesLoader {
              .ukrainian,
              .turkish,
              .vietnamese,
-             .indonesian,
-             .arabic:
+             .indonesian:
             return ["CHANGELOG"]
         case .system:
             if systemPrefersSimplifiedChinese {

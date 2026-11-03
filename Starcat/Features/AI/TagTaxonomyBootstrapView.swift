@@ -83,18 +83,18 @@ struct TagTaxonomyBootstrapView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             summaryCards
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: AIOrganizationLayout.gap) {
                 candidatePanel
                 evidencePanel
             }
-            .frame(width: 932, height: 424, alignment: .top)
+            .frame(width: AIOrganizationLayout.innerWidth, height: AIOrganizationLayout.panelHeight, alignment: .top)
         }
-        .padding(14)
-        .frame(width: 960, height: 516, alignment: .topLeading)
+        .padding(AIOrganizationLayout.padding)
+        .frame(width: AIOrganizationLayout.windowSize.width, height: AIOrganizationLayout.contentHeight, alignment: .topLeading)
     }
 
     private var summaryCards: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             summaryCard(
                 title: String.l10n(primaryRepositoryMetricKey),
                 value: model.session.corpusRepositoryCount.formatted(.number.locale(locale)),
@@ -120,38 +120,11 @@ struct TagTaxonomyBootstrapView: View {
                 tint: .green
             )
         }
-        .frame(width: 932, height: 54)
+        .frame(width: AIOrganizationLayout.innerWidth, height: AIOrganizationLayout.summaryHeight)
     }
 
     private func summaryCard(title: String, value: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(interfaceScale.font(.iconMedium, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: title)
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text(verbatim: value)
-                    .font(interfaceScale.font(.panelTitle).monospacedDigit())
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(width: 225.5, height: 54, alignment: .leading)
-        .background(
-            tint.opacity(colorScheme == .dark ? 0.22 : 0.12),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(tint.opacity(colorScheme == .dark ? 0.45 : 0.28))
-        }
+        AIOrganizationSummaryCard(title: title, value: value, symbol: icon, tint: tint)
     }
 
     private var candidatePanel: some View {
@@ -159,7 +132,7 @@ struct TagTaxonomyBootstrapView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(candidateTitleKey)
-                        .font(interfaceScale.font(.panelTitle))
+                        .font(interfaceScale.font(.body, weight: .semibold))
                     Text(candidateSubtitleKey)
                         .font(interfaceScale.font(.caption))
                         .foregroundStyle(.secondary)
@@ -190,8 +163,9 @@ struct TagTaxonomyBootstrapView: View {
                 }
             }
         }
-        .padding(12)
-        .frame(width: 520, height: 424, alignment: .topLeading)
+        .padding(10)
+        // 保留候选区稍宽的比例；首次引导和扩词同样必须装入缩小后的工作区。
+        .frame(width: 460, height: AIOrganizationLayout.panelHeight, alignment: .topLeading)
         .background(panelBackground)
         .overlay(panelBorder)
     }
@@ -259,10 +233,10 @@ struct TagTaxonomyBootstrapView: View {
     private var evidencePanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("batchAI.taxonomy.evidence.title")
-                .font(interfaceScale.font(.panelTitle))
+                .font(interfaceScale.font(.body, weight: .semibold))
             if let candidate = model.focusedCandidate {
                 Text(verbatim: candidate.name)
-                    .font(interfaceScale.font(.workspaceTitle))
+                    .font(interfaceScale.font(.panelTitle))
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
@@ -318,8 +292,9 @@ struct TagTaxonomyBootstrapView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(12)
-        .frame(width: 400, height: 424, alignment: .topLeading)
+        .padding(10)
+        .frame(width: AIOrganizationLayout.innerWidth - 460 - AIOrganizationLayout.gap,
+               height: AIOrganizationLayout.panelHeight, alignment: .topLeading)
         .background(panelBackground)
         .overlay(panelBorder)
     }

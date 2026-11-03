@@ -15,8 +15,6 @@ struct RAGInferenceBackendCard: View {
     let interfaceScale: InterfaceScale
     let onSelect: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
-
     private var isSelectable: Bool {
         backend == .api || inspection?.isAvailable == true
     }
@@ -60,10 +58,9 @@ struct RAGInferenceBackendCard: View {
         }
         .padding(interfaceScale.scaled(12))
         .frame(maxWidth: .infinity, alignment: .leading)
+        // 未选中时沿用外层原生 Form 的分组底色，避免旧卡片灰底叠出另一层背景。
         .background(
-            isSelected
-                ? Color.accentColor.opacity(0.10)
-                : StarcatSurface.raisedCard(colorScheme: colorScheme),
+            isSelected ? Color.accentColor.opacity(0.10) : Color.clear,
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
         )
         .overlay {

@@ -21,6 +21,7 @@ struct MyInsightsView: View {
     @Binding var scope: InsightsScope
     @Binding var selection: InsightsSelection
     let viewModel: MyInsightsViewModel
+    var headerHeight: CGFloat = InsightsColumnChrome.minimumHeaderHeight
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -66,7 +67,9 @@ struct MyInsightsView: View {
                             }
                             selectedContent
                         }
-                        .padding(18)
+                        .padding(.horizontal, 18)
+                        .padding(.top, InsightsColumnChrome.contentTopPadding)
+                        .padding(.bottom, 18)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                         // 刷新中略降透明度，新快照落地时不那么「硬切」。
                         .opacity(viewModel.isRefreshing ? 0.72 : 1)
@@ -185,22 +188,21 @@ struct MyInsightsView: View {
     }
 
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            // 右侧控件贴标题行顶对齐；默认 center 会相对「标题+副标题」居中，头上留一大块空。
-            HStack(alignment: .top, spacing: 12) {
-                headerTitle
-                Spacer(minLength: 16)
-                headerControls
+        InsightsColumnHeader(height: headerHeight) {
+            ViewThatFits(in: .horizontal) {
+                // 右侧控件贴标题行顶对齐；默认 center 会相对「标题+副标题」居中，头上留一大块空。
+                HStack(alignment: .top, spacing: 12) {
+                    headerTitle
+                    Spacer(minLength: 16)
+                    headerControls
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    headerTitle
+                    headerControls
+                }
             }
-            VStack(alignment: .leading, spacing: 10) {
-                headerTitle
-                headerControls
-            }
+            .padding(.horizontal, 20)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, InsightsColumnChrome.headerVerticalPadding)
-        // 与中栏共用固定高度；内容顶对齐，空白留在分割线上方而不是控件头顶。
-        .frame(height: InsightsColumnChrome.headerHeight, alignment: .topLeading)
     }
 
     private var headerTitle: some View {

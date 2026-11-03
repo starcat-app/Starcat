@@ -36,10 +36,17 @@ struct CodebaseMemoryExecutableSettingsView: View {
 
     var body: some View {
         Group {
-            LabeledContent {
-                executableValue
-            } label: {
-                Text("settings.integration.codebaseMemory.executable.label")
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("settings.integration.tools.program")
+                    if case .available(let executable) = resolutionState {
+                        Text(verbatim: executableDescription(executable))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 12)
+                executableStatus
             }
 
             if case .unavailable(let message) = resolutionState {
@@ -49,70 +56,68 @@ struct CodebaseMemoryExecutableSettingsView: View {
                     .textSelection(.enabled)
             }
 
+            // App Store 始终使用内置程序，不展示外部路径选择或自动检测恢复入口。
+            if channel.isDirect {
+                AgentRuntimePathRow(
+                    caption: "settings.integration.agentRuntime.executable",
+                    path: displayedExecutablePath
+                ) {
+                    AgentRuntimePathTrailingActions(
+                        path: displayedExecutablePath,
+                        isDisabled: isResolving,
+                        onChoose: chooseExecutable
+                    ) {
+                        ResetIconButton(help: Text("settings.integration.codebaseMemory.executable.restoreAutomatic")) {
+                            Task { await restoreAutomaticDetection() }
+                        }
+                        .disabled(!hasUserSelection || isResolving)
+                    }
+                }
+            }
+
             HStack(spacing: 8) {
+                Spacer()
                 if channel.isDirect {
                     Link(
                         "settings.integration.codebaseMemory.executable.install",
                         destination: CodebaseMemoryBinaryResolver.installationURL
                     )
-                    .font(.caption)
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
                 }
-
-                Spacer()
-
                 Button("settings.integration.codebaseMemory.executable.detectAgain") {
                     Task { await refresh() }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
                 .disabled(isResolving)
-
-                if channel.isDirect {
-                    Button("settings.integration.codebaseMemory.executable.choose") {
-                        chooseExecutable()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(isResolving)
-
-                    Button("settings.integration.codebaseMemory.executable.restoreAutomatic") {
-                        Task { await restoreAutomaticDetection() }
-                    }
-                    .disabled(!hasUserSelection || isResolving)
-                }
             }
         }
         .task { await refresh() }
     }
 
+    /// 状态、版本和来源来自 resolver 的同一次结果，不把示例版本或路径带入设置页。
     @ViewBuilder
-    private var executableValue: some View {
+    private var executableStatus: some View {
         switch resolutionState {
         case .idle, .resolving:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("settings.integration.codebaseMemory.executable.detecting")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .available(let executable):
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(verbatim: executable.url.path)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .help(executable.url.path)
-                Text(verbatim: executableDescription(executable))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        case .unavailable:
-            Text("settings.integration.codebaseMemory.executable.notFound")
+            Text("settings.integration.codebaseMemory.executable.detecting")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        case .available:
+            Label("settings.integration.agentRuntime.status.ready", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case .unavailable:
+            Label("settings.integration.tools.runtime.unavailable", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
         }
+    }
+
+    private var displayedExecutablePath: String {
+        if case .available(let executable) = resolutionState { return executable.url.path }
+        return ""
     }
 
     private var isResolving: Bool {

@@ -166,8 +166,10 @@ struct CompanionContextProvider {
                 recommendations: [],
                 hasMore: false
             )
-        let canOpenLocalActions = isActiveLocalRepo(localRepo, libraryState: libraryState)
-            && hasProEntitlement
+        // 图谱入口免费，但仍只允许对已 Star 或已入库的本地仓库发起动作。
+        // 摘要等既有付费动作继续遵守原权益边界，不能跟着图谱一起放开。
+        let hasActiveLocalRepo = isActiveLocalRepo(localRepo, libraryState: libraryState)
+        let canOpenPaidActions = hasActiveLocalRepo && hasProEntitlement
         return CompanionRepoContextResponse(
             schemaVersion: 1,
             repo: Self.repoDTO(owner: owner, name: name, localRepo: localRepo, libraryState: libraryState),
@@ -181,10 +183,10 @@ struct CompanionContextProvider {
             health: health,
             openssf: openssf,
             actions: CompanionActionsDTO(
-                openInStarcat: canOpenLocalActions,
-                generateSummary: canOpenLocalActions,
-                codeflow: canOpenLocalActions,
-                codebase: canOpenLocalActions
+                openInStarcat: canOpenPaidActions,
+                generateSummary: canOpenPaidActions,
+                codeflow: hasActiveLocalRepo,
+                codebase: hasActiveLocalRepo
             ),
             entitlement: CompanionEntitlementDTO(isPro: hasProEntitlement)
         )

@@ -226,7 +226,8 @@ struct ActivityAnnouncementPayload: Equatable, Sendable {
 }
 
 /// 通知 inbox 行 / 详情 payload。人名和摘要只在选中 hydrate 后才有。
-struct ActivityNotificationPayload: Equatable, Sendable {
+/// Codable 供 Issue 总结磁盘快照回放 matchesSource 使用；子模型均已 Codable。
+struct ActivityNotificationPayload: Equatable, Codable, Sendable {
     let threadId: String
     let reason: String
     let chip: GitHubNotificationChip

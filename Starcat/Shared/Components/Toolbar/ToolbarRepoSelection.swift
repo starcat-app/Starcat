@@ -67,6 +67,10 @@ struct ToolbarRepoSelection: Equatable {
     /// 公开 / 私有徽章。缺字段时按公开处理。
     let isPrivate: Bool
 
+    /// owner 头像 URL 字符串。下载文件 Sheet 顶栏用；缺失时由 Sheet 兜底拼
+    /// `github.com/{owner}.png`（GitHub 官方头像端点，Redirect 到当前头像）。
+    let ownerAvatar: String?
+
     /// 是否已 star。由调用方按 `StarredRegistry.contains(ghRepoId:)` 计算，
     /// 用于 toolbar 上 star/unstar 按钮的视觉态判定。**本类型不主动访问 registry**。
     let isStarred: Bool
@@ -89,6 +93,7 @@ struct ToolbarRepoSelection: Equatable {
             defaultBranch: nonEmpty(repo.defaultBranch),
             summary: nonEmpty(repo.description),
             isPrivate: repo.isPrivate,
+            ownerAvatar: nonEmpty(repo.ownerAvatar),
             isStarred: isStarred
         )
     }
@@ -111,6 +116,7 @@ struct ToolbarRepoSelection: Equatable {
             defaultBranch: nonEmpty(trending.defaultBranch),
             summary: nonEmpty(trending.description),
             isPrivate: trending.isPrivate ?? false,
+            ownerAvatar: trending.ownerAvatar?.absoluteString,
             isStarred: isStarred
         )
     }
@@ -128,6 +134,7 @@ struct ToolbarRepoSelection: Equatable {
             defaultBranch: nonEmpty(weekly.card.defaultBranch),
             summary: nonEmpty(weekly.card.description),
             isPrivate: weekly.card.isPrivate,
+            ownerAvatar: weekly.card.ownerAvatar?.absoluteString,
             isStarred: isStarred
         )
     }

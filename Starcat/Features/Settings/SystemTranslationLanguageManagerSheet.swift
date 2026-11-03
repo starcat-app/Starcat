@@ -135,10 +135,7 @@ struct SystemTranslationLanguageManagerSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
                 Button(action: openSystemSettings) {
-                    Label(
-                        "settings.translation.system.openSettings",
-                        systemImage: "gearshape"
-                    )
+                    Text("settings.translation.system.openSettings")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)

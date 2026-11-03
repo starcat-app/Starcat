@@ -11,7 +11,7 @@
 #   - 只读取「Fly 生产必须/建议配置」的 key，不 source 整个 .env（wiki 的
 #     PROBE_USER_AGENT 含括号，bash source 会 parse error）。
 #   - STORE_FILE / REPO_DIR 在 Fly 上强制覆盖为 /data/*（与 fly.toml volume 挂载一致）。
-#     recommend-api 无持久化卷，不同步 STORE_FILE。
+#     recommend 使用 MODEL_REGISTRY_DIR / METRICS_STORE_FILE，不使用 STORE_FILE。
 #   - sharing 的 BASE_URL 在 Fly 上强制为 https://starcat.ink；公开仓库、OG 与既有
 #     AI 分享链接都由阿里云 Nginx 统一代理（本地 .env 常见 localhost，不能直接同步）。
 #   - **目标生产架构**：聚合 App `starcat-api`（前缀环境变量 + 分库路径）。
@@ -97,7 +97,6 @@ case "$APP" in
     DISCOVERY_GH="$(require_env_val DISCOVERY_GITHUB_TOKENS)"
     DISCOVERY_ADMIN="$(require_env_val DISCOVERY_ADMIN_API_KEYS)"
     SHARING_GH="$(require_env_val SHARING_GITHUB_TOKENS)"
-    RECOMMEND_SIM="$(require_env_val RECOMMEND_SIMREPO_API_KEY)"
 
     args=(
       "STARCAT_API_SERVICES=all"
@@ -120,7 +119,6 @@ case "$APP" in
       "WEEKLY_GITHUB_TOKENS=$WEEKLY_GH"
       "DISCOVERY_GITHUB_TOKENS=$DISCOVERY_GH"
       "DISCOVERY_ADMIN_API_KEYS=$DISCOVERY_ADMIN"
-      "RECOMMEND_SIMREPO_API_KEY=$RECOMMEND_SIM"
       "TRENDING_WIKI_API_URL=$FLY_AGG_WIKI_API_URL"
       "TRENDING_WIKI_API_KEY=$SHARED"
       "WEEKLY_WIKI_API_URL=$FLY_AGG_WIKI_API_URL"
@@ -130,9 +128,12 @@ case "$APP" in
     if WEEKLY_ADMIN="$(read_env_val WEEKLY_ADMIN_API_KEYS 2>/dev/null || true)" && [[ -n "$WEEKLY_ADMIN" ]]; then
       args+=("WEEKLY_ADMIN_API_KEYS=$WEEKLY_ADMIN")
     fi
-    if RECOMMEND_EP="$(read_env_val RECOMMEND_SIMREPO_ENDPOINT 2>/dev/null || true)" && [[ -n "$RECOMMEND_EP" ]]; then
-      args+=("RECOMMEND_SIMREPO_ENDPOINT=$RECOMMEND_EP")
-    fi
+    # 自研推荐的发布凭据与公开 metadata PAT 分离，不再读取第三方配置。
+    for optional_key in RECOMMEND_MODEL_PUBLISH_KEYS RECOMMEND_GITHUB_TOKENS RECOMMEND_MAX_BUNDLE_BYTES; do
+      if optional_value="$(read_env_val "$optional_key" 2>/dev/null || true)" && [[ -n "$optional_value" ]]; then
+        args+=("${optional_key}=${optional_value}")
+      fi
+    done
 
     fly secrets set -a "$APP" "${args[@]}"
     ;;
@@ -193,12 +194,10 @@ case "$APP" in
     ;;
   starcat-recommend-api)
     API_KEYS="$(require_env_val API_KEYS)"
-    SIMREPO_API_KEY="$(require_env_val SIMREPO_API_KEY)"
     args=(
       "API_KEYS=$API_KEYS"
-      "SIMREPO_API_KEY=$SIMREPO_API_KEY"
     )
-    for optional_key in SIMREPO_ENDPOINT CACHE_TTL_SUCCESS_SECONDS CACHE_TTL_EMPTY_SECONDS CACHE_TTL_ERROR_SECONDS; do
+    for optional_key in MODEL_PUBLISH_KEYS MODEL_REGISTRY_DIR METRICS_STORE_FILE MAX_BUNDLE_BYTES GITHUB_TOKENS; do
       if optional_value="$(read_env_val "$optional_key" 2>/dev/null || true)" && [[ -n "$optional_value" ]]; then
         args+=("${optional_key}=${optional_value}")
       fi

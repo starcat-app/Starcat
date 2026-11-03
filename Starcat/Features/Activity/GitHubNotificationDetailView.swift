@@ -21,6 +21,9 @@ struct GitHubNotificationDetailView: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedItem: ActivityItem?
+    /// 顶部语言色光晕开关：活动-Issues 详情页保留；RepoIssues 工作台复用本组件时关闭
+    /// （渐变属于活动详情页的设计语言，工作台详情页不携带，2026-11-01 dong4j 决策）。
+    var showsHeroTint: Bool = true
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
     @State private var isDoneHelpPresented = false
@@ -79,72 +82,111 @@ struct GitHubNotificationDetailView: View {
                     .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
                     .padding(.bottom, 6)
             }
-            if !isComposerExpanded {
-                ScrollView {
-                    // GitHub API 单次 hydration 最多返回 100 条评论，数量有界。这里故意使用
-                    // VStack 一次性确定可变高度 Markdown 卡片的位置，避免 LazyVStack 在滚动时
-                    // 反复执行 LazySubviewPlacements，导致主线程陷入 SwiftUI 布局风暴。
-                    VStack(alignment: .leading, spacing: 12) {
-                        if let payload = item.notification {
-                            if settings.githubIssueEventTimelineEnabled,
-                               GitHubNotificationMapper.canReply(
-                                subjectType: payload.subjectType,
-                                number: payload.subjectNumber
-                               ) {
-                                GitHubNotificationIssueTimelineConversation(
-                                    payload: payload,
-                                    title: item.title,
-                                    locale: locale,
-                                    inbox: inbox,
-                                    timelineRevision: inbox.issueTimelineRevision(threadId: payload.threadId),
-                                    translation: translationVM,
-                                    document: translationDocument(payload),
-                                    onCommentsChange: { comments in
-                                        if timelineTranslationComments != comments {
-                                            timelineTranslationComments = comments
-                                        }
-                                    },
-                                    issueHTMLURL: item.htmlURL?.absoluteString
-                                )
-                            } else {
-                                conversation(
-                                    payload,
-                                    title: item.title,
-                                    issueHTMLURL: item.htmlURL?.absoluteString,
-                                    translation: translationVM
-                                )
-                            }
-                        }
-                    }
-                    .padding(18)
-                }
-            }
-            if let payload = item.notification,
-               GitHubNotificationMapper.canReply(
-                subjectType: payload.subjectType,
-                number: payload.subjectNumber
-               ) {
-                if !isComposerExpanded {
-                    Divider()
-                }
-                GitHubNotificationCommentComposer(
-                    payload: payload,
-                    issueTitle: item.title,
-                    repo: item.repo,
-                    isExpanded: $isComposerExpanded,
-                    onAIFailure: presentAIFailure
-                )
-                .frame(maxHeight: isComposerExpanded ? .infinity : nil)
-            }
+            detailBody(item)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 语言色光晕挂在会话详情根上，和账本 / Manage 详情同一套；工具行走透明才能透出来。
-        .detailHeroTintBackground(tint: item.accentColor)
+        // RepoIssues 工作台复用时经 showsHeroTint=false 整体关闭。
+        .detailHeroTintBackground(tint: item.accentColor, opacity: showsHeroTint ? 1 : 0)
         // 标题进系统导航栏，和中栏「活动 > 通知」同一层；横线上方只留仓库名。
         .navigationTitle(item.title)
         .navigationSubtitle(navigationSubtitle(item))
 
         withDetailObservers(content, item: item)
+    }
+
+    /// Overlay 只挂在详情正文范围，既不覆盖顶部导航，也不参与评论流的宽高测量。
+    private func detailBody(_ item: ActivityItem) -> some View {
+        VStack(spacing: 0) {
+            if !isComposerExpanded {
+                conversationScroll(item)
+            }
+            if let payload = item.notification,
+               GitHubNotificationMapper.canReply(subjectType: payload.subjectType, number: payload.subjectNumber) {
+                if !isComposerExpanded {
+                    Divider()
+                        .anchorPreference(key: GitHubNotificationIssueSummaryAnchorKey.self, value: .bounds) {
+                            .init(divider: $0)
+                        }
+                }
+                commentComposer(item, payload: payload)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .overlayPreferenceValue(GitHubNotificationIssueSummaryAnchorKey.self) { bounds in
+            if let composerAnchor = bounds.composer, let dividerAnchor = bounds.divider,
+               let payload = item.notification, payload.subjectType == "Issue", !isComposerExpanded {
+                issueSummaryOverlay(item, payload: payload, composerAnchor: composerAnchor, dividerAnchor: dividerAnchor)
+            }
+        }
+        .clipped()
+    }
+
+    /// 评论卡仍一次性排版；总结由独立浮层按批次渲染，不参与评论流的布局。
+    private func conversationScroll(_ item: ActivityItem) -> some View {
+        ScrollView {
+            // 单次 hydration 最多 100 条，保留 VStack，避免 LazySubviewPlacements 布局风暴。
+            VStack(alignment: .leading, spacing: 12) {
+                if let payload = item.notification {
+                    if settings.githubIssueEventTimelineEnabled,
+                       GitHubNotificationMapper.canReply(subjectType: payload.subjectType, number: payload.subjectNumber) {
+                        GitHubNotificationIssueTimelineConversation(
+                            payload: payload,
+                            title: item.title,
+                            locale: locale,
+                            inbox: inbox,
+                            timelineRevision: inbox.issueTimelineRevision(threadId: payload.threadId),
+                            translation: translationVM,
+                            document: translationDocument(payload),
+                            onCommentsChange: { comments in
+                                if timelineTranslationComments != comments { timelineTranslationComments = comments }
+                            },
+                            issueHTMLURL: item.htmlURL?.absoluteString
+                        )
+                    } else {
+                        conversation(payload, title: item.title, issueHTMLURL: item.htmlURL?.absoluteString, translation: translationVM)
+                    }
+                }
+            }
+            .padding(18)
+        }
+    }
+
+    /// 总结入口浮在输入区分割线上方，不在右侧占用输入宽度。
+    private func commentComposer(_ item: ActivityItem, payload: ActivityNotificationPayload) -> some View {
+        GitHubNotificationCommentComposer(
+            payload: payload,
+            issueTitle: item.title,
+            repo: item.repo,
+            isExpanded: $isComposerExpanded,
+            onAIFailure: presentAIFailure
+        )
+        .frame(maxHeight: isComposerExpanded ? .infinity : nil)
+    }
+
+    /// 切帖重建展示态，原生成会话由 AppDependencies 持有，回来重开可恢复。
+    private func issueSummaryOverlay(
+        _ item: ActivityItem,
+        payload: ActivityNotificationPayload,
+        composerAnchor: Anchor<CGRect>,
+        dividerAnchor: Anchor<CGRect>
+    ) -> some View {
+        var summaryPayload = payload
+        // 关闭 / 重开后的内存态比列表持有的快照更新，总结不能继续声称旧状态。
+        summaryPayload.issueState = inbox.resolvedIssueState(
+            threadId: payload.threadId,
+            persisted: payload.issueState
+        )
+
+        return GitHubNotificationIssueSummaryButton(
+            title: item.title,
+            payload: summaryPayload,
+            timeline: settings.githubIssueEventTimelineEnabled
+                ? inbox.cachedIssueTimeline(threadId: payload.threadId) ?? [] : [],
+            composerAnchor: composerAnchor,
+            dividerAnchor: dividerAnchor
+        )
+        .id("\(dependencies.databaseScopeRevision)|\(payload.threadId)|\(RepoAIInsightService.outputLanguageDescriptor())")
     }
 
     /// populatedDetail 的观察者与 toast 挂载（切条目重置、翻译预热、错误 / 复制 toast）。
@@ -1369,7 +1411,7 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
 
     private var editBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            GitHubNotificationCommentTextEditor(
+            ImagePasteTextEditor(
                 text: $editDraft,
                 placeholder: GitHubNotificationMapper.copy(
                     locale,
@@ -1977,6 +2019,10 @@ private struct GitHubNotificationCommentComposer: View {
                 .opacity(isGenerating ? 0 : 1)
                 .animation(.easeInOut(duration: StarcatAIHaloMetrics.fadeDuration(reduceMotion)), value: isGenerating)
         )
+        // 卡片边界只控制入口的水平对齐；垂直位置单独读取输入区上方的分割线。
+        .anchorPreference(key: GitHubNotificationIssueSummaryAnchorKey.self, value: .bounds) {
+            .init(composer: payload.subjectType == "Issue" && !isExpanded ? $0 : nil)
+        }
         // 光晕铺在 clip 外面的一圈 gutter 里，加大 blur 才不会被圆角裁掉。
         .padding(StarcatAIHaloMetrics.glowBleed)
         .overlay {
@@ -2332,11 +2378,11 @@ private struct GitHubNotificationCommentComposer: View {
     }
 
     private var composerMinHeight: CGFloat {
-        ceil(composerLineHeight * 3 + GitHubNotificationCommentNSTextView.contentInset.height * 2)
+        ceil(composerLineHeight * 3 + ImagePasteTextView.contentInset.height * 2)
     }
 
     private var composerCollapsedMaxHeight: CGFloat {
-        ceil(composerLineHeight * 8 + GitHubNotificationCommentNSTextView.contentInset.height * 2)
+        ceil(composerLineHeight * 8 + ImagePasteTextView.contentInset.height * 2)
     }
 
     private var composerEditorHeight: CGFloat {
@@ -2362,7 +2408,7 @@ private struct GitHubNotificationCommentComposer: View {
                 }
                 .padding(8)
             } else {
-                GitHubNotificationCommentTextEditor(
+                ImagePasteTextEditor(
                     text: $draft,
                     placeholder: GitHubNotificationMapper.copy(
                         locale,
@@ -2842,252 +2888,6 @@ private struct GitHubNotificationCommentComposer: View {
     }
 }
 
-/// 评论输入必须走 NSTextView：SwiftUI `TextEditor` + overlay `Text` 的 placeholder
-/// 和 insertion point 不在同一坐标系。测高对齐 RAG `AICommandTextEditor`：
-/// usedRect + inset，由外层按 3 行下限 / 8 行上限钳制，超出后内部滚动。
-private struct GitHubNotificationCommentTextEditor: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    var isEditable: Bool = true
-    let maximumHeight: CGFloat
-    var shouldBecomeFirstResponder: Bool = false
-    let onHeightChange: (CGFloat) -> Void
-    var onEditingChange: ((Bool) -> Void)? = nil
-    /// 撰写态 first responder 在 NSTextView，Esc 不会回到 SwiftUI，这里回传是否已处理。
-    var onEscape: (() -> Bool)? = nil
-    /// 剪贴板有图时拦截 Cmd+V，先插入占位再异步上传。
-    var onPasteImage: ((GitHubClipboardImage.Payload, String) -> Void)? = nil
-    var onPasteImageError: ((GitHubUserAttachmentError) -> Void)? = nil
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(parent: self)
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = GitHubNotificationCommentScrollView()
-        let textView = GitHubNotificationCommentNSTextView()
-        textView.delegate = context.coordinator
-        textView.string = text
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
-        textView.textColor = .labelColor
-        textView.insertionPointColor = .labelColor
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.textContainerInset = GitHubNotificationCommentNSTextView.contentInset
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.placeholder = placeholder
-        textView.setAccessibilityLabel(placeholder)
-        textView.onPasteImage = context.coordinator.parent.onPasteImage
-        textView.onPasteImageError = context.coordinator.parent.onPasteImageError
-
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.onMeasuredHeight = { [coordinator = context.coordinator] height in
-            coordinator.parent.onHeightChange(height)
-        }
-        scrollView.maximumHeight = maximumHeight
-        // 等容器拿到宽度后再测 usedRect，避免首帧按单行高度跳动。
-        DispatchQueue.main.async {
-            context.coordinator.reportHeight(for: textView)
-        }
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        context.coordinator.parent = self
-        guard let textView = scrollView.documentView as? GitHubNotificationCommentNSTextView else { return }
-        if let commentScroll = scrollView as? GitHubNotificationCommentScrollView {
-            commentScroll.onMeasuredHeight = { [coordinator = context.coordinator] height in
-                coordinator.parent.onHeightChange(height)
-            }
-            commentScroll.maximumHeight = maximumHeight
-        }
-        textView.placeholder = placeholder
-        textView.setAccessibilityLabel(placeholder)
-        textView.onPasteImage = context.coordinator.parent.onPasteImage
-        textView.onPasteImageError = context.coordinator.parent.onPasteImageError
-        textView.isEditable = isEditable
-        textView.isSelectable = true
-        if textView.string != text {
-            textView.string = text
-            textView.needsDisplay = true
-            // 手打字走 textDidChange，glyph 已经按当前宽度折行。
-            // AI 流式写 draft 只进这里，立刻测高会把整段当成一行，框就停在 3 行。
-            scrollView.layoutSubtreeIfNeeded()
-            context.coordinator.reportHeight(for: textView)
-            DispatchQueue.main.async {
-                context.coordinator.reportHeight(for: textView)
-            }
-        }
-        if shouldBecomeFirstResponder {
-            context.coordinator.focusIfNeeded(textView, in: scrollView)
-        } else {
-            context.coordinator.didRequestFocus = false
-        }
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: GitHubNotificationCommentTextEditor
-        var didRequestFocus = false
-
-        init(parent: GitHubNotificationCommentTextEditor) {
-            self.parent = parent
-        }
-
-        func focusIfNeeded(_ textView: NSTextView, in scrollView: NSScrollView) {
-            guard !didRequestFocus else { return }
-            didRequestFocus = true
-            DispatchQueue.main.async {
-                scrollView.window?.makeFirstResponder(textView)
-            }
-        }
-
-        func textDidBeginEditing(_ notification: Notification) {
-            parent.onEditingChange?(true)
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            parent.onEditingChange?(false)
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? GitHubNotificationCommentNSTextView else { return }
-            parent.text = textView.string
-            textView.needsDisplay = true
-            reportHeight(for: textView)
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else { return false }
-            // 输入法候选未上屏时 Esc 应只取消拼音，不能收评论框。
-            if textView.hasMarkedText() { return false }
-            return parent.onEscape?() ?? false
-        }
-
-        func reportHeight(for textView: NSTextView) {
-            guard let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
-            if let scrollView = textView.enclosingScrollView {
-                let width = scrollView.contentSize.width
-                if width <= 1 { return }
-                if abs(textView.frame.width - width) >= 0.5 {
-                    textView.setFrameSize(NSSize(width: width, height: max(textView.frame.height, 1)))
-                }
-            }
-            layoutManager.ensureLayout(for: textContainer)
-            let usedHeight = layoutManager.usedRect(for: textContainer).height
-            let height = min(
-                ceil(usedHeight + GitHubNotificationCommentNSTextView.contentInset.height * 2),
-                parent.maximumHeight
-            )
-            parent.onHeightChange(height)
-        }
-    }
-}
-
-private final class GitHubNotificationCommentScrollView: NSScrollView {
-    /// SwiftUI 侧的高度上限，layout 里测高后回传，让 AI 写入也能把外框撑开。
-    var maximumHeight: CGFloat = 0
-    var onMeasuredHeight: ((CGFloat) -> Void)?
-    private var lastReportedHeight: CGFloat = 0
-
-    /// 空白处也能点进输入：textView 至少铺满当前 SwiftUI 框；内容更高时再长高，交给滚动。
-    override func layout() {
-        super.layout()
-        guard let textView = documentView as? NSTextView else { return }
-        let width = contentSize.width
-        let minHeight = contentSize.height
-        var used = minHeight
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
-            layoutManager.ensureLayout(for: textContainer)
-            used = ceil(
-                layoutManager.usedRect(for: textContainer).height
-                    + textView.textContainerInset.height * 2
-            )
-        }
-        let height = max(minHeight, used)
-        textView.minSize = NSSize(width: 0, height: minHeight)
-        if abs(textView.frame.width - width) >= 0.5 || abs(textView.frame.height - height) >= 0.5 {
-            textView.setFrameSize(NSSize(width: width, height: height))
-        }
-        let reported = maximumHeight > 0 ? min(used, maximumHeight) : used
-        guard abs(reported - lastReportedHeight) >= 0.5 else { return }
-        lastReportedHeight = reported
-        onMeasuredHeight?(reported)
-    }
-}
-
-private final class GitHubNotificationCommentNSTextView: NSTextView {
-    static let contentInset = NSSize(width: 8, height: 8)
-    var placeholder = ""
-    var onPasteImage: ((GitHubClipboardImage.Payload, String) -> Void)?
-    var onPasteImageError: ((GitHubUserAttachmentError) -> Void)?
-
-    /// 有图就走 GitHub 附件上传；不要让 NSTextView 把图嵌成附件（importsGraphics 已关）。
-    override func paste(_ sender: Any?) {
-        guard isEditable else {
-            super.paste(sender)
-            return
-        }
-        let pasteboard = NSPasteboard.general
-        // 只认 PNG / TIFF 字节。网页复制常同时带文字和预览图，不能靠 NSImage(pasteboard:) 抢粘贴。
-        let hasImage = pasteboard.data(forType: .png) != nil
-            || pasteboard.data(forType: .tiff) != nil
-        guard hasImage else {
-            super.paste(sender)
-            return
-        }
-        guard let payload = GitHubClipboardImage.payload(from: pasteboard) else {
-            onPasteImageError?(.imageTooLarge)
-            return
-        }
-        guard let onPasteImage else {
-            super.paste(sender)
-            return
-        }
-        let placeholder = GitHubUserAttachment.uploadingPlaceholder(
-            fileName: payload.fileName,
-            token: UUID().uuidString
-        )
-        let inserted = GitHubUserAttachment.insertBlock(
-            placeholder,
-            into: string,
-            selectedUTF16: selectedRange()
-        )
-        let fullRange = NSRange(location: 0, length: (string as NSString).length)
-        if shouldChangeText(in: fullRange, replacementString: inserted.text) {
-            string = inserted.text
-            setSelectedRange(inserted.selectedUTF16)
-            didChangeText()
-        }
-        onPasteImage(payload, placeholder)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard string.isEmpty, !placeholder.isEmpty else { return }
-        placeholder.draw(
-            at: NSPoint(x: textContainerInset.width, y: textContainerInset.height),
-            withAttributes: [
-                .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
-                .foregroundColor: NSColor.placeholderTextColor
-            ]
-        )
-    }
-}
-
 /// 通知正文：GitHub 评论里的 HTML `<img>` 先收成 Markdown 图片，再用 Kingfisher 拉远程图。
 /// `#20` 在 `prepareMarkdown` 之后再 autolink，点了走系统浏览器。
 private struct GitHubNotificationMarkdown: View {
@@ -3232,8 +3032,8 @@ private struct GitHubNotificationRemoteImage: View {
     }
 }
 
-/// 与 README 翻译同一套：缺 provider / API Key / 无效 URL / 鉴权失败，toast 给「前往设置」。
-private func notificationAIErrorNeedsSettings(_ error: Error) -> Bool {
+/// 通知翻译、评论和 Issue 总结共用：配置 / 鉴权问题提供「前往设置」，暂时性故障仅重试。
+func notificationAIErrorNeedsSettings(_ error: Error) -> Bool {
     if let insight = error as? RepoAIInsightError {
         switch insight {
         case .missingProvider, .missingAPIKey:

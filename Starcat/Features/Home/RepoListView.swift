@@ -534,8 +534,6 @@ struct RepoListView: View {
     @State private var codebaseMemorySheetItem: CodeGraphSheetItem?
     /// 按文件勾选下载。与 CodeFlow 一样挂在页面根节点，避免 toolbar 重建把 sheet 闪回来。
     @State private var fileBrowserSheetItem: RepoFileBrowserSheetItem?
-    /// CodeFlow 为 Pro 功能；免费用户点入口时弹出统一付费墙，不打开执行面板。
-    @State private var paywallContext: ProPaywallContext?
     /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要结构化解释原因。
     @State private var gitHubStarListOAuthRestrictedRepo: Repo?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
@@ -610,9 +608,6 @@ struct RepoListView: View {
         .sheet(item: $gitHubStarListOAuthRestrictedRepo) { repo in
             GitHubStarListOAuthRestrictionSheet(repo: repo)
                 .appLocaleEnvironment()
-        }
-        .sheet(item: $paywallContext) { context in
-            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .sheet(item: $codeFlowSheetItem) { item in
             CodeFlowPanel(repo: item.repo)
@@ -1516,7 +1511,8 @@ struct RepoListView: View {
                 api: dependencies.weeklyAPI,
                 selectionService: dependencies.weeklySelectionService,
                 languageStore: dependencies.weeklyLanguageStore,
-                bulkRepository: dependencies.weeklyBulkRepository
+                bulkRepository: dependencies.weeklyBulkRepository,
+                hiddenSources: settings.exploreCatalogPreferences.hiddenWeeklySources
             )
         }
     }
@@ -2892,30 +2888,20 @@ struct RepoListView: View {
         stat.language.isEmpty ? "questionmark.folder" : "chevron.left.forwardslash.chevron.right"
     }
 
-    /// CodeFlow 为 Pro 能力：入口统一走权益门控，免费用户只看到付费墙。
+    /// 本地代码图谱免费开放；稳定的页面根节点仍负责承载执行面板。
     private func openCodeFlow(for repo: Repo) {
-        do {
-            try dependencies.entitlementGate.requirePro(.codeFlow)
-            AppLog.ui.info("Open CodeFlow sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
-            codeFlowSheetItem = CodeGraphSheetItem(repo: repo)
-        } catch {
-            paywallContext = ProPaywallContext(feature: .codeFlow, message: error.localizedDescription)
-        }
+        AppLog.ui.info("Open CodeFlow sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+        codeFlowSheetItem = CodeGraphSheetItem(repo: repo)
     }
 
-    /// CodebaseMemory 为 Pro 能力：与 CodeFlow 同款门控。
+    /// CodebaseMemory 与 CodeFlow 一样免费，运行环境检查仍由执行管线负责。
     private func openCodebaseMemory(for repo: Repo) {
-        do {
-            try dependencies.entitlementGate.requirePro(.codebaseMemory)
-            AppLog.ui.info("Open CodebaseMemory sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
-            codebaseMemorySheetItem = CodeGraphSheetItem(repo: repo)
-        } catch {
-            paywallContext = ProPaywallContext(feature: .codebaseMemory, message: error.localizedDescription)
-        }
+        AppLog.ui.info("Open CodebaseMemory sheet repo=\(repo.fullName, privacy: .public) id=\(repo.id, privacy: .public)")
+        codebaseMemorySheetItem = CodeGraphSheetItem(repo: repo)
     }
 
     /// Chrome Companion 的 action route 运行在本机 HTTP 服务中; UI 呈现仍由页面根视图负责。
-    /// 这里复用 toolbar 的门控与 sheet 承载逻辑, 避免多出一套 CodeFlow/Codebase 打开路径。
+    /// 这里复用 toolbar 的 sheet 承载逻辑, 避免多出一套 CodeFlow/Codebase 打开路径。
     private func handleCompanionActionRequest(_ request: CompanionActionDispatcher.Request?) {
         guard let request else { return }
         NSApp.activate(ignoringOtherApps: true)

@@ -228,6 +228,14 @@ enum TypeSafeDecisionAPI: String, Equatable, Sendable {
 /// 并发安全:actor 隔离;无共享可变状态(URLSession / decoder 均为不可变引用),
 /// 真正的并发控制由上层(分组会话的 5 Worker、批量队列)负责。
 actor TypeSafeClient {
+    /// 列表可能只包含别名；固定版本由设置层补齐，不把展示规则混入传输层。
+    private struct ModelsResponse: Decodable {
+        struct Model: Decodable {
+            let name: String
+        }
+        let models: [Model]
+    }
+
     private static let timeout: TimeInterval = 20
     /// 两次重试 = 最多三次传输；上层业务队列不会再对 TypeSafe 错误自动重试。
     private static let maxRetries = 2
@@ -313,6 +321,24 @@ actor TypeSafeClient {
             api: api,
             operation: operation
         )
+    }
+
+    /// 获取原生模型列表，不执行推理、保存凭据或改变连接验证状态。
+    func listModels(apiKey: String) async throws -> [String] {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw TypeSafeClientError.missingAPIKey }
+        let url = AppEndpoints.appendPath(AppEndpoints.TypeSafe.Paths.models, to: typeSafeBaseURL)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
+        let data = try await sendData(request)
+        do {
+            return try decoder.decode(ModelsResponse.self, from: data).models.map(\.name)
+        } catch {
+            throw TypeSafeClientError.decoding(error.localizedDescription)
+        }
     }
 
     // MARK: - 传输与重试
@@ -435,6 +461,16 @@ actor TypeSafeClient {
     }
 
     private func sendOnce(_ request: URLRequest) async throws -> TypeSafeSystemOneResponse {
+        let data = try await sendData(request)
+        do {
+            return try decoder.decode(TypeSafeSystemOneResponse.self, from: data)
+        } catch {
+            throw TypeSafeClientError.decoding(error.localizedDescription)
+        }
+    }
+
+    /// 两类端点共享鉴权与 HTTP 错误映射，模型列表不进入推理指标或退避队列。
+    private func sendData(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -452,11 +488,7 @@ actor TypeSafeClient {
         }
         switch http.statusCode {
         case 200..<300:
-            do {
-                return try decoder.decode(TypeSafeSystemOneResponse.self, from: data)
-            } catch {
-                throw TypeSafeClientError.decoding(error.localizedDescription)
-            }
+            return data
         case 401:
             throw TypeSafeClientError.unauthorized
         case 422:

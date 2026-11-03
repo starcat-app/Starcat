@@ -1428,12 +1428,7 @@ private struct KnowledgeRAGBrowserView: View {
             ),
             onAction: { presentedError in
                 if presentedError.action == .openAISettings {
-                    if presentedError.kind == .embeddingConfiguration
-                        || presentedError.kind == .embeddingRequest {
-                        settingsNavigation("ai.embedding")
-                    } else {
-                        AppDelegate.openSettingsWindow(target: "ai")
-                    }
+                    settingsNavigation(presentedError.settingsNavigationTarget)
                 }
                 viewModel.dismissError()
             }

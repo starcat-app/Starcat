@@ -50,12 +50,6 @@ struct HomeView: View {
 
     @Environment(AuthSession.self) private var authSession
     @Environment(SyncManager.self) private var syncManager
-    /// 保存应用当前的书写方向，供三栏内部内容继续渲染 Arabic RTL。
-    ///
-    /// 主窗口的 `NavigationSplitView` 外壳会固定为 LTR，避免 macOS 在 RTL 下镜像
-    /// 三栏后错误分配中栏宽度；各栏必须重新注入这里捕获的方向，不能连 Arabic
-    /// 文本和控件一起强制成 LTR。
-    @Environment(\.layoutDirection) private var appContentLayoutDirection
     @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
     /// 2026-06-15:搜索浮层弹出/收起的 .snappy 动画在关动画时跳过。
@@ -129,6 +123,8 @@ struct HomeView: View {
     @State private var preparedDetailCoachMarkRepoID: Repo.ID?
     /// 系统入口发来的重置动作必须先二次确认，避免用户误清语言 / 排序 / 筛选偏好。
     @State private var showsResetListPreferencesConfirmation: Bool = false
+    /// 系统入口确认期间若账号切换，必须废弃旧确认，不能重置另一个账号。
+    @State private var listPreferencesResetLogin: String?
     /// 重置成功只给轻量 toast，不写诊断日志，也不影响用户业务数据。
     @State private var listPreferenceResetToast: String?
     /// Universal Link 定位失败时保留可读错误。它只描述本次打开动作，不写入仓库数据。
@@ -158,6 +154,11 @@ struct HomeView: View {
 
     /// Explore 页二级模块。内部仍挂在 SidebarRootPage.trending 下，用户可见文案已升级为「探索」。
     @State private var selectedExploreMode: ExploreMode = .discover
+
+    /// 每日热点独立于仓库 ExploreMode，避免把仓库筛选应用到文章目录。
+    @State private var showsDailyRadarPreview = false
+    /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
+    @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
 
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
@@ -211,6 +212,8 @@ struct HomeView: View {
     @State private var selectedInsightsTopic: InsightsTopic = .overview
     @State private var selectedInsightsScope: InsightsScope = .starred
     @State private var selectedInsightsSelection: InsightsSelection = .overviewSummary
+    /// 仅协调洞察两栏顶栏的自然高度；不参与分栏宽度、选择或数据加载。
+    @State private var insightsHeaderHeight = InsightsColumnChrome.minimumHeaderHeight
     /// 中栏和详情栏共用同一个快照状态，避免相同范围重复查询或短暂显示不同数字。
     @State private var myInsightsViewModel: MyInsightsViewModel
 
@@ -317,6 +320,12 @@ struct HomeView: View {
                 WorkspaceSceneWindowReader(reference: batchAIParentWindow, minimumContentSize: nil)
                     .frame(width: 0, height: 0)
             }
+            .onPreferenceChange(InsightsColumnHeaderHeightPreferenceKey.self) { contentHeight in
+                let height = InsightsColumnChrome.headerHeight(fitting: contentHeight)
+                if insightsHeaderHeight != height {
+                    insightsHeaderHeight = height
+                }
+            }
     }
 
     private var baseNavigation: AnyView {
@@ -326,19 +335,11 @@ struct HomeView: View {
         AnyView(
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 sidebarColumn
-                    .environment(\.layoutDirection, appContentLayoutDirection)
             } content: {
-                contentColumn
-                    .environment(\.layoutDirection, appContentLayoutDirection)
+                previewAwareContentColumn
             } detail: {
-                detailColumn
-                    .environment(\.layoutDirection, appContentLayoutDirection)
+                previewAwareDetailColumn
             }
-            // macOS 15 的 NavigationSplitView 在 RTL 下会镜像三栏，但仍按 LTR 规则
-            // 协商 content 列宽：中栏宿主可能拿到超过 max width 的空间，而 RepoListView
-            // 仍被限制在 520pt，最终在列表旁留下整块空白。三栏是稳定的桌面工作区，
-            // 因此只固定结构外壳为 LTR；栏内 Arabic 内容已在上方恢复 RTL。
-            .environment(\.layoutDirection, .leftToRight)
             .environment(viewModel)
             .environment(readmeVM)
             .environment(translationVM)
@@ -346,7 +347,7 @@ struct HomeView: View {
     }
 
     private var navigationWithOverlays: AnyView {
-        AnyView(baseNavigation
+        AnyView(navigationWithDailyRadarPreview
         // 调试用：右上角浮动 W×H 胶囊，仅 DEBUG 包 + 设了 launch arg `-DebugLayoutOverlay YES` 时显示。
         // 详见 `Shared/Utilities/DebugFlags.swift` 的类型文档（含 Xcode Scheme / LLDB / defaults 三种切换方式）。
         .overlay(alignment: .topTrailing) {
@@ -355,7 +356,9 @@ struct HomeView: View {
             }
         }
         .overlayPreferenceValue(GettingStartedAnchorPreferenceKey.self) { anchors in
-            gettingStartedOverlay(anchors: anchors)
+            if !isDailyRadarPreviewPresented {
+                gettingStartedOverlay(anchors: anchors)
+            }
         }
         .onChange(of: searchCenterViewModel.isPresented) { _, isPresented in
             if isPresented {
@@ -365,6 +368,64 @@ struct HomeView: View {
                 SearchCenterWindowController.dismiss()
             }
         }
+        )
+    }
+
+    /// 独立内容路由保持原仓库选择，退出后继续使用原有分栏状态。
+    private var isDailyRadarPreviewPresented: Bool {
+        showsDailyRadarPreview
+    }
+
+    private var dailyRadarPreviewPresentation: Binding<Bool> {
+        $showsDailyRadarPreview
+    }
+
+    @ViewBuilder
+    private var previewAwareContentColumn: some View {
+        contentColumn
+            .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
+                [.content: $0]
+            }
+    }
+
+    @ViewBuilder
+    private var previewAwareDetailColumn: some View {
+        detailColumn
+            .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
+                [.detail: $0]
+            }
+    }
+
+    /// 两栏跨越不同 NavigationSplitView 宿主，必须在共同父层解析锚点后合并。
+    /// 锚点只决定中右区域；窗口内的独立宿主将面板延伸至顶部并盖住该区域的 toolbar，
+    /// 不改整窗 chrome / safe area，也不使用固定侧栏宽度或 toolbar 高度。
+    private var navigationWithDailyRadarPreview: AnyView {
+        AnyView(baseNavigation
+            .overlayPreferenceValue(DailyRadarPreviewColumnAnchors.self) { anchors in
+                GeometryReader { proxy in
+                    if let content = anchors[.content],
+                       let detail = anchors[.detail] {
+                        let bounds = proxy[content].union(proxy[detail])
+                        DailyRadarWindowOverlay(
+                            isPresented: showsDailyRadarPreview,
+                            reduceMotion: reduceMotion
+                        ) {
+                            DailyRadarPreviewWorkspace(
+                                readmeTranslationService: dependencies.readmeTranslationService,
+                                model: dailyRadarModel,
+                                onExit: { showsDailyRadarPreview = false }
+                            )
+                            // overlay 不继承 baseNavigation 子树的环境，显式 Star 操作需要此宿主。
+                            .environment(viewModel)
+                        }
+                        .frame(width: bounds.width, height: bounds.height)
+                        .position(x: bounds.midX, y: bounds.midY)
+                    }
+                }
+            }
+            .onChange(of: selectedSidebarPage) { _, _ in
+                showsDailyRadarPreview = false
+            }
         )
     }
 
@@ -503,8 +564,29 @@ struct HomeView: View {
         }
     }
 
+    /// 单独承载重置确认，避免继续增加主窗口超长 modifier 链的类型推导负担。
+    private var navigationWithListPreferencesReset: some View {
+        navigationWithOverlays
+            .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
+                guard let login = currentListPreferenceLogin else { return }
+                listPreferencesResetLogin = login
+                showsResetListPreferencesConfirmation = true
+            }
+            .onChange(of: currentListPreferenceLogin) { _, _ in
+                showsResetListPreferencesConfirmation = false
+                listPreferencesResetLogin = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .starcatListPreferencesDidReset)) { notification in
+                handleListPreferencesDidReset(notification)
+            }
+            .sheet(isPresented: $showsResetListPreferencesConfirmation) {
+                ListPreferencesResetSheet(onConfirm: resetListPreferencesForCurrentAccount)
+                    .appLocaleEnvironment()
+            }
+    }
+
     private var navigationWithSheets: AnyView {
-        AnyView(navigationWithOverlays
+        AnyView(navigationWithListPreferencesReset
         .sheet(isPresented: $showTagManagement, onDismiss: handleTagManagementDismissed) {
             TagManagementView(
                 viewModel: tagMgmtVM,
@@ -758,10 +840,6 @@ struct HomeView: View {
             gettingStartedStore.reset()
             syncGettingStartedProgressFromCurrentState()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
-            guard authSession.state.isAuthenticated else { return }
-            showsResetListPreferencesConfirmation = true
-        }
         .onReceive(NotificationCenter.default.publisher(for: .gettingStartedDidOrganizeRepo)) { _ in
             gettingStartedStore.markCompleted(.organizeRepo)
         }
@@ -820,9 +898,17 @@ struct HomeView: View {
             handleActivityCategoryChange(newCategory)
         }
         .onChange(of: selectedExploreMode) { _, mode in
+            reconcileExploreCatalogPreferences()
             commandRouter.activate(.list)
             persistListPreference(mode.rawValue, key: ListPreferenceKey.exploreMode)
             restoreExploreLanguagePreference(for: mode)
+        }
+        .onChange(of: settings.exploreCatalogPreferences, initial: true) { _, _ in
+            reconcileExploreCatalogPreferences()
+            reconcileDailyRadarPreferences()
+        }
+        .onChange(of: dependencies.linuxDoStore.selectedSource) { _, _ in
+            reconcileExploreCatalogPreferences()
         }
         .onChange(of: selectedTrendingLanguage) { _, language in
             persistListPreference(language.rawValue, key: ListPreferenceKey.trendingLanguage)
@@ -846,14 +932,6 @@ struct HomeView: View {
             Button("general.cancel", role: .cancel) {}
         } message: {
             Text(String.l10n(chatModelRequiredWorkspace.chatModelRequiredMessageKey))
-        }
-        .alert("settings.listPreferences.reset.title", isPresented: $showsResetListPreferencesConfirmation) {
-            Button("general.cancel", role: .cancel) {}
-            Button("settings.listPreferences.reset.confirm", role: .destructive) {
-                resetListPreferencesForCurrentAccount()
-            }
-        } message: {
-            Text("settings.listPreferences.reset.message")
         }
         .alert(
             "repo.share.open.error.title",
@@ -1276,7 +1354,9 @@ struct HomeView: View {
             // 2026-06-11 D-29：weekly 分类没有 selectedActivityItem，单独走 weekly project 语言色派生路径,
             // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
             // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
-            currentActivityTintColor: derivedActivityTintColor
+            currentActivityTintColor: derivedActivityTintColor,
+            dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
+            dailyRadarModel: dailyRadarModel
         )
         .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
     }
@@ -1284,8 +1364,13 @@ struct HomeView: View {
     @ViewBuilder
     private var contentColumn: some View {
         ZStack(alignment: .topLeading) {
+            // 保留 toolbar contributions 与原内容，避免标题栏收缩，也为面板淡入淡出
+            // 提供视觉承接；覆盖期间隔离鼠标、快捷键和辅助功能焦点。
             contentColumnBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .disabled(isDailyRadarPreviewPresented)
+                .allowsHitTesting(!isDailyRadarPreviewPresented)
+                .accessibilityHidden(isDailyRadarPreviewPresented)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
         .navigationSplitViewColumnWidth(
@@ -1324,7 +1409,8 @@ struct HomeView: View {
             InsightsListView(
                 topic: $selectedInsightsTopic,
                 selection: $selectedInsightsSelection,
-                snapshot: myInsightsViewModel.snapshot
+                snapshot: myInsightsViewModel.snapshot,
+                headerHeight: insightsHeaderHeight
             )
             .transition(insightsBoundaryTransition)
         } else {
@@ -1391,6 +1477,9 @@ struct HomeView: View {
         ZStack(alignment: .topLeading) {
             detailColumnBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .disabled(isDailyRadarPreviewPresented)
+                .allowsHitTesting(!isDailyRadarPreviewPresented)
+                .accessibilityHidden(isDailyRadarPreviewPresented)
         }
         .modifier(RepoShareHost())
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
@@ -1403,7 +1492,8 @@ struct HomeView: View {
                 topic: $selectedInsightsTopic,
                 scope: $selectedInsightsScope,
                 selection: $selectedInsightsSelection,
-                viewModel: myInsightsViewModel
+                viewModel: myInsightsViewModel,
+                headerHeight: insightsHeaderHeight
             )
         } else if selectedSidebarPage == .activity, selectedActivityCategory == .undoStar {
             RepoDetailView(selectedTrendingRepo: nil)
@@ -1913,9 +2003,11 @@ struct HomeView: View {
             await dependencies.exploreCatalogStore.reload()
         }
         Task {
-            await dependencies.weeklySelectionService.restoreCachedTotal(
-                from: dependencies.weeklyBulkRepository
-            )
+            let hidden = settings.exploreCatalogPreferences.hiddenWeeklySources
+            if let total = await dependencies.weeklyBulkRepository.cachedTotal(excludingSources: hidden),
+               hidden == settings.exploreCatalogPreferences.hiddenWeeklySources {
+                dependencies.weeklySelectionService.applyTotal(total)
+            }
         }
     }
 
@@ -2618,7 +2710,40 @@ struct HomeView: View {
         } else {
             selectedExploreMode = .discover
         }
+        reconcileExploreCatalogPreferences()
         restoreExploreLanguagePreference(for: selectedExploreMode, login: login)
+    }
+
+    /// 隐藏当前入口或恢复历史导航时，立即回退到第一个可见分组；Linux.do 虽复用
+    /// discover 内部路由，但其显隐必须独立判断，不能跟着“发现”一起被关闭。
+    private func reconcileExploreCatalogPreferences() {
+        let preferences = settings.exploreCatalogPreferences
+        let groupID = selectedExploreMode == .discover && dependencies.linuxDoStore.selectedSource == .linuxDo
+            ? "linuxDo" : selectedExploreMode.rawValue
+        if !preferences.isGroupEnabled(groupID), let first = preferences.visibleGroupIDs.first {
+            dependencies.linuxDoStore.selectedSource = first == "linuxDo" ? .linuxDo : .catalog
+            selectedExploreMode = ExploreMode(rawValue: first) ?? .discover
+        }
+        if let topic = selectedDiscoveryTopic, preferences.hiddenDiscoverTopics.contains(topic) {
+            selectedDiscoveryTopic = nil
+        }
+        if let platform = selectedDiscoveryPlatform, preferences.hiddenDiscoverPlatforms.contains(platform) {
+            selectedDiscoveryPlatform = nil
+        }
+    }
+
+    /// 一级入口被隐藏时退出文章覆盖层；当前二级分类被隐藏时回到“全部主题”。
+    private func reconcileDailyRadarPreferences() {
+        let preferences = settings.exploreCatalogPreferences
+        guard preferences.isGroupEnabled("dailyRadar") else {
+            if showsDailyRadarPreview { showsDailyRadarPreview = false }
+            return
+        }
+        if let category = dailyRadarModel.category,
+           !preferences.visibleDailyRadarCategories(dailyRadarModel.availableCategories)
+            .contains(where: { $0.id == category }) {
+            dailyRadarModel.selectCategory(nil)
+        }
     }
 
     private func restoreExploreLanguagePreference(for mode: ExploreMode, login explicitLogin: String? = nil) {
@@ -2639,17 +2764,26 @@ struct HomeView: View {
         }
     }
 
-    private func resetListPreferencesForCurrentAccount() {
-        guard let login = currentListPreferenceLogin else { return }
-
-        settings.resetListPreferences(login: login)
+    /// 设置窗口已完成持久化，这里只刷新当前账号列表，不能再次弹窗或执行重置。
+    private func handleListPreferencesDidReset(_ notification: Notification) {
+        guard let source = notification.object as? AppSettings, source === settings,
+              let login = notification.userInfo?["login"] as? String else { return }
+        let currentLogin = currentListPreferenceLogin?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard login == currentLogin else { return }
         resetVisibleListPreferencesToDefault()
-        listPreferenceResetToast = String.l10n("settings.listPreferences.reset.toast")
-        dependencies.telemetryManager.track(.listPreferencesReset)
-
         Task { @MainActor in
             await viewModel.reloadItems(forceRefresh: true)
         }
+    }
+
+    private func resetListPreferencesForCurrentAccount() {
+        showsResetListPreferencesConfirmation = false
+        guard let login = listPreferencesResetLogin, login == currentListPreferenceLogin,
+              settings.resetListViewPreferences(login: login) else { return }
+        listPreferencesResetLogin = nil
+        listPreferenceResetToast = String.l10n("settings.listPreferences.reset.toast")
+        dependencies.telemetryManager.track(.listPreferencesReset)
     }
 
     private func resetVisibleListPreferencesToDefault() {
@@ -2662,21 +2796,6 @@ struct HomeView: View {
 
         selectedActivityCategory = .notification
         savedActivityCategory = .notification
-
-        settings.repoSortOption = .starredAtDesc
-        settings.hideArchived = false
-        settings.hideForks = false
-        settings.statusFilter = nil
-        settings.starFilter = .all
-        settings.libraryFilter = .all
-        settings.repoLanguageFilter = .all
-        settings.globalFilterLanguages = []
-        settings.globalFilterLicenses = []
-        settings.wikiAvailabilityFilter = .unknown
-        settings.healthAvailabilityFilter = .unknown
-        settings.openSSFAvailabilityFilter = .unknown
-        settings.lastManageSelectionRaw = ""
-        settings.lastActivityCategoryRaw = ""
 
         savedManageSelection = .allStars
         if selectedSidebarPage == .manage {

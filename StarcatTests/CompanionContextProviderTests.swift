@@ -109,8 +109,9 @@ struct CompanionContextProviderTests {
         #expect(context.health == nil)
         #expect(context.openssf == nil)
         #expect(context.actions.openInStarcat == false)
-        #expect(context.actions.codeflow == false)
-        #expect(context.actions.codebase == false)
+        #expect(context.actions.generateSummary == false)
+        #expect(context.actions.codeflow == true)
+        #expect(context.actions.codebase == true)
     }
 
     @Test("starred repo returns editable private note")

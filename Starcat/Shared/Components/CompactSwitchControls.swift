@@ -4,7 +4,7 @@
 //
 //  macOS 26 系统 Switch 在固定 AppKit hosting sheet 中会出现 thumb 消失或拉伸。
 //  批量整理、GitHub Lists AI 分组预检等紧凑面板统一用本组件替代 `.toggleStyle(.switch)`：
-//  - `CompactSwitchIndicator`：44×24 稳定轨道 + thumb 位移动画
+//  - `CompactSwitchIndicator`：与设置页开关一致的 36×16 轨道 + 胶囊形 thumb 位移动画
 //  - `CompactSettingsToggleRow`：Settings 行范式（左 label + Spacer + 右开关，整行可点）
 //
 
@@ -23,17 +23,19 @@ struct CompactSwitchIndicator: View {
             Capsule()
                 .fill(trackFill)
 
-            Circle()
+            // 只收紧可见控件，保留外层整行的点击区；胶囊滑块对齐设置页的原生外观。
+            Capsule()
                 .fill(.white)
                 .overlay {
-                    Circle()
+                    Capsule()
                         .stroke(.black.opacity(0.08), lineWidth: 0.5)
                 }
+                .frame(width: 20, height: 12)
                 .shadow(color: .black.opacity(isEnabled ? 0.18 : 0.08), radius: 1, y: 1)
-                .padding(2)
-                .offset(x: isOn ? 20 : 0)
+                .padding(.leading, 2)
+                .offset(x: isOn ? 12 : 0)
         }
-        .frame(width: 44, height: 24)
+        .frame(width: 36, height: 16)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isOn)
         .accessibilityHidden(true)
     }

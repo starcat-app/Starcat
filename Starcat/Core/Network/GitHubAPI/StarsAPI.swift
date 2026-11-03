@@ -35,7 +35,9 @@ extension GitHubAPIClient {
             path: AppEndpoints.GitHubREST.Paths.userStarred,
             queryItems: query,
             accept: "application/vnd.github.star+json",
-            ifNoneMatch: ifNoneMatch
+            ifNoneMatch: ifNoneMatch,
+            // Star 列表已有显式 ETag；URLCache 中操作前的旧 200 响应不能把已取消的 Star 恢复。
+            cachePolicy: .reloadIgnoringLocalCacheData
         )
     }
 

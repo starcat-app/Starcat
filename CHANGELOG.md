@@ -6,24 +6,64 @@ Release notes for the Mac App Store edition of Starcat.
 
 ### New
 
+- Issue AI summaries: Open a glass panel from the floating button above the input area's divider, drag its top edge to adjust height, and read a streaming Markdown summary; generation continues when hidden or you switch Issues, and reopening restores progress or results.
+- Free source tools: Repository context packing, CodeFlow, and CodebaseMemory code graphs no longer require Pro, with existing repository and runtime limits retained.
 - Linux.do discovery: Browse verified open-source projects promoted on Linux.do, see provenance badges across repository lists, and open original discussions from repository details.
 - Quick search across lists: Expand the middle-column search field to quickly find repositories and activity items across Manage, Explore, Trending, Weekly, Awesome, Linux.do, notifications, and Undo Star.
 - Repository license filters: Select multiple licenses in the main window and combine them with other filters, with consistent pagination, project counts, and cached results.
+- Unstar data cleanup: Before unstarring, see which notes, tags, AI content, and analysis caches will be deleted; repositories in your library can optionally be removed from the knowledge base, with a clear warning that deletion cannot be undone.
+- Daily Radar: A new reading workspace for daily reports, browsable by topic categories with edition calendar navigation, per-category badges, and source branding; reports follow the app language. Each report gets a locally generated abstract cover, unique per edition; loading and category switches show skeleton placeholders, with seamless swaps when cached.
+- Summary replay: Successful issue summaries are saved locally, so reopening the same issue after relaunch replays the summary and shows when it was generated.
+- Explore & Weekly source filters: Filter explore categories and Weekly by source preference, remembered across restarts.
+- Issues workspace: The detail-page entry now opens a full workspace with a list-detail layout, search, state filters, and paginated scrolling, with precise non-PR counts; the detail side reuses the activity conversation (comment timeline, AI summary, translation), and new-issue creation supports templates, AI drafting, image pasting, and per-repository drafts.
 
 ### Improvements
 
-- Business icons: Insights icons now match the main window, while similar-repository recommendations, embedding models, and CodeFlow are easier to distinguish.
+- Similar-repository recommendations: Detail-page suggestions now use Starcat's own recommendation model on both distribution channels, without third-party recommendation services.
+- Provider connection checks: Check the current configuration in the background when opening model settings or switching providers, reusing results and in-flight requests for 30 seconds; failures preserve your configuration, and manual tests can run immediately.
+- GitHub attachment caching: Saves loaded README images and GIFs locally for faster repeat viewing, with storage included in image-cache statistics and cleanup.
+- README image loading: Shows a theme-aware placeholder while large images and GIFs load, then displays the image when ready to avoid long blank areas.
+- Settings redesign: Reorganizes configuration groups and navigation, unifies page headers, separators, and action layouts, removes repetitive descriptions, and brings account, privacy, and Pro benefits into a clearer structure.
+- Insights header layout: Reduces empty space above both columns and keeps card heights aligned with their content.
+- Business icons: Unified icons across the sidebar, Settings, repository details, and the AI/RAG workspaces, with distinct marks for forked origin and fork counts; Insights icons now match the main window, while similar-repository recommendations, embedding models, and CodeFlow are easier to distinguish.
 - Background task overview: Expand the status panel's task list to see each task's state and available workspace links or stop controls; idle cards are disabled and no longer open tag organization.
 - Background organization entry: After closing repository grouping or tag organization, the middle column keeps showing the current phase and processed counts, with direct access to the task or results.
-- Localized organization status: Task states and actions cover all 18 interface languages, stay on one line in narrow columns, and show their full text on hover.
+- Background organization banner: Uses consistent icon actions in wide and narrow middle columns, keeps status on one line, and shows full action names on hover.
+- AI organization workspaces: Uses more compact windows for repository grouping and tag organization, lets long content scroll within each panel, and restores session options to their values when the window opened.
+- Localized organization status: Task states and actions cover all 17 interface languages, stay on one line in narrow columns, and show their full text on hover.
 - License filter chips: Match sidebar tags with wrapping, content-sized height, and bounded scrolling; colors distinguish license obligation types, with full names and category notes on hover.
+- Narrow middle column: Hides auxiliary text such as the last sync time when space runs out, keeping search, filter, and refresh controls visible while the full text remains available on hover.
+- Summary panel polish: The launcher button highlights existing summaries in blue, the panel closes with Esc, and body scrolling no longer collides with the scrollbar.
+- File download window: The toolbar uses the repository owner's avatar with type-specific file icons.
+- Awesome source manager: The canvas keeps a fixed size, so operations no longer shift the layout.
+- Awesome sort menu: Shares the unified menu styling with other middle-column lists.
+- License card: License badges in repository details and search now share one obligation-colored card listing rights and duties, with the official reference a tap away.
+- Language support: Removes the Arabic interface language; the other 17 languages remain fully localized.
+- Daily Radar categories: Category names in the sidebar, reader, and settings follow the interface language, with per-category content toggles in Settings.
 
 ### Fixes
 
+- Embedding error guidance: Connection, configuration, authentication, and rate-limit issues no longer offer email feedback; connection failures show numbered recovery steps and open embedding settings directly, while request processing failures retain feedback.
+- Activity timeline: Reduces repeated processing of loaded comments while scrolling the middle column, improving responsiveness with longer notification lists.
+- Unstarred repositories: Repositories no longer reappear in lists because of stale sync results or cached data after you unstar them.
+- Unstar confirmation: The single-card dialog uses a narrower width to avoid excessive empty space.
 - Stars sync: Prevents background grouping work from keeping refresh active; pending organization authorization writes are retried only after a manual refresh.
+- Unstarring deleted repositories: Unstarring no longer stops on a 404 when the repository has been removed from GitHub, and local state updates as expected.
 - AI organization tabs: Repository grouping and tag organization tabs keep a stable size as counts change, without shifting when switching states.
 - License filter popover: Keeps its size and options stable during repeated selections and clearing, while results and counts continue to update.
 - Middle-column menus: Sort, trending period, and notification filters now show a single dropdown arrow.
+- Weekly filter controls: The filter and sort dropdowns now share the same size instead of mismatched heights.
+- Self-hosted service connections: Saves addresses and keys only after a successful manual test; automatic checks only verify connections, and failures preserve the saved configuration.
+- External index connections: Saves Meilisearch and Qdrant connection drafts only after successful tests, preserving the saved connection if key storage fails.
+- External search credentials: After you edit a key or leave Settings, stale test results no longer overwrite saved credentials or enablement.
+- Knowledge Base indexing failures: Ends the building state and pauses automatic retries for the same embedding configuration after a failed request, keeping text search available until a manual retry or configuration change.
+- Stopping Knowledge Base indexing: Ignores late embedding responses after stopping and releases in-progress chunks so indexing can resume later.
+- README images: Fixes missing images and GIFs in some light/dark theme picture sources.
+- README attachment images: Fixes images disappearing after temporary links expire, with existing cached pages repaired automatically.
+- AI reply panel: The AI reply panel no longer leaves a gap between its bottom edge and the status bar.
+- Awesome filter bar: The filter bar is realigned to the left-search, right-actions layout.
+- Label events: Fixed duplicated wording such as "added the label … label" in timeline text across 10 languages.
+- Explore preferences: Category and weekly source preferences set before upgrading are now preserved automatically.
 
 ## 1.9.0
 

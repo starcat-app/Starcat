@@ -73,7 +73,7 @@ struct UserFacingError: Equatable, Sendable {
             return UserFacingError(
                 title: String.l10n("error.user.aiProvider.title"),
                 message: localAI.localizedDescription,
-                recovery: String.l10n("error.user.aiProvider.recovery"),
+                recovery: String.l10n("error.user.aiProvider.recovery.modelsSettings"),
                 diagnosticSummary: DiagnosticEvent.redact(String(describing: localAI)),
                 shouldRecordDiagnostic: false
             )
@@ -264,7 +264,7 @@ struct UserFacingError: Equatable, Sendable {
             return UserFacingError(
                 title: String.l10n("error.user.aiProvider.title"),
                 message: error.localizedDescription,
-                recovery: String.l10n("error.user.aiProvider.recovery"),
+                recovery: String.l10n("error.user.aiProvider.recovery.modelsSettings"),
                 diagnosticSummary: DiagnosticEvent.redact(error.diagnosticDetail ?? error.localizedDescription),
                 statusCode: 402,
                 shouldRecordDiagnostic: false
@@ -481,7 +481,7 @@ struct UserFacingError: Equatable, Sendable {
         case .aiProvider:
             titleKey = "error.user.aiProvider.title"
             messageKey = "error.user.aiProvider.message"
-            recoveryKey = "error.user.aiProvider.recovery"
+            recoveryKey = "error.user.aiProvider.recovery.modelsSettings"
         case .recoverable:
             titleKey = "error.user.unknown.title"
             messageKey = "error.user.unknown.message"

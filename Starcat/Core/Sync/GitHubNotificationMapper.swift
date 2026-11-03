@@ -11,7 +11,8 @@
 
 import Foundation
 
-enum GitHubNotificationChip: String, Sendable {
+/// Codable 随 ActivityNotificationPayload 进入 Issue 总结磁盘快照。
+enum GitHubNotificationChip: String, Codable, Sendable {
     case mention
     case review
     case assign
@@ -29,13 +30,14 @@ enum GitHubNotificationChip: String, Sendable {
     case fork
 }
 
-enum GitHubNotificationPersonRole: String, Sendable {
+enum GitHubNotificationPersonRole: String, Codable, Sendable {
     case author
     case commenter
     case reviewRequester
 }
 
-struct GitHubNotificationPerson: Equatable, Identifiable, Sendable {
+/// 只编码存储属性；`id` / `avatarURLString` 是派生值，不进快照。
+struct GitHubNotificationPerson: Equatable, Codable, Identifiable, Sendable {
     let login: String
     let role: GitHubNotificationPersonRole
 

@@ -40,7 +40,7 @@ struct ReadmeWebViewTests {
         // 图片交互靠 app-owned WKUserScript 注入；README 页面自己的脚本仍由 CSP 禁止。
         #expect(html.contains("script-src 'none'"))
         #expect(html.contains(".readme-image-preview"))
-        #expect(html.contains("body.readme-js-ready .markdown-body img:not(.readme-image-loaded)"))
+        #expect(html.contains("body.readme-js-ready > article img:not(.readme-image-loaded)"))
     }
 
     @Test("README 页内查找请求用 generation 区分同一查询的再次执行")
@@ -288,12 +288,12 @@ struct ReadmeWebViewTests {
         #expect(script.contains("function markFailed()"))
         #expect(script.contains("image.classList.add('readme-image-failed');"))
         #expect(script.contains("image.removeAttribute('data-readme-zoomable');"))
-        #expect(script.contains("image.addEventListener('error', markFailed, { once: true });"))
+        #expect(script.contains("image.addEventListener('error', markFailed);"))
         // markLoaded 必须清掉失败态：<picture> 换源重载成功后图片要回到正常显示。
         #expect(script.contains("image.classList.remove('readme-image-failed');"))
         // CSS 失败态规则放在 loaded 规则之后，与 :not(.readme-image-loaded) 隐藏
         // 规则同特异性时靠源顺序取胜，失败图片显示 alt 文案而不是隐形。
-        #expect(document.contains("body.readme-js-ready .markdown-body img.readme-image-failed {"))
+        #expect(document.contains("body.readme-js-ready > article img.readme-image-failed {"))
         let hiddenRule = try #require(document.range(of: "img:not(.readme-image-loaded)"))
         let failedRule = try #require(document.range(of: "img.readme-image-failed"))
         #expect(hiddenRule.upperBound < failedRule.lowerBound)

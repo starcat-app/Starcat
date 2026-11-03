@@ -73,7 +73,7 @@ struct LocalAIModelsSection: View {
                 Button {
                     revealModelsDirectory()
                 } label: {
-                    Label("settings.localai.storage.reveal", systemImage: "folder")
+                    Text("settings.localai.storage.reveal")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
@@ -82,7 +82,7 @@ struct LocalAIModelsSection: View {
                 Button(role: .destructive) {
                     pendingClearAllConfirm = true
                 } label: {
-                    Label("settings.localai.storage.clearAll", systemImage: "trash")
+                    Text("settings.localai.storage.clearAll")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
@@ -235,11 +235,13 @@ struct LocalAIModelsSection: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .fixedSize()
         .popover(isPresented: isOpen, arrowEdge: .top) {
             modelOptionList(type, selected: selected)
                 .frame(width: Self.modelPopoverWidth)
                 .padding(.vertical, 6)
+                .appLocaleEnvironment()
         }
         .accessibilityLabel(Text(typeLabel(type)))
     }
@@ -309,10 +311,7 @@ struct LocalAIModelsSection: View {
                 .help(Text("settings.localai.model.badge.recommended"))
                 .accessibilityLabel(Text("settings.localai.model.badge.recommended"))
         } else if entry.isLite {
-            // 必须用 String.l10n 而不是 Text(LocalizedStringKey)：popover 浮层宿主
-            // 不继承主视图注入的 locale 环境，Text 会按系统语言解析（EN 界面显示
-            // 中文徽标的根因）。区块内其它文案同口径。
-            Text(verbatim: String.l10n("settings.localai.model.badge.lite"))
+            Text("settings.localai.model.badge.lite")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 7)
@@ -410,6 +409,7 @@ struct LocalAIModelsSection: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("settings.localai.model.action.retry")
+            .accessibilityLabel(Text("settings.localai.model.action.retry"))
 
         case .loadFailed:
             Button {
@@ -423,6 +423,7 @@ struct LocalAIModelsSection: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("settings.localai.model.action.retryLoad")
+            .accessibilityLabel(Text("settings.localai.model.action.retryLoad"))
 
         case .deleteFailed:
             deleteButton(entry)

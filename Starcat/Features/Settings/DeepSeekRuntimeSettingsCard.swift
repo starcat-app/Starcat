@@ -11,7 +11,7 @@ import SwiftUI
 /// 管理 DeepSeek Harness 的两个外部文件路径，并复用正式 adapter 的校验规则。
 ///
 /// 两个路径各占一行，避免 LabeledContent 把超长 Application Support 路径折成密密麻麻的两列。
-/// 选择后会立刻复检；不再单独放刷新按钮。每行提供 Finder 入口，方便定位埋在 venv 里的 carrier。
+/// 折叠时仍展示实际状态；选择后立即复检，展开后也可重新检测外部程序和配置的变化。
 struct DeepSeekRuntimeSettingsCard: View {
     @Environment(AppSettings.self) private var settings
 
@@ -22,6 +22,7 @@ struct DeepSeekRuntimeSettingsCard: View {
 
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedExecutablePath = ""
+    @State private var isExpanded = false
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -30,15 +31,7 @@ struct DeepSeekRuntimeSettingsCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(verbatim: "DeepSeek Harness")
-                    .font(.callout.weight(.semibold))
-                AgentRuntimeInfoButton(kind: .deepSeek)
-                Spacer(minLength: 8)
-                AgentRuntimeStatusChip(status: status)
-            }
-
+        DisclosureGroup(isExpanded: $isExpanded) {
             AgentRuntimePathRow(
                 caption: "settings.integration.agentRuntime.executable",
                 path: displayedExecutablePath
@@ -67,7 +60,22 @@ struct DeepSeekRuntimeSettingsCard: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
+            HStack(spacing: 8) {
+                Spacer()
+                AgentRuntimeInfoButton(kind: .deepSeek)
+                Button("settings.integration.agentRuntime.detectAgain", action: refresh)
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(status.isChecking)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(verbatim: "DeepSeek Harness")
+                Spacer(minLength: 8)
+                AgentRuntimeStatusChip(status: status)
+            }
         }
+        .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "DeepSeek Harness")))
         .task { refresh() }
     }
 

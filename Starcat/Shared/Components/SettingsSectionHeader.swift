@@ -15,11 +15,33 @@
 import SwiftUI
 
 /// 设置页分组标题（图标 + 文案）。
-struct SettingsSectionHeader: View {
+struct SettingsSectionHeader<Icon: View>: View {
 
     private let title: Text
-    private let icon: BusinessIcon
+    private let icon: Icon
 
+    /// 服务商等已有专属标识可直接复用，标题和图标列仍遵循统一设置页规格。
+    init(verbatim title: String, @ViewBuilder icon: () -> Icon) {
+        self.title = Text(verbatim: title)
+        self.icon = icon()
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            icon
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+
+            title
+                // 分组名称（如「外观」）和行 Label（如「主题」）同字号，
+                // 仅靠字重表达分组边界，避免在紧凑的 macOS Form 中形成伪页面标题。
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+    }
+}
+
+extension SettingsSectionHeader where Icon == BusinessIcon {
     init(
         _ titleKey: LocalizedStringKey,
         systemImage: String
@@ -45,19 +67,5 @@ struct SettingsSectionHeader: View {
     init(_ titleKey: LocalizedStringKey, iconSource: BusinessIcon.Source) {
         self.title = Text(titleKey)
         self.icon = BusinessIcon(source: iconSource, pointSize: iconSource.isAsset ? 16 : 13, weight: .medium)
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            icon
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
-
-            title
-                // 分组名称（如「外观」）和行 Label（如「主题」）同字号，
-                // 仅靠字重表达分组边界，避免在紧凑的 macOS Form 中形成伪页面标题。
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.primary)
-        }
     }
 }

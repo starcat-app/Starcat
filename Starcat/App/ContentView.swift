@@ -18,7 +18,6 @@ struct ContentView: View {
     @State private var showDataContributionConsent = false
     @State private var dataContributionConsentDraft = false
     @State private var dataContributionPromptAccountID: Int64?
-
     private let dataContributionPromptPreferences = DataContributionConsentPromptPreferences()
     /// 2026-06-15:用户「关闭应用内动画」开 + 系统「减少动态效果」开
     /// 任一为真时,跳过登录态切换的 .smooth 隐式动画,避免内容树瞬切时
@@ -91,7 +90,12 @@ struct ContentView: View {
         // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
-        .toolbarVisibility(firstRunOnboardingActive ? .hidden : .visible, for: .windowToolbar)
+        // 日报只在窗口内局部覆盖中右栏，不切换整窗 toolbar / safe area，
+        // 避免系统按钮和左侧栏在普通分类与日报之间重新布局。
+        .toolbarVisibility(
+            firstRunOnboardingActive ? .hidden : .visible,
+            for: .windowToolbar
+        )
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)
         // 2026-06-29：.onOpenURL 已移到 StarcatApp 顶层（更早注册 NSAppleEventManager，
         // 避免 view 还没 mount 时 URL event 丢失）。这里不再重复挂。

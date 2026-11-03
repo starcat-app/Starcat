@@ -215,6 +215,8 @@ struct GitHubNotificationInboxView: View {
 
     @ViewBuilder
     private var content: some View {
+        // 同一次列表更新只计算一次搜索快照。懒加载行不能为分页数量再次扫描整张时间线。
+        let visibleRows = visibleRows
         if inbox.missingScope && rows.isEmpty {
             missingScopeEmpty
         } else if rows.isEmpty && inbox.isSyncing {
@@ -225,29 +227,26 @@ struct GitHubNotificationInboxView: View {
         } else if visibleRows.isEmpty {
             searchEmptyState
         } else {
-            timeline
+            timeline(visibleRows)
         }
     }
 
     /// 通知服务按游标分页；先过滤已加载行，并在当前页无命中时继续补页，直到命中或耗尽。
     private var visibleRows: [GitHubInboxTimelineRow] {
-        rows.filter { row in
+        QuickSearchTextMatcher.filter(rows, query: quickSearchQuery) { row in
             let display = timelineDisplay(for: row)
-            return QuickSearchTextMatcher.matches(
-                quickSearchQuery,
-                candidates: [
-                    display.actorLogin,
-                    display.headline,
-                    display.fullName,
-                    display.snippet,
-                    display.subjectType,
-                    display.language
-                ]
-            )
+            return [
+                display.actorLogin,
+                display.headline,
+                display.fullName,
+                display.snippet,
+                display.subjectType,
+                display.language
+            ]
         }
     }
 
-    private var groupedRows: [(GitHubNotificationDayGroup, [GitHubInboxTimelineRow])] {
+    private func groupedRows(_ visibleRows: [GitHubInboxTimelineRow]) -> [(GitHubNotificationDayGroup, [GitHubInboxTimelineRow])] {
         let calendar = Calendar.current
         let now = Date()
         var buckets: [GitHubNotificationDayGroup: [GitHubInboxTimelineRow]] = [:]
@@ -264,10 +263,12 @@ struct GitHubNotificationInboxView: View {
 
     /// 不用 `List` + `.inset`：macOS 会把每一行画成带圆角和间隙的浮卡，
     /// 和方案里的 Mail 密度时间线相反。ScrollView 才能铺满选中、接上左侧轴线。
-    private var timeline: some View {
-        ScrollView {
+    private func timeline(_ visibleRows: [GitHubInboxTimelineRow]) -> some View {
+        let entries = timelineEntries(for: visibleRows)
+        let visibleRowCount = visibleRows.count
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(timelineEntries.enumerated()), id: \.element.id) { _, entry in
+                ForEach(Array(entries.enumerated()), id: \.element.id) { _, entry in
                     switch entry {
                     case .header(let group, let isFirst):
                         GitHubNotificationTimelineHeader(
@@ -286,8 +287,8 @@ struct GitHubNotificationInboxView: View {
                         )
                         .automaticListPagination(
                             appearingIndex: rowIndex,
-                            visibleItemCount: visibleRows.count,
-                            loadedItemCount: visibleRows.count,
+                            visibleItemCount: visibleRowCount,
+                            loadedItemCount: visibleRowCount,
                             hasMore: hasMore,
                             isLoading: isLoadingPage,
                             identity: "notification-\(String(describing: segment))-\(pagingGeneration)"
@@ -302,8 +303,8 @@ struct GitHubNotificationInboxView: View {
     }
 
     /// 整条时间线（含分组标题）共用一根轴线，避免「一组只有一条」时上下线段都被裁掉。
-    private var timelineEntries: [GitHubNotificationTimelineEntry] {
-        let groups = groupedRows
+    private func timelineEntries(for visibleRows: [GitHubInboxTimelineRow]) -> [GitHubNotificationTimelineEntry] {
+        let groups = groupedRows(visibleRows)
         var entries: [GitHubNotificationTimelineEntry] = []
         var timelineRowIndex = 0
         for (groupIndex, (group, grouped)) in groups.enumerated() {

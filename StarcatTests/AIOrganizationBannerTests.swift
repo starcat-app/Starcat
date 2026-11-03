@@ -54,7 +54,7 @@ struct AIOrganizationBannerTests {
         }
     }
 
-    @Test("全部支持语言、窄中栏和计数变化仍保持单行固定高度", arguments: AppLocale.allCases.filter { $0 != .system }, [CGFloat(240), 320, 480])
+    @Test("全部支持语言、宽窄中栏和计数变化仍保持单行固定高度", arguments: AppLocale.allCases.filter { $0 != .system }, [CGFloat(240), 320, 480, 840])
     func localizedLayoutStaysBounded(appLocale: AppLocale, width: CGFloat) throws {
         // String.l10n 读取持久化的应用语言，单独注入 SwiftUI locale 只会改变数字与布局方向。
         // 同步主线程测量期间设置并恢复原值，确保实际测量目标语言，且不遗留语言偏好。
@@ -87,7 +87,6 @@ struct AIOrganizationBannerTests {
             kind: kind, repositoryCount: 2_000_000_000, state: state, canStart: false,
             onStart: {}, onShowPanel: {}
         ).environment(\.locale, appLocale.effectiveLocale)
-            .environment(\.layoutDirection, appLocale.effectiveLayoutDirection)
             .environment(\.starcatInterfaceScale, scale)
             .environment(\.starcatReduceMotion, true))
         renderer.proposedSize = ProposedViewSize(width: width, height: nil)

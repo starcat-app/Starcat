@@ -146,6 +146,212 @@ private func allowWeeklyFilterTaskToFinish() async {
 @Suite("WeeklyBulkRepository", .serialized)
 struct WeeklyBulkRepositoryTests {
 
+    @MainActor
+    @Test("重建周刊模型后，已保存的 Hacker News 偏好在缓存首屏生效", arguments: [false, true])
+    func restoredSourcePreferencesApplyOnPresentation(injectAtCreation: Bool) async throws {
+        let defaults = UserDefaults(suiteName: "test.weekly.presentation.\(UUID().uuidString)")!
+        defer { defaults.removeObject(forKey: AppSettings.Keys.exploreCatalogPreferences) }
+        let settings = AppSettings(defaults: defaults)
+        settings.exploreCatalogPreferences.hiddenWeeklySources = ["discovery"]
+        let restored = AppSettings(defaults: defaults)
+        let hidden = restored.exploreCatalogPreferences.hiddenWeeklySources
+        #expect(hidden == ["discovery"])
+
+        let (repository, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/hn-only", "Swift", 300, "2026-06-15T12:00:00Z"),
+                    ("owner/weekly", "Swift", 200, "2026-06-15T11:00:00Z"),
+                    ("owner/shared", "Swift", 100, "2026-06-15T10:00:00Z")
+                ],
+                sourcesByFullName: [
+                    "owner/hn-only": ["discovery"],
+                    "owner/shared": ["discovery", "weekly"]
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repository.fetchBulk()
+        let requestCount = URLProtocolStub.receivedRequests.count
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let selection = WeeklySelectionService()
+        // 同时覆盖父容器正确注入，以及入场时收到旧配置模型的路径。
+        let model = WeeklyContentViewModel(
+            api: api, selectionService: selection,
+            languageStore: WeeklyLanguageStore(api: api), bulkRepository: repository,
+            hiddenSources: injectAtCreation ? hidden : []
+        )
+        await model.loadForPresentation(hiddenSources: hidden)
+        #expect(model.hiddenSources == hidden)
+        #expect(Set(model.items.map(\.fullName)) == ["owner/weekly", "owner/shared"])
+        #expect(model.total == 2)
+        #expect(selection.total == 2)
+        #expect(!model.availableSourceFilters.contains(.discovery))
+        #expect(!model.hasMore)
+        #expect(URLProtocolStub.receivedRequests.count == requestCount, "有效缓存入场不应额外联网")
+    }
+
+    @MainActor
+    @Test("离开周刊后修改来源偏好，返回时同步复用模型并重置来源单选", arguments: [false, true])
+    func sourcePreferencesResyncOnReturn(useMemorySnapshot: Bool) async throws {
+        let (repository, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: [
+                    ("owner/hn-only", "Swift", 300, "2026-06-15T12:00:00Z"),
+                    ("owner/weekly", "Swift", 200, "2026-06-15T11:00:00Z")
+                ],
+                sourcesByFullName: ["owner/hn-only": ["discovery"]]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repository.fetchBulk()
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let selection = WeeklySelectionService()
+        let model = WeeklyContentViewModel(
+            api: api, selectionService: selection,
+            languageStore: WeeklyLanguageStore(api: api), bulkRepository: repository
+        )
+        await model.loadForPresentation(hiddenSources: [])
+        if useMemorySnapshot { await model.reload() }
+        model.changeSource(to: .discovery)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.items.map(\.fullName) == ["owner/hn-only"])
+        let requestCount = URLProtocolStub.receivedRequests.count
+
+        // 不调用实时 changeHiddenSources，模拟周刊视图已卸载、父容器仍保留模型。
+        await model.loadForPresentation(hiddenSources: ["discovery"])
+        #expect(model.selectedSource == .all)
+        #expect(model.items.map(\.fullName) == ["owner/weekly"])
+        #expect(model.total == 1)
+        #expect(selection.total == 1)
+        #expect(!model.availableSourceFilters.contains(.discovery))
+        #expect(!model.isLoading)
+        await model.loadForPresentation(hiddenSources: [])
+        #expect(model.total == 2)
+        await model.loadForPresentation(hiddenSources: ["discovery"])
+        #expect(model.items.map(\.fullName) == ["owner/weekly"], "再次进入不能复用全量快照")
+        // SwiftUI 入场任务可能因用户立刻离开而取消，不能把复用模型留在 loading。
+        let cancelledPresentation = Task { await model.loadForPresentation(hiddenSources: ["weekly"]) }
+        cancelledPresentation.cancel()
+        await cancelledPresentation.value
+        #expect(!model.isLoading)
+        await model.loadForPresentation(hiddenSources: ["weekly"])
+        #expect(model.items.map(\.fullName) == ["owner/hn-only"], "取消入场后仍应能重新进入")
+        #expect(URLProtocolStub.receivedRequests.count == requestCount)
+    }
+
+    @MainActor
+    @Test("无缓存入场与 bulk 失败回退的请求均保留已恢复的来源范围")
+    func restoredSourcePreferencesApplyToRemoteFallback() async throws {
+        let (repository, _) = try makeRepository { request in
+            guard request.url?.path.hasSuffix("/bulk") != true else {
+                return (bulkHTTPResponse(503, request.url!), Data())
+            }
+            return (
+                bulkHTTPResponse(200, request.url!),
+                Data(#"{"schema_version":1,"data":[],"meta":{"page":1,"page_size":30,"total":0}}"#.utf8)
+            )
+        }
+        let api = WeeklyAPI(
+            baseURL: URL(string: "https://weekly.test.invalid")!,
+            session: URLProtocolStub.ephemeralSession()
+        )
+        let model = WeeklyContentViewModel(
+            api: api, languageStore: WeeklyLanguageStore(api: api), bulkRepository: repository
+        )
+        await model.loadForPresentation(hiddenSources: ["discovery"])
+        await model.reload()
+        await allowWeeklyFilterTaskToFinish()
+        let listRequests = URLProtocolStub.receivedRequests.filter { $0.url?.path.hasSuffix("/bulk") != true }
+        #expect(listRequests.count == 2)
+        for request in listRequests {
+            let components = try #require(URLComponents(url: request.url!, resolvingAgainstBaseURL: false))
+            let source = try #require(components.queryItems?.first { $0.name == "source" }?.value)
+            #expect(Set(source.split(separator: ",").map(String.init)) == ["weekly", "zread", "hellogithub", "ai_intelligence"])
+        }
+        #expect(!model.availableSourceFilters.contains(.discovery))
+    }
+
+    @MainActor
+    @Test("来源偏好在 SQLite 分页与内存筛选中一致，多来源去重且计数独立于临时筛选")
+    func sourcePreferencesApplyBeforePagingAndInvalidateSnapshots() async throws {
+        let names = (0..<53).map { "owner/repo\($0)" }
+        let (repository, _) = try makeRepository { request in
+            let body = bulkFixtureBody(
+                repos: names.enumerated().map { ($0.element, $0.offset == 51 ? "Go" : "Swift", 1000 - $0.offset, "2026-06-15T10:00:00Z") },
+                sourcesByFullName: [
+                    names[50]: ["hellogithub"],
+                    names[51]: ["weekly", "hellogithub"],
+                    names[52]: ["future-source"]
+                ]
+            )
+            return (bulkHTTPResponse(200, request.url!), body)
+        }
+        _ = try await repository.fetchBulk()
+        let hidden: Set<String> = ["weekly", "zread", "discovery", "ai_intelligence"]
+        func query(_ page: Int) -> WeeklyBulkCacheQuery {
+            WeeklyBulkCacheQuery(source: .all, coverage: .all, hideArchived: false, hideForks: false,
+                                 starsFilter: .all, pushedRecency: .all, language: "", searchQuery: "",
+                                 sort: .defaultOrder, page: page, pageSize: 2, now: Date(), hiddenSources: hidden)
+        }
+        let first = try #require(await repository.cachedPage(query: query(1)))
+        let second = try #require(await repository.cachedPage(query: query(2)))
+        #expect(first.filteredTotal == 3)
+        #expect(first.catalogTotal == 3)
+        #expect(first.items.count == 2)
+        #expect(second.items.count == 1)
+        #expect(Set((first.items + second.items).map(\.fullName)) == Set(names.suffix(3)))
+        #expect(await repository.cachedTotal(excludingSources: hidden) == 3)
+
+        let api = WeeklyAPI(baseURL: URL(string: "https://weekly.test.invalid")!)
+        let selection = WeeklySelectionService()
+        let model = WeeklyContentViewModel(api: api, selectionService: selection,
+                                           languageStore: WeeklyLanguageStore(api: api),
+                                           bulkRepository: repository, hiddenSources: hidden)
+        await model.loadInitialIfNeeded()
+        #expect(model.total == 3)
+        #expect(selection.total == 3)
+        #expect(!model.availableSourceFilters.contains(.weekly))
+        model.changeSource(to: .weekly)
+        #expect(model.selectedSource == .all, "不能通过旧筛选入口绕过长期偏好")
+        model.changeSource(to: .helloGitHub)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 2)
+        #expect(selection.total == 3)
+        await model.reload()
+        #expect(model.total == 2, "bulk 内存路径与 SQLite 的来源范围一致")
+        #expect(selection.total == 3)
+
+        model.changeHiddenSources(to: [])
+        await allowWeeklyFilterTaskToFinish()
+        model.changeSource(to: .all)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 53)
+        model.changeHiddenSources(to: hidden)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 3, "不能复用未包含来源偏好的 prepared snapshot")
+        // 让一次新范围派生先开始，再快速回到准备好的范围；取消后的 loading 不能残留。
+        model.changeHiddenSources(to: hidden.union(["future-source"]))
+        await Task.yield()
+        model.changeHiddenSources(to: hidden)
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.total == 3)
+        #expect(!model.isLoading)
+        model.changeSource(to: .helloGitHub)
+        await allowWeeklyFilterTaskToFinish()
+        model.changeHiddenSources(to: hidden.union(["hellogithub"]))
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.selectedSource == .all)
+        #expect(model.items.map(\.fullName) == [names[52]], "未来新来源默认启用")
+        model.changeHiddenSources(to: hidden.union(["hellogithub", "future-source"]))
+        await allowWeeklyFilterTaskToFinish()
+        #expect(model.items.isEmpty)
+        #expect(model.total == 0)
+        #expect(selection.total == 0)
+        model.resetFilters()
+        #expect(model.hiddenSources == hidden.union(["hellogithub", "future-source"]))
+    }
+
     // MARK: - 工厂
 
     private func makeRepository(

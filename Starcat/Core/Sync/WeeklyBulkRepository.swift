@@ -122,6 +122,7 @@ struct WeeklyBulkCacheQuery: Sendable {
     let pageSize: Int
     let now: Date
     var licenseFilter: RepoLicenseFilter = .all
+    var hiddenSources: Set<String> = []
 }
 
 /// Weekly bulk 数据仓库实现。
@@ -155,6 +156,36 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
         } catch {
             AppLog.network.warning("WeeklyBulk cachedTotal read failed: \(error.localizedDescription, privacy: .public)")
             return nil
+        }
+    }
+
+    /// 仅按长期来源偏好去重计数，不能叠加中栏语言、搜索等临时筛选。
+    func cachedTotal(excludingSources hiddenSources: Set<String>) async -> Int? {
+        guard !hiddenSources.isEmpty else { return await cachedTotal() }
+        do {
+            return try await database.writer.read { db in
+                guard try WeeklyBulkMetaRecord.fetchOne(db) != nil else { return nil }
+                let scope = Self.sourceScope(excluding: hiddenSources)
+                return try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM weekly_bulk_repos WHERE " + scope.sql,
+                    arguments: scope.arguments
+                )
+            }
+        } catch {
+            AppLog.network.warning("WeeklyBulk source count read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// 设置只需要动态来源目录，避免为了几个复选框解码整份 bulk 仓库缓存。
+    func cachedSources() async -> [WeeklySourceDescriptor] {
+        do {
+            return try await database.writer.read { db in
+                try WeeklyBulkSourceRecord.order(Column("sort_order").asc).fetchAll(db).map(\.descriptor)
+            }
+        } catch {
+            AppLog.network.warning("WeeklyBulk source catalog read failed: \(error.localizedDescription, privacy: .public)")
+            return []
         }
     }
 
@@ -250,6 +281,11 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                     .order(Column("sort_order").asc)
                     .fetchAll(db)
                 let items = records.compactMap { $0.toDomain() }
+                let scope = Self.sourceScope(excluding: query.hiddenSources)
+                let catalogTotal = query.hiddenSources.isEmpty ? meta.total : try Int.fetchOne(
+                    db, sql: "SELECT COUNT(*) FROM weekly_bulk_repos WHERE " + scope.sql,
+                    arguments: scope.arguments
+                ) ?? 0
                 return WeeklyBulkPageSnapshot(
                     sources: sourceRecords.map(\.descriptor),
                     items: items,
@@ -257,7 +293,7 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
                     lastFetchedAt: lastFetchedAt,
                     generatedAt: meta.generatedAt,
                     filteredTotal: total,
-                    catalogTotal: meta.total,
+                    catalogTotal: catalogTotal,
                     licenseOptions: RepoLicenseFilter.options(try Row.fetchAll(db,
                         sql: "SELECT DISTINCT license_spdx FROM weekly_bulk_repos"
                     ).map { $0["license_spdx"] as String? })
@@ -375,6 +411,12 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
         var clauses: [String] = []
         var arguments = StatementArguments()
 
+        if !query.hiddenSources.isEmpty {
+            let scope = sourceScope(excluding: query.hiddenSources)
+            clauses.append(scope.sql)
+            _ = arguments.append(contentsOf: scope.arguments)
+        }
+
         if query.source != .all {
             clauses.append("source_types_json LIKE ?")
             _ = arguments.append(contentsOf: ["%\"\(query.source.rawValue)\"%"])
@@ -431,6 +473,16 @@ actor WeeklyBulkRepository: WeeklyBulkRepositoryProtocol {
 
         guard !clauses.isEmpty else { return ("", arguments) }
         return (" WHERE " + clauses.joined(separator: " AND "), arguments)
+    }
+
+    /// EXISTS 以仓库为单位匹配启用来源，既避免多来源重复计数，也支持未来新增的来源 code。
+    private static func sourceScope(excluding hiddenSources: Set<String>) -> (sql: String, arguments: StatementArguments) {
+        guard !hiddenSources.isEmpty else { return ("1", StatementArguments()) }
+        let placeholders = Array(repeating: "?", count: hiddenSources.count).joined(separator: ",")
+        return (
+            "EXISTS (SELECT 1 FROM json_each(COALESCE(source_types_json, '[]')) WHERE value NOT IN (\(placeholders)))",
+            StatementArguments(hiddenSources.sorted())
+        )
     }
 
     private static func orderSQL(for sort: WeeklyFeedSort) -> String {

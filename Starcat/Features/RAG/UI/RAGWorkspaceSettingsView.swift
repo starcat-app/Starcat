@@ -2,7 +2,7 @@
 //  RAGWorkspaceSettingsView.swift
 //  Starcat
 //
-//  RAG 工作台设置内容：主设置的三个 RAG 分类与验收期保留的独立窗口共用草稿和控件。
+//  RAG 工作台设置内容：推理与检索使用主设置分类，提示词通过推理页的弹窗编辑。
 //  提示词写入 `AppSettings.ragPromptSettings`；检索写入
 //  `AppSettings.ragRetrievalSettings`（UserDefaults JSON），下一轮问答由
 //  `makeKnowledgeRAGService` 读入生效。
@@ -16,6 +16,7 @@
 //  - 2026-07-14：检索页对齐「侧栏 + 内容卡片」；预设切换静默写字段；保存持久化。
 //  - 2026-09-01：由工作台内 Sheet 改为 App 级原生设置窗口。
 //  - 2026-09-01：并入主设置的独立一级分类；旧窗口在验收前继续保留。
+//  - 2026-10-25：原生 grouped Form 承载推理与检索，提示词弹窗沿用原草稿和自动保存。
 //
 
 import SwiftUI
@@ -51,7 +52,6 @@ private actor RAGRerankCredentialAutoSaver {
 
 enum RAGSettingsSection: String, CaseIterable, Identifiable {
     case inference
-    case prompts
     case retrieval
 
     var id: String { rawValue }
@@ -59,18 +59,24 @@ enum RAGSettingsSection: String, CaseIterable, Identifiable {
     var titleKeyString: String {
         switch self {
         case .inference: return "rag.workspace.settings.section.inference"
-        case .prompts: return "rag.workspace.settings.section.prompts"
         case .retrieval: return "rag.workspace.settings.section.retrieval"
         }
     }
 
     var titleKey: LocalizedStringKey { LocalizedStringKey(titleKeyString) }
 
-    /// 只有三个一级分类，搜索只做稳定的分类过滤，不引入第二套深链模型。
+    var introductionKey: LocalizedStringKey {
+        switch self {
+        case .inference: return "rag.settings.inference.introduction"
+        case .retrieval: return "rag.settings.retrieval.introduction"
+        }
+    }
+
+    /// 提示词关键词仍定位推理页，具体弹窗由主设置导航处理。
     var searchKeywords: [String] {
         switch self {
-        case .inference: return ["inference", "backend", "cli", "codex", "claude", "推理", "后端"]
-        case .prompts: return ["prompt", "system", "user", "template", "提示词", "模板"]
+        case .inference: return ["inference", "backend", "cli", "codex", "claude", "推理", "后端",
+                                 "prompt", "system", "user", "template", "提示词", "模板"]
         case .retrieval: return ["retrieval", "rerank", "evidence", "vector", "meilisearch", "qdrant", "检索", "重排", "证据", "自托管"]
         }
     }
@@ -78,7 +84,6 @@ enum RAGSettingsSection: String, CaseIterable, Identifiable {
     var businessIcon: BusinessIcon.Symbol {
         switch self {
         case .inference: return .inference
-        case .prompts: return .prompts
         case .retrieval: return .retrieval
         }
     }
@@ -119,12 +124,6 @@ private enum RAGRetrievalPreset: String, CaseIterable, Identifiable {
         if normalized == .broad { return .broad }
         return .custom
     }
-}
-
-/// 设置内容的局部布局常量。
-private enum RAGSettingsLayoutMetrics {
-    /// macOS overlay 滚动条会盖住右缘控件；内容尾部预留 gutter。
-    static let scrollTrailerGutter: CGFloat = 14
 }
 
 private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
@@ -202,10 +201,10 @@ private struct RAGPromptPlaceholderItem: Identifiable {
 }
 
 struct RAGWorkspaceSettingsView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
+    @Environment(\.locale) private var locale
     @Bindable var settings: AppSettings
     let presentation: RAGWorkspaceSettingsPresentation
+    @Binding var isPromptEditorPresented: Bool
     @State private var tab: RAGPromptEditorTab = .generator
     @State private var draft: RAGPromptSettings
     /// CLI 只在 Direct 版可选；App Store 即使从旧偏好读到 CLI，也先归一成 API 草稿。
@@ -215,6 +214,8 @@ struct RAGWorkspaceSettingsView: View {
     @State private var isInspectingCLIRuntimes = false
     @State private var isPlaceholderPopoverPresented = false
     @State private var isDefaultPromptPopoverPresented = false
+    @State private var hasCheckedPrompt = false
+    @State private var isPromptCompatibilityPresented = false
     /// 独立窗口保留显式提交；嵌入主设置时通过 `onChange` 自动写入。
     @State private var retrievalPreset: RAGRetrievalPreset
     @State private var minimumVectorSimilarity: Double
@@ -238,15 +239,20 @@ struct RAGWorkspaceSettingsView: View {
     @State private var rerankAPIKeyAutoSaveTask: Task<Void, Never>?
     @State private var rerankCandidateLimit: String
     @State private var rerankCredentialError: String?
+    @State private var isSavingRerankCredential = false
+    @State private var hasSavedRerankCredential = false
+    @State private var isSourcesExpanded = false
     /// `apply(_:)` 写字段期间抬起，挡住误判「自定义」；用户手动拖滑杆 / 改数字时则放行。
     @State private var isApplyingRetrievalPreset = false
 
     init(
         settings: AppSettings,
-        presentation: RAGWorkspaceSettingsPresentation
+        presentation: RAGWorkspaceSettingsPresentation,
+        isPromptEditorPresented: Binding<Bool>
     ) {
         self.settings = settings
         self.presentation = presentation
+        _isPromptEditorPresented = isPromptEditorPresented
         _draft = State(initialValue: settings.ragPromptSettings)
         let availableBackends = RAGInferenceBackend.available(using: DistributionGate())
         _inferenceBackend = State(initialValue:
@@ -286,27 +292,26 @@ struct RAGWorkspaceSettingsView: View {
         }
     }
 
-    /// 主设置 Sidebar 已直接承载「推理 / 提示词 / 检索」，这里仅渲染当前分类内容。
-    /// 三项仍复用同一 View 类型和草稿状态，切换分类不会产生第二套导航或双写。
+    /// 推理与检索共用原草稿，提示词 Sheet 只改变编辑入口，不复制配置或新增保存流程。
     private func embeddedSettingsPage(section: RAGSettingsSection) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-                switch section {
-                case .inference:
-                    inferenceSettingsSections
-                case .prompts:
-                    promptSettingsSections
-                case .retrieval:
-                    retrievalSettingsSections
-                }
+        // 背景与行间距交给系统 Form，避免自绘卡片让深色底色偏亮。
+        Form {
+            introductionSection(section)
+            switch section {
+            case .inference:
+                inferenceSettingsSections
+                promptSettingsSection
+            case .retrieval:
+                retrievalSettingsSections
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, interfaceScale.scaled(20))
-            .padding(.trailing, interfaceScale.scaled(RAGSettingsLayoutMetrics.scrollTrailerGutter))
-            .padding(.bottom, interfaceScale.scaled(20))
         }
+        .formStyle(.grouped)
         .scrollIndicators(.automatic)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $isPromptEditorPresented) {
+            promptEditorSheet
+                .appLocaleEnvironment()
+        }
         .task(id: section) {
             await loadRerankAPIKeyIfNeeded()
             if section == .inference {
@@ -321,6 +326,14 @@ struct RAGWorkspaceSettingsView: View {
         .onChange(of: tab) { _, _ in
             isPlaceholderPopoverPresented = false
             isDefaultPromptPopoverPresented = false
+            hasCheckedPrompt = false
+            isPromptCompatibilityPresented = false
+        }
+        .onChange(of: isPromptEditorPresented) { _, _ in
+            isPlaceholderPopoverPresented = false
+            isDefaultPromptPopoverPresented = false
+            isPromptCompatibilityPresented = false
+            hasCheckedPrompt = false
         }
         .onChange(of: section) { _, _ in
             isPlaceholderPopoverPresented = false
@@ -332,6 +345,8 @@ struct RAGWorkspaceSettingsView: View {
         }
         .onChange(of: draft) { _, newValue in
             settings.ragPromptSettings = newValue
+            hasCheckedPrompt = false
+            isPromptCompatibilityPresented = false
         }
         .onChange(of: buildRetrievalSettings()) { _, newValue in
             settings.ragRetrievalSettings = newValue
@@ -347,6 +362,38 @@ struct RAGWorkspaceSettingsView: View {
             // 用户输入后立刻离开 RAG 分类时，取消等待并立即排入串行写入队列。
             guard hasEditedRerankAPIKey else { return }
             scheduleRerankAPIKeyAutoSave(delayNanoseconds: 0)
+        }
+    }
+
+    /// 一级页面使用与翻译、联网搜索相同的原生介绍卡片。
+    private func introductionSection(_ section: RAGSettingsSection) -> some View {
+        return Section {
+            HStack(spacing: 16) {
+                BusinessIcon(section.businessIcon, pointSize: 28)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 48, height: 48)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
+                Divider()
+                    .frame(height: 48)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(section.titleKey)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .help(Text(section.titleKey))
+                    Text(section.introductionKey)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(Text(section.introductionKey))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -373,6 +420,9 @@ struct RAGWorkspaceSettingsView: View {
     private func scheduleRerankAPIKeyAutoSave(delayNanoseconds: UInt64 = 450_000_000) {
         rerankAPIKeyAutoSaveTask?.cancel()
         let value = rerankAPIKey
+        isSavingRerankCredential = true
+        hasSavedRerankCredential = false
+        rerankCredentialError = nil
         rerankAPIKeyAutoSaveTask = Task { @MainActor in
             if delayNanoseconds > 0 {
                 try? await Task.sleep(nanoseconds: delayNanoseconds)
@@ -381,6 +431,8 @@ struct RAGWorkspaceSettingsView: View {
             let errorMessage = await RAGRerankCredentialAutoSaver.shared.persist(value)
             guard !Task.isCancelled else { return }
             rerankCredentialError = errorMessage
+            isSavingRerankCredential = false
+            hasSavedRerankCredential = errorMessage == nil
         }
     }
 
@@ -390,14 +442,11 @@ struct RAGWorkspaceSettingsView: View {
             isDefaultPromptPopoverPresented = false
             isPlaceholderPopoverPresented.toggle()
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "curlybraces")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("rag.workspace.prompt.placeholders.open")
-                    .font(.caption.weight(.medium))
-            }
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
+            Text("settings.ai.prompt.placeholders.open")
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -417,17 +466,11 @@ struct RAGWorkspaceSettingsView: View {
             isPlaceholderPopoverPresented = false
             isDefaultPromptPopoverPresented.toggle()
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("rag.workspace.prompt.default.open")
-                    .font(.caption.weight(.medium))
-            }
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
+            Label("rag.workspace.prompt.default.open", systemImage: "doc.text.magnifyingglass")
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .accessibilityLabel("rag.workspace.prompt.default.open")
         .help("rag.workspace.prompt.default.openHelp")
         .popover(isPresented: $isDefaultPromptPopoverPresented, arrowEdge: .top) {
             RAGDefaultPromptPopover(
@@ -439,77 +482,164 @@ struct RAGWorkspaceSettingsView: View {
         }
     }
 
-    /// 不含滚动容器的提示词内容，供独立窗口与主设置分类页共享。
-    private var promptSettingsSections: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-            // 与检索「预设」同款容器：带描边的卡片 + 等宽 tab，避免 settingsGroup
-            // 半透明底把 EqualWidthSegmentedControl 轨道衬底吃掉、看起来像裸文字+蓝 pill。
-            retrievalSettingsGroup(
-                titleKey: "rag.workspace.prompt.type.title",
-                systemImage: "text.quote"
-            ) {
-                // 等宽铺满（重置除外）：中英文不再因文案长短变成半行短条。
-                HStack(spacing: interfaceScale.scaled(12)) {
-                    EqualWidthSegmentedControl(
-                        items: Array(RAGPromptEditorTab.allCases),
-                        selection: $tab,
-                        title: \.titleKey
-                    )
-                    .accessibilityLabel("rag.workspace.prompt.title")
-
-                    promptCompatibilityBadge
-
-                    ResetIconButton(
-                        help: Text("rag.workspace.prompt.restoreHelp")
-                    ) {
-                        restoreCurrentTab()
-                    }
+    /// 页内仅保留状态和编辑入口，完整模板移入与翻译页同款的轻量 Sheet。
+    private var promptSettingsSection: some View {
+        Section {
+            HStack {
+                promptCompatibilityBadge(for: promptSummaryState)
+                Spacer(minLength: 12)
+                Button("settings.ai.models.prompt.edit") {
+                    isPromptEditorPresented = true
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
             }
-            settingsGroup(
-                titleKey: "rag.workspace.prompt.system",
-                systemImage: "text.alignleft"
-            ) {
-                promptEditor(
-                    text: systemBinding,
-                    minHeight: interfaceScale.scaled(190)
-                )
-            }
-            settingsGroup(
-                titleKey: "rag.workspace.prompt.user",
-                systemImage: "text.bubble"
-            ) {
-                VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
-                    promptEditor(
-                        text: userBinding,
-                        minHeight: interfaceScale.scaled(108)
-                    )
-                    if promptCompatibility.state == .limited {
-                        promptCompatibilityNotice
-                    }
-                }
-            }
-
-            // 参考其他提示词设置页的 footer：辅助入口属于当前提示词内容，放在全部
-            // 编辑器之后并右对齐，既不占用窗口 Toolbar，也不与类型控件争抢宽度。
-            VStack(spacing: interfaceScale.scaled(10)) {
-                Divider()
-                HStack(spacing: interfaceScale.scaled(16)) {
-                    Spacer(minLength: 0)
-                    placeholderHelpButton
-                    defaultPromptReferenceButton
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, interfaceScale.scaled(2))
+        } header: {
+            SettingsSectionHeader("rag.workspace.settings.section.prompts", businessIcon: .prompts)
+        } footer: {
+            Text("rag.settings.prompts.scope")
         }
     }
 
-    /// 不含滚动容器的推理内容；CLI 探测任务由实际承载它的页面外壳负责启动。
+    /// 单列尺寸、分隔线与编辑区高度沿用翻译弹窗；长模板只在 TextEditor 内滚动。
+    private var promptEditorSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("rag.workspace.settings.section.prompts")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 8)
+                SheetCloseButton { isPromptEditorPresented = false }
+            }
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("rag.settings.prompts.mode")
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text("rag.settings.prompts.modeHelp")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .help(Text("rag.settings.prompts.modeHelp"))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // 四项任务比翻译模式更长，长译文退回原生菜单，避免挤压编辑区。
+                ViewThatFits(in: .horizontal) {
+                    promptTaskPicker
+                        .pickerStyle(.segmented)
+                        .fixedSize(horizontal: true, vertical: false)
+                    promptTaskPicker
+                        .pickerStyle(.menu)
+                }
+            }
+
+            Divider()
+
+            // 与翻译页相同：切换任务时重建 NSTextView，避免继续使用旧任务的编辑状态。
+            VStack(alignment: .leading, spacing: 12) {
+                promptEditor(title: "rag.workspace.prompt.system", text: systemBinding, height: 180)
+                Divider()
+                promptEditor(title: "rag.workspace.prompt.user", text: userBinding, height: 80)
+            }
+            .id(tab)
+
+            HStack(spacing: 12) {
+                promptCompatibilityBadge(for: promptCompatibility.state)
+                    .font(.caption)
+                if hasCheckedPrompt {
+                    Label(
+                        LocalizedStringKey(promptCompatibility.state == .limited
+                            ? "rag.settings.prompts.checkLimited" : "rag.settings.prompts.checkPassed"),
+                        systemImage: promptCompatibility.state == .limited
+                            ? "exclamationmark.triangle" : "checkmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(promptCompatibility.state == .limited ? Color.orange : Color.green)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Button("rag.settings.prompts.check") {
+                    // 沿用原分析器，只检查当前模板，不发请求或修复用户输入。
+                    hasCheckedPrompt = true
+                    isPromptCompatibilityPresented = promptCompatibility.state == .limited
+                }
+                .buttonStyle(.link)
+                .help(Text("rag.settings.prompts.checkHint"))
+                .popover(isPresented: $isPromptCompatibilityPresented, arrowEdge: .top) {
+                    promptCompatibilityNotice
+                        .padding(16)
+                        .frame(width: 380)
+                        .appLocaleEnvironment()
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Spacer(minLength: 0)
+                defaultPromptReferenceButton
+                placeholderHelpButton
+                ResetIconButton(help: Text("rag.workspace.prompt.restoreHelp")) {
+                    restoreCurrentTab()
+                }
+                Button("settings.ai.models.prompt.done") {
+                    isPromptEditorPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 600)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var promptTaskPicker: some View {
+        Picker("rag.settings.prompts.task", selection: $tab) {
+            ForEach(RAGPromptEditorTab.allCases) { task in
+                Text(task.titleKey).tag(task)
+            }
+        }
+        .labelsHidden()
+        .accessibilityLabel("rag.settings.prompts.task")
+    }
+
+    /// 恢复后端卡片和直接展示的运行信息；分组继续使用 Form 的统一背景。
     private var inferenceSettingsSections: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
-            VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
+        Group {
+            Section {
+                VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
+                    Text("rag.workspace.inference.backend.summary")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    VStack(spacing: interfaceScale.scaled(10)) {
+                        ForEach(availableInferenceBackends) { backend in
+                            RAGInferenceBackendCard(
+                                backend: backend,
+                                inspection: runtimeInspection(for: backend),
+                                isSelected: inferenceBackend == backend,
+                                interfaceScale: interfaceScale
+                            ) {
+                                selectInferenceBackend(backend)
+                            }
+                        }
+                    }
+
+                    if availableInferenceBackends.contains(where: \.isCLI) {
+                        Label("rag.workspace.inference.loginNotice", systemImage: "person.badge.key")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } header: {
                 HStack(spacing: interfaceScale.scaled(8)) {
                     SettingsSectionHeader("rag.workspace.inference.backend.title", businessIcon: .inference)
                     Spacer(minLength: 0)
@@ -529,36 +659,9 @@ struct RAGWorkspaceSettingsView: View {
                         .accessibilityLabel("rag.workspace.inference.refresh.label")
                     }
                 }
-
-                Text("rag.workspace.inference.backend.summary")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                VStack(spacing: interfaceScale.scaled(10)) {
-                    ForEach(availableInferenceBackends) { backend in
-                        RAGInferenceBackendCard(
-                            backend: backend,
-                            inspection: runtimeInspection(for: backend),
-                            isSelected: inferenceBackend == backend,
-                            interfaceScale: interfaceScale
-                        ) {
-                            selectInferenceBackend(backend)
-                        }
-                    }
-                }
-
-                if availableInferenceBackends.contains(where: \.isCLI) {
-                    Label("rag.workspace.inference.loginNotice", systemImage: "person.badge.key")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
-            settingsGroup(
-                titleKey: "rag.workspace.inference.boundary.title",
-                systemImage: "lock.shield"
-            ) {
+            Section {
                 VStack(alignment: .leading, spacing: interfaceScale.scaled(8)) {
                     Label("rag.workspace.inference.boundary.retrieval", systemImage: "checkmark.shield")
                     Label("rag.workspace.inference.boundary.tools", systemImage: "nosign")
@@ -566,6 +669,8 @@ struct RAGWorkspaceSettingsView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            } header: {
+                SettingsSectionHeader("rag.workspace.inference.boundary.title", systemImage: "lock.shield")
             }
         }
     }
@@ -605,42 +710,61 @@ struct RAGWorkspaceSettingsView: View {
         isInspectingCLIRuntimes = false
     }
 
-    /// 不含滚动容器的检索内容，主设置可直接接在推理和提示词之后继续滚动。
+    /// 预设与关联参数归为同组；这里只调整呈现，继续复用原有草稿绑定和自动保存。
     private var retrievalSettingsSections: some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(14)) {
+        Group {
             retrievalSettingsGroup(
-                titleKey: "rag.workspace.retrieval.preset.title",
+                titleKey: "settings.retrieval.strategy.title",
                 systemImage: "slider.horizontal.3"
             ) {
                 presetPicker
-            }
-            retrievalSettingsGroup(
-                titleKey: "rag.workspace.retrieval.common.title",
-                systemImage: "line.3.horizontal.decrease.circle"
-            ) {
                 retrievalCommonSection
+                HStack(spacing: 12) {
+                    Text("settings.retrieval.strategy.matching")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button("settings.retrieval.strategy.restore") { apply(.balanced) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                }
             }
             retrievalSettingsGroup(
-                titleKey: "rag.workspace.retrieval.advanced.title",
-                systemImage: "gearshape.2"
-            ) {
-                retrievalAdvancedSection
-            }
-            retrievalSettingsGroup(
-                titleKey: "rag.workspace.retrieval.sources.title",
+                titleKey: "settings.retrieval.sources.title",
                 systemImage: "cylinder.split.1x2"
             ) {
-                retrievalSourcesSection
+                Button {
+                    isSourcesExpanded.toggle()
+                } label: {
+                    HStack {
+                        Text("settings.retrieval.sources.contents")
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 8)
+                        Text("\(buildRetrievalSettings().enabledSources.count) / 4")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Image(systemName: isSourcesExpanded ? "chevron.down" : "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .accessibilityValue(Text(LocalizedStringKey(isSourcesExpanded ? "settings.retrieval.expanded" : "settings.retrieval.collapsed")))
+                if isSourcesExpanded {
+                    retrievalSourcesSection
+                }
             }
             retrievalSettingsGroup(
-                titleKey: "rag.workspace.rerank.title",
+                titleKey: "settings.retrieval.rerank.title",
                 systemImage: "arrow.up.arrow.down.circle"
             ) {
                 rerankSection
             }
-            // 检索后端依赖前面的召回 / 重排语义，放在本页末尾作为高级基础设施配置。
             retrievalSettingsGroup(
-                titleKey: "settings.rag.backends.section",
+                titleKey: "settings.retrieval.storage.title",
                 systemImage: "magnifyingglass"
             ) {
                 RAGBackendSettingsView()
@@ -648,63 +772,77 @@ struct RAGWorkspaceSettingsView: View {
         }
     }
 
-    /// 与提示词页同款：等宽预设 tab + 右侧重置；主设置自动保存，独立窗口仍保留草稿提交。
+    /// 内置档位仍走 apply；恢复操作移到参数之后，明确它会同时恢复来源。
     private var presetPicker: some View {
-        HStack(spacing: interfaceScale.scaled(12)) {
-            EqualWidthSegmentedControl(
-                items: Array(RAGRetrievalPreset.allCases),
-                selection: retrievalPresetBinding,
-                title: \.titleKey
-            )
-            .accessibilityLabel("rag.workspace.retrieval.preset.title")
-
-            ResetIconButton(
-                help: Text("rag.workspace.retrieval.restoreDefaults")
-            ) {
-                apply(.balanced)
+        retrievalSelectionRow(
+            titleKey: "settings.retrieval.strategy.label",
+            selection: retrievalPresetBinding
+        ) {
+            ForEach(RAGRetrievalPreset.allCases) { preset in
+                Text(preset.titleKey).tag(preset)
             }
         }
+    }
+
+    /// 保留同一行的标题和控件；长翻译或窄窗口放不下全部分段时，使用原生菜单。
+    /// 标题以完整宽度参与测量，避免原生 Picker 的理想宽度把文字挤成逐字竖排。
+    private func retrievalSelectionRow<Selection: Hashable, Options: View>(
+        titleKey: LocalizedStringKey,
+        selection: Binding<Selection>,
+        @ViewBuilder options: () -> Options
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(titleKey)
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 12)
+                Picker(titleKey, selection: selection, content: options)
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            HStack(alignment: .center, spacing: 12) {
+                Text(titleKey)
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 12)
+                Picker(titleKey, selection: selection, content: options)
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var retrievalCommonSection: some View {
         // 自定义卡片没有 Form 自动分隔线；行间显式 Divider + 统一竖向 padding。
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: interfaceScale.scaled(6)) {
-                settingRow(
-                    titleKey: "rag.workspace.retrieval.minimumSimilarity",
-                    value: String(format: "%.2f", minimumVectorSimilarity)
-                )
-                Slider(value: similarityBinding, in: 0.00...1.00, step: 0.01)
-                    .controlSize(.small)
-                Text("rag.workspace.retrieval.minimumSimilarity.hint")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            SettingsSliderRow(
+                title: "rag.workspace.retrieval.minimumSimilarity", value: similarityBinding,
+                range: 0.00...1.00, step: 0.01,
+                readout: minimumVectorSimilarity.formatted(.percent.precision(.fractionLength(0)).locale(locale))
+            )
             .padding(.vertical, interfaceScale.scaled(8))
 
             Divider()
             settingTextFieldRow(
-                titleKey: "rag.workspace.retrieval.perRepositoryLimit",
-                hintKey: "rag.workspace.retrieval.perRepositoryLimit.hint",
+                titleKey: "settings.retrieval.strategy.perRepository",
+                hintKey: "settings.retrieval.strategy.perRepositoryHint",
                 text: perRepositoryEvidenceLimitBinding
             )
             .padding(.vertical, interfaceScale.scaled(8))
 
             Divider()
             settingTextFieldRow(
-                titleKey: "rag.workspace.retrieval.finalChunkLimit",
-                hintKey: "rag.workspace.retrieval.finalChunkLimit.hint",
+                titleKey: "settings.retrieval.strategy.fragments",
+                hintKey: "settings.retrieval.strategy.fragmentsHint",
                 text: finalEvidenceChunkLimitBinding
             )
             .padding(.vertical, interfaceScale.scaled(8))
-        }
-    }
-
-    private var retrievalAdvancedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+            // 三个数值行放在同一容器中，使用相同分隔线和 padding，避免 Form 额外增加组间留白。
+            Divider()
             settingTextFieldRow(
-                titleKey: "rag.workspace.retrieval.tokenBudget",
-                hintKey: "rag.workspace.retrieval.tokenBudget.hint",
+                titleKey: "settings.retrieval.strategy.length",
+                hintKey: "settings.retrieval.strategy.lengthHint",
                 text: evidenceTokenBudgetBinding
             )
             .padding(.vertical, interfaceScale.scaled(8))
@@ -714,28 +852,23 @@ struct RAGWorkspaceSettingsView: View {
     /// Rerank 服务由用户自行配置；关闭时保留协议、地址和模型，方便临时停用后再次启用。
     private var rerankSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Toggle("rag.workspace.rerank.enabled", isOn: $rerankEnabled)
+            Toggle("settings.retrieval.rerank.enabled", isOn: $rerankEnabled)
                 .font(ragFont(.body, scale: interfaceScale))
                 .padding(.vertical, interfaceScale.scaled(8))
-            Text("rag.workspace.rerank.enabled.hint")
+            Text("settings.retrieval.rerank.hint")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, interfaceScale.scaled(8))
             if rerankEnabled {
                 Divider()
-                // 与提示词 / 预设同款：等宽铺满，中英文布局一致。
-                EqualWidthSegmentedControl(
-                    items: [RAGRerankProvider.huggingFaceTEI, .cohereCompatible, .localMLX],
-                    selection: $rerankProvider,
-                    title: { provider in
-                        switch provider {
-                        case .huggingFaceTEI: return "rag.workspace.rerank.provider.tei"
-                        case .cohereCompatible: return "rag.workspace.rerank.provider.cohere"
-                        case .localMLX: return "rag.workspace.rerank.provider.localmlx"
-                        }
-                    }
-                )
-                .accessibilityLabel("rag.workspace.rerank.provider")
+                retrievalSelectionRow(
+                    titleKey: "settings.retrieval.rerank.method",
+                    selection: $rerankProvider
+                ) {
+                    Text("rag.workspace.rerank.provider.tei").tag(RAGRerankProvider.huggingFaceTEI)
+                    Text("settings.retrieval.rerank.cohere").tag(RAGRerankProvider.cohereCompatible)
+                    Text("settings.retrieval.rerank.local").tag(RAGRerankProvider.localMLX)
+                }
                 .onChange(of: rerankProvider) { previous, current in
                     // 仅在用户未改过默认地址时切换，手动填写的自托管地址不能被静默覆盖。
                     if rerankEndpoint == previous.defaultEndpoint {
@@ -744,57 +877,64 @@ struct RAGWorkspaceSettingsView: View {
                 }
                 .padding(.vertical, interfaceScale.scaled(10))
                 if rerankProvider != .localMLX {
-                Divider()
-                // URL 往往很长：输入框吃满标题右侧到容器右缘，溢出只水平滚动不换行。
-                settingTextFieldRow(
-                    titleKey: "rag.workspace.rerank.endpoint",
-                    hintKey: "rag.workspace.rerank.endpoint.hint",
-                    text: $rerankEndpoint,
-                    expandsToTrailingEdge: true
-                )
-                .padding(.vertical, interfaceScale.scaled(8))
-                if rerankProvider == .cohereCompatible {
                     Divider()
-                    settingTextFieldRow(
-                        titleKey: "rag.workspace.rerank.model",
-                        hintKey: "rag.workspace.rerank.model.hint",
-                        text: $rerankModel,
-                        expandsToTrailingEdge: true
-                    )
-                    .padding(.vertical, interfaceScale.scaled(8))
+                    rerankConnectionFields
+                } else {
+                    Text("settings.retrieval.rerank.localHint")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, interfaceScale.scaled(8))
                 }
-                Divider()
-                settingTextFieldRow(
-                    titleKey: "rag.workspace.rerank.apiKey",
-                    hintKey: "rag.workspace.rerank.apiKey.hint",
-                    text: rerankAPIKeyBinding,
-                    expandsToTrailingEdge: true,
-                    isSecure: true
-                )
-                .padding(.vertical, interfaceScale.scaled(8))
-                } // rerankProvider != .localMLX：本地重排序没有端点 / Key / 模型名可填
                 Divider()
                 settingTextFieldRow(
                     titleKey: "rag.workspace.rerank.candidateLimit",
-                    hintKey: "rag.workspace.rerank.candidateLimit.hint",
+                    hintKey: "settings.retrieval.rerank.candidatesHint",
                     text: rerankCandidateLimitBinding
                 )
                 .padding(.vertical, interfaceScale.scaled(8))
-                if let rerankCredentialError {
-                    Divider()
-                    Text(rerankCredentialError)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, interfaceScale.scaled(8))
-                }
             }
         }
+    }
+
+    /// 普通垂直栈按各行自然高度排版；统一输入列由字段组件负责，避免跨列备注参与 Grid 测量。
+    private var rerankConnectionFields: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            RAGSettingsConnectionField(titleKey: "rag.workspace.rerank.endpoint", text: $rerankEndpoint)
+                .padding(.vertical, interfaceScale.scaled(8))
+            Text("rag.workspace.rerank.endpoint.hint")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, interfaceScale.scaled(8))
+            if rerankProvider == .cohereCompatible {
+                Divider()
+                RAGSettingsConnectionField(titleKey: "rag.workspace.rerank.model", text: $rerankModel)
+                    .padding(.vertical, interfaceScale.scaled(8))
+                Text("rag.workspace.rerank.model.hint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, interfaceScale.scaled(8))
+            }
+            Divider()
+            RAGSettingsConnectionField(
+                titleKey: "settings.services.apiKey",
+                text: rerankAPIKeyBinding,
+                isSecure: true
+            )
+            .padding(.vertical, interfaceScale.scaled(8))
+            if isSavingRerankCredential || hasSavedRerankCredential || rerankCredentialError != nil {
+                // 保留实际保存反馈；未编辑时不额外占用一行备注空间。
+                rerankCredentialFeedback
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 四个来源各占一行，英文长标签不会被挤成省略号。
     private var retrievalSourcesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("rag.workspace.retrieval.sources.hint")
+            Text("settings.retrieval.sources.hint")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, interfaceScale.scaled(8))
@@ -807,7 +947,7 @@ struct RAGWorkspaceSettingsView: View {
             Divider()
             sourceToggle(
                 source: .notes,
-                titleKey: "rag.workspace.retrieval.source.notes",
+                titleKey: "settings.retrieval.sources.notes",
                 isOn: includesNotesBinding
             )
             .padding(.vertical, interfaceScale.scaled(8))
@@ -828,6 +968,27 @@ struct RAGWorkspaceSettingsView: View {
         }
     }
 
+    /// 状态占用固定的一行，编辑、保存成功和失败不让下方配置反复跳动。
+    private var rerankCredentialFeedback: some View {
+        HStack(spacing: 6) {
+            if isSavingRerankCredential {
+                ProgressView().controlSize(.mini)
+                Text("settings.retrieval.rerank.saving")
+            } else if let rerankCredentialError {
+                Label("settings.retrieval.rerank.saveFailed", systemImage: "exclamationmark.circle")
+                Text(rerankCredentialError)
+            } else if hasSavedRerankCredential {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text(LocalizedStringKey(rerankAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                     ? "settings.retrieval.rerank.cleared" : "settings.retrieval.rerank.saved"))
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
     private func sourceToggle(
         source: RAGChunkSource,
         titleKey: LocalizedStringKey,
@@ -846,55 +1007,20 @@ struct RAGWorkspaceSettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .toggleStyle(.checkbox)
+        .toggleStyle(.switch)
     }
 
-    private func settingsGroup<Content: View>(
-        titleKey: LocalizedStringKey,
-        systemImage: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        // 分组标题与卡片内容拉开到 12pt，避免「标题贴着 tab」的拥挤感。
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
-            // 双栏工作台不改成 Form；此处等效采用设置页 Section header 的字号、图标和间距契约。
-            sectionTitle(titleKey, systemImage: systemImage)
-            content()
-                .padding(interfaceScale.scaled(14))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    StarcatSurface.groupedCard(colorScheme: colorScheme),
-                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                )
-        }
-    }
-
-    /// 带描边的设置卡片：检索各分组 + 提示词「类型」tab 共用，保证分段控件轨道衬底不被半透明底吃掉。
-    /// System / User 长文本编辑仍走 `settingsGroup` 的更轻密度。
+    /// 保留检索各组完整内容，背景与间距由系统 Section 管理。
     private func retrievalSettingsGroup<Content: View>(
         titleKey: LocalizedStringKey,
         systemImage: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: interfaceScale.scaled(12)) {
-            sectionTitle(titleKey, systemImage: systemImage)
-            retrievalSettingsCard(content: content)
+        Section {
+            content()
+        } header: {
+            SettingsSectionHeader(titleKey, systemImage: systemImage)
         }
-    }
-
-    private func retrievalSettingsCard<Content: View>(
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        content()
-            .padding(interfaceScale.scaled(14))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                StarcatSurface.raisedCard(colorScheme: colorScheme),
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .stroke(Color.secondary.opacity(0.16), lineWidth: 0.5)
-            }
     }
 
     private var similarityBinding: Binding<Double> {
@@ -1009,92 +1135,34 @@ struct RAGWorkspaceSettingsView: View {
         retrievalPreset = RAGRetrievalPreset.matching(settings: buildRetrievalSettings())
     }
 
-    /// RAG 已嵌入主设置，标题直接复用统一组件，避免维护第二套字号和图标尺寸。
-    private func sectionTitle(_ key: LocalizedStringKey, systemImage: String) -> some View {
-        SettingsSectionHeader(key, systemImage: systemImage)
-    }
-
-    private func settingRow(titleKey: LocalizedStringKey, value: String) -> some View {
-        HStack {
-            Text(titleKey)
-                .font(ragFont(.body, scale: interfaceScale))
-                .foregroundStyle(.primary)
-            Spacer(minLength: interfaceScale.scaled(12))
-            Text(value)
-                .font(ragFont(.body, scale: interfaceScale, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// - Parameter expandsToTrailingEdge: 为 true 时输入框从标题右侧铺满到容器右缘（URL / 模型名等长文本）；
-    ///   默认 false 保持短数字框（分片上限 / Token 预算 / 候选数等）。
-    @ViewBuilder
+    /// 数值框固定同宽，按标题和完整备注的整体高度居中；统一最小行高后允许长翻译向下扩展。
     private func settingTextFieldRow(
         titleKey: LocalizedStringKey,
         hintKey: LocalizedStringKey,
-        text: Binding<String>,
-        expandsToTrailingEdge: Bool = false,
-        isSecure: Bool = false
+        text: Binding<String>
     ) -> some View {
-        if expandsToTrailingEdge {
-            // 长文本：标题与输入框同一行，说明放整行下方，避免长 hint 挤占输入宽度。
+        HStack(alignment: .center, spacing: interfaceScale.scaled(12)) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
-                    Text(titleKey)
-                        .font(ragFont(.body, scale: interfaceScale))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: true, vertical: false)
-                    if isSecure {
-                        SecureField("", text: text)
-                            .textFieldStyle(.roundedBorder)
-                            .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        TextField("", text: text)
-                            .textFieldStyle(.roundedBorder)
-                            .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
-                            .lineLimit(1)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
+                Text(titleKey)
+                    .font(ragFont(.body, scale: interfaceScale))
+                    .foregroundStyle(.primary)
                 Text(hintKey)
-                    // 设置备注遵循规范的系统 `.caption`，通过动态字体档位自适应一次，
-                    // 不再叠加 RAG 工作台的手工字号倍率。
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        } else {
-            HStack(alignment: .firstTextBaseline, spacing: interfaceScale.scaled(12)) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(titleKey)
-                        .font(ragFont(.body, scale: interfaceScale))
-                        .foregroundStyle(.primary)
-                    Text(hintKey)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: interfaceScale.scaled(12))
-                if isSecure {
-                    SecureField("", text: text)
-                        .textFieldStyle(.roundedBorder)
-                        .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
-                        .lineLimit(1)
-                        .frame(width: interfaceScale.scaled(80), alignment: .trailing)
-                } else {
-                    TextField("", text: text)
-                        .textFieldStyle(.roundedBorder)
-                        .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
-                        .lineLimit(1)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: interfaceScale.scaled(80), alignment: .trailing)
-                }
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: interfaceScale.scaled(12))
+            TextField("", text: text)
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .font(ragFont(.body, scale: interfaceScale, design: .monospaced))
+                .lineLimit(1)
+                .multilineTextAlignment(.trailing)
+                .frame(width: interfaceScale.scaled(100))
+                .accessibilityLabel(titleKey)
         }
+        .frame(minHeight: interfaceScale.scaled(48))
     }
 
     /// 把当前 UI 草稿收成持久化模型；非法数字回落到草稿对应项 / 平衡档默认。
@@ -1225,12 +1293,29 @@ struct RAGWorkspaceSettingsView: View {
     }
 
     private var currentPromptConfiguration: AIPromptConfiguration {
+        promptConfiguration(for: tab)
+    }
+
+    /// 汇总与当前任务使用同一份草稿；不为页内状态创建第二套提示词存储。
+    private func promptConfiguration(for tab: RAGPromptEditorTab) -> AIPromptConfiguration {
         switch tab {
         case .generator: return draft.generator
         case .planner: return draft.planner
         case .compressor: return draft.compressor
         case .title: return draft.title
         }
+    }
+
+    /// 入口反映全部四项任务：任一受限优先提醒，其次自定义，否则全部默认。
+    private var promptSummaryState: RAGPromptCompatibilityState {
+        let states = RAGPromptEditorTab.allCases.map { task in
+            RAGPromptCompatibilityAnalyzer.analyze(
+                current: promptConfiguration(for: task),
+                reference: task.defaultConfiguration
+            ).state
+        }
+        if states.contains(.limited) { return .limited }
+        return states.contains(.customized) ? .customized : .defaultValue
     }
 
     private var promptCompatibility: RAGPromptCompatibility {
@@ -1240,32 +1325,17 @@ struct RAGWorkspaceSettingsView: View {
         )
     }
 
-    /// 仅表达当前编辑页的真实状态；“已自定义”不是错误，只有缺失占位符才使用警告色。
-    private var promptCompatibilityBadge: some View {
-        let compatibility = promptCompatibility
-        let isLimited = compatibility.state == .limited
-        return HStack(spacing: interfaceScale.scaled(5)) {
-            Image(systemName: isLimited ? "exclamationmark.triangle.fill" : "checkmark.circle")
-                // 同行 EqualWidthSegmentedControl 是 13pt medium：badge 图标 10pt 时
-                // 视觉明显偏小，对齐到 12pt（caption 级图标上限）。
-                .font(interfaceScale.font(size: 12, weight: .semibold))
-                .accessibilityHidden(true)
-            Text(promptCompatibilityStatusKey(compatibility.state))
-                // caption(10pt) 在 tab 行里偏小，提到 callout 与卡片标题同级。
-                .font(.callout.weight(.medium))
-                .lineLimit(1)
-        }
-        .foregroundStyle(isLimited ? Color.orange : Color.secondary)
-        .padding(.horizontal, interfaceScale.scaled(8))
-        .frame(minWidth: interfaceScale.scaled(76), minHeight: interfaceScale.scaled(24))
-        .background(
-            (isLimited ? Color.orange : Color.secondary).opacity(isLimited ? 0.12 : 0.08),
-            in: Capsule()
+    /// 默认、自定义、受限分别表达真实草稿状态；自定义本身不表示错误。
+    private func promptCompatibilityBadge(for state: RAGPromptCompatibilityState) -> some View {
+        return Label(
+            promptCompatibilityStatusKey(state),
+            systemImage: state == .limited ? "exclamationmark.triangle" : "checkmark.circle"
         )
+        .foregroundStyle(state == .limited ? Color.orange : state == .defaultValue ? Color.green : Color.secondary)
         .accessibilityElement(children: .combine)
     }
 
-    /// 缺失或重复占位符紧邻 User Prompt 展示；这里只报告问题并保留恢复默认入口，
+    /// 缺失或重复占位符在检查结果中展示；这里只报告问题并保留恢复默认入口，
     /// 不再自动改写用户草稿，避免无法可靠推断的 Prompt 结构被程序拼坏。
     private var promptCompatibilityNotice: some View {
         let compatibility = promptCompatibility
@@ -1341,15 +1411,7 @@ struct RAGWorkspaceSettingsView: View {
                 .controlSize(.regular)
             }
         }
-        .padding(interfaceScale.scaled(10))
-        .background(
-            Color.orange.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(Color.orange.opacity(0.28), lineWidth: 0.5)
-        )
+
     }
 
     private func promptCompatibilityStatusKey(
@@ -1371,27 +1433,28 @@ struct RAGWorkspaceSettingsView: View {
         }
     }
 
+    /// 与翻译页使用相同的标题、等宽正文、固定编辑高度和轻量描边。
     private func promptEditor(
+        title: LocalizedStringKey,
         text: Binding<String>,
-        minHeight: CGFloat
+        height: CGFloat
     ) -> some View {
-        TextEditor(text: text)
-            .font(.system(.caption, design: .monospaced))
-            .scrollContentBackground(.hidden)
-            .padding(interfaceScale.scaled(8))
-            .frame(maxWidth: .infinity, minHeight: minHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(StarcatSurface.editor(colorScheme: colorScheme))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(
-                        Color.primary.opacity(StarcatSurface.composerStrokeOpacity(colorScheme: colorScheme)),
-                        lineWidth: 0.5
-                    )
-            )
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            TextEditor(text: text)
+                .font(.body.monospaced())
+                .accessibilityLabel(title)
+                .frame(height: height)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
+                )
+        }
     }
+
 }
 
 /// 当前 Prompt 页的只读默认值；只提供复制，不持有 Binding，也不会间接覆盖用户草稿。

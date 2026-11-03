@@ -13,8 +13,8 @@
 //    已删除（铁律 #1），VM 现在只负责数据 load / loadMore / reset 三件事。
 //  - **v1.1.1 修订（2026-06-29）**：从直接调 `RecommendAPI` 改为走
 //    `RecommendationContextService`（read-through cache）。`loadInitial` 先异步读磁盘 cache，
-//    但磁盘 I/O 在独立 actor 中执行，不阻塞主线程；SimRepo v1 继续按 TTL 刷新，自研 v2
-//    在缓存上屏后用模型版本 ETag 条件重验证，版本变化才下载并覆盖推荐正文。
+//    但磁盘 I/O 在独立 actor 中执行，不阻塞主线程；双渠道均在缓存上屏后用模型 / 源内容
+//    版本 ETag 条件重验证，版本变化才下载并覆盖推荐正文。
 //
 
 import Foundation

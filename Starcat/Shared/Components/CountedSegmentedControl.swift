@@ -17,7 +17,6 @@ struct CountedSegmentedControl<Item: Hashable>: View {
     let accessibilityLabel: LocalizedStringKey
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.layoutDirection) private var layoutDirection
     @FocusState private var focusedItem: Item?
 
     var body: some View {
@@ -39,8 +38,8 @@ struct CountedSegmentedControl<Item: Hashable>: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(accessibilityLabel))
-        .onKeyPress(.leftArrow) { moveSelection(by: layoutDirection == .leftToRight ? -1 : 1) }
-        .onKeyPress(.rightArrow) { moveSelection(by: layoutDirection == .leftToRight ? 1 : -1) }
+        .onKeyPress(.leftArrow) { moveSelection(by: -1) }
+        .onKeyPress(.rightArrow) { moveSelection(by: 1) }
     }
 
     /// 整段都是一个按钮，标题与数字不能变成两个独立点击目标。

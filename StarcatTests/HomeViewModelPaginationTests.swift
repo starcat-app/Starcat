@@ -262,6 +262,58 @@ struct HomeViewModelPaginationTests {
         #expect(vm.items.map(\.id) == [1], "旧 all-stars 结果返回后不得覆盖 Swift 分类")
     }
 
+    @Test("Star 变化后重新查询，不能复用操作前的同一在途请求")
+    func starChangeInvalidatesInFlightReload() async throws {
+        let gate = FirstDatabaseFetchGate()
+        let (vm, db) = try makeSUT {
+            await gate.blockFirstCall()
+        }
+        try await insertRepo(db, id: 1, fullName: "o/r1", starredAt: starredAt(forID: 1))
+        let oldReload = Task { @MainActor in
+            await vm.reloadItems(forceRefresh: true)
+        }
+        await gate.waitUntilFirstCallIsBlocked()
+        let oldGeneration = vm.reloadGenerationForTesting
+        try await GRDBRepoRepository(database: db).markUnstarred(repoId: 1, userID: 100)
+
+        let refresh = Task { @MainActor in
+            await vm.refreshAfterExternalStarChange()
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while vm.reloadGenerationForTesting == oldGeneration, Date() < deadline {
+            await Task.yield()
+        }
+        #expect(vm.reloadGenerationForTesting > oldGeneration)
+        await gate.resumeFirstCall()
+        await oldReload.value
+        await refresh.value
+
+        #expect(await gate.totalCallCount() == 2)
+        #expect(vm.items.isEmpty)
+        #expect(vm.visibleRepoTotalCount == 0)
+    }
+
+    @Test("取消 Star 后切回旧分类不能恢复缓存中的仓库")
+    func starChangeInvalidatesOtherCategorySnapshots() async throws {
+        let (vm, db) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/r1", starredAt: starredAt(forID: 1))
+        try await db.writer.write { database in
+            try database.execute(sql: "UPDATE repos SET language = 'Swift' WHERE id = 1")
+        }
+        await vm.reloadItems(reason: .selection)
+        vm.selection = .language("Swift")
+        await vm.reloadItems(reason: .selection)
+        #expect(vm.items.map(\.id) == [1])
+
+        try await GRDBRepoRepository(database: db).markUnstarred(repoId: 1, userID: 100)
+        await vm.refreshAfterExternalStarChange()
+        vm.selection = .allStars
+        await vm.reloadItems(reason: .selection)
+
+        #expect(vm.items.isEmpty)
+        #expect(vm.visibleRepoTotalCount == 0)
+    }
+
     @Test("DB Paging: 分类 A-B-A 命中首屏快照时同步上屏且不重复查询")
     func categoryRoundTripUsesPreparedDatabaseSnapshot() async throws {
         let counter = DatabaseFetchCounter()

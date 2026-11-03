@@ -128,8 +128,6 @@ struct StorageCacheUsageOverviewCard: View {
             header
             usageBar
             legendGrid
-            Divider()
-            footer
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
@@ -207,13 +205,6 @@ struct StorageCacheUsageOverviewCard: View {
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private var footer: some View {
-        Text("settings.storage.cacheOverview.footer")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var totalSummaryText: String {

@@ -170,7 +170,7 @@ struct ExploreNavigationPresentation: Equatable {
         }
     }
 
-    private static func localizedTopicTitle(code: String, fallback: String) -> String {
+    static func localizedTopicTitle(code: String, fallback: String) -> String {
         let key: String?
         switch code {
         case "ai": key = "explore.topic.ai"

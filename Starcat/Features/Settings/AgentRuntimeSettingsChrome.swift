@@ -14,17 +14,14 @@
 import AppKit
 import SwiftUI
 
-/// 配置指南提示条。视觉对齐 `RepositoryArchiveLimitNotice`：说明在左、短按钮在右。
+/// 单一配置指南入口：说明在左，独立操作靠右，不额外嵌套背景卡片。
 struct AgentRuntimeGuideNotice: View {
     let destination: URL
 
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "text.book.closed")
-                .foregroundStyle(.secondary)
-
+        HStack(alignment: .center, spacing: 12) {
             Text("settings.integration.agentRuntime.guide.notice")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -35,15 +32,10 @@ struct AgentRuntimeGuideNotice: View {
             Button("settings.integration.agentRuntime.openGuide.action") {
                 openURL(destination)
             }
-            // 次操作按钮统一 `.regular`（设置页规范 §5.1）：`.small` 会让这颗
-            // 按钮文案比同页其它 bordered 按钮小一号。
+            .buttonStyle(.bordered)
             .controlSize(.regular)
+            .fixedSize()
         }
-        .padding(10)
-        .background(
-            Color(nsColor: .controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 10)
-        )
     }
 }
 
@@ -99,8 +91,7 @@ struct AgentRuntimePathRow<Actions: View>: View {
     }
 }
 
-/// 路径行右侧固定口径：可选重置 + 短「选择」+ Finder。
-/// Codex 重置放在「选择」前面，文件夹仍贴在最右，和 CodeFlow 目录行的图标收口一致。
+/// 路径操作统一为「选择 → Finder → 可选重置」，与保存目录行保持相同顺序。
 struct AgentRuntimePathTrailingActions<Reset: View>: View {
     let path: String
     var isDisabled: Bool = false
@@ -121,10 +112,6 @@ struct AgentRuntimePathTrailingActions<Reset: View>: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if Reset.self != EmptyView.self {
-                reset
-            }
-
             Button("settings.integration.agentRuntime.openPanel.prompt", action: onChoose)
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
@@ -135,6 +122,10 @@ struct AgentRuntimePathTrailingActions<Reset: View>: View {
                 AgentRuntimePathReveal.reveal(path)
             }
             .disabled(path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            if Reset.self != EmptyView.self {
+                reset
+            }
         }
     }
 }
@@ -151,15 +142,20 @@ extension AgentRuntimePathTrailingActions where Reset == EmptyView {
     }
 }
 
-/// 标题行右侧的轻量状态。就绪只保留短标签「就绪」；失败细节放到路径行下方，
-/// 避免再占一整句，也不要用产品名（Codex App Server 等）替换就绪文案。
+/// 折叠后标题仍需读到真实状态；失败摘要保留在展开内容，标题不用单独图标替代文字。
 struct AgentRuntimeStatusChip: View {
     let status: AgentRuntimeSettingsStatus
 
     var body: some View {
         switch status {
-        case .idle, .checking:
-            EmptyView()
+        case .idle:
+            Text("settings.integration.agentRuntime.notConfigured")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .checking:
+            Text("settings.integration.agentRuntime.detecting")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         case .ready:
             Label {
                 Text("settings.integration.agentRuntime.status.ready")
@@ -170,11 +166,9 @@ struct AgentRuntimeStatusChip: View {
             .foregroundStyle(.green)
             .labelStyle(.titleAndIcon)
         case .failed:
-            // 失败细节在路径行下方的 Label 里朗读；这里只做标题行的视觉警示。
-            Image(systemName: "exclamationmark.triangle.fill")
+            Label("settings.integration.tools.runtime.unavailable", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(.red)
-                .accessibilityHidden(true)
         }
     }
 }
@@ -214,7 +208,7 @@ enum AgentRuntimeInfoKind: Sendable {
     var noteKey: LocalizedStringKey {
         switch self {
         case .codex: "settings.integration.agentRuntime.codex.info.note"
-        case .deepSeek: "settings.integration.agentRuntime.deepSeek.info.note"
+        case .deepSeek: "settings.integration.agentRuntime.deepSeek.info.note.modelsSettings"
         }
     }
 }
@@ -226,15 +220,12 @@ struct AgentRuntimeInfoButton: View {
     @State private var isPresented = false
 
     var body: some View {
-        Button("settings.integration.agentRuntime.info.button", systemImage: "exclamationmark.circle") {
+        SettingsActionIconButton(
+            title: "settings.integration.agentRuntime.info.button",
+            systemImage: "info.circle"
+        ) {
             isPresented.toggle()
         }
-        .labelStyle(.iconOnly)
-        .foregroundStyle(.secondary)
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover()
-        .help("settings.integration.agentRuntime.info.button")
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             AgentRuntimeInfoPopover(kind: kind)
                 .appLocaleEnvironment()

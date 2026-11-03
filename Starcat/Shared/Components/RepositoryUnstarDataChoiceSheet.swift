@@ -78,7 +78,8 @@ struct RepositoryUnstarDataChoiceSheet: View {
                 .padding(.horizontal, 20)
             footer
         }
-        .frame(width: 760)
+        // 单卡确认不占用双卡布局的宽度；已入库时仍为两种清理范围保留并排空间。
+        .frame(width: isInKnowledgeLibrary ? 760 : 560)
         .interactiveDismissDisabled(isWorking)
     }
 

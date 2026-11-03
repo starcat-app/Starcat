@@ -113,6 +113,57 @@ struct SyncManagerTests {
 
     // MARK: - Tests
 
+    @Test("迟到的同步页不能恢复本轮已取消的 Star", arguments: [false, true])
+    func latePagePreservesLocalUnstar(incremental: Bool) async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let userID: Int64 = 909
+        let dtos = [makeDTO(id: 1), makeDTO(id: 2)]
+        try await repo.upsertStarred(dtos, userID: userID, syncedAt: Date())
+        if incremental {
+            try await repo.updateSyncState(userID: userID, starredCount: 2, syncedCount: 2, status: "idle")
+        }
+        let registry = StarredRegistry()
+        let bootstrapper = StarredRegistryBootstrapper(registry: registry, repoRepository: repo)
+        await bootstrapper.reload()
+        sync.onSyncCompleted = { await bootstrapper.reload() }
+
+        // 请求已经开始后再提交取消操作，随后返回仍包含该仓库的旧页面。
+        mock.starredReposHandler = { _, _, _ in
+            try await repo.markUnstarred(repoId: 1, userID: userID)
+            return self.makeOnePageResponse(dtos: dtos)
+        }
+        sync.performFullSync(userID: userID, force: !incremental)
+        try await waitForState(sync) { if case .completed = $0 { true } else { false } }
+
+        #expect(try await repo.findById(1)?.isStarred == false)
+        #expect(try await repo.fetchStarredRepoIDs() == [2])
+        #expect(!registry.contains(ghRepoId: 1))
+        #expect(sync.progress?.current == 1)
+        #expect(sync.progress?.total == 1)
+    }
+
+    @Test("全量同步收尾不能移除同步期间新加的 Star")
+    func fullSyncPreservesLocalStar() async throws {
+        let (sync, mock, repo) = try makeSUT()
+        let userID: Int64 = 910
+        let original = makeDTO(id: 1)
+        let added = makeDTO(id: 2)
+        try await repo.upsertStarred([original], userID: userID, syncedAt: Date())
+
+        mock.starredReposHandler = { _, _, _ in
+            _ = try await repo.upsertSingleStarred(
+                repoDTO: added.repo, starredAt: nil, userID: userID, syncedAt: Date()
+            )
+            return self.makeOnePageResponse(dtos: [original])
+        }
+        sync.performFullSync(userID: userID, force: true)
+        try await waitForState(sync) { if case .completed = $0 { true } else { false } }
+
+        #expect(try await repo.fetchStarredRepoIDs() == [1, 2])
+        #expect(sync.progress?.current == 2)
+        #expect(sync.progress?.total == 2)
+    }
+
     @Test("正常无 rate limit → .completed")
     func normalSync() async throws {
         let (sync, mock, repo) = try makeSUT()

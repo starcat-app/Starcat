@@ -11,6 +11,7 @@
 
 import SwiftUI
 
+/// 只负责来源草稿与编辑；外层 AppKit 控制器拥有固定画布，列表在中部滚动。
 struct AwesomeSourceManagerSheet: View {
     private enum FocusedInput: Hashable {
         case search
@@ -20,23 +21,28 @@ struct AwesomeSourceManagerSheet: View {
     let store: AwesomeStore
 
     @Environment(\.locale) private var locale
-    @State private var enabledIDs: Set<String> = []
+    @State private var enabledIDs: Set<String>
     @State private var customSourceInput = ""
     @State private var searchQuery = ""
     @State private var customSourceError: String?
     @State private var actionError: String?
     @State private var isSaving = false
     @State private var isAddingCustomSource = false
-    @State private var initialized = false
     @State private var acceptsInputFocus = false
     @State private var pendingConfirmation: AwesomeSourceConfirmation?
     @FocusState private var focusedInput: FocusedInput?
 
-    /// 来源选择是桌面宽 Sheet，固定三列比 adaptive 更能保持卡片位置和视觉节奏。
+    /// 840pt 画布内保留两列完整卡片，不通过缩小图片和操作控件硬塞第三列。
     private let columns = Array(
         repeating: GridItem(.flexible(minimum: 280), spacing: 14, alignment: .top),
-        count: 3
+        count: 2
     )
+
+    /// 打开时一次性捕获勾选草稿；后续目录刷新不能覆盖用户尚未提交的选择。
+    init(store: AwesomeStore) {
+        self.store = store
+        _enabledIDs = State(initialValue: Set(store.sources.filter(\.isEnabled).map(\.id)))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,15 +59,14 @@ struct AwesomeSourceManagerSheet: View {
             Divider()
             footer
         }
-        // 卡片约 252pt；Sheet 保持能看见两行三列，不必为旧的 356pt 卡片加高。
-        .frame(minWidth: 1_000, idealWidth: 1_100, minHeight: 640, idealHeight: 740)
+        // 与控制器共用唯一尺寸；内容不能反向撑大窗口，超出部分只在中部滚动。
+        .frame(width: AwesomeSourceManagerWindowController.contentSize.width,
+               height: AwesomeSourceManagerWindowController.contentSize.height)
         .task {
-            guard !initialized else { return }
-            initialized = true
-            enabledIDs = Set(store.sources.filter(\.isEnabled).map(\.id))
             // 首帧先不让输入框参与焦点链，避免系统自动聚焦后再清除造成蓝框闪烁。
             // 挂载完成后恢复正常焦点能力，用户点击和键盘导航仍使用系统 Focus Ring。
             await Task.yield()
+            guard !Task.isCancelled else { return }
             acceptsInputFocus = true
         }
         // 进 Sheet 就预拉当前目录里全部 OG，不只是可见格子。URL 签名变了再拉一轮：
@@ -128,6 +133,7 @@ struct AwesomeSourceManagerSheet: View {
                 .focused($focusedInput, equals: .search)
         }
         .padding(20)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
@@ -313,6 +319,7 @@ struct AwesomeSourceManagerSheet: View {
                 .disabled(isSaving)
         }
         .padding(20)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func addCustomSource() {

@@ -21,6 +21,8 @@ struct ExternalSearchCredentialTestFailure: Equatable, Sendable {
 enum ExternalSearchCredentialTestOutcome: Equatable, Sendable {
     case succeeded
     case saveFailed
+    /// 编辑或离开页面后不发布旧结果，也不改变已存凭据与启用状态。
+    case superseded
     case failed(ExternalSearchCredentialTestFailure)
 }
 
@@ -45,7 +47,8 @@ final class ExternalSearchCredentialTester {
     func test(
         provider providerID: ExternalSearchProviderID,
         candidateKey: String,
-        anonymous: Bool = false
+        anonymous: Bool = false,
+        isCurrent: @MainActor () -> Bool = { true }
     ) async -> ExternalSearchCredentialTestOutcome {
         let trimmedKey = candidateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         // 匿名（keyless）模式无需 key 即可测试；认证模式要求 key。
@@ -63,6 +66,7 @@ final class ExternalSearchCredentialTester {
                 purpose: .credentialTest,
                 maxResults: Self.testMaxResults
             ))
+            guard isCurrent(), !Task.isCancelled else { return .superseded }
             if anonymous {
                 // 匿名测试成功：不保存 key、也不标记 credential verified（没有 credential），
                 // 只启用 provider，让用户在 keyless 模式下使用。
@@ -73,16 +77,20 @@ final class ExternalSearchCredentialTester {
             }
             // 认证模式：保存 key + 标记 verified + 启用。
             settings.setExternalSearchAPIKey(trimmedKey, for: providerID)
+            guard settings.externalSearchAPIKey(for: providerID) == trimmedKey else {
+                return .saveFailed
+            }
             settings.markExternalSearchCredentialVerified(for: providerID)
             var providerSettings = settings.externalSearchSettings(for: providerID)
             providerSettings.isEnabled = true
             settings.setExternalSearchSettings(providerSettings, for: providerID)
-            guard settings.externalSearchAPIKey(for: providerID) == trimmedKey else {
-                return .saveFailed
-            }
             return .succeeded
         } catch {
-            settings.clearExternalSearchCredentialVerification(for: providerID)
+            guard isCurrent(), !Task.isCancelled, !(error is CancellationError) else { return .superseded }
+            // 失败的新草稿不能撤销旧 Key 的验证；重测已存 Key 确认失效时才清除它。
+            if settings.externalSearchAPIKey(for: providerID) == trimmedKey {
+                settings.clearExternalSearchCredentialVerification(for: providerID)
+            }
             if let external = error as? ExternalSearchError {
                 return .failed(ExternalSearchCredentialTestFailure(
                     friendlyMessage: external.friendlyMessage,

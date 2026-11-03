@@ -10,7 +10,7 @@
 //
 //  设计说明：
 //  - README 缓存走 GRDB 的 `readmes` 表（ReadmeRepository.deleteAll）
-//  - 图片缓存走 Kingfisher 的 `ImageCache.default`（disk + memory）
+//  - 图片缓存包含 Kingfisher（disk + memory）与 README 附件原始文件缓存
 //  - 系统 OSLog 由 macOS 统一管理，无 app 本地日志文件可清；
 //    设置页里"日志条目"项保留但 disabled，提示用户用 Console.app 管理
 //
@@ -27,7 +27,7 @@ struct CacheStatistics: Equatable, Sendable {
     let readmeCount: Int
     /// README 缓存字节总数（基于 readmes.size 列累计）。
     let readmeBytes: Int64
-    /// Kingfisher 磁盘缓存字节数。
+    /// Kingfisher 与 README 附件图片的磁盘缓存字节数。
     let imageDiskBytes: UInt
     /// CodeFlow / RepoContext 共用的源码 ZIP 数量与容量。
     let archiveCount: Int
@@ -55,15 +55,21 @@ final class CacheCleaner {
     private let readmeRepository: ReadmeRepository
     private let fileManager: FileManager
     private let fixedArchiveDirectory: URL?
+    private let attachmentImages: ReadmeAttachmentImageCache
+    private let imageCache: ImageCache
 
     init(
         readmeRepository: ReadmeRepository,
         fileManager: FileManager = .default,
-        fixedArchiveDirectory: URL? = nil
+        fixedArchiveDirectory: URL? = nil,
+        attachmentImages: ReadmeAttachmentImageCache = .shared,
+        imageCache: ImageCache = .default
     ) {
         self.readmeRepository = readmeRepository
         self.fileManager = fileManager
         self.fixedArchiveDirectory = fixedArchiveDirectory
+        self.attachmentImages = attachmentImages
+        self.imageCache = imageCache
     }
 
     // MARK: - 统计
@@ -74,7 +80,7 @@ final class CacheCleaner {
     /// 比"全或无"更友好。
     func loadStatistics() async -> CacheStatistics {
         let (readmeCount, readmeBytes) = await loadReadmeStats()
-        let imageDisk = await calculateImageDiskBytes()
+        let imageDisk = await calculateImageDiskBytes() + attachmentImages.diskSize()
         let archives = loadArchiveStats()
         return CacheStatistics(
             readmeCount: readmeCount,
@@ -110,13 +116,15 @@ final class CacheCleaner {
         }
     }
 
-    /// 清 Kingfisher 图片缓存（memory + disk）。
+    /// 清 Kingfisher 图片缓存与各账户 README 附件缓存。
     func clearImageCache() async {
+        // 先取消附件在途任务，防止“清理完成”后旧下载立刻写回。
+        try? await attachmentImages.clear()
         // memory clear 是同步的
-        ImageCache.default.clearMemoryCache()
+        imageCache.clearMemoryCache()
         await withCheckedContinuation { cont in
             // Kingfisher disk clear 是 callback 风格,用 continuation 桥到 async
-            ImageCache.default.clearDiskCache {
+            imageCache.clearDiskCache {
                 cont.resume()
             }
         }
@@ -158,7 +166,7 @@ final class CacheCleaner {
     /// 失败时返回 0（设置页能显示"无法读取"已经过分了，对用户而言 0 即可解读为"无需清理"）。
     private func calculateImageDiskBytes() async -> UInt {
         await withCheckedContinuation { cont in
-            ImageCache.default.calculateDiskStorageSize { result in
+            imageCache.calculateDiskStorageSize { result in
                 switch result {
                 case .success(let bytes):
                     cont.resume(returning: bytes)

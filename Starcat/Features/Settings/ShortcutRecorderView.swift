@@ -21,82 +21,65 @@ struct ShortcutRecorderView: View {
     @State private var isRecording = false
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isRecording ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.10))
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(isRecording ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: 1)
-
-            // i18n 注意（2026-06-16 dong4j 反馈"显示的是 key 名而不是翻译"修复）：
-            // 原写法 `Text(isRecording ? "key" : shortcut.displayText)` 让 Swift 类型推断把
-            // 字面量降级为 `String`（因为 displayText 是 String），整个表达式命中 SwiftUI
-            // `Text(_ content: some StringProtocol)` 重载——这个重载**完全不查 xcstrings**，
-            // 屏幕上直接渲染裸 key "settings.general.shortcuts.recording"。
-            // 改用 if/else 分支让两个 Text 各自命中对应重载：
-            // - isRecording 分支：单独的字面量 → `Text(_ key: LocalizedStringKey)` 正常本地化
-            // - 非 isRecording 分支：`Text(verbatim:)` 显式声明"这是字面符号串（⌘K 等），
-            //   不要尝试查表"，避免未来 displayText 偶然匹配上 xcstrings 的 key 被误本地化
-            Group {
-                if isRecording {
-                    Text("settings.general.shortcuts.recording")
-                        .font(.system(.body, design: .monospaced).weight(.medium))
-                        .foregroundStyle(Color.accentColor)
-                } else {
-                    // 每个修饰键和主键单独成帽，避免 ⇧⌘F 挤成一坨无法扫读。
-                    HStack(spacing: 4) {
-                        ForEach(Array(shortcut.displaySegments.enumerated()), id: \.offset) { _, segment in
-                            Text(verbatim: segment)
-                                // 键帽渲染属于特殊键盘 UI（规范 §9 例外）：11pt rounded
-                                // 模拟实体键帽，不适用设置页图标 / 文字口径。
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.primary)
-                                .frame(minWidth: 16)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(Color.primary.opacity(0.06))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .strokeBorder(Color.secondary.opacity(0.22), lineWidth: 1)
-                                )
-                        }
+        HStack(spacing: 0) {
+            // 符号串决定自然宽度；不把背景或无固有尺寸的 NSView 放进布局主树，避免重新撑满整行。
+            // 按键符号是技术字面量，必须使用 verbatim；录制提示则单独走本地化重载。
+            Text(verbatim: shortcut.displaySegments.joined(separator: " "))
+                .font(.system(.body, design: .monospaced).weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .opacity(isRecording ? 0 : 1)
+                .accessibilityHidden(isRecording)
+                .overlay {
+                    // 保留当前键位的占位尺寸，长译文只在录制区域截断，不让录制状态改变按钮宽度。
+                    if isRecording {
+                        Text("settings.general.shortcuts.recording")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
+                            .padding(.horizontal, 4)
+                            .help(Text("settings.general.shortcuts.recording"))
                     }
-                    .padding(.trailing, shortcut == defaultShortcut ? 0 : 18)
                 }
-            }
-
-            ShortcutCaptureView(
-                isRecording: $isRecording,
-                onCapture: capture
-            )
+                .overlay {
+                    ShortcutCaptureView(
+                        isRecording: $isRecording,
+                        onCapture: capture
+                    )
+                }
 
             if shortcut != defaultShortcut {
-                // 恢复入口只有在用户改过键位后才出现，并内嵌在录制框中。
-                // 这样既保留原有“恢复默认”语义，也把行外空间还给录制框本身。
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    Button(action: onRestoreDefault) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(SettingsIconMetrics.standardGlyph)
-                            .foregroundStyle(.secondary)
-                            .frame(
-                                width: SettingsIconMetrics.actionFrameSize,
-                                height: SettingsIconMetrics.actionFrameSize
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(Text("settings.general.shortcuts.restoreDefault"))
-                    .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
-                    .padding(.trailing, 2)
+                // 恢复入口仍只在键位改过后出现；独占命中区，避免覆盖短组合或触发底下的录制层。
+                Button(action: onRestoreDefault) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(SettingsIconMetrics.standardGlyph)
+                        .foregroundStyle(.secondary)
+                        .frame(
+                            width: SettingsIconMetrics.actionFrameSize,
+                            height: SettingsIconMetrics.actionFrameSize
+                        )
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(Text("settings.general.shortcuts.restoreDefault"))
+                .accessibilityLabel(Text("settings.general.shortcuts.restoreDefault"))
+                .padding(.trailing, 2)
             }
         }
-        // 分段键帽比紧凑符号串更宽；给 ⌘⇧F 这类三键组合留出间距，恢复按钮叠在右侧。
-        .frame(width: 156, height: 28)
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: 28)
+        .background {
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isRecording ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.10))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 5)
+                .strokeBorder(isRecording ? Color.accentColor : Color.secondary.opacity(0.25), lineWidth: 1)
+                .allowsHitTesting(false)
+        }
         .help(helpKey)
     }
 

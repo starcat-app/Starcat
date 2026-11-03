@@ -12,7 +12,7 @@ import AppKit
 import SwiftUI
 
 enum BatchAIWorkspaceWindowMetrics {
-    static let contentSize = NSSize(width: 960, height: 640)
+    static let contentSize = AIOrganizationLayout.windowSize
 }
 
 /// 单实例固定 sheet；父窗口由发起操作的 HomeView 传入，展示与点击回调分离。

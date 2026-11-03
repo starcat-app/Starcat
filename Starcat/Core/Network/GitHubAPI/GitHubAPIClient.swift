@@ -165,9 +165,11 @@ actor GitHubAPIClient {
         queryItems: [URLQueryItem] = [],
         accept: String = "application/vnd.github+json",
         ifNoneMatch: String? = nil,
+        cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
         as type: T.Type = T.self
     ) async throws -> APIResponse<T> {
         var request = try buildRequest(method: "GET", path: path, queryItems: queryItems, accept: accept, body: nil)
+        request.cachePolicy = cachePolicy
         if let etag = ifNoneMatch, !etag.isEmpty {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }

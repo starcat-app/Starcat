@@ -8,7 +8,6 @@
 //  关键约束：
 //  - Sheet 关闭时不杀 UI 子进程（用户继续在浏览器交互）
 //  - App 退出时由 willTerminate 兜底杀（见 StarcatApp）
-//  - Pro 门控走 ProPaywallSheet
 
 import SwiftUI
 
@@ -18,7 +17,6 @@ struct CodebaseMemoryPanel: View {
     @State private var viewModel: CodebaseMemoryViewModel
     @State private var showsDetails: Bool
     @State private var isDetailsHeaderHovered = false
-    @State private var paywallContext: ProPaywallContext?
 
     /// 当前 sheet 载荷中的 repo。
     ///
@@ -72,13 +70,9 @@ struct CodebaseMemoryPanel: View {
         }
         .frame(width: 520)
         .task {
-            guard requireAccess() else { return }
             // 即使 SwiftUI 复用 presentation host，也以当前 sheet item 的 repo 重新校准 ViewModel。
             viewModel.refreshRepo(repo: repo)
             await viewModel.prepare()
-        }
-        .sheet(item: $paywallContext) { context in
-            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         .onDisappear { viewModel.cancel() }
         .onChange(of: viewModel.state) { _, state in
@@ -416,13 +410,11 @@ struct CodebaseMemoryPanel: View {
             }
             if viewModel.storedProject != nil, !viewModel.isRunning {
                 Button("codebaseMemory.panel.regenerate") {
-                    guard requireAccess() else { return }
                     viewModel.regenerate(maximumArchiveBytes: configuredMaximumArchiveBytes)
                 }
                 .disabled(!viewModel.canGenerate)
             }
             Button(actionTitle) {
-                guard requireAccess() else { return }
                 viewModel.start(maximumArchiveBytes: configuredMaximumArchiveBytes)
             }
             .buttonStyle(.borderedProminent)
@@ -469,16 +461,6 @@ struct CodebaseMemoryPanel: View {
         case .failed:
             return ""
         }
-    }
-
-    // MARK: - Pro Gating
-
-    private func requireAccess() -> Bool {
-        if viewModel.paywallContext != nil {
-            paywallContext = viewModel.paywallContext
-            return false
-        }
-        return true
     }
 }
 

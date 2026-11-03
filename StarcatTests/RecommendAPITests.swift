@@ -2,7 +2,7 @@
 //  RecommendAPITests.swift
 //  StarcatTests
 //
-//  覆盖 Recommend API v1/v2 路由选择与自研 ServingBundle 响应解码。
+//  覆盖双渠道共用的 v2 路由、缓存身份与自研 ServingBundle 响应解码。
 //  网络由 URLProtocolStub 截获，不依赖本地或线上推荐服务。
 //
 
@@ -10,22 +10,25 @@ import Foundation
 import Testing
 @testable import Starcat
 
-@Suite("RecommendAPI v1/v2 契约", .serialized)
+@Suite("RecommendAPI 自研契约", .serialized)
 struct RecommendAPITests {
     private let baseURL = URL(string: "https://recommend.test.invalid")!
 
-    @Test("SimRepo 契约保持 v1 路由和无模型版本响应")
-    func simRepoUsesV1Route() async throws {
-        let api = makeAPI(contract: .simRepoV1)
+    @Test("默认客户端只访问 v2，内容推荐没有校准分数时保持原分数")
+    func defaultClientUsesV2ForContentFallback() async throws {
+        let api = makeAPI()
         URLProtocolStub.requestHandler = { request in
-            #expect(request.url?.path == "/api/v1/repos/42/recommendations")
-            return Self.response(for: request, body: Self.v1Body)
+            #expect(request.url?.path == "/api/v2/repos/42/recommendations")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
+            #expect(request.value(forHTTPHeaderField: "X-SC-Svc") == "recommend")
+            return Self.response(for: request, body: Self.contentBody)
         }
 
         let page = try await api.fetchRecommendations(repoID: 42, limit: 10, offset: 0)
 
-        #expect(page.source == "simrepo")
-        #expect(page.modelVersion == nil)
+        #expect(page.source == "starcat_trained")
+        #expect(page.fallback)
+        #expect(page.modelVersion == "coverage-v20-c0123456789abcdef")
         #expect(page.items.first?.repoID == 84)
         #expect(page.items.first?.displayScore == nil)
         #expect(page.items.first?.asSemanticSearchHit().displayScore == 0.9)
@@ -33,7 +36,7 @@ struct RecommendAPITests {
 
     @Test("自研契约使用 v2 路由并解码 ServingBundle 版本")
     func trainedBundleUsesV2Route() async throws {
-        let api = makeAPI(contract: .trainedV2)
+        let api = makeAPI()
         URLProtocolStub.requestHandler = { request in
             #expect(request.url?.path == "/api/v2/repos/42/recommendations")
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -56,7 +59,7 @@ struct RecommendAPITests {
 
     @Test("自研缓存按模型版本发送 ETag 并接受 304")
     func trainedBundleRevalidatesWithModelVersionETag() async throws {
-        let api = makeAPI(contract: .trainedV2)
+        let api = makeAPI()
         URLProtocolStub.requestHandler = { request in
             #expect(request.value(forHTTPHeaderField: "If-None-Match") == "\"recommendation:costar-real-v1:42:10:0\"")
             return Self.response(for: request, body: "", statusCode: 304)
@@ -77,7 +80,7 @@ struct RecommendAPITests {
 
     @Test("服务端模型升级后条件请求返回新页面")
     func trainedBundleRevalidationReturnsNewModel() async throws {
-        let api = makeAPI(contract: .trainedV2)
+        let api = makeAPI()
         URLProtocolStub.requestHandler = { request in
             #expect(request.value(forHTTPHeaderField: "If-None-Match") == "\"recommendation:costar-old-v1:42:10:0\"")
             return Self.response(for: request, body: Self.v2Body)
@@ -97,12 +100,11 @@ struct RecommendAPITests {
         #expect(page.modelVersion == "costar-real-v1")
     }
 
-    private func makeAPI(contract: RecommendationAPIContract) -> RecommendAPI {
+    private func makeAPI() -> RecommendAPI {
         URLProtocolStub.reset()
         return RecommendAPI(
             baseURL: baseURL,
             apiKey: "test-key",
-            contract: contract,
             session: URLProtocolStub.ephemeralSession()
         )
     }
@@ -121,8 +123,8 @@ struct RecommendAPITests {
         return (response, Data(body.utf8))
     }
 
-    private static let v1Body = """
-    {"schema_version":1,"data":{"source":"simrepo","fallback":false,"repo_id":42,"items":[{"repo_id":84,"full_name":"owner/simrepo","stars":10,"forks":1,"archived":false,"score":0.9,"source":"simrepo","reasons":[]}],"has_more":false}}
+    private static let contentBody = """
+    {"schema_version":1,"data":{"source":"starcat_trained","fallback":true,"repo_id":42,"model_version":"coverage-v20-c0123456789abcdef","items":[{"repo_id":84,"full_name":"owner/content","stars":10,"forks":1,"archived":false,"score":0.9,"source":"starcat_trained","reasons":["metadata_similarity"]}],"has_more":false}}
     """
 
     private static let v2Body = """

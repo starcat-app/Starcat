@@ -32,14 +32,14 @@
 //  - 该规则与 owner/repo 无关，在「owner/repo 缺失」保守短路之前执行。
 //
 //  ────────────────────────────────────────────────────────────────────────────
-//  图片策略（与原 ReadmeWebView 实现一致，**仅是位置迁移**）
+//  图片策略
 //  ────────────────────────────────────────────────────────────────────────────
 //
 //  触发原因：GitHub HTML render 端点对原生 HTML `<img>` 不做 URL 重写，
 //  用 `repo.htmlUrl` 作 baseURL 时 `./logo.PNG` 会被浏览器解析为
 //  `https://github.com/owner/logo.PNG` → 404。
 //
-//  - 完整 URL（http(s):// / data: / 协议相对 //） → 不动
+//  - 完整 URL（http(s):// / data: / 协议相对 //） → 除 GitHub 签名附件外不动
 //  - GitHub 站点根路径 raw 图片（`/{owner}/{repo}/raw/{ref}/{path}`）
 //    → 改写为 `https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}`
 //  - 其余视作相对路径 → 拼到 README 文件所在目录对应的 raw URL：
@@ -47,13 +47,15 @@
 //    - HEAD 自动指向 default branch，无需额外查询 default branch
 //    - GitHub HTML 外层 `data-path=".github/README.md"` 表示本文档位于 `.github/`
 //      目录，`img/logo.png` 必须解析到 `.github/img/logo.png`，不能按仓库根拼接
-//  - owner/repo 缺失 → 直接原样返回（保守，宁可坏图不要错重写）
+//  - `<picture>` 内 `<source srcset>` 的相对候选复用上述地址规则；仅替换 URL，
+//    保留 media / type / sizes、候选描述符与原始空白，不触碰其它媒体的 source
+//  - owner/repo 缺失 → 相对路径原样返回（保守，宁可坏图不要错重写）
 //
-//  视频策略（GitHub Issue #107，2026-08-22）：
-//  - GitHub 上传的视频会被 HTML API 渲染为 `<video src="短时效签名 URL">`；
+//  附件策略（视频 GitHub Issue #107；2026-10-29 补齐图片）：
+//  - GitHub 上传的图片与视频会被 HTML API 渲染为短时效签名 URL；
 //  - `rendered_html` 的缓存寿命远长于签名 URL，直接落库会导致视频很快失效；
 //  - 从 `private-user-images.githubusercontent.com` path 提取 attachment UUID，改写为
-//    `https://github.com/user-attachments/assets/<UUID>`，由 GitHub 在播放时生成新重定向；
+//    `https://github.com/user-attachments/assets/<UUID>`，由 GitHub 在加载时生成新重定向；
 //  - UUID 无法可靠提取时保持原样，避免把第三方或未知地址误改坏。
 //
 //  正则只匹配双引号包裹的属性（GitHub render 出来稳定用双引号），不引入新依赖
@@ -78,21 +80,27 @@ enum ReadmeAssetURLRewriter {
     ///   - repo: 仓库 name（缺失 / 空字符串则不重写相对路径）
     /// - Returns: 重写后的 HTML；没有命中资源规则时返回原字符串
     static func rewrite(in html: String, owner: String?, repo: String?) -> String {
-        // camo → canonical 与 owner/repo 无关，先于保守短路执行：
-        // 即使拿不到仓库身份，也至少把图片从不稳定的 camo 代理还原成原始地址。
+        // camo 回源后再规范化签名附件，避免 canonical 本身就是会过期的临时地址。
+        // 两者均不依赖仓库身份；缺失身份时仍能修复旧缓存，不猜测相对路径。
         let camoRewritten = rewriteCamoProxiedImages(in: html)
-        guard let owner, let repo, !owner.isEmpty, !repo.isEmpty else { return camoRewritten }
+        let attachmentRewritten = rewriteGitHubAttachmentSources(in: camoRewritten)
+        guard let owner, let repo, !owner.isEmpty, !repo.isEmpty else { return attachmentRewritten }
         let rawRoot = "https://raw.githubusercontent.com/\(owner)/\(repo)/HEAD/"
-        let documentDirectory = readmeDocumentDirectory(from: camoRewritten)
+        let documentDirectory = readmeDocumentDirectory(from: attachmentRewritten)
         let rawBase = rawRoot + documentDirectory
 
         let imageRewritten = rewriteImageSources(
-            in: camoRewritten,
+            in: attachmentRewritten,
             rawBase: rawBase,
             rawRoot: rawRoot,
             documentDirectory: documentDirectory
         )
-        return rewriteGitHubVideoSources(in: imageRewritten)
+        return rewritePictureSourceSets(
+            in: imageRewritten,
+            rawBase: rawBase,
+            rawRoot: rawRoot,
+            documentDirectory: documentDirectory
+        )
     }
 
     /// 把 GitHub camo 代理的 `<img src>` / `<source srcset>` 改写回 `data-canonical-src`
@@ -242,12 +250,155 @@ enum ReadmeAssetURLRewriter {
         return result
     }
 
-    /// 把 GitHub HTML API 生成的短时效视频地址改成稳定 attachment URL。
+    /// 只补齐 picture 图片候选，不让同名 source 标签把视频 / 音频带入图片地址规则。
+    ///
+    /// 深浅色 picture 会优先使用 source，即使 img.src 已是正确直链，漏改 source
+    /// 仍会裂图。按文档逆序替换标签，避免前面的字符串长度变化使后续匹配区间失效。
+    private static func rewritePictureSourceSets(
+        in html: String,
+        rawBase: String,
+        rawRoot: String,
+        documentDirectory: String
+    ) -> String {
+        guard let pictureRegex = try? NSRegularExpression(
+            pattern: #"<picture\b[^>]*>.*?</picture\s*>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ),
+              let sourceRegex = try? NSRegularExpression(
+                pattern: #"<source\b[^>]*>"#,
+                options: [.caseInsensitive]
+              )
+        else { return html }
+
+        let nsHtml = html as NSString
+        let pictures = pictureRegex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+        var result = html
+        for picture in pictures.reversed() {
+            for source in sourceRegex.matches(in: html, range: picture.range).reversed() {
+                let tag = nsHtml.substring(with: source.range)
+                guard let srcset = attributeValue(named: "srcset", inTag: tag) else { continue }
+                let rewritten = rewritePictureSourceSet(
+                    srcset,
+                    rawBase: rawBase,
+                    rawRoot: rawRoot,
+                    documentDirectory: documentDirectory
+                )
+                guard rewritten != srcset, let range = Range(source.range, in: result) else { continue }
+                result.replaceSubrange(range, with: replaceAttributeValue(named: "srcset", inTag: tag, with: rewritten))
+            }
+        }
+        return result
+    }
+
+    /// 按 URL token 与描述符读取 srcset，仅替换相对 URL 与 GitHub 签名附件的字符区间。
+    ///
+    /// 不能直接 split(",")：data URI 和普通 URL 路径也能含逗号。URL 先读到 ASCII
+    /// 空白，尾逗号才结束无描述符候选；否则读取后面的 1x / 480w 等描述符。
+    /// 不认识的描述符保留整串，避免只修好前半段却破坏候选选择。绝对 URL 不补目录，
+    /// 使缓存每次读取重跑此函数仍保持幂等；HTML 的 &amp; 等转义直接按原字符保留。
+    private static func rewritePictureSourceSet(
+        _ srcset: String,
+        rawBase: String,
+        rawRoot: String,
+        documentDirectory: String
+    ) -> String {
+        rewriteSourceSet(srcset) { url in
+            if let stableURL = stableGitHubAttachmentURL(from: url) { return stableURL }
+            guard !url.isEmpty, !url.hasPrefix("//"), !url.hasPrefix("#"),
+                  URL(string: url)?.scheme == nil else { return url }
+            return rewriteOne(url, rawBase: rawBase, rawRoot: rawRoot, documentDirectory: documentDirectory)
+        }
+    }
+
+    /// 仅展示时路由附件图片；数据库始终保留可在外部打开的 HTTPS 地址。
+    ///
+    /// 在 WebKit 解析 HTML 前替换，避免 document-end 再换 src 导致同图发两次网络请求。
+    /// picture 作为完整块处理，所以视频 / 音频的 source 不会误入图片加载器。
+    static func rewriteAttachmentImagesForDisplay(in html: String) -> String {
+        guard let blocks = try? NSRegularExpression(
+            pattern: #"<picture\b[^>]*>.*?</picture\s*>|<img\b[^>]*>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ),
+              let tags = try? NSRegularExpression(pattern: #"<(?:img|source)\b[^>]*>"#, options: [.caseInsensitive])
+        else { return html }
+        let nsHTML = html as NSString
+        var result = html
+        for block in blocks.matches(in: html, range: NSRange(location: 0, length: nsHTML.length)).reversed() {
+            for match in tags.matches(in: html, range: block.range).reversed() {
+                var tag = nsHTML.substring(with: match.range)
+                if tag.lowercased().hasPrefix("<img"), let src = attributeValue(named: "src", inTag: tag) {
+                    tag = replaceAttributeValue(named: "src", inTag: tag, with: ReadmeAttachmentImageURL.cachedSource(src))
+                }
+                if let srcset = attributeValue(named: "srcset", inTag: tag) {
+                    tag = replaceAttributeValue(
+                        named: "srcset", inTag: tag,
+                        with: rewriteSourceSet(srcset, transform: ReadmeAttachmentImageURL.cachedSource)
+                    )
+                }
+                if let range = Range(match.range, in: result) { result.replaceSubrange(range, with: tag) }
+            }
+        }
+        return result
+    }
+
+    /// IO 规范化与展示路由共用候选解析，避免两套逗号 / 描述符规则逐渐漂移。
+    private static func rewriteSourceSet(_ srcset: String, transform: (String) -> String) -> String {
+        let whitespace: Set<Character> = [" ", "\t", "\n", "\r", "\u{0C}"]
+        var cursor = srcset.startIndex
+        var replacements: [(Range<String.Index>, String)] = []
+
+        while cursor < srcset.endIndex {
+            while cursor < srcset.endIndex, whitespace.contains(srcset[cursor]) || srcset[cursor] == "," {
+                cursor = srcset.index(after: cursor)
+            }
+            guard cursor < srcset.endIndex else { break }
+
+            let urlStart = cursor
+            while cursor < srcset.endIndex, !whitespace.contains(srcset[cursor]) {
+                cursor = srcset.index(after: cursor)
+            }
+            var urlEnd = cursor
+            while urlEnd > urlStart, srcset[srcset.index(before: urlEnd)] == "," {
+                urlEnd = srcset.index(before: urlEnd)
+            }
+            if urlEnd == cursor {
+                let descriptorStart = cursor
+                while cursor < srcset.endIndex, srcset[cursor] != "," {
+                    cursor = srcset.index(after: cursor)
+                }
+                let descriptor = srcset[descriptorStart..<cursor].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !descriptor.isEmpty {
+                    if descriptor.hasSuffix("w"), let width = Int(descriptor.dropLast()), width > 0 {
+                        // 宽度描述符保留原文，仅校验其属于可安全处理的单候选形式。
+                    } else if descriptor.hasSuffix("x"),
+                              let density = Double(descriptor.dropLast()), density.isFinite, density >= 0 {
+                        // 密度描述符与原候选绑定，不参与 URL 拼接。
+                    } else {
+                        return srcset
+                    }
+                }
+            }
+
+            let url = String(srcset[urlStart..<urlEnd])
+            let rewritten = transform(url)
+            if rewritten != url {
+                replacements.append((urlStart..<urlEnd, rewritten))
+            }
+        }
+
+        var result = srcset
+        for (range, url) in replacements.reversed() {
+            result.replaceSubrange(range, with: url)
+        }
+        return result
+    }
+
+    /// 把 GitHub HTML API 生成的短时效图片与视频地址改成稳定 attachment URL。
     ///
     /// 同时处理 `src` 与 `data-canonical-src`，避免旧签名继续残留在落库 HTML 中。
-    /// 只扫描 `<video ...>` 开始标签，不触碰 iframe、object 或普通链接。
-    private static func rewriteGitHubVideoSources(in html: String) -> String {
-        let tagPattern = #"<video\b[^>]*>"#
+    /// 只扫描 img / video 资源属性，不触碰 iframe、object 或普通链接。
+    private static func rewriteGitHubAttachmentSources(in html: String) -> String {
+        let tagPattern = #"<(?:img|video)\b[^>]*>"#
         guard let tagRegex = try? NSRegularExpression(
             pattern: tagPattern,
             options: [.caseInsensitive]
@@ -266,7 +417,7 @@ enum ReadmeAssetURLRewriter {
         var result = html
         for match in matches.reversed() {
             let tag = nsHtml.substring(with: match.range)
-            let rewrittenTag = rewriteVideoSourceAttributes(in: tag)
+            let rewrittenTag = rewriteAttachmentSourceAttributes(in: tag)
             guard rewrittenTag != tag,
                   let range = Range(match.range, in: result)
             else { continue }
@@ -275,9 +426,9 @@ enum ReadmeAssetURLRewriter {
         return result
     }
 
-    /// 只替换视频标签中的资源属性值，保留 GitHub 生成的 controls、muted、class 与 style。
-    private static func rewriteVideoSourceAttributes(in tag: String) -> String {
-        let attributePattern = #"\b(data-canonical-src|src)\s*=\s*"([^"]+)""#
+    /// 只替换资源属性值，保留尺寸、替代文本和媒体控制属性；不能误匹配 data-src 等属性。
+    private static func rewriteAttachmentSourceAttributes(in tag: String) -> String {
+        let attributePattern = #"(?<=\s)(data-canonical-src|src)\s*=\s*"([^"]+)""#
         guard let attributeRegex = try? NSRegularExpression(
             pattern: attributePattern,
             options: [.caseInsensitive]
@@ -305,8 +456,8 @@ enum ReadmeAssetURLRewriter {
         return result
     }
 
-    /// GitHub 的签名视频 path 会保留原 attachment UUID；只在 host 与 UUID 都准确时重写。
-    private static func stableGitHubAttachmentURL(from source: String) -> String? {
+    /// GitHub 的签名附件 path 会保留原 UUID；只在 host 与 UUID 都准确时重写。
+    static func stableGitHubAttachmentURL(from source: String) -> String? {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               url.host?.lowercased() == "private-user-images.githubusercontent.com"

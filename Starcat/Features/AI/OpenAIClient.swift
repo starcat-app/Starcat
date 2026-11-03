@@ -805,7 +805,8 @@ struct OpenAIClient: AIClientProtocol {
 
     func listModels() async throws -> [AIModelDescriptor] {
         let url = try Self.modelsURL(baseURL: configuration.baseURL, provider: configuration.provider)
-        var request = URLRequest(url: url)
+        // 模型发现也用于即时连接检测，不能用 HTTP 缓存把已离线服务误报为可用。
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = "GET"
         request.timeoutInterval = configuration.timeoutInterval
         let key = Self.effectiveAPIKey(for: configuration)

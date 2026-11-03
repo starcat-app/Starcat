@@ -195,6 +195,99 @@ struct ReadmeAPINetworkTests {
         #expect(cached?.renderedHtml?.contains(expected) == true)
     }
 
+    @Test("缓存读取与 304 刷新都修复 picture 候选地址并持久化", arguments: [false, true])
+    func cachedPictureSourcesAreRepaired(refresh: Bool) async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        // 模拟旧缓存：img 已是直链，source 仍保留相对路径。不能依赖服务端返回新 HTML。
+        let oldHTML = #"""
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/hero/demo.gif">
+          <img src="https://raw.githubusercontent.com/alice/foo/HEAD/docs/hero/demo.gif" width="900">
+        </picture>
+        """#
+        try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let repaired: Readme?
+        if refresh {
+            guard case let .notModified(readme) = await api.refreshReadme(for: repo) else {
+                Issue.record("期望 304 使用本地缓存修复 picture 地址")
+                return
+            }
+            repaired = readme
+        } else {
+            repaired = try await api.cachedReadme(for: repo)
+        }
+
+        let expected = oldHTML.replacingOccurrences(
+            of: #"srcset="docs/"#,
+            with: #"srcset="https://raw.githubusercontent.com/alice/foo/HEAD/docs/"#
+        )
+        #expect(repaired?.renderedHtml == expected)
+        let cached = try await readmeRepo.find(repoId: repo.id)
+        #expect(cached?.renderedHtml == expected)
+        let secondRead = try await api.cachedReadme(for: repo)
+        #expect(secondRead?.renderedHtml == expected)
+    }
+
+    @Test("签名图片在缓存读取、200、304 与 Trending 提升路径中修复并持久化", arguments: ["cache", "200", "304", "trending"])
+    func signedImagesAreRepaired(path: String) async throws {
+        let (api, mock, repo, readmeRepo, db) = try await makeAPI()
+        let trendingRepo = TrendingReadmeRepository(database: db)
+        let source = "https://private-user-images.githubusercontent.com/60738984/646132383-2cd4a6ec-eb1e-4b45-8627-a76442ea3874.png?jwt=expired"
+        let oldHTML = #"<picture><source srcset="\#(source) 1x"><img src="\#(source)" width="900"></picture>"#
+        let expected = oldHTML.replacingOccurrences(
+            of: source,
+            with: "https://github.com/user-attachments/assets/2cd4a6ec-eb1e-4b45-8627-a76442ea3874"
+        )
+        // 200 模拟首次入库；其它路径只提供旧签名 HTML，保证修复不依赖服务端更新。
+        if path == "trending" {
+            try await trendingRepo.upsert(TrendingReadme(
+                fullName: repo.fullName,
+                renderedHtml: oldHTML,
+                etag: "\"old-etag\"",
+                lastModified: nil,
+                cachedAt: "2026-05-29T00:00:00Z",
+                size: oldHTML.utf8.count
+            ))
+        } else if path != "200" {
+            try await readmeRepo.upsert(makeReadme(repoId: repo.id, html: oldHTML))
+        }
+        mock.readmeHTMLHandler = { _, _, _, _ in
+            if path == "200" {
+                return BytesResponse.ok(data: Data(oldHTML.utf8), etag: "\"new-etag\"")
+            }
+            return BytesResponse.notModified304(etag: "\"old-etag\"")
+        }
+
+        let repaired: Readme?
+        switch path {
+        case "cache", "trending":
+            repaired = try await api.cachedReadme(for: repo)
+        case "200":
+            guard case let .updated(readme) = await api.refreshReadme(for: repo) else {
+                Issue.record("期望 200 返回规范化后的图片地址")
+                return
+            }
+            repaired = readme
+        default:
+            guard case let .notModified(readme) = await api.refreshReadme(for: repo) else {
+                Issue.record("期望 304 修复缓存里的签名图片地址")
+                return
+            }
+            repaired = readme
+        }
+        #expect(repaired?.renderedHtml == expected)
+        let persisted = try await readmeRepo.find(repoId: repo.id)
+        #expect(persisted?.renderedHtml == expected)
+        let secondRead = try await api.cachedReadme(for: repo)
+        #expect(secondRead?.renderedHtml == expected)
+        let remainingTrending = try await trendingRepo.find(fullName: repo.fullName)
+        #expect(remainingTrending == nil)
+    }
+
     @Test("refreshReadme: 304 命中时修复子目录 README 旧缓存里的错误 raw HEAD 路径")
     func refresh304RepairsCachedSubdirectoryReadmeRawImage() async throws {
         let (api, mock, repo, readmeRepo, _) = try await makeAPI()

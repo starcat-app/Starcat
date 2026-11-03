@@ -37,7 +37,7 @@ enum ReadmeTranslationError: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .missingProvider:
-            return String.l10n("readme.translate.error.missingProvider")
+            return String.l10n("readme.translate.error.missingProvider.modelsSettings")
         case .missingAPIKey:
             return String.l10n("readme.translate.error.missingAPIKey")
         case .emptySource:

@@ -12,6 +12,7 @@ import Observation
 ///
 /// 枚举放在 Core/Subscription，是为了让业务层只表达“我要使用哪个能力”，不关心
 /// StoreKit 或数量上限的具体实现。
+/// 仓库上下文与本地代码图谱向所有用户开放，不属于 Pro 门控能力。
 ///
 /// **历史变更（dong4j 2026-06-21 拍板放开）**：曾有 `case anySearchWeb`，对应
 /// AnySearch Web 搜索的 Pro 拦截。dong4j 决定网页搜索对所有用户开放后：
@@ -29,13 +30,9 @@ enum ProFeature: String, CaseIterable, Sendable {
     case readmeTranslation
     case semanticSearch
     case knowledgeRAG
-    case repoContext
     case releaseSubscription
     case tagCreation
     case cloudSync
-    case codeFlow
-    /// Pro 功能：CodebaseMemory 3D 代码图谱（tree-sitter 索引 + 浏览器可视化）。
-    case codebaseMemory
     case repoHealth
     case mcpService
     case smartCollections
@@ -54,12 +51,9 @@ enum ProFeature: String, CaseIterable, Sendable {
         case .readmeTranslation: return String.l10n("subscription.feature.readmeTranslation")
         case .semanticSearch: return String.l10n("subscription.feature.semanticSearch")
         case .knowledgeRAG: return String.l10n("subscription.feature.knowledgeRAG")
-        case .repoContext: return String.l10n("subscription.feature.repoContext")
         case .releaseSubscription: return String.l10n("subscription.feature.releaseSubscription")
         case .tagCreation: return String.l10n("subscription.feature.tagCreation")
         case .cloudSync: return String.l10n("subscription.feature.cloudSync")
-        case .codeFlow: return String.l10n("subscription.feature.codeFlow")
-        case .codebaseMemory: return String.l10n("subscription.feature.codebaseMemory")
         case .repoHealth: return String.l10n("subscription.feature.repoHealth")
         case .mcpService: return String.l10n("subscription.feature.mcpService")
         case .smartCollections: return String.l10n("subscription.feature.smartCollections")

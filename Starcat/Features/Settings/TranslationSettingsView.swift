@@ -2,18 +2,15 @@
 //  TranslationSettingsView.swift
 //  Starcat
 //
-//  「翻译服务」设置页：默认引擎 + Apple / Google 翻译凭据 + AI 翻译配置。
-//
-//  2026-09-11 起翻译相关的 AI 配置从「AI 服务」迁入本页（dong4j 拍板）：
-//  - AI 的服务商 / 模型目录仍归「AI 服务」页维护，本页只负责「用谁译」；
-//  - 默认引擎选中 AI 翻译后，在本页从已配置服务商中挑 Chat 模型，并维护
-//    分段 / 全文两套 Prompt；模型参数跟随模型本身（AI 服务页模型列表），
-//    不在本页出现；
-//  - AI 区块固定放页面最后：后续新增翻译引擎时按引擎追加 Section。
+//  翻译设置只管理引擎及其专属配置，目标语言继续来自现有翻译入口。
+//  服务商与模型目录在模型页统一管理；分段 / 全文提示词在同一弹窗中切换并即时保存。
+//  Google 凭据先经实际所选通道验证，再保存或删除；失败与迟到结果均不覆盖既有配置。
 //
 
 import SwiftUI
 
+/// 原生翻译设置表单；沿用语言包目录、翻译任务存储和运行时客户端。
+@MainActor
 struct TranslationSettingsTab: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.openURL) private var openURL
@@ -21,23 +18,20 @@ struct TranslationSettingsTab: View {
     @State private var systemLanguageCatalog = SystemTranslationLanguageCatalog()
     @State private var isSystemLanguageManagerPresented = false
     @State private var googleAPIKey = ""
-    @State private var hasStoredGoogleAPIKey = false
-    @State private var isGoogleAPIKeyVisible = false
-    /// 「测试并保存」进行中：测试期间禁用按钮并显示进度。
     @State private var isTestingGoogleKey = false
-    /// Key 测试 / 保存失败原因，展示在状态行下方。
     @State private var googleKeyError: String?
-
-    /// AI 翻译 Prompt 的二级 Tab。只切换 Prompt，不复制 Provider / Model 配置。
+    @State private var isGoogleKeyApplied = false
+    /// 输入或引擎变更时取消本次验证，身份同时阻挡不响应取消的迟到请求提交旧草稿。
+    @State private var googleTestTask: Task<Void, Never>?
+    @State private var googleTestID: UUID?
+    /// 模式只决定当前编辑的提示词，不复制或切换翻译任务模型。
     @State private var promptMode: ReadmeTranslationMode = .segmented
-    /// 「可用占位符」popover；切换模式时关闭，避免旧模式说明残留。
-    @State private var isPromptPlaceholderPopoverPresented = false
+    @State private var isPromptEditorPresented = false
 
     var body: some View {
         Form {
+            introductionSection
             engineSection
-            // dong4j 2026-09-11 确认：引擎专属配置只在该引擎被选中时展示，
-            // 后续新增翻译引擎也按此规则追加 Section。
             if settings.readmeTranslationEngine == .system {
                 systemTranslationSection
             }
@@ -52,9 +46,7 @@ struct TranslationSettingsTab: View {
         .task(id: settings.effectiveReadmeTranslationLanguage) {
             await refreshEngines()
         }
-        .task {
-            loadGoogleAPIKey()
-        }
+        .task { loadGoogleAPIKey() }
         .sheet(isPresented: $isSystemLanguageManagerPresented) {
             SystemTranslationLanguageManagerSheet(
                 targetLanguage: settings.effectiveReadmeTranslationLanguage,
@@ -63,9 +55,60 @@ struct TranslationSettingsTab: View {
             )
             .appLocaleEnvironment()
         }
+        .sheet(isPresented: $isPromptEditorPresented) {
+            TranslationPromptSheet(
+                mode: $promptMode,
+                systemPrompt: { promptSystemBinding(for: $0) },
+                userPrompt: { promptUserBinding(for: $0) },
+                onRestoreDefault: restoreDefaultPrompt
+            )
+            .appLocaleEnvironment()
+        }
+        .onChange(of: settings.readmeTranslationEngine) { _, engine in
+            if engine != .google { cancelGoogleKeyTest() }
+        }
+        .onChange(of: settings.effectiveReadmeTranslationLanguage) { _, _ in
+            cancelGoogleKeyTest()
+        }
+        .onDisappear { cancelGoogleKeyTest() }
     }
 
-    // MARK: - 引擎选择
+    /// 与模型页共用说明卡片的视觉结构，表面交给 grouped Form，避免卡片套卡片。
+    private var introductionSection: some View {
+        Section {
+            HStack(spacing: 16) {
+                Image(systemName: "character.bubble")
+                    .font(.title)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 48, height: 48)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
+
+                Divider()
+                    .frame(height: 48)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("settings.navigation.item.translation")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .help(Text("settings.navigation.item.translation"))
+                    Text("settings.translation.introduction.description")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(Text("settings.translation.introduction.description"))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    // MARK: - 引擎与系统翻译
 
     private var engineSection: some View {
         Section {
@@ -73,396 +116,261 @@ struct TranslationSettingsTab: View {
                 Text("settings.translation.engine.empty")
                     .foregroundStyle(.secondary)
             } else {
-                Picker(selection: Binding(
-                    get: { settings.readmeTranslationEngine },
-                    set: { settings.readmeTranslationEngine = $0 }
-                )) {
-                    ForEach(availableEngines) { engine in
-                        Text(LocalizedStringKey(engine.displayNameKey)).tag(engine)
+                centeredRow {
+                    Picker("settings.translation.engine.default", selection: Binding(
+                        get: { settings.readmeTranslationEngine },
+                        set: { settings.readmeTranslationEngine = $0 }
+                    )) {
+                        ForEach(availableEngines) { engine in
+                            Text(LocalizedStringKey(engine.displayNameKey)).tag(engine)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
                 } label: {
-                    Text("settings.translation.engine.default")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("settings.translation.engine.default")
+                            .lineLimit(1)
+                        Text("settings.translation.layout.engine.help")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .help(Text("settings.translation.layout.engine.help"))
+                    }
                 }
             }
         } header: {
-            Text("settings.translation.section.engine")
-        } footer: {
-            Text("settings.translation.section.engine.footer")
+            SettingsSectionHeader("settings.translation.section.engine", systemImage: "character.bubble")
         }
     }
 
-    // MARK: - 系统翻译
-
-    /// 仅默认引擎 = 系统翻译时显示。这里展示语言组合的实时摘要；完整列表和下载
-    /// 交给独立 Sheet，避免把二十余种语言直接铺进主设置页。
+    /// 只展示实际语言组合的就绪摘要；完整下载与管理继续交给原语言包窗口。
     private var systemTranslationSection: some View {
         let target = settings.effectiveReadmeTranslationLanguage
         return Section {
-            LabeledContent("settings.translation.system.targetLanguage") {
-                Text(verbatim: target.displayName)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack(alignment: .center, spacing: 12) {
+            centeredRow {
+                if !systemLanguageCatalog.isLoaded(for: target) || systemLanguageCatalog.isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else if systemLanguageCatalog.availablePairCount == 0 {
+                    Label("settings.translation.layout.system.unavailable", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(.secondary)
+                } else if systemLanguageCatalog.readyCount == systemLanguageCatalog.availablePairCount {
+                    Label("settings.translation.layout.system.ready", systemImage: "checkmark")
+                        .foregroundStyle(.green)
+                } else {
+                    Label("settings.translation.layout.system.available", systemImage: "arrow.down.circle")
+                        .foregroundStyle(.secondary)
+                }
+            } label: {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("settings.translation.system.languages")
-                        .foregroundStyle(.primary)
+                    Text("settings.translation.layout.system.packages")
+                        .lineLimit(1)
                     Text(verbatim: systemLanguageReadinessText(for: target))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
-                Spacer(minLength: 12)
-                Button("settings.translation.system.manage") {
+            }
+            centeredRow {
+                Button("settings.translation.layout.system.view") {
                     isSystemLanguageManagerPresented = true
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
-            }
-
-            HStack {
-                Spacer(minLength: 0)
-                Button(action: openSystemLanguageSettings) {
-                    Label(
-                        "settings.translation.system.openSettings",
-                        systemImage: "gearshape"
-                    )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            } label: {
+                Text("settings.translation.layout.system.manage")
+                    .lineLimit(1)
             }
         } header: {
-            SettingsSectionHeader(
-                "settings.translation.section.system",
-                systemImage: "character.bubble"
-            )
-        } footer: {
-            Text("settings.translation.section.system.footer")
+            SettingsSectionHeader("settings.translation.section.system", systemImage: "laptopcomputer")
         }
         .task(id: target.rawValue) {
             await systemLanguageCatalog.refresh(target: target)
         }
     }
 
-    private func systemLanguageReadinessText(
-        for target: ReadmeTranslationLanguage
-    ) -> String {
+    /// 数字是当前目标语言下的可用组合，不将 Apple 提供的组合状态误称为语言包文件数量。
+    private func systemLanguageReadinessText(for target: ReadmeTranslationLanguage) -> String {
         guard systemLanguageCatalog.isLoaded(for: target) else {
             return String.l10n("settings.translation.system.readiness.loading")
         }
         return String(
-            format: String.l10n("settings.translation.system.readiness.format"),
+            format: String.l10n("settings.translation.layout.system.readiness"),
             systemLanguageCatalog.readyCount,
             systemLanguageCatalog.availablePairCount
         )
     }
 
-    /// Apple 没有公开直接弹出「翻译语言」二级窗口的稳定 API；打开官方支持的
-    /// 「语言与地区」面板，由用户进入翻译语言完成删除或全局管理。
+    /// 系统设置入口保留在现有语言包管理窗口；Apple 没有公开直达翻译语言子窗口的稳定 API。
     private func openSystemLanguageSettings() {
-        guard let url = URL(
-            string: "x-apple.systempreferences:com.apple.Localization-Settings.extension"
-        ) else { return }
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension") else { return }
         openURL(url)
     }
 
     // MARK: - Google 翻译
 
-    /// 仅默认引擎 = Google 翻译时显示（dong4j 2026-09-11 确认）。
     private var googleSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("settings.translation.google.description")
-                    // 对齐 DESIGN.md caption 规格：辅助说明 12px / 400，不再用默认 body 撑大行高。
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            SettingsAPIKeyField(
+                title: "settings.translation.google.apiKey.field", text: googleAPIKeyBinding
+            )
 
-                HStack(spacing: 8) {
-                    if isGoogleAPIKeyVisible {
-                        TextField(
-                            "settings.translation.google.apiKey.field",
-                            text: $googleAPIKey
-                        )
-                        .textFieldStyle(.roundedBorder)
-                    } else {
-                        SecureField(
-                            "settings.translation.google.apiKey.field",
-                            text: $googleAPIKey
-                        )
-                        .textFieldStyle(.roundedBorder)
-                    }
-
-                    Button {
-                        isGoogleAPIKeyVisible.toggle()
-                    } label: {
-                        Image(systemName: isGoogleAPIKeyVisible ? "eye.slash" : "eye")
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(Text(isGoogleAPIKeyVisible
-                        ? "settings.translation.google.apiKey.hide"
-                        : "settings.translation.google.apiKey.show"))
-                }
-
-                HStack {
-                    Text(googleAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                        ? "settings.translation.google.publicMode"
-                        : "settings.translation.google.cloudMode")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button {
-                        Task { await testAndSaveGoogleKey() }
-                    } label: {
-                        // 与 AI 服务页「测试并获取模型」同款：测试期间按钮内嵌进度。
-                        if isTestingGoogleKey {
-                            HStack(spacing: 4) {
-                                ProgressView().controlSize(.small)
-                                Text("settings.translation.google.apiKey.testAndSave")
-                            }
-                        } else {
-                            Text("settings.translation.google.apiKey.testAndSave")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(isTestingGoogleKey
-                        || (googleAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            && !hasStoredGoogleAPIKey))
-                }
-
-                if let googleKeyError {
-                    Text(googleKeyError)
+            HStack(spacing: 8) {
+                if isTestingGoogleKey {
+                    ProgressView().controlSize(.small)
+                    Text("settings.services.summary.checking")
                         .font(.caption)
-                        .foregroundStyle(.red)
-                }
-
-                HStack {
-                    Spacer()
-                    Button("settings.translation.google.openConsole") {
-                        guard let url = URL(string: "https://console.cloud.google.com/apis/credentials") else { return }
-                        openURL(url)
+                        .foregroundStyle(.secondary)
+                } else if let googleKeyError {
+                    Label {
+                        Text(verbatim: googleKeyError)
+                            .lineLimit(2)
+                            .help(googleKeyError)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
                     }
+                    .font(.caption)
+                } else if isGoogleKeyApplied {
+                    Label("settings.translation.layout.google.applied", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
                 }
+                Spacer(minLength: 8)
+                Button("settings.connection.getAPIKey") {
+                    openGoogleConsole()
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+                .fixedSize()
+                Button(action: startGoogleKeyTest) {
+                    Text("settings.translation.layout.google.testApply")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .disabled(isTestingGoogleKey)
             }
         } header: {
-            Text("settings.translation.section.google")
-        } footer: {
-            Text("settings.translation.section.google.rateLimitFooter")
+            SettingsSectionHeader("settings.translation.section.google", systemImage: "globe")
         }
+    }
+
+    private func openGoogleConsole() {
+        guard let url = URL(string: "https://console.cloud.google.com/apis/credentials") else { return }
+        openURL(url)
     }
 
     // MARK: - AI 翻译
 
-    /// 仅默认引擎 = AI 翻译时显示（dong4j 2026-09-11 确认）。引擎可用性沿用
-    /// 「不可用不出现」规则：没有已配置服务商时引擎列表里没有 AI，本区块也不会出现，
-    /// 因此无需额外的「未配置」空态。
     private var aiTranslationSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 0) {
-                // 与 AI 服务页「模型配置」行同款交互：左 label + 右双下拉。
-                trailingRow(label: "settings.ai.task.providerLabel") {
-                    Picker("settings.ai.task.providerLabel", selection: providerBinding) {
-                        ForEach(verifiedProfiles) { profile in
-                            Label {
-                                Text(profile.displayName)
-                            } icon: {
-                                AIProviderIconView(provider: profile.provider, size: 14)
-                            }
-                            .tag(profile.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                }
-
-                Divider()
-
-                trailingRow(label: "settings.ai.task.modelLabel") {
-                    Picker("settings.ai.task.modelLabel", selection: modelBinding) {
-                        if enabledModels.isEmpty {
-                            Text("settings.translation.ai.model.empty")
-                                .tag("")
-                        } else {
-                            ForEach(enabledModels) { model in
-                                Text(AnthropicModelCatalog.displayName(forAPIID: model.name)).tag(model.name)
-                            }
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                }
-
-                Divider()
-
-                // 提示词行：二级 Tab 只切 Prompt；↺ 重置当前选中模式。
-                HStack(spacing: 12) {
-                    Text("settings.translation.ai.prompt")
-                        .foregroundStyle(.primary)
-                    EqualWidthSegmentedControl(
-                        items: ReadmeTranslationMode.allCases,
-                        selection: $promptMode,
-                        title: { LocalizedStringKey($0.displayNameKey) }
-                    )
-                    .accessibilityLabel("settings.ai.prompt.translation.mode.pickerLabel")
-                    ResetIconButton(
-                        help: Text("settings.translation.ai.prompt.restoreHelp \(String.l10n(promptMode.displayNameKey))")
-                    ) {
-                        restoreDefaultPrompt()
-                    }
-                }
-                .padding(.vertical, 10)
-
-                Divider()
-
-                promptEditor(
-                    titleKey: "settings.ai.prompt.system",
-                    binding: promptSystemBinding,
-                    height: 180
+            centeredRow {
+                AITaskModelPicker(
+                    title: "settings.ai.models.model.title",
+                    profiles: verifiedProfiles,
+                    selection: translationModelBinding,
+                    providerDisplayName: translationProviderName,
+                    availableModels: enabledModels(in:)
                 )
-                .padding(.vertical, 10)
-
-                Divider()
-
-                promptEditor(
-                    titleKey: "settings.ai.prompt.user",
-                    binding: promptUserBinding,
-                    height: 80
-                )
-                .padding(.vertical, 10)
-
-                Divider()
-
-                // 对齐设置页独立操作按钮右对齐规范：长文案收进 popover，底部只留入口。
-                HStack {
-                    Spacer(minLength: 0)
-                    placeholderHelpButton
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("settings.ai.models.model.title")
+                        .lineLimit(1)
+                    Text("settings.translation.layout.ai.model.help")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .help(Text("settings.translation.layout.ai.model.help"))
                 }
-                .padding(.vertical, 10)
             }
-            .onChange(of: promptMode) { _, _ in
-                isPromptPlaceholderPopoverPresented = false
+            centeredRow {
+                Button("settings.ai.models.prompt.edit") {
+                    isPromptEditorPresented = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("settings.translation.ai.prompt")
+                        .lineLimit(1)
+                    Text("settings.translation.layout.prompt.help")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .help(Text("settings.translation.layout.prompt.help"))
+                }
+            }
+            HStack {
+                Spacer(minLength: 0)
+                Button("settings.translation.layout.ai.manageProviders") {
+                    NotificationCenter.default.post(name: .starcatJumpToSettingsTab, object: "ai.models")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .lineLimit(1)
+                .help(Text("settings.translation.layout.ai.manageProviders"))
             }
         } header: {
-            Text("settings.translation.ai.section")
-        } footer: {
-            Text("settings.translation.ai.footer")
+            SettingsSectionHeader("settings.translation.ai.section", systemImage: "sparkles")
         }
     }
 
-    /// 设置行：左侧 label、右侧控件（一左一右）。
-    private func trailingRow<Content: View>(
-        label: LocalizedStringKey,
-        @ViewBuilder content: () -> Content
+    /// 两行说明作为同一个标签块居中，避免 Form 首行基线把右侧控件顶到上方。
+    private func centeredRow<Content: View, RowLabel: View>(
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder label: () -> RowLabel
     ) -> some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(label)
-                .foregroundStyle(.primary)
+            label().frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 12)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
     }
 
-    /// System / User Prompt 编辑器：等宽字体 + 固定高度（超出内部滚动），描边提示可编辑区。
-    private func promptEditor(
-        titleKey: LocalizedStringKey,
-        binding: Binding<String>,
-        height: CGFloat
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(titleKey)
-                .font(.caption.weight(.semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            TextEditor(text: binding)
-                .font(.system(.caption, design: .monospaced))
-                .frame(height: height)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.secondary.opacity(0.25), lineWidth: 0.5)
-                )
-        }
-    }
+    // MARK: - AI 翻译数据源与原任务绑定
 
-    /// 底部入口：点开看 token + 含义，与 AI 服务页 Prompt 区同一套组件。
-    private var placeholderHelpButton: some View {
-        Button {
-            isPromptPlaceholderPopoverPresented.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "curlybraces")
-                    .font(.caption2.weight(.semibold))
-                Text("settings.ai.prompt.placeholders.open")
-                    .font(.caption.weight(.medium))
-                Image(systemName: "info.circle")
-                    .font(.caption2.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help("settings.ai.prompt.placeholders.openHelp")
-        .popover(isPresented: $isPromptPlaceholderPopoverPresented, arrowEdge: .top) {
-            AIPromptPlaceholderPopover(catalog: AIPromptPlaceholderCatalog.catalog(
-                for: .translation,
-                translationMode: promptMode
-            ))
-                .appLocaleEnvironment()
-        }
-    }
-
-    // MARK: - AI 翻译数据源
-
-    /// 与 AI 服务页任务下拉同口径：仅「已启用 + 测试通过」的服务商可入列。
     private var verifiedProfiles: [AIProviderProfile] {
         settings.aiProviderProfiles.filter(\.isVerifiedConfiguration)
     }
 
-    /// 当前翻译任务服务商下可入选的模型。
-    private var enabledModels: [AIModelDescriptor] {
-        guard let profile = settings.aiProviderProfiles.first(
-            where: { $0.id == settings.aiTranslationTask.providerID }
-        ), profile.isVerifiedConfiguration else { return [] }
-        return enabledModels(in: profile)
-    }
-
-    /// 翻译模型口径（dong4j 2026-09-11 确认）：Chat + Unknown 且已启用。
-    /// 与 AI 服务页 `enabledModels(providerID:capability:)` 的 chat 过滤保持一致。
+    /// 翻译仍只接受已启用的 Chat / Unknown 模型，与模型页菜单使用相同的能力口径。
     private func enabledModels(in profile: AIProviderProfile) -> [AIModelDescriptor] {
         profile.models.filter {
             $0.isEnabled && ($0.capability == .chat || $0.capability == .unknown)
         }
     }
 
-    // MARK: - AI 翻译 Bindings
-
-    /// 切服务商时自动选该服务商第一个可用模型，并关闭自定义模型开关。
-    private var providerBinding: Binding<String> {
-        Binding(
-            get: { settings.aiTranslationTask.providerID },
-            set: { providerID in
-                var config = settings.aiTranslationTask
-                config.providerID = providerID
-                if let profile = settings.aiProviderProfiles.first(where: { $0.id == providerID }),
-                   profile.isVerifiedConfiguration,
-                   let first = enabledModels(in: profile).first {
-                    config.modelID = first.name
-                    config.useCustomModel = false
-                }
-                settings.aiTranslationTask = config
-            }
-        )
+    private var translationProviderName: String {
+        let providerID = settings.resolvedAITask(settings.aiTranslationTask).providerID
+        return settings.aiProviderProfiles.first { $0.id == providerID }?.displayName ?? providerID
     }
 
-    /// 选目录模型时关闭自定义开关；`customModelName` 保留不清，
-    /// 与 AI 服务页任务模型下拉语义一致。
-    private var modelBinding: Binding<String> {
+    /// 菜单身份包含服务商，避免多个兼容服务返回同名模型时同时选中。
+    private var translationModelBinding: Binding<AITaskModelPicker.Selection> {
         Binding(
-            get: { settings.resolvedAITask(settings.aiTranslationTask).modelID },
-            set: { modelName in
+            get: {
+                let config = settings.resolvedAITask(settings.aiTranslationTask)
+                return AITaskModelPicker.Selection(
+                    providerID: config.providerID,
+                    modelName: config.useCustomModel ? config.customModelName : config.modelID,
+                    isCustom: config.useCustomModel
+                )
+            },
+            set: { selection in
+                guard !selection.isCustom,
+                      let profile = verifiedProfiles.first(where: { $0.id == selection.providerID }),
+                      enabledModels(in: profile).contains(where: { $0.name == selection.modelName }) else { return }
                 var config = settings.aiTranslationTask
-                settings.selectLocalAIModel(named: modelName, providerID: config.providerID)
-                config.modelID = modelName
+                settings.selectLocalAIModel(named: selection.modelName, providerID: selection.providerID)
+                config.providerID = selection.providerID
+                config.modelID = selection.modelName
                 config.useCustomModel = false
                 settings.aiTranslationTask = config
             }
@@ -470,8 +378,8 @@ struct TranslationSettingsTab: View {
     }
 
     /// 分段模式读写 `aiTranslationTask.prompt`；全文模式读写独立的 `aiFullTranslationPrompt`。
-    private var promptSystemBinding: Binding<String> {
-        if promptMode == .full {
+    private func promptSystemBinding(for mode: ReadmeTranslationMode) -> Binding<String> {
+        if mode == .full {
             return Binding(
                 get: { settings.aiFullTranslationPrompt.systemPrompt },
                 set: { value in
@@ -491,8 +399,8 @@ struct TranslationSettingsTab: View {
         )
     }
 
-    private var promptUserBinding: Binding<String> {
-        if promptMode == .full {
+    private func promptUserBinding(for mode: ReadmeTranslationMode) -> Binding<String> {
+        if mode == .full {
             return Binding(
                 get: { settings.aiFullTranslationPrompt.userPromptTemplate },
                 set: { value in
@@ -513,8 +421,8 @@ struct TranslationSettingsTab: View {
     }
 
     /// 与 AI 服务页同语义：分段重置任务内 Prompt，全文重置独立存储的全文 Prompt。
-    private func restoreDefaultPrompt() {
-        if promptMode == .full {
+    private func restoreDefaultPrompt(_ mode: ReadmeTranslationMode) {
+        if mode == .full {
             settings.aiFullTranslationPrompt = AIDefaultPrompts.fullTranslation
             return
         }
@@ -542,71 +450,86 @@ struct TranslationSettingsTab: View {
         }
     }
 
-    /// 「测试并保存」（dong4j 2026-09-11 确认）：先用候选 Key 实际调一次 Cloud
-    /// Translation（与运行时同一条路径），成功才写入 Starcat 的加密凭据文件；
-    /// 失败不落盘，已保存的旧 Key 保持不变。
-    /// 字段为空且已有存量 Key 时视为「清除」，直接删除回到无 Key 公开通道（无需测试）。
-    @MainActor
-    private func testAndSaveGoogleKey() async {
-        let trimmed = googleAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: - Google 验证与凭据提交
 
-        guard !trimmed.isEmpty else {
-            deleteGoogleAPIKey()
-            return
-        }
+    /// 只有用户编辑输入时失效验证，成功后标准化空格不会误清除刚显示的成功状态。
+    private var googleAPIKeyBinding: Binding<String> {
+        Binding(
+            get: { googleAPIKey },
+            set: { value in
+                cancelGoogleKeyTest()
+                googleAPIKey = value
+                googleKeyError = nil
+            }
+        )
+    }
 
-        isTestingGoogleKey = true
+    /// 点击时捕获候选输入，空 Key 也复用现有客户端的公开接口进行真实测试。
+    private func startGoogleKeyTest() {
+        guard !isTestingGoogleKey else { return }
+        let candidate = googleAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = settings.effectiveReadmeTranslationLanguage
+        let attemptID = UUID()
+        googleTestID = attemptID
         googleKeyError = nil
-        defer { isTestingGoogleKey = false }
-
-        // 用候选 Key 走一次真实 Cloud 请求；目标语取当前翻译目标语，让测试贴近真实使用。
-        let client = GoogleTranslationClient(apiKey: trimmed)
-        do {
-            _ = try await client.translate(
-                texts: ["hello"],
-                targetLanguage: settings.effectiveReadmeTranslationLanguage
-            )
-        } catch {
-            googleKeyError = error.localizedDescription
-            return
-        }
-
-        do {
-            try KeychainManager.shared.storeServiceAPIKey(
-                trimmed,
-                forService: GoogleTranslationClient.keychainServiceID
-            )
-            googleAPIKey = trimmed
-            hasStoredGoogleAPIKey = true
-        } catch {
-            googleKeyError = error.localizedDescription
-            AppLog.keychain.error(
-                "Google Translation API key update failed: \(error.localizedDescription, privacy: .public)"
-            )
+        isGoogleKeyApplied = false
+        isTestingGoogleKey = true
+        googleTestTask = Task {
+            await testAndApplyGoogleKey(candidate, target: target, attemptID: attemptID)
         }
     }
 
-    private func deleteGoogleAPIKey() {
-        do {
-            try KeychainManager.shared.deleteServiceAPIKey(
-                forService: GoogleTranslationClient.keychainServiceID
-            )
-            googleAPIKey = ""
-            hasStoredGoogleAPIKey = false
-            googleKeyError = nil
-        } catch {
-            googleKeyError = error.localizedDescription
-            AppLog.keychain.error(
-                "Google Translation API key delete failed: \(error.localizedDescription, privacy: .public)"
-            )
+    /// 网络通过后才同步提交凭据；清空旧 Key 同样先验证公开通道，失败保留原配置。
+    /// 输入、目标或引擎改变后旧任务不得提交，defer 也不能清掉新任务的状态。
+    private func testAndApplyGoogleKey(
+        _ candidate: String,
+        target: ReadmeTranslationLanguage,
+        attemptID: UUID
+    ) async {
+        defer {
+            if googleTestID == attemptID {
+                isTestingGoogleKey = false
+                googleTestTask = nil
+                googleTestID = nil
+            }
         }
+        do {
+            _ = try await GoogleTranslationClient(apiKey: candidate).translate(
+                texts: ["hello"],
+                targetLanguage: target
+            )
+            try Task.checkCancellation()
+            guard googleTestID == attemptID,
+                  googleAPIKey.trimmingCharacters(in: .whitespacesAndNewlines) == candidate,
+                  settings.effectiveReadmeTranslationLanguage == target,
+                  settings.readmeTranslationEngine == .google else { return }
+
+            if candidate.isEmpty {
+                try KeychainManager.shared.deleteServiceAPIKey(forService: GoogleTranslationClient.keychainServiceID)
+            } else {
+                try KeychainManager.shared.storeServiceAPIKey(candidate, forService: GoogleTranslationClient.keychainServiceID)
+            }
+            googleAPIKey = candidate
+            isGoogleKeyApplied = true
+        } catch {
+            guard googleTestID == attemptID, !Task.isCancelled else { return }
+            googleKeyError = error.localizedDescription
+        }
+    }
+
+    /// 失效身份优先于等待网络取消，防止旧响应覆盖用户下一次编辑或离开页面后的配置。
+    private func cancelGoogleKeyTest() {
+        googleTestTask?.cancel()
+        googleTestTask = nil
+        googleTestID = nil
+        isTestingGoogleKey = false
+        isGoogleKeyApplied = false
     }
 
     private func loadGoogleAPIKey() {
         googleAPIKey = (try? KeychainManager.shared.loadServiceAPIKey(
             forService: GoogleTranslationClient.keychainServiceID
         )) ?? ""
-        hasStoredGoogleAPIKey = !googleAPIKey.isEmpty
     }
 }
 

@@ -25,6 +25,7 @@
 
 import Foundation
 import GRDB
+import os.lock
 
 // MARK: - 查询投影
 
@@ -57,6 +58,10 @@ struct GRDBRepoRepository {
     /// **不要** 缓存 `database.writer` 为本地 let，否则切账号后还会写到老 DB。
     private let database: any DatabaseManaging
 
+    /// Repository 的值拷贝共享这份会话记录；按账号隔离，避免旧同步页覆盖稍后提交的用户操作。
+    /// 只保护在途同步，不把取消历史变成永久屏蔽名单，也不改变已发布的数据库结构。
+    private let localStarMutations = OSAllocatedUnfairLock(initialState: [Int64: [Int64: Date]]())
+
     init(database: any DatabaseManaging) {
         self.database = database
     }
@@ -66,12 +71,16 @@ struct GRDBRepoRepository {
     /// 批量 upsert 一组 starred repos。
     /// 同时维护 starred_repos 表（user-repo 关系 + starred_at）。
     /// 整批写入在一个事务里，保证原子性。
-    func upsertStarred(_ dtos: [StarredRepoDTO], userID: Int64, syncedAt: Date) async throws {
-        guard !dtos.isEmpty else { return }
+    /// - Returns: 实际写入的 ID；被较新用户操作挡住的旧记录不能再记入 Star 账本或同步数量。
+    @discardableResult
+    func upsertStarred(_ dtos: [StarredRepoDTO], userID: Int64, syncedAt: Date) async throws -> Set<Int64> {
+        guard !dtos.isEmpty else { return [] }
         let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
 
-        try await database.writer.write { db in
-            for dto in dtos {
+        return try await database.writer.write { db in
+            let protectedIDs = locallyChangedStarIDs(userID: userID, since: syncedAt)
+            var writtenIDs: Set<Int64> = []
+            for dto in dtos where !protectedIDs.contains(dto.repo.id) {
                 var repo = Self.repoFromDTO(dto.repo, starredAt: dto.starredAt, cachedAt: cachedAtISO)
                 try repo.save(db)
 
@@ -83,7 +92,9 @@ struct GRDBRepoRepository {
                     lastSyncAt: cachedAtISO
                 )
                 try starred.save(db)
+                writtenIDs.insert(dto.repo.id)
             }
+            return writtenIDs
         }
     }
 
@@ -93,10 +104,11 @@ struct GRDBRepoRepository {
     /// 同时清理 starred_repos 中相应行。
     /// 不删除 repo / 笔记 / 标签，确保用户数据安全。
     @discardableResult
-    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws -> Set<Int64> {
+    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64, syncedAt: Date) async throws -> Set<Int64> {
         try await database.writer.write { db in
             let localIDs = try Int64.fetchSet(db, sql: "SELECT id FROM repos WHERE is_starred = 1")
-            let toUnstar = localIDs.subtracting(remoteRepoIDs)
+            let protectedIDs = locallyChangedStarIDs(userID: userID, since: syncedAt)
+            let toUnstar = localIDs.subtracting(remoteRepoIDs).subtracting(protectedIDs)
             guard !toUnstar.isEmpty else { return [] }
 
             // SQLite IN (...) 不支持数组绑定，手动展开占位符
@@ -143,7 +155,24 @@ struct GRDBRepoRepository {
                 sql: "DELETE FROM starred_repos WHERE user_id = ? AND repo_id = ?",
                 arguments: [userID, repoId]
             )
+            recordLocalStarMutation(db: db, repoID: repoId, userID: userID)
             AppLog.sync.info("Marked repo \(repoId, privacy: .public) as unstarred (user=\(userID, privacy: .public))")
+        }
+    }
+
+    /// 必须在同一 writer 队列中于提交成功后登记，既堵住“提交后、await 返回前”的竞态，也不保护回滚操作。
+    private func recordLocalStarMutation(db: Database, repoID: Int64, userID: Int64) {
+        db.afterNextTransaction(onCommit: { _ in
+            localStarMutations.withLock { mutations in
+                mutations[userID, default: [:]][repoID] = Date()
+            }
+        })
+    }
+
+    /// 调用方同样在 writer 事务内检查，确保判断与实际写入之间不会插入另一次 Star 操作。
+    private func locallyChangedStarIDs(userID: Int64, since syncStartedAt: Date) -> Set<Int64> {
+        localStarMutations.withLock { mutations in
+            Set((mutations[userID] ?? [:]).compactMap { $0.value >= syncStartedAt ? $0.key : nil })
         }
     }
 
@@ -203,6 +232,7 @@ struct GRDBRepoRepository {
                 lastSyncAt: cachedAtISO
             )
             try starred.save(db)
+            recordLocalStarMutation(db: db, repoID: repoDTO.id, userID: userID)
 
             AppLog.sync.info("Upserted starred repo \(repoDTO.id, privacy: .public) (\(repoDTO.fullName, privacy: .public))")
             return repo

@@ -25,6 +25,14 @@ protocol UndoStarHistoryRepositoryProtocol: Sendable {
     func fetchRepo(ghRepoId: Int64) async throws -> Repo?
     /// 统计过期记录数（不删除）。
     func countExpired(before cutoff: String) async throws -> Int
+    func count() async throws -> Int
+}
+
+extension UndoStarHistoryRepositoryProtocol {
+    /// 测试替身可沿用已有读取入口；正式仓储用 COUNT 避免加载全部仓库记录。
+    func count() async throws -> Int {
+        try await fetchAll(sort: .unstarredAtDesc).count
+    }
 }
 
 /// Undo Star 排序选项。
@@ -129,6 +137,12 @@ struct GRDBUndoStarHistoryRepository: UndoStarHistoryRepositoryProtocol {
             try Int.fetchOne(db, sql: """
                 SELECT COUNT(*) FROM undo_star_history WHERE unstarred_at < ?
                 """, arguments: [cutoff]) ?? 0
+        }
+    }
+
+    func count() async throws -> Int {
+        try await database.writer.read { db in
+            try UndoStarRecord.fetchCount(db)
         }
     }
 }

@@ -1237,7 +1237,7 @@ struct AgentWorkspaceRunSurface: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .disabled(viewModel.isRunning || deepSeekProviderOptions.isEmpty)
-        .help(String.l10n("agent.workspace.runtime.deepSeekProviderHelp"))
+        .help(String.l10n("agent.workspace.runtime.deepSeekProviderHelp.modelsSettings"))
     }
 
     private var deepSeekModelMenu: some View {

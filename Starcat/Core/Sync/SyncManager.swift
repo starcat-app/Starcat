@@ -357,17 +357,17 @@ final class SyncManager {
                     break
                 }
 
-                try await repository.upsertStarred(dtos, userID: userID, syncedAt: syncStartedAt)
-                await recordSyncedStars(dtos, userID: userID)
-                allRemoteIDs.formUnion(dtos.map { $0.repo.id })
-                totalSynced += dtos.count
+                let writtenIDs = try await repository.upsertStarred(dtos, userID: userID, syncedAt: syncStartedAt)
+                await recordSyncedStars(dtos.filter { writtenIDs.contains($0.repo.id) }, userID: userID)
+                allRemoteIDs.formUnion(writtenIDs)
+                totalSynced += writtenIDs.count
                 progress?.current = totalSynced
                 progress?.currentPage = page
 
                 // R-07：page 1 写库成功 → 立刻翻边沿信号，HomeView 把首页 ~100 条上屏。
                 // 增量模式时 page 1 可能就 break，但本句仍执行；增量第一页写入也是值得"上屏"的场景。
                 // 失败 / cancellation 不会到这里（前面有 throw）。
-                if page == 1 {
+                if page == 1, !writtenIDs.isEmpty {
                     firstPageWrittenAt = Date()
                 }
 
@@ -394,7 +394,8 @@ final class SyncManager {
             if !incrementalMode {
                 let unstarredIDs = try await repository.markUnstarredExcept(
                     remoteRepoIDs: allRemoteIDs,
-                    userID: userID
+                    userID: userID,
+                    syncedAt: syncStartedAt
                 )
                 // 网页 Unstar 没有历史接口；全量扫完才能知道哪些本地 star 消失了。
                 try? await activityRepository?.recordUnstars(
@@ -404,15 +405,8 @@ final class SyncManager {
                 )
             }
 
-            // 进度与统计的最终值：
-            // - 全量：totalSynced == 本地 starred 总数
-            // - 增量：totalSynced 只是本次新增 / 边界页的条数，应用本地 starredCount 才反映真实总数
-            let finalCount: Int
-            if incrementalMode {
-                finalCount = (try? await repository.starredCount()) ?? totalSynced
-            } else {
-                finalCount = totalSynced
-            }
+            // 全量和增量都以提交后的本地数量收口，包含本轮同步期间用户新增或取消的 Star。
+            let finalCount = (try? await repository.starredCount()) ?? totalSynced
 
             try await repository.updateSyncState(
                 userID: userID,

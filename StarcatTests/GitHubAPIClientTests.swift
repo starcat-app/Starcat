@@ -690,6 +690,7 @@ struct GitHubAPIClientTests {
 
         let req = try #require(URLProtocolStub.receivedRequests.first)
         #expect(req.value(forHTTPHeaderField: "Accept") == "application/vnd.github.star+json")
+        #expect(req.cachePolicy == .reloadIgnoringLocalCacheData)
         // query 参数
         let comps = URLComponents(url: req.url!, resolvingAgainstBaseURL: false)!
         let queryItems = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value) })

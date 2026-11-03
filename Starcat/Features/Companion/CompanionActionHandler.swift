@@ -22,7 +22,6 @@ enum CompanionActionError: Error, Equatable {
     case invalidAction
     case repoNotFound
     case repoNotStarred
-    case requiresPro(ProFeature)
 }
 
 @MainActor
@@ -74,13 +73,11 @@ struct CompanionActionHandler {
     private let requestGenerateSummary: @MainActor @Sendable (Repo) -> Void
     private let requestCodeFlow: @MainActor @Sendable (Repo) -> Void
     private let requestCodebase: @MainActor @Sendable (Repo) -> Void
-    private let isProUser: @Sendable () async -> Bool
 
     init(
         repoRepository: any RepoRepositoryProtocol,
         repoNoteRepository: any RepoNoteRepositoryProtocol,
-        dispatcher: CompanionActionDispatcher,
-        entitlementGate: EntitlementGate? = nil
+        dispatcher: CompanionActionDispatcher
     ) {
         self.init(
             lookupRepo: { owner, name in
@@ -100,11 +97,6 @@ struct CompanionActionHandler {
             },
             requestCodebase: { repo in
                 dispatcher.requestCodebase(for: repo)
-            },
-            isProUser: {
-                await MainActor.run {
-                    entitlementGate?.isProUser ?? false
-                }
             }
         )
     }
@@ -115,8 +107,7 @@ struct CompanionActionHandler {
         requestOpenRepo: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestGenerateSummary: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
         requestCodeFlow: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
-        requestCodebase: @escaping @MainActor @Sendable (Repo) -> Void = { _ in },
-        isProUser: @escaping @Sendable () async -> Bool = { true }
+        requestCodebase: @escaping @MainActor @Sendable (Repo) -> Void = { _ in }
     ) {
         self.lookupRepo = lookupRepo
         self.lookupLibraryState = lookupLibraryState
@@ -124,7 +115,6 @@ struct CompanionActionHandler {
         self.requestGenerateSummary = requestGenerateSummary
         self.requestCodeFlow = requestCodeFlow
         self.requestCodebase = requestCodebase
-        self.isProUser = isProUser
     }
 
     func open(owner: String, repo name: String, action: CompanionOpenAction) async throws {
@@ -142,10 +132,8 @@ struct CompanionActionHandler {
         case .generateSummary:
             await requestGenerateSummary(repo)
         case .codeflow:
-            guard await isProUser() else { throw CompanionActionError.requiresPro(.codeFlow) }
             await requestCodeFlow(repo)
         case .codebase:
-            guard await isProUser() else { throw CompanionActionError.requiresPro(.codebaseMemory) }
             await requestCodebase(repo)
         }
     }

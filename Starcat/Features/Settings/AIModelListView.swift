@@ -408,6 +408,7 @@ private struct AIModelListRow: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help("settings.ai.modelList.parametersHelp")
+            .accessibilityLabel(Text("settings.ai.modelList.parametersHelp"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)

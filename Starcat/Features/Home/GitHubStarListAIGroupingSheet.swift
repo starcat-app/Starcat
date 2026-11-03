@@ -56,8 +56,9 @@ struct GitHubStarListAIGroupingSheet: View {
             Divider()
             footer
         }
-        // 固定窗口：min/max 同值，避免 macOS sheet 按内容把窗口撑出屏幕。
-        .frame(minWidth: 960, maxWidth: 960, minHeight: 640, maxHeight: 640)
+        // 与 AppKit 共用固定画布；SwiftUI 内容变化不能反向改变窗口尺寸。
+        .frame(width: AIOrganizationLayout.windowSize.width, height: AIOrganizationLayout.windowSize.height)
+        .font(interfaceScale.font(.body))
         .clipped()
         .background {
             GitHubStarListAIGroupingPresentationObserver(
@@ -118,17 +119,18 @@ struct GitHubStarListAIGroupingSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: BusinessIcon.Symbol.groups.systemImage)
-                .font(interfaceScale.font(.iconLarge))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+        HStack(spacing: 10) {
+            AIOrganizationIconBadge(
+                symbol: BusinessIcon.Symbol.groups.systemImage, tint: .purple, typography: .iconLarge
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text("githubStarLists.aiGrouping.title")
-                    .font(interfaceScale.font(.workspaceTitle))
-                    Text("githubStarLists.aiGrouping.subtitle.organize")
+                    .font(interfaceScale.font(.panelTitle))
+                Text("githubStarLists.aiGrouping.subtitle.organize")
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help("githubStarLists.aiGrouping.subtitle.organize")
             }
             Spacer()
             // 开始页没有分析任务，不展示暂停/进行中 pill，避免和原型里误放到预览稿的状态抢标题。
@@ -171,8 +173,8 @@ struct GitHubStarListAIGroupingSheet: View {
                 SheetCloseButton(action: onClose)
             }
         }
-        .padding(.horizontal, 20)
-        .frame(height: 64)
+        .padding(.horizontal, 14)
+        .frame(height: AIOrganizationLayout.headerHeight)
     }
 
     @ViewBuilder
@@ -335,16 +337,20 @@ struct GitHubStarListAIGroupingSheet: View {
     private var resultToolbar: some View {
         @Bindable var store = presentation
         return HStack(spacing: 8) {
-            CountedSegmentedControl(
-                items: [GitHubStarListAIResultFilter.actionable, .suggestions, .applied, .applyFailed, .all],
-                selection: $store.filter,
-                totalCount: store.snapshot.totalCount,
-                title: { LocalizedStringKey($0.tabTitleKey) },
-                count: { store.snapshot.count(for: $0) },
-                accessibilityLabel: "githubStarLists.aiGrouping.filter.label"
-            )
-
-            Spacer(minLength: 8)
+            // 长翻译在 Tab 区内滚动，保留缩小窗口中的搜索、重试与稳定计数槽位。
+            ScrollView(.horizontal) {
+                CountedSegmentedControl(
+                    items: [GitHubStarListAIResultFilter.actionable, .suggestions, .applied, .applyFailed, .all],
+                    selection: $store.filter,
+                    totalCount: store.snapshot.totalCount,
+                    title: { LocalizedStringKey($0.tabTitleKey) },
+                    count: { store.snapshot.count(for: $0) },
+                    accessibilityLabel: "githubStarLists.aiGrouping.filter.label"
+                )
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: interfaceScale.scaled(24))
 
             TextField("githubStarLists.aiGrouping.search.tab", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)
@@ -390,13 +396,15 @@ struct GitHubStarListAIGroupingSheet: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("action.close", action: onClose)
-                Button("githubStarLists.aiGrouping.start") {
+                Button {
                     Task {
                         await session.startManual(
                             autoConfirmEnabled: autoConfirmEnabled,
                             confidenceThreshold: settings.githubStarListAutoGroupingSettings.confidenceThreshold
                         )
                     }
+                } label: {
+                    Label("githubStarLists.aiGrouping.start", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
@@ -407,9 +415,9 @@ struct GitHubStarListAIGroupingSheet: View {
                         || candidateListDisplays.isEmpty
                 )
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
-            .frame(height: 58)
+            .controlSize(.regular)
+            .padding(.horizontal, 14)
+            .frame(height: AIOrganizationLayout.footerHeight)
         } else {
             let filter = presentation.filter
             AIOrganizationReviewFooter(

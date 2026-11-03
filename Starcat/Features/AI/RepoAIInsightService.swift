@@ -30,9 +30,9 @@ enum RepoAIInsightError: Error, LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey(let task):
-            return String(format: String.l10n("ai.insight.error.missingAPIKeyFormat"), task)
+            return String(format: String.l10n("ai.insight.error.missingAPIKeyFormat.modelsSettings"), task)
         case .missingProvider(let task):
-            return String(format: String.l10n("ai.insight.error.missingTaskProviderFormat"), task)
+            return String(format: String.l10n("ai.insight.error.missingTaskProviderFormat.modelsSettings"), task)
         case .invalidJSON:
             return String.l10n("ai.insight.error.invalidJSON")
         }
@@ -1340,6 +1340,41 @@ final class RepoAIInsightService {
         )
     }
 
+    /// Issue 阅读摘要复用摘要任务的模型与权益；只检查配置，不拉取仓库代码或写摘要缓存。
+    func ensureGitHubIssueSummaryReady() throws {
+        try entitlementGate?.requirePro(.aiSummary, usesLocalOnly: settings.isSummaryTaskResolvedToLocalAI)
+        try ensureGenerationClientsReady(includeSummary: true, includeTags: false)
+    }
+
+    /// Issue 面板始终流式；这里回传真正的新片段，不能沿用其它摘要路径的全文快照回调。
+    func generateGitHubIssueSummary(
+        context: String,
+        outputLanguage: String? = nil,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        try ensureGitHubIssueSummaryReady()
+        try Task.checkCancellation()
+        let task = settings.resolvedAITask(settings.aiSummaryTask)
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.summary")
+        )
+        let request = GitHubNotificationIssueSummary.makeRequest(
+            context: context,
+            model: model,
+            parameters: task.parameters,
+            outputLanguage: outputLanguage ?? Self.outputLanguageDescriptor()
+        )
+        return try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: true,
+            onDelta: nil,
+            onToken: onDelta
+        )
+    }
+
     /// GitHub 通知评论：走 Chat 任务，强制关 thinking，不写仓库摘要缓存。
     func ensureGitHubCommentReady() throws {
         try entitlementGate?.requirePro(.aiChat, usesLocalOnly: settings.isChatTaskResolvedToLocalAI)
@@ -1378,6 +1413,36 @@ final class RepoAIInsightService {
         return GitHubNotificationCommentAI.sanitizeComment(raw)
     }
 
+    /// 新建 Issue：按用户粗略描述 + 仓库 Issue 模板生成规范正文（流式）。
+    /// 与通知评论框同一 Chat 任务与门禁（`ensureGitHubCommentReady`）。
+    func generateIssueDraft(
+        pack: GitHubIssueComposerPack,
+        onDelta: @escaping @MainActor (String) -> Void
+    ) async throws -> String {
+        try ensureGitHubCommentReady()
+        let task = settings.resolvedAITask(settings.aiChatTask)
+        let (client, model) = try makeClient(
+            task: task,
+            fallbackModel: settings.aiChatModel,
+            taskName: String.l10n("ai.taskName.chat")
+        )
+        let params = task.parameters
+        let request = GitHubIssueComposerAI.makeRequest(
+            pack: pack,
+            model: model,
+            parameters: params
+        )
+        let raw = try await Self.generateText(
+            client: client,
+            request: request,
+            streamEnabled: params.streamEnabled,
+            onDelta: { snapshot in
+                onDelta(GitHubIssueComposerAI.sanitizeIssueDraft(snapshot))
+            }
+        )
+        return GitHubIssueComposerAI.sanitizeIssueDraft(raw)
+    }
+
     /// 纯请求构造器，便于单测精确验证笔记与 README 的边界。
     static func makeRepoNoteRequest(
         readmeMarkdown: String,
@@ -1402,12 +1467,14 @@ final class RepoAIInsightService {
         )
     }
 
-    /// 摘要与个人笔记共用同一套流式语义，避免两条路径在取消、空响应上漂移。
+    /// 摘要与个人笔记继续接收全文快照；TextKit 消费方显式选用 onToken 接收增量。
+    /// 两种回调共用取消、空响应与长度截断检查，不能在 UI 里二次裁切 reasoning 标签。
     static func generateText(
         client: any AIClientProtocol,
         request: AIChatRequest,
         streamEnabled: Bool,
-        onDelta: (@MainActor (String) -> Void)?
+        onDelta: (@MainActor (String) -> Void)?,
+        onToken: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         if streamEnabled {
             var accumulated = ""
@@ -1418,6 +1485,7 @@ final class RepoAIInsightService {
                 case .delta(let delta):
                     accumulated += delta
                     onDelta?(accumulated)
+                    onToken?(delta)
                 case .reasoningDelta, .reasoningCompleted, .toolCallDelta, .usage:
                     continue
                 case .completed(let response):

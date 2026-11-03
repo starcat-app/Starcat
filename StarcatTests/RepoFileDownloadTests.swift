@@ -113,6 +113,37 @@ struct RepoFileTreeBuilderTests {
     }
 }
 
+@Suite("RepoFileTypeIcon")
+struct RepoFileTypeIconTests {
+
+    private static let code = "chevron.left.forwardslash.chevron.right"
+
+    @Test("常见扩展名映射到对应类型图标，大小写不敏感")
+    func mapsCommonExtensions() {
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "eslint.config.js") == Self.code)
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "main.SWIFT") == Self.code)
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "README.md") == "doc.richtext")
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "logo.png") == "photo")
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "dist.tar.gz") == "doc.zipper")
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "alert.mp3") == "waveform")
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "demo.mov") == "film")
+    }
+
+    @Test("dotfile 取点号后的整段当扩展名，无扩展名走整名匹配")
+    func mapsDotfilesAndBareNames() {
+        #expect(RepoFileTypeIcon.symbolName(forFileName: ".gitignore") == Self.code)
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "Makefile") == Self.code)
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "Dockerfile") == Self.code)
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "LICENSE") == "doc.richtext")
+    }
+
+    @Test("未知类型退回默认 doc 图标")
+    func fallsBackToDefault() {
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "data.unknownext") == "doc.text")
+        #expect(RepoFileTypeIcon.symbolName(forFileName: "") == "doc.text")
+    }
+}
+
 @Suite("GitLFSPointer")
 struct GitLFSPointerTests {
     @Test("标准 pointer 解析 oid 和 size")

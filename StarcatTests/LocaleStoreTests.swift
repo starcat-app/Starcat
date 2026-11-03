@@ -36,7 +36,6 @@ struct LocaleStoreTests {
             "tr",
             "vi",
             "id",
-            "ar",
         ]
         let actualIdentifiers = Set(
             AppLocale.allCases
@@ -54,15 +53,7 @@ struct LocaleStoreTests {
         }
     }
 
-    @Test("Arabic 使用 RTL，其他显式语言使用 LTR")
-    func appLocaleUsesExpectedLayoutDirection() {
-        for appLocale in AppLocale.allCases where appLocale != .system {
-            let expected: LayoutDirection = appLocale == .arabic ? .rightToLeft : .leftToRight
-            #expect(appLocale.effectiveLayoutDirection == expected)
-        }
-    }
-
-    @Test("18 种目标 locale 映射到明确的 AI 输出语言", arguments: [
+    @Test("17 种目标 locale 映射到明确的 AI 输出语言", arguments: [
         ("en", "English"),
         ("zh-Hans", "Simplified Chinese"),
         ("zh-Hant", "Traditional Chinese"),
@@ -80,7 +71,6 @@ struct LocaleStoreTests {
         ("tr", "Turkish"),
         ("vi", "Vietnamese"),
         ("id", "Indonesian"),
-        ("ar", "Arabic"),
     ])
     func supportedLocaleMapsToAIOutputLanguage(
         identifier: String,

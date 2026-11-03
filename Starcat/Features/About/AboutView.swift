@@ -998,6 +998,12 @@ private struct AboutDependency: Identifiable {
 
     private static let embeddedResources: [AboutDependency] = [
         AboutDependency(
+            name: "CC Switch",
+            license: "MIT",
+            copyright: "Copyright (c) 2025 Jason Young",
+            url: URL(string: "https://github.com/farion1231/cc-switch")
+        ),
+        AboutDependency(
             name: "Lucide Icons",
             license: "ISC",
             copyright: "Copyright (c) 2026 Lucide Icons and Contributors",
@@ -1008,6 +1014,12 @@ private struct AboutDependency: Identifiable {
             license: "MIT",
             copyright: "Copyright (c) 2015 konpa",
             url: URL(string: "https://github.com/devicons/devicon")
+        ),
+        AboutDependency(
+            name: "Simple Icons",
+            license: "CC0 1.0",
+            copyright: "Copyright (c) Simple Icons contributors",
+            url: URL(string: "https://github.com/simple-icons/simple-icons")
         ),
         AboutDependency(
             name: "GitHub Linguist",
@@ -1063,13 +1075,6 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright 2020 OpenSSF Scorecard Authors",
             url: URL(string: "https://github.com/ossf/scorecard")
         ),
-        AboutDependency(
-            name: "SimRepo",
-            license: "MIT / GPL-3.0",
-            copyright: "Copyright (c) Mubelotix — similar-repo recommendations via starcat-recommend-api",
-            url: URL(string: "https://github.com/Mubelotix/SimRepo")
-        ),
-
         // MARK: Starcat 支撑服务 / 浏览器插件
         //
         // supports/ 下的独立 API 与浏览器插件虽然不是 App 内 SPM 依赖，但已经作为 Starcat

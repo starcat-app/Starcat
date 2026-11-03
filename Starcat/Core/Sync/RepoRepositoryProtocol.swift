@@ -31,13 +31,14 @@ protocol RepoRepositoryProtocol: Sendable {
 
     // MARK: - Upsert / 取消 Star 标记
 
-    /// 批量 upsert 一组 starred repos。
-    func upsertStarred(_ dtos: [StarredRepoDTO], userID: Int64, syncedAt: Date) async throws
+    /// 批量 upsert，跳过本轮同步开始后已被用户修改的仓库，返回实际写入的 ID。
+    @discardableResult
+    func upsertStarred(_ dtos: [StarredRepoDTO], userID: Int64, syncedAt: Date) async throws -> Set<Int64>
 
     /// 将本地存在但不在远端集合中的 repo 标记为 is_starred = false。
     /// - returns: 本次被取消 star 的 repo id，给账本写 Unstar 用。
     @discardableResult
-    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64) async throws -> Set<Int64>
+    func markUnstarredExcept(remoteRepoIDs: Set<Int64>, userID: Int64, syncedAt: Date) async throws -> Set<Int64>
 
     /// W4 B1：把单个 repo 标记为 is_starred = false。
     /// 同时清理 starred_repos 中对应行，并把本地 stars_count 减 1（下限 0）。

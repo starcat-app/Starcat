@@ -16,8 +16,10 @@ import SwiftUI
 import AppKit  // W4-5 D1 follow-up：NSApp.appearance 控制主题（preferredColorScheme 在 macOS 有 nil-restore bug）
 
 extension Notification.Name {
-    /// 三处系统入口共用的列表偏好重置意图；实际重置由 HomeView 在当前账号上下文执行。
+    /// Dock / 菜单栏入口请求在主窗口确认；设置页直接在自己的窗口确认。
     static let starcatResetListPreferencesRequested = Notification.Name("starcat.resetListPreferencesRequested")
+    /// 持久化已重置，仅供已挂载列表刷新临时选择，不得再弹确认或重复清空配置。
+    static let starcatListPreferencesDidReset = Notification.Name("starcat.listPreferencesDidReset")
 }
 
 @main
@@ -349,7 +351,6 @@ struct StarcatApp: App {
         LaunchSplashContainer {
             ContentView()
                 .environment(\.locale, localeStore.selection.effectiveLocale)
-                .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
                 .environment(\.starcatInterfaceScale, dependencies.settings.interfaceScale)
                 .id(localeStore.selection.rawValue)
                 // 系统翻译 Session 必须挂在存活的 SwiftUI 树上；零尺寸宿主不占布局。
@@ -409,7 +410,6 @@ struct StarcatApp: App {
     private var settingsRoot: some View {
         SettingsView()
             .environment(\.locale, localeStore.selection.effectiveLocale)
-            .environment(\.layoutDirection, localeStore.selection.effectiveLayoutDirection)
             .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
             .id(localeStore.selection.rawValue)
     }

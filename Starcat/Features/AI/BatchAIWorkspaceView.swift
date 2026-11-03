@@ -47,7 +47,7 @@ private struct TagTaxonomyBootstrapPreparingView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: BusinessIcon.Symbol.tags.systemImage)
-                .font(.system(size: 44, weight: .regular))
+                .font(interfaceScale.font(.iconLarge))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
@@ -168,7 +168,8 @@ struct BatchAIWorkspaceView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 960, maxWidth: 960, minHeight: 640, maxHeight: 640)
+        .frame(width: AIOrganizationLayout.windowSize.width, height: AIOrganizationLayout.windowSize.height)
+        .font(interfaceScale.font(.body))
         .clipped()
         .confirmationDialog(
             "batchAI.panel.discard.title",
@@ -193,14 +194,13 @@ struct BatchAIWorkspaceView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: BusinessIcon.Symbol.tags.systemImage)
-                .font(interfaceScale.font(.iconLarge))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+        HStack(spacing: 10) {
+            AIOrganizationIconBadge(
+                symbol: BusinessIcon.Symbol.tags.systemImage, tint: .purple, typography: .iconLarge
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text("batchAI.organizeTags.title")
-                    .font(interfaceScale.font(.workspaceTitle))
+                    .font(interfaceScale.font(.panelTitle))
                 Text(headerSubtitleKey)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
@@ -229,8 +229,8 @@ struct BatchAIWorkspaceView: View {
                     .disabled(isStarting)
             }
         }
-        .padding(.horizontal, 20)
-        .frame(height: 64)
+        .padding(.horizontal, 14)
+        .frame(height: AIOrganizationLayout.headerHeight)
     }
 
     @ViewBuilder
@@ -350,7 +350,7 @@ struct BatchAIWorkspaceView: View {
                                 Text("batchAI.taxonomy.preparing.action")
                             }
                         } else {
-                            Text("batchAI.generateTags.start")
+                            Label("batchAI.generateTags.start", systemImage: "sparkles")
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -362,8 +362,9 @@ struct BatchAIWorkspaceView: View {
                             || issue != nil
                     )
                 }
-                .padding(.horizontal, 20)
-                .frame(height: 58)
+                .controlSize(.regular)
+                .padding(.horizontal, 14)
+                .frame(height: AIOrganizationLayout.footerHeight)
             case .taxonomy(let model):
                 HStack(spacing: 10) {
                     taxonomyFooterMessage(model)
@@ -381,8 +382,8 @@ struct BatchAIWorkspaceView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(isStarting || !model.hasValidSelection)
                 }
-                .padding(.horizontal, 20)
-                .frame(height: 58)
+                .padding(.horizontal, 14)
+                .frame(height: AIOrganizationLayout.footerHeight)
             case .expansion(let model):
                 HStack(spacing: 10) {
                     expansionFooterMessage(model)
@@ -399,8 +400,8 @@ struct BatchAIWorkspaceView: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(isStarting || !model.hasValidSelection)
                 }
-                .padding(.horizontal, 20)
-                .frame(height: 58)
+                .padding(.horizontal, 14)
+                .frame(height: AIOrganizationLayout.footerHeight)
             case .review:
                 AIOrganizationReviewFooter(
                     discardTitle: "batchAI.panel.discard.action",

@@ -14,14 +14,8 @@
 //  - 生成标签固定开启；autoApply=false 时，建议在进度窗口逐仓展开并人工应用。
 //  - 常规任务在 AI 配置不可用时禁用；空标签库会切到纯本地体系引导，不要求 AI Key。
 //
-//  UI 设计（2026-06-06 17:51 dong4j 反馈"系统 toggle 太丑"重做）：
-//  - 抛弃 `Toggle(...).toggleStyle(.switch)`：macOS 26 的系统 switch 颗粒粗、
-//    放在小窗口里视觉权重过大，让 sheet 看着像"安卓系统设置"。
-//  - 改用 **可点击卡片 + 圆形 checkmark**：整行点击切换，圆形勾选标记替代 toggle，
-//    视觉重量更轻。选中态用 tint 淡色背景 + 描边明确反馈。
-//  - hover 反馈复用项目共享 `PressableHover`，与详情页可点击元素一致。
-//  - 自动应用属于结果处理策略，不计入 AI 操作数量；统一放在右侧"本次整理"卡中，
-//    使用与 AI 仓库分组相同的紧凑开关、阈值和结果去向说明。
+//  展示约束：四项操作按设计图平铺；代码上下文和外部搜索仍依赖摘要，不能因平铺解除门控。
+//  自动应用属于结果处理策略，不计入 AI 操作数量；重置只恢复打开本页时的配置快照。
 //
 
 import SwiftUI
@@ -43,6 +37,8 @@ struct BatchAIOptionsSheet: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Environment(AppSettings.self) private var settings
+    @State private var initialOptions: BatchAIQueueOptions?
+    @State private var initialTagCounts: (minimum: Int, maximum: Int)?
 
     private var tagSuggestionRangeText: String {
         AITagSuggestionCountPolicy.displayRange(
@@ -61,24 +57,24 @@ struct BatchAIOptionsSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AIOrganizationLayout.gap) {
             summaryCards
 
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: AIOrganizationLayout.gap) {
                 actionsPanel
                 sessionPanel
             }
-            .frame(width: 932, height: 424, alignment: .top)
+            .frame(width: AIOrganizationLayout.innerWidth, height: AIOrganizationLayout.panelHeight, alignment: .top)
         }
-        .padding(14)
-        .frame(width: 960, height: 516, alignment: .topLeading)
+        .padding(AIOrganizationLayout.padding)
+        .frame(width: AIOrganizationLayout.windowSize.width, height: AIOrganizationLayout.contentHeight, alignment: .topLeading)
     }
 
     private var summaryCards: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             summaryCard(
                 title: scopeTitle,
-                value: "\(pendingCount)",
+                value: pendingCount.formatted(.number.locale(locale)),
                 icon: "shippingbox",
                 tint: .purple
             )
@@ -89,64 +85,40 @@ struct BatchAIOptionsSheet: View {
                 tint: .blue
             )
             summaryCard(
-                title: String.l10n("batchAI.options.actionsLabel"),
-                value: "\(selectedActionCount)",
+                title: String.l10n("batchAI.options.selectedActions"),
+                value: selectedActionCount.formatted(.number.locale(locale)),
                 icon: "checklist",
                 tint: .green
             )
             summaryCard(
                 title: requiresTaxonomyBootstrap
                     ? String.l10n("batchAI.taxonomy.metric.mode")
-                    : String(format: String.l10n("batchAI.options.estimateFormat"), estimatedMinutes),
+                    : String.l10n("batchAI.options.estimatedTime"),
                 value: requiresTaxonomyBootstrap
                     ? String.l10n("search.footer.source.local")
-                    : "\(estimatedMinutes)",
+                    : String(format: String.l10n("batchAI.options.estimatedMinutesFormat"), locale: locale, estimatedMinutes),
                 icon: requiresTaxonomyBootstrap ? "desktopcomputer" : "clock",
                 tint: .orange
             )
         }
-        .frame(width: 932, height: 54)
+        .frame(width: AIOrganizationLayout.innerWidth, height: AIOrganizationLayout.summaryHeight)
     }
 
     private func summaryCard(title: String, value: String, icon: String, tint: Color) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(interfaceScale.font(.iconMedium, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: title)
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text(verbatim: value)
-                    .font(interfaceScale.font(.panelTitle).monospacedDigit())
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(width: 225.5, height: 54, alignment: .leading)
-        .background(
-            tint.opacity(colorScheme == .dark ? 0.22 : 0.12),
-            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(tint.opacity(colorScheme == .dark ? 0.45 : 0.28))
-        }
+        AIOrganizationSummaryCard(title: title, value: value, symbol: icon, tint: tint)
     }
 
     private var actionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("batchAI.options.actionsLabel")
-                .font(interfaceScale.font(.panelTitle))
+                .font(interfaceScale.font(.body, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
 
             ScrollView {
                 VStack(spacing: 8) {
                     OptionCard(
                         icon: "tag",
+                        tint: .blue,
                         title: "batchAI.generateTags.action.tags",
                         subtitle: tagsActionDescription,
                         // 与 options.actions 对齐；写死 true 会掩盖「标签未进 actions」的预检异常。
@@ -158,18 +130,34 @@ struct BatchAIOptionsSheet: View {
                 }
             }
         }
-        .padding(12)
-        .frame(width: 640, height: 424, alignment: .top)
+        .padding(10)
+        .frame(width: AIOrganizationLayout.leadingPanelWidth, height: AIOrganizationLayout.panelHeight, alignment: .top)
         .background(panelBackground)
         .overlay(panelBorder)
         .onAppear(perform: prepareForPresentation)
     }
 
     private var sessionPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("githubStarLists.aiGrouping.preflight.session")
-                .font(interfaceScale.font(.panelTitle))
+        ScrollView {
+            sessionContents
+        }
+        .padding(10)
+        .frame(width: AIOrganizationLayout.sessionPanelWidth, height: AIOrganizationLayout.panelHeight, alignment: .topLeading)
+        .background(panelBackground)
+        .overlay(panelBorder)
+    }
 
+    /// 长翻译、大字号或附加提示在右栏内滚动，不再把固定窗口内容裁掉。
+    private var sessionContents: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("githubStarLists.aiGrouping.preflight.session")
+                    .font(interfaceScale.font(.body, weight: .semibold))
+                Spacer(minLength: 4)
+                ResetIconButton(help: Text("settings.general.reset"), font: interfaceScale.font(.iconMedium)) {
+                    restoreOpeningOptions()
+                }
+            }
             sessionFact(
                 title: scopeTitle,
                 value: pendingCount.formatted(.number.locale(locale)),
@@ -205,12 +193,13 @@ struct BatchAIOptionsSheet: View {
             .disabled(requiresTaxonomyBootstrap)
             // “允许新增”只打开整批概念发现：Jev 首轮未覆盖的仓库汇总后调用一次 LLM，
             // 候选仍需确认并重新归类，与是否自动应用现有标签正交。
-                CompactSettingsToggleRow(
-                    title: "batchAI.options.allowVocabularyExpansion",
-                    isOn: $options.autoCreateMissingTags
-                )
+            CompactSettingsToggleRow(
+                title: "batchAI.options.allowVocabularyExpansion",
+                isOn: $options.autoCreateMissingTags
+            )
             .disabled(requiresTaxonomyBootstrap)
 
+            Divider()
             // 阈值始终可见，关闭自动应用时只禁用 Slider，避免开关导致卡片内容跳动。
             thresholdSlider
 
@@ -234,12 +223,8 @@ struct BatchAIOptionsSheet: View {
                 }
             }
 
-            Spacer(minLength: 0)
         }
-        .padding(12)
-        .frame(width: 280, height: 424, alignment: .topLeading)
-        .background(panelBackground)
-        .overlay(panelBorder)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func sessionNote(_ title: String) -> some View {
@@ -259,6 +244,7 @@ struct BatchAIOptionsSheet: View {
     private func sessionFact(title: String, value: String, icon: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
+                .font(interfaceScale.font(.iconSmall))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
                 .accessibilityHidden(true)
@@ -266,6 +252,7 @@ struct BatchAIOptionsSheet: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .help(Text(verbatim: title))
             Spacer(minLength: 4)
             Text(verbatim: value)
                 .font(interfaceScale.font(.caption).weight(.semibold).monospacedDigit())
@@ -278,6 +265,7 @@ struct BatchAIOptionsSheet: View {
     private var tagSuggestionCountEditor: some View {
         HStack(spacing: 8) {
             Image(systemName: "slider.horizontal.3")
+                .font(interfaceScale.font(.iconSmall))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
                 .accessibilityHidden(true)
@@ -285,6 +273,7 @@ struct BatchAIOptionsSheet: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .help("settings.autoTidy.tagSuggestionCount")
                 .layoutPriority(1)
             Spacer(minLength: 4)
             AITagSuggestionCountRangeControl(
@@ -318,12 +307,13 @@ struct BatchAIOptionsSheet: View {
             : Color.primary.opacity(0.04)
     }
 
-    // MARK: - Summary Card（带本次任务上下文子选项）
+    // MARK: - 摘要及其上下文操作
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             OptionCard(
                 icon: "doc.text",
+                tint: .purple,
                 title: "batchAI.options.action.summary",
                 subtitle: String.l10n("batchAI.options.action.summary.desc"),
                 isSelected: options.actions.contains(.summary),
@@ -331,43 +321,39 @@ struct BatchAIOptionsSheet: View {
                 onToggle: { toggleAction(.summary) }
             )
 
-            // 摘要上下文选项始终展开；摘要未开启时只禁用，不再改变左侧布局高度。
-            VStack(spacing: 6) {
-                OptionCard(
-                    icon: "chevron.left.forwardslash.chevron.right",
-                    title: "ai.assistant.summary.options.codeContext.title",
-                    subtitle: String.l10n("ai.assistant.summary.options.codeContext.subtitle"),
-                    isSelected: options.actions.contains(.summary)
-                        && options.codeContextEnabledOverride == true,
-                    isDisabled: requiresTaxonomyBootstrap
-                        || !options.actions.contains(.summary)
-                        || !canPrepareCodeContext,
-                    isNested: true,
-                    onToggle: {
-                        options.codeContextEnabledOverride = !(options.codeContextEnabledOverride ?? false)
-                    }
-                )
-                OptionCard(
-                    icon: "network",
-                    title: "ai.assistant.summary.options.externalSearch.title",
-                    subtitle: String.l10n(
-                        hasUsableExternalSearchProvider
-                            ? "ai.assistant.summary.options.externalSearch.subtitle"
-                            : "ai.assistant.summary.options.externalSearch.unavailable"
-                    ),
-                    isSelected: options.actions.contains(.summary)
-                        && options.externalContextEnabledOverride == true,
-                    isDisabled: requiresTaxonomyBootstrap
-                        || !options.actions.contains(.summary)
-                        || !hasUsableExternalSearchProvider,
-                    isNested: true,
-                    onToggle: {
-                        options.externalContextEnabledOverride = !(options.externalContextEnabledOverride ?? false)
-                    }
-                )
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            // 视觉上与主操作同级；执行上仍是摘要子选项，保持原有启用条件。
+            OptionCard(
+                icon: "chevron.left.forwardslash.chevron.right",
+                tint: .green,
+                title: "ai.assistant.summary.options.codeContext.title",
+                subtitle: String.l10n("ai.assistant.summary.options.codeContext.subtitle"),
+                isSelected: options.actions.contains(.summary)
+                    && options.codeContextEnabledOverride == true,
+                isDisabled: requiresTaxonomyBootstrap
+                    || !options.actions.contains(.summary)
+                    || !canPrepareCodeContext,
+                onToggle: {
+                    options.codeContextEnabledOverride = !(options.codeContextEnabledOverride ?? false)
+                }
+            )
+            OptionCard(
+                icon: "globe",
+                tint: .orange,
+                title: "ai.assistant.summary.options.externalSearch.title",
+                subtitle: String.l10n(
+                    hasUsableExternalSearchProvider
+                        ? "ai.assistant.summary.options.externalSearch.subtitle"
+                        : "ai.assistant.summary.options.externalSearch.unavailable"
+                ),
+                isSelected: options.actions.contains(.summary)
+                    && options.externalContextEnabledOverride == true,
+                isDisabled: requiresTaxonomyBootstrap
+                    || !options.actions.contains(.summary)
+                    || !hasUsableExternalSearchProvider,
+                onToggle: {
+                    options.externalContextEnabledOverride = !(options.externalContextEnabledOverride ?? false)
+                }
+            )
         }
     }
 
@@ -447,12 +433,30 @@ struct BatchAIOptionsSheet: View {
     /// 每次进入预检都清理上一轮残留选项，避免界面显示禁用但参数仍为 true。
     private func prepareForPresentation() {
         ensureTagsActionSelected()
-        guard requiresTaxonomyBootstrap else { return }
-        options.actions.remove(.summary)
-        options.autoApplyTags = false
-        options.autoCreateMissingTags = false
-        options.codeContextEnabledOverride = false
-        options.externalContextEnabledOverride = false
+        if requiresTaxonomyBootstrap {
+            options.actions.remove(.summary)
+            options.autoApplyTags = false
+            options.autoCreateMissingTags = false
+            options.codeContextEnabledOverride = false
+            options.externalContextEnabledOverride = false
+        }
+        if initialOptions == nil {
+            initialOptions = options
+            initialTagCounts = (
+                settings.clampedAITagSuggestionCounts.minimum,
+                settings.clampedAITagSuggestionCounts.maximum
+            )
+        }
+    }
+
+    /// 恢复本页打开时的有效选项，不清理词表、不改队列，也不重置其它 AI 设置。
+    private func restoreOpeningOptions() {
+        if let initialOptions { options = initialOptions }
+        if let initialTagCounts {
+            settings.applyAITagSuggestionCounts(
+                minimum: initialTagCounts.minimum, maximum: initialTagCounts.maximum
+            )
+        }
     }
 
     private func percentString(_ v: Double) -> String {
@@ -462,30 +466,16 @@ struct BatchAIOptionsSheet: View {
 
 // MARK: - OptionCard
 
-/// 可点击卡片，代替 system Toggle.switch。
-///
-/// 视觉规范：
-/// - 圆角 10pt、内边距 12pt、最小高度 56pt
-/// - 左侧图标固定 28×28 圆角容器，selected 时填充 tint，unselected 时浅灰
-/// - 右侧 18pt 圆形 checkmark，selected = tint 实心 + 白勾，unselected = 描边空心圆
-/// - 选中态：背景 `tint.opacity(0.08)` + 描边 `tint.opacity(0.35)`
-/// - 未选中态：背景透明 + 描边 `secondary.opacity(0.18)`
-/// - hover：背景叠加 `secondary.opacity(0.05)`
-/// - disabled：保留选中态视觉但不响应点击，用于表达“生成标签”为必选项
-///
-/// 比起 `.toggleStyle(.switch)` 的好处：
-/// - macOS 26 的 system switch 颗粒粗（~30×18pt），三个堆在一起视觉很重；
-///   圆形 checkmark 仅 18pt，视觉重量是 switch 的 1/3。
-/// - 整卡可点击，命中区域大；用户不必精准点中右侧那个小开关。
-/// - 选中态用背景色 + 描边表达，比 switch 的"半截绿条"更明显。
+/// 四项操作共用的紧凑整行按钮。颜色标识功能，蓝色边框和方形勾选框表达选择状态；
+/// 必选标签即使不可切换也保留清晰选中态，不能灰化成“该功能不可用”。
 private struct OptionCard: View {
 
     let icon: String
+    let tint: Color
     let title: LocalizedStringKey
     let subtitle: String
     let isSelected: Bool
     var isDisabled: Bool = false
-    var isNested: Bool = false
     let onToggle: () -> Void
 
     @State private var isHovered: Bool = false
@@ -496,11 +486,11 @@ private struct OptionCard: View {
         Button {
             onToggle()
         } label: {
-            HStack(spacing: isNested ? 10 : 12) {
+            HStack(spacing: 10) {
                 iconBadge
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(interfaceScale.font(.rowTitle))
+                        .font(interfaceScale.font(.bodyEmphasis))
                         .foregroundStyle(.primary)
                     Text(verbatim: subtitle)
                         .font(interfaceScale.font(.caption))
@@ -511,7 +501,8 @@ private struct OptionCard: View {
                 Spacer(minLength: 8)
                 checkmark
             }
-            .padding(isNested ? 9 : 12)
+            .padding(10)
+            .frame(minHeight: 62)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .background(cardBackground)
@@ -528,21 +519,14 @@ private struct OptionCard: View {
     }
 
     private var iconBadge: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.12))
-            Image(systemName: icon)
-                .font(interfaceScale.font(.iconMedium, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-        }
-        .frame(width: isNested ? 24 : 28, height: isNested ? 24 : 28)
+        AIOrganizationIconBadge(symbol: icon, tint: tint)
     }
 
     @ViewBuilder
     private var checkmark: some View {
         if isSelected {
             ZStack {
-                Circle()
+                RoundedRectangle(cornerRadius: 4)
                     .fill(Color.accentColor)
                 Image(systemName: "checkmark")
                     .font(.system(size: 10, weight: .bold))
@@ -551,7 +535,7 @@ private struct OptionCard: View {
             .frame(width: 18, height: 18)
             .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
         } else {
-            Circle()
+            RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.2)
                 .frame(width: 18, height: 18)
         }

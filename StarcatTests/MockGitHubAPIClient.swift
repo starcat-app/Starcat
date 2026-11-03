@@ -94,6 +94,15 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var markNotificationThreadDoneHandler: ((_ id: String) async throws -> Void)?
     var updateNotificationIssueStateHandler: ((_ path: String, _ state: String) async throws -> Void)?
     var uploadUserAttachmentHandler: ((_ fileName: String, _ contentType: String, _ repositoryID: Int64, _ data: Data) async throws -> URL)?
+    /// 详情页 Issues 浮层：仓库 Issue 列表 mock handler。
+    var repoIssuesHandler: ((_ owner: String, _ repo: String, _ state: GitHubRepoIssueState, _ page: Int, _ perPage: Int) async throws -> APIResponse<[GitHubRepoIssue]>)?
+    /// `/search/issues` mock handler（精确计数与关键词兜底共用）。
+    var searchIssuesHandler: ((_ query: String, _ page: Int, _ perPage: Int) async throws -> APIResponse<GitHubRepoIssueSearchResult>)?
+    /// 新建 Issue mock handler。
+
+    var issueTemplatesHandler: ((_ owner: String, _ repo: String) async throws -> [GitHubIssueTemplate])?
+
+    var createRepoIssueHandler: ((_ owner: String, _ repo: String, _ title: String, _ body: String?) async throws -> GitHubRepoIssue)?
 
     // MARK: - 调用记录（供断言用）
     //
@@ -120,6 +129,9 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     private let _updateNotificationIssueCommentCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
     private let _updateNotificationIssueBodyCalls = OSAllocatedUnfairLock<[(path: String, body: String)]>(initialState: [])
     private let _listNotificationIssueTimelineCalls = OSAllocatedUnfairLock<[String]>(initialState: [])
+    private let _repoIssuesCalls = OSAllocatedUnfairLock<[(owner: String, repo: String, state: GitHubRepoIssueState, page: Int, perPage: Int)]>(initialState: [])
+    private let _searchIssuesCalls = OSAllocatedUnfairLock<[(query: String, page: Int, perPage: Int)]>(initialState: [])
+    private let _createRepoIssueCalls = OSAllocatedUnfairLock<[(owner: String, repo: String, title: String, body: String?)]>(initialState: [])
 
     /// 快照 getter：测试断言用 `mock.readmeHTMLCalls.count` 继续生效。
     var readmeHTMLCalls: [(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)] {
@@ -163,6 +175,15 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
     var listNotificationIssueTimelineCalls: [String] {
         _listNotificationIssueTimelineCalls.withLock { $0 }
+    }
+    var repoIssuesCalls: [(owner: String, repo: String, state: GitHubRepoIssueState, page: Int, perPage: Int)] {
+        _repoIssuesCalls.withLock { $0 }
+    }
+    var searchIssuesCalls: [(query: String, page: Int, perPage: Int)] {
+        _searchIssuesCalls.withLock { $0 }
+    }
+    var createRepoIssueCalls: [(owner: String, repo: String, title: String, body: String?)] {
+        _createRepoIssueCalls.withLock { $0 }
     }
 
     // MARK: - Protocol conformance
@@ -460,6 +481,50 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.uploadUserAttachmentHandler 未设置")
         }
         return try await handler(fileName, contentType, repositoryID, data)
+    }
+
+    func repoIssues(
+        owner: String,
+        repo: String,
+        state: GitHubRepoIssueState,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<[GitHubRepoIssue]> {
+        _repoIssuesCalls.withLock { $0.append((owner, repo, state, page, perPage)) }
+        guard let handler = repoIssuesHandler else {
+            fatalError("MockGitHubAPIClient.repoIssuesHandler 未设置")
+        }
+        return try await handler(owner, repo, state, page, perPage)
+    }
+
+    func searchIssues(
+        query: String,
+        page: Int,
+        perPage: Int
+    ) async throws -> APIResponse<GitHubRepoIssueSearchResult> {
+        _searchIssuesCalls.withLock { $0.append((query, page, perPage)) }
+        guard let handler = searchIssuesHandler else {
+            fatalError("MockGitHubAPIClient.searchIssuesHandler 未设置")
+        }
+        return try await handler(query, page, perPage)
+    }
+
+    func createRepoIssue(
+        owner: String,
+        repo: String,
+        title: String,
+        body: String?
+    ) async throws -> GitHubRepoIssue {
+        _createRepoIssueCalls.withLock { $0.append((owner, repo, title, body)) }
+        guard let handler = createRepoIssueHandler else {
+            fatalError("MockGitHubAPIClient.createRepoIssueHandler 未设置")
+        }
+        return try await handler(owner, repo, title, body)
+    }
+
+    func issueTemplates(owner: String, repo: String) async throws -> [GitHubIssueTemplate] {
+        guard let handler = issueTemplatesHandler else { return [] }
+        return try await handler(owner, repo)
     }
 }
 

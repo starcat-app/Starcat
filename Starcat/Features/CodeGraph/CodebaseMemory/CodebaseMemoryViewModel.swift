@@ -5,7 +5,7 @@
 //  驱动分支加载、版本检查、共享 ZIP、持久解压、codebase 二进制索引、UI 子进程启动、浏览器打开。
 //  7 步状态机: resolveBinary → resolveRevision → download → extract → index → startUI → openBrowser
 //
-//  对齐 CodeFlowViewModel 的骨架（状态机 / VersionStatus / Pro gating / 步骤追踪）。
+//  对齐 CodeFlowViewModel 的骨架（状态机 / VersionStatus / 步骤追踪）。
 
 import AppKit
 import Foundation
@@ -51,8 +51,6 @@ final class CodebaseMemoryViewModel {
     var selectedBranchName = "" {
         didSet { updateSelectionVersionStatus() }
     }
-
-    var paywallContext: ProPaywallContext?
 
     /// repo 由 sheet item 驱动；Panel 重建后通常与 init 参数一致。
     /// 仍保留可变字段，让 `refreshRepo(repo:)` 在 SwiftUI 复用 presentation host 时能做二次校准。
@@ -229,7 +227,6 @@ final class CodebaseMemoryViewModel {
             do {
                 // Step 0: App Store 解析 bundle；Direct 解析用户选择或本机安装路径。
                 setStep(id: .resolveBinary, status: .running)
-                // Pro check done in RepoListView.openCodebaseMemory() before sheet present
                 let executable: CodebaseMemoryExecutable
                 do {
                     executable = try await binaryResolver.resolveExecutableInfo()

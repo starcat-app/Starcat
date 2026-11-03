@@ -74,16 +74,21 @@ struct BatchAIQueuePanel: View {
     private var resultToolbar: some View {
         @Bindable var store = presentation
         return HStack(spacing: 8) {
-            CountedSegmentedControl(
-                items: [BatchAIResultFilter.actionable, .pendingReview, .completed, .failed, .ignored, .all],
-                selection: $store.filter,
-                totalCount: store.totalJobCount,
-                title: filterTitle,
-                count: { store.count(for: $0) },
-                accessibilityLabel: "githubStarLists.aiGrouping.filter.label"
-            )
-
-            Spacer(minLength: 8)
+            // 缩小工作区后，长翻译不能把搜索和重试挤出窗口；仅让 Tab 区横向滚动，
+            // 分段控件仍使用原批次计数槽位和筛选绑定。
+            ScrollView(.horizontal) {
+                CountedSegmentedControl(
+                    items: [BatchAIResultFilter.actionable, .pendingReview, .completed, .failed, .ignored, .all],
+                    selection: $store.filter,
+                    totalCount: store.totalJobCount,
+                    title: filterTitle,
+                    count: { store.count(for: $0) },
+                    accessibilityLabel: "githubStarLists.aiGrouping.filter.label"
+                )
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: interfaceScale.scaled(24))
 
             TextField("githubStarLists.aiGrouping.search.tab", text: $store.searchText)
                 .textFieldStyle(.roundedBorder)

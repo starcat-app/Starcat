@@ -629,7 +629,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
     case turkish = "tr"
     case vietnamese = "vi"
     case indonesian = "id"
-    case arabic = "ar"
 
     var id: String { rawValue }
 
@@ -671,8 +670,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
                 localized = "Tự động"
             case .indonesian:
                 localized = "Otomatis"
-            case .arabic:
-                localized = "تلقائي"
             }
             return localized
         case .simplifiedChinese:  return "简体中文"
@@ -692,7 +689,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .turkish:            return "Türkçe"
         case .vietnamese:         return "Tiếng Việt"
         case .indonesian:         return "Bahasa Indonesia"
-        case .arabic:             return "العربية"
         }
     }
 
@@ -734,7 +730,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
         case .turkish:            return "Turkish"
         case .vietnamese:         return "Vietnamese"
         case .indonesian:         return "Indonesian"
-        case .arabic:             return "Arabic"
         }
     }
 
@@ -821,8 +816,6 @@ enum ReadmeTranslationLanguage: String, CaseIterable, Identifiable, Codable, Sen
             return .vietnamese
         case "id":
             return .indonesian
-        case "ar":
-            return .arabic
         default:
             return .english
         }
@@ -921,6 +914,11 @@ final class AppSettings {
     /// 不清掉用户长期维护的兴趣语言集合。
     var interestedLanguages: [String] {
         didSet { persistJSON(key: Keys.interestedLanguages, value: Self.normalizedLanguageList(interestedLanguages)) }
+    }
+
+    /// 长期探索内容偏好，与当前列表筛选分开保存，重置列表不应取消用户的来源选择。
+    var exploreCatalogPreferences: ExploreCatalogPreferences {
+        didSet { persistJSON(key: Keys.exploreCatalogPreferences, value: exploreCatalogPreferences) }
     }
 
     /// toolbar 全局语言筛选当前选中的语言。空数组表示不过滤语言。
@@ -1948,6 +1946,9 @@ final class AppSettings {
             key: Keys.interestedLanguages,
             defaults: defaults
         ).map(Self.normalizedLanguageList) ?? []
+        self.exploreCatalogPreferences = Self.decodeJSON(
+            ExploreCatalogPreferences.self, key: Keys.exploreCatalogPreferences, defaults: defaults
+        ) ?? ExploreCatalogPreferences()
         self.globalFilterLanguages = Self.decodeJSON(
             [String].self,
             key: Keys.globalFilterLanguages,
@@ -2450,6 +2451,7 @@ final class AppSettings {
         libraryFilter = .all
         repoLanguageFilter = .all
         interestedLanguages = []
+        exploreCatalogPreferences = ExploreCatalogPreferences()
         globalFilterLanguages = []
         globalFilterLicenses = []
         wikiAvailabilityFilter = .unknown
@@ -2580,6 +2582,37 @@ final class AppSettings {
         guard let login = normalizedListPreferenceLogin(login) else { return }
         let prefix = "\(login):"
         listPreferenceValues = listPreferenceValues.filter { !$0.key.hasPrefix(prefix) }
+    }
+
+    /// 用户确认后的完整列表重置；不依赖 HomeView 存活，设置窗口可独立完成持久化。
+    ///
+    /// 账号无效时整次 no-op，避免登出期间误清共享筛选。感兴趣语言是长期候选池，
+    /// 与当前列表语言筛选不同，必须保留；完成持久化后才通知已挂载列表刷新临时状态。
+    @discardableResult
+    func resetListViewPreferences(login: String?) -> Bool {
+        guard let login = normalizedListPreferenceLogin(login) else { return false }
+        resetListPreferences(login: login)
+        repoSortOption = .starredAtDesc
+        hideArchived = false
+        hideForks = false
+        statusFilter = nil
+        starFilter = .all
+        libraryFilter = .all
+        repoLanguageFilter = .all
+        globalFilterLanguages = []
+        globalFilterLicenses = []
+        wikiAvailabilityFilter = .unknown
+        healthAvailabilityFilter = .unknown
+        openSSFAvailabilityFilter = .unknown
+        lastManageSelectionRaw = ""
+        lastActivityCategoryRaw = ""
+
+        NotificationCenter.default.post(
+            name: .starcatListPreferencesDidReset,
+            object: self,
+            userInfo: ["login": login]
+        )
+        return true
     }
 
     private func scopedListPreferenceKey(_ key: String, login: String?) -> String? {
@@ -3055,6 +3088,7 @@ final class AppSettings {
         static let libraryFilter = "settings.libraryFilter"
         static let repoLanguageFilter = "settings.repoLanguageFilter"
         static let interestedLanguages = "settings.filters.interestedLanguages.v1"
+        static let exploreCatalogPreferences = "settings.explore.catalogPreferences.v1"
         static let globalFilterLanguages = "settings.filters.global.languages.v1"
         static let globalFilterLicenses = "settings.filters.global.licenses.v1"
         static let wikiAvailabilityFilter = "settings.filters.global.wikiAvailability.v1"
@@ -3181,6 +3215,7 @@ final class AppSettings {
             libraryFilter,
             repoLanguageFilter,
             interestedLanguages,
+            exploreCatalogPreferences,
             globalFilterLanguages,
             globalFilterLicenses,
             wikiAvailabilityFilter,

@@ -94,7 +94,7 @@ struct BusinessIconTests {
         #expect(SidebarItem.library.systemImage == AgentRepositorySource.knowledge.systemImage)
         #expect(SidebarItem.allStars.systemImage == AgentRepositorySource.starred.systemImage)
         #expect(RAGSettingsSection.inference.businessIcon == .inference)
-        #expect(RAGSettingsSection.prompts.businessIcon == .prompts)
+        #expect(RAGSettingsSection.allCases == [.inference, .retrieval])
         #expect(RAGSettingsSection.retrieval.businessIcon == .retrieval)
         #expect(AppBackgroundTask.Kind.indexing.icon == .aiIndex)
         #expect(AppBackgroundTask.Kind.grouping.icon == .groups)

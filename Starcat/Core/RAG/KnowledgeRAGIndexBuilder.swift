@@ -10,6 +10,7 @@
 //  标记当前 batch，不删除已经 ready 的其它 chunks。
 //
 
+import CryptoKit
 import Foundation
 import Observation
 
@@ -197,6 +198,8 @@ final class KnowledgeRAGIndexBuilder {
     private let keychain: any KeychainManaging
     private let builder: RAGChunkBuilder
     private let embeddingBatchSize: Int
+    /// 测试可替换网络客户端；生产仍统一经过 AIClientFactory，不能绕过模型与凭据校验。
+    private let embeddingClientFactory: @MainActor (AIClientConfiguration) throws -> any AIClientProtocol
 
     /// README HTML 与 Markdown 各自独立请求；限制单次请求，避免离线网络阻塞整轮索引。
     private static let readmeRequestTimeout: TimeInterval = 15
@@ -218,6 +221,9 @@ final class KnowledgeRAGIndexBuilder {
     /// 挂进当前 AccessList，和高频 UI 变更叠在一起会 PAC 崩。
     @ObservationIgnored private var exclusiveRunning = false
     @ObservationIgnored private var pendingAuto = RAGPendingAutoIndexWork()
+    /// 同一配置失败后只暂停后台向量请求，文本 source diff 继续执行。
+    /// 凭据仅参与不可逆指纹，不额外保留明文；手动重试、切库或配置变化可解除暂停。
+    @ObservationIgnored private var lastEmbeddingFailure: (fingerprint: SHA256.Digest, message: String)?
     private var refreshSummaryRestoreTask: Task<Void, Never>?
     private var observationTasks: [Task<Void, Never>] = []
     private var debouncedSourceTasks: [Int64: Task<Void, Never>] = [:]
@@ -252,7 +258,10 @@ final class KnowledgeRAGIndexBuilder {
         entitlementGate: EntitlementGate,
         keychain: any KeychainManaging = KeychainManager.shared,
         builder: RAGChunkBuilder = RAGChunkBuilder(),
-        embeddingBatchSize: Int = 32
+        embeddingBatchSize: Int = 32,
+        embeddingClientFactory: @escaping @MainActor (AIClientConfiguration) throws -> any AIClientProtocol = {
+            try AIClientFactory.make(configuration: $0)
+        }
     ) {
         self.chunkRepository = chunkRepository
         self.repoRepository = repoRepository
@@ -271,6 +280,7 @@ final class KnowledgeRAGIndexBuilder {
         self.builder = builder
         // 配置异常时仍保证队列每轮能前进，避免 limit=0 导致空轮询。
         self.embeddingBatchSize = max(1, embeddingBatchSize)
+        self.embeddingClientFactory = embeddingClientFactory
         restorePersistedRefreshSummary()
     }
 
@@ -283,7 +293,7 @@ final class KnowledgeRAGIndexBuilder {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.rebuildKnowledgeBase(recordsRefreshSummary: false)
+                try await self.rebuildKnowledgeBase(recordsRefreshSummary: false, userInitiated: userInitiated)
             } catch is CancellationError {
                 // `cancel()` 已把状态打成 idle；被更新一轮替换时也不要覆盖新状态。
             } catch {
@@ -309,6 +319,7 @@ final class KnowledgeRAGIndexBuilder {
         workGeneration += 1
         pendingAuto.reset()
         exclusiveRunning = false
+        lastEmbeddingFailure = nil
         exclusiveLock?.cancel()
         let tasks = [refreshSummaryRestoreTask].compactMap { $0 }
             + observationTasks
@@ -430,8 +441,10 @@ final class KnowledgeRAGIndexBuilder {
 
     /// 全量重建只表示“重新计算 source diff + 补齐待处理 embedding”，内容未变的 ready chunk
     /// 仍复用原向量。真正强制换向量由 embedding model 变化触发 stale。
-    func rebuildKnowledgeBase(recordsRefreshSummary: Bool = true) async throws {
+    func rebuildKnowledgeBase(recordsRefreshSummary: Bool = true, userInitiated: Bool = true) async throws {
         try await withExclusiveWork(policy: .replaceRunning) {
+            // 必须等上一轮退出后再解除暂停，避免上一轮迟到失败覆盖用户这次重试。
+            if userInitiated { self.lastEmbeddingFailure = nil }
             try await self.performRebuildKnowledgeBase(recordsRefreshSummary: recordsRefreshSummary)
         }
     }
@@ -440,8 +453,9 @@ final class KnowledgeRAGIndexBuilder {
     ///
     /// `fetchMissingReadmes` 最终经过 `ReadmeInflightTracker`：如果 README 后台预拉已在处理
     /// 同一个 repo，两个入口会等待同一份 HTML / Markdown 请求结果，不会重复消耗 GitHub 配额。
-    func rebuildRepository(_ repo: Repo) async throws {
+    func rebuildRepository(_ repo: Repo, userInitiated: Bool = true) async throws {
         try await withExclusiveWork(policy: .waitInQueue) {
+            if userInitiated { self.lastEmbeddingFailure = nil }
             try await self.performRebuildRepository(repo)
         }
     }
@@ -473,6 +487,7 @@ final class KnowledgeRAGIndexBuilder {
     /// 还要用户手动点击刷新才能重新参与召回。
     func embedEditedChunks(_ chunks: [RAGDeletedChunkIdentity] = []) async throws {
         try await withExclusiveWork(policy: .waitInQueue) {
+            self.lastEmbeddingFailure = nil
             try await self.performEmbedEditedChunks(chunks)
         }
     }
@@ -552,7 +567,7 @@ final class KnowledgeRAGIndexBuilder {
         }
         guard let repo = try? await repoRepository.findById(repoID) else { return }
         do {
-            try await rebuildRepository(repo)
+            try await rebuildRepository(repo, userInitiated: false)
         } catch EntitlementGateError.requiresPro {
             // 非 Pro 用户不建立 RAG 索引，保持既有静默门禁语义。
         } catch is CancellationError {
@@ -665,8 +680,10 @@ final class KnowledgeRAGIndexBuilder {
         } catch EntitlementGateError.requiresPro {
             return
         } catch is CancellationError {
+            assignStatus(.idle)
             return
         } catch {
+            assignStatus(.failed(error.localizedDescription))
             AppLog.ai.error("RAG source refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
             recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshSources", repo: repo.fullName)
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
@@ -706,8 +723,10 @@ final class KnowledgeRAGIndexBuilder {
         } catch EntitlementGateError.requiresPro {
             return
         } catch is CancellationError {
+            assignStatus(.idle)
             return
         } catch {
+            assignStatus(.failed(error.localizedDescription))
             AppLog.ai.error("RAG metadata refresh failed: \(error.localizedDescription, privacy: .public)")
             recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshMetadata")
         }
@@ -868,7 +887,8 @@ final class KnowledgeRAGIndexBuilder {
         let embeddingRuntime = try? makeEmbeddingClient()
         // 文本分片一旦写入 rag_chunks 就已可被 FTS 检索。Embedding 配置缺失或失效时，
         // 将本轮作为关键词索引成功收口，不能把已经可用的本地知识误报成构建失败。
-        guard let (client, model) = embeddingRuntime else {
+        guard let (client, model, fingerprint) = embeddingRuntime else {
+            lastEmbeddingFailure = nil
             let total = try await chunkRepository.countChunksNeedingEmbedding()
             let coverage = try await chunkRepository.coverage(model: "")
             if recordsRefreshSummary {
@@ -899,9 +919,18 @@ final class KnowledgeRAGIndexBuilder {
             try await syncExternalBackends(model: model)
             let coverage = try await chunkRepository.coverage(model: model)
             assignStatus(.completed(coverage))
+            lastEmbeddingFailure = nil
             if recordsRefreshSummary {
                 await markRefreshSummaryCompleted(at: Date())
             }
+            NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
+            return
+        }
+
+        // 后台通知仍可更新 FTS；同一故障配置不再因同步或笔记变更而反复发起失败请求。
+        // 比较本轮实际客户端配置，换模型、地址、超时参数或 Key 后自然允许下一次尝试。
+        if let failure = lastEmbeddingFailure, failure.fingerprint == fingerprint {
+            assignStatus(.failed(failure.message))
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
             return
         }
@@ -934,7 +963,6 @@ final class KnowledgeRAGIndexBuilder {
                 let vectors = try await client.embeddings(inputs: claimed.map(\.content), model: model)
                 // HTTP 返回后必须先认 generation：暂停已经把 UI 打成 idle，不能再 markReady 把进度弹回去。
                 if Task.isCancelled || !isCurrentWorkGeneration {
-                    try await chunkRepository.releaseEmbeddingClaim(claimID: claimID)
                     throw CancellationError()
                 }
                 // Provider 若少返回一条或给出空向量，不能让部分 chunk 永久停留在带 claim 的 pending。
@@ -960,9 +988,18 @@ final class KnowledgeRAGIndexBuilder {
                 }
                 externalIndexChanges.recordUpserts(updates.map(\.identity.chunkID))
             } catch is CancellationError {
-                try await chunkRepository.releaseEmbeddingClaim(claimID: claimID)
+                try await releaseCancelledEmbeddingClaim(claimID)
+                assignStatus(.idle)
                 throw CancellationError()
             } catch {
+                // Provider 可能在 cancel 后才抛超时或鉴权错误；迟到响应不能把 idle 改成失败，
+                // 也不能重新暂停已经换配置或手动重试的新一轮。
+                guard isCurrentWorkGeneration else {
+                    try await releaseCancelledEmbeddingClaim(claimID)
+                    throw CancellationError()
+                }
+                lastEmbeddingFailure = (fingerprint, error.localizedDescription)
+                assignStatus(.failed(error.localizedDescription))
                 try await chunkRepository.markFailed(
                     claimed.compactMap { chunk in
                         guard let id = chunk.id else { return nil }
@@ -971,6 +1008,7 @@ final class KnowledgeRAGIndexBuilder {
                     claimID: claimID,
                     error: error.localizedDescription
                 )
+                NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
                 do {
                     try await syncExternalBackends(model: model)
                 } catch {
@@ -991,10 +1029,20 @@ final class KnowledgeRAGIndexBuilder {
         try await syncExternalBackends(model: model)
         let coverage = try await chunkRepository.coverage(model: model)
         assignStatus(.completed(coverage))
+        lastEmbeddingFailure = nil
         if recordsRefreshSummary {
             await markRefreshSummaryCompleted(at: Date())
         }
         NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
+    }
+
+    /// GRDB 会拒绝已取消 Task 的写事务。清理必须在不继承取消标记的独立 Task 中完成，
+    /// 并等待提交后再退出当前互斥轮次，避免把 claim 留给下一次进入页面才清除。
+    private func releaseCancelledEmbeddingClaim(_ claimID: String) async throws {
+        let repository = chunkRepository
+        try await Task {
+            try await repository.releaseEmbeddingClaim(claimID: claimID)
+        }.value
     }
 
     /// Summary 是值类型；每次赋回属性以确保 Observation 能让两个窗口同步刷新。
@@ -1205,14 +1253,14 @@ final class KnowledgeRAGIndexBuilder {
         }
     }
 
-    private func makeEmbeddingClient() throws -> (any AIClientProtocol, String) {
+    private func makeEmbeddingClient() throws -> (any AIClientProtocol, String, SHA256.Digest) {
         let selection = try settings.resolveEmbeddingSelection()
         let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !apiKey.isEmpty || selection.profile.provider.allowsEmptyAPIKey else {
             throw AIEmbeddingError.missingAPIKey
         }
-        let client = try AIClientFactory.make(configuration: AIClientConfiguration(
+        let configuration = AIClientConfiguration(
             providerID: selection.profile.id,
             provider: selection.profile.provider,
             apiKey: apiKey,
@@ -1221,8 +1269,21 @@ final class KnowledgeRAGIndexBuilder {
             embeddingModel: selection.modelName,
             timeoutInterval: selection.parameters.timeoutSeconds,
             usageContext: AIUsageContext(feature: .knowledgeIndexing, phase: "chunk_embedding")
-        ))
-        return (client, selection.modelName)
+        )
+        let client = try embeddingClientFactory(configuration)
+        return (client, selection.modelName, embeddingFingerprint(configuration))
+    }
+
+    /// 长度前缀避免不同字段组合碰撞；指纹只用于本进程内的失败暂停，不落盘或写入日志。
+    private func embeddingFingerprint(_ configuration: AIClientConfiguration) -> SHA256.Digest {
+        var bytes = Data()
+        for field in [
+            configuration.providerID, configuration.provider.rawValue, configuration.baseURL,
+            configuration.embeddingModel, String(configuration.timeoutInterval), configuration.apiKey
+        ] {
+            bytes.append(contentsOf: "\(field.utf8.count):\(field)".utf8)
+        }
+        return SHA256.hash(data: bytes)
     }
 
     private func resolvedEmbeddingModel() -> String {
@@ -1268,6 +1329,7 @@ final class KnowledgeRAGIndexBuilder {
             do {
                 try await operation()
             } catch is CancellationError {
+                self.assignStatus(.idle)
                 throw CancellationError()
             } catch {
                 self.assignStatus(.failed(error.localizedDescription))
@@ -1279,7 +1341,10 @@ final class KnowledgeRAGIndexBuilder {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                // 收尾增量失败不能把已经成功的用户重建改写成失败。
+                // 增量在进入 building / embedding 后失败也必须结束活跃态，不能遗留停止按钮。
+                if self.status.isActivelyIndexing {
+                    self.assignStatus(.failed(error.localizedDescription))
+                }
                 AppLog.ai.error("RAG coalesced follow-up indexing failed: \(error.localizedDescription, privacy: .public)")
                 self.recordDeveloperDiagnosticIfNeeded(error, operation: "rag.drainPending")
             }

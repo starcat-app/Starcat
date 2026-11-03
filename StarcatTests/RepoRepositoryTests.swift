@@ -147,7 +147,7 @@ struct RepoRepositoryTests {
         try await repo.upsertStarred(dtos, userID: 100, syncedAt: Date())
 
         // 远端只剩 id=1, 2
-        try await repo.markUnstarredExcept(remoteRepoIDs: [1, 2], userID: 100)
+        try await repo.markUnstarredExcept(remoteRepoIDs: [1, 2], userID: 100, syncedAt: Date())
 
         let starred = try await repo.starredCount()
         #expect(starred == 2)
@@ -157,6 +157,28 @@ struct RepoRepositoryTests {
             let count = try Int.fetchOne(db, sql: "SELECT count(*) FROM repos WHERE id = 3 AND is_starred = 0") ?? 0
             #expect(count == 1)
         }
+    }
+
+    @Test("旧同步页保留取消结果，但较新的同步仍可接收重新 Star")
+    func localUnstarOnlyProtectsOlderSync() async throws {
+        let (repo, db) = try makeRepo()
+        let dto = makeDTO(id: 9003, name: "restar")
+        try await repo.upsertStarred([dto], userID: 100, syncedAt: Date())
+        let oldSyncStartedAt = Date()
+        let repositoryCopy = repo
+        try await repositoryCopy.markUnstarred(repoId: dto.repo.id, userID: 100)
+
+        let ignored = try await repo.upsertStarred([dto], userID: 100, syncedAt: oldSyncStartedAt)
+        #expect(ignored.isEmpty)
+        #expect(try await repo.findById(dto.repo.id)?.isStarred == false)
+        try await db.writer.read { database in
+            let count = try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM starred_repos")
+            #expect(count == 0)
+        }
+
+        let accepted = try await repo.upsertStarred([dto], userID: 100, syncedAt: Date())
+        #expect(accepted == [dto.repo.id])
+        #expect(try await repo.findById(dto.repo.id)?.isStarred == true)
     }
 
     @Test("markUnstarred 单个 repo：设 is_starred=0 + 删 starred_repos 行")

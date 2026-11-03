@@ -35,7 +35,6 @@ struct RecommendAPILiveIntegrationTests {
         let api = RecommendAPI(
             baseURL: baseURL,
             apiKey: apiKey,
-            contract: .trainedV2,
             session: URLSession(configuration: configuration)
         )
 

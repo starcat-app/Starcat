@@ -71,4 +71,92 @@ struct RAGStreamingPlainTextSessionTests {
         #expect(body.pointSize == 13)
         #expect(caption.pointSize == 12)
     }
+
+    @Test("增量追加、收起和重新挂接不丢尾段，并保持思考文本的辅助字色")
+    @MainActor
+    func textSurvivesAppendAndReattachment() throws {
+        let session = RAGStreamingPlainTextSession()
+        let font = NSFont.systemFont(ofSize: 14)
+        let oldScrollView = RAGStreamingPlainTextView.makeUnadornedScrollView(font: font)
+        let oldView = try #require(oldScrollView.documentView as? NSTextView)
+        session.attach(oldView, pinsToBottom: false)
+        session.append("开头🪐")
+        session.flushNow()
+        session.append("尚未合流的尾段")
+        session.detach(oldView)
+        #expect(oldView.string == "开头🪐尚未合流的尾段")
+
+        session.append("后台继续")
+        session.flushNow()
+        let newScrollView = RAGStreamingPlainTextView.makeUnadornedScrollView(font: font)
+        let newView = try #require(newScrollView.documentView as? NSTextView)
+        session.attach(newView, pinsToBottom: false)
+        session.append("再打开")
+        session.flushNow()
+
+        #expect(newView.string == "开头🪐尚未合流的尾段后台继续再打开")
+        #expect(oldView.string == "开头🪐尚未合流的尾段")
+        let storage = try #require(newView.textStorage)
+        #expect(storage.length == (session.text as NSString).length)
+        storage.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: storage.length)) { color, _, _ in
+            #expect(color as? NSColor == NSColor.secondaryLabelColor)
+        }
+    }
+
+    @Test("高频小片段只在合流时编辑一次 TextKit，完整内容立即可读取")
+    @MainActor
+    func burstIsBufferedWithoutPerTokenStorageEdits() throws {
+        let session = RAGStreamingPlainTextSession()
+        let scrollView = RAGStreamingPlainTextView.makeUnadornedScrollView(font: .systemFont(ofSize: 14))
+        let textView = try #require(scrollView.documentView as? NSTextView)
+        let storage = try #require(textView.textStorage)
+        session.attach(textView, pinsToBottom: false)
+        let edits = StreamingStorageEditCounter()
+        storage.delegate = edits
+
+        // 不让主 actor 在循环中挂起，模拟网络瞬间返回大量小 delta；不依赖计时或帧率阈值。
+        for _ in 0..<10_000 { session.append("字") }
+        #expect(session.text == String(repeating: "字", count: 10_000))
+        #expect(storage.length == 0)
+        #expect(edits.count == 0)
+        session.flushNow()
+        #expect(textView.string == session.text)
+        #expect(edits.count == 1)
+        #expect(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == NSColor.secondaryLabelColor)
+    }
+
+    @Test("空会话的相同视图无需反复清空，首批输出挂接与合流不会重复追加")
+    @MainActor
+    func emptyAttachmentDoesNotRewriteStorage() throws {
+        let session = RAGStreamingPlainTextSession()
+        let scrollView = RAGStreamingPlainTextView.makeUnadornedScrollView(font: .systemFont(ofSize: 14))
+        let textView = try #require(scrollView.documentView as? NSTextView)
+        let storage = try #require(textView.textStorage)
+        session.attach(textView, pinsToBottom: false)
+        let edits = StreamingStorageEditCounter()
+        storage.delegate = edits
+
+        session.attachIfNeeded(textView, pinsToBottom: false)
+        session.attachIfNeeded(textView, pinsToBottom: false)
+        #expect(edits.count == 0)
+        session.append("首批输出")
+        session.attachIfNeeded(textView, pinsToBottom: false)
+        session.flushNow()
+        #expect(textView.string == "首批输出")
+        #expect(edits.count == 1)
+    }
+}
+
+/// 记录 TextKit 的真实编辑次数；用同步批次断言合流，避免性能测试依赖机器速度。
+private final class StreamingStorageEditCounter: NSObject, NSTextStorageDelegate {
+    private(set) var count = 0
+
+    func textStorage(
+        _ textStorage: NSTextStorage,
+        didProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        count += 1
+    }
 }

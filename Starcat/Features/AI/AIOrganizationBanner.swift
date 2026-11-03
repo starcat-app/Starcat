@@ -8,7 +8,7 @@
 import SwiftUI
 import ThinkingOrbsKit
 
-/// 只展示会话投影；单行文本截断、完整 tooltip、窄宽图标入口共同保证多语言布局稳定。
+/// 只展示会话投影；所有阶段统一使用图标入口，避免两种整理因列宽不同显示出不同操作样式。
 struct AIOrganizationBanner: View {
     enum Kind { case grouping, tags }
 
@@ -23,10 +23,7 @@ struct AIOrganizationBanner: View {
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            row(compact: false)
-            row(compact: true)
-        }
+        row
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -37,8 +34,8 @@ struct AIOrganizationBanner: View {
         .padding(.vertical, 8)
     }
 
-    /// 完整按钮必须按自然单行宽度参与适配；空间不足换图标，而不是让按钮文字换行。
-    private func row(compact: Bool) -> some View {
+    /// 状态文字留在横幅中，操作名称由 tooltip / accessibility 承担，宽窄中栏保持同一外观。
+    private var row: some View {
         HStack(spacing: 10) {
             if case .analyzing = state {
                 ThinkingOrb(state: .composing, size: .px20, theme: .auto, paused: reduceMotion)
@@ -62,26 +59,21 @@ struct AIOrganizationBanner: View {
             }
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(minWidth: compact ? 0 : interfaceScale.scaled(120), maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
+            // 只隐藏文案，沿用原按钮的自然尺寸，避免图标固定框再叠加系统内边距。
             Button(action: state == .idle ? onStart : onShowPanel) {
-                if compact {
-                    Label { Text(verbatim: AIOrganizationBannerText.l10n(state.actionKey)) } icon: {
-                        Image(systemName: state == .idle ? "play.fill" : "macwindow")
-                    }
-                        .labelStyle(.iconOnly)
-                } else {
-                    Label { Text(verbatim: AIOrganizationBannerText.l10n(state.actionKey)) } icon: {
-                        Image(systemName: state == .idle ? "play.fill" : "macwindow")
-                    }
-                        .lineLimit(1)
+                Label { Text(verbatim: AIOrganizationBannerText.l10n(state.actionKey)) } icon: {
+                    Image(systemName: state == .idle ? "play.fill" : "macwindow")
                 }
+                .labelStyle(.iconOnly)
             }
             .controlSize(.regular)
             .buttonStyle(.borderedProminent)
             .fixedSize()
             .disabled(state == .idle && !canStart)
             .help(Text(verbatim: AIOrganizationBannerText.l10n(state.actionKey)))
+            .accessibilityLabel(Text(verbatim: AIOrganizationBannerText.l10n(state.actionKey)))
         }
         .frame(height: interfaceScale.scaled(36))
     }

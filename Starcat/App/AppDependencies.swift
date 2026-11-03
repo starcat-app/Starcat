@@ -190,6 +190,9 @@ final class AppDependencies {
     let aiSummaryRepository: any AISummaryRepositoryProtocol
     /// W6 AI：单仓 AI 摘要与标签推荐服务。
     let repoAIInsightService: RepoAIInsightService
+    /// Issue 总结由应用持有；收起面板或切帖只结束展示，不取消请求或丢失本次结果。
+    /// 成功总结落盘 DiskIssueSummaryCache，重启后可回放（派生数据，不入库）。
+    let githubIssueSummaryStore = GitHubNotificationIssueSummaryStore(persistenceCache: .shared)
     /// 单仓 AI 摘要的进程内会话表。按 repo 保留生成 Task 与 UI 状态，切换详情不取消。
     let repoAIInsightSessionStore: RepoAIInsightSessionStore
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
@@ -278,6 +281,10 @@ final class AppDependencies {
     /// Weekly 多来源后端 API 客户端。
     /// 独立 actor，无需 GitHub OAuth；Explore 页 `weekly` 分类直接消费。
     let weeklyAPI: WeeklyAPI
+    /// 日报与周刊共享服务配置，内容缓存保持独立；版本供工作区热更新身份使用。
+    let dailyRadarAPI: DailyRadarAPI
+    let dailyRadarRepository: DailyRadarRepository
+    private(set) var dailyRadarConfigurationRevision: UInt64 = 0
 
     /// Weekly UI 共享状态：sidebar 计数徽章 + HomeView 详情页路由共用。
     /// 详见 `WeeklySelectionService` 文件头注释。
@@ -1477,6 +1484,12 @@ final class AppDependencies {
             apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
         )
         self.weeklyAPI = weeklyAPIInstance
+        let dailyRadarAPI = DailyRadarAPI(
+            baseURL: AppEndpoints.Weekly.baseURL,
+            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
+        )
+        self.dailyRadarAPI = dailyRadarAPI
+        self.dailyRadarRepository = DailyRadarRepository(api: dailyRadarAPI)
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
@@ -1502,13 +1515,11 @@ final class AppDependencies {
         )
         self.wikiAPI = wikiAPIInstance
 
-        // Recommend 只在详情页按需单查，不在启动期请求。Direct 使用新增的 v2
-        // ServingBundle 路由完成本次自研推荐链路；App Store 继续使用 v1 SimRepo，
-        // 因此本功能分支不会改变已发布渠道的线上行为。
+        // 双渠道统一消费生产自研 v2；旧客户端的 v1 过渡只留在服务端，
+        // 防止分发渠道差异继续造成数据来源和推荐缓存不一致。
         self.recommendAPI = RecommendAPI(
             baseURL: AppEndpoints.Recommend.baseURL,
-            apiKey: StarcatAPIKeyResolver.resolve(for: .recommend),
-            contract: distributionChannel.isDirect ? .trainedV2 : .simRepoV1
+            apiKey: StarcatAPIKeyResolver.resolve(for: .recommend)
         )
 
         // 2026-06-15 v4.y：Wiki 磁盘缓存 + SWR 编排。装配顺序：
@@ -1969,6 +1980,7 @@ final class AppDependencies {
         }
         guard database.currentUserId != previousUserId else { return }
         databaseScopeRevision &+= 1
+        githubIssueSummaryStore.reset(scopeRevision: databaseScopeRevision)
         repositoryInsightsContextScopeState.update(
             userID: database.currentUserId,
             databaseRevision: databaseScopeRevision
@@ -2094,6 +2106,9 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateBaseURL(target)
         case .weekly:
             await weeklyAPI.updateBaseURL(target)
+            await dailyRadarAPI.update(baseURL: target)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
@@ -2146,7 +2161,11 @@ final class AppDependencies {
         // 3) 推送到对应 actor 热更新
         switch service {
         case .trending: await trendingAPI.updateAPIKey(resolved)
-        case .weekly:   await weeklyAPI.updateAPIKey(resolved)
+        case .weekly:
+            await weeklyAPI.updateAPIKey(resolved)
+            await dailyRadarAPI.update(apiKey: resolved, replacesKey: true)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateAPIKey(resolved)
         case .wiki:     await wikiAPI.updateAPIKey(resolved)
         case .recommend: await recommendAPI.updateAPIKey(resolved)

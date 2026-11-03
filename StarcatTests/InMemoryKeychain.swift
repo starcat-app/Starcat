@@ -21,6 +21,14 @@ final class InMemoryKeychain: KeychainManaging, @unchecked Sendable {
 
     private let lock = NSLock()
     private var storage: [String: String] = [:]
+    private let rejectsAIKeyWrites: Bool
+    private let rejectsServiceKeyWrites: Bool
+
+    /// 保存失败的测试必须走同一凭据接口，不能用网络成功代替“已保存”。
+    init(rejectsAIKeyWrites: Bool = false, rejectsServiceKeyWrites: Bool = false) {
+        self.rejectsAIKeyWrites = rejectsAIKeyWrites
+        self.rejectsServiceKeyWrites = rejectsServiceKeyWrites
+    }
 
     // MARK: - GitHub Token
 
@@ -65,6 +73,9 @@ final class InMemoryKeychain: KeychainManaging, @unchecked Sendable {
     }
 
     func storeAIKey(_ key: String, forProvider providerID: String) throws {
+        if rejectsAIKeyWrites {
+            throw KeychainError.writeFailed(underlying: CocoaError(.fileWriteNoPermission))
+        }
         setValue(key, forKey: "ai_api_key::\(providerID)")
     }
 
@@ -80,6 +91,9 @@ final class InMemoryKeychain: KeychainManaging, @unchecked Sendable {
     // MARK: - R-01 自建后端服务 API Key（trending / weekly / sharing）
 
     func storeServiceAPIKey(_ key: String, forService serviceID: String) throws {
+        if rejectsServiceKeyWrites {
+            throw KeychainError.writeFailed(underlying: CocoaError(.fileWriteNoPermission))
+        }
         setValue(key, forKey: "service_api_key::\(serviceID)")
     }
 
