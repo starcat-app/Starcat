@@ -51,7 +51,9 @@ extension RAGCitationSource {
         case .summary: return BusinessIcon.Symbol.summary.systemImage
         case .metadata: return BusinessIcon.Symbol.metadata.systemImage
         case .knowledgeBaseMetadata: return BusinessIcon.Symbol.knowledgeMetadata.systemImage
-        case .repositoryInsights: return BusinessIcon.Symbol.repositoryInsights.systemImage
+        // repositoryInsights 注册条目已资产化（Lucide gauge）；引用徽标仍持 SF 字符串，
+        // 样板阶段先回落到同语义的 SF gauge，批量迁移 RAG 引用图标时统一改为 source 渲染。
+        case .repositoryInsights: return "gauge"
         case .repoContext: return BusinessIcon.Symbol.codeContext.systemImage
         }
     }

@@ -30,14 +30,16 @@ enum AgentRepositorySource: String, CaseIterable, Codable, Hashable, Sendable {
         }
     }
 
-    var systemImage: String {
+    /// 图标来源走注册表解析：资产条目（stars/library/weekly/trending/discovery 已 Lucide 化）
+    /// 与 SF 条目（storage）统一经 BusinessIcon 渲染，不再暴露 SF 字符串。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .local: return BusinessIcon.Symbol.storage.systemImage
-        case .starred: return BusinessIcon.Symbol.stars.systemImage
-        case .knowledge: return BusinessIcon.Symbol.library.systemImage
-        case .weekly: return BusinessIcon.Symbol.weekly.systemImage
-        case .trending: return BusinessIcon.Symbol.trending.systemImage
-        case .discovery: return BusinessIcon.Symbol.discovery.systemImage
+        case .local: return .business(.storage)
+        case .starred: return .business(.stars)
+        case .knowledge: return .business(.library)
+        case .weekly: return .business(.weekly)
+        case .trending: return .business(.trending)
+        case .discovery: return .business(.discovery)
         }
     }
 }

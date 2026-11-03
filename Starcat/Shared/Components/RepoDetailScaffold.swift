@@ -1133,8 +1133,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         case .weeklyIssue(let number, let url):
             Link(destination: url) {
                 HStack(spacing: 4) {
-                    Image(systemName: BusinessIcon.Symbol.weekly.systemImage)
-                        .font(.system(size: 12, weight: .semibold))
+                    // Weekly 图标已资产化；12pt SF 对应约 15pt 资产画布做光学匹配。
+                    BusinessIcon(.weekly, pointSize: 15, weight: .semibold)
                     Text("# \(number)")
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 }

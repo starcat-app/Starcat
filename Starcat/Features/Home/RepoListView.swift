@@ -1293,7 +1293,8 @@ struct RepoListView: View {
         VStack(alignment: .leading, spacing: 8) {
             filterSectionHeader(
                 title: "sidebar.myProjects",
-                icon: SidebarItem.myProjects.systemImage
+                // myProjects 尚未资产化（批量阶段换 folder-git-2），取注册表 SF 名仍安全。
+                icon: BusinessIcon.Symbol.myProjects.rawValue
             )
 
             projectFilterMenuRow(title: "list.filter.project.affiliation") {

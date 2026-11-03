@@ -37,12 +37,14 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         }
     }
 
-    var systemImage: String {
+    /// 根入口图标来源：四个一级入口统一走 Lucide 业务资产，经 BusinessIcon 渲染；
+    /// 不再暴露 SF 字符串，避免资产名漏进 `Image(systemName:)`。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .manage:   return "star.circle"
-        case .trending: return "safari"
-        case .activity: return "bell.circle"
-        case .insights: return "gauge.with.dots.needle.bottom.0percent"
+        case .manage:   return .business(.stars)
+        case .trending: return .business(.discovery)
+        case .activity: return .business(.notifications)
+        case .insights: return .business(.repositoryInsights)
         }
     }
 }
@@ -139,24 +141,25 @@ enum SidebarItem: Hashable, Identifiable {
         }
     }
 
-    /// SF Symbol 图标名（用于 Sidebar 行的前置图标）。
-    var systemImage: String {
+    /// 导航行图标来源：资产与系统符号统一经 BusinessIcon 渲染。
+    /// `.business()` 会按注册表的 isAsset 自动解析，SF 条目继续走系统符号。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .trending:                return BusinessIcon.Symbol.discovery.systemImage
-        case .allStars:                return BusinessIcon.Symbol.stars.systemImage
+        case .trending:                return .business(.discovery)
+        case .allStars:                return .business(.stars)
         // 与「订阅发布」的 shippingbox.fill 区分：用人物叠层表达「我拥有 / 可访问的项目」。
         // 不用 folder.badge.gearshape——同行已有项目授权 gear 角标，再叠 gear 会视觉撞车。
-        case .myProjects:              return BusinessIcon.Symbol.myProjects.systemImage
-        case .untagged:                return BusinessIcon.Symbol.untagged.systemImage
-        case .library:                 return BusinessIcon.Symbol.library.systemImage
-        case .allLanguages:            return BusinessIcon.Symbol.languages.systemImage
-        case .smartCollectionsHome:    return BusinessIcon.Symbol.collections.systemImage
-        case .smartCollection(let kind): return kind.systemImage
-        case .userSmartCollection:     return BusinessIcon.Symbol.collections.systemImage
-        case .language:                return BusinessIcon.Symbol.codeContext.systemImage
-        case .tag:                     return BusinessIcon.Symbol.tags.systemImage
-        case .githubStarListUngrouped: return BusinessIcon.Symbol.ungrouped.systemImage
-        case .githubStarList:          return BusinessIcon.Symbol.groups.systemImage
+        case .myProjects:              return .business(.myProjects)
+        case .untagged:                return .business(.untagged)
+        case .library:                 return .business(.library)
+        case .allLanguages:            return .business(.languages)
+        case .smartCollectionsHome:    return .business(.collections)
+        case .smartCollection(let kind): return .system(kind.systemImage)
+        case .userSmartCollection:     return .business(.collections)
+        case .language:                return .business(.codeContext)
+        case .tag:                     return .business(.tags)
+        case .githubStarListUngrouped: return .business(.ungrouped)
+        case .githubStarList:          return .business(.groups)
         }
     }
 

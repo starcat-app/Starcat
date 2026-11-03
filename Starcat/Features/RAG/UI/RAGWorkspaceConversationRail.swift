@@ -185,8 +185,13 @@ struct RAGWorkspaceConversationRail: View {
             ) {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
-                        Label("rag.workspace.status.knowledgeBase", systemImage: BusinessIcon.Symbol.library.systemImage)
-                            .font(ragFont(.callout, weight: .semibold))
+                        // 知识库图标已资产化（Lucide library），Label 的 icon 槽改走 BusinessIcon 渲染。
+                        Label {
+                            Text("rag.workspace.status.knowledgeBase")
+                        } icon: {
+                            BusinessIcon(.library, pointSize: 17)
+                        }
+                        .font(ragFont(.callout, weight: .semibold))
                         Spacer()
                         Image(systemName: viewModel.isKnowledgeBaseEmpty ? "plus.circle" : "arrow.up.right.square")
                             .font(iconFont(size: 13, weight: .medium))

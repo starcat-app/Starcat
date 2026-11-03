@@ -16,7 +16,9 @@ enum BuiltInAgents {
         id: "github-weekly-report",
         title: String.l10n("agent.definition.githubWeeklyReport.title"),
         subtitle: String.l10n("agent.definition.githubWeeklyReport.subtitle"),
-        systemImage: BusinessIcon.Symbol.weekly.systemImage,
+        // Weekly 注册条目已资产化；AgentDefinition 仍持 SF 字符串，样板阶段先落字面量，
+        // 批量迁移 Agent 定义图标时统一改为 source 型渲染。
+        systemImage: "newspaper",
         capabilityLabels: [
             String.l10n("agent.capability.trending"),
             String.l10n("agent.capability.report"),

@@ -1200,7 +1200,8 @@ struct SidebarView: View {
         Section("nav.trending") {
             if settings.exploreCatalogPreferences.isGroupEnabled("dailyRadar") {
                 exploreSelectableRow(selection: .dailyRadarPreview, count: dailyRadarModel.totalCount) {
-                    exploreSidebarSystemIcon("newspaper", color: .indigo)
+                    // 每日热点与 Weekly 拆分图形：雷达 vs 报纸（2026-11-04 图标体系样板决议）。
+                    exploreSidebarBusinessIcon(.dailyRadar, color: .indigo)
                 } title: {
                     Text("dailyRadar.title")
                 }
@@ -1650,10 +1651,9 @@ struct SidebarView: View {
             }
         } label: {
             VStack(spacing: 6) {
-                Image(systemName: page.systemImage)
-                    // 圆形 SF Symbol 的有效墨迹面积比 folder / bell.badge 小，三入口局部放大避免视觉塌陷。
-                    .font(interfaceScale.font(size: 30, weight: .medium))
-                    .symbolEffect(.bounce, value: rootNavigationBounceTokens[page, default: 0])
+                // 根入口换 Lucide 资产后不再有 symbolEffect 弹跳反馈；如需保留可改用
+                // scaleEffect 动画补齐（样板阶段先移除，验收时一并定夺）。
+                BusinessIcon(source: page.iconSource, pointSize: 30 * interfaceScale.multiplier, weight: .medium)
                     .frame(height: 30)
                 Text(page.titleKey)
                     // 四入口文案比 body 小一号：图标仍占主视觉，标签只做识别不抢权重。
@@ -2422,12 +2422,16 @@ struct SidebarView: View {
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            Image(systemName: item.systemImage)
-                .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                .foregroundStyle(
-                    SidebarSemanticIconStyle(semanticColor: item.semanticIconColor ?? .secondary)
-                )
-                .frame(width: 16, height: 16)
+            // 资产与 SF 统一经 BusinessIcon 渲染；沿用探索侧栏「16pt 素材 / 13pt SF」光学匹配规则。
+            BusinessIcon(
+                source: item.iconSource,
+                pointSize: (item.iconSource.isAsset ? 16 : 13) * interfaceScale.multiplier,
+                weight: .semibold
+            )
+            .foregroundStyle(
+                SidebarSemanticIconStyle(semanticColor: item.semanticIconColor ?? .secondary)
+            )
+            .frame(width: 16, height: 16)
         }
         .tag(item)
         // HOM-46 优化：鼠标悬停时预取相邻分类数据，降低点击后的感知延迟
@@ -2482,14 +2486,17 @@ struct SidebarView: View {
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            Image(systemName: SidebarItem.myProjects.systemImage)
-                .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                .foregroundStyle(
-                    SidebarSemanticIconStyle(
-                        semanticColor: SidebarItem.myProjects.semanticIconColor ?? .secondary
-                    )
+            BusinessIcon(
+                source: SidebarItem.myProjects.iconSource,
+                pointSize: (SidebarItem.myProjects.iconSource.isAsset ? 16 : 13) * interfaceScale.multiplier,
+                weight: .semibold
+            )
+            .foregroundStyle(
+                SidebarSemanticIconStyle(
+                    semanticColor: SidebarItem.myProjects.semanticIconColor ?? .secondary
                 )
-                .frame(width: 16, height: 16)
+            )
+            .frame(width: 16, height: 16)
         }
         .tag(SidebarItem.myProjects)
         .onHover { isHovering in
@@ -2622,9 +2629,9 @@ struct SidebarView: View {
                 .frame(width: Self.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            // 优先 user-defined SF Symbol；否则 fallback "tag.fill"
-            // 明亮选中反白，避免彩色 icon 叠在系统蓝底上看不清。
-            Image(systemName: tag.icon ?? BusinessIcon.Symbol.tags.systemImage)
+            // 优先 user-defined SF Symbol；否则 fallback "tag.fill"。
+            // tags 注册条目转 Lucide 资产时（批量阶段），此处需一并改为 BusinessIcon 渲染。
+            Image(systemName: tag.icon ?? "tag.fill")
                 .font(interfaceScale.font(.iconSmall, weight: .semibold))
                 .foregroundStyle(
                     SidebarSemanticIconStyle(

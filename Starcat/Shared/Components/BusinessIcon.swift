@@ -23,15 +23,19 @@ struct BusinessIcon: View {
         case forkedRepository = "BusinessForkedRepository"
         case forkCount = "BusinessForkCount"
 
-        // 保留准确的系统符号。集中名称使跨页面调用不再各自猜测同一业务的图形。
-        case discovery = "safari"
-        case trending = "chart.line.uptrend.xyaxis"
+        // Lucide 统一业务图标层（方案 A）：素材取自锁定版本 Lucide 1.67.0 的同名 SVG。
+        // 画布自带留白，调用方按既有「16pt 素材 / 13pt SF」规则做光学尺寸匹配。
+        case discovery = "BusinessDiscovery"
+        case trending = "BusinessTrending"
         case popular = "flame"
         case releases = "shippingbox"
-        case weekly = "newspaper"
+        case weekly = "BusinessWeekly"
+        // 每日热点与 Weekly 拆分图形：前者雷达、后者报纸，避免探索侧栏同形撞车。
+        case dailyRadar = "BusinessDailyRadar"
         case linuxDo = "text.bubble"
-        case stars = "star.fill"
-        case library = "heart.fill"
+        case stars = "BusinessStars"
+        // 知识库改用书架图形（2026-11-04 决议），heart 收敛为「加入知识库」动作语义。
+        case library = "BusinessLibrary"
         case myProjects = "person.crop.rectangle.stack.fill"
         case collections = "line.3.horizontal.decrease.circle"
         case languages = "globe"
@@ -41,7 +45,7 @@ struct BusinessIcon: View {
         case ungrouped = "tray"
         case groups = "folder.fill"
         case general = "gearshape"
-        case notifications = "bell"
+        case notifications = "BusinessNotifications"
         case shortcuts = "keyboard"
         case pro = "crown.fill"
         case privacy = "lock.shield"
@@ -63,7 +67,7 @@ struct BusinessIcon: View {
         case summary = "doc.text"
         case metadata = "list.bullet.rectangle"
         case knowledgeMetadata = "cylinder.split.1x2"
-        case repositoryInsights = "gauge.with.dots.needle.bottom.0percent"
+        case repositoryInsights = "BusinessInsights"
         case repositoryHealth = "gauge.with.dots.needle.67percent"
         case security = "checkmark.shield.fill"
         case repositories = "square.stack.3d.up"
@@ -78,7 +82,9 @@ struct BusinessIcon: View {
         var isAsset: Bool {
             switch self {
             case .curatedCollection, .automation, .inference, .aiIndex, .license, .embedding, .recommendations,
-                 .forkedRepository, .forkCount: return true
+                 .forkedRepository, .forkCount,
+                 .discovery, .trending, .weekly, .dailyRadar, .stars, .library, .notifications, .repositoryInsights:
+                return true
             default: return false
             }
         }

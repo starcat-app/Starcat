@@ -46,10 +46,13 @@ struct AgentContextPickerRepositoryRow: View, Equatable {
             ) {
                 HStack(spacing: 4) {
                     ForEach(sources.prefix(2), id: \.self) { source in
-                        Image(systemName: source.systemImage)
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                            .help(source.title)
+                        // 来源徽标可能为 Lucide 资产或 SF 符号，统一经 BusinessIcon 渲染。
+                        BusinessIcon(
+                            source: source.iconSource,
+                            pointSize: (source.iconSource.isAsset ? 13 : 11) * interfaceScale.multiplier
+                        )
+                        .foregroundStyle(.secondary)
+                        .help(source.title)
                     }
                 }
             }

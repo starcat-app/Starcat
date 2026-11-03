@@ -1038,7 +1038,15 @@ struct AgentWorkspaceRunSurface: View {
                 .foregroundStyle(.secondary)
             ForEach(AgentRepositorySource.allCases, id: \.self) { source in
                 Toggle(isOn: repositorySourceBinding(source)) {
-                    Label(source.title, systemImage: source.systemImage)
+                    // 来源图标可能为 Lucide 资产或 SF 符号，统一经 BusinessIcon 渲染。
+                    Label {
+                        Text(source.title)
+                    } icon: {
+                        BusinessIcon(
+                            source: source.iconSource,
+                            pointSize: source.iconSource.isAsset ? 14 : 12
+                        )
+                    }
                 }
             }
         }

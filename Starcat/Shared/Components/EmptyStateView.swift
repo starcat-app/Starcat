@@ -81,6 +81,10 @@ struct EmptyStateView<Accessory: View>: View {
 
     let systemImage: String
 
+    /// 业务资产图标（BusinessIcon 注册表条目）。与 `systemImage` 二选一；传入后优先于系统符号。
+    /// 供空态复用 Lucide 业务图形（如知识库书架），避免资产名漏进 `Image(systemName:)`。
+    let businessIcon: BusinessIcon.Symbol?
+
     /// 本地化标题键。与 `titleText` 互斥，二选一传。
     let title: LocalizedStringKey?
 
@@ -121,9 +125,11 @@ struct EmptyStateView<Accessory: View>: View {
         subtitleHorizontalPadding: CGFloat = 0,
         titleFont: Font = .headline,
         subtitleFont: Font = .caption,
+        businessIcon: BusinessIcon.Symbol? = nil,
         @ViewBuilder accessory: () -> Accessory = { EmptyView() }
     ) {
         self.systemImage = systemImage
+        self.businessIcon = businessIcon
         self.title = title
         self.titleText = nil
         self.subtitle = subtitle
@@ -147,9 +153,11 @@ struct EmptyStateView<Accessory: View>: View {
         subtitleHorizontalPadding: CGFloat = 0,
         titleFont: Font = .headline,
         subtitleFont: Font = .caption,
+        businessIcon: BusinessIcon.Symbol? = nil,
         @ViewBuilder accessory: () -> Accessory = { EmptyView() }
     ) {
         self.systemImage = systemImage
+        self.businessIcon = businessIcon
         self.title = nil
         self.titleText = titleText
         self.subtitle = subtitle
@@ -164,9 +172,15 @@ struct EmptyStateView<Accessory: View>: View {
 
     var body: some View {
         VStack(spacing: spacing) {
-            Image(systemName: systemImage)
-                .font(.system(size: iconSize))
-                .foregroundStyle(.secondary)
+            // 资产业务图标与 SF 系统符号走同一占位；资产画布自带留白，直接用 iconSize 做画布尺寸。
+            if let businessIcon {
+                BusinessIcon(businessIcon, pointSize: iconSize)
+                    .foregroundStyle(.secondary)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: iconSize))
+                    .foregroundStyle(.secondary)
+            }
 
             titleView
 
