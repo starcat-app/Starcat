@@ -150,6 +150,14 @@ struct DailyRadarPreviewWorkspace: View {
             }
             .padding(.horizontal, 24)
             .frame(height: 52)
+            // 局部宿主盖住原 titlebar 后，标题空白处继续提供系统窗口拖动，
+            // 手势放在背景，避免抢刷新 / 关闭按钮的点击。
+            .background {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+                    .allowsWindowActivationEvents()
+            }
             Divider()
 
             ScrollView {

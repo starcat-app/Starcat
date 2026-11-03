@@ -18,9 +18,6 @@ struct ContentView: View {
     @State private var showDataContributionConsent = false
     @State private var dataContributionConsentDraft = false
     @State private var dataContributionPromptAccountID: Int64?
-    /// 每日热点覆盖中右栏时隐藏整窗 toolbar，让自定义头部从窗口顶部开始。
-    @State private var hidesDailyRadarWindowToolbar = false
-
     private let dataContributionPromptPreferences = DataContributionConsentPromptPreferences()
     /// 2026-06-15:用户「关闭应用内动画」开 + 系统「减少动态效果」开
     /// 任一为真时,跳过登录态切换的 .smooth 隐式动画,避免内容树瞬切时
@@ -89,22 +86,14 @@ struct ContentView: View {
             minHeight: MainWindowFrameDefaults.contentMinSize.height
         )
         .mainWindowFrameAutosave()
-        .onPreferenceChange(DailyRadarPreviewToolbarVisibilityPreference.self) { isPresented in
-            hidesDailyRadarWindowToolbar = isPresented
-        }
         // 让三栏内容背景延伸到 window toolbar 下方，避免 toolbar 的独立实色背景
         // 与 Sidebar / Repo detail 顶部渐变形成横向硬分界。各栏仍自行决定背景颜色，
         // 这里只移除系统 toolbar 的遮挡，不改变 toolbar item 的布局与交互。
         .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
-        .dailyRadarFullSizeWindowChrome(isEnabled: hidesDailyRadarWindowToolbar)
-        // fullSizeContentView 只放开 AppKit contentView；SwiftUI 仍会尊重 titlebar
-        // safe area。仅在日报覆盖期间忽略顶部 inset，普通三栏布局保持原状。
-        .ignoresSafeArea(
-            .container,
-            edges: hidesDailyRadarWindowToolbar ? .top : []
-        )
+        // 日报只在窗口内局部覆盖中右栏，不切换整窗 toolbar / safe area，
+        // 避免系统按钮和左侧栏在普通分类与日报之间重新布局。
         .toolbarVisibility(
-            firstRunOnboardingActive || hidesDailyRadarWindowToolbar ? .hidden : .visible,
+            firstRunOnboardingActive ? .hidden : .visible,
             for: .windowToolbar
         )
         .animation(reduceMotion ? nil : .smooth, value: authSession.state)

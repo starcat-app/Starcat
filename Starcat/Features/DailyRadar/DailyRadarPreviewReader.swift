@@ -39,6 +39,13 @@ struct DailyRadarPreviewReader: View {
             }
             .padding(.horizontal, 24)
             .frame(height: 52)
+            // 阅读页也覆盖系统标题栏；只让标题空白背景承担窗口拖动。
+            .background {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+                    .allowsWindowActivationEvents()
+            }
             Divider()
             ScrollView {
                 VStack(spacing: 0) {

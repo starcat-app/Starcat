@@ -159,8 +159,6 @@ struct HomeView: View {
     @State private var showsDailyRadarPreview = false
     /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
     @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
-    /// 由 ContentView 接管 window toolbar：DailyRadar 中右覆盖层需要从窗口顶部开始。
-    @State private var hidesDailyRadarWindowToolbar = false
 
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
@@ -318,10 +316,6 @@ struct HomeView: View {
 
     var body: some View {
         navigationWithLifecycle
-            .preference(
-                key: DailyRadarPreviewToolbarVisibilityPreference.self,
-                value: hidesDailyRadarWindowToolbar
-            )
             .background {
                 WorkspaceSceneWindowReader(reference: batchAIParentWindow, minimumContentSize: nil)
                     .frame(width: 0, height: 0)
@@ -403,27 +397,29 @@ struct HomeView: View {
     }
 
     /// 两栏跨越不同 NavigationSplitView 宿主，必须在共同父层解析锚点后合并。
-    /// 覆盖层不借用固定侧栏宽度，因而侧栏拖动 / 折叠时仍保留准确的左侧命中边界。
+    /// 锚点只决定中右区域；窗口内的独立宿主将面板延伸至顶部并盖住该区域的 toolbar，
+    /// 不改整窗 chrome / safe area，也不使用固定侧栏宽度或 toolbar 高度。
     private var navigationWithDailyRadarPreview: AnyView {
         AnyView(baseNavigation
             .overlayPreferenceValue(DailyRadarPreviewColumnAnchors.self) { anchors in
                 GeometryReader { proxy in
-                    if showsDailyRadarPreview,
-                       let content = anchors[.content],
+                    if let content = anchors[.content],
                        let detail = anchors[.detail] {
                         let bounds = proxy[content].union(proxy[detail])
-                        DailyRadarPreviewWorkspace(
-                            readmeTranslationService: dependencies.readmeTranslationService,
-                            model: dailyRadarModel,
-                            onExit: { showsDailyRadarPreview = false }
-                        )
-                        .onAppear { hidesDailyRadarWindowToolbar = true }
-                        .onDisappear { hidesDailyRadarWindowToolbar = false }
-                            // overlay 不继承 baseNavigation 子树的环境，详情的显式 Star 操作需要此宿主。
+                        DailyRadarWindowOverlay(
+                            isPresented: showsDailyRadarPreview,
+                            reduceMotion: reduceMotion
+                        ) {
+                            DailyRadarPreviewWorkspace(
+                                readmeTranslationService: dependencies.readmeTranslationService,
+                                model: dailyRadarModel,
+                                onExit: { showsDailyRadarPreview = false }
+                            )
+                            // overlay 不继承 baseNavigation 子树的环境，显式 Star 操作需要此宿主。
                             .environment(viewModel)
-                            .frame(width: bounds.width, height: bounds.height)
-                            .clipped()
-                            .position(x: bounds.midX, y: bounds.midY)
+                        }
+                        .frame(width: bounds.width, height: bounds.height)
+                        .position(x: bounds.midX, y: bounds.midY)
                     }
                 }
             }
@@ -1368,14 +1364,13 @@ struct HomeView: View {
     @ViewBuilder
     private var contentColumn: some View {
         ZStack(alignment: .topLeading) {
-            if isDailyRadarPreviewPresented {
-                // 移除底层交互树而非仅遮挡：避免 README / 列表继续接收快捷键与 AX 焦点。
-                // 主窗口持有的 ViewModel 与仓库选择不受影响，退出预览后继续使用。
-                Color.clear.accessibilityHidden(true)
-            } else {
-                contentColumnBody
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
+            // 保留 toolbar contributions 与原内容，避免标题栏收缩，也为面板淡入淡出
+            // 提供视觉承接；覆盖期间隔离鼠标、快捷键和辅助功能焦点。
+            contentColumnBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .disabled(isDailyRadarPreviewPresented)
+                .allowsHitTesting(!isDailyRadarPreviewPresented)
+                .accessibilityHidden(isDailyRadarPreviewPresented)
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
         .navigationSplitViewColumnWidth(
@@ -1480,12 +1475,11 @@ struct HomeView: View {
     @ViewBuilder
     private var detailColumn: some View {
         ZStack(alignment: .topLeading) {
-            if isDailyRadarPreviewPresented {
-                Color.clear.accessibilityHidden(true)
-            } else {
-                detailColumnBody
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }
+            detailColumnBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .disabled(isDailyRadarPreviewPresented)
+                .allowsHitTesting(!isDailyRadarPreviewPresented)
+                .accessibilityHidden(isDailyRadarPreviewPresented)
         }
         .modifier(RepoShareHost())
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: selectedSidebarPage)
