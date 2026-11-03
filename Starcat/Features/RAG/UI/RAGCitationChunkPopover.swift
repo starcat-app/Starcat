@@ -393,8 +393,7 @@ struct RAGCitationChunkSourceHeader: View {
                 showAvatarBorder: false
             )
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Image(systemName: citation.source.systemImageName)
-                    .font(iconFont(size: 11, scale: interfaceScale, weight: .semibold))
+                BusinessIcon(source: citation.source.iconSource, pointSize: 13 * interfaceScale.multiplier, weight: .semibold)
                     .foregroundStyle(citation.source.tintColor)
                 (Text(citation.source.titleKey) + Text(" · \(citation.sectionTitle)"))
                     .font(ragFont(.caption2, scale: interfaceScale))

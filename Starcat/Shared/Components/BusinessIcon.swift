@@ -115,7 +115,8 @@ struct BusinessIcon: View {
     }
 
     /// 通用控件仍可传 SF 名称，但资源与系统符号不能在渲染时混用。
-    enum Source: Equatable, Sendable {
+    /// Hashable：AgentDefinition 等持图标来源的数据模型需要合成判等。
+    enum Source: Hashable, Sendable {
         case system(String)
         case asset(String)
 

@@ -52,7 +52,8 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
     let id: String
     let title: String
     let subtitle: String
-    let systemImage: String
+    /// Agent 身份图标来源；内置/外部 Agent 统一走 Lucide 业务资产（批次 3 收口）。
+    let iconSource: BusinessIcon.Source
     let capabilityLabels: [String]
     let defaultPrompt: String
     let isEnabled: Bool
@@ -79,7 +80,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         id: String,
         title: String,
         subtitle: String,
-        systemImage: String,
+        iconSource: BusinessIcon.Source,
         capabilityLabels: [String],
         defaultPrompt: String,
         isEnabled: Bool,
@@ -95,7 +96,7 @@ struct AgentDefinition: Identifiable, Hashable, Sendable {
         self.id = id
         self.title = title
         self.subtitle = subtitle
-        self.systemImage = systemImage
+        self.iconSource = iconSource
         self.capabilityLabels = capabilityLabels
         self.defaultPrompt = defaultPrompt
         self.isEnabled = isEnabled

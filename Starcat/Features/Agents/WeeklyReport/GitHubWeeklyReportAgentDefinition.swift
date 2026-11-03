@@ -18,7 +18,7 @@ enum BuiltInAgents {
         subtitle: String.l10n("agent.definition.githubWeeklyReport.subtitle"),
         // Weekly 注册条目已资产化；AgentDefinition 仍持 SF 字符串，样板阶段先落字面量，
         // 批量迁移 Agent 定义图标时统一改为 source 型渲染。
-        systemImage: "newspaper",
+        iconSource: .business(.weekly),
         capabilityLabels: [
             String.l10n("agent.capability.trending"),
             String.l10n("agent.capability.report"),
@@ -62,7 +62,7 @@ enum BuiltInAgents {
         id: "repo-insight",
         title: String.l10n("agent.definition.repoInsight.title"),
         subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
-        systemImage: "doc.text.magnifyingglass",
+        iconSource: .business(.repositoryAnalysis),
         capabilityLabels: [
             String.l10n("agent.capability.repository"),
             String.l10n("agent.capability.analysis"),
@@ -104,7 +104,7 @@ enum BuiltInAgents {
         id: "repo-alternatives",
         title: String.l10n("agent.definition.repoAlternatives.title"),
         subtitle: String.l10n("agent.definition.repoAlternatives.subtitle"),
-        systemImage: "arrow.triangle.branch",
+        iconSource: .business(.alternatives),
         capabilityLabels: [
             String.l10n("agent.capability.compare"),
             String.l10n("agent.capability.github"),
@@ -150,7 +150,7 @@ enum BuiltInAgents {
         id: "untagged-tidy",
         title: String.l10n("agent.definition.untaggedTidy.title"),
         subtitle: String.l10n("agent.definition.untaggedTidy.subtitle"),
-        systemImage: "tag.fill",
+        iconSource: .business(.tags),
         capabilityLabels: [
             String.l10n("agent.capability.taxonomy"),
             String.l10n("agent.capability.queue"),
@@ -197,7 +197,7 @@ enum BuiltInAgents {
             id: "overlap-scan",
             title: String.l10n("agent.definition.overlapScan.title"),
             subtitle: String.l10n("agent.definition.overlapScan.subtitle"),
-            systemImage: "rectangle.3.group",
+            iconSource: .business(.dashboard),
             capabilityLabels: [
                 String.l10n("agent.capability.cluster"),
                 String.l10n("agent.capability.cleanup"),
@@ -210,7 +210,7 @@ enum BuiltInAgents {
             id: "recall-search",
             title: String.l10n("agent.definition.recallSearch.title"),
             subtitle: String.l10n("agent.definition.recallSearch.subtitle"),
-            systemImage: "quote.bubble",
+            iconSource: .business(.prompts),
             capabilityLabels: [
                 String.l10n("agent.capability.fts"),
                 String.l10n("agent.capability.semantic"),
@@ -224,7 +224,7 @@ enum BuiltInAgents {
             id: "release-watcher",
             title: String.l10n("agent.definition.releaseWatcher.title"),
             subtitle: String.l10n("agent.definition.releaseWatcher.subtitle"),
-            systemImage: "bell.badge",
+            iconSource: .business(.notifications),
             capabilityLabels: [
                 String.l10n("agent.capability.release"),
                 String.l10n("agent.capability.watch")

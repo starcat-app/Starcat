@@ -27,8 +27,7 @@ struct RepoHealthBadge: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: "gauge.with.dots.needle.67percent")
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            BusinessIcon(.repositoryHealth, pointSize: 14, weight: .semibold)
                 .foregroundStyle(tint)
             Text(verbatim: data.grade)
                 .font(interfaceScale.font(.captionSmall, weight: .bold))

@@ -625,8 +625,7 @@ struct RepoAIOpenButton: View {
             )
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(interfaceScale.font(.iconSmall, weight: .semibold))
+                BusinessIcon(.ai, pointSize: 16, weight: .semibold)
                 Text("AI")
                     .font(interfaceScale.font(.body, weight: .semibold))
             }
@@ -981,8 +980,7 @@ private struct RepoShareOwnerAIAvatar: View {
                 size: 48
             )
 
-            Image(systemName: "sparkles")
-                .font(.system(size: 9, weight: .semibold))
+            BusinessIcon(.ai, pointSize: 11, weight: .semibold)
                 .foregroundStyle(.white)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(Color.accentColor.gradient))

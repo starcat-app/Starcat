@@ -11,7 +11,8 @@ import SwiftUI
 /// 扩展与连接各页共用的说明入口，长语言按内容自然增高，不占用额外弹性高度。
 struct SettingsPageIntroduction: View {
     let title: LocalizedStringKey
-    let systemImage: String
+    /// 页面身份图标来源：设置页入口统一走 Lucide 业务资产（批次 3 收口）。
+    let iconSource: BusinessIcon.Source
     let description: LocalizedStringKey
     let context: LocalizedStringKey
 
@@ -19,8 +20,7 @@ struct SettingsPageIntroduction: View {
         Section {
             HStack(spacing: 16) {
                 // 页面身份卡片沿用现有通用、翻译页的强调图标，区别于普通分组标题。
-                Image(systemName: systemImage)
-                    .font(.title)
+                BusinessIcon(source: iconSource, pointSize: 30)
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 48, height: 48)
                     .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))

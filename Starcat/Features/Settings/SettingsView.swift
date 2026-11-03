@@ -1763,7 +1763,7 @@ private struct StorageSettingsTab: View {
         return Form {
             SettingsPageIntroduction(
                 title: "settings.navigation.item.dataStorage",
-                systemImage: "internaldrive",
+                iconSource: .business(.storage),
                 description: "settings.storage.layout.introduction.description",
                 context: "settings.storage.layout.introduction.context"
             )

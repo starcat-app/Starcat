@@ -2317,8 +2317,7 @@ private struct KnowledgeRAGBrowserView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     HStack(spacing: 4) {
-                        Image(systemName: hit.chunk.source.systemImageName)
-                            .font(.caption2.weight(.semibold))
+                        BusinessIcon(source: hit.chunk.source.iconSource, pointSize: 13, weight: .semibold)
                             .foregroundStyle(hit.chunk.source.tintColor)
                             .accessibilityHidden(true)
                         Text(sourceKey(hit.chunk.source))
@@ -2715,9 +2714,8 @@ private struct KnowledgeRAGBrowserView: View {
                 Button { editingChunk = managed } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 7) {
-                            // 与证据卡 / 引用列表同源：来源 SF Symbol + tint。
-                            Image(systemName: chunk.source.systemImageName)
-                                .font(.caption.weight(.semibold))
+                            // 与证据卡 / 引用列表同源：来源图标（Lucide 资产）+ tint。
+                            BusinessIcon(source: chunk.source.iconSource, pointSize: 14, weight: .semibold)
                                 .foregroundStyle(chunk.source.tintColor)
                                 .accessibilityHidden(true)
                             Text(sourceKey(chunk.source))
@@ -3058,7 +3056,7 @@ private struct KnowledgeRAGChunkEditor: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     let source: RAGChunkSource?
-    let sourceSystemImageName: String
+    let sourceIconSource: BusinessIcon.Source
     let sourceTintColor: Color
     let editorTitleKey: LocalizedStringKey
     let locksMetadataFields: Bool
@@ -3083,7 +3081,7 @@ private struct KnowledgeRAGChunkEditor: View {
 
     init(chunk: RAGManagedChunk, embeddingStatus: RAGEmbeddingStatus, onSave: @escaping (String, String, String) async -> String?) {
         source = chunk.chunk.source
-        sourceSystemImageName = chunk.chunk.source.systemImageName
+        sourceIconSource = chunk.chunk.source.iconSource
         sourceTintColor = chunk.chunk.source.tintColor
         editorTitleKey = "rag.browser.chunk.edit"
         locksMetadataFields = false
@@ -3103,7 +3101,7 @@ private struct KnowledgeRAGChunkEditor: View {
 
     init(repoContext: RepoContextDocument, onSave: @escaping (String) async -> String?) {
         source = nil
-        sourceSystemImageName = "chevron.left.forwardslash.chevron.right"
+        sourceIconSource = .business(.codeContext)
         sourceTintColor = .purple
         editorTitleKey = "rag.browser.repoContext.title"
         locksMetadataFields = true
@@ -3124,7 +3122,7 @@ private struct KnowledgeRAGChunkEditor: View {
 
     init(hit: RAGRetrievalHitInspection, embeddingStatus: RAGEmbeddingStatus, onEdit: @escaping () -> Void) {
         source = hit.hit.chunk.source
-        sourceSystemImageName = hit.hit.chunk.source.systemImageName
+        sourceIconSource = hit.hit.chunk.source.iconSource
         sourceTintColor = hit.hit.chunk.source.tintColor
         editorTitleKey = "rag.browser.retrieval.detail"
         locksMetadataFields = false
@@ -3154,8 +3152,7 @@ private struct KnowledgeRAGChunkEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 // 窗口标题要比下方仓库身份行更大一档（title3 vs callout）。
-                Image(systemName: sourceSystemImageName)
-                    .font(.title3.weight(.semibold))
+                BusinessIcon(source: sourceIconSource, pointSize: 24, weight: .semibold)
                     .foregroundStyle(sourceTintColor)
                     .accessibilityHidden(true)
                 Text(editorTitleKey).font(.title3.weight(.semibold))

@@ -33,8 +33,7 @@ struct RAGWorkspaceConversationRail: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 9) {
-                    Image(systemName: "bubble.left.and.text.bubble.right")
-                        .font(iconFont(size: 24, weight: .semibold))
+                    BusinessIcon(.ragWorkspace, pointSize: 28, weight: .semibold)
                         // 左上角品牌标识走独立双主题色（light #0E9488 / dark #2DD4BF），
                         // 不随系统强调色变蓝；其余 accent 高亮保持不变。
                         .foregroundStyle(Color("RAGWorkspaceBrand"))

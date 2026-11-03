@@ -98,16 +98,15 @@ struct BusinessIconTests {
 
     @Test("RAG 引用与分片的内容类型一致，摘要不再使用翻译图标")
     func citationMappingsStayConsistent() {
-        #expect(RAGChunkSource.readme.systemImageName == RAGCitationSource.readme.systemImageName)
-        #expect(RAGChunkSource.notes.systemImageName == RAGCitationSource.notes.systemImageName)
-        #expect(RAGChunkSource.summary.systemImageName == RAGCitationSource.summary.systemImageName)
-        #expect(RAGChunkSource.metadata.systemImageName == RAGCitationSource.metadata.systemImageName)
-        // 引用徽标仍持 SF 字面量（待 source 型迁移），摘要与翻译、代码上下文的图形保持区分。
-        #expect(RAGCitationSource.summary.systemImageName == "doc.text")
-        #expect(RAGCitationSource.summary.systemImageName != "character.bubble")
-        #expect(RAGCitationSource.repoContext.systemImageName == "chevron.left.forwardslash.chevron.right")
+        #expect(RAGChunkSource.readme.iconSource == RAGCitationSource.readme.iconSource)
+        #expect(RAGChunkSource.notes.iconSource == RAGCitationSource.notes.iconSource)
+        #expect(RAGChunkSource.summary.iconSource == RAGCitationSource.summary.iconSource)
+        #expect(RAGChunkSource.metadata.iconSource == RAGCitationSource.metadata.iconSource)
+        #expect(RAGCitationSource.summary.iconSource == .business(.summary))
+        #expect(RAGCitationSource.summary.iconSource != .business(.translation))
+        #expect(RAGCitationSource.repoContext.iconSource == .business(.codeContext))
         #expect(RAGPlanSectionHelpTopic.repoContext.systemImage == "chevron.left.forwardslash.chevron.right")
-        #expect(BuiltInAgents.untaggedTidy.systemImage == "tag.fill")
+        #expect(BuiltInAgents.untaggedTidy.iconSource == .business(.tags))
     }
 
     /// 导航与内容区用同一语义，避免之后只修正详情、遗漏洞察的入口图标。

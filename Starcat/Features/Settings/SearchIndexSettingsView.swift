@@ -27,7 +27,7 @@ struct SearchIndexSettingsView: View {
             Form {
                 SettingsPageIntroduction(
                     title: "settings.navigation.item.searchIndex",
-                    systemImage: "magnifyingglass",
+                    iconSource: .business(.retrieval),
                     description: "settings.searchIndex.introduction.description",
                     context: "settings.searchIndex.introduction.context"
                 )

@@ -334,8 +334,7 @@ struct RAGWorkspaceInspector: View {
                                         citationIdentityLabel(citation)
                                         // source 图标跟面包屑同排：一眼对来源类型，又不挤第一行 logo。
                                         HStack(alignment: .firstTextBaseline, spacing: 5) {
-                                            Image(systemName: citation.source.systemImageName)
-                                                .font(iconFont(size: 11, weight: .semibold))
+                                            BusinessIcon(source: citation.source.iconSource, pointSize: 13, weight: .semibold)
                                                 .foregroundStyle(citation.source.tintColor)
                                             // 来源·路径合成单行：小字 + 尾部省略，避免侧栏窄时把 section 折成两行。
                                             (Text(citation.source.titleKey) + Text(" · \(citation.localizedSectionTitle)"))
@@ -1190,8 +1189,7 @@ struct RAGWorkspaceInspector: View {
                     Text(citation.source.titleKey)
                         .font(ragFont(.caption, weight: .semibold))
                 } icon: {
-                    Image(systemName: citation.source.systemImageName)
-                        .font(iconFont(size: 11, weight: .semibold))
+                    BusinessIcon(source: citation.source.iconSource, pointSize: 13, weight: .semibold)
                         .foregroundStyle(citation.source.tintColor)
                 }
             }
@@ -1294,8 +1292,7 @@ struct RAGWorkspaceInspector: View {
                 Text(citation.source.titleKey)
                     .font(ragFont(.callout, weight: .semibold))
             } icon: {
-                Image(systemName: citation.source.systemImageName)
-                    .font(iconFont(size: 12, weight: .semibold))
+                BusinessIcon(source: citation.source.iconSource, pointSize: 14, weight: .semibold)
                     .foregroundStyle(citation.source.tintColor)
             }
         } else {
@@ -2220,8 +2217,7 @@ struct RAGWorkspaceInspector: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             HStack(spacing: 5) {
-                Image(systemName: hit.source.systemImageName)
-                    .font(iconFont(size: 10, weight: .semibold))
+                BusinessIcon(source: hit.source.iconSource, pointSize: 12, weight: .semibold)
                     .foregroundStyle(hit.source.tintColor)
                     .accessibilityHidden(true)
                 Text(hit.source.titleKey)
@@ -2265,8 +2261,7 @@ struct RAGWorkspaceInspector: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             HStack(spacing: 5) {
-                Image(systemName: candidate.source.systemImageName)
-                    .font(iconFont(size: 10, weight: .semibold))
+                BusinessIcon(source: candidate.source.iconSource, pointSize: 12, weight: .semibold)
                     .foregroundStyle(candidate.source.tintColor)
                     .accessibilityHidden(true)
                 Text(candidate.source.titleKey)

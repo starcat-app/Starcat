@@ -36,7 +36,7 @@ struct LabsSettingsTab: View {
         Form {
             SettingsPageIntroduction(
                 title: "settings.navigation.item.labs",
-                systemImage: "flask",
+                iconSource: .business(.labs),
                 description: "settings.labs.layout.introduction",
                 context: "settings.labs.intro"
             )

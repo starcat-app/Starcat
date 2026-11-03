@@ -228,7 +228,7 @@ struct WeeklyContentView: View {
                 selection: weeklySortBinding(viewModel),
                 options: Array(WeeklyFeedSort.allCases),
                 displayName: weeklySortTitle,
-                systemImage: weeklySortIcon
+                iconSource: weeklySortIconSource
             )
             .controlSize(.regular)
 
@@ -461,16 +461,17 @@ struct WeeklyContentView: View {
         }
     }
 
-    private func weeklySortIcon(_ sort: WeeklyFeedSort) -> String {
+    /// 排序图标走 Lucide 业务资产；默认排序（智能序）用 thumbs-up，与 AI sparkles 区分。
+    private func weeklySortIconSource(_ sort: WeeklyFeedSort) -> BusinessIcon.Source {
         switch sort {
-        case .defaultOrder: return "sparkles"
-        case .starsDesc: return "star.fill"
-        case .starsAsc: return "star"
-        case .updatedDesc, .updatedAsc: return "clock.arrow.circlepath"
-        case .createdDesc: return "calendar.badge.plus"
-        case .createdAsc: return "calendar"
-        case .nameAsc: return "a.square"
-        case .nameDesc: return "z.square"
+        case .defaultOrder: return .business(.thumbsUp)
+        case .starsDesc: return .business(.stars)
+        case .starsAsc: return .business(.stars)
+        case .updatedDesc, .updatedAsc: return .business(.recentUpdate)
+        case .createdDesc: return .business(.calendarPlus)
+        case .createdAsc: return .business(.calendarDays)
+        case .nameAsc: return .business(.sortAZ)
+        case .nameDesc: return .business(.sortZA)
         }
     }
 

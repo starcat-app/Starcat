@@ -20,7 +20,7 @@ enum ExternalAgentDefinitions {
             id: "external-general-poc",
             title: String.l10n("agent.definition.general.title"),
             subtitle: String.l10n("agent.definition.general.subtitle"),
-            systemImage: "terminal",
+            iconSource: .business(.terminal),
             capabilityLabels: [
                 String.l10n("agent.capability.externalRuntime"),
                 String.l10n("agent.capability.readOnly"),
@@ -62,7 +62,7 @@ enum ExternalAgentDefinitions {
             id: "external-research-poc",
             title: String.l10n("agent.definition.research.title"),
             subtitle: String.l10n("agent.definition.research.subtitle"),
-            systemImage: "books.vertical",
+            iconSource: .business(.research),
             capabilityLabels: [
                 String.l10n("agent.capability.research"),
                 String.l10n("agent.capability.repositories"),

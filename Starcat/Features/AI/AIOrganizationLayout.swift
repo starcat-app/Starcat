@@ -42,6 +42,21 @@ struct AIOrganizationIconBadge: View {
     }
 }
 
+/// 业务身份色块（Lucide 资产）：仓库分组 / 标签整理等入口与 SF 徽章共用同一容器规格。
+struct AIOrganizationBusinessIconBadge: View {
+    let icon: BusinessIcon.Symbol
+    let tint: Color
+    var pointSize: CGFloat = 17
+
+    var body: some View {
+        BusinessIcon(icon, pointSize: pointSize)
+            .foregroundStyle(tint)
+            .frame(width: 28, height: 28)
+            .background(tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 7))
+            .accessibilityHidden(true)
+    }
+}
+
 /// 四列概览卡保持同高；比例来自现有快照，长翻译截断并保留完整提示。
 struct AIOrganizationSummaryCard: View {
     let title: String

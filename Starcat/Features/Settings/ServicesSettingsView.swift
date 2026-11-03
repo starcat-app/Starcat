@@ -62,7 +62,7 @@ struct ServicesSettingsTab: View {
         Form {
             SettingsPageIntroduction(
                 title: "settings.navigation.item.customServices",
-                systemImage: "server.rack",
+                iconSource: .business(.services),
                 description: "settings.services.introduction.description",
                 context: "settings.services.introduction.context"
             )

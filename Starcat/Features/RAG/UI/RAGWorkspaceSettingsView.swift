@@ -997,8 +997,7 @@ struct RAGWorkspaceSettingsView: View {
         Toggle(isOn: isOn) {
             // 来源图标属于行 Label 的一部分：与设置页正文同为 13pt，只用语义色区分来源。
             HStack(spacing: 5) {
-                Image(systemName: source.systemImageName)
-                    .font(interfaceScale.font(size: 13, weight: .medium))
+                BusinessIcon(source: source.iconSource, pointSize: 16, weight: .medium)
                     .foregroundStyle(source.tintColor)
                 Text(titleKey)
                     .font(ragFont(.body, scale: interfaceScale))

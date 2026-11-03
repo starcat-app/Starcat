@@ -397,7 +397,7 @@ struct ActivityView: View {
                 selection: activitySortBinding(viewModel),
                 options: Array(ActivityTimeSort.allCases),
                 displayName: { $0.titleKey },
-                systemImage: { $0.systemImage }
+                iconSource: { $0.iconSource }
             )
 
             Spacer()

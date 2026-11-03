@@ -212,8 +212,7 @@ struct AgentWorkspaceView: View {
             viewModel.selectAgent(agent)
         } label: {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: agent.systemImage)
-                    .font(agentIconFont(size: 17, weight: .regular))
+                BusinessIcon(source: agent.iconSource, pointSize: 20)
                     .frame(width: 22, height: 22)
                     .foregroundStyle(agent.id == viewModel.selectedAgentID ? Color.accentColor : Color.secondary)
 

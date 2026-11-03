@@ -408,7 +408,7 @@ struct TrendingView: View {
             selection: trendingSortBinding,
             options: Array(TrendingSortOption.allCases),
             displayName: { $0.titleKey },
-            systemImage: { $0.systemImage },
+            iconSource: { $0.iconSource },
             dividerBefore: { $0 == TrendingSortOption.allCases.first(where: \.isTrendingSpecificSort) }
         )
     }

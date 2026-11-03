@@ -145,8 +145,8 @@ enum ActivityTimeSort: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var systemImage: String {
-        "clock"
+    var iconSource: BusinessIcon.Source {
+        .business(.recentUpdate)
     }
 }
 

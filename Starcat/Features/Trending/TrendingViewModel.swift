@@ -100,26 +100,26 @@ enum TrendingSortOption: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var systemImage: String {
+    var iconSource: BusinessIcon.Source {
         switch self {
         case .recommended:
-            return "sparkles"
+            return .business(.thumbsUp)
         case .starsDesc:
-            return "star.fill"
+            return .business(.stars)
         case .starsAsc:
-            return "star"
+            return .business(.stars)
         case .updatedDesc, .updatedAsc:
-            return "clock.arrow.circlepath"
+            return .business(.recentUpdate)
         case .createdDesc:
-            return "calendar.badge.plus"
+            return .business(.calendarPlus)
         case .createdAsc:
-            return "calendar"
+            return .business(.calendarDays)
         case .nameAsc:
-            return "a.square"
+            return .business(.sortAZ)
         case .nameDesc:
-            return "z.square"
+            return .business(.sortZA)
         case .risingTrend:
-            return "chart.line.uptrend.xyaxis"
+            return .business(.trending)
         }
     }
 }

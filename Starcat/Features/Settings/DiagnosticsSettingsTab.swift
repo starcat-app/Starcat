@@ -23,7 +23,7 @@ struct DiagnosticsSettingsTab: View {
         Form {
             SettingsPageIntroduction(
                 title: "settings.navigation.item.diagnosticsSupport",
-                systemImage: "stethoscope",
+                iconSource: .business(.diagnostics),
                 description: "settings.diagnostics.layout.introduction.description",
                 context: "settings.diagnostics.layout.introduction.context"
             )

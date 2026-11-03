@@ -41,8 +41,7 @@ struct RAGCitationChipsRow: View {
                     onSelectCitation(citation)
                 } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: citation.source.systemImageName)
-                            .font(interfaceScale.font(size: 10, weight: .semibold))
+                        BusinessIcon(source: citation.source.iconSource, pointSize: 12 * interfaceScale.multiplier, weight: .semibold)
                             .foregroundStyle(citation.source.tintColor)
                         Text("\(citation.marker) ·")
                             // captionSmall(11) 比正文 body(13) 再小一档，避免底部引用抢视线。

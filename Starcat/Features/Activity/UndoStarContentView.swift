@@ -248,7 +248,7 @@ struct UndoStarContentView: View {
                 selection: $viewModel.sortOption,
                 options: UndoStarSortOption.allCases,
                 displayName: { $0.displayName },
-                systemImage: { $0.systemImage }
+                iconSource: { $0.iconSource }
             )
 
             Spacer()
@@ -387,15 +387,15 @@ extension UndoStarSortOption {
         }
     }
 
-    var systemImage: String {
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .unstarredAtDesc: return "clock.arrow.circlepath"
-        case .starsDesc:       return "star.fill"
-        case .starsAsc:        return "star"
-        case .updatedDesc:     return "arrow.up"
-        case .updatedAsc:      return "arrow.down"
-        case .nameAsc:         return "textformat.abc"
-        case .nameDesc:        return "textformat.abc"
+        case .unstarredAtDesc: return .business(.recentUpdate)
+        case .starsDesc:       return .business(.stars)
+        case .starsAsc:        return .business(.stars)
+        case .updatedDesc:     return .business(.recentUpdate)
+        case .updatedAsc:      return .business(.recentUpdate)
+        case .nameAsc:         return .business(.sortAZ)
+        case .nameDesc:        return .business(.sortZA)
         }
     }
 }

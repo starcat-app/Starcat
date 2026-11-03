@@ -11,17 +11,17 @@
 import SwiftUI
 
 extension RAGChunkSource {
-    /// 来源复用详情页的内容图标；不混用圆形/无圆形版本，也不把摘要误画成翻译。
-    var systemImageName: String {
+    /// 来源复用详情页的内容图标（Lucide 业务资产）；不混用圆形/无圆形版本，也不把摘要误画成翻译。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .readme: return "doc.richtext"
-        case .notes: return "note.text"
-        case .summary: return "doc.text"
-        case .metadata: return "list.bullet.rectangle"
+        case .readme: return .business(.readme)
+        case .notes: return .business(.notes)
+        case .summary: return .business(.summary)
+        case .metadata: return .business(.metadata)
         }
     }
 
-    /// 来源类型 → 图标色；与 systemImageName 同枚举分支，避免两处漂移。
+    /// 来源类型 → 图标色；与 iconSource 同枚举分支，避免两处漂移。
     var tintColor: Color {
         switch self {
         case .readme: return .blue
@@ -43,18 +43,16 @@ extension RAGChunkSource {
 }
 
 extension RAGCitationSource {
-    /// 两个 XML 是仓库级临时证据，使用独立图标；其它来源保持与分片一致。
-    var systemImageName: String {
+    /// 引用来源图标；两个 XML 是仓库级临时证据，使用独立图标，其它来源保持与分片一致。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .readme: return "doc.richtext"
-        case .notes: return "note.text"
-        case .summary: return "doc.text"
-        case .metadata: return "list.bullet.rectangle"
-        case .knowledgeBaseMetadata: return "cylinder.split.1x2"
-        // repositoryInsights 注册条目已资产化（Lucide gauge）；引用徽标仍持 SF 字符串，
-        // 样板阶段先回落到同语义的 SF gauge，批量迁移 RAG 引用图标时统一改为 source 渲染。
-        case .repositoryInsights: return "gauge"
-        case .repoContext: return "chevron.left.forwardslash.chevron.right"
+        case .readme: return .business(.readme)
+        case .notes: return .business(.notes)
+        case .summary: return .business(.summary)
+        case .metadata: return .business(.metadata)
+        case .knowledgeBaseMetadata: return .business(.knowledgeMetadata)
+        case .repositoryInsights: return .business(.repositoryInsights)
+        case .repoContext: return .business(.codeContext)
         }
     }
 

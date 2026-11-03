@@ -574,9 +574,13 @@ struct RepoAIWindowContentView: View {
     private func summaryHeader(vm: RepoAIInsightViewModel) -> some View {
         @Bindable var vm = vm
         return HStack(alignment: .center, spacing: 10) {
-            Label("ai.assistant.summary.title", systemImage: "doc.text")
-                .font(interfaceScale.font(.panelTitle, weight: .semibold))
-                .labelStyle(.titleAndIcon)
+            Label {
+                Text("ai.assistant.summary.title")
+            } icon: {
+                BusinessIcon(.summary, pointSize: 20, weight: .semibold)
+            }
+            .font(interfaceScale.font(.panelTitle, weight: .semibold))
+            .labelStyle(.titleAndIcon)
                 .foregroundStyle(.primary)
 
             Spacer()
@@ -1313,8 +1317,7 @@ struct RepoAIWindowContentView: View {
     /// 全部按钮严格遵守 `.buttonStyle(.plain) + .focusEffectDisabled()` 规则。
     private func chatSessionToolbar(chat: RepoAIChatViewModel) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.text.bubble.right")
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            BusinessIcon(.ragWorkspace, pointSize: 13, weight: .semibold)
                 .foregroundStyle(.secondary)
             Text(verbatim: displayTitle(for: chat))
                 .font(interfaceScale.font(.caption, weight: .medium))
@@ -1905,10 +1908,11 @@ struct RepoAIWindowContentView: View {
 
     private var chatEmptyState: some View {
         EmptyStateView(
-            systemImage: "bubble.left.and.text.bubble.right",
+            systemImage: "",
             title: "ai.assistant.chat.empty.title",
             subtitle: "ai.assistant.chat.empty.description",
-            subtitleHorizontalPadding: 40
+            subtitleHorizontalPadding: 40,
+            businessIcon: .ragWorkspace
         )
         .frame(maxWidth: .infinity)
     }
