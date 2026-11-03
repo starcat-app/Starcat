@@ -25,7 +25,7 @@ struct DailyRadarStoryCard: View {
                         // featured 大卡左侧叠标题/摘要：程序化封面主体右移避让文字区；
                         // 普通卡/阅读页 hero 文字不压封面，保持居中。
                         DailyRadarCoverView(cover: story.cover, category: story.category,
-                                            seed: story.id, hero: featured,
+                                            seed: story.id,
                                             textSafeLeading: featured ? 0.38 : 0)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
@@ -33,8 +33,8 @@ struct DailyRadarStoryCard: View {
                     .accessibilityHidden(true)
 
                     if featured {
-                        // 封面（AI 图与程序化兜底）统一深色调，文字固定深色语义
-                        // 环境（白字），与图片暗部保持稳定对比，不再依赖 fallback 字段。
+                        // 本地封面在文字安全区降低细节与亮度，文字固定深色语义
+                        // 环境（白字），保持明暗主题下相同的阅读对比。
                         VStack(alignment: .leading, spacing: 14) {
                             Text("dailyRadar.featured")
                                 .font(scale.font(size: 12, weight: .semibold))

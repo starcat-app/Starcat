@@ -2,528 +2,375 @@
 //  DailyRadarProgrammaticCover.swift
 //  Starcat
 //
-//  每日热点程序化封面：AI 生成封面（hero_url）未下发或下载失败时的本地兜底。
-//
-//  设计（2026-11-01 dong4j 定调「千变万化、越随机越好、越抽象越好」）：
-//  放弃具象母题（终端/机器人等固定形状），改为【生成艺术组合系统】——
-//  8 种抽象风格原语（流线 / 粒子场 / 弧环 / 辐射束 / 山脊线 / 波纹网格 / 碎片 / 色带）
-//  按 seed 随机选 1 主 1~2 次叠加，每张图的构图、密度、配色、焦点全部由
-//  确定性随机数流抽出。同报告永远同一画面（跨启动、跨用户一致），
-//  报告之间近乎无限变化；分类辨识只保留色相基座（12 分类色相 + seed 偏移）。
+//  每日热点的本地生成艺术：六类构图分别组织空间、主体与细节，而非随机叠加原语。
+//  仅封面内容区采用编辑式视觉；周边原生控件不受影响，不包含网络或模型调用。
 //
 //  关键约束：
-//  - 确定性：Canvas 闭包每帧重跑，随机数必须从 seed 重建同序列——用
-//    splitmix64 PRNG，绝不能用 SystemRandomNumberGenerator。
-//  - 无符号下溢：PRNG 内部显式 &+ &*；seed 派生做减法一律先转 Int
-//    （2026-11-01 已踩：UInt64 余数直接减常数 SIGTRAP 崩溃）。
-//  - 文字安全区（textSafeLeading）：featured 大卡左侧叠标题/摘要，
-//    焦点与焦点型原语（粒子/环/辐射）整体右移；其余场景居中。
-//  - 性能预算：单张 ≤ 400 个绘制元素，Canvas 一次构建 Path 批量 stroke/fill，
-//    列表滚动多卡同时绘制无压力；矢量适配任意窗口宽度与界面缩放。
-//  - 类型检查器：原语方法内长算术链拆局部变量，避免 "unable to type-check"。
+//  - 每次绘制从报告身份重建随机流，禁止使用系统随机数或按帧变化的状态
+//  - 几何与纹理分流，尺寸只裁减细节，不改变风格与配色
+//  - 采样与图形数量都有上限，不启用动画、逐像素噪声或全画面模糊
+//  - 主推卡通过绘制区域和末层遮罩保护左侧文字，不能仅将单个焦点右移
 //
 
 import SwiftUI
 
-// MARK: - 确定性随机
-
-/// splitmix64：从 seed 展开确定性随机流。Canvas 每帧用同一 seed 重建，
-/// 重放同一序列，保证逐帧一致、跨启动一致。
-struct SeededGenerator {
-    private var state: UInt64
-
-    init(seed: UInt64) {
-        state = seed
-    }
-
-    mutating func next() -> UInt64 {
-        state = state &+ 0x9E3779B97F4A7C15
-        var z = state
-        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
-        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
-        return z ^ (z >> 31)
-    }
-
-    /// [0, 1)
-    mutating func double() -> Double {
-        Double(next() >> 11) / Double(1 << 53)
-    }
-
-    /// [a, b)
-    mutating func range(_ a: Double, _ b: Double) -> Double {
-        a + double() * (b - a)
-    }
-
-    /// [0, n)
-    mutating func int(_ n: Int) -> Int {
-        Int(next() % UInt64(max(n, 1)))
-    }
-
-    mutating func bool(probability: Double) -> Bool {
-        double() < probability
-    }
-
-    mutating func pick<T>(_ options: [T]) -> T {
-        options[int(options.count)]
-    }
-}
-
-// MARK: - 配色
-
-/// 单张封面的配色方案：从分类色相基座出发，seed 决定偏移与第二色相。
-private struct CoverPalette {
-    let hueA: Double
-    let hueB: Double
-    let hueC: Double
-
-    /// 主渐变色（t: 0→1 在第一、第二色相间插值）。
-    func color(at t: Double) -> Color {
-        let clamped = min(max(t, 0), 1)
-        let hue = hueA + (hueB - hueA) * clamped
-        let brightness = 0.62 + clamped * 0.30
-        return Color(hue: hue, saturation: 0.78, brightness: brightness)
-    }
-
-    var backgroundTop: Color {
-        Color(hue: hueC, saturation: 0.44, brightness: 0.15)
-    }
-
-    var backgroundBottom: Color {
-        Color(hue: hueC + 0.05, saturation: 0.52, brightness: 0.08)
-    }
-}
-
-// MARK: - 视图
-
+/// 封面是无交互的静态 Canvas；同一份构图可适配卡片、缩略图和阅读页。
 struct DailyRadarProgrammaticCover: View {
     let category: String?
-    /// 稳定 seed：调用方传报告 id（含期次日期），驱动全部差异的唯一来源。
     let seed: String
-    /// 左侧文字安全区占比（0~0.4）：featured 大卡叠标题/摘要时传入，
-    /// 焦点与焦点型原语右移；其余场景保持 0（居中）。
     var textSafeLeading: CGFloat = 0
 
     var body: some View {
+        let composition = DailyRadarCoverComposition(category: category, seed: seed)
         Canvas { context, size in
-            let canvasRect = CGRect(origin: .zero, size: size)
-            var rng = SeededGenerator(seed: Self.stableHash(seed))
-            let palette = Self.makePalette(category: category, rng: &rng)
-            let subjectX = Double(textSafeLeading) + (1 - Double(textSafeLeading)) / 2
-
-            Self.drawBackground(context, size: size, palette: palette, rng: &rng)
-            Self.drawUnderlay(context, canvasRect: canvasRect, rng: &rng, palette: palette)
-
-            // 主原语压轴绘制；末位 = 主（全强度），其余陪衬压暗。
-            let primitives = Self.pickPrimitives(rng: &rng)
-            for (index, primitive) in primitives.enumerated() {
-                let isMain = index == primitives.count - 1
-                let intensity = isMain ? 1.0 : 0.42
-                Self.drawPrimitive(primitive, context: context, rect: canvasRect,
-                                   rng: &rng, palette: palette,
-                                   subjectX: subjectX, intensity: intensity)
+            guard size.width > 0, size.height > 0 else { return }
+            let safe = DailyRadarCoverComposition.safeLeading(textSafeLeading)
+            let rect = CGRect(origin: .zero, size: size)
+            let art = CGRect(x: size.width * safe, y: 0,
+                             width: size.width * (1 - safe), height: size.height)
+            let detail = DailyRadarCoverComposition.detailLevel(for: size)
+            var rng = SeededGenerator(seed: composition.geometrySeed)
+            Self.drawBackground(context, rect: rect, composition: composition)
+            // 主体单独裁剪，避免大型轨道和透视面溢回文字区域。
+            var subject = context
+            subject.clip(to: Path(art))
+            switch composition.style {
+            case .terrain:
+                Self.drawTerrain(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+            case .network:
+                Self.drawNetwork(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+            case .orbital:
+                Self.drawOrbital(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+            case .architecture:
+                Self.drawArchitecture(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+            case .strata:
+                Self.drawStrata(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+            case .interference:
+                Self.drawInterference(subject, rect: art, composition: composition, rng: &rng, detail: detail)
             }
-
-            Self.drawSparks(context, rect: canvasRect, rng: &rng,
-                            palette: palette, subjectX: subjectX)
+            Self.drawTexture(context, rect: rect, composition: composition, detail: detail)
+            if safe > 0 {
+                Self.drawTextProtection(context, rect: rect, safe: safe)
+            }
         }
         .allowsHitTesting(false)
     }
 
-    // MARK: - 组合与配色
+    // MARK: - 共享的色彩、背景与文字保护
 
-    private static func stableHash(_ value: String) -> UInt64 {
-        var hash: UInt64 = 5381
-        for scalar in value.unicodeScalars {
-            hash = (hash &* 33) &+ UInt64(scalar.value)
+    /// 离散选取主色或强调色，不在 HSB 上跨色相长距离插值，以免补色间出现脏色。
+    private static func ink(_ composition: DailyRadarCoverComposition, accent: Bool = false,
+                            brightness: Double = 0.90) -> Color {
+        Color(hue: accent ? composition.accentHue : composition.hue,
+              saturation: accent ? 0.62 : 0.74, brightness: brightness)
+    }
+
+    /// 背景暗部与有色中间调加稀疏基准网格，为主体提供尺度参照。
+    private static func drawBackground(_ ctx: GraphicsContext, rect: CGRect,
+                                       composition c: DailyRadarCoverComposition) {
+        let dark = Color(hue: c.backgroundHue, saturation: 0.48, brightness: 0.08)
+        let mid = Color(hue: c.backgroundHue, saturation: 0.55, brightness: 0.23)
+        ctx.fill(Path(rect), with: .linearGradient(
+            Gradient(colors: [dark, mid, dark]),
+            startPoint: rect.origin, endPoint: CGPoint(x: rect.maxX, y: rect.maxY)))
+        var grid = Path()
+        for column in 1..<13 {
+            let x = rect.width * Double(column) / 13
+            grid.move(to: CGPoint(x: x, y: 0))
+            grid.addLine(to: CGPoint(x: x, y: rect.height))
         }
-        return hash
-    }
-
-    /// 分类色相基座（品牌来源对齐官方色）；seed 决定偏移与第二/背景色相。
-    private static func baseHue(for category: String?) -> Double {
-        switch category {
-        case "ai-cli": return 0.52
-        case "ai-agents": return 0.30
-        case "ai-infra": return 0.72
-        case "ai-web": return 0.58
-        case "ai-trending": return 0.93
-        case "ai-hn": return 0.07
-        case "ai-ph": return 0.03
-        case "ai-arxiv": return 0.99
-        case "ai-hf": return 0.13
-        case "ai-community": return 0.40
-        case "ai-weekly": return 0.78
-        case "ai-monthly": return 0.62
-        default: return 0.58
+        for row in 1..<7 {
+            let y = rect.height * Double(row) / 7
+            grid.move(to: CGPoint(x: 0, y: y))
+            grid.addLine(to: CGPoint(x: rect.width, y: y))
         }
+        ctx.stroke(grid, with: .color(ink(c).opacity(0.075)), lineWidth: 0.5)
     }
 
-    private static func makePalette(category: String?, rng: inout SeededGenerator) -> CoverPalette {
-        let shift = (rng.double() - 0.5) * 0.09
-        let hueA = baseHue(for: category) + shift
-        let hueB = hueA + rng.range(-0.20, 0.20)
-        let hueC = hueA + rng.range(-0.08, 0.10)
-        return CoverPalette(hueA: hueA, hueB: hueB, hueC: hueC)
-    }
-
-    /// 主 1 + 次 1~2：从 8 原语池抽，互不重复。主原语放在数组末尾（最后绘制、
-    /// 压在陪衬之上）。8×7×6 组合 × 各原语连续参数 → 近乎无限。
-    private static func pickPrimitives(rng: inout SeededGenerator) -> [CoverPrimitive] {
-        let pool: [CoverPrimitive] = [.flowLines, .particles, .rings, .ridgeLines,
-                                      .waveGrid, .rays, .shards, .bands]
-        let main = rng.pick(pool)
-        var underlayers: [CoverPrimitive] = []
-        let extra = 1 + rng.int(2)
-        while underlayers.count < extra {
-            let candidate = rng.pick(pool)
-            if candidate != main, !underlayers.contains(candidate) {
-                underlayers.append(candidate)
+    /// 微刻度采用独立随机流；没有逐像素采样，也不会干扰主体的随机序列。
+    private static func drawTexture(_ ctx: GraphicsContext, rect: CGRect,
+                                    composition c: DailyRadarCoverComposition, detail: Int) {
+        var rng = SeededGenerator(seed: c.textureSeed)
+        var marks = Path()
+        for index in 0..<64 {
+            let x = rect.width * rng.double()
+            let y = rect.height * rng.double()
+            if index % (3 - detail) != 0 { continue }
+            marks.move(to: CGPoint(x: x - 1.5, y: y))
+            marks.addLine(to: CGPoint(x: x + 1.5, y: y))
+            if index % 4 == 0 {
+                marks.move(to: CGPoint(x: x, y: y - 1.5))
+                marks.addLine(to: CGPoint(x: x, y: y + 1.5))
             }
         }
-        return underlayers + [main]
+        ctx.stroke(marks, with: .color(.white.opacity(0.16)), lineWidth: 0.6)
     }
 
-    // MARK: - 背景与整体层
-
-    /// 背景渐变：深色双停靠，角度由 rng 抽取。
-    private static func drawBackground(_ ctx: GraphicsContext, size: CGSize,
-                                       palette: CoverPalette, rng: inout SeededGenerator) {
-        let bgAngle = rng.double() * 2 * .pi
-        let halfW = size.width / 2
-        let halfH = size.height / 2
-        let start = CGPoint(x: halfW - cos(bgAngle) * halfW, y: halfH - sin(bgAngle) * halfH)
-        let end = CGPoint(x: size.width - start.x, y: size.height - start.y)
-        let gradient = Gradient(colors: [palette.backgroundTop, palette.backgroundBottom])
-        ctx.fill(Path(CGRect(origin: .zero, size: size)),
-                 with: .linearGradient(gradient, startPoint: start, endPoint: end))
+    /// 遮罩最后绘制，让纹理也服从安全区；渐变过渡避免主体裁剪边缘成为硬接缝。
+    private static func drawTextProtection(_ ctx: GraphicsContext, rect: CGRect, safe: CGFloat) {
+        let gradient = Gradient(stops: [
+            .init(color: .black.opacity(0.82), location: 0),
+            .init(color: .black.opacity(0.65), location: safe),
+            .init(color: .clear, location: min(safe + 0.25, 1))
+        ])
+        ctx.fill(Path(rect), with: .linearGradient(
+            gradient, startPoint: .zero, endPoint: CGPoint(x: rect.width, y: 0)))
     }
 
-    /// 底层大形状：约 60% 报告出现一个极低透明度大圆盘或斜带，给画面铺底层次。
-    private static func drawUnderlay(_ ctx: GraphicsContext, canvasRect: CGRect,
-                                     rng: inout SeededGenerator, palette: CoverPalette) {
-        guard rng.bool(probability: 0.6) else { return }
-        let center = CGPoint(x: canvasRect.width * rng.range(0.25, 0.75),
-                             y: canvasRect.height * rng.range(0.25, 0.75))
-        let radius = min(canvasRect.width, canvasRect.height) * rng.range(0.55, 0.95)
-        if rng.bool(probability: 0.5) {
-            let rect = CGRect(x: center.x - radius, y: center.y - radius,
+    // MARK: - 流场地形
+
+    /// 多频场生成连续地形；先填后描逐层遮挡，形成山脊而非互不相关的波浪线。
+    private static func drawTerrain(_ ctx: GraphicsContext, rect: CGRect,
+                                    composition c: DailyRadarCoverComposition,
+                                    rng: inout SeededGenerator, detail: Int) {
+        let peak = rng.range(0.25, 0.75)
+        let frequency = rng.range(1.1, 2.4)
+        let amplitude = rng.range(0.12, 0.24)
+        for row in 0..<34 {
+            if row % (3 - detail) != 0 && row != 33 { continue }
+            let t = Double(row) / 33
+            var ridge = Path()
+            for sample in 0...64 {
+                let u = Double(sample) / 64
+                let envelope = exp(-pow((u - peak) * 3.2, 2))
+                let large = sin(u * frequency * 2 * .pi + c.phase + t * 1.6)
+                let small = sin(u * 18 + c.phase * 0.7 + t * 5) * 0.23
+                let height = (large + small) * amplitude * (0.4 + envelope)
+                let point = CGPoint(x: rect.minX + u * rect.width,
+                                    y: rect.height * (0.12 + t * 0.85 - height))
+                if sample == 0 { ridge.move(to: point) } else { ridge.addLine(to: point) }
+            }
+            var fill = ridge
+            fill.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY * 1.4))
+            fill.addLine(to: CGPoint(x: rect.minX, y: rect.maxY * 1.4))
+            fill.closeSubpath()
+            ctx.fill(fill, with: .color(ink(c, brightness: 0.12 + t * 0.16)))
+            let accent = row % 7 == 0
+            ctx.stroke(ridge, with: .color(ink(c, accent: accent).opacity(accent ? 0.90 : 0.48)),
+                       lineWidth: accent ? 1.5 : 0.7)
+        }
+    }
+
+    // MARK: - 节点网络
+
+    /// 三个空间簇加局部邻接；先建立同一套节点，再按尺寸减少边，缩略图不随机换主体。
+    private static func drawNetwork(_ ctx: GraphicsContext, rect: CGRect,
+                                    composition c: DailyRadarCoverComposition,
+                                    rng: inout SeededGenerator, detail: Int) {
+        let centers = [
+            CGPoint(x: 0.30, y: 0.30), CGPoint(x: 0.72, y: 0.46), CGPoint(x: 0.42, y: 0.78)
+        ]
+        var nodes: [CGPoint] = []
+        for index in 0..<54 {
+            let center = centers[index % centers.count]
+            let angle = rng.range(0, 2 * .pi)
+            let radius = sqrt(rng.double()) * 0.26
+            nodes.append(CGPoint(x: rect.minX + (center.x + cos(angle) * radius) * rect.width,
+                                 y: (center.y + sin(angle) * radius) * rect.height))
+        }
+        let reach = hypot(rect.width, rect.height) * 0.22
+        for index in nodes.indices {
+            // 每个节点只取最近的三条边，上限为 162 次连线，不做全连接图。
+            let neighbors = nodes.indices.filter { $0 > index }
+                .sorted { distance(nodes[index], nodes[$0]) < distance(nodes[index], nodes[$1]) }
+                .prefix(3)
+            for (rank, other) in neighbors.enumerated() {
+                let length = distance(nodes[index], nodes[other])
+                guard length < reach, rank <= detail else { continue }
+                var edge = Path()
+                edge.move(to: nodes[index])
+                edge.addLine(to: nodes[other])
+                let accent = index % 5 == 0
+                ctx.stroke(edge, with: .color(ink(c, accent: accent).opacity(accent ? 0.64 : 0.25)),
+                           lineWidth: accent ? 1.1 : 0.6)
+            }
+        }
+        for index in nodes.indices {
+            let hub = index % 9 == 0
+            let radius: CGFloat = hub ? 4.5 : 1.6
+            let node = CGRect(x: nodes[index].x - radius, y: nodes[index].y - radius,
                               width: radius * 2, height: radius * 2)
-            ctx.fill(Path(ellipseIn: rect), with: .color(palette.color(at: rng.double()).opacity(0.05)))
-        } else {
-            var band = ctx
-            band.translateBy(x: center.x, y: center.y)
-            band.rotate(by: .radians(rng.range(-0.5, 0.5)))
-            let width = radius * 2
-            let height = min(canvasRect.width, canvasRect.height) * rng.range(0.18, 0.4)
-            band.fill(Path(CGRect(x: -width / 2, y: -height / 2, width: width, height: height)),
-                      with: .color(palette.color(at: rng.double()).opacity(0.05)))
-        }
-    }
-
-    /// 前景亮点点缀：4~16 枚小亮点（白/主色），给抽象构图收焦点。
-    private static func drawSparks(_ ctx: GraphicsContext, rect: CGRect,
-                                   rng: inout SeededGenerator, palette: CoverPalette,
-                                   subjectX: Double) {
-        let count = 4 + rng.int(13)
-        for _ in 0..<count {
-            let nearFocus = rng.bool(probability: 0.55)
-            let baseX = nearFocus ? subjectX : 0.5
-            let x = rect.width * (baseX + (rng.double() - 0.5) * 0.7)
-            let y = rect.height * rng.range(0.08, 0.92)
-            let dot = rect.height * rng.range(0.004, 0.011)
-            let color: Color = rng.bool(probability: 0.4) ? .white : palette.color(at: rng.double())
-            ctx.fill(Path(ellipseIn: CGRect(x: x - dot, y: y - dot, width: dot * 2, height: dot * 2)),
-                     with: .color(color.opacity(rng.range(0.5, 0.95))))
-        }
-    }
-
-    // MARK: - 原语分发
-
-    private static func drawPrimitive(_ primitive: CoverPrimitive, context: GraphicsContext,
-                                      rect: CGRect, rng: inout SeededGenerator,
-                                      palette: CoverPalette, subjectX: Double, intensity: Double) {
-        var ctx = context
-        switch primitive {
-        case .flowLines:
-            drawFlowLines(&ctx, rect: rect, rng: &rng, palette: palette, intensity: intensity)
-        case .particles:
-            drawParticles(&ctx, rect: rect, rng: &rng, palette: palette, subjectX: subjectX, intensity: intensity)
-        case .rings:
-            drawRings(&ctx, rect: rect, rng: &rng, palette: palette, subjectX: subjectX, intensity: intensity)
-        case .ridgeLines:
-            drawRidgeLines(&ctx, rect: rect, rng: &rng, palette: palette, intensity: intensity)
-        case .waveGrid:
-            drawWaveGrid(&ctx, rect: rect, rng: &rng, palette: palette, intensity: intensity)
-        case .rays:
-            drawRays(&ctx, rect: rect, rng: &rng, palette: palette, subjectX: subjectX, intensity: intensity)
-        case .shards:
-            drawShards(&ctx, rect: rect, rng: &rng, palette: palette, subjectX: subjectX, intensity: intensity)
-        case .bands:
-            drawBands(&ctx, rect: rect, rng: &rng, palette: palette, subjectX: subjectX, intensity: intensity)
-        }
-    }
-
-    // MARK: - 风格原语
-
-    /// 参数化流线：横向贝塞尔束，条数/波幅/频率/斜率/抖动全随机。
-    private static func drawFlowLines(_ ctx: inout GraphicsContext, rect: CGRect,
-                                      rng: inout SeededGenerator, palette: CoverPalette,
-                                      intensity: Double) {
-        let count = 8 + rng.int(14)
-        let amplitude = rect.height * rng.range(0.06, 0.22)
-        let frequency = rng.range(1.2, 3.4)
-        let phase = rng.double() * 2 * .pi
-        let tilt = rng.range(-0.22, 0.22)
-        let baseWidth = rng.range(0.8, 2.6)
-        for index in 0..<count {
-            let t = Double(index) / Double(max(count - 1, 1))
-            let baseline = rect.minY + rect.height * (0.12 + t * 0.76) + rect.width * tilt * (t - 0.5)
-            var path = Path()
-            let segments = 6 + rng.int(4)
-            var previous = CGPoint(x: rect.minX,
-                                   y: baseline + sin(phase + t * 2.2) * amplitude)
-            path.move(to: previous)
-            for segment in 1...segments {
-                let x = rect.minX + rect.width * Double(segment) / Double(segments)
-                let wave = sin(Double(segment) / Double(segments) * frequency * 2 * .pi + phase + t * 2.2) * amplitude
-                let jitter = (rng.double() - 0.5) * amplitude * 0.35
-                let current = CGPoint(x: x, y: baseline + wave + jitter)
-                let midX = (previous.x + current.x) / 2
-                path.addQuadCurve(to: current, control: CGPoint(x: midX, y: previous.y))
-                previous = current
+            ctx.fill(Path(ellipseIn: node), with: .color(ink(c, accent: hub)))
+            if hub {
+                ctx.stroke(Path(ellipseIn: node.insetBy(dx: -5, dy: -5)),
+                           with: .color(ink(c, accent: true).opacity(0.35)), lineWidth: 0.8)
             }
-            let color = palette.color(at: t)
-            ctx.stroke(path,
-                       with: .color(color.opacity(rng.range(0.28, 0.85) * intensity)),
-                       lineWidth: baseWidth * rng.range(0.6, 1.5))
         }
     }
 
-    /// 粒子场：高斯散布 / 环带 / 正弦带三种分布随机一种，围绕焦点。
-    private static func drawParticles(_ ctx: inout GraphicsContext, rect: CGRect,
-                                      rng: inout SeededGenerator, palette: CoverPalette,
-                                      subjectX: Double, intensity: Double) {
-        let count = 60 + rng.int(160)
-        let focus = CGPoint(x: rect.width * subjectX, y: rect.height * rng.range(0.35, 0.65))
-        let distribution = rng.int(3)
-        let spread = min(rect.width, rect.height) * rng.range(0.30, 0.65)
-        let bandPhase = rng.double() * 2 * .pi
-        let bandFreq = rng.range(1.5, 3.5)
-        let ringRadius = spread * rng.range(0.5, 0.9)
-        for _ in 0..<count {
-            var x: Double
-            var y: Double
-            switch distribution {
-            case 0:
-                x = focus.x + (rng.double() + rng.double() - 1) * spread
-                y = focus.y + (rng.double() + rng.double() - 1) * spread
-            case 1:
-                let angle = rng.double() * 2 * .pi
-                let radius = ringRadius * rng.range(0.82, 1.18)
-                x = focus.x + cos(angle) * radius
-                y = focus.y + sin(angle) * radius * rng.range(0.75, 1.0)
-            default:
-                let bandY = rect.height * rng.range(0.2, 0.8)
-                x = rect.width * rng.range(0.05, 0.95)
-                y = bandY + sin(x / rect.width * bandFreq * 2 * .pi + bandPhase) * spread * 0.3
-            }
-            let dot = rect.height * rng.range(0.003, 0.010)
-            let distance = hypot(x - focus.x, y - focus.y) / spread
-            let fade = max(0.25, 1 - distance * 0.7)
-            let color: Color = rng.bool(probability: 0.7) ? palette.color(at: rng.double()) : .white
-            ctx.fill(Path(ellipseIn: CGRect(x: x - dot, y: y - dot, width: dot * 2, height: dot * 2)),
-                     with: .color(color.opacity(rng.range(0.3, 0.9) * fade * intensity)))
-        }
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        hypot(a.x - b.x, a.y - b.y)
     }
 
-    /// 弧环：以焦点为圆心的缺口弧环组，半径/跨度/相位逐环随机。
-    private static func drawRings(_ ctx: inout GraphicsContext, rect: CGRect,
-                                  rng: inout SeededGenerator, palette: CoverPalette,
-                                  subjectX: Double, intensity: Double) {
-        let count = 4 + rng.int(6)
-        let center = CGPoint(x: rect.width * (subjectX + (rng.double() - 0.5) * 0.12),
-                             y: rect.height * rng.range(0.38, 0.62))
-        let baseRadius = min(rect.width, rect.height) * rng.range(0.06, 0.14)
-        let step = min(rect.width, rect.height) * rng.range(0.05, 0.10)
-        let lineWidth = rng.range(1.0, 3.2)
-        for index in 0..<count {
-            let radius = baseRadius + Double(index) * step
-            let start = rng.double() * 2 * .pi
-            let span = rng.range(0.6, 1.9) * .pi
-            var arc = Path()
-            arc.addArc(center: center, radius: radius,
-                       startAngle: .radians(start), endAngle: .radians(start + span),
-                       clockwise: false)
-            let color = index % 2 == 0 ? palette.color(at: Double(index) / Double(count)) : palette.color(at: 1)
-            ctx.stroke(arc, with: .color(color.opacity(rng.range(0.25, 0.8) * intensity)),
-                       lineWidth: lineWidth * rng.range(0.6, 1.4))
+    // MARK: - 轨道结构
+
+    /// 椭圆轨道包围实体核心；刻度、卫星与前后弧共同构成立体关系。
+    private static func drawOrbital(_ ctx: GraphicsContext, rect: CGRect,
+                                    composition c: DailyRadarCoverComposition,
+                                    rng: inout SeededGenerator, detail: Int) {
+        let center = CGPoint(x: rect.midX, y: rect.height * rng.range(0.42, 0.58))
+        let unit = min(rect.width, rect.height)
+        var space = ctx
+        space.translateBy(x: center.x, y: center.y)
+        space.rotate(by: .radians(c.tilt * 2 - 0.35))
+        for orbit in 0..<10 {
+            let radius = unit * (0.16 + Double(orbit) * 0.044)
+            let flatten = 0.35 + Double(orbit % 3) * 0.13
+            let ellipse = CGRect(x: -radius, y: -radius * flatten,
+                                 width: radius * 2, height: radius * flatten * 2)
+            let accent = orbit % 3 == 0
+            space.stroke(Path(ellipseIn: ellipse),
+                         with: .color(ink(c, accent: accent).opacity(accent ? 0.74 : 0.32)),
+                         lineWidth: accent ? 1.5 : 0.7)
+            let angle = c.phase + Double(orbit) * 1.7
+            let satellite = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius * flatten)
+            space.fill(Path(ellipseIn: CGRect(x: satellite.x - 2, y: satellite.y - 2, width: 4, height: 4)),
+                       with: .color(ink(c, accent: true)))
         }
+        let core = CGRect(x: -unit * 0.13, y: -unit * 0.13, width: unit * 0.26, height: unit * 0.26)
+        space.fill(Path(ellipseIn: core), with: .linearGradient(
+            Gradient(colors: [ink(c, accent: true), ink(c, brightness: 0.28)]),
+            startPoint: core.origin, endPoint: CGPoint(x: core.maxX, y: core.maxY)))
+        // 前侧弧盖在核心上，表达穿插；外围刻度只负责细节，不改变轨道身份。
+        var front = Path()
+        front.addArc(center: .zero, radius: unit * 0.17, startAngle: .degrees(10),
+                     endAngle: .degrees(160), clockwise: false)
+        space.stroke(front, with: .color(ink(c).opacity(0.85)), lineWidth: 2.3)
+        var ticks = Path()
+        for index in stride(from: 0, to: 96, by: 3 - detail) {
+            let angle = Double(index) / 96 * 2 * .pi
+            let inner = unit * 0.57
+            let outer = inner + unit * (index % 8 == 0 ? 0.035 : 0.012)
+            ticks.move(to: CGPoint(x: cos(angle) * inner, y: sin(angle) * inner))
+            ticks.addLine(to: CGPoint(x: cos(angle) * outer, y: sin(angle) * outer))
+        }
+        space.stroke(ticks, with: .color(ink(c, accent: true).opacity(0.45)), lineWidth: 0.8)
     }
 
-    /// 山脊线：平滑噪声驱动的横向折线束，自下而上逐层抬升（等高线地形感）。
-    private static func drawRidgeLines(_ ctx: inout GraphicsContext, rect: CGRect,
-                                       rng: inout SeededGenerator, palette: CoverPalette,
-                                       intensity: Double) {
-        let rows = 5 + rng.int(7)
-        let points = 8 + rng.int(7)
-        let amplitude = rect.height * rng.range(0.05, 0.16)
-        let freqA = rng.range(1.0, 2.6)
-        let freqB = rng.range(3.0, 6.5)
-        let phase = rng.double() * 2 * .pi
-        let lineWidth = rng.range(1.0, 2.4)
-        for row in 0..<rows {
-            let t = Double(row) / Double(max(rows - 1, 1))
-            let baseline = rect.maxY - rect.height * (0.10 + t * 0.72)
-            var path = Path()
-            for point in 0...points {
-                let x = rect.minX + rect.width * Double(point) / Double(points)
-                let u = Double(point) / Double(points)
-                let noise = sin(u * freqA * 2 * .pi + phase + t * 1.4) * amplitude
-                    + sin(u * freqB * 2 * .pi + phase * 1.7) * amplitude * 0.45
-                let location = CGPoint(x: x, y: baseline - noise)
-                if point == 0 {
-                    path.move(to: location)
-                } else {
-                    path.addLine(to: location)
+    // MARK: - 透视建筑
+
+    /// 抽象棱柱在等距投影下按远近绘制，三面明度与网格截面提供结构复杂度。
+    private static func drawArchitecture(_ ctx: GraphicsContext, rect: CGRect,
+                                         composition c: DailyRadarCoverComposition,
+                                         rng: inout SeededGenerator, detail: Int) {
+        let unit = min(rect.width / 7, rect.height / 5.5)
+        let origin = CGPoint(x: rect.midX, y: rect.height * 0.55)
+        func project(_ x: Double, _ y: Double, _ z: Double) -> CGPoint {
+            CGPoint(x: origin.x + (x - y) * unit,
+                    y: origin.y + (x + y) * unit * 0.42 - z * unit)
+        }
+        for diagonal in 0...8 {
+            for x in 0...4 {
+                let y = diagonal - x
+                guard (0...4).contains(y) else { continue }
+                let height = rng.range(0.3, 1.9)
+                let px = Double(x) - 2
+                let py = Double(y) - 2
+                let a = project(px, py, height)
+                let b = project(px + 0.8, py, height)
+                let d = project(px, py + 0.8, height)
+                let e = project(px + 0.8, py + 0.8, height)
+                let bottomB = project(px + 0.8, py, 0)
+                let bottomD = project(px, py + 0.8, 0)
+                let bottomE = project(px + 0.8, py + 0.8, 0)
+                let accent = (x + y) % 4 == 0
+                let faces = [[b, e, bottomE, bottomB], [d, e, bottomE, bottomD], [a, b, e, d]]
+                for (index, points) in faces.enumerated() {
+                    let face = polygon(points)
+                    let brightness = [0.27, 0.40, 0.72][index]
+                    ctx.fill(face, with: .color(ink(c, accent: accent, brightness: brightness)))
+                    ctx.stroke(face, with: .color(ink(c, accent: accent).opacity(0.66)), lineWidth: 0.7)
+                }
+                if detail > 0 {
+                    var seams = Path()
+                    for layer in 1...3 {
+                        let z = height * Double(layer) / 4
+                        seams.move(to: project(px + 0.8, py, z))
+                        seams.addLine(to: project(px + 0.8, py + 0.8, z))
+                        seams.addLine(to: project(px, py + 0.8, z))
+                    }
+                    ctx.stroke(seams, with: .color(ink(c, accent: accent).opacity(0.32)), lineWidth: 0.5)
                 }
             }
-            ctx.stroke(path, with: .color(palette.color(at: t).opacity(rng.range(0.3, 0.8) * intensity)),
-                       lineWidth: lineWidth * rng.range(0.6, 1.3))
         }
     }
 
-    /// 波纹网格：正弦形变横线束，频率/相位/幅度随机，可选竖线。
-    private static func drawWaveGrid(_ ctx: inout GraphicsContext, rect: CGRect,
-                                     rng: inout SeededGenerator, palette: CoverPalette,
-                                     intensity: Double) {
-        let lines = 7 + rng.int(12)
-        let points = 22 + rng.int(18)
-        let amplitude = rect.height * rng.range(0.04, 0.14)
-        let frequency = rng.range(1.0, 4.0)
-        let phase = rng.double() * 2 * .pi
-        let lineWidth = rng.range(0.8, 2.0)
-        let withVertical = rng.bool(probability: 0.35)
-        for line in 0..<lines {
-            let t = Double(line) / Double(max(lines - 1, 1))
-            let baseline = rect.minY + rect.height * (0.14 + t * 0.72)
-            var path = Path()
-            for point in 0...points {
-                let x = rect.minX + rect.width * Double(point) / Double(points)
-                let y = baseline + sin(x / rect.width * frequency * 2 * .pi + phase + t * 2.0) * amplitude
-                let location = CGPoint(x: x, y: y)
-                if point == 0 {
-                    path.move(to: location)
-                } else {
-                    path.addLine(to: location)
+    /// 面共享封闭路径，填充与描边不会因分别计算顶点出现细缝。
+    private static func polygon(_ points: [CGPoint]) -> Path {
+        var path = Path()
+        path.addLines(points)
+        path.closeSubpath()
+        return path
+    }
+
+    // MARK: - 层叠切片
+
+    /// 扭转截面堆叠为雕塑体，低频形变使轮廓避免退化为同心圆环。
+    private static func drawStrata(_ ctx: GraphicsContext, rect: CGRect,
+                                   composition c: DailyRadarCoverComposition,
+                                   rng: inout SeededGenerator, detail: Int) {
+        let lobes = 3 + rng.int(4)
+        let radius = min(rect.width * 0.37, rect.height * 0.32)
+        for layer in 0..<32 {
+            if layer % (3 - detail) != 0 && layer != 31 { continue }
+            let t = Double(layer) / 31
+            let center = CGPoint(x: rect.midX + sin(t * 2.8 + c.phase) * radius * 0.28,
+                                 y: rect.height * (0.28 + t * 0.48))
+            let scale = 0.64 + sin(t * .pi) * 0.40
+            var points: [CGPoint] = []
+            for sample in 0..<72 {
+                let angle = Double(sample) / 72 * 2 * .pi
+                let ripple = 1 + sin(angle * Double(lobes) + t * 4 + c.phase) * 0.15
+                let x = cos(angle + c.tilt) * radius * scale * ripple
+                let y = sin(angle) * radius * scale * ripple * 0.42
+                points.append(CGPoint(x: center.x + x, y: center.y + y))
+            }
+            let contour = polygon(points)
+            let accent = layer % 8 < 2
+            ctx.fill(contour, with: .linearGradient(
+                Gradient(colors: [ink(c, accent: accent, brightness: 0.20),
+                                  ink(c, accent: accent, brightness: 0.44)]),
+                startPoint: CGPoint(x: center.x - radius, y: center.y),
+                endPoint: CGPoint(x: center.x + radius, y: center.y)))
+            ctx.stroke(contour, with: .color(ink(c, accent: accent).opacity(0.85)), lineWidth: 0.85)
+        }
+    }
+
+    // MARK: - 波面干涉
+
+    /// 两组耦合波形形成交织曲面；主波带保留填充体积，交叉线承担次级结构。
+    private static func drawInterference(_ ctx: GraphicsContext, rect: CGRect,
+                                         composition c: DailyRadarCoverComposition,
+                                         rng: inout SeededGenerator, detail: Int) {
+        let frequency = rng.range(1.2, 2.6)
+        let amplitude = rng.range(0.10, 0.19)
+        for family in 0..<2 {
+            for row in 0..<30 {
+                if row % (3 - detail) != 0 { continue }
+                let t = Double(row) / 29
+                var wave = Path()
+                var reverse: [CGPoint] = []
+                for sample in 0...72 {
+                    let u = Double(sample) / 72
+                    let angle = u * frequency * 2 * .pi + c.phase + t * 3
+                    let envelope = sin(u * .pi)
+                    let displacement = sin(angle) * amplitude * envelope
+                    let baseline = 0.16 + t * 0.68
+                    let v = family == 0 ? baseline + displacement : 1 - baseline - displacement * 0.8
+                    let point = CGPoint(x: rect.minX + rect.width * u,
+                                        y: rect.height * (v + (u - 0.5) * c.tilt))
+                    if sample == 0 { wave.move(to: point) } else { wave.addLine(to: point) }
+                    reverse.append(CGPoint(x: point.x, y: point.y + rect.height * 0.022))
                 }
-            }
-            ctx.stroke(path, with: .color(palette.color(at: t).opacity(rng.range(0.22, 0.7) * intensity)),
-                       lineWidth: lineWidth)
-        }
-        if withVertical {
-            let verticals = 4 + rng.int(8)
-            for column in 0..<verticals {
-                let x = rect.minX + rect.width * Double(column + 1) / Double(verticals + 1)
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: rect.minY + rect.height * 0.12))
-                path.addLine(to: CGPoint(x: x, y: rect.maxY - rect.height * 0.12))
-                ctx.stroke(path, with: .color(palette.color(at: rng.double()).opacity(0.18 * intensity)),
-                           lineWidth: lineWidth * 0.7)
+                if row % 6 == 0 {
+                    var ribbon = wave
+                    for point in reverse.reversed() { ribbon.addLine(to: point) }
+                    ribbon.closeSubpath()
+                    ctx.fill(ribbon, with: .color(ink(c, accent: family == 1).opacity(0.20)))
+                }
+                ctx.stroke(wave, with: .color(ink(c, accent: family == 1).opacity(family == 0 ? 0.66 : 0.46)),
+                           lineWidth: row % 6 == 0 ? 1.5 : 0.65)
             }
         }
     }
-
-    /// 辐射束：以焦点为中心的放射线段，角度均布 + 抖动，长短疏密随机。
-    private static func drawRays(_ ctx: inout GraphicsContext, rect: CGRect,
-                                 rng: inout SeededGenerator, palette: CoverPalette,
-                                 subjectX: Double, intensity: Double) {
-        let count = 14 + rng.int(22)
-        let center = CGPoint(x: rect.width * subjectX, y: rect.height * rng.range(0.4, 0.6))
-        let inner = min(rect.width, rect.height) * rng.range(0.04, 0.12)
-        let maxLength = min(rect.width, rect.height) * rng.range(0.35, 0.7)
-        let sweep = rng.bool(probability: 0.5) ? 2 * .pi : rng.range(0.9, 2.1) * .pi
-        let startAngle = rng.double() * 2 * .pi
-        let lineWidth = rng.range(0.8, 2.2)
-        for index in 0..<count {
-            let angle = startAngle + Double(index) / Double(count) * sweep + (rng.double() - 0.5) * 0.08
-            let length = maxLength * rng.range(0.3, 1.0)
-            let from = CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner)
-            let to = CGPoint(x: center.x + cos(angle) * (inner + length),
-                             y: center.y + sin(angle) * (inner + length))
-            var path = Path()
-            path.move(to: from)
-            path.addLine(to: to)
-            ctx.stroke(path, with: .color(palette.color(at: rng.double()).opacity(rng.range(0.2, 0.7) * intensity)),
-                       lineWidth: lineWidth * rng.range(0.6, 1.3))
-        }
-    }
-
-    /// 碎片：随机弧段与短斜线散布，位置/角度/长度/粗细全随机。
-    private static func drawShards(_ ctx: inout GraphicsContext, rect: CGRect,
-                                   rng: inout SeededGenerator, palette: CoverPalette,
-                                   subjectX: Double, intensity: Double) {
-        let count = 10 + rng.int(13)
-        for _ in 0..<count {
-            let nearFocus = rng.bool(probability: 0.5)
-            let baseX = nearFocus ? subjectX : 0.5
-            let center = CGPoint(x: rect.width * (baseX + (rng.double() - 0.5) * 0.6),
-                                 y: rect.height * rng.range(0.1, 0.9))
-            let isArc = rng.bool(probability: 0.45)
-            let color = palette.color(at: rng.double())
-            let opacity = rng.range(0.18, 0.6) * intensity
-            if isArc {
-                let radius = min(rect.width, rect.height) * rng.range(0.04, 0.16)
-                let start = rng.double() * 2 * .pi
-                let span = rng.range(0.3, 1.3) * .pi
-                var arc = Path()
-                arc.addArc(center: center, radius: radius,
-                           startAngle: .radians(start), endAngle: .radians(start + span),
-                           clockwise: rng.bool(probability: 0.5))
-                ctx.stroke(arc, with: .color(color.opacity(opacity)), lineWidth: rng.range(1.0, 3.0))
-            } else {
-                let angle = rng.double() * 2 * .pi
-                let length = min(rect.width, rect.height) * rng.range(0.05, 0.2)
-                var line = Path()
-                line.move(to: CGPoint(x: center.x - cos(angle) * length / 2,
-                                      y: center.y - sin(angle) * length / 2))
-                line.addLine(to: CGPoint(x: center.x + cos(angle) * length / 2,
-                                         y: center.y + sin(angle) * length / 2))
-                ctx.stroke(line, with: .color(color.opacity(opacity)),
-                           lineWidth: rng.range(1.0, 3.0))
-            }
-        }
-    }
-
-    /// 斜向色带：3~7 条平行低透明度宽带铺底，整体角度与间距随机。
-    private static func drawBands(_ ctx: inout GraphicsContext, rect: CGRect,
-                                  rng: inout SeededGenerator, palette: CoverPalette,
-                                  subjectX: Double, intensity: Double) {
-        let count = 3 + rng.int(5)
-        let angle = rng.range(-0.6, 0.6)
-        let pivot = CGPoint(x: rect.width * subjectX, y: rect.height / 2)
-        let long = hypot(rect.width, rect.height)
-        for index in 0..<count {
-            let t = Double(index) / Double(max(count - 1, 1))
-            let height = rect.height * rng.range(0.08, 0.26)
-            let offset = (t - 0.5) * rect.width * rng.range(0.8, 1.4)
-            var band = ctx
-            band.translateBy(x: pivot.x + offset, y: pivot.y)
-            band.rotate(by: .radians(angle))
-            band.fill(Path(CGRect(x: -long / 2, y: -height / 2, width: long, height: height)),
-                      with: .color(palette.color(at: t).opacity(rng.range(0.05, 0.14) * intensity)))
-        }
-    }
-}
-
-// MARK: - 原语枚举
-
-private enum CoverPrimitive {
-    case flowLines
-    case particles
-    case rings
-    case ridgeLines
-    case waveGrid
-    case rays
-    case shards
-    case bands
 }

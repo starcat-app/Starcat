@@ -44,7 +44,7 @@ struct DailyRadarPreviewReader: View {
                 VStack(spacing: 0) {
                     GeometryReader { geometry in
                         DailyRadarCoverView(cover: story.cover, category: story.category,
-                                            seed: story.id, hero: true)
+                                            seed: story.id)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }

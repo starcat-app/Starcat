@@ -2,34 +2,26 @@
 //  DailyRadarCoverView.swift
 //  Starcat
 //
-//  封面两级来源：AI/远程封面（hero_url / card_url）→ 程序化封面（本地 Canvas 绘制）。
-//  远程失败或无 CDN 时不展示破图，永远有程序化兜底，不触发额外网络请求。
+//  所有日报封面统一在本地绘制，服务端封面元数据仅提供无障碍描述。
+//  不建立远程图片请求，保证离线、历史报告与首次展示使用同一套构图。
 //
 
 import SwiftUI
 
-/// 图片只接受 HTTPS，失败不展示破图、不触发额外生成。
+/// 首页、往期与阅读页共用的本地封面入口。
 struct DailyRadarCoverView: View {
     let cover: DailyRadarReport.Cover
-    /// 分类决定程序化封面的色相与母题；nil 走中性兜底母题。
+    /// 分类影响构图权重与配色；未知分类仍参与全部构图选择。
     var category: String?
-    /// 稳定 seed（报告 id）：同分类不同报告的色温/光斑/母题布局各不相同。
-    var seed: String = ""
-    var hero = false
+    /// 必须传报告 id，避免多个调用方遗漏身份后生成完全相同的图片。
+    let seed: String
     /// 左侧文字安全区占比（0~0.4）：featured 大卡左侧叠标题/摘要时传入，
     /// 程序化封面主体右移避让；阅读页 hero / 普通卡 / 往期行保持 0。
     var textSafeLeading: CGFloat = 0
 
     var body: some View {
-        let candidate = hero ? (cover.heroURL ?? cover.cardURL) : cover.cardURL
-        AsyncImage(url: candidate?.scheme == "https" ? candidate : nil) { phase in
-            if let image = phase.image {
-                image.resizable().scaledToFill()
-            } else {
-                DailyRadarProgrammaticCover(category: category, seed: seed,
-                                            textSafeLeading: textSafeLeading)
-            }
-        }
-        .accessibilityLabel(Text(verbatim: cover.alt))
+        DailyRadarProgrammaticCover(category: category, seed: seed,
+                                    textSafeLeading: textSafeLeading)
+            .accessibilityLabel(Text(verbatim: cover.alt))
     }
 }
