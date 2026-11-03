@@ -47,6 +47,7 @@ enum RAGWorkspaceFeedbackMail {
 enum RAGWorkspaceErrorKind: Equatable {
     case configuration
     case embeddingConfiguration
+    case embeddingConnection
     case embeddingRequest
     case authentication
     case network
@@ -69,13 +70,17 @@ struct RAGWorkspaceError: Identifiable {
     let id = UUID()
     let kind: RAGWorkspaceErrorKind
     let technicalDetail: String
+    /// 保留领域错误，认证、限流和超时也应展示向量化原因，不能退回问答通用文案
+    private let embeddingError: AIEmbeddingError?
 
     init(error: Error) {
+        embeddingError = error as? AIEmbeddingError
         technicalDetail = error.localizedDescription
         kind = Self.classify(error: error, detail: technicalDetail)
     }
 
     init(technicalDetail: String) {
+        embeddingError = nil
         self.technicalDetail = technicalDetail
         kind = Self.classify(error: nil, detail: technicalDetail)
     }
@@ -84,6 +89,7 @@ struct RAGWorkspaceError: Identifiable {
         switch kind {
         case .configuration, .authentication: return "rag.workspace.error.configuration.title"
         case .embeddingConfiguration: return "rag.workspace.error.embeddingConfiguration.title"
+        case .embeddingConnection: return "rag.workspace.error.embeddingConnection.title"
         case .embeddingRequest: return "rag.workspace.error.embeddingRequest.title"
         case .network, .timeout: return "rag.workspace.error.network.title"
         case .planner: return "rag.workspace.error.planner.title"
@@ -97,6 +103,7 @@ struct RAGWorkspaceError: Identifiable {
         switch kind {
         case .configuration: return "rag.workspace.error.configuration.message.modelsSettings"
         case .embeddingConfiguration: return "rag.workspace.error.embeddingConfiguration.message.modelsSettings"
+        case .embeddingConnection: return "rag.workspace.error.embeddingConnection.recovery"
         case .embeddingRequest: return "rag.workspace.error.embeddingRequest.message"
         case .authentication: return "rag.workspace.error.authentication.message.modelsSettings"
         case .network: return "rag.workspace.error.network.message"
@@ -111,17 +118,39 @@ struct RAGWorkspaceError: Identifiable {
     /// 向量化领域错误本身已经是本地化、可执行的产品文案，直接展示具体原因；
     /// 其他错误仍用固定文案，避免把 HTTP / GRDB 等内部细节暴露给用户。
     var messageText: String {
+        if let embeddingError { return embeddingError.localizedDescription }
         switch kind {
-        case .embeddingConfiguration, .embeddingRequest:
+        case .embeddingConfiguration, .embeddingConnection, .embeddingRequest:
             return technicalDetail
         case .configuration, .authentication, .network, .timeout, .planner, .attachment, .generation, .unknown:
             return String.l10n(messageKey)
         }
     }
 
+    /// 原生 alert 只承载文本；用段落和编号分开原因与操作，不依赖其中无法稳定呈现的自定义布局
+    var formattedMessageText: String {
+        guard kind == .embeddingConnection else { return messageText }
+        return messageText + "\n\n" + String.l10n("rag.workspace.error.embeddingConnection.recovery")
+    }
+
+    /// 连接、配置和限流可由用户自助恢复；反馈入口留给请求处理或应用内部的异常
+    var shouldOfferFeedback: Bool {
+        switch kind {
+        case .configuration, .embeddingConfiguration, .embeddingConnection, .authentication, .network, .timeout, .attachment:
+            return false
+        case .embeddingRequest, .planner, .generation, .unknown:
+            return true
+        }
+    }
+
+    /// 两个窗口使用相同设置路由，避免新增错误类别后只跳到设置首页
+    var settingsNavigationTarget: String {
+        embeddingError == nil ? "ai" : "ai.embedding"
+    }
+
     var action: RAGWorkspaceErrorAction {
         switch kind {
-        case .configuration, .embeddingConfiguration, .embeddingRequest, .authentication: return .openAISettings
+        case .configuration, .embeddingConfiguration, .embeddingConnection, .embeddingRequest, .authentication: return .openAISettings
         case .network: return .checkNetwork
         case .timeout, .planner, .generation: return .retry
         case .attachment: return .removeAttachments
@@ -146,8 +175,8 @@ struct RAGWorkspaceError: Identifiable {
             if error.isConfigurationIssue { return .embeddingConfiguration }
             switch error {
             case .authenticationRejected: return .authentication
-            case .networkUnavailable, .rateLimited: return .network
-            case .timedOut: return .timeout
+            case .networkUnavailable, .timedOut: return .embeddingConnection
+            case .rateLimited: return .network
             case .modelRequestRejected, .invalidResponse, .emptyResponse, .requestFailed:
                 return .embeddingRequest
             case .missingProvider, .providerUnavailable, .missingAPIKey, .missingModel, .incompatibleModel:
@@ -226,9 +255,11 @@ private struct RAGWorkspaceErrorAlertModifier: ViewModifier {
                 .keyboardShortcut(.defaultAction)
             }
 
-            Button("rag.workspace.error.feedback") {
-                RAGWorkspaceFeedbackMail.open(for: presentedError)
-                error = nil
+            if presentedError.shouldOfferFeedback {
+                Button("rag.workspace.error.feedback") {
+                    RAGWorkspaceFeedbackMail.open(for: presentedError)
+                    error = nil
+                }
             }
 
             if presentedError.action == .dismiss {
@@ -238,7 +269,7 @@ private struct RAGWorkspaceErrorAlertModifier: ViewModifier {
                 Button("common.close", role: .cancel) { error = nil }
             }
         } message: { presentedError in
-            Text(presentedError.messageText)
+            Text(presentedError.formattedMessageText)
         }
     }
 }

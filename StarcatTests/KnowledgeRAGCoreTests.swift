@@ -1457,6 +1457,54 @@ struct KnowledgeRAGCoreTests {
         #expect(embeddingRequest.action == .openAISettings)
     }
 
+    @Test("向量化连接失败分段展示原因和处理步骤，引导设置且不提供反馈",
+          arguments: [AIEmbeddingError.networkUnavailable, .timedOut])
+    func embeddingConnectionErrorPresentation(error: AIEmbeddingError) {
+        let presentation = RAGWorkspaceError(error: error)
+
+        #expect(presentation.kind == .embeddingConnection)
+        #expect(presentation.titleKey == "rag.workspace.error.embeddingConnection.title")
+        #expect(presentation.messageText == error.localizedDescription)
+        #expect(presentation.formattedMessageText == error.localizedDescription
+            + "\n\n" + String.l10n("rag.workspace.error.embeddingConnection.recovery"))
+        #expect(presentation.action == .openAISettings)
+        #expect(presentation.settingsNavigationTarget == "ai.embedding")
+        #expect(!presentation.shouldOfferFeedback)
+    }
+
+    @Test("向量化配置、认证和限流保留具体原因，不提供反馈",
+          arguments: [AIEmbeddingError.missingProvider, .providerUnavailable, .missingAPIKey, .missingModel,
+                      .incompatibleModel("chat-only"), .authenticationRejected, .rateLimited])
+    func embeddingRecoverableErrorsDoNotOfferFeedback(error: AIEmbeddingError) {
+        let presentation = RAGWorkspaceError(error: error)
+
+        #expect(presentation.messageText == error.localizedDescription)
+        #expect(presentation.settingsNavigationTarget == "ai.embedding")
+        #expect(!presentation.shouldOfferFeedback)
+    }
+
+    @Test("向量化请求处理异常仍保留反馈",
+          arguments: [AIEmbeddingError.modelRequestRejected, .invalidResponse, .emptyResponse, .requestFailed])
+    func embeddingRequestErrorsOfferFeedback(error: AIEmbeddingError) {
+        let presentation = RAGWorkspaceError(error: error)
+
+        #expect(presentation.kind == .embeddingRequest)
+        #expect(presentation.shouldOfferFeedback)
+        #expect(presentation.messageText == error.localizedDescription)
+        #expect(presentation.settingsNavigationTarget == "ai.embedding")
+    }
+
+    @Test("通用网络故障不提供反馈，生成和未知异常仍可反馈")
+    func workspaceFeedbackEligibility() {
+        #expect(!RAGWorkspaceError(error: URLError(.cannotConnectToHost)).shouldOfferFeedback)
+        #expect(!RAGWorkspaceError(error: URLError(.timedOut)).shouldOfferFeedback)
+        #expect(!RAGWorkspaceError(error: AIClientError.missingAPIKey).shouldOfferFeedback)
+        #expect(!RAGWorkspaceError(error: AIClientError.rateLimited(detail: "HTTP 429")).shouldOfferFeedback)
+        #expect(RAGWorkspaceError(error: AIClientError.emptyResponse).shouldOfferFeedback)
+        #expect(RAGWorkspaceError(technicalDetail: "Unexpected internal failure").shouldOfferFeedback)
+        #expect(RAGWorkspaceError(error: AIClientError.missingAPIKey).settingsNavigationTarget == "ai")
+    }
+
     @Test("Planner: 日期歧义计划必须带追问")
     func plannerClarification() throws {
         let plan = try KnowledgeRAGQueryPlanner.decodeAndValidate("""

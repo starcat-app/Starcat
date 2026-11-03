@@ -313847,6 +313847,220 @@
         }
       }
     },
+    "rag.workspace.error.embeddingConnection.recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Prüfen Sie, ob der Embedding-Dienst gestartet wurde und ordnungsgemäß läuft.\n2. Testen Sie die Verbindung unter „Modelle & Anbieter“. Aktualisieren Sie die Vektoren erneut, sobald der Test erfolgreich ist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. Make sure the embedding service is running properly.\n2. Test the connection in Models & Providers settings. Once the test succeeds, refresh vectors again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Comprueba que el servicio de embeddings esté iniciado y funcione correctamente.\n2. Prueba la conexión en Modelos y proveedores. Cuando la prueba se complete correctamente, vuelve a actualizar los vectores."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Vérifiez que le service d’embedding est démarré et fonctionne correctement.\n2. Testez la connexion dans Modèles et fournisseurs. Une fois le test réussi, actualisez à nouveau les vecteurs."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Pastikan layanan embedding sudah dimulai dan berjalan dengan baik.\n2. Uji koneksi di pengaturan Model & Penyedia. Setelah pengujian berhasil, perbarui vektor lagi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Assicurati che il servizio di embedding sia avviato e funzioni correttamente.\n2. Verifica la connessione nelle impostazioni Modelli e provider. Dopo un test riuscito, aggiorna di nuovo i vettori."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. 埋め込みサービスが起動し、正常に動作していることを確認してください。\n2. 「モデルとプロバイダー」設定で接続をテストし、成功したらベクトルを再度更新してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. 임베딩 서비스가 시작되어 정상적으로 실행 중인지 확인하세요.\n2. 모델 및 제공자 설정에서 연결을 테스트하세요. 테스트가 성공하면 벡터를 다시 새로 고치세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Controleer of de embeddingservice is gestart en goed werkt.\n2. Test de verbinding in de instellingen voor Modellen en providers. Vernieuw de vectoren zodra de test is geslaagd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Upewnij się, że usługa osadzania jest uruchomiona i działa prawidłowo.\n2. Przetestuj połączenie w ustawieniach Modele i dostawcy. Po pomyślnym teście ponownie odśwież wektory."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Confirme que o serviço de embedding foi iniciado e está funcionando corretamente.\n2. Teste a conexão nas configurações de Modelos e provedores. Após o teste ser concluído com sucesso, atualize os vetores novamente."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Убедитесь, что сервис эмбеддингов запущен и работает корректно.\n2. Проверьте соединение в настройках «Модели и провайдеры». После успешной проверки обновите векторы ещё раз."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Gömme hizmetinin başlatıldığından ve düzgün çalıştığından emin olun.\n2. Modeller ve Sağlayıcılar ayarlarında bağlantıyı test edin. Test başarılı olduktan sonra vektörleri yeniden yenileyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Переконайтеся, що сервіс ембеддингів запущено й він працює належним чином.\n2. Перевірте з’єднання в налаштуваннях «Моделі та постачальники». Після успішної перевірки оновіть вектори знову."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "1. Đảm bảo dịch vụ nhúng đã khởi động và đang hoạt động bình thường.\n2. Kiểm tra kết nối trong cài đặt Mô hình và nhà cung cấp. Sau khi kiểm tra thành công, hãy làm mới vectơ lần nữa."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. 确认向量化服务已启动并正常运行\n2. 在「模型与服务商」设置中测试连接，通过后重新刷新向量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1. 確認向量化服務已啟動並正常運作\n2. 在「模型與服務商」設定中測試連線，通過後重新整理向量"
+          }
+        }
+      }
+    },
+    "rag.workspace.error.embeddingConnection.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Embedding-Dienst vorübergehend nicht verfügbar"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Embedding service temporarily unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Servicio de embeddings temporalmente no disponible"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Service d’embedding temporairement indisponible"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Layanan embedding sementara tidak tersedia"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Servizio di embedding temporaneamente non disponibile"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "埋め込みサービスを一時的に利用できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "임베딩 서비스를 일시적으로 사용할 수 없음"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Embeddingservice tijdelijk niet beschikbaar"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usługa osadzania jest tymczasowo niedostępna"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Serviço de embedding temporariamente indisponível"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервис эмбеддингов временно недоступен"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gömme hizmeti geçici olarak kullanılamıyor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сервіс ембеддингів тимчасово недоступний"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dịch vụ nhúng tạm thời không khả dụng"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向量化服务暂不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "向量化服務暫不可用"
+          }
+        }
+      }
+    },
     "rag.workspace.error.embeddingRequest.message" : {
       "localizations" : {
         "de" : {

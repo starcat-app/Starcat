@@ -158,10 +158,8 @@ struct KnowledgeRAGWorkspaceView: View {
             ),
             onAction: { presentedError in
                 // 向量化错误应直达向量模型配置，而不是只打开设置首页让用户自行定位。
-                if presentedError.action == .openAISettings,
-                   presentedError.kind == .embeddingConfiguration
-                       || presentedError.kind == .embeddingRequest {
-                    settingsNavigation("ai.embedding")
+                if presentedError.action == .openAISettings {
+                    settingsNavigation(presentedError.settingsNavigationTarget)
                     viewModel.dismissError()
                 } else {
                     viewModel.resolveWorkspaceErrorAction(presentedError.action)
