@@ -42,12 +42,13 @@ enum InsightsTopic: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var systemImage: String {
+    /// 主题图标来源：统一走 Lucide 业务资产（概览 dashboard / 组织 building / 技术 code / 健康 gauge）。
+    var iconSource: BusinessIcon.Source {
         switch self {
-        case .overview:     return "rectangle.3.group.fill"
-        case .organization: return "tray.full.fill"
-        case .technology:   return "chevron.left.forwardslash.chevron.right"
-        case .health:       return BusinessIcon.Symbol.repositoryHealth.systemImage
+        case .overview:     return .business(.dashboard)
+        case .organization: return .business(.organization)
+        case .technology:   return .business(.codeContext)
+        case .health:       return .business(.repositoryHealth)
         }
     }
 

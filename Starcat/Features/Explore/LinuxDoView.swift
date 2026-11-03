@@ -147,7 +147,7 @@ struct LinuxDoView: View {
             }
             if model.rows.isEmpty {
                 ContentUnavailableView {
-                    Label("linuxdo.catalog.empty", systemImage: BusinessIcon.Symbol.linuxDo.systemImage)
+                    Label("linuxdo.catalog.empty", systemImage: "text.bubble")
                 } description: {
                     // 全自动目录复用已有刷新/筛选提示，不再把正常采集描述为等待审核。
                     Text("weekly.empty.subtitle")

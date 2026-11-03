@@ -46,7 +46,7 @@ private struct TagTaxonomyBootstrapPreparingView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: BusinessIcon.Symbol.tags.systemImage)
+            Image(systemName: "tag.fill")
                 .font(interfaceScale.font(.iconLarge))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -196,7 +196,7 @@ struct BatchAIWorkspaceView: View {
     private var header: some View {
         HStack(spacing: 10) {
             AIOrganizationIconBadge(
-                symbol: BusinessIcon.Symbol.tags.systemImage, tint: .purple, typography: .iconLarge
+                symbol: "tag.fill", tint: .purple, typography: .iconLarge
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text("batchAI.organizeTags.title")

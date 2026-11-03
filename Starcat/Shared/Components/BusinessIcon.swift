@@ -23,71 +23,70 @@ struct BusinessIcon: View {
         case forkedRepository = "BusinessForkedRepository"
         case forkCount = "BusinessForkCount"
 
-        // Lucide 统一业务图标层（方案 A）：素材取自锁定版本 Lucide 1.67.0 的同名 SVG。
-        // 画布自带留白，调用方按既有「16pt 素材 / 13pt SF」规则做光学尺寸匹配。
+        // Lucide 统一业务图标层（方案 A，2026-11-04 批量收口）：全部条目使用锁定版本
+        // Lucide 1.67.0 的模板 SVG。画布自带留白，调用方按「16pt 素材 / 13pt SF」做光学匹配。
+        // 仍需 SF 字符串的原生 API（Label(systemImage:) / 菜单）一律落字面量，不走本注册表。
         case discovery = "BusinessDiscovery"
         case trending = "BusinessTrending"
-        case popular = "flame"
-        case releases = "shippingbox"
+        case popular = "BusinessPopular"
+        case releases = "BusinessReleases"
         case weekly = "BusinessWeekly"
         // 每日热点与 Weekly 拆分图形：前者雷达、后者报纸，避免探索侧栏同形撞车。
         case dailyRadar = "BusinessDailyRadar"
-        case linuxDo = "text.bubble"
+        case linuxDo = "BusinessLinuxDo"
         case stars = "BusinessStars"
         // 知识库改用书架图形（2026-11-04 决议），heart 收敛为「加入知识库」动作语义。
         case library = "BusinessLibrary"
-        case myProjects = "person.crop.rectangle.stack.fill"
-        case collections = "line.3.horizontal.decrease.circle"
-        case languages = "globe"
-        case codeContext = "chevron.left.forwardslash.chevron.right"
-        case tags = "tag.fill"
-        case untagged = "tag.slash"
-        case ungrouped = "tray"
-        case groups = "folder.fill"
-        case general = "gearshape"
+        case myProjects = "BusinessMyProjects"
+        case collections = "BusinessCollections"
+        case languages = "BusinessLanguages"
+        case codeContext = "BusinessCodeContext"
+        case tags = "BusinessTags"
+        case untagged = "BusinessUntagged"
+        case ungrouped = "BusinessUngrouped"
+        case groups = "BusinessGroups"
+        case general = "BusinessGeneral"
         case notifications = "BusinessNotifications"
-        case shortcuts = "keyboard"
-        case pro = "crown.fill"
-        case privacy = "lock.shield"
-        case models = "cpu"
-        case translation = "character.bubble"
-        case mcp = "point.3.connected.trianglepath.dotted"
-        case codeFlow = "flowchart"
-        case services = "server.rack"
-        case browserExtensions = "puzzlepiece.extension"
-        case localTools = "hammer"
-        case prompts = "text.quote"
-        case retrieval = "magnifyingglass"
-        case storage = "internaldrive"
-        case diagnostics = "stethoscope"
-        case labs = "flask"
-        case readme = "doc.richtext"
-        case notes = "note.text"
-        case addNote = "note.text.badge.plus"
-        case summary = "doc.text"
-        case metadata = "list.bullet.rectangle"
-        case knowledgeMetadata = "cylinder.split.1x2"
+        case shortcuts = "BusinessShortcuts"
+        case pro = "BusinessPro"
+        case privacy = "BusinessPrivacy"
+        case models = "BusinessModels"
+        case translation = "BusinessTranslation"
+        case mcp = "BusinessMCP"
+        case codeFlow = "BusinessCodeFlow"
+        case services = "BusinessServices"
+        case browserExtensions = "BusinessBrowserExtensions"
+        case localTools = "BusinessLocalTools"
+        case prompts = "BusinessPrompts"
+        case retrieval = "BusinessRetrieval"
+        case storage = "BusinessStorage"
+        case diagnostics = "BusinessDiagnostics"
+        case labs = "BusinessLabs"
+        case readme = "BusinessReadme"
+        case notes = "BusinessNotes"
+        case addNote = "BusinessAddNote"
+        case summary = "BusinessSummary"
+        case metadata = "BusinessMetadata"
+        case knowledgeMetadata = "BusinessKnowledgeMetadata"
         case repositoryInsights = "BusinessInsights"
-        case repositoryHealth = "gauge.with.dots.needle.67percent"
-        case security = "checkmark.shield.fill"
-        case repositories = "square.stack.3d.up"
-        case repositoryAnalysis = "doc.text.magnifyingglass"
-        case alternatives = "arrow.triangle.branch"
-        case research = "books.vertical"
-        case terminal = "terminal"
-        case ragWorkspace = "bubble.left.and.text.bubble.right"
-        case ai = "sparkles"
+        case repositoryHealth = "BusinessRepositoryHealth"
+        case security = "BusinessSecurity"
+        case repositories = "BusinessRepositories"
+        case repositoryAnalysis = "BusinessAnalysis"
+        case alternatives = "BusinessAlternatives"
+        case research = "BusinessResearch"
+        case terminal = "BusinessTerminal"
+        case ragWorkspace = "BusinessRAGWorkspace"
+        case ai = "BusinessAI"
+        // 活动与洞察分类补充条目：与主导航共用同一资产管线。
+        case announcement = "BusinessAnnouncement"
+        case following = "BusinessFollowing"
+        case undoStar = "BusinessUndoStar"
+        case dashboard = "BusinessDashboard"
+        case organization = "BusinessOrganization"
 
-        /// 只把嵌入资源作为模板图处理；SF Symbols 继续参与系统的字重与基线排版。
-        var isAsset: Bool {
-            switch self {
-            case .curatedCollection, .automation, .inference, .aiIndex, .license, .embedding, .recommendations,
-                 .forkedRepository, .forkCount,
-                 .discovery, .trending, .weekly, .dailyRadar, .stars, .library, .notifications, .repositoryInsights:
-                return true
-            default: return false
-            }
-        }
+        /// 全部条目均已资产化；保留布尔开关以便未来个别条目回落 SF Symbols。
+        var isAsset: Bool { true }
 
         /// 用于已只接受系统图标名的原生 API。资产调用方必须走 BusinessIcon。
         var systemImage: String {

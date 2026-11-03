@@ -1294,7 +1294,7 @@ struct RepoListView: View {
             filterSectionHeader(
                 title: "sidebar.myProjects",
                 // myProjects 尚未资产化（批量阶段换 folder-git-2），取注册表 SF 名仍安全。
-                icon: BusinessIcon.Symbol.myProjects.rawValue
+                icon: "person.crop.rectangle.stack.fill"
             )
 
             projectFilterMenuRow(title: "list.filter.project.affiliation") {

@@ -56,14 +56,14 @@ struct IntegrationSettingsTab: View {
                 if page == .browserExtensions {
                     SettingsPageIntroduction(
                         title: "settings.navigation.item.browserExtensions",
-                        systemImage: BusinessIcon.Symbol.browserExtensions.rawValue,
+                        systemImage: "puzzlepiece.extension",
                         description: "settings.integration.browser.introduction.description",
                         context: "settings.integration.browser.introduction.context"
                     )
                 } else {
                     SettingsPageIntroduction(
                         title: "settings.navigation.item.codeAndLocalTools",
-                        systemImage: BusinessIcon.Symbol.codeContext.rawValue,
+                        systemImage: "chevron.left.forwardslash.chevron.right",
                         description: "settings.integration.tools.configuration.description",
                         context: "settings.integration.tools.configuration.context"
                     )

@@ -322,11 +322,14 @@ struct UnifiedRepoRow: View {
             RemoteAvatar(urlString: RepoAvatarURL.from(owner: card.owner), size: 40)
             if case .activityKind(let category) = card.badge {
                 // 角标只在「全部分类」有辨识价值；尺寸刻意压到头像 ~1/4，避免抢 owner 头像。
-                Image(systemName: category.systemImage)
-                    .font(interfaceScale.font(size: 8, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(2)
-                    .background(Circle().fill(category.iconColor))
+                // Lucide 资产在 8pt 级别笔画易糊，画布放大约一档做光学补偿。
+                BusinessIcon(
+                    source: category.iconSource,
+                    pointSize: 10 * interfaceScale.multiplier
+                )
+                .foregroundStyle(.white)
+                .padding(2)
+                .background(Circle().fill(category.iconColor))
                     .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
                     .offset(x: 1, y: 1)
             }

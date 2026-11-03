@@ -26,7 +26,7 @@ enum RAGPlanSectionHelpTopic: String, Identifiable {
         case .networkPlan: return "network"
         case .retrievalFunnel: return "line.3.horizontal.decrease.circle.fill"
         case .contextBudget: return "gauge.with.dots.needle.33percent"
-        case .repoContext: return BusinessIcon.Symbol.codeContext.systemImage
+        case .repoContext: return "chevron.left.forwardslash.chevron.right"
         }
     }
 

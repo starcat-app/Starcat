@@ -213,7 +213,7 @@ struct ActivityDetailView: View {
                 }
 
                 HStack(spacing: 8) {
-                    MetaBadge(systemImage: item.category.systemImage, text: item.category.localizedTitle, tint: .secondary)
+                    MetaBadge(businessIcon: item.category.symbol, text: item.category.localizedTitle, tint: .secondary)
                     if let date = item.createdAt {
                         RelativeDateBadge(date: date)
                     }
@@ -525,9 +525,13 @@ struct ActivityDetailView: View {
             ZStack {
                 Circle()
                     .fill(item.accentColor.opacity(0.18))
-                Image(systemName: item.category.systemImage)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(item.accentColor)
+                // Lucide 资产画布带留白，SF 20 对应约 25 做光学匹配。
+                BusinessIcon(
+                    source: item.category.iconSource,
+                    pointSize: 25,
+                    weight: .semibold
+                )
+                .foregroundStyle(item.accentColor)
             }
             .frame(width: size, height: size)
         }

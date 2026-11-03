@@ -533,7 +533,7 @@ struct AgentWorkspaceRunSurface: View {
             }
 
             if activeRuntimeBackend == .builtinLoop, viewModel.selectedModelID == nil {
-                Label("agent.workspace.model.required", systemImage: BusinessIcon.Symbol.models.systemImage)
+                Label("agent.workspace.model.required", systemImage: "cpu")
                     .font(agentFont(.caption))
                     .foregroundStyle(.secondary)
             } else if activeRuntimeBackend == .deepSeekHarness, selectedDeepSeekSelection == nil {
@@ -1080,7 +1080,7 @@ struct AgentWorkspaceRunSurface: View {
                 }
             }
         } label: {
-            Label(viewModel.selectedModelDisplayName, systemImage: BusinessIcon.Symbol.models.systemImage)
+            Label(viewModel.selectedModelDisplayName, systemImage: "cpu")
                 .font(agentFont(.caption, weight: .semibold))
                 .lineLimit(1)
         }
@@ -1137,7 +1137,7 @@ struct AgentWorkspaceRunSurface: View {
                 }
             }
         } label: {
-            Label(activeRuntimeBackend.displayName, systemImage: BusinessIcon.Symbol.terminal.systemImage)
+            Label(activeRuntimeBackend.displayName, systemImage: "terminal")
                 .font(agentFont(.caption, weight: .semibold))
                 .lineLimit(1)
         }
@@ -1263,7 +1263,7 @@ struct AgentWorkspaceRunSurface: View {
                 }
             }
         } label: {
-            Label(selectedDeepSeekSelection?.model.name ?? "—", systemImage: BusinessIcon.Symbol.models.systemImage)
+            Label(selectedDeepSeekSelection?.model.name ?? "—", systemImage: "cpu")
                 .font(agentFont(.caption, weight: .semibold))
                 .lineLimit(1)
         }
@@ -1344,7 +1344,7 @@ struct AgentWorkspaceRunSurface: View {
         } label: {
             Label(
                 selectedCodexModelSelection?.displayName ?? "Codex",
-                systemImage: codexModelCatalogError == nil ? BusinessIcon.Symbol.models.systemImage : "exclamationmark.triangle"
+                systemImage: codexModelCatalogError == nil ? "cpu" : "exclamationmark.triangle"
             )
             .font(agentFont(.caption, weight: .semibold))
             .lineLimit(1)

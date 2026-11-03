@@ -3103,7 +3103,7 @@ private struct KnowledgeRAGChunkEditor: View {
 
     init(repoContext: RepoContextDocument, onSave: @escaping (String) async -> String?) {
         source = nil
-        sourceSystemImageName = BusinessIcon.Symbol.codeContext.systemImage
+        sourceSystemImageName = "chevron.left.forwardslash.chevron.right"
         sourceTintColor = .purple
         editorTitleKey = "rag.browser.repoContext.title"
         locksMetadataFields = true

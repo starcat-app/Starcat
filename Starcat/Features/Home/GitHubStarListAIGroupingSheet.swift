@@ -121,7 +121,7 @@ struct GitHubStarListAIGroupingSheet: View {
     private var header: some View {
         HStack(spacing: 10) {
             AIOrganizationIconBadge(
-                symbol: BusinessIcon.Symbol.groups.systemImage, tint: .purple, typography: .iconLarge
+                symbol: "folder.fill", tint: .purple, typography: .iconLarge
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text("githubStarLists.aiGrouping.title")

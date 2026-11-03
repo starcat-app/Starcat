@@ -574,7 +574,7 @@ struct RepoAIWindowContentView: View {
     private func summaryHeader(vm: RepoAIInsightViewModel) -> some View {
         @Bindable var vm = vm
         return HStack(alignment: .center, spacing: 10) {
-            Label("ai.assistant.summary.title", systemImage: BusinessIcon.Symbol.summary.systemImage)
+            Label("ai.assistant.summary.title", systemImage: "doc.text")
                 .font(interfaceScale.font(.panelTitle, weight: .semibold))
                 .labelStyle(.titleAndIcon)
                 .foregroundStyle(.primary)
@@ -1313,7 +1313,7 @@ struct RepoAIWindowContentView: View {
     /// 全部按钮严格遵守 `.buttonStyle(.plain) + .focusEffectDisabled()` 规则。
     private func chatSessionToolbar(chat: RepoAIChatViewModel) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: BusinessIcon.Symbol.ragWorkspace.systemImage)
+            Image(systemName: "bubble.left.and.text.bubble.right")
                 .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(verbatim: displayTitle(for: chat))
@@ -1905,7 +1905,7 @@ struct RepoAIWindowContentView: View {
 
     private var chatEmptyState: some View {
         EmptyStateView(
-            systemImage: BusinessIcon.Symbol.ragWorkspace.systemImage,
+            systemImage: "bubble.left.and.text.bubble.right",
             title: "ai.assistant.chat.empty.title",
             subtitle: "ai.assistant.chat.empty.description",
             subtitleHorizontalPadding: 40

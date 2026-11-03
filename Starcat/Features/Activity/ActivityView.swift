@@ -205,7 +205,7 @@ struct ActivityView: View {
             } else if let error = viewModel.loadError, viewModel.items.isEmpty {
                 emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
             } else if viewModel.items.isEmpty {
-                emptyState(systemImage: selectedCategory.systemImage, title: "activity.empty.title", subtitle: emptySubtitle)
+                emptyState(businessIcon: selectedCategory.symbol, title: "activity.empty.title", subtitle: emptySubtitle)
             } else {
                 activityItemList(viewModel)
             }
@@ -581,6 +581,19 @@ struct ActivityView: View {
         .padding()
     }
 
+    /// 分类空态使用 Lucide 业务资产，与侧栏分类图标保持同一图形。
+    private func emptyState(businessIcon: BusinessIcon.Symbol, title: LocalizedStringKey, subtitle: LocalizedStringKey) -> some View {
+        EmptyStateView(
+            systemImage: "",
+            title: title,
+            subtitle: subtitle,
+            spacing: 12,
+            businessIcon: businessIcon
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
     private func emptyState(systemImage: String, title: LocalizedStringKey, subtitleText: String) -> some View {
         EmptyStateView(
             systemImage: systemImage,
@@ -773,7 +786,7 @@ private struct ActivityRowView: View {
                             style: .full
                         )
                     }
-                    MetaBadge(systemImage: item.category.systemImage, text: item.category.localizedTitle, tint: .secondary)
+                    MetaBadge(businessIcon: item.category.symbol, text: item.category.localizedTitle, tint: .secondary)
                     if let date = item.createdAt {
                         RelativeDateBadge(date: date)
                     }
@@ -797,9 +810,13 @@ private struct ActivityRowView: View {
             ZStack {
                 Circle()
                     .fill(item.accentColor.opacity(0.18))
-                Image(systemName: item.category.systemImage)
-                    .font(.system(size: size > 24 ? 17 : 11, weight: .semibold))
-                    .foregroundStyle(item.accentColor)
+                // Lucide 资产画布带留白，SF 17/11 对应约 21/14 做光学匹配。
+                BusinessIcon(
+                    source: item.category.iconSource,
+                    pointSize: size > 24 ? 21 : 14,
+                    weight: .semibold
+                )
+                .foregroundStyle(item.accentColor)
             }
             .frame(width: size, height: size)
         }

@@ -2335,7 +2335,7 @@ struct RepositoryInsightsView: View {
         InsightsSectionContainer(
             title: "insights.repo.section.health",
             subtitle: "insights.repo.section.health.subtitle",
-            systemImage: BusinessIcon.Symbol.repositoryHealth.systemImage,
+            systemImage: "gauge.with.dots.needle.67percent",
             iconColor: .pink,
             chrome: .emphasized
         ) {

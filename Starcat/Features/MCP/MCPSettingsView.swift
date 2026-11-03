@@ -28,7 +28,7 @@ struct MCPSettingsTab: View {
         return Form {
             SettingsPageIntroduction(
                 title: "settings.mcp.title",
-                systemImage: BusinessIcon.Symbol.mcp.rawValue,
+                systemImage: "point.3.connected.trianglepath.dotted",
                 description: "settings.mcp.introduction.description",
                 context: "settings.mcp.content.introduction.context"
             )

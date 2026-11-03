@@ -34,7 +34,7 @@ struct RAGWorkspaceModelMenu: View {
                     AIProviderIconView(provider: provider, size: 14)
                 } else {
                     // fallback 固定 14×14，避免切换 API / CLI 后菜单标签宽度跳动。
-                    Image(systemName: BusinessIcon.Symbol.models.systemImage)
+                    Image(systemName: "cpu")
                         .resizable()
                         .scaledToFit()
                         .frame(width: 14, height: 14)
@@ -62,7 +62,7 @@ struct RAGWorkspaceModelMenu: View {
                 AIProviderIconView(provider: provider, size: 15)
             }
         } else {
-            Label(model.name, systemImage: BusinessIcon.Symbol.models.systemImage)
+            Label(model.name, systemImage: "cpu")
         }
     }
 }

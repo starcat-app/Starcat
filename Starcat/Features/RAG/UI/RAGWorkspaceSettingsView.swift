@@ -151,7 +151,7 @@ private enum RAGPromptEditorTab: String, CaseIterable, Identifiable {
                 .init(token: "{questionSection}", systemImage: "text.bubble", meaningKey: "rag.workspace.prompt.placeholder.questionSection"),
                 .init(token: "{evidenceSection}", systemImage: "doc.text.magnifyingglass", meaningKey: "rag.workspace.prompt.placeholder.evidenceSection"),
                 .init(token: "{repositoryInsightsSection}", systemImage: "gauge.with.dots.needle.bottom.0percent", meaningKey: "rag.workspace.prompt.placeholder.repositoryInsightsSection"),
-                .init(token: "{repoContextSection}", systemImage: BusinessIcon.Symbol.codeContext.systemImage, meaningKey: "rag.workspace.prompt.placeholder.repoContextSection"),
+                .init(token: "{repoContextSection}", systemImage: "chevron.left.forwardslash.chevron.right", meaningKey: "rag.workspace.prompt.placeholder.repoContextSection"),
                 .init(token: "{remoteSection}", systemImage: "network", meaningKey: "rag.workspace.prompt.placeholder.remoteSection"),
                 .init(token: "{attachmentSection}", systemImage: "paperclip", meaningKey: "rag.workspace.prompt.placeholder.attachmentSection"),
             ]

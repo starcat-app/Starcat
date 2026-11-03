@@ -85,19 +85,23 @@ enum ActivityCategory: String, CaseIterable, Identifiable, Sendable {
         Color(hex: iconColorHex) ?? .accentColor
     }
 
-    var systemImage: String {
+    /// 分类对应的业务图标条目；侧栏、MetaBadge 徽标与头像角标共用同一资产。
+    /// 发新版复用 releases（火箭），时间线复用 ungrouped（inbox），建议复用 ai（sparkles）。
+    var symbol: BusinessIcon.Symbol {
         switch self {
-        case .all:          return "tray.full"
-        case .announcement: return "megaphone"
-        case .release:      return "shippingbox"
-        case .star:         return "star"
-        case .repository:   return "folder"
-        case .following:    return "person.2"
-        case .suggestion:   return "sparkles"
-        case .undoStar:     return "arrow.uturn.backward.circle"
-        case .notification: return "bell"
+        case .all:          return .ungrouped
+        case .announcement: return .announcement
+        case .release:      return .releases
+        case .star:         return .stars
+        case .repository:   return .groups
+        case .following:    return .following
+        case .suggestion:   return .ai
+        case .undoStar:     return .undoStar
+        case .notification: return .notifications
         }
     }
+
+    var iconSource: BusinessIcon.Source { .business(symbol) }
 }
 
 extension ActivityCategory {

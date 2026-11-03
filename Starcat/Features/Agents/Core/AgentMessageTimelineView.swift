@@ -934,7 +934,7 @@ struct AgentMessageTimelineView: View {
         case .command: return "terminal"
         case .fileChange: return "doc.badge.gearshape"
         case .webSearch: return "globe"
-        case .mcpTool: return BusinessIcon.Symbol.mcp.systemImage
+        case .mcpTool: return "point.3.connected.trianglepath.dotted"
         case .approval: return "checkmark.shield"
         case .warning: return "exclamationmark.triangle"
         case .retry: return "arrow.clockwise"

@@ -870,7 +870,7 @@ struct MyInsightsView: View {
         InsightsSectionContainer(
             title: "insights.section.coverage",
             subtitle: "insights.section.coverage.subtitle",
-            systemImage: BusinessIcon.Symbol.repositoryHealth.systemImage,
+            systemImage: "gauge.with.dots.needle.67percent",
             iconColor: .pink,
             chrome: .emphasized
         ) {

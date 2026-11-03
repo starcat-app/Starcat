@@ -62,7 +62,7 @@ enum BuiltInAgents {
         id: "repo-insight",
         title: String.l10n("agent.definition.repoInsight.title"),
         subtitle: String.l10n("agent.definition.repoInsight.subtitle"),
-        systemImage: BusinessIcon.Symbol.repositoryAnalysis.systemImage,
+        systemImage: "doc.text.magnifyingglass",
         capabilityLabels: [
             String.l10n("agent.capability.repository"),
             String.l10n("agent.capability.analysis"),
@@ -104,7 +104,7 @@ enum BuiltInAgents {
         id: "repo-alternatives",
         title: String.l10n("agent.definition.repoAlternatives.title"),
         subtitle: String.l10n("agent.definition.repoAlternatives.subtitle"),
-        systemImage: BusinessIcon.Symbol.alternatives.systemImage,
+        systemImage: "arrow.triangle.branch",
         capabilityLabels: [
             String.l10n("agent.capability.compare"),
             String.l10n("agent.capability.github"),
@@ -150,7 +150,7 @@ enum BuiltInAgents {
         id: "untagged-tidy",
         title: String.l10n("agent.definition.untaggedTidy.title"),
         subtitle: String.l10n("agent.definition.untaggedTidy.subtitle"),
-        systemImage: BusinessIcon.Symbol.tags.systemImage,
+        systemImage: "tag.fill",
         capabilityLabels: [
             String.l10n("agent.capability.taxonomy"),
             String.l10n("agent.capability.queue"),

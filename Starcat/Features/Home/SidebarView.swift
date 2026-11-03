@@ -1105,11 +1105,14 @@ struct SidebarView: View {
                         .lineLimit(1)
                 } icon: {
                     // 与星标 / 探索 / 活动侧栏一致：未选中保留语义色，明亮选中反白。
-                    Image(systemName: topic.systemImage)
-                        .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                        .foregroundStyle(
-                            SidebarSemanticIconStyle(semanticColor: topic.semanticIconColor)
-                        )
+                    BusinessIcon(
+                        source: topic.iconSource,
+                        pointSize: 16 * interfaceScale.multiplier,
+                        weight: .semibold
+                    )
+                    .foregroundStyle(
+                        SidebarSemanticIconStyle(semanticColor: topic.semanticIconColor)
+                    )
                         .frame(width: 16, height: 16)
                 }
                 .tag(topic)
@@ -1585,12 +1588,15 @@ struct SidebarView: View {
         Label {
             activityCategoryLabel(category)
         } icon: {
-            // Activity 分类使用系统语义图标，不复用 LanguageIconView，避免渲染出语言 logo。
+            // Activity 分类统一走 Lucide 业务资产，不复用 LanguageIconView，避免渲染出语言 logo。
             // 明亮选中态反白：与探索「发现 / 趋势 / …」同一套 SidebarSemanticIconStyle。
-            Image(systemName: category.systemImage)
-                .font(interfaceScale.font(.iconSmall, weight: .semibold))
-                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: category.iconColor))
-                .frame(width: 16, height: 16)
+            BusinessIcon(
+                source: category.iconSource,
+                pointSize: 16 * interfaceScale.multiplier,
+                weight: .semibold
+            )
+            .foregroundStyle(SidebarSemanticIconStyle(semanticColor: category.iconColor))
+            .frame(width: 16, height: 16)
         }
         .tag(category)
     }
