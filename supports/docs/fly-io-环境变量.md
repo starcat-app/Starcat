@@ -148,7 +148,7 @@ make setup-production-api-keys     # 从 starcat-api/.env 共用 Key 写入 Secr
 | `*_STORE_FILE` / `WEEKLY_REPO_DIR` | 强制 `/data/...` |
 | `SHARING_BASE_URL` | Fly 强制 `https://starcat.ink` |
 | `TRENDING_GITHUB_TOKENS` 等 | 各服务 GitHub PAT |
-| `RECOMMEND_SIMREPO_API_KEY` | simrepo |
+| `RECOMMEND_MODEL_REGISTRY_DIR` | 持久化自研模型目录，生产 `/data/recommend-model-registry` |
 | `TRENDING_WIKI_API_URL` / `TRENDING_WIKI_API_KEY` | 聚合内预热：loopback + 共用 Key；notifier 带 `X-SC-Svc: wiki` |
 | `WEEKLY_WIKI_API_URL` / `WEEKLY_WIKI_API_KEY` | 同上；Weekly notifier 也固定带 `X-SC-Svc: wiki` |
 | `DISCOVERY_ADMIN_API_KEYS` | 必填；Discovery 管理接口独立 key，不继承 Weekly Admin Key |
@@ -236,13 +236,12 @@ cron 频率在代码内固定（daily/weekly/monthly 等），无需 Fly env。
 |------|------|---------------------|------|
 | `PORT` | T | `5005` | |
 | `API_KEYS` | R | — | 客户端读取接口 Bearer 白名单 |
-| `SIMREPO_API_KEY` | R | — | SimRepo 上游只读 key，只允许放后端 |
-| `SIMREPO_ENDPOINT` | O | 内置 SimRepo Qdrant recommend endpoint | 如上游 endpoint 变更再显式配置 |
-| `CACHE_TTL_SUCCESS_SECONDS` | O | `604800` | 成功结果进程内缓存 TTL |
-| `CACHE_TTL_EMPTY_SECONDS` | O | `21600` | 空结果缓存 TTL |
-| `CACHE_TTL_ERROR_SECONDS` | O | `600` | 错误缓存 TTL |
+| `MODEL_REGISTRY_DIR` | O | `./data/model-registry` | 必须持久化，推荐需要已激活的 ServingBundle |
+| `METRICS_STORE_FILE` | O | `./data/recommend-metrics.db` | 请求指标库，生产放在 `/data` |
+| `MODEL_PUBLISH_KEYS` | O | — | 模型发布专用 Key；不设置则关闭发布接口 |
+| `GITHUB_TOKENS` | O | — | 目录外公开项目元信息；聚合使用 `RECOMMEND_GITHUB_TOKENS` |
 
-> recommend-api 当前无 SQLite 和 Fly volume，`fly-backup-*` / `fly-restore-*` / `fly-wipe-data-*` 不包含它。
+> 生产推荐位于 `starcat-api` 聚合卷，卷快照包含模型 Registry 和 metrics；旧独立 App 的备份入口不能代替聚合卷备份。v1/v2 共用自研模型，不再配置第三方 Key 或页面 TTL。
 
 ---
 
@@ -309,7 +308,8 @@ fly secrets set -a starcat-wiki-api \
 # recommend
 fly secrets set -a starcat-recommend-api \
   API_KEYS='sk-starcat-...' \
-  SIMREPO_API_KEY='simrepo-readonly-key'
+  MODEL_REGISTRY_DIR='/data/recommend-model-registry' \
+  METRICS_STORE_FILE='/data/recommend-metrics.db'
 
 # discovery
 fly secrets set -a starcat-discovery-api \

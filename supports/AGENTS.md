@@ -60,7 +60,7 @@
 | `starcat-trending-api` | 5002 | SQLite(`trending.db`) | GitHub Trending 抓取、榜单 API | `starcat-trending-api` | `goquery` |
 | `starcat-weekly-api` | 5003 | SQLite(`weekly.db`) + git repo | 阮一峰周刊项目同步、API 补全 | `starcat-weekly-api` | `goldmark` |
 | `starcat-wiki-api` | 5004 | SQLite(`wiki.db`) | Wiki / 文档索引探测、SWR 缓存 | `starcat-wiki-api` | `golang.org/x/net/html` |
-| `starcat-recommend-api` | 5005 | 进程内缓存 | SimRepo 相似仓库推荐代理 | `starcat-recommend-api` | `github.com/joho/godotenv` |
+| `starcat-recommend-api` | 5005 | 持久化 ServingBundle Registry + SQLite metrics | 自研相似推荐；v1 临时适配、v2 主入口 | `starcat-api` 聚合 | `modernc.org/sqlite` |
 | `starcat-discovery-api` | 5006 | SQLite(`discovery.db`) | 探索发现、热门、新发布榜单 | `starcat-discovery-api` | `modernc.org/sqlite`、`robfig/cron` |
 | `starcat-collection-api` | 5011 | SQLite(`collection.db`) | 公开 Star 快照分块接收、激活与 Trainer 导出 | `starcat-app/starcat-collection-api`（私有） | `starcat-api-kit`、`modernc.org/sqlite` |
 | `starcat-api-kit` | — | — | 共享 auth / envelope / CORS / tokenpool | — | 被各 API 通过版本化 Go module 引用 |
@@ -309,7 +309,7 @@ R-01 起,各 API 服务**统一**使用 `github.com/joho/godotenv` 加载 `.env`
 | `API_KEYS` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | API 鉴权白名单（详见 §API 鉴权约定） |
 | `GITHUB_TOKENS` | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | GitHub PAT 池（多 token 轮换；sharing 用于公开仓库预览） |
 | `ADMIN_API_KEYS` | ❌ | ⚠️ 按需 | ⚠️ 按需 | ❌ | ❌ | ✅ | 管理接口鉴权白名单 |
-| `SIMREPO_API_KEY` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | recommend-api 访问 SimRepo 的服务端密钥 |
+| `MODEL_PUBLISH_KEYS` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | 独立于查询 Key 的模型发布凭据；不得传给客户端 |
 
 > 详细配置说明 + `.env.example` 模板见各 API 的 `docs/R-01-*-改造方案.md`。
 >
@@ -419,7 +419,7 @@ ghp_xxx****abcd
    - trending: `PORT`、`STORE_FILE`、`API_KEYS`、`GITHUB_TOKENS`
    - weekly: `PORT`、`STORE_FILE`、`REPO_DIR`、`API_KEYS`、`GITHUB_TOKENS`（**注意**：R-01 起 `GITHUB_TOKEN` 单值改为 `GITHUB_TOKENS` 多值池）
    - wiki: `PORT`、`STORE_FILE`、`API_KEYS`
-   - recommend: `PORT`、`API_KEYS`、`SIMREPO_API_KEY`、`SIMREPO_ENDPOINT`、缓存 TTL
+   - recommend: `PORT`、`API_KEYS`、`MODEL_REGISTRY_DIR`、`METRICS_STORE_FILE`，可选 `MODEL_PUBLISH_KEYS` / `GITHUB_TOKENS`；无活动 Bundle 不回退第三方
    - discovery: `PORT`、`STORE_FILE`、`API_KEYS`、`ADMIN_API_KEYS`、`GITHUB_TOKENS`、同步 cron、缓存 TTL
 5. **CI 矩阵版本必须 ≥ go.mod 的 go directive**:否则 CI 会用 `GOTOOLCHAIN=local` 拒绝构建
 6. **测试覆盖率**:weekly 有 parser 单测,sharing/trending 暂未覆盖 — 后续可补；R-01 起每个 API 必带 envelope / auth / ratelimit / tokenpool 单测
