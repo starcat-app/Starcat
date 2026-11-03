@@ -87,12 +87,6 @@ struct BusinessIcon: View {
 
         /// 全部条目均已资产化；保留布尔开关以便未来个别条目回落 SF Symbols。
         var isAsset: Bool { true }
-
-        /// 用于已只接受系统图标名的原生 API。资产调用方必须走 BusinessIcon。
-        var systemImage: String {
-            precondition(!isAsset, "Asset business icons must be rendered with BusinessIcon")
-            return rawValue
-        }
     }
 
     /// 通用控件仍可传 SF 名称，但资源与系统符号不能在渲染时混用。
@@ -106,9 +100,10 @@ struct BusinessIcon: View {
             return false
         }
 
-        /// 通用徽章和统计项也复用资源解析，不能把资产名称传给 SF Symbols API。
+        /// 通用徽章和统计项也复用资源解析；注册表已全量资产化，直接返回资产名。
+        /// 不再暴露 SF 字符串访问器，避免资产名经变量间接漏进 `Image(systemName:)`。
         static func business(_ symbol: Symbol) -> Source {
-            symbol.isAsset ? .asset(symbol.rawValue) : .system(symbol.systemImage)
+            .asset(symbol.rawValue)
         }
     }
 

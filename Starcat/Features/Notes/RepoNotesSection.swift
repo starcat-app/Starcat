@@ -257,8 +257,13 @@ struct RepoNotesSection: View {
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        Label("repo.privateNotes", systemImage: (hasNoteContent ? BusinessIcon.Symbol.notes : .addNote).systemImage)
-                            .font(.caption)
+                        // 笔记图标已 Lucide 资产化；有无内容分别用笔记/新建笔记图形，经 BusinessIcon 渲染。
+                        Label {
+                            Text("repo.privateNotes")
+                        } icon: {
+                            BusinessIcon(hasNoteContent ? .notes : .addNote, pointSize: 14)
+                        }
+                        .font(.caption)
                         if let edited = viewModel?.note?.editedAt {
                             Text(String(format: String.l10n("repo.lastEditedFormat"), formattedEditedAt(edited)))
                                 .font(.caption2)
