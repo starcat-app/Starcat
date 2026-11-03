@@ -47,8 +47,11 @@ struct DailyRadarEditionCalendarPicker: View {
                         .foregroundStyle(.secondary)
                     Text(verbatim: displayDate)
                         .font(scale.font(size: 12))
+                        .monospacedDigit()
                         .lineLimit(1)
                 }
+                // 两位月、日与等宽数字保证日期切换不伸缩，按钮只保留内容所需的宽度。
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 10)
                 .frame(height: 26)
                 .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
@@ -299,7 +302,7 @@ struct DailyRadarEditionCalendarPicker: View {
 
     private var displayDate: String {
         guard let date = selectedDate ?? latestDate else { return String.l10n("dailyRadar.featured") }
-        return DailyRadarDateFormatting.label(date, locale: locale)
+        return DailyRadarDateFormatting.compactLabel(date, locale: locale)
     }
 
     private var anchorDate: Date {

@@ -18,6 +18,25 @@ enum DailyRadarDateFormatting {
         return formatter.string(from: date)
     }
 
+    /// 筛选按钮统一使用两位月、日，配合等宽数字保持宽度稳定，不再为完整月份名留白。
+    static func compactLabel(_ businessDate: String, locale: Locale) -> String {
+        guard let date = date(fromBusinessDate: businessDate) else { return businessDate }
+        let calendar = calendar(for: locale)
+        if locale.language.languageCode?.identifier == "zh" {
+            let formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.timeZone = calendar.timeZone
+            formatter.locale = locale
+            formatter.dateFormat = "yyyy年MM月dd日"
+            return formatter.string(from: date)
+        }
+        let style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
+            .year(.defaultDigits)
+            .month(.twoDigits)
+            .day(.twoDigits)
+        return date.formatted(style)
+    }
+
     /// 日报日期是服务端业务字符串；解析失败时返回 nil，由调用方保留无效输入原样展示。
     static func date(fromBusinessDate businessDate: String) -> Date? {
         let parts = businessDate.split(separator: "-").compactMap { Int($0) }

@@ -209,20 +209,34 @@ struct DailyRadarPreviewWorkspace: View {
                                 isHistoryExpanded.toggle()
                             }
                         } label: {
-                            HStack {
-                                Text("dailyRadar.history")
-                                    .font(scale.font(size: 17, weight: .semibold))
-                                Spacer()
-                                Image(systemName: isHistoryExpanded ? "chevron.down" : "chevron.forward")
-                                    .font(scale.font(size: 12, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 20, height: 20)
-                                    .accessibilityHidden(true)
+                            // 让边界明确覆盖整行点击区；hover 状态留在局部表面，
+                            // 避免光标进出时连带刷新整个日报及历史列表。
+                            LocalHoverSurface(
+                                normalBackground: Color.primary.opacity(0.03),
+                                hoveredBackground: Color.primary.opacity(0.06),
+                                normalBorder: Color(nsColor: .separatorColor),
+                                hoveredBorder: Color.primary.opacity(0.22),
+                                cornerRadius: 8
+                            ) {
+                                HStack {
+                                    Text("dailyRadar.history")
+                                        .font(scale.font(size: 17, weight: .semibold))
+                                    Spacer()
+                                    Image(systemName: isHistoryExpanded ? "chevron.down" : "chevron.forward")
+                                        .font(scale.font(size: 12, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20, height: 20)
+                                        .accessibilityHidden(true)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .contentShape(Rectangle())
                             }
-                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
+                        .pointerStyle(.link)
                         .accessibilityValue(Text(isHistoryExpanded
                                                  ? "settings.general.disclosure.expanded"
                                                  : "settings.general.disclosure.collapsed"))
