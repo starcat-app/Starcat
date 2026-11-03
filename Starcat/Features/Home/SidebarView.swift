@@ -88,6 +88,8 @@ struct SidebarView: View {
     @State private var exploreTopicsExpanded: Bool = true
     /// Explore 发现模块平台分类展开/收起状态。
     @State private var explorePlatformsExpanded: Bool = true
+    /// 每日热点子分类展开/收起状态；「全部主题」行常驻，仅子分类折叠（2026-11-04 对齐其他分组）。
+    @State private var dailyRadarCategoriesExpanded: Bool = true
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
     @State private var activityCategoriesExpanded: Bool = true
     @Binding var selectedPage: SidebarRootPage
@@ -1058,12 +1060,45 @@ struct SidebarView: View {
     private var dailyRadarSidebarContent: some View {
         Section {
             dailyRadarCategoryRow(nil)
-            ForEach(visibleDailyRadarCategories) { category in
-                dailyRadarCategoryRow(category)
+            if dailyRadarCategoriesExpanded {
+                ForEach(visibleDailyRadarCategories) { category in
+                    dailyRadarCategoryRow(category)
+                        .transition(Self.disclosureRowTransition)
+                }
             }
         } header: {
-            Text("explore.sidebar.categories")
+            dailyRadarCategorySectionHeader
         }
+    }
+
+    /// 与主题/平台/语言分组同一套折叠头：整行可点、右侧计数 + chevron（遵循折叠展开规范）。
+    private var dailyRadarCategorySectionHeader: some View {
+        Button {
+            withAnimation(disclosureAnimation) {
+                dailyRadarCategoriesExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text("explore.sidebar.categories")
+                    .font(interfaceScale.font(.body))
+
+                Spacer(minLength: 8)
+
+                Text(dailyRadarModel.availableCategories.count.formatted())
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+
+                disclosureChevron(isExpanded: dailyRadarCategoriesExpanded)
+                    .frame(width: 20, height: 20)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(disclosureHelp(isExpanded: dailyRadarCategoriesExpanded))
     }
 
     /// 二级目录与设置页共用同一隐藏集合；后端新增分类默认进入列表。
@@ -2123,8 +2158,31 @@ struct SidebarView: View {
     }
 
     private func exploreTopicIconColor(for code: String?) -> Color {
-        // 已知分类使用中性色突出图标语义；未知动态分类继续用蓝点提示它来自后端扩展。
-        exploreTopicLocalizationKey(code ?? "") == nil && code != nil ? .accentColor.opacity(0.7) : .secondary
+        // 与活动分类、日报分类同一套系统调色板语义色（2026-11-04 决议：
+        // 发现子分类此前全灰，与其他带色子分组不一致）；未知动态分类继续用蓝点提示后端扩展。
+        switch code {
+        case nil: return .secondary
+        case "ai": return .purple
+        case "privacy": return .blue
+        case "networking": return .cyan
+        case "media": return .pink
+        case "social": return .orange
+        case "reading": return .brown
+        case "tools": return .teal
+        default: return .accentColor.opacity(0.7)
+        }
+    }
+
+    /// 平台来自后端、数量可增长，没有固定语义可逐个指定；
+    /// 按 code 稳定取色板颜色，保证同一平台跨重启颜色不变、不同平台多数可区分。
+    private func explorePlatformIconColor(for code: String?) -> Color {
+        guard let code else { return .secondary }
+        let palette: [Color] = [.blue, .purple, .teal, .orange, .pink, .brown, .cyan, .green]
+        var hash = 5381
+        for scalar in code.unicodeScalars {
+            hash = (hash << 5) &+ hash &+ Int(scalar.value)   // djb2：简单稳定，无需加密
+        }
+        return palette[abs(hash) % palette.count]
     }
 
     private func explorePlatformRow(_ platform: DiscoveryPlatformDTO?) -> some View {
@@ -2135,7 +2193,7 @@ struct SidebarView: View {
         ) {
             exploreDiscoverySidebarIcon(
                 platform?.systemName ?? "square.stack.3d.up",
-                color: .secondary
+                color: explorePlatformIconColor(for: code)
             )
         } title: {
             if let platform {
