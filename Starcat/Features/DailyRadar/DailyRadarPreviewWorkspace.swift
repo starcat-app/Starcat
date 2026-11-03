@@ -56,6 +56,8 @@ struct DailyRadarPreviewWorkspace: View {
                 if let story {
                     DailyRadarPreviewReader(
                         story: story, detail: model.detail,
+                        workspaceTitle: model.workspaceTitle,
+                        workspaceCategory: model.category,
                         availableWidth: geometry.size.width,
                         failed: model.detailFailed,
                         projectStore: projectStore,
@@ -137,7 +139,11 @@ struct DailyRadarPreviewWorkspace: View {
     private func home(width: CGFloat) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Label("dailyRadar.title", systemImage: "newspaper")
+                Label {
+                    Text(verbatim: model.workspaceTitle)
+                } icon: {
+                    DailyRadarCategoryIcon(categoryID: model.category, size: 17 * scale.multiplier)
+                }
                     .font(scale.font(size: 17, weight: .semibold))
                     .lineLimit(1)
                 Spacer(minLength: 8)

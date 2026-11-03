@@ -235,6 +235,32 @@ struct DailyRadarClientTests {
         #expect(Set(model.items.map(\.id)).count == model.items.count)
     }
 
+    @Test @MainActor func workspaceTitleFollowsCategoryAndReturnsToOverview() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        #expect(model.workspaceTitle == String.l10n("dailyRadar.title"))
+
+        // 无需等待分类首屏请求完成，标题就应与侧栏当前选择一致。
+        model.selectCategory("ai-cli")
+        #expect(model.workspaceTitle == DailyRadarCatalog.Category.localizedTitle(for: "ai-cli"))
+        await model.reload()
+        let category = try #require(model.availableCategories.first(where: { $0.id == "ai-cli" }))
+        #expect(model.workspaceTitle == category.localizedTitle)
+
+        model.selectCategory(nil)
+        #expect(model.workspaceTitle == String.l10n("dailyRadar.title"))
+    }
+
+    @Test @MainActor func workspaceTitleKeepsUnknownCategoryReadableBeforeCatalogArrives() {
+        let model = DailyRadarWorkspaceViewModel()
+        model.selectCategory("future-category")
+        #expect(model.workspaceTitle == "future-category")
+        model.selectCategory("ai-community")
+        #expect(model.workspaceTitle == DailyRadarCatalog.Category.localizedTitle(for: "ai-community"))
+    }
+
     @Test @MainActor func sidebarCountsFollowCatalogAndSelectCategoryClosesDetail() async throws {
         let fixture = DailyRadarFixture()
         defer { fixture.clean() }

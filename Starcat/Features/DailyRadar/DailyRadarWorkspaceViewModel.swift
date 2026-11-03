@@ -50,6 +50,12 @@ final class DailyRadarWorkspaceViewModel {
         return items.filter { $0.editionDate < edition }
     }
     var availableCategories: [DailyRadarCatalog.Category] { catalog?.categories ?? [] }
+    /// 标题与侧栏共用分类本地化；目录尚未返回时也立即跟随当前选择，不显示旧分类名。
+    var workspaceTitle: String {
+        guard let category else { return String.l10n("dailyRadar.title") }
+        return availableCategories.first(where: { $0.id == category })?.localizedTitle
+            ?? DailyRadarCatalog.Category.localizedTitle(for: category)
+    }
     /// 侧边栏计数徽标数据源：catalog 未加载或旧后端无计数字段时为空，徽标隐藏。
     var categoryCounts: [String: Int] { catalog?.categoryCounts ?? [:] }
     var totalCount: Int? { catalog?.totalCount }

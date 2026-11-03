@@ -13,6 +13,9 @@ import AppKit
 struct DailyRadarPreviewReader: View {
     let story: DailyRadarReport
     let detail: DailyRadarReport?
+    /// 保持用户进入时的分类上下文，不因打开报告而回到固定的总览标题。
+    let workspaceTitle: String
+    let workspaceCategory: String?
     let availableWidth: CGFloat
     let failed: Bool
     let projectStore: DailyRadarProjectStore
@@ -26,7 +29,11 @@ struct DailyRadarPreviewReader: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Label("dailyRadar.title", systemImage: "newspaper")
+                Label {
+                    Text(verbatim: workspaceTitle)
+                } icon: {
+                    DailyRadarCategoryIcon(categoryID: workspaceCategory, size: 13 * scale.multiplier)
+                }
                     .font(scale.font(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer(minLength: 8)
