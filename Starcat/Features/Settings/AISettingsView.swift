@@ -69,6 +69,13 @@ struct AISettingsTab: View {
 
     @State private var apiKeys: [String: String] = [:]
     @State private var isTestingProfileID: String?
+    /// 即时状态与历史验证分开，断线时保留菜单和任务绑定；旧请求由 revision 隔离。
+    @State private var providerAvailability = SettingsConnectionTest<AIProviderConnectionVerifier.Result>()
+    @State private var providerConnectionTest = AIProviderConnectionTest()
+    @State private var testedAvailabilityRequest: AIClientConfiguration?
+    @State private var hasLoadedAPIKeys = false
+    @State private var availabilityRetryID = UUID()
+    @State private var forceAvailabilityTest = false
     /// 新增和编辑复用同一草稿弹窗；父窗口关闭时同步取消，防止迟到请求写回。
     @State private var providerSetupSession: AIProviderSetupViewModel?
     /// 编辑入口捕获当前任务，弹窗始终写回该任务，不与另一个分段选择器争用状态。
@@ -214,6 +221,27 @@ struct AISettingsTab: View {
             guard page == .models else { return }
             ensureSelection()
             loadAPIKeys()
+            hasLoadedAPIKeys = true
+        }
+        .task(id: availabilityTaskID) {
+            // 等待密钥加载完成再发请求，避免把未加载的凭据误报成认证失败。
+            guard !Task.isCancelled else { return }
+            providerAvailability.invalidate()
+            let request = availabilityRequest
+            testedAvailabilityRequest = request
+            let force = forceAvailabilityTest
+            forceAvailabilityTest = false
+            guard let request, !TestEnvironment.isRunning else { return }
+            await providerAvailability.run {
+                // SwiftUI 取消切换前的等待任务，但网络请求由会话持有，切换回来可复用。
+                try await providerConnectionTest.check(request, force: force)
+            }
+        }
+        .onDisappear {
+            providerAvailability.invalidate()
+            providerConnectionTest.cancelAll()
+            testedAvailabilityRequest = nil
+            hasLoadedAPIKeys = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .starcatJumpToAIEmbeddingSection)) { _ in
             guard page == .models else { return }
@@ -242,6 +270,10 @@ struct AISettingsTab: View {
         .background(SettingsWindowCloseListener {
             providerSetupSession?.cancel()
             providerSetupSession = nil
+            providerAvailability.invalidate()
+            providerConnectionTest.cancelAll()
+            testedAvailabilityRequest = nil
+            hasLoadedAPIKeys = false
         })
         // HOM-AIPROVIDERS-DELETE-CONFIRM-2026-06-12 (dong4j 反馈)：
         // 删除服务商二次确认。用 `presenting:` 把 profile 注入到 alert 闭包，
@@ -424,6 +456,8 @@ struct AISettingsTab: View {
         }
         apiKeys[profile.id] = apiKey
         setSelectedProfileID(profile.id)
+        // 同输入重测成功时配置身份不变，也要让状态行读取刚完成的检测结果。
+        availabilityRetryID = UUID()
         repairTasksAfterProfileChange()
     }
 
@@ -434,7 +468,7 @@ struct AISettingsTab: View {
             editingProfile: profile,
             existingAPIKey: apiKeys[profile.id, default: ""],
             verify: { draft, apiKey in
-                try await AIProviderConnectionVerifier.verify(
+                try await providerConnectionTest.verify(
                     profile: draft,
                     apiKey: apiKey,
                     referencedModelNames: referencedModelNames(for: draft.id)
@@ -485,29 +519,33 @@ struct AISettingsTab: View {
                 }
 
                 AddIconButton(help: Text("settings.ai.provider.addHelp")) {
-                    providerSetupSession = AIProviderSetupViewModel()
+                    providerSetupSession = AIProviderSetupViewModel(verify: { draft, apiKey in
+                        try await providerConnectionTest.verify(profile: draft, apiKey: apiKey)
+                    })
                 }
                 .disabled(isTestingProfileID != nil || providerSetupSession != nil)
             }
 
-            HStack(spacing: 8) {
-                if let profile = selectedProfile {
-                    // 数量读取当前目录，不能沿用上次测试的快照；未就绪的本地 AI 不标为已验证。
-                    let verified = profile.isVerifiedConfiguration
-                    let summary = String(
-                        format: String.l10n(verified
-                            ? "settings.ai.provider.models.verifiedCountFormat"
-                            : "settings.ai.provider.models.countFormat"),
-                        profile.models.count.formatted(.number.locale(locale))
-                    )
-                    Label(summary, systemImage: verified ? "checkmark.circle" : "square.stack.3d.up")
-                        .font(.caption)
-                        .foregroundStyle(verified ? Color.green : Color.secondary)
-                        .lineLimit(1)
-                        .help(summary)
+            HStack(alignment: .center, spacing: 8) {
+                if selectedProfile != nil {
+                    providerAvailabilityStatus
                 }
 
                 Spacer(minLength: 8)
+
+                SyncIconButton(
+                    isRefreshing: isAvailabilityTesting,
+                    disabled: selectedProfile == nil || isAvailabilityTesting || isTestingProfileID != nil,
+                    // 环形箭头视觉偏大，较标准图标缩小 1pt；命中区仍与相邻按钮一致。
+                    font: .system(size: SettingsIconMetrics.standardGlyphSize - 1, weight: .medium),
+                    frameSize: SettingsIconMetrics.actionFrameSize,
+                    tooltip: String.l10n("settings.ai.provider.testButton")
+                ) {
+                    providerAvailability.invalidate()
+                    testedAvailabilityRequest = nil
+                    forceAvailabilityTest = true
+                    availabilityRetryID = UUID()
+                }
 
                 ImportIconButton(
                     help: Text("settings.ai.provider.importCCSwitch.help"),
@@ -539,6 +577,68 @@ struct AISettingsTab: View {
                 systemImage: "server.rack"
             )
         }
+    }
+
+    /// 配置一变就不显示旧结果，避免 SwiftUI 新任务尚未启动时短暂沿用上个服务商的绿标。
+    private var isAvailabilityTesting: Bool {
+        availabilityRequest != nil
+            && (testedAvailabilityRequest != availabilityRequest || providerAvailability.isTesting)
+    }
+
+    @ViewBuilder
+    private var providerAvailabilityStatus: some View {
+        let isCurrent = testedAvailabilityRequest == availabilityRequest
+        let error = isCurrent ? providerAvailability.errorMessage : nil
+        let result = isCurrent ? providerAvailability.result : nil
+        let summary = if isAvailabilityTesting {
+            String.l10n("settings.ai.provider.setup.testing")
+        } else if let error {
+            error
+        } else if let result {
+            result.models.isEmpty
+                ? String.l10n("settings.ai.provider.availability.noModels")
+                : String(
+                    format: String.l10n("settings.ai.provider.availability.successFormat"),
+                    result.models.count.formatted(.number.locale(locale))
+                )
+        } else {
+            String.l10n("ai.connectionTest.notTested")
+        }
+        let appearance: (symbol: String, color: Color) = if isAvailabilityTesting {
+            ("network", .accentColor)
+        } else if error != nil {
+            ("exclamationmark.circle", .red)
+        } else if let result {
+            result.models.isEmpty
+                ? ("exclamationmark.triangle", .orange)
+                : ("checkmark.circle", .green)
+        } else {
+            ("questionmark.circle", .secondary)
+        }
+        Label(summary, systemImage: appearance.symbol)
+            .font(.caption)
+            .foregroundStyle(appearance.color)
+            // 不为单行提示预留第二行，避免文字上移；长错误按需换行并与操作区整体居中。
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .help(summary)
+    }
+
+    /// 页面生命周期与请求输入共同触发测试；手动重试只改变 nonce，不重写配置。
+    private struct AvailabilityTaskID: Equatable {
+        let request: AIClientConfiguration?
+        let retryID: UUID
+    }
+
+    private var availabilityRequest: AIClientConfiguration? {
+        guard page == .models, hasLoadedAPIKeys, let profile = selectedProfile else { return nil }
+        return AIProviderConnectionVerifier.configuration(
+            profile: profile, apiKey: apiKeys[profile.id] ?? ""
+        )
+    }
+
+    private var availabilityTaskID: AvailabilityTaskID {
+        AvailabilityTaskID(request: availabilityRequest, retryID: availabilityRetryID)
     }
 
     /// 高级配置常驻显示；模型列表仍在当前服务商的管理弹窗中编辑。
@@ -1677,11 +1777,12 @@ struct AISettingsTab: View {
 
         let testingKey = apiKey(for: profile)
         do {
-            let verified = try await AIProviderConnectionVerifier.verify(
+            let verified = try await providerConnectionTest.verify(
                 profile: profile,
                 apiKey: testingKey,
                 referencedModelNames: referencedModelNames(for: profile.id)
             )
+            try Task.checkCancellation()
 
             try persistAPIKey(testingKey, forProvider: profile.id, allowsEmpty: profile.provider.allowsEmptyAPIKey)
 
@@ -1691,6 +1792,8 @@ struct AISettingsTab: View {
             apiKeys[profile.id] = testingKey
             repairTasksAfterProfileChange()
         } catch {
+            // 退场取消不属于连接失败，不能在页面关闭后写入失败记录。
+            guard !Task.isCancelled, !(error is CancellationError) else { return }
             updateProfile(profile.id) { current in
                 current.lastTestedAt = ISO8601DateFormatter.shared.string(from: Date())
                 current.lastTestStatus = .failed(error.localizedDescription)
