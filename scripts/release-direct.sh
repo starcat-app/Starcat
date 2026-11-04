@@ -460,9 +460,9 @@ merge_appcast() {
     --incoming "$CURRENT_APPCAST_PATH" \
     --output "$APPCAST_PATH"
 
-  # 开发版用户也必须接收后续正式版。正式 item 会按营销版本替换同版本的
-  # 开发 item，但正式 appcast 永远不会反向合入开发版条目。
-  log "同步正式版本到开发版 appcast: ${VERSION}"
+  # Beta 版用户也必须接收后续正式版。正式 item 会按营销版本替换同版本的
+  # Beta item，但正式 appcast 永远不会反向合入 Beta 版条目。
+  log "同步正式版本到 Beta 版 appcast: ${VERSION}"
   python3 "${SCRIPT_DIR}/merge-appcast.py" \
     --base "$DEVELOPMENT_APPCAST_PATH" \
     --incoming "$CURRENT_APPCAST_PATH" \

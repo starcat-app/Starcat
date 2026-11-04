@@ -13,11 +13,12 @@ import Sparkle
 
 /// Direct 版可选的更新源。
 ///
-/// 正式版与开发版使用不同 appcast，避免旧客户端、官网和 Homebrew 把预览构建
-/// 误判为正式最新版。开发版 appcast 同时包含正式版条目，因此选择开发版的用户
+/// 正式版与 Beta 版使用不同 appcast，避免旧客户端、官网和 Homebrew 把 Beta 构建
+/// 误判为正式最新版。Beta appcast 同时包含正式版条目，因此选择 Beta 版的用户
 /// 仍能在正式版构建号更新时回到稳定版本。
 enum DirectUpdateChannel: String, CaseIterable, Identifiable {
     case stable
+    /// 持久化值和订阅地址保留 development，确保既有 Beta 用户升级后继续接收更新。
     case development
 
     static let preferenceKey = "directUpdateChannel"
@@ -108,7 +109,7 @@ final class DirectUpdateController {
 
     /// 保存更新通道，并立即用新 feed 执行一次用户主动检查。
     ///
-    /// Sparkle 只会安装构建号更高的版本，因此从开发版切回正式版不会触发降级；
+    /// Sparkle 只会安装构建号更高的版本，因此从 Beta 版切回正式版不会触发降级；
     /// 用户会等到后续构建号更高的正式版再更新。
     func selectUpdateChannel(_ channel: DirectUpdateChannel) {
         guard isDirectBuild else { return }

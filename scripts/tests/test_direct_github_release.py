@@ -32,6 +32,7 @@ class FakeGitHub:
         self.prerelease = False
         self.assets = {}
         self.events = []
+        self.commands = []
         self.fail_upload = None
         self.api_error = None
 
@@ -50,6 +51,7 @@ class FakeGitHub:
             return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
         assert "--repo" in args and args[args.index("--repo") + 1] == release.REPOSITORY
         assert "--clobber" not in args
+        self.commands.append(args)
         action = args[1]
         self.events.append(action)
         if action == "create":
@@ -101,13 +103,13 @@ class DirectReleaseTests(unittest.TestCase):
         self.assertEqual(self.github.events, ["create", "upload", "download", "upload", "download", "edit"])
         self.assertFalse(self.github.draft)
 
-    def test_development_release_is_published_as_prerelease(self):
+    def test_beta_release_is_published_as_prerelease_without_becoming_latest(self):
         self.changelog.write_text(
-            "## 9.9.9-待发布\n\n### New\n\n- Preview: Development feature.\n"
+            "## 9.9.9-待发布\n\n### New\n\n- Beta: Early access feature.\n"
         )
 
         release.publish(
-            "9.9.9-dev.1",
+            "9.9.9-beta.1",
             self.dmg,
             self.sha,
             self.changelog,
@@ -117,7 +119,26 @@ class DirectReleaseTests(unittest.TestCase):
 
         self.assertFalse(self.github.draft)
         self.assertTrue(self.github.prerelease)
-        self.assertNotIn("--latest", self.github.events)
+        create_command = self.github.commands[0]
+        self.assertEqual(create_command[2], "v9.9.9-beta.1")
+        self.assertEqual(create_command[create_command.index("--title") + 1], "Starcat 9.9.9 Beta 1")
+        self.assertTrue(all("--latest" not in command for command in self.github.commands))
+
+    def test_invalid_beta_versions_stop_before_remote_actions(self):
+        """新发布只接受正整数 Beta 序号，历史 dev tag 不再作为新版本输入。"""
+        for version in ("9.9.9", "9.9.9-dev.1", "9.9.9-beta.0", "9.9.9-beta.01", "9.9.9-beta.1-extra"):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "X.Y.Z-beta.N"):
+                release.publish(version, self.dmg, self.sha, self.changelog, prerelease=True)
+        self.assertEqual(self.github.events, [])
+
+    def test_beta_rejects_artifacts_from_a_different_marketing_version(self):
+        """防止新 Beta tag 误挂另一营销版本的安装包与更新说明。"""
+        with self.assertRaisesRegex(ValueError, "必须与发布版本"):
+            release.publish(
+                "9.9.9-beta.1", self.dmg, self.sha, self.changelog,
+                prerelease=True, marketing_version="9.9.8",
+            )
+        self.assertEqual(self.github.events, [])
 
     def test_upload_failure_keeps_draft_and_retry_only_fills_missing_asset(self):
         self.github.fail_upload = self.sha.name
@@ -225,19 +246,31 @@ run_or_print() { printf '%s\\n' "$*"; }
         self.assertNotIn(".dmg", result.stdout)
         self.assertNotIn(".sha256", result.stdout)
 
-    def test_development_release_help_and_version_gate_do_not_publish(self):
+    def test_beta_release_help_and_version_gate_do_not_publish(self):
         script = ROOT / "scripts/release-direct-development.sh"
         help_result = subprocess.run(
             ["bash", str(script), "--help"], text=True, capture_output=True
         )
         invalid_result = subprocess.run(
-            ["bash", str(script), "9.9.9-beta.1"], text=True, capture_output=True
+            ["bash", str(script), "9.9.9-dev.1"], text=True, capture_output=True
         )
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
-        self.assertIn("X.Y.Z-dev.N", help_result.stdout)
+        self.assertIn("X.Y.Z-beta.N", help_result.stdout)
         self.assertNotEqual(invalid_result.returncode, 0)
-        self.assertIn("X.Y.Z-dev.N", invalid_result.stderr)
+        self.assertIn("X.Y.Z-beta.N", invalid_result.stderr)
+
+    def test_beta_version_gate_extracts_marketing_version_without_running_pipeline(self):
+        """只执行参数解析段，验证 Beta 输入不会触发打包、tag 或网络。"""
+        source = (ROOT / "scripts/release-direct-development.sh").read_text()
+        parameter_gate = source.split("\nSCRIPT_DIR=", 1)[0]
+        result = subprocess.run(
+            ["bash", "-c", parameter_gate + '\nprintf "%s" "$MARKETING_VERSION"',
+             "beta-version-gate", "9.9.9-beta.2"],
+            text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "9.9.9")
 
     def test_reuse_does_not_rebuild_or_staple(self):
         probe = '''set -eu

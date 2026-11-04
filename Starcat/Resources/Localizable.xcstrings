@@ -566479,6 +566479,50 @@
         }
       }
     },
+    "settings.pro.direct.updates.includeBeta" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta-Updates einschließen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Include Beta updates" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Incluir actualizaciones Beta" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Inclure les mises à jour Beta" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sertakan pembaruan Beta" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Includi aggiornamenti Beta" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta 版のアップデートを受け取る" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta 업데이트 포함" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta-updates ontvangen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Uwzględniaj aktualizacje Beta" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Incluir atualizações Beta" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Получать обновления Beta" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta güncellemelerini al" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Отримувати оновлення Beta" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Nhận bản cập nhật Beta" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "包含 Beta 版更新" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "包含 Beta 版更新" } }
+      }
+    },
+    "settings.pro.direct.updates.includeBeta.help" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta-Versionen können unfertige oder instabile Funktionen enthalten. Das Deaktivieren installiert keine ältere Version." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Beta versions may include unfinished or unstable features. Turning this off will not downgrade the installed version." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Las versiones Beta pueden incluir funciones incompletas o inestables. Desactivar esta opción no instalará una versión anterior." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Les versions Beta peuvent contenir des fonctionnalités inachevées ou instables. Désactiver cette option ne réinstallera pas une version antérieure." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Versi Beta mungkin menyertakan fitur yang belum selesai atau tidak stabil. Menonaktifkan opsi ini tidak akan menurunkan versi yang terpasang." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Le versioni Beta possono includere funzionalità incomplete o instabili. Disattivare questa opzione non installerà una versione precedente." } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta 版には未完成または不安定な機能が含まれる場合があります。オフにしても、インストール済みのバージョンはダウングレードされません。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta 버전에는 미완성 또는 불안정한 기능이 포함될 수 있습니다. 이 옵션을 꺼도 설치된 버전은 다운그레이드되지 않습니다." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta-versies kunnen onvoltooide of instabiele functies bevatten. Uitschakelen installeert geen oudere versie." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wersje Beta mogą zawierać niedokończone lub niestabilne funkcje. Wyłączenie tej opcji nie przywróci starszej wersji aplikacji." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "As versões Beta podem incluir recursos incompletos ou instáveis. Desativar esta opção não instalará uma versão anterior." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Версии Beta могут содержать незавершённые или нестабильные функции. Отключение этой настройки не приведёт к установке более ранней версии." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta sürümleri tamamlanmamış veya kararsız özellikler içerebilir. Bu seçeneği kapatmak yüklü sürümü eski bir sürüme döndürmez." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Версії Beta можуть містити незавершені або нестабільні функції. Вимкнення цієї опції не поверне встановлену програму до попередньої версії." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Phiên bản Beta có thể chứa các tính năng chưa hoàn thiện hoặc chưa ổn định. Tắt tùy chọn này sẽ không hạ cấp phiên bản đã cài đặt." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta 版可能包含未完成或不稳定的功能；关闭后不会降级已安装的版本。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "Beta 版可能包含尚未完成或不穩定的功能；關閉後不會降級已安裝的版本。" } }
+      }
+    },
     "settings.pro.direct.updates.includePreview" : {
       "localizations" : {
         "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vorschau-Updates einschließen" } },

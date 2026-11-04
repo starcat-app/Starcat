@@ -18,9 +18,9 @@
 #   STARCAT_GENERATE_APPCAST=1         使用 Sparkle generate_appcast 生成当前版本 appcast。
 #   STARCAT_DOWNLOAD_BASE_URL          appcast 下载前缀，默认 GitHub Release 的 v<version>/ 目录。
 #                                     生成后会从 CHANGELOG 注入 Sparkle 更新说明（description）。
-#   STARCAT_DIRECT_DIST_DIR            覆盖产物目录；开发版发布用独立目录避免覆盖正式产物。
+#   STARCAT_DIRECT_DIST_DIR            覆盖产物目录；Beta 版发布用独立目录避免覆盖正式产物。
 #   STARCAT_DIRECT_ALLOW_PENDING_CHANGELOG=1
-#                                     允许开发版读取 `X.Y.Z-待发布` Changelog；正式发布禁止设置。
+#                                     允许 Beta 版读取 `X.Y.Z-待发布` Changelog；正式发布禁止设置。
 #   STARCAT_DMG_TOOL=create-dmg|hdiutil
 #                                     默认 create-dmg；仅显式设置 hdiutil 时生成裸 DMG。
 #   STARCAT_DMG_APPLESCRIPT_TIMEOUT_SECONDS

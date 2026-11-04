@@ -50,7 +50,7 @@ def file_sha256(path: Path) -> str:
 
 
 def release_notes(changelog: Path, version: str, *, allow_pending: bool = False) -> str:
-    """正式 Release 拒绝待发布标题；开发版 prerelease 可以复用待发布说明。"""
+    """正式 Release 拒绝待发布标题；Beta prerelease 可以复用待发布说明。"""
     heading_suffix = r"(?:-待发布)?" if allow_pending else ""
     match = re.search(
         rf"^## {re.escape(version)}{heading_suffix}\s*\n(.*?)(?=^## |\Z)",
@@ -72,12 +72,16 @@ def publish(
     marketing_version: str | None = None,
 ) -> None:
     """上传草稿、回读实际附件并校验摘要，再按指定发布类型公开。"""
-    expected_pattern = r"\d+\.\d+\.\d+(?:-dev\.\d+)?" if prerelease else r"\d+\.\d+\.\d+"
+    expected_pattern = r"\d+\.\d+\.\d+-beta\.[1-9]\d*" if prerelease else r"\d+\.\d+\.\d+"
     if not re.fullmatch(expected_pattern, version):
-        raise ValueError("正式版本必须是 X.Y.Z；开发版本必须是 X.Y.Z-dev.N")
-    marketing_version = marketing_version or version
+        raise ValueError("正式版本必须是 X.Y.Z；Beta 版本必须是 X.Y.Z-beta.N")
+    # tag 使用 Beta 序号，App 与附件仍使用合法的营销版本；两者必须指向同一版本。
+    base_version = version.split("-beta.", 1)[0]
+    marketing_version = marketing_version or base_version
     if not re.fullmatch(r"\d+\.\d+\.\d+", marketing_version):
         raise ValueError("App 营销版本必须是 X.Y.Z")
+    if marketing_version != base_version:
+        raise ValueError("App 营销版本必须与发布版本的 X.Y.Z 一致")
     if dmg.name != f"Starcat-{marketing_version}-arm64.dmg" or checksum.name != dmg.name + ".sha256":
         raise ValueError("DMG/SHA256 文件名必须与目标版本一致")
     digest = file_sha256(dmg)
@@ -98,7 +102,8 @@ def publish(
             notes_path.write_text(notes, encoding="utf-8")
             create_args = [
                 "release", "create", tag, "--repo", REPOSITORY,
-                "--draft", "--verify-tag", "--title", f"Starcat {version}",
+                "--draft", "--verify-tag", "--title",
+                f"Starcat {marketing_version} Beta {version.rsplit('.', 1)[1]}" if prerelease else f"Starcat {version}",
                 "--notes-file", str(notes_path),
             ]
             if prerelease:

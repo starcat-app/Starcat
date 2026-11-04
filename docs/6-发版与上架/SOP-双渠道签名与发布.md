@@ -226,33 +226,35 @@ STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_NOTARY_SUBMISSION_ID=<subm
 6. 生成并部署官网 changelog、静态页和 nginx，确认下载可用后上传 appcast。
 7. 校验官网 appcast、GitHub DMG 和 changelog。
 
-### 5.3 Direct 开发版更新通道
+### 5.3 Direct Beta 版更新通道
 
-Direct 用户可在「设置 → 通用 → 更新」选择正式版或开发版。新安装和没有历史偏好的
-用户固定默认为正式版：
+Direct 预发布统一称为 **Beta 版**，中文界面也使用此名称。用户在「设置 → 通用 → 更新」
+打开「包含 Beta 版更新」即可接收 Beta 版及后续正式版；该开关默认关闭。
 
 | 通道 | Appcast | 发布类型 | 接收范围 |
 |------|---------|----------|----------|
 | 正式版 | `https://starcat.ink/appcast.xml` | GitHub Release | 仅正式版 |
-| 开发版 | `https://starcat.ink/appcast-development.xml` | GitHub prerelease | 开发版及后续正式版 |
+| Beta 版 | `https://starcat.ink/appcast-development.xml` | GitHub prerelease | Beta 版及后续正式版 |
 
 两个通道共用 Direct Bundle ID、Developer ID 签名、公证和 Sparkle EdDSA 信任链，不是
 Debug 包。Sparkle 继续按数值型 `CFBundleVersion` 判断新旧：切回正式版不会降级当前
 安装版本，而是等待构建号更高的正式版。
 
-开发版版本号固定为 `X.Y.Z-dev.N`，其中 App 内
-`CFBundleShortVersionString` 仍为合法的 `X.Y.Z`，`dev.N` 用于 tag、GitHub prerelease
-和发布记录。执行入口：
+新发布版本号固定为 `X.Y.Z-beta.N`（N 为从 1 开始、无前导零的正整数），其中 App 内
+`CFBundleShortVersionString` 仍为合法的 `X.Y.Z`，`beta.N` 用于 tag 和发布记录，
+GitHub 标题显示为 `Starcat X.Y.Z Beta N`。历史 `v1.9.2-dev.1` tag 与产物保持原状。
+脚本名、环境变量、`development` 偏好值与 appcast 地址保留既有标识，确保已有订阅连续。
+执行入口：
 
 ```bash
-STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh 2.0.0-dev.1
+STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh 1.9.3-beta.1
 # 或
-make release-direct-development VERSION=2.0.0-dev.1
+make release-direct-development VERSION=1.9.3-beta.1
 ```
 
 该脚本默认要求 `dev` 分支和干净工作区，产物放在 `dist/direct-development/`，并且只会：
 
-1. 创建并推送 `vX.Y.Z-dev.N` tag。
+1. 创建并推送 `vX.Y.Z-beta.N` tag。
 2. 生成 Developer ID 签名、公证并 staple 的 Release DMG。
 3. 创建 GitHub prerelease，上传并回读校验 DMG/SHA256。
 4. 合并并发布 `appcast-development.xml`。
@@ -263,11 +265,11 @@ make release-direct-development VERSION=2.0.0-dev.1
 ```bash
 STARCAT_DEVELOPMENT_RELEASE_SKIP_TAG=1 \
 STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS=1 \
-./scripts/release-direct-development.sh 2.0.0-dev.1
+./scripts/release-direct-development.sh 1.9.3-beta.1
 ```
 
-正式版发布仍执行原命令。正式 item 会同时合入开发版 appcast，按相同营销版本替换对应
-开发 item，保证开发版用户能回到后续正式版；开发 item 永远不会反向进入正式 appcast。
+正式版发布仍执行原命令。正式 item 会同时合入 Beta appcast，按相同营销版本替换对应
+Beta item，保证 Beta 版用户能回到后续正式版；Beta item 永远不会反向进入正式 appcast。
 
 ### 5.4 GitHub Release 与 appcast 发布
 
@@ -281,7 +283,7 @@ SHA256；全部一致才公开 Release。官网 appcast 在附件公开并可下
 
 DMG/SHA256 不再上传阿里云。正式 appcast 仍发布到
 `https://starcat.ink/appcast.xml`，官网和默认客户端继续使用这个更新入口；正式发布还会
-同步 `https://starcat.ink/appcast-development.xml`，但不会向其中写入任何开发版内容。
+同步 `https://starcat.ink/appcast-development.xml`，但不会向其中写入任何 Beta 版内容。
 
 上传或官网发布失败后，保留最终 DMG、SHA256、`appcast-current.xml`，使用：
 

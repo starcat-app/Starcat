@@ -123,6 +123,20 @@ STARCAT_DMG_RETRY_SLEEP_SECONDS=90 \
 
 ## 4. 正式公开发版
 
+### Direct Beta 版
+
+Beta 版使用独立发布入口，当前准备版本为 **1.9.3 Beta 1**（`v1.9.3-beta.1`）：
+
+```bash
+make release-direct-development VERSION=1.9.3-beta.1
+```
+
+该入口从 `dev` 的干净提交构建，执行 Developer ID 签名、公证和 GitHub prerelease 发布，
+仅更新 `appcast-development.xml`。用户在「设置 → 通用 → 更新」打开「包含 Beta 版更新」后接收。
+关闭开关不会降级当前版本。完整约束及失败续跑见 [双渠道发布 SOP](SOP-双渠道签名与发布.md#53-direct-beta-版更新通道)。
+
+### 正式版
+
 正式公开分发时启用 notarization：
 
 ```bash

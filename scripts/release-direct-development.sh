@@ -1,31 +1,32 @@
 #!/usr/bin/env bash
 #
-# release-direct-development.sh — 发布 Direct 开发版并更新独立 Sparkle appcast。
+# release-direct-development.sh — 发布 Direct Beta 版并更新独立 Sparkle appcast。
 #
-# 开发版仍是 Developer ID 签名并经过 Apple 公证的 Release 构建，只是 GitHub Release
+# Beta 版仍是 Developer ID 签名并经过 Apple 公证的 Release 构建，只是 GitHub Release
 # 标记为 prerelease，且只公布到 appcast-development.xml。它不会修改正式 appcast、
 # 官网最新版、Changelog、Homebrew 或其它正式发布元数据。
+# 脚本名、环境变量和 feed 地址保留既有标识，避免中断已安装客户端与运维入口。
 
 set -euo pipefail
 
 show_help() {
   cat <<'EOF'
-Starcat Direct 开发版发布脚本
+Starcat Direct Beta 版发布脚本
 
 用法:
-  ./scripts/release-direct-development.sh <X.Y.Z-dev.N>
+  ./scripts/release-direct-development.sh <X.Y.Z-beta.N>
 
 示例:
-  STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh 2.0.0-dev.1
+  STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh 1.9.3-beta.1
 
   # 只检查参数、分支和工作区并打印副作用命令。
   STARCAT_DEVELOPMENT_RELEASE_DRY_RUN=1 \
-    ./scripts/release-direct-development.sh 2.0.0-dev.1
+    ./scripts/release-direct-development.sh 1.9.3-beta.1
 
   # tag 已存在或 GitHub 上传中断时复用已公证产物。
   STARCAT_DEVELOPMENT_RELEASE_SKIP_TAG=1 \
   STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS=1 \
-    ./scripts/release-direct-development.sh 2.0.0-dev.1
+    ./scripts/release-direct-development.sh 1.9.3-beta.1
 
 关键约束:
   - 默认要求 dev 分支和干净工作区。
@@ -41,8 +42,8 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 fi
 
 DEVELOPMENT_VERSION="${1:-}"
-if ! [[ "$DEVELOPMENT_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-dev\.([1-9][0-9]*)$ ]]; then
-  echo "开发版版本号必须是 X.Y.Z-dev.N，例如 2.0.0-dev.1；当前: ${DEVELOPMENT_VERSION:-<empty>}" >&2
+if ! [[ "$DEVELOPMENT_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-beta\.([1-9][0-9]*)$ ]]; then
+  echo "Beta 版本号必须是 X.Y.Z-beta.N，例如 1.9.3-beta.1；当前: ${DEVELOPMENT_VERSION:-<empty>}" >&2
   exit 1
 fi
 MARKETING_VERSION="${BASH_REMATCH[1]}"
@@ -94,17 +95,17 @@ require_release_state() {
   local current_branch
   current_branch="$(git branch --show-current)"
   [ "$current_branch" = "$RELEASE_BRANCH" ] \
-    || fail "当前分支是 ${current_branch}，开发版发布要求在 ${RELEASE_BRANCH}"
+    || fail "当前分支是 ${current_branch}，Beta 版发布要求在 ${RELEASE_BRANCH}"
 
   if [ -n "$(git status --porcelain)" ]; then
     git status --short >&2
-    fail "工作区不干净；开发版必须来自可复现提交"
+    fail "工作区不干净；Beta 版必须来自可复现提交"
   fi
 
   [ -d "$SITE_ROOT/.git" ] || fail "未找到独立官网仓库: $SITE_ROOT"
   [ -d "$PAGES_DIR" ] || fail "未找到 Direct 官网目录: $PAGES_DIR"
   [ "${STARCAT_NOTARIZE:-0}" = "1" ] || [ "$DRY_RUN" = "1" ] \
-    || fail "开发版外部分发也必须设置 STARCAT_NOTARIZE=1"
+    || fail "Beta 版外部分发也必须设置 STARCAT_NOTARIZE=1"
 }
 
 create_and_push_tag() {
@@ -123,7 +124,7 @@ create_and_push_tag() {
 
 package_development() {
   if [ "${STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS:-0}" = "1" ]; then
-    log "复用已公证的开发版产物，不重新签名或 staple"
+    log "复用已公证的 Beta 版产物，不重新签名或 staple"
     return
   fi
 
@@ -138,14 +139,14 @@ package_development() {
 
 verify_local_artifacts() {
   [ "$DRY_RUN" = "1" ] && return
-  [ -f "$DMG_PATH" ] || fail "未找到开发版 DMG: $DMG_PATH"
-  [ -f "$SHA_PATH" ] || fail "未找到开发版 SHA256: $SHA_PATH"
-  [ -f "$CURRENT_APPCAST_PATH" ] || fail "未找到开发版当前 appcast: $CURRENT_APPCAST_PATH"
+  [ -f "$DMG_PATH" ] || fail "未找到 Beta 版 DMG: $DMG_PATH"
+  [ -f "$SHA_PATH" ] || fail "未找到 Beta 版 SHA256: $SHA_PATH"
+  [ -f "$CURRENT_APPCAST_PATH" ] || fail "未找到 Beta 版当前 appcast: $CURRENT_APPCAST_PATH"
 
   grep -Fq "${DOWNLOAD_BASE_URL}Starcat-${MARKETING_VERSION}-arm64.dmg" "$CURRENT_APPCAST_PATH" \
-    || fail "开发版 appcast 下载地址与 prerelease tag 不一致"
+    || fail "Beta 版 appcast 下载地址与 prerelease tag 不一致"
   grep -Fq "<sparkle:shortVersionString>${MARKETING_VERSION}</sparkle:shortVersionString>" "$CURRENT_APPCAST_PATH" \
-    || fail "开发版 appcast 营销版本不正确"
+    || fail "Beta 版 appcast 营销版本不正确"
 }
 
 publish_github_prerelease() {
@@ -195,7 +196,7 @@ main() {
   publish_github_prerelease
   merge_development_appcast
   publish_development_appcast
-  log "开发版发布完成: $DEVELOPMENT_VERSION"
+  log "Beta 版发布完成: $DEVELOPMENT_VERSION"
 }
 
 main
