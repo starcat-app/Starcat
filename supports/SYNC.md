@@ -90,6 +90,12 @@ cd supports
 
 ### 新增独立仓库登记
 
+`ai-weekly-events/` 已于 2026-11-05 登记为本地内容 MVP，预期远端为
+`starcat-app/ai-weekly-events`，尚未创建或推送。
+当前仓库位于 `Starcat-weekly-ai-events-mvp` worktree 的 `supports/` 下，
+不会随主仓库提交同步。`clone-all.sh` 仅预登记，远端创建后再启用自动 clone；
+README 推广脚本已登记本项目。原图缓存、预览、发布状态和密钥不跨 Git 同步。
+
 新增项目使用根目录 `skills/starcat-support-project-create`，并把以下更新视为
 同一个创建事务：
 
@@ -171,6 +177,7 @@ make sync-fly-secrets
 
 | 日期 | 决策 | 原因 |
 |------|------|------|
+| 2026-11-05 | 本地初始化 `ai-weekly-events` 内容仓库，暂不计入远端项目数量 | 每周 AI 大事 MVP；仓库可见性、远端创建与推送尚未执行 |
 | 2026-08-24 | GitHub 独立仓库从 25 个扩展到 26 个 | 新增 `starcat-admin-console`，独立承担本地服务运营、精选发布与 Awesome 来源管理 |
 | 2026-08-23 | GitHub 独立仓库从 24 个扩展到 25 个 | 新增私有 `starcat-collection-api`，独立承担经同意的公开 Star 快照收集与训练导出 |
 | 2026-08-23 | GitHub 独立仓库从 23 个扩展到 24 个 | 新增私有 `starcat-recsys-trainer`，独立承担推荐数据与离线训练管道 |

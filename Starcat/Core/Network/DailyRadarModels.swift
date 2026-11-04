@@ -91,6 +91,8 @@ extension DailyRadarCatalog {
         .init(id: "ai-hf", title: "Hugging Face", period: "weekly"),
         .init(id: "ai-community", title: "Community", period: "daily"),
         .init(id: "ai-weekly", title: "AI Weekly Archive", period: "weekly"),
+        // 独立编辑栏目，保留历史生态周报的分类身份与归档
+        .init(id: "ai-weekly-events", title: "Weekly AI Highlights", period: "weekly"),
         .init(id: "ai-monthly", title: "AI Monthly Archive", period: "monthly"),
     ]
 }

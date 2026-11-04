@@ -49,6 +49,14 @@
 
 > 端口规范：5000 段是 macOS 系统服务保留段，自建后端从 5001 起顺序分配。
 
+### 本地 MVP 内容项目
+
+`ai-weekly-events/` 是「每周 AI 大事」独立内容仓库，提供 Skill、原文图片采集、
+双语编排、审核和发布工具，复用 Weekly API，不新增常驻服务。
+预期远端 `starcat-app/ai-weekly-events` 尚未创建，本轮仅在
+`../Starcat-weekly-ai-events-mvp/supports/ai-weekly-events` 初始化本地 Git 仓库。
+因此暂不增加远端仓库计数或启用自动 clone；远端创建和推送另行授权。
+
 ---
 
 ## 🧩 在 Starcat 中的角色

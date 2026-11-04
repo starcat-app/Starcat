@@ -74,6 +74,7 @@ struct DailyRadarCategoryIcon: View {
         case "ai-trending": return .alternatives
         case "ai-community": return .linuxDo
         case "ai-weekly": return .weekly
+        case "ai-weekly-events": return .announcement
         case "ai-monthly": return .archive
         default: return nil
         }
@@ -90,6 +91,7 @@ struct DailyRadarCategoryIcon: View {
         case "ai-trending": return .teal
         case "ai-community": return .green
         case "ai-weekly": return .indigo
+        case "ai-weekly-events": return .teal
         case "ai-monthly": return .brown
         default: return .secondary
         }

@@ -17,6 +17,7 @@
 #   - homebrew-starcat
 #   - .github / starcat-docs / starcat-site / starcat-admin-console
 #   - extensions/ 下 2 个浏览器插件
+#   - ai-weekly-events 为本地 MVP，远端创建前不进入自动 clone
 #
 # 前置条件: git 可用; 私有仓库需要 gh CLI 或 SSH key 已配置
 # =============================================================================
@@ -72,6 +73,7 @@ if $SHOW_HELP; then
   echo "  starcat-localization  本地化资源"
   echo "  homebrew-starcat    Starcat App Homebrew Cask tap"
   echo "  starcat-skill       Starcat AI Agent Skill"
+  echo "  ai-weekly-events   每周 AI 大事（本地 MVP，远端尚未创建，不自动 clone）"
   echo "  starcat-cli         跨平台 Starcat CLI"
   echo "  starcat-alfred-workflow  Alfred 仓库搜索 Workflow"
   echo "  starcat-utools-plugin  uTools 仓库搜索插件"
@@ -91,6 +93,8 @@ fi
 # 格式: "目录名|GitHub URL|描述"
 # extensions/ 下的项目目录名带 "extensions/" 前缀
 PROJECTS=(
+  # 本地 MVP 预登记；远端获准创建后再启用，避免默认 clone 请求不存在的仓库
+  # "ai-weekly-events|https://github.com/starcat-app/ai-weekly-events.git|每周 AI 大事双语内容与 Skill"
   "starcat-sharing-api|https://github.com/starcat-app/starcat-sharing-api.git|Go API - 分享服务"
   "starcat-trending-api|https://github.com/starcat-app/starcat-trending-api.git|Go API - 趋势服务"
   "starcat-weekly-api|https://github.com/starcat-app/starcat-weekly-api.git|Go API - 周刊服务"

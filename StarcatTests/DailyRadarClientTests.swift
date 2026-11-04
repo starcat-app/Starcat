@@ -11,6 +11,25 @@ import Testing
 @testable import Starcat
 
 struct DailyRadarClientTests {
+    /// 新周报必须使用服务目录的 weekly 周期，避免沿用默认 daily 而查询不到内容
+    @Test @MainActor func weeklyEventsSelectionUsesWeeklyRequests() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "weekly-events", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        model.selectCategory("ai-weekly-events")
+        await model.reload()
+        #expect(model.categoryPeriod == "weekly")
+        let requests = fixture.state.requests.filter { $0.url?.path.hasSuffix("/reports") == true }
+        let request = try #require(requests.last)
+        let url = try #require(request.url)
+        let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(query.contains(.init(name: "category", value: "ai-weekly-events")))
+        #expect(query.contains(.init(name: "period", value: "weekly")))
+        #expect(model.workspaceTitle == DailyRadarCatalog.Category.localizedTitle(for: "ai-weekly-events"))
+    }
+
     @Test func concurrentRequestsShareCacheAndQueryIdentityIncludesFilters() async throws {
         let fixture = DailyRadarFixture()
         defer { fixture.clean() }
@@ -393,7 +412,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
             if path.hasSuffix("/catalog") {
                 // 计数与 /reports 的 total=12 语义保持一致，供侧边栏徽标断言使用。
                 payload = """
-                {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":12},"total_count":12}
+                {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"},{"id":"ai-weekly-events","title":"Weekly AI Highlights","period":"weekly"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":12},"total_count":12}
                 """
             } else if path.hasSuffix("/dates") {
                 // joined 已负责去掉最后一个元素后的分隔符，不能再 dropLast，

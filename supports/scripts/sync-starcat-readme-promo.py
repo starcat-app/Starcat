@@ -47,6 +47,14 @@ ROOT = Path(__file__).resolve().parents[2]
 # 两者不适合插入会自引用的通用推广区块，因此不进入生成目标。
 PROJECTS = [
     Project(
+        Path("supports/ai-weekly-events"),
+        "Weekly AI Highlights",
+        "editorial",
+        "每周 AI 大事",
+        "这是 Starcat 每周 AI 大事的独立内容与 Skill 仓库，提供来源核实、原文配图和中英双版审核发布流程。",
+        "Editorial content and skill for Starcat Weekly AI Highlights, with verified sources, original article images and reviewed bilingual reports.",
+    ),
+    Project(
         Path("supports/starcat-docs"),
         "Starcat Documentation",
         "docs",

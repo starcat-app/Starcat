@@ -176792,6 +176792,27 @@
         "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "生態週報" } }
       }
     },
+    "dailyRadar.category.ai-weekly-events" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "KI-Highlights der Woche" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly AI Highlights" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Lo más destacado de IA de la semana" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Les temps forts de l’IA de la semaine" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorotan AI Mingguan" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Le novità IA della settimana" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "今週のAI重要ニュース" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이번 주 AI 주요 소식" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "AI-hoogtepunten van de week" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Najważniejsze wydarzenia AI tygodnia" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Destaques de IA da semana" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Главные события ИИ за неделю" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Haftanın Yapay Zekâ Gelişmeleri" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Головні події ШІ за тиждень" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tin AI nổi bật trong tuần" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周 AI 大事" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "每週 AI 大事" } }
+      }
+    },
     "dailyRadar.close" : {
       "localizations" : {
         "en" : {
