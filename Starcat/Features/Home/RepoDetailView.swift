@@ -772,12 +772,12 @@ struct ReadmeStateView: View {
                 documentID: documentKey,
                 baseURL: documentBaseURL,
                 onScrollReportChange: onScrollReportChange,
-                onOpenInNewWindow: { [html = renderedHtml, baseURL = documentBaseURL, windowTitle, settings, markdownContext] in
+                onOpenInNewWindow: { [html = renderedHtml, baseURL = documentBaseURL, windowTitle, dependencies, markdownContext] in
                     ReadmeWindowController.show(
                         htmlFragment: html,
                         baseURL: baseURL,
                         title: windowTitle,
-                        settings: settings,
+                        dependencies: dependencies,
                         markdownContext: markdownContext
                     )
                 },
@@ -790,7 +790,7 @@ struct ReadmeStateView: View {
                     { target in
                         ReadmeWindowController.showRepositoryMarkdown(
                             target: target,
-                            settings: settings,
+                            dependencies: dependencies,
                             readmeAPI: context.readmeAPI
                         )
                     }

@@ -62,26 +62,30 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
     /// 异步拉 Markdown 时如果只靠局部变量，窗会在回调前被释放。
     private static var liveWindows: [ObjectIdentifier: ReadmeWindowController] = [:]
 
-    private let settings: AppSettings
+    private let dependencies: AppDependencies
     private let markdownContext: ReadmeWindowMarkdownContext?
     private let documentTarget: RepositoryMarkdownLinkTarget?
     private let model: RepositoryMarkdownWindowModel
     private let hostedContentController: NSViewController
 
     /// 显示已经渲染好的 README 快照。
+    ///
+    /// - Parameter dependencies: 应用级依赖。`ReadmeWebView` 自 85ffdb9b 起在 body 里
+    ///   读取 `@Environment(AuthSession.self)`，本窗必须挂标准链，否则首帧渲染就会触发
+    ///   "No Observable object of type AuthSession found" 断言崩溃（实机 2026-11-04 复现）。
     @MainActor
     static func show(
         htmlFragment: String,
         baseURL: URL?,
         title: String,
-        settings: AppSettings,
+        dependencies: AppDependencies,
         markdownContext: ReadmeWindowMarkdownContext? = nil
     ) {
         let controller = ReadmeWindowController(
             htmlFragment: htmlFragment,
             baseURL: baseURL,
             title: title,
-            settings: settings,
+            dependencies: dependencies,
             markdownContext: markdownContext,
             documentTarget: nil
         )
@@ -95,7 +99,7 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
     @MainActor
     static func showRepositoryMarkdown(
         target: RepositoryMarkdownLinkTarget,
-        settings: AppSettings,
+        dependencies: AppDependencies,
         readmeAPI: ReadmeAPI
     ) {
         let context = ReadmeWindowMarkdownContext(
@@ -107,7 +111,7 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
             htmlFragment: nil,
             baseURL: target.contentBaseURL,
             title: target.windowTitle,
-            settings: settings,
+            dependencies: dependencies,
             markdownContext: context,
             documentTarget: target
         )
@@ -151,11 +155,11 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
         htmlFragment: String?,
         baseURL: URL?,
         title: String,
-        settings: AppSettings,
+        dependencies: AppDependencies,
         markdownContext: ReadmeWindowMarkdownContext?,
         documentTarget: RepositoryMarkdownLinkTarget?
     ) {
-        self.settings = settings
+        self.dependencies = dependencies
         self.markdownContext = markdownContext
         self.documentTarget = documentTarget
         self.model = RepositoryMarkdownWindowModel(
@@ -170,18 +174,15 @@ final class ReadmeWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
 
+        // 标准注入链（含 AuthSession / AppSettings / 命令路由 / locale / 字号倍率）。
+        // 旧版只注入 settings + 命令路由，85ffdb9b 给 ReadmeWebView 增加
+        // `@Environment(AuthSession.self)` 读取后，独立 README 窗首帧即断言崩溃。
         let content = RepositoryMarkdownWindowRoot(
             model: model,
-            settings: settings,
+            dependencies: dependencies,
             markdownContext: markdownContext
         )
-        .starcatAnimationOverride()
-        .appLocaleEnvironment()
-        .environment(\.starcatInterfaceScale, settings.interfaceScale)
-        .dynamicTypeSize(settings.interfaceScale.dynamicTypeSize)
-        .environment(settings)
-        // README 页内查找要登记到进程内共享路由；漏掉会在 @Environment 读取时断言崩溃。
-        .starcatCommandRouterEnvironment()
+        .appHostEnvironment(dependencies)
 
         let hostingController = NSHostingController(rootView: content)
         window.contentViewController = hostingController
@@ -245,7 +246,7 @@ private final class RepositoryMarkdownWindowModel {
 
 private struct RepositoryMarkdownWindowRoot: View {
     let model: RepositoryMarkdownWindowModel
-    let settings: AppSettings
+    let dependencies: AppDependencies
     let markdownContext: ReadmeWindowMarkdownContext?
 
     var body: some View {
@@ -268,7 +269,7 @@ private struct RepositoryMarkdownWindowRoot: View {
         return { target in
             ReadmeWindowController.showRepositoryMarkdown(
                 target: target,
-                settings: settings,
+                dependencies: dependencies,
                 readmeAPI: markdownContext.readmeAPI
             )
         }

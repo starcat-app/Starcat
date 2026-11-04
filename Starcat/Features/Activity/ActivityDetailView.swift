@@ -140,12 +140,12 @@ struct ActivityDetailView: View {
             ReadmeWebView(
                 htmlFragment: item.announcement!.htmlBody!,
                 baseURL: URL(string: "https://github.blog/"),
-                onOpenInNewWindow: { [html = item.announcement!.htmlBody!, settings] in
+                onOpenInNewWindow: { [html = item.announcement!.htmlBody!, dependencies] in
                     ReadmeWindowController.show(
                         htmlFragment: html,
                         baseURL: URL(string: "https://github.blog/"),
                         title: item.title,
-                        settings: settings
+                        dependencies: dependencies
                     )
                 }
             )
