@@ -347,7 +347,9 @@ struct RepoAIWindowContentView: View {
     }
 
     /// 自定义面板标题栏。系统标题栏被隐藏后，主动关闭入口必须留在内容树中；
-    /// `isMovableByWindowBackground` 仍让标题空白区域承担拖动窗口的职责。
+    /// 标题空白区域的窗口拖动由 `RepoAIWindowController` 在 AppKit 层叠加的
+    /// `RepoAIWindowDragStripView` 承担（SwiftUI 全幅内容会吞掉 mouseDown，
+    /// `isMovableByWindowBackground` 单独不生效，2026-11-04 修订）。
     /// 左上角用当前仓库 logo（对齐 RAG 工作台身份标识），不再用 sparkles 泛化图标。
     private var panelHeader: some View {
         HStack(spacing: 10) {

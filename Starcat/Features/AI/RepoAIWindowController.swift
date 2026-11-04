@@ -44,6 +44,29 @@ private enum RepoAIWindowMetrics {
     /// 最小尺寸：低于 480 宽 / 600 高时输入条 + 气泡 + segmented toggle bar
     /// 会显得很拥挤。当前默认 540 - 60 = 还有约 1 档可继续收窄空间。
     static let minContentSize = NSSize(width: 480, height: 600)
+    /// 顶部自定义标题栏拖动区高度：与 `RepoAIWindowContentView.panelHeader`
+    /// （标题行 + 上下 10pt padding ≈ 44pt）保持一致；改 header 布局时需同步。
+    static let headerDragStripHeight: CGFloat = 44
+    /// 右侧留给操作按钮（独立窗口：detach + close，26pt × 2 + 间距 + 尾部 padding）
+    /// 的不拦截宽度；拖动条不得覆盖这里，否则按钮点不到。取 140 留余量。
+    static let headerTrailingActionButtonZoneWidth: CGFloat = 140
+}
+
+/// 独立 AI 窗口的自定义标题栏拖动条。
+///
+/// 为什么需要它（2026-11-04 dong4j 反馈"独立 AI 摘要窗口无法移动"）：
+/// - 窗口是 `.borderless`，没有系统标题栏，唯一拖动来源是
+///   `isMovableByWindowBackground = true`；
+/// - 但 SwiftUI 内容铺满整窗（背景色 + ScrollView + 输入条），
+///   `NSHostingView` 会对命中点做 SwiftUI 侧交互判定并接管 mouseDown，
+///   AppKit 的"背景拖动"检查永远走不到，窗口实际不可移动；
+/// - 因此在 AppKit 层放一条覆盖 header 区域的兄弟视图，收到 mouseDown 后直接
+///   `performDrag(with:)` 转成窗口拖动会话。这是 borderless 自定义标题栏窗口的
+///   标准做法（等效系统标题栏的拖动行为），不依赖 SwiftUI 的事件判定。
+private final class RepoAIWindowDragStripView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
 }
 
 /// 详情页底部 AI 面板所派生的附属独立窗口控制器。
@@ -216,35 +239,74 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         window.invalidateShadow()
     }
 
-    /// 为独立 AI 面板选择与当前系统一致的 AppKit 根材质。
+    /// 为独立 AI 面板组装 AppKit 根视图：材质层 + 顶部拖动条，同装进一个普通容器。
     ///
-    /// macOS 26 的 `NSGlassEffectView` 同时负责动态采样和圆角，必须通过
-    /// `contentView` 属性嵌入 hosting view；旧系统继续保留已经线上验证过的
-    /// `NSVisualEffectView` + 9-slice mask 路径，避免改变 macOS 15–25 外观。
+    /// 结构（2026-11-04 拖动条修订后）：
+    /// ```text
+    /// NSWindow.contentView = 普通容器 NSView
+    ///   ├─ 玻璃 / 材质层（承载 SwiftUI hosting view）
+    ///   └─ RepoAIWindowDragStripView（覆盖 header，兄弟节点，位于最上层）
+    /// ```
+    ///
+    /// - 玻璃 / 材质层的选择维持原逻辑：macOS 26 的 `NSGlassEffectView` 同时负责
+    ///   动态采样和圆角，必须通过 `contentView` 属性嵌入 hosting view；旧系统继续
+    ///   保留已经线上验证过的 `NSVisualEffectView` + 9-slice mask 路径。
+    /// - 拖动条必须是材质层的 **AppKit 兄弟节点**：挂进 NSHostingView 的子视图会被
+    ///   SwiftUI 的 hitTest 接管收不到 mouseDown；挂在 `NSGlassEffectView` 上也没有
+    ///   官方保障（头文件明示 arbitrary subviews 的 z-order 行为不保证）。普通容器
+    ///   里后添加的子视图位于最上层，命中测试先落到拖动条。
     private static func makeWindowSurface(contentView: NSView) -> NSView {
+        let container = NSView()
+
+        let surface: NSView
         if #available(macOS 26.0, *) {
             let glassView = NSGlassEffectView()
             glassView.style = .regular
             glassView.cornerRadius = 18
             glassView.contentView = contentView
-            return glassView
+            surface = glassView
+        } else {
+            let effectView = NSVisualEffectView()
+            effectView.material = .windowBackground
+            effectView.blendingMode = .behindWindow
+            effectView.state = .active
+            effectView.maskImage = roundedCornerMaskImage(radius: 18)
+
+            contentView.translatesAutoresizingMaskIntoConstraints = false
+            effectView.addSubview(contentView)
+            NSLayoutConstraint.activate([
+                contentView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
+                contentView.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
+                contentView.topAnchor.constraint(equalTo: effectView.topAnchor),
+                contentView.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
+            ])
+            surface = effectView
         }
 
-        let effectView = NSVisualEffectView()
-        effectView.material = .windowBackground
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.maskImage = roundedCornerMaskImage(radius: 18)
-
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-        effectView.addSubview(contentView)
+        surface.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(surface)
         NSLayoutConstraint.activate([
-            contentView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            contentView.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: effectView.topAnchor),
-            contentView.bottomAnchor.constraint(equalTo: effectView.bottomAnchor)
+            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            surface.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            surface.topAnchor.constraint(equalTo: container.topAnchor),
+            surface.bottomAnchor.constraint(equalTo: container.bottomAnchor)
         ])
-        return effectView
+
+        // 拖动条只覆盖 header 的标题 + 空白区域；右侧按钮区（detach / close）
+        // 保留给 SwiftUI 命中，否则按钮会被拦截点不到。
+        let dragStrip = RepoAIWindowDragStripView()
+        dragStrip.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(dragStrip)
+        NSLayoutConstraint.activate([
+            dragStrip.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            dragStrip.trailingAnchor.constraint(
+                equalTo: container.trailingAnchor,
+                constant: -RepoAIWindowMetrics.headerTrailingActionButtonZoneWidth
+            ),
+            dragStrip.topAnchor.constraint(equalTo: container.topAnchor),
+            dragStrip.heightAnchor.constraint(equalToConstant: RepoAIWindowMetrics.headerDragStripHeight)
+        ])
+        return container
     }
 
     /// 生成 9-slice 圆角蒙版图，用于 `NSVisualEffectView.maskImage`。
