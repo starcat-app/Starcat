@@ -72,26 +72,35 @@ struct DailyRadarPreviewWorkspace: View {
                         .zIndex(1)
                 }
 
-                // 项目属于当前文章会话；文章关闭时立即移除面板与遮罩，
-                // 不等待 onChange 清理局部状态，避免分类切换后短暂盖住新首页。
-                if story != nil, let project {
-                    // 遮罩只覆盖中右内容区；文章保持挂载，关闭后继续原来的阅读位置。
-                    Button(action: closeProject) {
-                        Color.black.opacity(0.10)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .accessibilityLabel(Text("dailyRadar.backToStory"))
-                    .transition(.opacity)
-                    .zIndex(2)
+                // 容器始终挂载，让项目滑入与下拉时都裁切在横条下方，
+                // 遮罩也使用同一边界，避免盖住阅读页标题和语言信息。
+                ZStack {
+                    // 项目属于当前文章会话；文章关闭时立即移除面板与遮罩，
+                    // 不等待 onChange 清理局部状态，避免分类切换后短暂盖住新首页。
+                    if story != nil, let project {
+                        Button(action: closeProject) {
+                            Color.black.opacity(0.10)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .accessibilityLabel(Text("dailyRadar.backToStory"))
+                        .transition(.opacity)
 
-                    DailyRadarPreviewProjectView(project: project, store: projectStore, onBack: closeProject)
-                        .id(project.id)
-                        .frame(width: projectSheetWidth(in: geometry.size.width), height: geometry.size.height)
-                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(3)
+                        DailyRadarPreviewProjectView(project: project, store: projectStore, onBack: closeProject)
+                            .id(project.id)
+                            .frame(width: projectSheetWidth(in: geometry.size.width))
+                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                            .zIndex(1)
+                    }
                 }
+                .frame(
+                    width: geometry.size.width,
+                    height: max(0, geometry.size.height - DailyRadarReaderLayout.headerHeight - DailyRadarReaderLayout.headerDividerHeight)
+                )
+                .clipped()
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .zIndex(2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))

@@ -8,7 +8,7 @@
 
 import SwiftUI
 
-/// 顶部可拖动的窄幅全高详情；宽高由工作区决定，不创建另一个系统窗口。
+/// 顶部可拖动的窄幅详情；工作区限制在阅读横条下方，不创建另一个系统窗口。
 struct DailyRadarPreviewProjectView: View {
     let project: DailyRadarReport.Project
     let store: DailyRadarProjectStore

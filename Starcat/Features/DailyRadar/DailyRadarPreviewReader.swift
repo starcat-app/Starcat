@@ -45,7 +45,7 @@ struct DailyRadarPreviewReader: View {
                     .accessibilityLabel(Text("dailyRadar.backToHome"))
             }
             .padding(.horizontal, 24)
-            .frame(height: 52)
+            .frame(height: DailyRadarReaderLayout.headerHeight)
             // 阅读页也覆盖系统标题栏；只让标题空白背景承担窗口拖动。
             .background {
                 Color.clear
@@ -54,6 +54,7 @@ struct DailyRadarPreviewReader: View {
                     .allowsWindowActivationEvents()
             }
             Divider()
+                .frame(height: DailyRadarReaderLayout.headerDividerHeight)
             ScrollView {
                 VStack(spacing: 0) {
                     GeometryReader { geometry in
@@ -198,8 +199,11 @@ private struct DailyRadarReaderSkeleton: View {
     }
 }
 
-/// 阅读区宽度策略独立出来，便于用测试锁定最小、自适应与超宽封顶行为。
+/// 阅读区布局统一管理，保证项目面板避让横条，并锁定正文的自适应宽度。
 enum DailyRadarReaderLayout {
+    /// 横条与分隔线共用固定尺寸，工作区据此限制项目面板及遮罩的上边缘。
+    static let headerHeight: CGFloat = 52
+    static let headerDividerHeight: CGFloat = 1
     /// 小窗口下先比旧版 720pt 更宽，缓解日报表格拥挤；宽窗口按比例增长。
     static let minimumContentWidth: CGFloat = 760
     /// 与首页内容体系一致，超宽窗口不把正文行长无限拉长。
