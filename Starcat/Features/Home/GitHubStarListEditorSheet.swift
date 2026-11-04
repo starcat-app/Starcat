@@ -215,6 +215,9 @@ struct GitHubStarListEditorSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .frame(width: 24, height: 24)
+            // plain 按钮的空心描边不能承担完整点击区；在 label 内覆盖中心空白与边缘
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
