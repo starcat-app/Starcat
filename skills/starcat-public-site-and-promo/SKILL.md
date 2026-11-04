@@ -13,7 +13,7 @@ description: Starcat 官网部署与推广内容同步流程。用于用户要�
 - `supports/starcat-site/direct/deploy.sh` 会通过 `ssh`/`rsync` 修改 `aliyun2` 服务器，属于生产副作用。
 - `supports/starcat-site/direct/deploy.sh` 会依次上传 nginx 配置、reload nginx 并同步静态资源，必须确认完整副作用。
 - `sync-starcat-readme-promo.py` 会批量改 supports 多个 README，执行前先说明影响范围。
-- 不要复制公开图片到各项目；推广区块统一引用 `starcat-pro` 的远程图片。
+- 不要复制公开图片到各项目；推广区块统一引用 `starcat-site` 仓库 `assets/` 的远程图片（starcat-pro 已归档，Starcat#202）。
 
 ## 入口选择
 

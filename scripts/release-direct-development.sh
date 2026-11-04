@@ -155,7 +155,7 @@ publish_github_prerelease() {
     --prerelease \
     --dmg "$DMG_PATH" \
     --sha256 "$SHA_PATH" \
-    --changelog "$PROJECT_ROOT/supports/starcat-pro/CHANGELOG.md"
+    --changelog "$PROJECT_ROOT/supports/starcat-site/direct/CHANGELOG.md"
 }
 
 merge_development_appcast() {

@@ -42,7 +42,7 @@ Starcat 的完整环境不是一个目录可以覆盖的。迁移前先区分配
 | Provisioning Profiles | Xcode 缓存 | 否 | Automatic Signing 重新下载，不建议直接复制缓存 |
 | `starcat-notary` | Keychain generic password | 否 | 每台 Mac 单独执行 `notarytool store-credentials` |
 | GitHub / 发布服务器 SSH key | `~/.ssh` | 否 | 安全迁移私钥与 `config`，权限设为 `600` |
-| `supports/starcat-pro` 等项目 | `supports/` 下独立 Git 仓库 | 不属于主仓库 | 保留各自 `.git`，逐个 clone 或全量复制 |
+| `supports/starcat-site` 等项目 | `supports/` 下独立 Git 仓库 | 不属于主仓库 | 保留各自 `.git`，逐个 clone 或全量复制 |
 | `Starcat/Resources/Codebase/codebase.bin` | Git ignored 构建资源 | 否 | 全量复制或运行下载脚本重新获取 |
 
 不要复制整个 `~/Library/Keychains` 或整个 DerivedData。证书通过 Xcode/Keychain 导入，Sparkle 使用官方 `generate_keys -x/-f`，notary profile 在新 Mac 重新创建。
@@ -187,7 +187,7 @@ chmod +x scripts/setup-macos-development.sh
 5. 运行 `xcodegen generate`。
 6. 解析 `StarcatDirect` 的 Swift Package，拉取 Sparkle 等依赖。
 7. 检查/下载 `codebase.bin`。
-8. 检查/克隆 `supports/starcat-pro`。
+8. 检查/克隆 `supports/starcat-site`（双渠道 Changelog 所在，Starcat#202）。
 9. 提示补齐三类签名证书。
 10. 可选创建 `starcat-notary`。
 11. 验证或导入既有 Sparkle 私钥。
@@ -579,18 +579,20 @@ file Starcat/Resources/Codebase/codebase.bin
 
 下载脚本会执行 SHA-256 校验并设置执行权限。
 
-### 12.2 `supports/starcat-pro`
+### 12.2 `supports/starcat-site`
 
-Direct Release 构建从该独立仓库读取双语 changelog：
+App Store 与 Direct Release 构建都从该独立仓库读取对应渠道的双语 changelog（2026-11 迁入，Starcat#202）：
 
 ```bash
-test -d supports/starcat-pro/.git
+test -d supports/starcat-site/.git
+test -f supports/starcat-site/appstore/CHANGELOG.md
+test -f supports/starcat-site/direct/CHANGELOG.md
 ```
 
 缺失时只克隆需要的仓库：
 
 ```bash
-git clone https://github.com/starcat-app/starcat-pro.git supports/starcat-pro
+git clone https://github.com/starcat-app/starcat-site.git supports/starcat-site
 ```
 
 不要把它强行加入 Starcat 主仓库。`supports/clone-all.sh` 会处理整个 supports 生态，范围更大；只为客户端发版准备环境时，不需要自动克隆全部项目。
@@ -799,9 +801,11 @@ security find-identity -v -p codesigning
 确认独立仓库存在：
 
 ```bash
-git -C supports/starcat-pro status
-test -f supports/starcat-pro/CHANGELOG.md
-test -f supports/starcat-pro/CHANGELOG-ZH.md
+git -C supports/starcat-site status
+test -f supports/starcat-site/appstore/CHANGELOG.md
+test -f supports/starcat-site/appstore/CHANGELOG-ZH.md
+test -f supports/starcat-site/direct/CHANGELOG.md
+test -f supports/starcat-site/direct/CHANGELOG-ZH.md
 ```
 
 ### App Store archive 包含 Sparkle
@@ -844,7 +848,7 @@ test -f supports/starcat-pro/CHANGELOG-ZH.md
 - [ ] Apple Distribution identity 可用。
 - [ ] Developer ID Application identity 可用。
 - [ ] `create-dmg` 可用。
-- [ ] `supports/starcat-pro` 独立仓库存在。
+- [ ] `supports/starcat-site` 独立仓库存在（含 appstore/ 与 direct/ 双渠道 Changelog）。
 - [ ] `Secrets.xcconfig` 的生产值完整。
 - [ ] Sparkle 私钥已导入，且与项目公钥匹配。
 - [ ] `starcat-notary` profile 有效。

@@ -29,7 +29,7 @@
 
 | 子目录 | GitHub | 说明 |
 |--------|--------|------|
-| [`starcat-pro/`](./starcat-pro/) | [`starcat-app/starcat-pro`](https://github.com/starcat-app/starcat-pro) | 公开支持、Issue 与发布说明 |
+| [`starcat-pro/`](./starcat-pro/) | [`starcat-app/starcat-pro`](https://github.com/starcat-app/starcat-pro) | 已归档：Changelog 迁至 starcat-site，公开 Issue 迁至主仓库 |
 | [`.github/`](./.github/) | [`starcat-app/.github`](https://github.com/starcat-app/.github) | 组织主页与共享社区健康文件 |
 | [`starcat-docs/`](./starcat-docs/) | [`starcat-app/starcat-docs`](https://github.com/starcat-app/starcat-docs) | Starcat 官方用户文档 |
 | [`starcat-site/`](./starcat-site/) | [`starcat-app/starcat-site`](https://github.com/starcat-app/starcat-site) | Direct、App Store 官网、博客与公开法律页面源码 |

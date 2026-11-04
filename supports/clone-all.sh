@@ -9,7 +9,7 @@
 #
 # 支撑项目统一放在 supports/ 目录下:
 #   - 6 个可聚合 Go API + 独立 collection/license API
-#   - starcat-pro / starcat-license-api / starcat-localization
+#   - starcat-pro（已归档，只读保留）/ starcat-license-api / starcat-localization
 #   - starcat-skill / starcat-cli / starcat-alfred-workflow / starcat-utools-plugin
 #   - starcat-raycast-extension
 #   - starcat-recsys-trainer (🔒 私有)
@@ -66,7 +66,7 @@ if $SHOW_HELP; then
   echo "  6 个可聚合 Go API 服务  (starcat-*-api)"
   echo "  starcat-api-kit    Go API 共享工具包"
   echo "  starcat-api        六业务 API 聚合服务 (🔒 私有)"
-  echo "  starcat-pro        公开支持与发布说明"
+  echo "  starcat-pro        已归档（changelog 迁至 starcat-site，支持迁至主仓库 issues）"
   echo "  starcat-license-api  Direct 分发授权 API (🔒 私有)"
   echo "  starcat-collection-api  公开 Star 快照收集 API (🔒 私有)"
   echo "  starcat-localization  本地化资源"
@@ -99,7 +99,7 @@ PROJECTS=(
   "starcat-discovery-api|https://github.com/starcat-app/starcat-discovery-api.git|Go API - 发现服务"
   "starcat-api-kit|https://github.com/starcat-app/starcat-api-kit.git|Go 库 - API 共享工具包"
   "starcat-api|https://github.com/starcat-app/starcat-api.git|Go API - 业务 API 聚合服务 🔒"
-  "starcat-pro|https://github.com/starcat-app/starcat-pro.git|公开支持与发布说明"
+  "starcat-pro|https://github.com/starcat-app/starcat-pro.git|已归档：changelog 迁至 starcat-site，支持迁至主仓库 issues"
   ".github|https://github.com/starcat-app/.github.git|组织主页与共享社区健康文件"
   "starcat-docs|https://github.com/starcat-app/starcat-docs.git|Starcat 官方文档"
   "starcat-site|https://github.com/starcat-app/starcat-site.git|Starcat 官方网站源码"

@@ -50,6 +50,6 @@ Starcat 产品推广区块不要写进模板的固定正文。项目登记到
 - 所有 `{{...}}` 占位符必须替换。
 - `CONTRIBUTING.md` 的命令必须能在真实项目运行。
 - `SECURITY.md` 要描述项目真实凭据、网络、更新或数据边界，不能保留泛化假话。
-- `SUPPORT.md` 的仓库链接必须指向新项目，产品支持统一指向 `starcat-pro`。
+- `SUPPORT.md` 的仓库链接必须指向新项目，产品支持统一指向主仓库 [Starcat issues](https://github.com/starcat-app/Starcat/issues)。
 - `config.yml` 的 Security Advisory URL 必须指向新仓库。
 - LICENSE 不得因“统一模板”覆盖第三方许可证要求。

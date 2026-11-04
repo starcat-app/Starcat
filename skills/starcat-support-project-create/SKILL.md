@@ -98,8 +98,8 @@ supports/scripts/sync-starcat-readme-promo.py
 <!-- starcat-promo:end -->
 ```
 
-- 图片继续引用 `starcat-app/starcat-pro` 的公开 `banner.webp` 和 `main.webp`，不要在
-  新项目复制营销图片。
+- 图片继续引用 `starcat-app/starcat-site` 仓库 `assets/` 的公开 `banner.webp` 和 `main.webp`，不要在
+  新项目复制营销图片（starcat-pro 已归档，Starcat#202）。
 - 真实脚本名是 `sync-starcat-readme-promo.py`，不是
   `sync-starcat-readme-prpmo.sh`。
 

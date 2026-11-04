@@ -86,7 +86,7 @@ STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_RELEASE_REUSE_ARTIFACTS=1 
    ```
 
 4. 获得普通版本文档授权后先更新生成源 `supports/scripts/sync-starcat-readme-promo.py`，再运行该项目脚本同步 marker 管理的 README；运行前后逐仓库比较状态，禁止覆盖 marker 外内容。
-5. 单独同步不由推广脚本生成的根 README、Issue 模板、`starcat-pro`、组织 profile、用户文档发布摘要和官网正式 / 测试页 fallback。Changelog 和 `docs/功能实现总览.md` 仍要求各自授权。
+5. 单独同步不由推广脚本生成的根 README、Issue 模板、starcat-site 双渠道 Changelog、组织 profile、用户文档发布摘要和官网正式 / 测试页 fallback。Changelog 和 `docs/功能实现总览.md` 仍要求各自授权。
 6. 对每个改变的独立仓库执行 `git diff --check`，检查中英文语义、版本、下载 URL、build、size 与 appcast 一致；重新运行只读审计脚本，旧版 stale candidate 必须归零。
 7. 只有获得官网部署授权后才部署生成页面。文件已更新、仓库已提交、远端已 push、官网已部署和公网已验证是五个独立状态。
 

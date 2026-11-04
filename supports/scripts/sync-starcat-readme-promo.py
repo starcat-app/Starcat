@@ -12,8 +12,8 @@ Starcat 介绍后逐渐漂移。运行后会：
     supports/scripts/sync-starcat-readme-promo.py
 
 公开图片统一引用 `starcat-pro`，不要复制到各仓库：
-  - https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp
-  - https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp
+  - https://raw.githubusercontent.com/starcat-app/starcat-site/main/assets/banner.webp
+  - https://raw.githubusercontent.com/starcat-app/starcat-site/main/assets/main.webp
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from pathlib import Path
 
 START = "<!-- starcat-promo:start -->"
 END = "<!-- starcat-promo:end -->"
-BANNER = "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp"
-MAIN = "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp"
+BANNER = "https://raw.githubusercontent.com/starcat-app/starcat-site/main/assets/banner.webp"
+MAIN = "https://raw.githubusercontent.com/starcat-app/starcat-site/main/assets/main.webp"
 
 
 @dataclass(frozen=True)
@@ -43,7 +43,7 @@ class Project:
 ROOT = Path(__file__).resolve().parents[2]
 
 
-# `.github` 使用专属组织主页，`starcat-pro` 同时承担图片与公开支持内容源；
+# `.github` 使用专属组织主页，`starcat-site` 同时承担图片与双渠道 Changelog 内容源；
 # 两者不适合插入会自引用的通用推广区块，因此不进入生成目标。
 PROJECTS = [
     Project(
@@ -255,7 +255,7 @@ def promo(project: Project, lang: str) -> str:
     link_rows = (
         """- 官网与下载: https://starcat.ink
 - Mac App Store: 搜索 Starcat for GitHub
-- 公开支持与发布说明: https://github.com/starcat-app/starcat-pro
+- 公开支持: https://github.com/starcat-app/Starcat/issues · 更新日志: https://starcat.ink/changelog.html
 - Starcat App Homebrew tap: https://github.com/starcat-app/homebrew-starcat
 - CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
 - AI Agent Skill: https://github.com/starcat-app/starcat-skill
@@ -267,7 +267,7 @@ def promo(project: Project, lang: str) -> str:
         if is_zh
         else """- Home and downloads: https://starcat.ink
 - Mac App Store: search for Starcat for GitHub
-- Public support and release notes: https://github.com/starcat-app/starcat-pro
+- Public support: https://github.com/starcat-app/Starcat/issues · Release notes: https://starcat.ink/changelog.html
 - Starcat App Homebrew tap: https://github.com/starcat-app/homebrew-starcat
 - CLI / MCP: [starcat-cli](https://github.com/starcat-app/starcat-cli) / [Homebrew tap](https://github.com/starcat-app/homebrew-starcat-cli)
 - AI Agent Skill: https://github.com/starcat-app/starcat-skill
@@ -311,7 +311,7 @@ def promo(project: Project, lang: str) -> str:
 
 <div align="center">
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/website-starcat.ink-38BDF8?style=flat&color=blue" alt="website"/></a>
-<a href="https://github.com/starcat-app/starcat-pro"><img src="https://img.shields.io/badge/support-starcat--pro-lightgrey.svg?style=flat&color=blue" alt="support"/></a>
+<a href="https://github.com/starcat-app/Starcat/issues"><img src="https://img.shields.io/github/issues/starcat-app/Starcat?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app/homebrew-starcat"><img src="https://img.shields.io/badge/install-homebrew-lightgrey.svg?style=flat&color=blue" alt="homebrew"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
 </div>
@@ -395,9 +395,33 @@ def zh_readme_source(project: Project) -> str:
     return (ROOT / project.path / "README.md").read_text(encoding="utf-8")
 
 
+# starcat-pro 归档迁移（Starcat#202）：SUPPORT.md 不含 promo marker，
+# 用纯 URL 替换收口历史模板留下的旧支持链接与旧图片地址。
+LEGACY_URL_REPLACEMENTS = {
+    "https://github.com/starcat-app/starcat-pro/issues": "https://github.com/starcat-app/Starcat/issues",
+    "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp": BANNER,
+    "https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp": MAIN,
+}
+
+
+def fix_support_file(repo: Path) -> bool:
+    support = repo / "SUPPORT.md"
+    if not support.exists():
+        return False
+    text = support.read_text(encoding="utf-8")
+    original = text
+    for old, new in LEGACY_URL_REPLACEMENTS.items():
+        text = text.replace(old, new)
+    if text != original:
+        support.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
 def main() -> int:
     for project in PROJECTS:
         repo = ROOT / project.path
+        fix_support_file(repo)
         readme = repo / "README.md"
         if not readme.exists():
             raise FileNotFoundError(readme)

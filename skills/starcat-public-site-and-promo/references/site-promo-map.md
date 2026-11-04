@@ -31,8 +31,8 @@ python3 supports/starcat-site/direct/generate-changelog.py
 
 输入：
 
-- `supports/starcat-pro/CHANGELOG.md`
-- `supports/starcat-pro/CHANGELOG-ZH.md`
+- `supports/starcat-site/direct/CHANGELOG.md`
+- `supports/starcat-site/direct/CHANGELOG-ZH.md`
 
 输出：
 
@@ -82,13 +82,13 @@ marker：
 明确排除：
 
 - `supports/.github`：组织主页使用信息密度更高的专属双语介绍，不插入通用区块。
-- `supports/starcat-pro`：作为推广图片与公开支持内容的单一来源，避免生成自引用区块。
+- `supports/starcat-site`：推广图片（`assets/`）与两渠道 Changelog 的单一来源，自身也是生成目标，避免生成自引用区块。
 - `supports/ai-file-wall`：仅供本地多 AI 协作，不属于 `starcat-app` 公开生态。
 
 公开图片统一引用：
 
-- `https://raw.githubusercontent.com/starcat-app/starcat-pro/main/banner.webp`
-- `https://raw.githubusercontent.com/starcat-app/starcat-pro/main/main.webp`
+- `https://raw.githubusercontent.com/starcat-app/starcat-site/main/assets/banner.webp`
+- `https://raw.githubusercontent.com/starcat-app/starcat-site/main/assets/main.webp`
 
 ## 验证
 
@@ -115,5 +115,5 @@ curl -fsSI https://starcat.ink/changelog-zh.html
 | `aliyun2` SSH 不通 | 停止；让用户检查 `~/.ssh/config` |
 | nginx reload 失败 | 不继续静态部署；先修 `starcat.ink.conf` |
 | rsync 删除了远程多余文件 | 这是 `--delete` 预期行为；执行前必须说明 |
-| changelog 源文件不存在 | 检查 `supports/starcat-pro/CHANGELOG*.md` 是否存在 |
+| changelog 源文件不存在 | 检查 `supports/starcat-site/direct/CHANGELOG*.md` 是否存在 |
 | README diff 过大 | 检查 marker 是否缺失或旧推广区块清理规则是否匹配过宽 |

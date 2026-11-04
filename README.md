@@ -14,7 +14,7 @@
 <sub>
 <b>macOS 15 Sequoia or newer</b>: Install with <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a>, download the <a href="https://starcat.ink">Direct build</a> for Apple Silicon Macs, or get <b><a href="https://apps.apple.com/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b> from the Mac App Store.<br>
 Previous versions and release notes: <a href="./CHANGELOG.md">Changelog</a> · <a href="https://starcat.ink/changelog.html">Website changelog</a><br>
-Public issue tracker: <a href="https://github.com/starcat-app/starcat-pro/issues">Report a bug or request a feature</a><br>
+Public issue tracker: <a href="https://github.com/starcat-app/Starcat/issues">Report a bug or request a feature</a><br>
 User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store: <a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · Privacy: <a href="https://starcat.ink/privacy.html">Privacy Policy</a> · <a href="https://starcat.ink/eula.html">EULA</a><br>
 中文说明: <a href="./README-ZH.md">README-ZH.md</a>
 </sub>
@@ -27,13 +27,13 @@ User docs: <a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · M
 <a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
-<a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
+<a href="https://github.com/starcat-app/Starcat/issues"><img src="https://img.shields.io/github/issues/starcat-app/Starcat?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
 </div>
 
 <br />
 
-This repository is the **macOS app source**. Public support, issues, and release notes live in [starcat-pro](https://github.com/starcat-app/starcat-pro). Docs, CLI, plugins, and self-hostable APIs are listed under Related projects.
+This repository is the **macOS app source** and the public issue tracker. Release notes live in [starcat-site](https://github.com/starcat-app/starcat-site) (`appstore/` and `direct/` changelogs). Docs, CLI, plugins, and self-hostable APIs are listed under Related projects.
 
 ## About Starcat
 
@@ -221,7 +221,7 @@ This repository is the macOS app. Starcat also has standalone repos for docs, di
 |---------|------|
 | [starcat.ink](https://starcat.ink) | Direct website, downloads, release notes |
 | [dong4j.app/starcat](https://dong4j.app/starcat/) | Mac App Store landing page |
-| [starcat-pro](https://github.com/starcat-app/starcat-pro) | Public support, issues, changelog, and promo images |
+| [starcat-pro](https://github.com/starcat-app/starcat-pro) | Archived — changelog moved to starcat-site, support moved to this repo's issues |
 | [starcat-docs](https://github.com/starcat-app/starcat-docs) | Official user docs, published at [starcat.mintlify.app](https://starcat.mintlify.app/) |
 | [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store site and legal pages |
 | [starcat-localization](https://github.com/starcat-app/starcat-localization) | UI localization, currently 18 languages |
@@ -358,7 +358,7 @@ Report vulnerabilities privately as described in [SECURITY.md](./SECURITY.md).
 
 ## Support
 
-Product questions: [starcat-pro](https://github.com/starcat-app/starcat-pro/issues).
+Product questions: [this repository's issues](https://github.com/starcat-app/Starcat/issues).
 Source-code issues: this repository. Details in [SUPPORT.md](./SUPPORT.md).
 
 ## Acknowledgments

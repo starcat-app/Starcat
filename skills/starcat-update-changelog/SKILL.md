@@ -1,9 +1,9 @@
 ---
 name: starcat-update-changelog
 description: >
-  Update Starcat changelog documents in supports/starcat-pro/ by reading ALL git commits
-  from the main Starcat project and generating categorized release notes in both English
-  and Chinese. Use this skill whenever the user wants to update changelog, release notes,
+  Update the four Starcat changelog documents under supports/starcat-site/ (appstore/ and
+  direct/ channels, English and Chinese) by reading ALL git commits from the main Starcat
+  project and generating categorized release notes. Use this skill whenever the user wants to update changelog, release notes,
   update records, or sync the changelog with recent commits. Also trigger when the user
   mentions CHANGELOG.md, CHANGELOG-ZH.md, release notes update, or asks to summarize
   recent changes for the next version.
@@ -11,15 +11,18 @@ description: >
 
 # Update Starcat Changelog
 
-Read ALL git commits from the main Starcat project since the last version tag, then update
-`CHANGELOG.md` (English) and `CHANGELOG-ZH.md` (Chinese) in `supports/starcat-pro/`.
+Read ALL git commits from the main Starcat project since the last version tag, then update the
+four channel changelogs under `supports/starcat-site/` (moved there 2026-11 from the main repo
+root and `starcat-pro`; see Starcat#202). The main repo root `CHANGELOG*` files are pointers only.
 
 ## File Locations
 
 | File | Path |
 |------|------|
-| Changelog (EN) | `supports/starcat-pro/CHANGELOG.md` |
-| Changelog (ZH) | `supports/starcat-pro/CHANGELOG-ZH.md` |
+| App Store (EN) | `supports/starcat-site/appstore/CHANGELOG.md` |
+| App Store (ZH) | `supports/starcat-site/appstore/CHANGELOG-ZH.md` |
+| Direct (EN) | `supports/starcat-site/direct/CHANGELOG.md` |
+| Direct (ZH) | `supports/starcat-site/direct/CHANGELOG-ZH.md` |
 | Git repo (source) | Starcat root (the Xcode project) |
 
 ---
@@ -227,7 +230,7 @@ and before the first existing `## <version>` section.
 - Blank line between sections and between bullets
 - Bullets start with `- ` (dash + space)
 - Bullets use `短标题：说明`（中文全角冒号）或 `Short title: detail`（英文冒号+空格）；不要句首分类动词、不要用 em dash
-- The version link reference goes at the bottom of the file（starcat-pro 渠道若在用）
+- The version link reference goes at the bottom of the file（主仓库 releases 若在用）
 
 ---
 
@@ -236,7 +239,7 @@ and before the first existing `## <version>` section.
 At the bottom of each file, insert BEFORE the previous version's link:
 
 ```markdown
-[<version>]: https://github.com/starcat-app/starcat-pro/releases/tag/<version>
+[<version>]: https://github.com/starcat-app/Starcat/releases/tag/<version>
 ```
 
 Maintain reverse chronological order (newest first).

@@ -55,7 +55,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 6 | `starcat-discovery-api/` | `starcat-app/starcat-discovery-api` |
 | 7 | `starcat-api-kit/` | `starcat-app/starcat-api-kit`（公开） |
 | 8 | `starcat-api/` | `starcat-app/starcat-api` 🔒 私有 |
-| 9 | `starcat-pro/` | `starcat-app/starcat-pro` |
+| 9 | `starcat-pro/` | `starcat-app/starcat-pro`（已归档，只读保留） |
 | 10 | `.github/` | `starcat-app/.github` |
 | 11 | `starcat-docs/` | `starcat-app/starcat-docs` |
 | 12 | `starcat-site/` | `starcat-app/starcat-site` |

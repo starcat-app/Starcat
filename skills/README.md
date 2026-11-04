@@ -43,7 +43,7 @@
 
 | Skill                        | 作用                                                                                                                                               |
 |------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| `starcat-update-changelog`   | 读取主仓库全部 git commit，为 `supports/starcat-pro` 生成中英文分类 release notes                                                                  |
+| `starcat-update-changelog`   | 读取主仓库全部 git commit，为 `supports/starcat-site` 的 appstore/ 与 direct/ 四份 Changelog 生成中英文分类 release notes                                                                  |
 | `starcat-changelog-cdn-sync` | 以 `CHANGELOG-ZH.md` 为唯一编辑源，截图转 WebP 经 PicList 上传 CDN，并把图片与条目改动同步到四份更新日志                                           |
 | `starcat-localization-sync`  | 本地化生产与同步：`Localizable.xcstrings` 与 `supports/starcat-localization` 的 xcloc 双向同步、AI 初稿、翻译审批、18 语言审计；仅在明确要求时使用 |
 | `starcat-weekly-import`      | 从新闻 / 清单等批量文本联网甄别真实 GitHub 仓库，核验 `owner/repo` 并经用户确认后，通过 weekly-api 批量写入受控人工来源（默认 `ai_intelligence`）  |

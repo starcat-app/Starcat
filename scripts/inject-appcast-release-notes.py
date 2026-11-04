@@ -364,8 +364,9 @@ def main() -> None:
     changelog_en_path = resolve_default_changelog(
         args.changelog_en,
         [
-            supports / "starcat-pro" / "CHANGELOG.md",
-            project_root / "CHANGELOG.md",
+            # Direct 渠道 changelog 自 2026-11 起随 starcat-site 同仓维护（Starcat#202）；
+            # 主仓库根目录只剩指针文件，不能作为 appcast 更新说明来源。
+            supports / "starcat-site" / "direct" / "CHANGELOG.md",
         ],
     )
     if changelog_en_path is None:

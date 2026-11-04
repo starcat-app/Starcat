@@ -14,7 +14,7 @@
 <sub>
 <b>macOS 15 Sequoia 或更高版本</b>：优先使用 <a href="https://github.com/starcat-app/homebrew-starcat">Homebrew</a> 安装，也可以从 <a href="https://starcat.ink">官网</a> 下载面向 Apple Silicon Mac 的 Direct 版本，或在 Mac App Store 获取 <b><a href="https://apps.apple.com/cn/app/starcat-for-github/id6788809803?mt=12">Starcat for GitHub</a></b>。<br>
 历史版本与发布说明：<a href="./CHANGELOG-ZH.md">更新日志</a> · <a href="https://starcat.ink/changelog-zh.html">官网更新记录</a><br>
-公开问题反馈：<a href="https://github.com/starcat-app/starcat-pro/issues">反馈 bug 或提出功能建议</a><br>
+公开问题反馈：<a href="https://github.com/starcat-app/Starcat/issues">反馈 bug 或提出功能建议</a><br>
 用户文档：<a href="https://starcat.mintlify.app/">starcat.mintlify.app</a> · Mac App Store：<a href="https://dong4j.app/starcat/">dong4j.app/starcat</a> · 隐私：<a href="https://starcat.ink/privacy-zh.html">隐私政策</a> · <a href="https://starcat.ink/eula-zh.html">用户协议</a><br>
 English: <a href="./README.md">README.md</a>
 </sub>
@@ -27,13 +27,13 @@ English: <a href="./README.md">README.md</a>
 <a href="https://dong4j.app/starcat/"><img src="https://img.shields.io/badge/Mac%20App%20Store-dong4j.app-lightgrey.svg?style=flat&color=blue" alt="Mac App Store"/></a>
 <a href="https://starcat.ink"><img src="https://img.shields.io/badge/platform-macOS%2015%2B-lightgrey.svg?style=flat&color=blue" alt="platform"/></a>
 <a href="https://github.com/starcat-app/starcat-localization"><img src="https://img.shields.io/badge/localization-open-lightgrey.svg?style=flat&color=blue" alt="localization"/></a>
-<a href="https://github.com/starcat-app/starcat-pro/issues"><img src="https://img.shields.io/github/issues/starcat-app/starcat-pro?style=flat&color=blue" alt="issues"/></a>
+<a href="https://github.com/starcat-app/Starcat/issues"><img src="https://img.shields.io/github/issues/starcat-app/Starcat?style=flat&color=blue" alt="issues"/></a>
 <a href="https://github.com/starcat-app"><img src="https://img.shields.io/badge/org-starcat--app-lightgrey.svg?style=flat&color=blue" alt="organization"/></a>
 </div>
 
 <br />
 
-本仓库是 **macOS 客户端源码**。公开支持、Issue 和发布说明在 [starcat-pro](https://github.com/starcat-app/starcat-pro)。配套文档、CLI、插件和可自建 API 见下方「相关项目」。
+本仓库是 **macOS 客户端源码**，也是公开问题反馈入口。发布说明在 [starcat-site](https://github.com/starcat-app/starcat-site)（`appstore/` 与 `direct/` 双渠道更新日志）。配套文档、CLI、插件和可自建 API 见下方「相关项目」。
 
 ## 这是什么
 
@@ -221,7 +221,7 @@ CloudKit 同步字段已经预留，生产版本还没有接上。Starcat 不托
 |------|------|
 | [starcat.ink](https://starcat.ink) | Direct 官网、下载、更新说明 |
 | [dong4j.app/starcat](https://dong4j.app/starcat/) | Mac App Store 落地页 |
-| [starcat-pro](https://github.com/starcat-app/starcat-pro) | 公开支持、Issue、Changelog 与营销图 |
+| [starcat-pro](https://github.com/starcat-app/starcat-pro) | 已归档：Changelog 迁至 starcat-site，支持迁至主仓库 issues |
 | [starcat-docs](https://github.com/starcat-app/starcat-docs) | 官方用户文档源码，发布于 [starcat.mintlify.app](https://starcat.mintlify.app/) |
 | [starcat-site](https://github.com/starcat-app/starcat-site) | Direct / App Store 官网与法律页面源码 |
 | [starcat-localization](https://github.com/starcat-app/starcat-localization) | 界面本地化资源，目前 18 种语言 |
@@ -358,7 +358,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
 ## 支持
 
-产品问题请到 [starcat-pro](https://github.com/starcat-app/starcat-pro/issues)。
+产品问题请到[本仓库 issue](https://github.com/starcat-app/Starcat/issues)。
 源码问题请到本仓库。说明见 [SUPPORT.md](./SUPPORT.md)。
 
 ## 致谢

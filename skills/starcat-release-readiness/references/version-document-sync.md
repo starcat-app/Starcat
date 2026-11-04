@@ -18,8 +18,8 @@
 
 - `README.md` / `README-ZH.md`：当前公开版本、Direct 下载 URL 和当前能力摘要。
 - `.github/ISSUE_TEMPLATE/*.yml`：要求用户填写 Starcat 版本时的示例 placeholder。
-- `CHANGELOG.md` / `CHANGELOG-ZH.md`：App Store 当前正式版本与下一待发布区。
-- `supports/starcat-pro/CHANGELOG.md` / `CHANGELOG-ZH.md`：Direct 当前正式版本与下一待发布区。
+- `supports/starcat-site/appstore/CHANGELOG.md` / `CHANGELOG-ZH.md`：App Store 当前正式版本与下一待发布区（2026-11 迁入，Starcat#202）。
+- `supports/starcat-site/direct/CHANGELOG.md` / `CHANGELOG-ZH.md`：Direct 当前正式版本与下一待发布区。
 
 `docs/功能实现总览.md` 受独立授权保护，不因本清单自动修改。
 
@@ -27,7 +27,7 @@
 
 - 生成源：`supports/scripts/sync-starcat-readme-promo.py`。
 - 派生文件：脚本 `PROJECTS` 中每个独立仓库的 `README.md` / `README-ZH.md` marker 区块。
-- 专用维护：`supports/starcat-pro` 与 `supports/.github/profile` 不在通用生成目标中，必须单独检查。
+- 专用维护：`supports/starcat-site`（本身是生成目标，含双渠道 Changelog）与 `supports/.github/profile` 不适合机械重刷，必须单独检查。
 
 更新生成源中的公开版本、下载 URL 和能力摘要后，才运行：
 

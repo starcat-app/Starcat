@@ -222,10 +222,27 @@ targets:
           set -euo pipefail
 
           # App 内 Release Notes 根据用户首选语言读取 bundle 里的更新日志。
-          # App Store 包只打包主仓库内的审核安全更新日志，避免混入 Direct-only 分发说明。
+          # App Store 包只打包 App Store 渠道更新日志（2026-11 起随 starcat-site 同仓维护，见 Starcat#202），
+          # 避免混入 Direct-only 分发说明。主仓库根目录的 CHANGELOG 只是指针文件，严禁拷进 bundle。
+          CHANGELOG_SOURCE_ROOT="${SRCROOT}/supports/starcat-site/appstore"
+          if [[ ! -f "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" || ! -f "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" ]]; then
+            # `supports/starcat-site` 是独立仓库，不会随主仓库 worktree 自动出现。
+            # Debug 构建只验证代码与资源链路：回退另一渠道日志，两者皆缺则警告并跳过；
+            # Release 必须阻断，避免发布错误内容。
+            if [[ "${CONFIGURATION}" == "Debug" && -f "${SRCROOT}/supports/starcat-site/direct/CHANGELOG.md" && -f "${SRCROOT}/supports/starcat-site/direct/CHANGELOG-ZH.md" ]]; then
+              echo "warning: appstore changelog unavailable; using direct channel changelog for Debug build"
+              CHANGELOG_SOURCE_ROOT="${SRCROOT}/supports/starcat-site/direct"
+            elif [[ "${CONFIGURATION}" == "Debug" ]]; then
+              echo "warning: supports/starcat-site changelogs unavailable; Debug bundle built without changelog"
+              exit 0
+            else
+              echo "error: App Store Release requires supports/starcat-site/appstore/CHANGELOG.md and CHANGELOG-ZH.md" >&2
+              exit 1
+            fi
+          fi
           mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${SRCROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${SRCROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
+          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
+          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
@@ -365,16 +382,21 @@ targets:
         script: |
           set -euo pipefail
 
-          # Direct 包继续使用公开 starcat-pro 更新日志，保留 Direct-only 分发与更新说明。
-          CHANGELOG_SOURCE_ROOT="${SRCROOT}/supports/starcat-pro"
+          # Direct 包使用 Direct 渠道公开更新日志（2026-11 起随 starcat-site 同仓维护，见 Starcat#202），
+          # 保留 Direct-only 分发与更新说明。主仓库根目录的 CHANGELOG 只是指针文件，严禁拷进 bundle。
+          CHANGELOG_SOURCE_ROOT="${SRCROOT}/supports/starcat-site/direct"
           if [[ ! -f "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" || ! -f "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" ]]; then
-            # `supports/starcat-pro` 是独立仓库，不会随主仓库 worktree 自动出现。Debug 构建
-            # 只验证代码与资源链路，可回退主仓库日志；Release 必须继续阻断，避免发布错误内容。
-            if [[ "${CONFIGURATION}" == "Debug" ]]; then
-              echo "warning: supports/starcat-pro is unavailable; using root changelog for Debug build"
-              CHANGELOG_SOURCE_ROOT="${SRCROOT}"
+            # `supports/starcat-site` 是独立仓库，不会随主仓库 worktree 自动出现。Debug 构建
+            # 只验证代码与资源链路，回退另一渠道日志（最接近旧回退行为），两者皆缺则警告跳过；
+            # Release 必须继续阻断，避免发布错误内容。
+            if [[ "${CONFIGURATION}" == "Debug" && -f "${SRCROOT}/supports/starcat-site/appstore/CHANGELOG.md" && -f "${SRCROOT}/supports/starcat-site/appstore/CHANGELOG-ZH.md" ]]; then
+              echo "warning: direct changelog unavailable; using appstore channel changelog for Debug build"
+              CHANGELOG_SOURCE_ROOT="${SRCROOT}/supports/starcat-site/appstore"
+            elif [[ "${CONFIGURATION}" == "Debug" ]]; then
+              echo "warning: supports/starcat-site changelogs unavailable; Debug bundle built without changelog"
+              exit 0
             else
-              echo "error: Direct Release requires supports/starcat-pro/CHANGELOG.md and CHANGELOG-ZH.md" >&2
+              echo "error: Direct Release requires supports/starcat-site/direct/CHANGELOG.md and CHANGELOG-ZH.md" >&2
               exit 1
             fi
           fi

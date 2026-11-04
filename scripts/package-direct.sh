@@ -83,11 +83,12 @@ DEFAULT_DIRECT_SIGN_IDENTITY="Developer ID Application: liwen gong (8WCUMGCWMB)"
 log() { printf '[direct] %s\n' "$1"; }
 fail() { printf '[direct] ERROR: %s\n' "$1" >&2; exit 1; }
 
-# Direct App 会把 starcat-pro Changelog 签入 bundle；公开包只能接受与目标版本
-# 完全一致的正式标题，避免发布后才发现“待发布”仍显示在 App 内。
+# Direct App 会把 Direct 渠道 Changelog（2026-11 起随 starcat-site 同仓维护，Starcat#202）
+# 签入 bundle；公开包只能接受与目标版本完全一致的正式标题，
+# 避免发布后才发现“待发布”仍显示在 App 内。
 verify_release_changelogs() {
   local changelog
-  local changelog_root="${PROJECT_ROOT}/supports/starcat-pro"
+  local changelog_root="${PROJECT_ROOT}/supports/starcat-site/direct"
 
   for changelog in "$changelog_root/CHANGELOG.md" "$changelog_root/CHANGELOG-ZH.md"; do
     [ -f "$changelog" ] || fail "缺少 Direct Changelog: $changelog"

@@ -219,7 +219,7 @@ Starcat/
 │   │   ├── appstore/                # Mac App Store 官网
 │   │   └── _local-admin/            # 本地运营控制台
 │   ├── starcat-*-api/               # 各后端 API 独立仓库
-│   ├── starcat-pro/                 # 公开支持与发布说明独立仓库
+│   ├── starcat-pro/                 # 已归档：changelog 迁至 starcat-site，支持入口迁至主仓库 issues
 │   ├── starcat-cli/                 # CLI / MCP 独立仓库
 │   ├── starcat-skill/               # AI Agent Skill 独立仓库
 │   ├── starcat-localization/        # 本地化资源独立仓库

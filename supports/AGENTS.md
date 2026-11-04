@@ -31,7 +31,7 @@
 | 官网 | `starcat-site/` | Direct、Direct Test、App Store 官网源码；旧 `_local-admin` 只保留到新控制台验收 |
 | 管理控制台 | `starcat-admin-console/` | React + shadcn/ui 本地运营控制台；远程部署属于第二阶段 |
 | 用户文档 | `starcat-docs/` | Mintlify 官方使用文档 |
-| 公开支持 | `starcat-pro/` | Issue、公开发布说明与营销图片源 |
+| 公开支持（已迁移） | `starcat-site/` | 双渠道 Changelog 与营销图片（`assets/`）；公开 Issue 在主仓库 Starcat。`starcat-pro/` 已归档，仅留历史 |
 | 工具与集成 | `starcat-cli/`、`starcat-skill/`、`extensions/` | CLI/MCP、AI Agent Skill 与浏览器插件 |
 | 分发与协作 | `homebrew-starcat*/`、`starcat-localization/`、`.github/` | Homebrew、本地化和组织主页 |
 | 后端 API | `starcat-*-api/`、`starcat-api-kit/`、`starcat-api/` | 六个业务服务、共享 kit、聚合网关与独立 license / collection；Fly.io 规则只适用于可部署服务 |

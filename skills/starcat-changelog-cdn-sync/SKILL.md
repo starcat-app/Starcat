@@ -1,7 +1,7 @@
 ---
 name: starcat-changelog-cdn-sync
 description: >
-  在修改主仓库 CHANGELOG-ZH.md 后，把本地相对路径截图转为 WebP、经 PicList 上传到
+  在修改 supports/starcat-site/appstore/CHANGELOG-ZH.md 后，把本地相对路径截图转为 WebP、经 PicList 上传到
   cdn.dong4j.site，替换为 CDN 地址，再把图片与中文条目改动同步到另外 3 份更新日志，
   最后只删除本次已成功上传的临时 PNG/WebP。用户提到 changelog 截图上传 CDN、同步四份
   更新日志、CHANGELOG-ZH 本地图片、PicList 上传更新说明图时使用。
@@ -9,17 +9,16 @@ description: >
 
 # Starcat Changelog CDN 同步
 
-以主仓库 **`CHANGELOG-ZH.md` 为唯一编辑源**，把「本地临时截图 + 中文条目改动」收口到
-四份正式更新日志，并清理临时媒体文件。
+以 **`supports/starcat-site/appstore/CHANGELOG-ZH.md` 为唯一编辑源**（2026-11 迁入 starcat-site，见 Starcat#202），把「本地临时截图 + 中文条目改动」收口到四份正式更新日志，并清理临时媒体文件。
 
 ## 四份文件
 
 | 角色 | 路径 |
 |------|------|
-| **源（只从此处开始）** | `CHANGELOG-ZH.md` |
-| App Store 英文 | `CHANGELOG.md` |
-| Direct 中文 | `supports/starcat-pro/CHANGELOG-ZH.md` |
-| Direct 英文 | `supports/starcat-pro/CHANGELOG.md` |
+| **源（只从此处开始）** | `supports/starcat-site/appstore/CHANGELOG-ZH.md` |
+| App Store 英文 | `supports/starcat-site/appstore/CHANGELOG.md` |
+| Direct 中文 | `supports/starcat-site/direct/CHANGELOG-ZH.md` |
+| Direct 英文 | `supports/starcat-site/direct/CHANGELOG.md` |
 
 遵守 `docs/5-规范/Changelog-更新规范.md`：渠道专属条目只留在对应渠道；公共功能四份语义对齐。
 
@@ -45,7 +44,7 @@ description: >
 
 dong4j 通常流程：
 
-1. 先手改主仓库 `CHANGELOG-ZH.md`（可含本地 `./CHANGELOG-ZH/*.png` 与中文描述改动）；
+1. 先手改 `supports/starcat-site/appstore/CHANGELOG-ZH.md`（可含本地 `./CHANGELOG-ZH/*.png` 与中文描述改动）；
 2. 再调用本 skill（或说「同步 changelog 图到 CDN」）。
 
 Agent 不要在用户未改 ZH 时主动发明截图或条目。
@@ -73,7 +72,7 @@ curl -fsS http://127.0.0.1:36677/ >/dev/null
 which cwebp
 
 # 源文件存在
-test -f CHANGELOG-ZH.md
+test -f supports/starcat-site/appstore/CHANGELOG-ZH.md
 ```
 
 若 PicList 未监听 36677：停下来让用户打开 PicList（启用内置 Server），不要改用其它上传通道，

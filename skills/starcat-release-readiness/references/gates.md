@@ -55,11 +55,12 @@
 
 ## 3. Changelog
 
-- 检查以下四份 Markdown：
-  - `CHANGELOG.md`
-  - `CHANGELOG-ZH.md`
-  - `supports/starcat-pro/CHANGELOG.md`
-  - `supports/starcat-pro/CHANGELOG-ZH.md`
+- 检查以下四份 Markdown（2026-11 起随 starcat-site 同仓维护，见 Starcat#202）：
+  - `supports/starcat-site/appstore/CHANGELOG.md`
+  - `supports/starcat-site/appstore/CHANGELOG-ZH.md`
+  - `supports/starcat-site/direct/CHANGELOG.md`
+  - `supports/starcat-site/direct/CHANGELOG-ZH.md`
+- 主仓库根 `CHANGELOG.md` / `CHANGELOG-ZH.md` 只是指针文件；若发现被写入条目或拷入构建产物，直接判 FAIL
 - 准备阶段目标版本保持 `X.Y.Z-待发布`；改成正式标题、生成网站 HTML 或部署必须单独授权。
 - 公共功能四份语义对齐；App Store 和 Direct 专属能力只出现在对应渠道。
 - 检查目标版本以来的提交、用户可感知结果和 `Release-Note:`，列出缺漏但不自动补写。

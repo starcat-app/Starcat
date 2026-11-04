@@ -28,7 +28,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SECRETS_TEMPLATE="${PROJECT_ROOT}/Configs/Secrets.xcconfig.template"
 SECRETS_FILE="${PROJECT_ROOT}/Configs/Secrets.xcconfig"
 CODEBASE_BINARY="${PROJECT_ROOT}/Starcat/Resources/Codebase/codebase.bin"
-STARCAT_PRO_DIR="${PROJECT_ROOT}/supports/starcat-pro"
+STARCAT_SITE_DIR="${PROJECT_ROOT}/supports/starcat-site"
 SPARKLE_EXPORT_DEFAULT="${PROJECT_ROOT}/sparkle-private-key"
 STORE_ENTITLEMENTS="${PROJECT_ROOT}/Starcat/Starcat.entitlements"
 DIRECT_ENTITLEMENTS="${PROJECT_ROOT}/Starcat/StarcatDirect.entitlements"
@@ -326,10 +326,10 @@ audit_local_files() {
     dev_issue "缺少 Starcat/Resources/Codebase/codebase.bin（该文件不在 Git 中）"
   fi
 
-  if [ -d "$STARCAT_PRO_DIR/.git" ]; then
-    ok "supports/starcat-pro 独立仓库存在"
+  if [ -d "$STARCAT_SITE_DIR/.git" ]; then
+    ok "supports/starcat-site 独立仓库存在"
   else
-    release_issue "缺少 supports/starcat-pro；Direct Release 构建需要它的双语 changelog"
+    release_issue "缺少 supports/starcat-site；App Store 与 Direct Release 构建都需要它的双渠道 changelog"
   fi
 
   if [ -f "$SPARKLE_EXPORT_DEFAULT" ]; then
@@ -735,14 +735,14 @@ prepare_untracked_assets() {
     ok "CodebaseMemory 二进制已存在"
   fi
 
-  if [ ! -d "$STARCAT_PRO_DIR/.git" ]; then
-    warn "Direct Release 需要独立仓库 supports/starcat-pro"
-    if ask_yes_no "只克隆 supports/starcat-pro 吗？" "Y"; then
+  if [ ! -d "$STARCAT_SITE_DIR/.git" ]; then
+    warn "Release 构建需要独立仓库 supports/starcat-site（双渠道 changelog，Starcat#202）"
+    if ask_yes_no "只克隆 supports/starcat-site 吗？" "Y"; then
       mkdir -p "$PROJECT_ROOT/supports"
-      git clone https://github.com/starcat-app/starcat-pro.git "$STARCAT_PRO_DIR"
+      git clone https://github.com/starcat-app/starcat-site.git "$STARCAT_SITE_DIR"
     fi
   else
-    ok "supports/starcat-pro 已存在"
+    ok "supports/starcat-site 已存在"
   fi
 }
 

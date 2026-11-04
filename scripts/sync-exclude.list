@@ -7,7 +7,7 @@
 # Go API 服务（7 个，含 starcat-license-api）
 **/*-api/
 # 其他支撑项目（5 个）
-**/starcat-pro/
+# starcat-pro 已归档（changelog/支持入口迁移见 Starcat#202），不再同步
 **/starcat-localization/
 **/homebrew-starcat/
 **/starcat-chrome-plugin/

@@ -13,7 +13,7 @@ Before opening an issue:
 - Keep one problem or request per issue.
 
 For Starcat application and product support (downloads, billing, Pro entitlements, or
-how to use a feature), use [starcat-pro Issues](https://github.com/starcat-app/starcat-pro/issues)
+how to use a feature), use [this repository's issues](https://github.com/starcat-app/Starcat/issues)
 or email [dong4j@gmail.com](mailto:dong4j@gmail.com).
 
 User documentation: [starcat.mintlify.app](https://starcat.mintlify.app/)
