@@ -58,13 +58,17 @@ struct GitHubStarListSidebarRow: View {
                 .frame(width: SidebarView.trailingFixedWidth, alignment: .trailing)
             }
         } icon: {
-            Circle()
-                .fill(
-                    SidebarSemanticIconStyle(
-                        semanticColor: Color(hex: list.colorHex) ?? .accentColor
+            // 无图标时不绘制圆点，避免强调色兜底重新补出用户已经关闭的装饰
+            if !list.colorHex.isEmpty {
+                Circle()
+                    .fill(
+                        SidebarSemanticIconStyle(
+                            semanticColor: Color(hex: list.colorHex) ?? .accentColor
+                        )
                     )
-                )
-                .frame(width: 14, height: 14)
+                    .frame(width: 14, height: 14)
+                    .accessibilityHidden(true)
+            }
         }
         .contextMenu {
             Button(action: onEdit) {

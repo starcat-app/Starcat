@@ -411,10 +411,12 @@ private struct GitHubStarListAIGroupingRuleCard: View {
                     )
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
-                            Circle()
-                                .fill(Color(hex: group.list.colorHex) ?? .accentColor)
-                                .frame(width: 6, height: 6)
-                                .accessibilityHidden(true)
+                            if !group.list.colorHex.isEmpty {
+                                Circle()
+                                    .fill(Color(hex: group.list.colorHex) ?? .accentColor)
+                                    .frame(width: 6, height: 6)
+                                    .accessibilityHidden(true)
+                            }
                             Text(verbatim: group.list.name)
                                 .font(interfaceScale.font(.bodyEmphasis))
                                 .foregroundStyle(.primary)

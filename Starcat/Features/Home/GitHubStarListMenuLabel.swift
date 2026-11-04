@@ -8,7 +8,7 @@
 import AppKit
 import SwiftUI
 
-/// 用原色圆点、分组名和仓库数量构成统一的 GitHub List 菜单标签。
+/// 用可选原色圆点、分组名和仓库数量构成统一的 GitHub List 菜单标签
 ///
 /// 勾选状态由外层 `Toggle` / `NSMenuItem.state` 表达；本组件只负责不会被系统 tint
 /// 覆盖的分组颜色和稳定文本格式。
@@ -18,10 +18,15 @@ struct GitHubStarListMenuLabel: View {
     let repositoryCount: Int
 
     var body: some View {
-        Label(
-            title: { Text(verbatim: "\(list.name)  (\(repositoryCount))") },
-            icon: { Image(nsImage: colorDotImage) }
-        )
+        if list.colorHex.isEmpty {
+            // 无图标菜单项直接使用文本，不能生成强调色圆点作为兜底
+            Text(verbatim: "\(list.name)  (\(repositoryCount))")
+        } else {
+            Label(
+                title: { Text(verbatim: "\(list.name)  (\(repositoryCount))") },
+                icon: { Image(nsImage: colorDotImage) }
+            )
+        }
     }
 
     /// AppKit 菜单会 tint template image；显式关闭 template 才能保留分组原色。

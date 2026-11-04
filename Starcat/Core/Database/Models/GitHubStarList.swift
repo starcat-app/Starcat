@@ -19,13 +19,16 @@ struct GitHubStarList: Codable, FetchableRecord, MutablePersistableRecord, Ident
 
     static let databaseTableName = "github_star_lists"
 
+    /// 现有 color_hex 列要求 NOT NULL，以空字符串持久化「无图标」，无需改动已发布 schema
+    static let noColorHex = ""
+
     /// GitHub GraphQL `UserList.id`。
     var id: String
     var name: String
     var description: String?
     var isPrivate: Bool
 
-    /// Starcat 本地颜色；GitHub API 不提供这个字段。
+    /// Starcat 本地颜色；空字符串表示不显示颜色图标，GitHub API 不提供这个字段
     var colorHex: String
 
     /// 远端列表顺序。GitHub `lists` connection 没有 order 参数，按返回顺序落库。
@@ -120,31 +123,4 @@ struct GitHubStarListRemoteRecord: Equatable, Sendable {
 struct GitHubStarListRemoteMembership: Equatable, Sendable {
     var listId: String
     var repoFullName: String
-}
-
-/// GitHub Stars List 颜色辅助。
-///
-/// Core 层不能反向依赖 `Features/Tags/TagColorPalette`，这里保留一份轻量候选色。
-/// 颜色一旦落库后不会因为候选集调整自动变化；hash 只影响首次见到的远端 list。
-enum GitHubStarListColor {
-    static let defaultHex = "#0A84FF"
-
-    /// 与 `TagColorPalette.presets` 同步。黄色槽不用系统浅黄 `#FFD60A`，
-    /// 改芥末金 `#C9A406`，避免亮色主题下色点发飘。
-    private static let palette = [
-        "#FF453A", "#FF9F0A", "#C9A406", "#30D158",
-        "#66D4CF", "#40C8E0", "#64D2FF", "#0A84FF",
-        "#5E5CE6", "#BF5AF2", "#FF375F", "#AC8E68"
-    ]
-
-    /// 按 GitHub list id 做稳定 hash。不能用 Swift `Hasher`，因为它每进程随机播种。
-    static func defaultColorHex(forListID id: String) -> String {
-        guard !palette.isEmpty else { return defaultHex }
-        var hash: UInt32 = 2166136261
-        for byte in id.utf8 {
-            hash ^= UInt32(byte)
-            hash = hash &* 16777619
-        }
-        return palette[Int(hash % UInt32(palette.count))]
-    }
 }

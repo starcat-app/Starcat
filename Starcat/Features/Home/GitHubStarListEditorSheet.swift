@@ -6,7 +6,7 @@
 //
 //  设计约束：
 //  - name / description / private 写 GitHub；颜色和 AI 分组规则只写 Starcat 本地缓存。
-//  - 新建时用户不选颜色则传 nil，保存成功后由 `list.id` 稳定 hash 生成默认色。
+//  - 新建默认无图标，显式传空字符串；nil 在 Repository 中代表保留旧颜色，不能用于清除
 //  - 删除 list 是远端 destructive mutation，必须二次确认。
 //  - Header 对齐新建标签：单行标题（新增分组 / 编辑分组）+ 左上角分组语义图标（rectangle.3.group），不要二级标题。
 //  - GitHub / Starcat 分成两段，避免创建时把 AI 规则当成必填项。
@@ -29,7 +29,7 @@ struct GitHubStarListEditorSheet: View {
     @State private var name: String
     @State private var description: String
     @State private var isPrivate: Bool
-    @State private var selectedColorHex: String?
+    @State private var selectedColorHex: String
     @State private var aiInstruction = ""
     @State private var autoApplyEnabled = false
     @State private var isAIRuleExpanded: Bool
@@ -61,7 +61,7 @@ struct GitHubStarListEditorSheet: View {
         _name = State(initialValue: list?.name ?? "")
         _description = State(initialValue: list?.description ?? "")
         _isPrivate = State(initialValue: list?.isPrivate ?? false)
-        _selectedColorHex = State(initialValue: list?.colorHex)
+        _selectedColorHex = State(initialValue: list?.colorHex ?? GitHubStarList.noColorHex)
         // 新建默认折叠；编辑态等规则加载后再决定是否展开，避免空规则占掉第一眼。
         _isAIRuleExpanded = State(initialValue: expandAIRuleOnOpen)
     }
@@ -172,7 +172,7 @@ struct GitHubStarListEditorSheet: View {
 
     private var colorRow: some View {
         HStack(spacing: 6) {
-            autoColorButton
+            noColorButton
             ForEach(TagColorPalette.presets, id: \.hex) { preset in
                 Button {
                     selectedColorHex = preset.hex
@@ -200,15 +200,16 @@ struct GitHubStarListEditorSheet: View {
         }
     }
 
-    private var autoColorButton: some View {
+    /// 无图标和实际颜色一样是可保存的选择，不能再交给默认补色逻辑处理
+    private var noColorButton: some View {
         Button {
-            selectedColorHex = nil
+            selectedColorHex = GitHubStarList.noColorHex
         } label: {
             ZStack {
                 Circle()
                     .strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
                     .frame(width: 20, height: 20)
-                if selectedColorHex == nil {
+                if selectedColorHex.isEmpty {
                     Image(systemName: "checkmark")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(.secondary)
@@ -217,7 +218,9 @@ struct GitHubStarListEditorSheet: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(Text("githubStarLists.editor.color.auto"))
+        .help(Text("githubStarLists.editor.color.none"))
+        .accessibilityLabel(Text("githubStarLists.editor.color.none"))
+        .accessibilityAddTraits(selectedColorHex.isEmpty ? .isSelected : [])
     }
 
     /// AI 规则新建默认折叠；整行标题可点，符合折叠/展开规范。

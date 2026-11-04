@@ -23,7 +23,7 @@ protocol GitHubStarListRepositoryProtocol: Sendable {
         syncedAt: Date
     ) async throws
 
-    /// 保存单个 list。已有 list 的本地颜色默认保留；传入 `colorHex` 时显式覆盖颜色。
+    /// 保存单个 list：nil 保留已有颜色，空字符串清除颜色；新 list 默认无图标
     func upsertList(_ remote: GitHubStarListRemoteRecord, colorHex: String?, syncedAt: Date) async throws
 
     /// 删除一个 list，本地 membership 依赖外键级联清理。

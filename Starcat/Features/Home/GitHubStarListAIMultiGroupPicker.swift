@@ -63,10 +63,12 @@ struct GitHubStarListAIMultiGroupPicker: View {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                     .frame(width: 16)
-                Circle()
-                    .fill(Color(hex: list.colorHex) ?? .accentColor)
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
+                if !list.colorHex.isEmpty {
+                    Circle()
+                        .fill(Color(hex: list.colorHex) ?? .accentColor)
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                }
                 Text(verbatim: list.name)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
