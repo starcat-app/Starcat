@@ -62,6 +62,7 @@
 | 68 | [Anthropic Messages API 服务商详细设计](68-Anthropic服务商详细设计.md) | 新增 `.anthropic` adapter：Messages API、tool_use 内部转换、不改业务消息模型；Embedding 门禁关闭 |
 | 69 | [从 CC Switch 导入 AI Provider 详细设计](69-CC-Switch导入Provider详细设计.md) | 从 `~/.cc-switch/cc-switch.db` 一次性导入 BYOK；永远新增 `cc-switch:` 前缀；Direct 探测 / App Store 选择器 |
 | 70 | [Linux.do 项目发现与来源标识接入方案](70-Linux.do项目发现与来源标识接入方案.md) | 2.0.0 设计草案：RSS / API 采集、推广项目识别、独立目录、跨分类来源索引与原帖追溯 |
+| 71 | [关注关系图谱技术方案](71-关注关系图谱技术方案.md) | 2.0.0 P2 方案：左侧「关注者」入口、全窗口遮盖层、GraphQL following 快照、本地图模型、头像节点 WebView 渲染与请求预算 |
 
 ---
 
