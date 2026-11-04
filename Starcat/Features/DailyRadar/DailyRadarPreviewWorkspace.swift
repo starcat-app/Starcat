@@ -72,7 +72,9 @@ struct DailyRadarPreviewWorkspace: View {
                         .zIndex(1)
                 }
 
-                if let project {
+                // 项目属于当前文章会话；文章关闭时立即移除面板与遮罩，
+                // 不等待 onChange 清理局部状态，避免分类切换后短暂盖住新首页。
+                if story != nil, let project {
                     // 遮罩只覆盖中右内容区；文章保持挂载，关闭后继续原来的阅读位置。
                     Button(action: closeProject) {
                         Color.black.opacity(0.10)
@@ -106,6 +108,11 @@ struct DailyRadarPreviewWorkspace: View {
         .task(id: model.identity) {
             guard !model.scope.isEmpty else { return }
             await model.reload()
+        }
+        .onChange(of: story?.contentIdentity) { _, _ in
+            // 工作区会跨分类保留挂载，文章会话结束或替换时必须同步清理项目，
+            // 否则下一篇文章可能重新带出上一会话的仓库详情。
+            project = nil
         }
         // 往期内容默认展开规则：仅「每日热点」总分类下默认折叠，选中子分类时
         // 默认展开。initial 覆盖挂载入口（父级 / 子分类进入时 category 已就绪），
