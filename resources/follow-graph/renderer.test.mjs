@@ -175,6 +175,11 @@ test('a real click callback highlights and selects before any native selection e
   assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
   r.props.get('onBackgroundClick')();
   assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
+  r.props.get('onNodeClick')(nodes[1]);
+  r.props.get('onLinkClick')(links[1]);
+  assert.equal(r.messages.at(-1).id, null);
+  assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
 });
 
 test('clicking a second-level node highlights every directed hop from root and runs a continuous flow', () => {

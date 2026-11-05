@@ -49,14 +49,10 @@ final class FollowGraphViewModel {
         let root = FollowGraphNode(id: String(user.id), login: user.login, name: user.name, avatarURL: user.avatarUrl)
         if snapshot?.accountID != root.id {
             snapshot = .init(root: root)
-            expandedSources = [:]
-            selectedID = nil
-            viewport = nil
-            focusID = nil
-            search = ""
             followState = FollowGraphFollowState()
             store = nil
         }
+        resetCanvas()
         // 同账户重开沿用 Store，卡片关闭后仍在进行的关注确认可以写回同一份关系。
         if store == nil { store = FollowGraphStore(provider: FollowGraphAPI(client: client)) }
         isLoading = true
@@ -78,6 +74,18 @@ final class FollowGraphViewModel {
                 statusKey = "followGraph.status.ready"
             }
         }
+    }
+
+    /// 每次进入重新展示默认图谱；账户缓存和在途关注写入仍属于原来的 Store。
+    func resetCanvas() {
+        expandedSources = [:]
+        selectedID = nil
+        viewport = nil
+        focusID = nil
+        search = ""
+        rendererError = false
+        rendererRevision += 1
+        rebuildPresentation()
     }
 
     func stop() {

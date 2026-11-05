@@ -41,6 +41,26 @@ private actor FollowGraphFollowGate {
 struct FollowGraphFollowStateTests {
     private let user = FollowGraphNode(id: "2", login: "user2", name: nil, avatarURL: nil)
 
+    @Test("重开清空画布交互状态，但保留账户关注写入会话")
+    func resetCanvas() {
+        let model = FollowGraphViewModel()
+        let followState = model.followState
+        model.selectedID = "2"
+        model.search = "user"
+        model.focusID = "2"
+        model.viewport = FollowGraphViewport(values: [120, -80, 3])
+        model.rendererError = true
+        let revision = model.rendererRevision
+        model.resetCanvas()
+        #expect(model.selectedID == nil)
+        #expect(model.search.isEmpty)
+        #expect(model.focusID == nil)
+        #expect(model.viewport == nil)
+        #expect(!model.rendererError)
+        #expect(model.rendererRevision == revision + 1)
+        #expect(model.followState === followState)
+    }
+
     @Test("失败保留原状态，重试成功后才能回写图谱，并支持取消关注")
     func successAndFailure() async {
         let mock = MockGitHubAPIClient()

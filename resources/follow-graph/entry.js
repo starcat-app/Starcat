@@ -157,6 +157,9 @@ const graph = new ForceGraph(container)
   .onRenderFramePost((ctx, scale) => drawPathFlow(ctx, scale))
   .onNodeClick(node => { if (performance.now() - lastDrag > 250) selectNode(node.id); })
   .onBackgroundClick(() => selectNode(null))
+  // Fine edges occupy much of a dense canvas. The library dispatches link hits
+  // separately from background hits; both mean deselect in this product.
+  .onLinkClick(() => selectNode(null))
   .onNodeDrag(() => { lastDrag = performance.now(); viewportTouched = true; })
   .onNodeDragEnd(node => {
     lastDrag = performance.now();
