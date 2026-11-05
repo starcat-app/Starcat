@@ -21,6 +21,20 @@ enum DailyRadarError: Error {
 
 /// actor 保证凭据热更新和请求快照分离；迟到响应不能污染新服务的缓存。
 actor DailyRadarAPI {
+    /// 本地演示只覆盖日报客户端，不改用户设置或其它 Weekly 接口；Release 不接受此入口
+    nonisolated static func localDemoBaseURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
+        #if DEBUG
+        guard let raw = environment["STARCAT_DAILY_RADAR_DEMO_URL"],
+              let url = URL(string: raw), url.scheme == "http",
+              ["127.0.0.1", "localhost", "[::1]"].contains(url.host ?? ""),
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
+              url.path.isEmpty || url.path == "/" else { return nil }
+        return url
+        #else
+        return nil
+        #endif
+    }
+
     struct Configuration: Sendable {
         let baseURL: URL
         let key: String?

@@ -11,6 +11,17 @@ import Testing
 @testable import Starcat
 
 struct DailyRadarClientTests {
+    /// 演示入口不能把用户客户端引到远端或携带凭据的地址
+    @Test func demoEndpointOnlyAcceptsLocalHTTPOrigin() {
+        let name = "STARCAT_DAILY_RADAR_DEMO_URL"
+        #expect(DailyRadarAPI.localDemoBaseURL(environment: [name: "http://127.0.0.1:18083"]) != nil)
+        for url in ["https://example.com", "http://192.168.1.1", "http://user:pass@127.0.0.1",
+                    "http://127.0.0.1/path", "http://127.0.0.1?token=anything"] {
+            #expect(DailyRadarAPI.localDemoBaseURL(environment: [name: url]) == nil)
+        }
+        #expect(DailyRadarAPI.localDemoBaseURL(environment: [:]) == nil)
+    }
+
     /// 冷启动断网仍恢复整套首屏；网络失败不能推进原来的成功时间
     @Test @MainActor func offlineRestartRestoresCompleteHomeAndCachedArticle() async throws {
         let fixture = DailyRadarFixture()

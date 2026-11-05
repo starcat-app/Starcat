@@ -1485,7 +1485,7 @@ final class AppDependencies {
         )
         self.weeklyAPI = weeklyAPIInstance
         let dailyRadarAPI = DailyRadarAPI(
-            baseURL: AppEndpoints.Weekly.baseURL,
+            baseURL: DailyRadarAPI.localDemoBaseURL() ?? AppEndpoints.Weekly.baseURL,
             apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
         )
         self.dailyRadarAPI = dailyRadarAPI
@@ -2106,7 +2106,7 @@ final class AppDependencies {
         case .trending: await trendingAPI.updateBaseURL(target)
         case .weekly:
             await weeklyAPI.updateBaseURL(target)
-            await dailyRadarAPI.update(baseURL: target)
+            await dailyRadarAPI.update(baseURL: DailyRadarAPI.localDemoBaseURL() ?? target)
             await dailyRadarRepository.cancelRequests()
             dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateBaseURL(target)
