@@ -41,7 +41,7 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 
 ---
 
-## 独立仓库目录（25 个）
+## 独立仓库目录（28 个）
 
 以下目录各自是**独立的 git 仓库**，有自己的 GitHub remote、CI/CD 和版本号：
 
@@ -73,13 +73,15 @@ git 不管的 → sync-untracked.sh 同步（按 sync-manifest.list 清单）
 | 24 | `starcat-recsys-trainer/` | `starcat-app/starcat-recsys-trainer` 🔒 私有 |
 | 25 | `starcat-collection-api/` | `starcat-app/starcat-collection-api` 🔒 私有 |
 | 26 | `starcat-admin-console/` | `starcat-app/starcat-admin-console` |
+| 27 | `starcat-ai-events/` | `starcat-app/starcat-ai-events` 🔒 私有 |
+| 28 | `starcat-ai-events-api/` | `starcat-app/starcat-ai-events-api` 🔒 私有，聚合部署 |
 
 ### 一键拉取所有独立仓库
 
 ```bash
 cd supports
 
-# 首次 clone 全部 26 个远端目标
+# 首次 clone 全部 28 个远端目标
 ./clone-all.sh
 
 # 后续更新全部
@@ -90,11 +92,9 @@ cd supports
 
 ### 新增独立仓库登记
 
-`ai-weekly-events/` 已于 2026-11-05 登记为本地内容 MVP，预期远端为
-`starcat-app/ai-weekly-events`，尚未创建或推送。
-当前仓库位于 `Starcat-weekly-ai-events-mvp` worktree 的 `supports/` 下，
-不会随主仓库提交同步。`clone-all.sh` 仅预登记，远端创建后再启用自动 clone；
-README 推广脚本已登记本项目。原图缓存、预览、发布状态和密钥不跨 Git 同步。
+`starcat-ai-events/` 已于 2026-11-06 从本地 MVP 改名，远端
+`starcat-app/starcat-ai-events` 为 Private。独立 `starcat-ai-events-api/` 仅聚合部署。
+两项目需组织授权访问；不把 Private 仓宣传为匿名可 clone 的公开服务。
 
 新增项目使用根目录 `skills/starcat-support-project-create`，并把以下更新视为
 同一个创建事务：

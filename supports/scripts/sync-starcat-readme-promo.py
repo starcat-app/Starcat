@@ -47,7 +47,15 @@ ROOT = Path(__file__).resolve().parents[2]
 # 两者不适合插入会自引用的通用推广区块，因此不进入生成目标。
 PROJECTS = [
     Project(
-        Path("supports/ai-weekly-events"),
+        Path("supports/starcat-ai-events-api"),
+        "Starcat AI Events API",
+        "private-editorial-api",
+        "Starcat 每周 AI 大事 API",
+        "这是 Starcat 每周 AI 大事的独立编辑发布服务，验收期间 Private，仅聚合部署。",
+        "Private editorial publication service for Starcat Weekly AI Highlights, mounted in the aggregate gateway.",
+    ),
+    Project(
+        Path("supports/starcat-ai-events"),
         "Weekly AI Highlights",
         "editorial",
         "每周 AI 大事",
@@ -295,6 +303,10 @@ def promo(project: Project, lang: str) -> str:
         if project.kind == "api" and is_zh
         else "\n\n> Starcat provides hosted defaults for normal users. This API is open source so advanced users can inspect it, run it locally, or deploy their own instance."
         if project.kind == "api"
+        else "\n\n> 此仓库是验收期间保持 Private 的独立编辑周报服务，正式环境只由聚合后端装配。"
+        if project.kind == "private-editorial-api" and is_zh
+        else "\n\n> This editorial reporting service remains private during acceptance and is mounted in the aggregate backend in production."
+        if project.kind == "private-editorial-api"
         else "\n\n> 此仓库包含 Starcat Direct 授权与支付集成的私有服务端实现，不作为可自部署公共 API 分发。"
         if project.kind == "private-api" and is_zh
         else "\n\n> This repository contains Starcat's private Direct licensing and payment backend. It is not distributed as a self-hostable public API."

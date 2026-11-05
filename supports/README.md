@@ -8,7 +8,7 @@
 
 ---
 
-## 📦 项目清单（共 26 个）
+## 📦 项目清单（共 28 个）
 
 ### Go 后端项目（10 个）
 
@@ -51,11 +51,10 @@
 
 ### 本地 MVP 内容项目
 
-`ai-weekly-events/` 是「每周 AI 大事」独立内容仓库，提供 Skill、原文图片采集、
-双语编排、审核和发布工具，复用 Weekly API，不新增常驻服务。
-预期远端 `starcat-app/ai-weekly-events` 尚未创建，本轮仅在
-`../Starcat-weekly-ai-events-mvp/supports/ai-weekly-events` 初始化本地 Git 仓库。
-因此暂不增加远端仓库计数或启用自动 clone；远端创建和推送另行授权。
+`starcat-ai-events/` 是「每周 AI 大事」独立内容仓，提供 Skill、原文图片留证、
+中英稿和人工审核发布。远端 `starcat-app/starcat-ai-events` 验收期间为 Private。
+`starcat-ai-events-api/` 是独立 Go 后端，以 `ai-events` 装配到 `starcat-api`，
+使用 `/data/ai-events.db`，不创建独立 Fly App。两仓均需组织读取权限。
 
 ---
 
@@ -113,7 +112,7 @@ Starcat App
 ```bash
 cd supports
 
-# 首次 clone 全部 26 个远端目标
+# 首次 clone 全部 28 个远端目标
 ./clone-all.sh
 
 # 后续批量更新
@@ -178,7 +177,7 @@ secrets 需要单独确认。
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 25 个独立仓库目录
+- 上表除 `ai-file-wall` 外的 28 个独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

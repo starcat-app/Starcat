@@ -48,6 +48,7 @@
 | `starcat-wiki-api` | GitHub Wiki / 文档可用性探测 + 缓存 | Starcat 的 README / Wiki 辅助入口 |
 | `starcat-recommend-api` | 相似仓库推荐 API | Starcat 仓库详情页的相关推荐 |
 | `starcat-discovery-api` | 探索发现、热门、新发布榜单 API | Starcat 的「探索」入口 |
+| `starcat-ai-events-api` | 每周 AI 大事双语编辑发布 | 每日热点中的独立周报栏目 |
 | `starcat-collection-api` | 静默接收匿名公开 Star 快照 | 设置中用户主动开启的推荐数据贡献旁路 |
 
 ---
@@ -512,3 +513,10 @@ ghp_xxx****abcd
 ---
 
 *最后更新: 2026-11-02（统一受支持的 Go 安全基线、模块版本来源与 CI 漏洞检查）*
+
+## 每周 AI 大事正式链路
+
+内容仓 `starcat-ai-events` 与后端 `starcat-ai-events-api` 均独立维护，验收期间 Private。
+后端本地 5013，生产仅 `X-SC-Svc: ai-events` 装配进既有 `starcat-api`，
+`AI_EVENTS_*` 前缀、`/data/ai-events.db` 分库；不创建独立 Fly App。
+备份随聚合卷 SQLite 在线备份，不新增危险的独立 wipe/restore 入口。
