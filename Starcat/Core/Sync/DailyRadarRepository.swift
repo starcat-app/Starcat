@@ -77,10 +77,7 @@ actor DailyRadarRepository {
     /// 只有三段读取全部成功且版本一致才替换快照；刷新中途失败不破坏上一份完整结果
     func saveHome(query: DailyRadarQuery, catalogRevision: String, edition: String?) async {
         let config = await api.configuration()
-        let catalogParameters = [
-            URLQueryItem(name: "language", value: query.language),
-            URLQueryItem(name: "fallback", value: query.fallback ? "true" : "false")
-        ]
+        let catalogParameters = query.catalogParameters
         var request = query
         request.catalogRevision = catalogRevision
         request.dateTo = nil
@@ -156,7 +153,8 @@ actor DailyRadarRepository {
 
     private func key(_ path: String, _ parameters: [URLQueryItem], _ config: DailyRadarAPI.Configuration) -> String {
         let query = parameters.sorted { $0.name < $1.name }.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
-        return DailyRadarAPI.Configuration.digest("\(config.namespace)|\(path)|\(query)")
+        let namespace = DailyRadarAPI.isEvents(path: path, parameters: parameters) ? config.eventsNamespace : config.namespace
+        return DailyRadarAPI.Configuration.digest("\(namespace)|\(path)|\(query)")
     }
     private func read(key: String) -> Entry? {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent(key)) else { return nil }

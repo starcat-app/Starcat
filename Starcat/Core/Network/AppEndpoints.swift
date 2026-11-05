@@ -615,6 +615,14 @@ enum AppEndpoints {
         }
     }
 
+    /// 编辑周报与 Weekly 独立配置，正式环境共用聚合 host，用服务头分流
+    enum AIEvents {
+        static let productionURL = StarcatGatewayRouting.aggregatedProductionURL
+        @MainActor static var baseURL: URL {
+            AppEndpoints.resolve(production: productionURL, service: .aiEvents)
+        }
+    }
+
     // MARK: - 公共辅助
 
     /// `ThirdPartyService` → 生效 baseURL 的 dispatch。
@@ -622,6 +630,7 @@ enum AppEndpoints {
     @MainActor
     static func resolved(for service: ThirdPartyService) -> URL {
         switch service {
+        case .aiEvents: return AIEvents.baseURL
         case .weekly:   return Weekly.baseURL
         case .trending: return Trending.baseURL
         case .sharing:  return Sharing.baseURL
@@ -636,6 +645,7 @@ enum AppEndpoints {
     /// 给 `ThirdPartyService.productionURL` / 重置按钮 / 未配置时回退用。
     static func production(for service: ThirdPartyService) -> URL {
         switch service {
+        case .aiEvents: return AIEvents.productionURL
         case .weekly:   return Weekly.productionURL
         case .trending: return Trending.productionURL
         case .sharing:  return Sharing.productionURL

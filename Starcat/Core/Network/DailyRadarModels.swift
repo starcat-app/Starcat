@@ -20,6 +20,16 @@ struct DailyRadarQuery: Hashable, Sendable {
     var cursor: String?
     var limit = 20
 
+    /// 仅独立编辑栏目需要服务身份；其他分类继续共享 Weekly 的完整目录
+    var catalogParameters: [URLQueryItem] {
+        var values = [
+            URLQueryItem(name: "language", value: language),
+            URLQueryItem(name: "fallback", value: fallback ? "true" : "false")
+        ]
+        if category == "ai-weekly-events" { values.append(.init(name: "category", value: category)) }
+        return values
+    }
+
     var parameters: [URLQueryItem] {
         var values = [
             URLQueryItem(name: "period", value: period),

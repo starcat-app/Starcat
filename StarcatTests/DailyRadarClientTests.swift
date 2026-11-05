@@ -11,15 +11,49 @@ import Testing
 @testable import Starcat
 
 struct DailyRadarClientTests {
-    /// 演示入口不能把用户客户端引到远端或携带凭据的地址
-    @Test func demoEndpointOnlyAcceptsLocalHTTPOrigin() {
-        let name = "STARCAT_DAILY_RADAR_DEMO_URL"
-        #expect(DailyRadarAPI.localDemoBaseURL(environment: [name: "http://127.0.0.1:18083"]) != nil)
-        for url in ["https://example.com", "http://192.168.1.1", "http://user:pass@127.0.0.1",
-                    "http://127.0.0.1/path", "http://127.0.0.1?token=anything"] {
-            #expect(DailyRadarAPI.localDemoBaseURL(environment: [name: url]) == nil)
-        }
-        #expect(DailyRadarAPI.localDemoBaseURL(environment: [:]) == nil)
+    /// 新栏目独立路由与凭据，不能借 Weekly 的 key 或当前选中分类读取正文
+    @Test func eventsRequestsUseIndependentServiceAndCredential() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        await fixture.api.updateEvents(baseURL: URL(string: "https://\(fixture.host)")!, apiKey: "events-fixture", replacesKey: true)
+        let config = await fixture.api.configuration()
+        let query = DailyRadarQuery(category: "ai-weekly-events", period: "weekly")
+        _ = try await fixture.api.request(path: "/api/v1/daily-radar/catalog", parameters: query.catalogParameters, etag: nil, configuration: config)
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "X-SC-Svc") == "ai-events")
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer events-fixture")
+        _ = try await fixture.api.request(path: "/api/v1/daily-radar/reports/ai-weekly-events:2026-11-05:ai-weekly-events",
+                                         parameters: [.init(name: "revision", value: "fixed")], etag: nil, configuration: config)
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "X-SC-Svc") == "ai-events")
+        _ = try await fixture.api.request(path: "/catalog", parameters: [], etag: nil, configuration: config)
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "X-SC-Svc") == "weekly")
+        #expect(fixture.state.requests.last?.value(forHTTPHeaderField: "Authorization") == "Bearer fixture")
+    }
+
+    /// 新凭据只隔离新服务缓存，既有日报磁盘身份必须继续有效
+    @Test @MainActor func eventsCredentialChangePreservesDailyCacheAndInvalidatesEventsCache() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let path = "/api/v1/daily-radar/catalog"
+        let parameters = DailyRadarQuery(category: "ai-weekly-events").catalogParameters
+        await fixture.api.updateEvents(apiKey: "events-one", replacesKey: true)
+        _ = try await fixture.repository.fetch(DailyRadarCatalog.self, path: path, parameters: [])
+        _ = try await fixture.repository.fetch(DailyRadarCatalog.self, path: path, parameters: parameters)
+        await fixture.api.updateEvents(apiKey: "events-two", replacesKey: true)
+        #expect(await fixture.repository.cached(DailyRadarCatalog.self, path: path, parameters: []) != nil)
+        #expect(await fixture.repository.cached(DailyRadarCatalog.self, path: path, parameters: parameters) == nil)
+        let model = DailyRadarWorkspaceViewModel()
+        #expect(model.availableCategories.contains { $0.id == "ai-weekly-events" })
+    }
+
+    /// 远端目录未返回时也使用正确周期，不能因服务切换把周刊临时当作日报
+    @Test @MainActor func weeklyCategoryPeriodIsAvailableBeforeNetwork() {
+        let model = DailyRadarWorkspaceViewModel()
+        model.category = "ai-weekly-events"
+        #expect(model.categoryPeriod == "weekly")
+        model.category = "ai-weekly"
+        #expect(model.categoryPeriod == "weekly")
+        model.category = "ai"
+        #expect(model.categoryPeriod == "daily")
     }
 
     /// 冷启动断网仍恢复整套首屏；网络失败不能推进原来的成功时间

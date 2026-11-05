@@ -304,13 +304,7 @@ if ! pluginkit -a "$WIDGET_EXTENSION_PATH"; then
 fi
 
 echo "==> 启动 StarcatDirect..."
-# 显式交给 LaunchServices，普通 shell 环境不会自动传入 GUI App。
-# App 端仅在 Debug 接受 loopback URL，不写入用户的服务设置。
-APP_LAUNCH_OPTIONS=("$APP_PATH")
-if [ -n "${STARCAT_DAILY_RADAR_DEMO_URL:-}" ]; then
-  APP_LAUNCH_OPTIONS=(--env "STARCAT_DAILY_RADAR_DEMO_URL=$STARCAT_DAILY_RADAR_DEMO_URL" "$APP_PATH")
-fi
-if ! open "${APP_LAUNCH_OPTIONS[@]}"; then
+if ! open "$APP_PATH"; then
   echo "ERROR: LaunchServices 拒绝启动 StarcatDirect。"
   echo "       app: $APP_PATH"
   exit 1

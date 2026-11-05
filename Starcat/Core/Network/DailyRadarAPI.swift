@@ -21,26 +21,24 @@ enum DailyRadarError: Error {
 
 /// actor 保证凭据热更新和请求快照分离；迟到响应不能污染新服务的缓存。
 actor DailyRadarAPI {
-    /// 本地演示只覆盖日报客户端，不改用户设置或其它 Weekly 接口；Release 不接受此入口
-    nonisolated static func localDemoBaseURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
-        #if DEBUG
-        guard let raw = environment["STARCAT_DAILY_RADAR_DEMO_URL"],
-              let url = URL(string: raw), url.scheme == "http",
-              ["127.0.0.1", "localhost", "[::1]"].contains(url.host ?? ""),
-              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil,
-              url.path.isEmpty || url.path == "/" else { return nil }
-        return url
-        #else
-        return nil
-        #endif
-    }
-
     struct Configuration: Sendable {
         let baseURL: URL
         let key: String?
         let generation: UInt64
+        let eventsBaseURL: URL?
+        let eventsKey: String?
+        init(baseURL: URL, key: String?, generation: UInt64, eventsBaseURL: URL? = nil, eventsKey: String? = nil) {
+            self.baseURL = baseURL
+            self.key = key
+            self.generation = generation
+            self.eventsBaseURL = eventsBaseURL
+            self.eventsKey = eventsKey
+        }
         var namespace: String {
             Self.digest("daily-radar-v1|\(baseURL.absoluteString)|\(key ?? "")")
+        }
+        var eventsNamespace: String {
+            Self.digest("ai-events-v1|\((eventsBaseURL ?? baseURL).absoluteString)|\(eventsKey ?? "")")
         }
         static func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -53,29 +51,51 @@ actor DailyRadarAPI {
     }
     private var baseURL: URL
     private var key: String?
+    private var eventsBaseURL: URL?
+    private var eventsKey: String?
     private var generation: UInt64 = 0
     private let session: URLSession
 
-    init(baseURL: URL, apiKey: String?, session: URLSession = .shared) {
+    init(baseURL: URL, apiKey: String?, eventsBaseURL: URL? = nil, eventsAPIKey: String? = nil, session: URLSession = .shared) {
         self.baseURL = baseURL
         key = apiKey
+        self.eventsBaseURL = eventsBaseURL
+        eventsKey = eventsAPIKey
         self.session = session
     }
-    func configuration() -> Configuration { .init(baseURL: baseURL, key: key, generation: generation) }
+    func configuration() -> Configuration {
+        .init(baseURL: baseURL, key: key, generation: generation, eventsBaseURL: eventsBaseURL, eventsKey: eventsKey)
+    }
     func update(baseURL: URL? = nil, apiKey: String? = nil, replacesKey: Bool = false) {
         if let baseURL { self.baseURL = baseURL }
         if replacesKey { key = apiKey }
         generation &+= 1
     }
 
+    /// 独立服务热更新同样推进代次，旧请求不能写入新凭据对应的缓存
+    func updateEvents(baseURL: URL? = nil, apiKey: String? = nil, replacesKey: Bool = false) {
+        if let baseURL { eventsBaseURL = baseURL }
+        if replacesKey { eventsKey = apiKey }
+        generation &+= 1
+    }
+
+    /// 分类参数决定目录/列表归属；正文从不可变报告 ID 判断，避免依赖当前 UI 选择
+    nonisolated static func isEvents(path: String, parameters: [URLQueryItem]) -> Bool {
+        parameters.contains { $0.name == "category" && $0.value == "ai-weekly-events" }
+            || path.hasPrefix("/api/v1/daily-radar/reports/ai-weekly-events:")
+    }
+
     /// 请求使用捕获的配置；HTTP 自带缓存关闭，ETag 由独立日报缓存统一管理。
     func request(path: String, parameters: [URLQueryItem], etag: String?, configuration: Configuration) async throws -> Response {
-        var components = URLComponents(url: AppEndpoints.appendPath(path, to: configuration.baseURL), resolvingAgainstBaseURL: false)!
+        let events = Self.isEvents(path: path, parameters: parameters)
+        let target = events ? (configuration.eventsBaseURL ?? configuration.baseURL) : configuration.baseURL
+        let key = events ? configuration.eventsKey : configuration.key
+        var components = URLComponents(url: AppEndpoints.appendPath(path, to: target), resolvingAgainstBaseURL: false)!
         components.queryItems = parameters.sorted { $0.name < $1.name }
         guard let url = components.url else { throw DailyRadarError.invalidResponse }
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .weekly)
-        if let key = configuration.key, !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: events ? .aiEvents : .weekly)
+        if let key, !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         if let etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
