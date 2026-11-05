@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/weekly-ai-events-mvp` | 本地 `../Starcat-weekly-ai-events-mvp` worktree；远端目标 `origin/codex/weekly-ai-events-mvp` | 基于 `dev` 的 `34b4554c` 实现每周 AI 大事 MVP：Skill 双语编辑、原文配图、审核发布与周报分类接入。 | `开发中`；2026-11-06 dong4j 授权提交并推送功能分支。 | 独立验证与验收后合回 `dev`；本轮仅共享功能分支，不自动合并或发布。 |
+| `codex/weekly-ai-events-mvp` | 本地 `../Starcat-weekly-ai-events-mvp` worktree；远端目标 `origin/codex/weekly-ai-events-mvp` | 每周 AI 大事正式链路：Private 内容仓、独立 API、聚合部署、客户端缓存与验收。2026-11-06 已合入 `dev@8be24cc8`。 | `开发中`；2026-11-06 dong4j 授权提交并推送功能分支。 | 独立验证与验收后合回 `dev`；2026-11-06 正式链路已在本 worktree 完成，聚合服务 release 39 已部署；未经验收不合回 `dev`。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
@@ -40,15 +40,23 @@
 
 ## 每周 AI 大事跨仓工作区
 
-主仓分支 `codex/weekly-ai-events-mvp` 基于 `dev@34b4554c`。
-Weekly 后端使用同名独立仓库分支，基于 `dev@622a708`，
-worktree 位于 `../Starcat-weekly-ai-events-mvp/supports/starcat-weekly-api`。
-内容仓库在 `../Starcat-weekly-ai-events-mvp/supports/ai-weekly-events`
-本地初始化，同名分支，无远端，预期仓库为 `starcat-app/ai-weekly-events`。
-三者独立提交和验证，验收后分别合入各自集成分支。
-2026-11-06 dong4j 授权提交并推送功能分支，主仓与 Weekly API
-均使用 `origin/codex/weekly-ai-events-mvp`。内容仓库本地提交完成后，
-仍须明确新 GitHub 仓库的可见性再创建 remote 和推送；不自动合并或部署。
+主仓分支 `codex/weekly-ai-events-mvp` 原基线 `dev@34b4554c`，2026-11-06
+已合入最新 `dev@8be24cc8`。所有正式化修改留在本 worktree，等待 dong4j 验收后再合回。
+
+| 仓库 | 工作目录（本 worktree 下） | 分支与基线 | 归宿 |
+|---|---|---|---|
+| Starcat | `.` | `codex/weekly-ai-events-mvp`，已合入 `dev@8be24cc8` | 人工验收后合回 dev |
+| Weekly API | `supports/starcat-weekly-api` | 同名分支，基于 `dev@622a708` | 撤掉未上线的周报写入路径，保留日报 |
+| 聚合 API | `supports/starcat-api` | 同名分支，基于 `dev@d2fcf37` | 装配独立 ai-events 服务，部署现有 Fly App |
+| 内容与 Skill | `supports/starcat-ai-events` | 同名分支，保留原本地仓历史 | `starcat-app/starcat-ai-events` Private，验收后另行授权 Public |
+| AI Events API | `supports/starcat-ai-events-api` | 新独立仓同名分支 | 以 server 包接入聚合；不创建独立 Fly App |
+
+聚合其余七个 sibling 依赖在同一 worktree 下使用固定 `origin/main` 提交的 detached
+worktree，仅作为构建输入；不切换或修改原开发仓。固定 SHA 见
+`supports/starcat-api/dependencies.json`，本功能不合并、推送或发布这些依赖仓。
+
+2026-11-06 dong4j 已授权 Private 内容仓创建和推送、dev 正向同步、按功能提交、
+正式链路开发及聚合后端部署。该授权不包含反向合回 dev 或把内容仓公开。
 
 ## 推荐数据链路跨仓分支
 
@@ -76,3 +84,8 @@ worktree 位于 `../Starcat-weekly-ai-events-mvp/supports/starcat-weekly-api`。
 | `feature/rag` | 已删除 | Git 历史未直接合并，但 17 个独有提交的功能已被当前 RAG 实现完整覆盖或升级替代。 |
 | `codex/search` | 已删除 | dong4j 已删除远端 `origin/codex/search`；本地无该分支、无 worktree。公开前不再保留这条改写前的旧历史。 |
 | `codex/chrome-companion` | 已删除 | 旧提交 `901efc38` 已被项目明确废弃；当前 Companion App 端和独立 Chrome 插件仓库采用重写后的正式方案。 |
+
+2026-11-06 交付核对：内容 `12bf3159`、独立 API `ddf410b1`、Weekly 迁出 `ed1402cb`、
+聚合 `0c069881` 均已推送同名功能分支。聚合 release 39 在现有单 Machine 部署，
+八服务健康与业务只读抽样通过；内容及新后端仍为 Private。人工验收与
+`AI_EVENTS_READ_TOKEN` 配置尚待完成，验收清单见正式链路设计文档。

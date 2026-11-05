@@ -1,6 +1,7 @@
 # 每周 AI 大事 MVP 实现说明
 
-> 状态：独立工作树内实现与验证，待真实内容样板和人工界面验收
+> 历史说明：本文记录 MVP 当时的实现，接口、配置与未审核演示入口已被替代。
+> 现行方案与验收以[正式链路设计与验收](每周AI大事-正式链路设计与验收.md)为准，禁止按本文旧演示命令运行
 >
 > 需求依据：[需求规格说明书](../../2-产品/需求讨论/正式方案/每周AI大事需求规格说明书.md)
 
@@ -14,11 +15,11 @@
 |---|---|---|
 | Starcat | worktree 根目录 | `codex/weekly-ai-events-mvp`，`34b4554c` |
 | Weekly API | `supports/starcat-weekly-api` | 独立仓库同名分支，`dev@622a708` |
-| 周报内容与 Skill | `supports/ai-weekly-events` | 本地初始化，同名分支，无远端 |
+| 周报内容与 Skill | `supports/starcat-ai-events` | 本地初始化，同名分支，无远端 |
 
 独立仓库交付提交：内容与 Skill 为 `a307f90`，Weekly API 为 `08c4e02`。
 
-预期内容远端固定为 `starcat-app/ai-weekly-events`。初始 MVP 未执行远端创建、
+预期内容远端固定为 `starcat-app/starcat-ai-events`。初始 MVP 未执行远端创建、
 推送、图片上传、生产发布或分支合并；2026-11-06 dong4j 另行授权提交并推送功能分支。
 主仓与 Weekly API 使用同名 `codex/weekly-ai-events-mvp` 远端分支；
 内容仓库须明确可见性后再创建 GitHub 仓库。三个仓库分别提交，不能只合并主仓就宣称上线。
@@ -31,7 +32,7 @@
 | 名称 | 每周 AI 大事 |
 | 分类 | `ai-weekly-events`，`period=weekly` |
 | 来源 | `source=ai-weekly-events`，`source_kind=editorial` |
-| 内容仓库 | `source_repository=starcat-app/ai-weekly-events`，须服务允许清单 |
+| 内容仓库 | `source_repository=starcat-app/starcat-ai-events`，须服务允许清单 |
 | 报告身份 | `ai-weekly-events:<edition_date>:ai-weekly-events` |
 | 语言 | `zh-Hans` 与 `en` 同一期、同内容提交，成对入队 |
 | 固定源路径 | `digests/<edition_date>/zh-Hans.md`、`en.md` |
@@ -44,7 +45,7 @@
 
 独立 Weekly 服务配置 `DAILY_RADAR_SOURCE_REPOSITORIES`；
 聚合部署使用对应的 `WEEKLY_DAILY_RADAR_SOURCE_REPOSITORIES` 装配配置。
-配置时保留既有允许项，追加 `starcat-app/ai-weekly-events`。
+配置时保留既有允许项，追加 `starcat-app/starcat-ai-events`。
 
 ## 编辑与发布链路
 
