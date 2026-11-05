@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/weekly-ai-events-mvp` | 本地；`../Starcat-weekly-ai-events-mvp` worktree，无远端分支 | 基于 `dev` 的 `34b4554c` 实现每周 AI 大事 MVP：Skill 双语编辑、原文配图、审核发布与周报分类接入。 | `开发中`；2026-11-04 dong4j 授权创建并实施。 | 独立验证与验收后合回 `dev`；不自动推送、合并或发布。 |
+| `codex/weekly-ai-events-mvp` | 本地 `../Starcat-weekly-ai-events-mvp` worktree；远端目标 `origin/codex/weekly-ai-events-mvp` | 基于 `dev` 的 `34b4554c` 实现每周 AI 大事 MVP：Skill 双语编辑、原文配图、审核发布与周报分类接入。 | `开发中`；2026-11-06 dong4j 授权提交并推送功能分支。 | 独立验证与验收后合回 `dev`；本轮仅共享功能分支，不自动合并或发布。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
@@ -45,7 +45,10 @@ Weekly 后端使用同名独立仓库分支，基于 `dev@622a708`，
 worktree 位于 `../Starcat-weekly-ai-events-mvp/supports/starcat-weekly-api`。
 内容仓库在 `../Starcat-weekly-ai-events-mvp/supports/ai-weekly-events`
 本地初始化，同名分支，无远端，预期仓库为 `starcat-app/ai-weekly-events`。
-三者独立提交和验证，验收后分别合入各自集成分支；当前不自动合并、推送或部署。
+三者独立提交和验证，验收后分别合入各自集成分支。
+2026-11-06 dong4j 授权提交并推送功能分支，主仓与 Weekly API
+均使用 `origin/codex/weekly-ai-events-mvp`。内容仓库本地提交完成后，
+仍须明确新 GitHub 仓库的可见性再创建 remote 和推送；不自动合并或部署。
 
 ## 推荐数据链路跨仓分支
 
