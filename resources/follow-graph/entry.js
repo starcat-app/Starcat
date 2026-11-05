@@ -1,7 +1,7 @@
 // Offline 2D Canvas renderer. Swift owns authentication, graph semantics and caching.
 import ForceGraph from 'force-graph';
 import { forceCollide } from 'd3-force-3d';
-import { ProgressiveReveal } from './progressive-reveal.mjs';
+import { ProgressiveReveal, compareIDs } from './progressive-reveal.mjs';
 
 const container = document.getElementById('graph');
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
@@ -211,22 +211,12 @@ function selectNode(id) {
   post('select', { id });
 }
 
-/** Stable BFS mirrors native numeric-ID ordering and never invents a direct root edge. */
+/** The reveal queue already builds the same stable BFS tree on each graph revision.
+ * Reuse it for selection instead of sorting/scanning the whole graph on every click.
+ */
 function pathFromRoot(id) {
   if (!id || !nodes.has(id)) return [];
-  const outgoing = new Map();
-  for (const link of links.values()) {
-    const source = endpoint(link.source), target = endpoint(link.target);
-    if (!outgoing.has(source)) outgoing.set(source, []);
-    outgoing.get(source).push(target);
-  }
-  for (const targets of outgoing.values()) targets.sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
-  const queue = [root], parents = new Map([[root, null]]);
-  for (let i = 0; i < queue.length && !parents.has(id); i++) {
-    for (const target of outgoing.get(queue[i]) || []) {
-      if (!parents.has(target)) { parents.set(target, queue[i]); queue.push(target); }
-    }
-  }
+  const parents = reveal.parents;
   if (!parents.has(id)) return [];
   const path = [];
   for (let current = id; current != null; current = parents.get(current)) path.push(current);
@@ -393,7 +383,7 @@ function update(payload) {
     // Sorted phyllotaxis is deterministic on reopen and valid even with Reduce Motion.
     const sorted = [...payload.nodes].sort((a, b) =>
       a.id === b.id ? 0 : a.id === root ? -1 : b.id === root ? 1 :
-        a.id.localeCompare(b.id, 'en', { numeric: true }));
+        compareIDs(a.id, b.id));
     sorted.forEach((value, index) => {
       if (nodes.has(value.id)) {
         const node = nodes.get(value.id);

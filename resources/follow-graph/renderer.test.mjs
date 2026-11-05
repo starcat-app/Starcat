@@ -388,3 +388,23 @@ test('degree sizes count incoming/outgoing loaded edges and selection never chan
   r.update(3, r.data(10_000));
   assert.ok(r.props.get('graphData').nodes.every(node => node.radius >= 10 && node.radius <= 26));
 });
+
+test('cached BFS respects numeric tie breaks, cycles and edge removal on the next revision', () => {
+  const r = renderer(), data = r.data(10);
+  data.links = [
+    { source: '1', target: '10' }, { source: '10', target: '3' },
+    { source: '1', target: '2' }, { source: '2', target: '3' },
+    { source: '3', target: '1' }
+  ];
+  r.update(1, data);
+  r.props.get('onNodeClick')(r.props.get('graphData').nodes.find(node => node.id === '3'));
+  const color = r.props.get('linkColor');
+  assert.equal(color(data.links[2]), '#007aff');
+  assert.equal(color(data.links[3]), '#007aff');
+  assert.notEqual(color(data.links[0]), '#007aff');
+  r.update(2, { ...data, links: data.links.filter(link => link.source !== '2') });
+  assert.equal(color(data.links[0]), '#007aff');
+  assert.equal(color(data.links[1]), '#007aff');
+  r.update(3, { ...data, links: [] });
+  assert.notEqual(color(data.links[0]), '#007aff');
+});

@@ -1,6 +1,10 @@
 // Presentation-only queue: no requests, cache mutation or synthetic relationships.
 // Time is injected so ordering, suspension and Reduce Motion are deterministic in tests.
 
+// Reuse ICU collation state across all sorts instead of rebuilding it per comparison.
+// Numeric GitHub IDs retain the same stable traversal ordering as the native model.
+export const compareIDs = new Intl.Collator('en', { numeric: true }).compare;
+
 /** Reveal parents before children and retain existing nodes across incoming data batches. */
 export class ProgressiveReveal {
   visible = new Set();
@@ -28,8 +32,7 @@ export class ProgressiveReveal {
       if (!outgoing.has(source)) outgoing.set(source, []);
       outgoing.get(source).push(target);
     }
-    const compare = (a, b) => a.localeCompare(b, 'en', { numeric: true });
-    for (const targets of outgoing.values()) targets.sort(compare);
+    for (const targets of outgoing.values()) targets.sort(compareIDs);
     this.parents = new Map([[root, null]]);
     const ordered = nodes.has(root) ? [root] : [];
     for (let i = 0; i < ordered.length; i++) {
@@ -40,7 +43,7 @@ export class ProgressiveReveal {
         }
       }
     }
-    ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compare));
+    ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compareIDs));
     if (this.pending.length === 0) { this.nextAt = now + 45; this.burst = 0; }
     this.pending = ordered.filter(id => !this.visible.has(id));
     if (reduced) this.finish();
