@@ -22,6 +22,8 @@ import SwiftUI
 import AppKit
 
 struct SidebarHeaderView: View {
+    /// 图谱由主窗口承载，统计卡不自行创建窗口或持有网络任务。
+    var onOpenFollowGraph: () -> Void = {}
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var viewModel
@@ -495,7 +497,7 @@ struct SidebarHeaderView: View {
 
     /// 构建三栏统计数据行，每项均可点击并跳转到对应 GitHub 页面。
     /// - Starred → https://github.com/{username}?tab=stars
-    /// - Followers → https://github.com/{username}?tab=followers
+    /// - Followers → 主窗口关注关系图谱遮盖层
     /// - Following → https://github.com/{username}?tab=following
     private func statsRow(user: GitHubUserDTO) -> some View {
         HStack(spacing: 0) {
@@ -509,8 +511,9 @@ struct SidebarHeaderView: View {
             StatCell(
                 value: user.followers ?? 0,
                 label: "sidebar.stats.followers",
-                helpText: String.l10n("sidebar.openGithubFollowers"),
-                url: GitHubURLs.userFollowersTab(login: user.login)
+                helpText: String.l10n("followGraph.title"),
+                url: nil,
+                action: onOpenFollowGraph
             )
             Divider().frame(height: 26)
             StatCell(
@@ -540,24 +543,27 @@ struct SidebarHeaderView: View {
 /// - Parameters:
 ///   - value: 要显示的数字
 ///   - label: 统计标签（Starred / Followers / Following）
-///   - url: 可选链接；传入时数字会变为可点击链接，点击后在新标签页打开对应 GitHub 页面
+///   - url: 可选链接；没有原生 action 时打开对应 GitHub 页面
+///   - action: 原生工作区入口，优先于 URL，保留现有统计字号和 hover
 private struct StatCell: View {
     let value: Int
     let label: LocalizedStringKey
     let helpText: String
     let url: URL?
+    var action: (() -> Void)? = nil
 
     var body: some View {
         // 2026-06-05 dong4j 反馈：数字与 label 字号差太小，视觉上几乎一样大。
         // 改为数字 19pt/.bold（约为 caption2 的 ~1.7x），形成明显的"主-辅"层级。
         // 间距 2 → 3：字号放大后保持 baseline 视觉呼吸。
         VStack(spacing: 3) {
-            if let url = url {
+            if url != nil || action != nil {
                 // 2026-06-02 dong4j 要求统一 hover 反馈：sidebar 三栏统计数据
                 // （Starred / Followers / Following）加 `.pressableHover()`，
                 // 与详情页 Stats 按钮保持同款交互反馈。
                 Button {
-                    NSWorkspace.shared.open(url)
+                    if let action { action() }
+                    else if let url { NSWorkspace.shared.open(url) }
                 } label: {
                     Text(value, format: .number)
                         .font(.system(size: 19, weight: .bold))

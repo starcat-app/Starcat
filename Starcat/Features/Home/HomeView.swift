@@ -159,6 +159,9 @@ struct HomeView: View {
     @State private var showsDailyRadarPreview = false
     /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
     @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
+    /// 图谱模型跨关闭保留；原页面选择不随遮盖层变化。
+    @State private var showsFollowGraph = false
+    @State private var followGraphModel = FollowGraphViewModel()
 
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
@@ -401,6 +404,25 @@ struct HomeView: View {
     /// 不改整窗 chrome / safe area，也不使用固定侧栏宽度或 toolbar 高度。
     private var navigationWithDailyRadarPreview: AnyView {
         AnyView(baseNavigation
+            .disabled(showsFollowGraph)
+            .accessibilityHidden(showsFollowGraph)
+            .background {
+                FollowGraphWindowOverlay(isPresented: showsFollowGraph, onEscape: {
+                    if !followGraphModel.search.isEmpty { followGraphModel.search = "" }
+                    else if followGraphModel.selectedID != nil { followGraphModel.select(nil, expand: false) }
+                    else { showsFollowGraph = false }
+                }) {
+                    if let user = authSession.state.user,
+                       let client = dependencies.apiClient as? GitHubAPIClient {
+                        FollowGraphOverlayView(model: followGraphModel, user: user, client: client) {
+                            showsFollowGraph = false
+                        }
+                        // 原页面 disabled，但独立宿主里的图谱必须保持可操作。
+                        .disabled(false)
+                        .accessibilityHidden(false)
+                    }
+                }
+            }
             .overlayPreferenceValue(DailyRadarPreviewColumnAnchors.self) { anchors in
                 GeometryReader { proxy in
                     if let content = anchors[.content],
@@ -1356,7 +1378,11 @@ struct HomeView: View {
             // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
             currentActivityTintColor: derivedActivityTintColor,
             dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
-            dailyRadarModel: dailyRadarModel
+            dailyRadarModel: dailyRadarModel,
+            onOpenFollowGraph: {
+                showsDailyRadarPreview = false
+                showsFollowGraph = true
+            }
         )
         .navigationSplitViewColumnWidth(min: 240, ideal: 260, max: 320)
     }
@@ -1643,6 +1669,8 @@ struct HomeView: View {
         // user id 没变（如 unauthenticated ↔ awaitingUserCode 中间态、authenticated(A) 内部刷新）
         // → 不动任何业务状态，避免误清缓存导致 UI 无谓重渲。
         guard oldUserID != newUserID else { return }
+        showsFollowGraph = false
+        followGraphModel.clearAccount()
 
         if let newUser = newState.user {
             // 登录态变化统一走 `handleAuthenticatedEntry`（区分会话恢复 vs 真换账号）。

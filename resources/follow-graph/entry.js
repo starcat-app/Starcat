@@ -1,0 +1,357 @@
+// Offline 2D Canvas renderer. Swift owns authentication, graph semantics and caching.
+import ForceGraph from 'force-graph';
+import { forceCollide } from 'd3-force-3d';
+
+const container = document.getElementById('graph');
+let session = '', root = '', selected = null, dark = false, reduceMotion = false;
+let destroyed = false, active = true, lastDrag = -Infinity, activeImages = 0;
+let viewportTouched = false, lastSequence = 0;
+let pendingView = null;
+let pathEdges = new Set(), highlightedNodes = new Set();
+let adjacentNodes = new Set(), lastAnchor = '', anchorTimer = null;
+const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
+const endpoint = value => typeof value === 'object' ? value.id : value;
+const edgeKey = (a, b) => `${a}:${b}`;
+const radius = node => node.id === root ? 20 : node.id === selected ? 17 : 11;
+const isPath = link => pathEdges.has(edgeKey(endpoint(link.source), endpoint(link.target)));
+const isAdjacent = link => selected != null &&
+  (endpoint(link.source) === selected || endpoint(link.target) === selected);
+const linkColor = link => isPath(link) ? '#007aff' : isAdjacent(link) ?
+  (dark ? '#c3cdd9' : '#465d73') : (dark ? '#65788b45' : '#8196ab40');
+const post = (type, extra = {}) => {
+  if (!destroyed) window.webkit?.messageHandlers.followGraph.postMessage({ type, session, ...extra });
+};
+
+/** Rasterize each avatar once; Canvas drawing never allocates GPU textures or images per frame. */
+function paint(resource, node) {
+  const ctx = resource.canvas.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(32, 32, 32, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = dark ? '#46586a' : '#cdd9e5';
+  ctx.fillRect(0, 0, 64, 64);
+  if (resource.loaded) ctx.drawImage(resource.image, 0, 0, 64, 64);
+  else {
+    ctx.fillStyle = dark ? '#ffffff' : '#24374a';
+    ctx.font = 'bold 28px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(node.login.slice(0, 1).toUpperCase(), 32, 33);
+  }
+  ctx.restore();
+}
+
+/** Bound avatar requests; removed nodes and teardown release in-flight handlers too. */
+function drainImages() {
+  while (!destroyed && activeImages < 4 && imageQueue.length) {
+    const [node, resource] = imageQueue.shift();
+    if (resources.get(node.id) !== resource) continue;
+    activeImages++;
+    const image = new Image();
+    resource.image = image;
+    const finish = () => {
+      image.onload = image.onerror = null;
+      resource.cancel = null;
+      activeImages--;
+      drainImages();
+    };
+    resource.cancel = () => { finish(); image.src = ''; };
+    image.onload = () => {
+      if (!destroyed && resources.get(node.id) === resource) {
+        resource.loaded = true;
+        paint(resource, node);
+        // Invalidate one frame even after the force simulation has stopped.
+        graph.nodeCanvasObject(drawNode);
+      }
+      finish();
+    };
+    image.onerror = finish;
+    const url = new URL(node.avatar);
+    url.searchParams.set('s', '64');
+    image.src = url.href;
+  }
+}
+
+function avatar(node) {
+  if (!resources.has(node.id)) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const resource = { canvas, loaded: false };
+    resources.set(node.id, resource);
+    paint(resource, node);
+    if (node.avatar) { imageQueue.push([node, resource]); drainImages(); }
+  }
+  return resources.get(node.id).canvas;
+}
+
+/** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
+function drawNode(node, ctx, scale) {
+  const r = radius(node);
+  const emphasized = node.id === root || node.id === selected ||
+    highlightedNodes.has(node.id) || adjacentNodes.has(node.id);
+  ctx.save();
+  ctx.globalAlpha = !selected || emphasized ? 1 : 0.3;
+  if (r * scale < 3 && !emphasized) {
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = dark ? '#92a5b8' : '#687f96';
+    ctx.fill();
+  } else {
+    ctx.drawImage(avatar(node), node.x - r, node.y - r, r * 2, r * 2);
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = emphasized ? '#007aff' : (dark ? '#8b99a8' : '#ffffff');
+    ctx.lineWidth = (emphasized ? 2 : 1) / scale;
+    ctx.stroke();
+  }
+  if (node.id === root || node.id === selected) {
+    // Only prominent nodes have persistent labels, so large graphs stay readable.
+    const fontSize = 12 / scale;
+    ctx.font = `500 ${fontSize}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = dark ? '#f5f5f7' : '#1c1c1e';
+    ctx.fillText(`@${node.login}`, node.x, node.y + r + 5 / scale);
+  }
+  ctx.restore();
+}
+
+const graph = new ForceGraph(container)
+  .minZoom(0.05).maxZoom(8)
+  .nodeRelSize(4)
+  .nodeVal(node => (radius(node) / 4) ** 2)
+  .nodeCanvasObject(drawNode)
+  .nodePointerAreaPaint((node, color, ctx, scale = 1) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, Math.max(radius(node), 6 / scale), 0, Math.PI * 2);
+    ctx.fill();
+  })
+  .nodeLabel(node => {
+    const label = document.createElement('span');
+    label.textContent = `${node.name} (@${node.login})`;
+    return label;
+  })
+  .linkWidth(link => isPath(link) ? 3 : isAdjacent(link) ? 2.4 : selected ? 0.3 : 0.6)
+  .linkColor(link => !isPath(link) && !isAdjacent(link) && selected ?
+    (dark ? '#65788b18' : '#8196ab18') : linkColor(link))
+  .linkDirectionalArrowColor(linkColor)
+  .linkDirectionalArrowLength(link => isPath(link) || isAdjacent(link) ? 6 : 0)
+  .linkDirectionalArrowRelPos(1)
+  .cooldownTicks(120)
+  .onEngineTick(applyPendingView)
+  .onEngineStop(() => {
+    applyPendingView();
+    if (!viewportTouched && nodes.size > 1) fit();
+    publishAnchor();
+  })
+  .onRenderFramePost(() => scheduleAnchor())
+  .onNodeClick(node => { if (performance.now() - lastDrag > 250) selectNode(node.id); })
+  .onBackgroundClick(() => selectNode(null))
+  .onNodeDrag(() => { lastDrag = performance.now(); viewportTouched = true; })
+  .onNodeDragEnd(node => {
+    lastDrag = performance.now();
+    node.fx = node.id === root ? 0 : node.x;
+    node.fy = node.id === root ? 0 : node.y;
+  })
+  .onZoomEnd(({ x, y, k }) => {
+    post('viewport', { value: [x, y, k] });
+    publishAnchor();
+  });
+
+/** Coalesce moving frames and retain a trailing update, including the final settled frame.
+ * Only the selected avatar crosses the native bridge; unchanged coordinates produce no message.
+ */
+function scheduleAnchor() {
+  if (!destroyed && selected && anchorTimer === null) {
+    anchorTimer = setTimeout(() => { anchorTimer = null; publishAnchor(); }, 33);
+  }
+}
+
+function publishAnchor() {
+  if (destroyed) return;
+  const node = nodes.get(selected);
+  const point = node && graph.graph2ScreenCoords(node.x, node.y);
+  const value = point ? [point.x, point.y, radius(node) * graph.zoom()] : null;
+  if (value && !value.every(Number.isFinite)) return;
+  const rounded = value?.map(v => Math.round(v * 2) / 2) ?? null;
+  const identity = JSON.stringify([selected, rounded]);
+  if (identity === lastAnchor) return;
+  lastAnchor = identity;
+  post('anchor', { id: selected, value: rounded });
+}
+
+/** Give immediate visual feedback before Swift's next update pass. The native side still
+ * owns path computation and loading; post selection before coordinates so stale anchors are rejected.
+ */
+function selectNode(id) {
+  if (selected === id) {
+    post('select', { id });
+    publishAnchor();
+    return;
+  }
+  selected = id;
+  pathEdges = new Set();
+  highlightedNodes = new Set();
+  updateAdjacency();
+  redrawSelection();
+  post('select', { id });
+  publishAnchor();
+}
+
+function updateAdjacency() {
+  adjacentNodes = new Set();
+  for (const link of links.values()) {
+    if (isAdjacent(link)) {
+      adjacentNodes.add(endpoint(link.source));
+      adjacentNodes.add(endpoint(link.target));
+    }
+  }
+}
+
+function redrawSelection() {
+  graph.nodeCanvasObject(drawNode).nodePointerAreaPaint(graph.nodePointerAreaPaint())
+    .linkColor(graph.linkColor()).linkWidth(graph.linkWidth())
+    .linkDirectionalArrowLength(graph.linkDirectionalArrowLength());
+}
+
+// force-graph runs its simulation in two dimensions. The shared D3 extension supplies
+// collision detection without bringing back Three.js, a perspective camera or WebGL.
+graph.d3Force('collide', forceCollide(node => node.id === root ? 25 : 21).iterations(2));
+graph.d3Force('charge').strength(-90);
+graph.d3Force('link').distance(65).strength(0.12);
+
+function fit(duration = 0) {
+  graph.zoomToFit(duration, Math.min(90, innerWidth / 5, innerHeight / 5));
+}
+
+/** The component applies graphData asynchronously and may auto-zoom on that update.
+ * Restore the native viewport only after its layout update, including zero-tick Reduce Motion.
+ */
+function applyPendingView() {
+  const action = pendingView;
+  pendingView = null;
+  action?.();
+}
+
+function syncAnimation() {
+  if (active && !document.hidden) graph.resumeAnimation();
+  else graph.pauseAnimation();
+}
+
+/** Apply ordered native batches without rebuilding existing node positions or user pan/zoom. */
+function update(payload) {
+  if (destroyed || payload.sequence <= lastSequence) return;
+  lastSequence = payload.sequence;
+  session = payload.session;
+  root = payload.root;
+  if ('dark' in payload) {
+    dark = payload.dark;
+    graph.backgroundColor(dark ? '#1c1c1e' : '#f5f5f7');
+    for (const [id, resource] of resources) paint(resource, nodes.get(id));
+  }
+  if ('reduceMotion' in payload) {
+    reduceMotion = payload.reduceMotion;
+    graph.cooldownTicks(reduceMotion ? 0 : 120);
+  }
+  if ('selected' in payload) selected = payload.selected;
+  if (payload.path) {
+    highlightedNodes = new Set(payload.path);
+    pathEdges = new Set(payload.path.slice(1).map((id, i) => edgeKey(payload.path[i], id)));
+  }
+  if (payload.viewport) viewportTouched = true;
+  if (payload.nodes) {
+    const incoming = new Set(payload.nodes.map(node => node.id));
+    for (const id of nodes.keys()) {
+      if (!incoming.has(id)) {
+        nodes.delete(id);
+        const resource = resources.get(id);
+        resources.delete(id);
+        resource?.cancel?.();
+      }
+    }
+    // Sorted phyllotaxis is deterministic on reopen and valid even with Reduce Motion.
+    const sorted = [...payload.nodes].sort((a, b) =>
+      a.id === b.id ? 0 : a.id === root ? -1 : b.id === root ? 1 :
+        a.id.localeCompare(b.id, 'en', { numeric: true }));
+    sorted.forEach((value, index) => {
+      if (nodes.has(value.id)) {
+        const node = nodes.get(value.id);
+        if (node.avatar !== value.avatar || node.login !== value.login) {
+          const resource = resources.get(value.id);
+          resources.delete(value.id);
+          resource?.cancel?.();
+        }
+        Object.assign(node, value);
+      } else {
+        const theta = index * 2.39996323, distance = 34 * Math.sqrt(index);
+        nodes.set(value.id, { ...value, x: distance * Math.cos(theta), y: distance * Math.sin(theta) });
+      }
+      if (value.id === root) Object.assign(nodes.get(value.id), { x: 0, y: 0, fx: 0, fy: 0 });
+    });
+    const newLinks = new Map();
+    payload.links.forEach(value => {
+      const key = edgeKey(value.source, value.target);
+      newLinks.set(key, links.get(key) || value);
+    });
+    links.clear(); for (const [key, link] of newLinks) links.set(key, link);
+    graph.graphData({ nodes: [...nodes.values()], links: [...links.values()] });
+  }
+  if ('selected' in payload || payload.nodes) {
+    updateAdjacency();
+  }
+  // Request redraws for selection/avatars without keeping a settled canvas rendering forever.
+  redrawSelection();
+  const applyView = () => {
+    if (payload.viewport) {
+      const [x, y, zoom] = payload.viewport;
+      graph.zoom(zoom, 0).centerAt(x, y, 0);
+    } else if ('focus' in payload) {
+      const node = nodes.get(payload.focus);
+      const duration = reduceMotion ? 0 : 300;
+      viewportTouched = true;
+      if (node) graph.centerAt(node.x, node.y, duration).zoom(Math.max(1, graph.zoom()), duration);
+      else fit(duration);
+    } else if (!viewportTouched && nodes.size > 1) fit();
+  };
+  if (payload.nodes) {
+    if (!pendingView || payload.viewport || 'focus' in payload) pendingView = applyView;
+  }
+  else if (payload.viewport || 'focus' in payload) { pendingView = null; applyView(); }
+  if ('active' in payload) active = payload.active;
+  syncAnimation();
+  publishAnchor();
+}
+
+// Track actual gestures separately from programmatic zoom events, which also invoke onZoomEnd.
+const touchViewport = () => { viewportTouched = true; };
+container.addEventListener('pointerdown', touchViewport);
+container.addEventListener('wheel', touchViewport, { passive: true });
+const resize = new ResizeObserver(() => {
+  graph.width(innerWidth).height(innerHeight);
+  scheduleAnchor();
+});
+resize.observe(container);
+document.addEventListener('visibilitychange', syncAnimation);
+const onError = () => post('error');
+window.addEventListener('error', onError);
+window.followGraph = {
+  update,
+  destroy() {
+    destroyed = true;
+    clearTimeout(anchorTimer);
+    anchorTimer = null;
+    pendingView = null;
+    resize.disconnect();
+    container.removeEventListener('pointerdown', touchViewport);
+    container.removeEventListener('wheel', touchViewport);
+    document.removeEventListener('visibilitychange', syncAnimation);
+    window.removeEventListener('error', onError);
+    for (const resource of resources.values()) resource.cancel?.();
+    resources.clear(); imageQueue.length = 0;
+    graph._destructor();
+  }
+};
+post('ready');

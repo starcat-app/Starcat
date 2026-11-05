@@ -998,6 +998,186 @@ private struct AboutDependency: Identifiable {
 
     private static let embeddedResources: [AboutDependency] = [
         AboutDependency(
+            name: "@tweenjs/tween.js 25.0.0",
+            license: "MIT",
+            copyright: "Copyright (c) 2010-2012 Tween.js authors.",
+            url: URL(string: "https://github.com/tweenjs/tween.js")
+        ),
+        AboutDependency(
+            name: "accessor-fn 1.5.3",
+            license: "MIT",
+            copyright: "Copyright (c) 2017 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/accessor-fn")
+        ),
+        AboutDependency(
+            name: "bezier-js 6.1.4",
+            license: "MIT",
+            copyright: "A javascript Bezier curve library by Pomax.",
+            url: URL(string: "https://github.com/Pomax/bezierjs")
+        ),
+        AboutDependency(
+            name: "canvas-color-tracker 1.3.2",
+            license: "MIT",
+            copyright: "Copyright (c) 2018 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/canvas-color-tracker")
+        ),
+        AboutDependency(
+            name: "d3-array 3.2.5",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-array")
+        ),
+        AboutDependency(
+            name: "d3-binarytree 1.0.2",
+            license: "MIT",
+            copyright: "Copyright (c) 2017 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/d3-binarytree")
+        ),
+        AboutDependency(
+            name: "d3-color 3.1.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-color")
+        ),
+        AboutDependency(
+            name: "d3-dispatch 3.0.2",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-dispatch")
+        ),
+        AboutDependency(
+            name: "d3-drag 3.0.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-drag")
+        ),
+        AboutDependency(
+            name: "d3-ease 3.0.2",
+            license: "BSD-3-Clause",
+            copyright: "Copyright 2010-2026 Mike Bostock; Copyright 2001 Robert Penner",
+            url: URL(string: "https://github.com/d3/d3-ease")
+        ),
+        AboutDependency(
+            name: "d3-force-3d 3.0.6",
+            license: "MIT",
+            copyright: "Copyright (c) 2017 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/d3-force-3d")
+        ),
+        AboutDependency(
+            name: "d3-format 3.1.3",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-format")
+        ),
+        AboutDependency(
+            name: "d3-interpolate 3.0.2",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-interpolate")
+        ),
+        AboutDependency(
+            name: "d3-octree 1.1.0",
+            license: "MIT",
+            copyright: "Copyright (c) 2017 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/d3-octree")
+        ),
+        AboutDependency(
+            name: "d3-quadtree 3.0.2",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-quadtree")
+        ),
+        AboutDependency(
+            name: "d3-scale 4.0.3",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-scale")
+        ),
+        AboutDependency(
+            name: "d3-scale-chromatic 3.1.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock; Copyright 2002 Cynthia Brewer, Mark Harrower, and The Pennsylvania State University",
+            url: URL(string: "https://github.com/d3/d3-scale-chromatic")
+        ),
+        AboutDependency(
+            name: "d3-selection 3.0.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-selection")
+        ),
+        AboutDependency(
+            name: "d3-time 3.1.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-time")
+        ),
+        AboutDependency(
+            name: "d3-time-format 4.1.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-time-format")
+        ),
+        AboutDependency(
+            name: "d3-timer 3.0.2",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-timer")
+        ),
+        AboutDependency(
+            name: "d3-transition 3.0.2",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-transition")
+        ),
+        AboutDependency(
+            name: "d3-zoom 3.0.1",
+            license: "ISC",
+            copyright: "Copyright 2010-2026 Mike Bostock",
+            url: URL(string: "https://github.com/d3/d3-zoom")
+        ),
+        AboutDependency(
+            name: "float-tooltip 1.8.0",
+            license: "MIT",
+            copyright: "Copyright (c) 2022 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/float-tooltip")
+        ),
+        AboutDependency(
+            name: "force-graph 1.52.0",
+            license: "MIT",
+            copyright: "Copyright (c) 2018 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/force-graph")
+        ),
+        AboutDependency(
+            name: "index-array-by 1.4.2",
+            license: "MIT",
+            copyright: "Copyright (c) 2018 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/index-array-by")
+        ),
+        AboutDependency(
+            name: "kapsule 1.16.3",
+            license: "MIT",
+            copyright: "Copyright (c) 2017 Vasco Asturiano",
+            url: URL(string: "https://github.com/vasturiano/kapsule")
+        ),
+        AboutDependency(
+            name: "lodash-es 4.18.1",
+            license: "MIT",
+            copyright: "Copyright OpenJS Foundation and other contributors <https://openjsf.org/>; Copyright and related rights for sample code are waived via CC0. Sample",
+            url: URL(string: "https://github.com/lodash/lodash")
+        ),
+        AboutDependency(
+            name: "preact 11.1.1",
+            license: "MIT",
+            copyright: "Copyright (c) 2015-present Jason Miller",
+            url: URL(string: "https://github.com/preactjs/preact")
+        ),
+        AboutDependency(
+            name: "tinycolor2 1.6.0",
+            license: "MIT",
+            copyright: "Copyright (c), Brian Grinstead, http://briangrinstead.com",
+            url: URL(string: "https://github.com/bgrins/TinyColor")
+        ),
+        AboutDependency(
             name: "CC Switch",
             license: "MIT",
             copyright: "Copyright (c) 2025 Jason Young",
