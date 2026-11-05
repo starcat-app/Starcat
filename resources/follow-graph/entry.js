@@ -14,9 +14,12 @@ const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let adjacentNodes = new Set();
 const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
+const avatarFades = new Set();
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
-const radius = node => node.id === root ? 20 : node.id === selected ? 17 : 11;
+// Degree describes only the loaded presentation graph. Logarithmic scaling keeps
+// a high-degree hub readable without allowing it to cover the surrounding graph.
+const radius = node => node.radius ?? 10;
 const isPath = link => pathEdges.has(edgeKey(endpoint(link.source), endpoint(link.target)));
 const isAdjacent = link => selected != null &&
   (endpoint(link.source) === selected || endpoint(link.target) === selected);
@@ -27,8 +30,8 @@ const post = (type, extra = {}) => {
 };
 
 /** Rasterize each avatar once; Canvas drawing never allocates GPU textures or images per frame. */
-function paint(resource, node) {
-  const ctx = resource.canvas.getContext('2d');
+function paint(resource, node, placeholder = false) {
+  const ctx = (placeholder ? resource.placeholder : resource.canvas).getContext('2d');
   ctx.clearRect(0, 0, 64, 64);
   ctx.save();
   ctx.beginPath();
@@ -36,7 +39,7 @@ function paint(resource, node) {
   ctx.clip();
   ctx.fillStyle = dark ? '#46586a' : '#cdd9e5';
   ctx.fillRect(0, 0, 64, 64);
-  if (resource.loaded) ctx.drawImage(resource.image, 0, 0, 64, 64);
+  if (resource.loaded && !placeholder) ctx.drawImage(resource.image, 0, 0, 64, 64);
   else {
     ctx.fillStyle = dark ? '#ffffff' : '#24374a';
     ctx.font = 'bold 28px -apple-system, sans-serif';
@@ -65,9 +68,12 @@ function drainImages() {
     image.onload = () => {
       if (!destroyed && resources.get(node.id) === resource) {
         resource.loaded = true;
+        resource.loadedAt = performance.now();
         paint(resource, node);
+        if (!reduceMotion) avatarFades.add(resource);
         // Invalidate one frame even after the force simulation has stopped.
         graph.nodeCanvasObject(drawNode);
+        syncAnimation();
       }
       finish();
     };
@@ -81,13 +87,16 @@ function drainImages() {
 function avatar(node) {
   if (!resources.has(node.id)) {
     const canvas = document.createElement('canvas');
+    const placeholder = document.createElement('canvas');
     canvas.width = canvas.height = 64;
-    const resource = { canvas, loaded: false };
+    placeholder.width = placeholder.height = 64;
+    const resource = { canvas, placeholder, loaded: false };
     resources.set(node.id, resource);
     paint(resource, node);
+    paint(resource, node, true);
     if (node.avatar) { imageQueue.push([node, resource]); drainImages(); }
   }
-  return resources.get(node.id).canvas;
+  return resources.get(node.id);
 }
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
@@ -100,14 +109,24 @@ function drawNode(node, ctx, scale) {
   const emphasized = node.id === root || node.id === selected ||
     highlightedNodes.has(node.id) || adjacentNodes.has(node.id);
   ctx.save();
-  ctx.globalAlpha = (!selected || emphasized ? 1 : 0.3) * Math.min(1, progress * 3);
+  const opacity = (!selected || emphasized ? 1 : 0.3) * Math.min(1, progress * 3);
+  ctx.globalAlpha = opacity;
   if (r * scale < 3 && !emphasized) {
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
     ctx.fillStyle = dark ? '#92a5b8' : '#687f96';
     ctx.fill();
   } else {
-    ctx.drawImage(avatar(node), node.x - r, node.y - r, r * 2, r * 2);
+    const resource = avatar(node);
+    const fade = !resource.loaded || reduceMotion ? 1 :
+      Math.min(1, Math.max(0, (performance.now() - resource.loadedAt) / 280));
+    // Keep the letter beneath the fading image, so a late download never flashes
+    // an empty circle. The node's selection/reveal opacity still applies to both.
+    if (fade < 1) ctx.drawImage(resource.placeholder, node.x - r, node.y - r, r * 2, r * 2);
+    ctx.save();
+    ctx.globalAlpha = opacity * fade;
+    ctx.drawImage(resource.canvas, node.x - r, node.y - r, r * 2, r * 2);
+    ctx.restore();
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
     ctx.strokeStyle = emphasized ? '#007aff' : (dark ? '#8b99a8' : '#ffffff');
@@ -266,7 +285,8 @@ function redrawSelection() {
 
 // force-graph runs its simulation in two dimensions. The shared D3 extension supplies
 // collision detection without bringing back Three.js, a perspective camera or WebGL.
-graph.d3Force('collide', forceCollide(node => node.id === root ? 25 : 21).iterations(2));
+const collision = forceCollide(node => radius(node) + 6).iterations(2);
+graph.d3Force('collide', collision);
 graph.d3Force('charge').strength(-90);
 graph.d3Force('link').distance(65).strength(0.12);
 
@@ -288,7 +308,11 @@ function syncAnimation() {
   reveal.setRunning(running, performance.now());
   if (running) graph.resumeAnimation();
   else graph.pauseAnimation();
-  if (destroyed || !running || reduceMotion || (selectedPath.length < 2 && !reveal.animating)) {
+  for (const resource of avatarFades) {
+    if (reduceMotion || performance.now() - resource.loadedAt >= 280) avatarFades.delete(resource);
+  }
+  if (destroyed || !running || reduceMotion ||
+      (selectedPath.length < 2 && !reveal.animating && !avatarFades.size)) {
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
   } else if (animationFrame === null) animationFrame = requestAnimationFrame(animate);
@@ -341,7 +365,10 @@ function update(payload) {
   if ('dark' in payload) {
     dark = payload.dark;
     graph.backgroundColor(dark ? '#1c1c1e' : '#f5f5f7');
-    for (const [id, resource] of resources) paint(resource, nodes.get(id));
+    for (const [id, resource] of resources) {
+      paint(resource, nodes.get(id));
+      paint(resource, nodes.get(id), true);
+    }
   }
   if ('reduceMotion' in payload) {
     reduceMotion = payload.reduceMotion;
@@ -359,6 +386,7 @@ function update(payload) {
         placed.delete(id);
         const resource = resources.get(id);
         resources.delete(id);
+        avatarFades.delete(resource);
         resource?.cancel?.();
       }
     }
@@ -372,6 +400,7 @@ function update(payload) {
         if (node.avatar !== value.avatar || node.login !== value.login) {
           const resource = resources.get(value.id);
           resources.delete(value.id);
+          avatarFades.delete(resource);
           resource?.cancel?.();
         }
         Object.assign(node, value);
@@ -387,6 +416,17 @@ function update(payload) {
       newLinks.set(key, links.get(key) || value);
     });
     links.clear(); for (const [key, link] of newLinks) links.set(key, link);
+    const degrees = new Map();
+    for (const link of links.values()) {
+      for (const id of new Set([endpoint(link.source), endpoint(link.target)])) {
+        degrees.set(id, (degrees.get(id) || 0) + 1);
+      }
+    }
+    for (const node of nodes.values()) {
+      node.radius = Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
+    }
+    // D3 caches collision radii. Refresh it when the graph changes, not on selection.
+    collision.radius(node => radius(node) + 6);
     graphRevision = payload.revision;
     reveal.sync(nodes, links, root, performance.now(), reduceMotion);
     if (!overviewStarted && !reduceMotion) {
@@ -457,6 +497,7 @@ window.followGraph = {
     window.removeEventListener('error', onError);
     for (const resource of resources.values()) resource.cancel?.();
     resources.clear(); imageQueue.length = 0;
+    avatarFades.clear();
     graph._destructor();
   }
 };

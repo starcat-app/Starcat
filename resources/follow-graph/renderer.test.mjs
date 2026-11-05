@@ -118,7 +118,7 @@ test('avatar hit areas, directed path highlight and image redraw survive settled
   r.images[0].onload();
   assert.ok(r.calls.some(([name]) => name === 'nodeCanvasObject'));
   r.props.get('nodePointerAreaPaint')(nodes[1], '#123456', r.canvasContext);
-  assert.equal(r.calls.findLast(([name]) => name === 'arc')[3], 17);
+  assert.equal(r.calls.findLast(([name]) => name === 'arc')[3], nodes[1].radius);
   r.props.get('nodePointerAreaPaint')(nodes[1], '#123456', r.canvasContext, 0.1);
   assert.equal(r.calls.findLast(([name]) => name === 'arc')[3], 60);
   r.props.get('onNodeClick')(nodes[1]);
@@ -153,7 +153,7 @@ test('selection emphasizes every incoming/outgoing edge, keeps path distinct, an
   } });
   r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[3], recording, 1);
   r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[4], recording, 1);
-  assert.deepEqual(alpha, [1, 0.3]);
+  assert.deepEqual(alpha, [1, 1, 0.3, 0.3]);
   r.update(2, { selected: null, path: [] });
   assert.equal(width(incoming), 0.6);
   assert.equal(arrow(incoming), 0);
@@ -243,7 +243,7 @@ test('cached snapshots visibly reveal root then children, reuse objects and repo
   assert.equal(displayed.nodes.length, 2);
   assert.equal(displayed.nodes[0], root);
   assert.equal(displayed.nodes[1].id, '2');
-  assert.ok(Math.hypot(displayed.nodes[1].x - root.x, displayed.nodes[1].y - root.y) <= 45);
+  assert.ok(Math.hypot(displayed.nodes[1].x - root.x, displayed.nodes[1].y - root.y) <= root.radius + 24.001);
   r.calls.length = 0;
   r.props.get('nodeCanvasObject')(displayed.nodes[1], r.canvasContext, 1);
   const initialSize = r.calls.findLast(([name]) => name === 'arc')[3];
@@ -343,4 +343,48 @@ test('hidden/inactive canvas stays paused; teardown releases avatar loads and li
   const before = r.messages.length;
   r.update(2, r.data(3));
   assert.equal(r.messages.length, before);
+});
+
+test('downloaded avatars crossfade after layout settles and stop scheduling after completion', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  r.update(2, { reduceMotion: false });
+  const node = r.props.get('graphData').nodes[1];
+  const alphas = [];
+  const ctx = new Proxy({}, {
+    get: () => () => {},
+    set: (_, key, value) => { if (key === 'globalAlpha') alphas.push(value); return true; }
+  });
+  const draw = () => { alphas.length = 0; r.props.get('nodeCanvasObject')(node, ctx, 1); return alphas.at(-1); };
+  draw();
+  r.images[0].onload();
+  assert.equal(draw(), 0);
+  assert.equal(r.frames.size, 1);
+  r.frame(140);
+  assert.equal(draw(), 0.5);
+  r.frame(140);
+  assert.equal(draw(), 1);
+  assert.equal(r.frames.size, 0);
+  r.update(3, { reduceMotion: true });
+  assert.equal(draw(), 1);
+});
+
+test('degree sizes count incoming/outgoing loaded edges and selection never changes geometry', () => {
+  const r = renderer(), data = r.data(6);
+  data.links = [
+    { source: '1', target: '2' },
+    ...['3', '4', '5', '6'].map(target => ({ source: '2', target }))
+  ];
+  r.update(1, data);
+  const nodes = r.props.get('graphData').nodes;
+  assert.ok(nodes[1].radius > nodes[0].radius);
+  assert.equal(nodes[0].radius, nodes[2].radius);
+  const radius = nodes[1].radius;
+  r.props.get('onNodeClick')(nodes[1]);
+  assert.equal(nodes[1].radius, radius);
+  r.update(2, { ...data, links: [{ source: '1', target: '2' }] });
+  assert.ok(nodes[1].radius < radius);
+  assert.equal(nodes[2].radius, 10);
+  r.update(3, r.data(10_000));
+  assert.ok(r.props.get('graphData').nodes.every(node => node.radius >= 10 && node.radius <= 26));
 });
