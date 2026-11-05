@@ -92,6 +92,15 @@
 - `make build-direct` 构建与产物校验通过；日志 `/tmp/starcat-follow-graph-compact-direct.log`。原生回归和双渠道最终构建在关注同步提交时一并执行。
 - GUI 外观、长译文和真实点击体验留待人工验收，未使用屏幕控制。关注写操作在下一独立提交中接入。
 
+## 关注操作与关系同步（2026-11-06）
+
+- 复用 OwnerFollowService 接入关注 / 取消关注，本人隐藏按钮；请求失败保留状态并在卡片内提示，查询重试与写入重试分别处理，避免误取消关注。关闭或切换卡片不重复提交请求，旧查询不能回滚写入成功结果。
+- GitHub 成功后在 Store 中同步本人出边、可达分量与账户 JSON 缓存，更新路径和流水。取消直接关注后，仍可达的选中用户和完整间接路径不会被展示样本截断。
+- 关注修订号保护操作前已开始的跨页刷新；之后新刷新仍使用远端结果。同账户重开和迟到发布使用快照新旧校验；成功回调检查账户及 Store 身份。
+- 5 个 suite、34 项原生测试通过（0.295 秒），含 Owner 卡片社交链接回归；新增关注失败 / 重试、查询重试意图、重复点击、迟到查询、取消查询、缓存、账户拒绝、并发分页和重开保护。日志 `/tmp/starcat-follow-graph-follow-tests.log`。
+- 本轮复用已有文案，12 个相关 key 均具备 17 种语言，未修改 Catalog；真实文案布局、明暗主题、过渡效果与 GitHub 关注写操作仍待人工验收，自动测试不代替 GUI 或真实账号操作。
+- 最终 `make build-appstore` / `make build-direct` 构建及产物校验通过；两渠道 3 份离线渲染资源与源码逐字节一致，12 个复用 key × 17 种语言与编译后的字符串一致。日志 `/tmp/starcat-follow-graph-profile-appstore.log`、`/tmp/starcat-follow-graph-profile-direct.log`；`git diff --check` 通过。
+
 ## 原 3D MVP 自动验证（历史记录）
 
 - `xcodegen generate` 已执行。

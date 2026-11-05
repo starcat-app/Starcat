@@ -45,6 +45,7 @@ struct OwnerCardView: View {
     var onToggleFollow: () -> Void = {}
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 已关注时默认表达关系状态，只有 hover 才暴露破坏性较强的“取消关注”意图。
@@ -496,6 +497,6 @@ struct OwnerCardView: View {
     }
 
     private func compactCount(_ value: Int) -> String {
-        value.formatted(.number.notation(.compactName))
+        value.formatted(.number.notation(.compactName).locale(locale))
     }
 }

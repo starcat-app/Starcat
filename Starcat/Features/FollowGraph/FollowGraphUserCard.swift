@@ -18,6 +18,7 @@ struct FollowGraphUserCard: View {
     @State private var profile: GitHubUserDTO?
     @State private var socialAccounts: [GitHubSocialAccountDTO] = []
     @State private var contribution: ContributionCalendarPayload?
+    @State private var followRetry = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -31,16 +32,38 @@ struct FollowGraphUserCard: View {
                 externalLinks: OwnerCardExternalLink.make(profile: profile, socialAccounts: socialAccounts),
                 emailAddress: profile?.email,
                 contributionPayload: contribution,
-                isFollowing: nil,
+                isFollowing: model.followState.values[node.id],
                 isCompact: true,
-                showsFollowAction: false,
+                showsFollowAction: node.id != model.snapshot?.rootID,
+                isFollowInFlight: model.followState.inFlight.contains(node.id) ||
+                    (model.followState.values[node.id] == nil && model.followState.errors[node.id] == nil),
+                isFollowActionEnabled: model.followState.values[node.id] != nil,
                 onOpenGitHub: { open(GitHubURLs.userProfile(login: node.login)) },
                 onClose: { model.select(nil, expand: false) },
                 onOpenExternalLink: open,
                 onComposeEmail: composeEmail,
                 onOpenFollowers: { open(GitHubURLs.userFollowersTab(login: node.login)) },
-                onOpenFollowing: { open(GitHubURLs.userFollowingTab(login: node.login)) }
+                onOpenFollowing: { open(GitHubURLs.userFollowingTab(login: node.login)) },
+                onToggleFollow: { model.toggleFollow(node, service: dependencies.ownerFollowService) }
             )
+
+            if let error = model.followState.errors[node.id] {
+                HStack(alignment: .top) {
+                    Text(verbatim: error.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button("action.retry") {
+                        switch error {
+                        case .query: followRetry += 1
+                        case .write:
+                            model.toggleFollow(node, service: dependencies.ownerFollowService)
+                        }
+                    }
+                    .disabled(model.followState.inFlight.contains(node.id))
+                }
+            }
 
             Divider()
 
@@ -91,6 +114,10 @@ struct FollowGraphUserCard: View {
             let value = try? await dependencies.ownerFollowService.contribution(login: node.login)
             guard !Task.isCancelled else { return }
             contribution = value
+        }
+        .task(id: followRetry) {
+            guard node.id != model.snapshot?.rootID else { return }
+            await model.followState.load(node, service: dependencies.ownerFollowService)
         }
     }
 

@@ -22,6 +22,40 @@ private func page(_ source: Int, _ targets: [Int], next: String? = nil, remainin
 
 @Suite("FollowGraph graph semantics")
 struct FollowGraphEngineTests {
+    @Test("关注缩短路径，取消后保留间接可达用户并清理失联分量")
+    func confirmedFollowChanges() {
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2, 3]))
+        graph.merge(page(2, [4, 5]))
+        graph.merge(page(3, [4]))
+        graph.setFollowing(true, node: node(4))
+        graph.setFollowing(true, node: node(4))
+        #expect(graph.path(to: "4") == ["1", "4"])
+        #expect(graph.progress["1"]?.totalCount == 3)
+        graph.setFollowing(false, node: node(4))
+        #expect(graph.path(to: "4") == ["1", "2", "4"])
+        graph.setFollowing(false, node: node(2))
+        #expect(graph.nodes["2"] == nil)
+        #expect(graph.nodes["5"] == nil)
+        #expect(graph.path(to: "4") == ["1", "3", "4"])
+        #expect(graph.progress["1"]?.totalCount == 1)
+        let before = graph
+        graph.setFollowing(true, node: node(1))
+        #expect(graph == before)
+    }
+
+    @Test("取消直接关注后，选中用户仍沿已知间接路径展示，不受二层样本截断")
+    func selectionSurvivesUnfollow() {
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2, 100]))
+        graph.merge(page(2, Array(3...100)))
+        graph.setFollowing(false, node: node(100))
+        #expect(graph.presentation().nodes["100"] == nil)
+        let displayed = graph.presentation(selectedID: "100")
+        #expect(displayed.path(to: "100") == ["1", "2", "100"])
+        #expect(!displayed.edges.contains(.init(source: "1", target: "100")))
+    }
+
     @Test("高出度缓存默认恢复两层样本，显式展开复用缓存且不修改原快照")
     func boundedPresentation() {
         var graph = FollowGraphSnapshot(root: node(1))
@@ -147,6 +181,7 @@ private actor SuspendedFollowGraphProvider: FollowGraphProviding {
         await withCheckedContinuation { waiter = $0 }
     }
     func release(_ page: FollowGraphPage) {
+        requested = false
         response?.resume(returning: page)
         response = nil
     }
@@ -158,6 +193,105 @@ struct FollowGraphStoreTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return (root, FollowGraphDiskCache(root: root))
+    }
+
+    @Test("已确认关注同步缓存，其他账户无法写入")
+    func followingPersistence() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = FollowGraphStore(provider: ScriptedFollowGraphProvider([]), cache: cache)
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, [3]))
+        await store.begin(graph, session: UUID())
+        let followed = try await store.setFollowing(true, node: node(3), accountID: "1")
+        #expect(followed.path(to: "3") == ["1", "3"])
+        #expect(await cache.load(account: "1") == followed)
+        let unfollowed = try await store.setFollowing(false, node: node(3), accountID: "1")
+        #expect(unfollowed.path(to: "3") == ["1", "2", "3"])
+        #expect(await cache.load(account: "1") == unfollowed)
+        await #expect(throws: FollowGraphStoreError.self) {
+            _ = try await store.setFollowing(true, node: node(4), accountID: "99")
+        }
+        #expect(await store.read(accountID: "1") == unfollowed)
+        #expect(await cache.load(account: "99") == nil)
+    }
+
+    @Test("重开画布时较旧缓存不能覆盖已确认的关注关系")
+    func reopenDuringFollow() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = FollowGraphStore(provider: ScriptedFollowGraphProvider([]), cache: cache)
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2]))
+        graph.savedAt = .distantPast
+        await store.begin(graph, session: UUID())
+        let confirmed = try await store.setFollowing(true, node: node(3), accountID: "1")
+        let current = await store.begin(graph, session: UUID())
+        #expect(current == confirmed)
+        #expect(current.path(to: "3") == ["1", "3"])
+    }
+
+    @Test("变更前已开始的刷新不能恢复取消的边或删除刚关注的边", arguments: [true, false])
+    func followDuringRefresh(following: Bool) async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let provider = SuspendedFollowGraphProvider()
+        let store = FollowGraphStore(provider: provider, cache: cache)
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, following ? [2] : [2, 3]))
+        graph.merge(page(2, [3]))
+        let session = UUID()
+        await store.begin(graph, session: session)
+        let request = Task { try await store.load(userID: "1", session: session, refresh: true) }
+        await provider.waitForRequest()
+        _ = try await store.setFollowing(following, node: node(3), accountID: "1")
+        await provider.release(page(1, following ? [2] : [2, 3]))
+        let value = try await request.value
+        #expect(value.edges.contains(.init(source: "1", target: "3")) == following)
+        #expect(value.path(to: "3") == (following ? ["1", "3"] : ["1", "2", "3"]))
+        #expect(await cache.load(account: "1") == value)
+    }
+
+    @Test("写操作之后新发起的刷新仍可反映 GitHub 的后续变化")
+    func laterRefreshIsAuthoritative() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = FollowGraphStore(provider: ScriptedFollowGraphProvider([page(1, [2])]), cache: cache)
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, [3]))
+        let session = UUID()
+        await store.begin(graph, session: session)
+        _ = try await store.setFollowing(true, node: node(3), accountID: "1")
+        let value = try await store.load(userID: "1", session: session, refresh: true)
+        #expect(!value.edges.contains(.init(source: "1", target: "3")))
+        #expect(value.path(to: "3") == ["1", "2", "3"])
+    }
+
+    @Test("跨页刷新完成时不恢复前一页已取消的关系，且保留中途新增关注")
+    func followDuringMultipageRefresh() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let provider = SuspendedFollowGraphProvider()
+        let store = FollowGraphStore(provider: provider, cache: cache)
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2, 4]))
+        graph.merge(page(4, [2, 3]))
+        let session = UUID()
+        await store.begin(graph, session: session)
+        let request = Task { try await store.load(userID: "1", session: session, refresh: true) }
+        await provider.waitForRequest()
+        await provider.release(page(1, [2], next: "cursor"))
+        await provider.waitForRequest()
+        _ = try await store.setFollowing(false, node: node(2), accountID: "1")
+        _ = try await store.setFollowing(true, node: node(3), accountID: "1")
+        await provider.release(page(1, [4]))
+        let value = try await request.value
+        #expect(!value.edges.contains(.init(source: "1", target: "2")))
+        #expect(value.path(to: "2") == ["1", "4", "2"])
+        #expect(value.path(to: "3") == ["1", "3"])
+        #expect(await cache.load(account: "1") == value)
     }
 
     @Test("原子快照可恢复，其他账号与不安全路径无法读取")

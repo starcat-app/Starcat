@@ -33,6 +33,8 @@ struct FollowGraphOverlayView: View {
             if let node = model.selected {
                 selectedInfo(node)
                     .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity))
+                    // 移除过渡仍需位于不透明画布之上，否则关闭会直接消失。
+                    .zIndex(1)
             }
             VStack(spacing: 8) {
                 HStack(alignment: .top) {
@@ -54,6 +56,7 @@ struct FollowGraphOverlayView: View {
                 }
             }
             .padding(16)
+            .zIndex(2)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
@@ -159,6 +162,8 @@ struct FollowGraphOverlayView: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardContentHeight = $0 }
         }
         .scrollBounceBehavior(.basedOnSize)
+        // 只淡换卡片内容，不把外框尺寸或位置变化纳入切换动画。
+        .animation(.easeInOut(duration: 0.16), value: node.id)
         .frame(width: width, height: height)
         .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -168,7 +173,6 @@ struct FollowGraphOverlayView: View {
         .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
         // 用实际卡片尺寸定位，卡片以外的画布保持命中；节点移出视野也不隐藏资料。
         .offset(x: max(20, canvasSize.width - width - 20), y: max(toolbarHeight + 40, canvasSize.height - height - 20))
-        .animation(.easeInOut(duration: 0.16), value: node.id)
     }
 
     private var status: some View {

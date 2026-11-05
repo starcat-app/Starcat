@@ -20,6 +20,7 @@ final class FollowGraphViewModel {
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
     private(set) var revision = 0
+    private(set) var followState = FollowGraphFollowState()
     var selectedID: String?
     var search = ""
     var viewport: FollowGraphViewport?
@@ -53,8 +54,11 @@ final class FollowGraphViewModel {
             viewport = nil
             focusID = nil
             search = ""
+            followState = FollowGraphFollowState()
+            store = nil
         }
-        store = FollowGraphStore(provider: FollowGraphAPI(client: client))
+        // 同账户重开沿用 Store，卡片关闭后仍在进行的关注确认可以写回同一份关系。
+        if store == nil { store = FollowGraphStore(provider: FollowGraphAPI(client: client)) }
         isLoading = true
         errorText = nil
         statusKey = "followGraph.status.loading"
@@ -64,10 +68,11 @@ final class FollowGraphViewModel {
             if let cached, cached.savedAt > (snapshot?.savedAt ?? .distantPast) ||
                 (snapshot?.nodes.count ?? 0) <= 1 { snapshot = cached }
             guard let store, let snapshot else { return }
-            await store.begin(snapshot, session: session)
-            rebuildPresentation()
+            let current = await store.begin(snapshot, session: session)
+            guard !Task.isCancelled, generation == session else { return }
+            publish(current, session: session)
             // 已有快照先离线展示，由用户主动继续或刷新，避免每次重开消耗配额。
-            if snapshot.progress.isEmpty { await explore(session: session, store: store) }
+            if current.progress.isEmpty { await explore(session: session, store: store) }
             else {
                 isLoading = false
                 statusKey = "followGraph.status.ready"
@@ -94,6 +99,32 @@ final class FollowGraphViewModel {
         viewport = nil
         focusID = nil
         search = ""
+        followState = FollowGraphFollowState()
+    }
+
+    /// 写请求由账户会话持有，切换节点不会重发；退出账户后不再写入原图谱。
+    func toggleFollow(_ node: FollowGraphNode, service: OwnerFollowService) {
+        guard let accountID = snapshot?.accountID, let store, node.id != accountID else { return }
+        let state = followState
+        Task {
+            await state.toggle(node, service: service) { following in
+                guard self.store === store, self.snapshot?.accountID == accountID else { return }
+                do {
+                    let value = try await store.setFollowing(following, node: node, accountID: accountID)
+                    guard self.store === store, self.snapshot?.accountID == accountID else { return }
+                    self.publish(value, session: self.generation)
+                } catch {
+                    // 远端成功不回滚按钮；缓存失败时仍显示 Store 中已确认的真实关系。
+                    guard self.store === store, self.snapshot?.accountID == accountID else { return }
+                    if let value = await store.read(accountID: accountID),
+                       self.store === store, self.snapshot?.accountID == accountID {
+                        self.publish(value, session: self.generation)
+                    }
+                    guard self.store === store, self.snapshot?.accountID == accountID else { return }
+                    self.errorText = error.localizedDescription
+                }
+            }
+        }
     }
 
     func select(_ id: String?, expand: Bool) {
@@ -167,7 +198,9 @@ final class FollowGraphViewModel {
         errorText = nil
         statusKey = "followGraph.status.loading"
         task = Task {
-            await store.begin(snapshot, session: session)
+            let current = await store.begin(snapshot, session: session)
+            guard !Task.isCancelled, generation == session else { return }
+            publish(current, session: session)
             await operation(session, store)
             guard generation == session else { return }
             isLoading = false
@@ -224,14 +257,15 @@ final class FollowGraphViewModel {
     }
 
     private func publish(_ value: FollowGraphSnapshot, session: UUID) {
-        guard generation == session, !Task.isCancelled else { return }
+        guard generation == session, !Task.isCancelled,
+              value.savedAt >= (snapshot?.savedAt ?? .distantPast) else { return }
         snapshot = value
         rebuildPresentation()
     }
 
-    /// 坐标每帧变化不会重新裁剪整图；只在数据批次或显式展开时更新展示快照。
+    /// 只在图数据变化、关注确认或显式展开时更新展示快照。
     private func rebuildPresentation() {
-        displayedSnapshot = snapshot?.presentation(expanded: expandedSources)
+        displayedSnapshot = snapshot?.presentation(expanded: expandedSources, selectedID: selectedID)
         if let selectedID, displayedSnapshot?.nodes[selectedID] == nil { self.selectedID = nil }
         revision += 1
         renderedCounts = nil
