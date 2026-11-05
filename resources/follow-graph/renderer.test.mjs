@@ -159,7 +159,7 @@ test('selection emphasizes every incoming/outgoing edge, keeps path distinct, an
   assert.equal(arrow(incoming), 0);
 });
 
-test('a real click callback highlights and sends the card anchor before any native selection echo', () => {
+test('a real click callback highlights and selects before any native selection echo', () => {
   const r = renderer();
   r.update(1, r.data(4));
   const { nodes, links } = r.props.get('graphData');
@@ -167,8 +167,7 @@ test('a real click callback highlights and sends the card anchor before any nati
   r.props.get('onNodeClick')(nodes[1]);
   assert.equal(r.messages[0].type, 'select');
   assert.equal(r.messages[0].id, '2');
-  assert.equal(r.messages[1].type, 'anchor');
-  assert.equal(r.messages[1].id, '2');
+  assert.equal(r.messages.length, 1);
   assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
   assert.ok(r.props.get('linkWidth')(links[0]) > r.props.get('linkWidth')(links[1]));
   r.update(2, { selected: '2', path: ['1', '2'] });
@@ -305,28 +304,20 @@ test('large cached graphs accelerate to completion without a minute-long serial 
   assert.ok(time < 15_000);
 });
 
-test('native card anchor follows pan/zoom and movement, coalesces frames, and stops after teardown', () => {
+test('selection stays native while pan/zoom and rendering send no card coordinates', () => {
   const r = renderer();
   r.update(1, { ...r.data(3), selected: '2', path: ['1', '2'] });
-  let anchor = r.messages.findLast(message => message.type === 'anchor');
-  assert.equal(anchor.id, '2');
-  assert.equal(anchor.value[2], 17);
   r.update(2, { viewport: [100, -50, 2] });
+  const before = r.messages.length;
   const node = r.props.get('graphData').nodes[1];
-  anchor = r.messages.findLast(message => message.type === 'anchor');
-  assert.equal(anchor.value[2], 34);
   node.x = 150; node.y = -30;
   for (let i = 0; i < 20; i++) r.props.get('onRenderFramePost')();
-  assert.equal(r.timers.size, 1);
   r.tick();
-  anchor = r.messages.at(-1);
-  assert.deepEqual(Array.from(anchor.value), [700, 440, 34]);
-  const count = r.messages.length;
-  r.props.get('onRenderFramePost')(); r.tick();
-  assert.equal(r.messages.length, count);
+  assert.equal(r.messages.length, before);
+  assert.ok(r.messages.every(message => message.type !== 'anchor'));
   r.props.get('onBackgroundClick')();
+  assert.equal(r.messages.at(-1).type, 'select');
   assert.equal(r.messages.at(-1).id, null);
-  r.props.get('onRenderFramePost')();
   r.window.followGraph.destroy();
   assert.equal(r.timers.size, 0);
 });

@@ -20,10 +20,7 @@ final class FollowGraphViewModel {
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
     private(set) var revision = 0
-    var selectedID: String? {
-        didSet { if selectedID != oldValue { selectionAnchor = nil } }
-    }
-    var selectionAnchor: FollowGraphSelectionAnchor?
+    var selectedID: String?
     var search = ""
     var viewport: FollowGraphViewport?
     var focusID: String?

@@ -41,23 +41,6 @@ struct FollowGraphEngineTests {
         #expect(graph.presentation() == displayed)
     }
 
-    @Test("节点卡片拒绝非法坐标，在右侧及下边缘翻转并避让顶部工具栏")
-    func selectionAnchorLayout() throws {
-        for values: [Double] in [[], [.nan, 0, 17], [0, .infinity, 17], [0, 0, -1], [0, 0, 161]] {
-            #expect(FollowGraphSelectionAnchor(values: values) == nil)
-        }
-        let right = try #require(FollowGraphSelectionAnchor(values: [950, 750, 17]))
-        let origin = right.cardOrigin(width: 320, height: 180, canvasWidth: 1000,
-                                      canvasHeight: 800, topInset: 120)
-        #expect(origin.x == 601)
-        #expect(origin.y == 604)
-        let top = try #require(FollowGraphSelectionAnchor(values: [10, 20, 17]))
-        let topOrigin = top.cardOrigin(width: 320, height: 180, canvasWidth: 1000,
-                                      canvasHeight: 800, topInset: 120)
-        #expect(topOrigin.x == 39)
-        #expect(topOrigin.y == 120)
-    }
-
     @Test("二维视口保留平移缩放，拒绝三维相机、非有限值与越界缩放")
     func viewportValidation() throws {
         let viewport = try #require(FollowGraphViewport(values: [120, -80, 1.5]))

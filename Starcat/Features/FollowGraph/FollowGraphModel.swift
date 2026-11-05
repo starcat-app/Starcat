@@ -179,30 +179,3 @@ struct FollowGraphPage: Sendable {
 protocol FollowGraphProviding: Sendable {
     func page(login: String, cursor: String?, count: Int) async throws -> FollowGraphPage
 }
-
-/// WebView 的 CSS 像素与原生 point 对齐；只接受有限坐标，避免不可信消息污染布局。
-struct FollowGraphSelectionAnchor: Equatable {
-    let x: Double
-    let y: Double
-    let radius: Double
-
-    init?(values: [Double]) {
-        guard values.count == 3, values.allSatisfy(\.isFinite),
-              abs(values[0]) < 1_000_000, abs(values[1]) < 1_000_000,
-              (0...160).contains(values[2]) else { return nil }
-        x = values[0]
-        y = values[1]
-        radius = values[2]
-    }
-
-    /// 优先放在头像右侧，空间不足时翻到左侧；上下避让工具栏及窗口边缘。
-    func cardOrigin(width: Double, height: Double, canvasWidth: Double,
-                    canvasHeight: Double, topInset: Double) -> (x: Double, y: Double) {
-        let right = x + radius + 12
-        let preferredX = right + width <= canvasWidth - 16 ? right : x - radius - 12 - width
-        return (
-            max(16, min(preferredX, canvasWidth - width - 16)),
-            max(topInset, min(y - height / 2, canvasHeight - height - 16))
-        )
-    }
-}

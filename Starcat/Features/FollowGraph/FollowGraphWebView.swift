@@ -80,7 +80,6 @@ struct FollowGraphWebView: NSViewRepresentable {
             if type == "ready" {
                 guard !ready else { return }
                 ready = true
-                model.selectionAnchor = nil
                 model.rendererError = false
                 flush()
                 return
@@ -96,12 +95,6 @@ struct FollowGraphWebView: NSViewRepresentable {
             case "viewport":
                 if let values = body["value"] as? [Double],
                    let viewport = FollowGraphViewport(values: values) { model.viewport = viewport }
-            case "anchor":
-                // 迟到的前一节点坐标不可把新选中卡片拉回旧位置。
-                guard let id = body["id"] as? String, id == model.selectedID,
-                      let values = body["value"] as? [Double],
-                      let anchor = FollowGraphSelectionAnchor(values: values) else { return }
-                if model.selectionAnchor != anchor { model.selectionAnchor = anchor }
             case "progress":
                 if let nodes = body["nodes"] as? Int, let edges = body["edges"] as? Int,
                    let revision = body["revision"] as? Int {

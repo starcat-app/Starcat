@@ -12,7 +12,7 @@ let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
 const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
-let adjacentNodes = new Set(), lastAnchor = '', anchorTimer = null;
+let adjacentNodes = new Set();
 const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
@@ -153,9 +153,8 @@ const graph = new ForceGraph(container)
   .onEngineStop(() => {
     applyPendingView();
     if (!viewportTouched && nodes.size > 1 && !reveal.animating) fit();
-    publishAnchor();
   })
-  .onRenderFramePost((ctx, scale) => { drawPathFlow(ctx, scale); scheduleAnchor(); })
+  .onRenderFramePost((ctx, scale) => drawPathFlow(ctx, scale))
   .onNodeClick(node => { if (performance.now() - lastDrag > 250) selectNode(node.id); })
   .onBackgroundClick(() => selectNode(null))
   .onNodeDrag(() => { lastDrag = performance.now(); viewportTouched = true; })
@@ -166,38 +165,14 @@ const graph = new ForceGraph(container)
   })
   .onZoomEnd(({ x, y, k }) => {
     post('viewport', { value: [x, y, k] });
-    publishAnchor();
   });
 
-/** Coalesce moving frames and retain a trailing update, including the final settled frame.
- * Only the selected avatar crosses the native bridge; unchanged coordinates produce no message.
- */
-function scheduleAnchor() {
-  if (!destroyed && selected && anchorTimer === null) {
-    anchorTimer = setTimeout(() => { anchorTimer = null; publishAnchor(); }, 33);
-  }
-}
-
-function publishAnchor() {
-  if (destroyed) return;
-  const node = nodes.get(selected);
-  const point = node && graph.graph2ScreenCoords(node.x, node.y);
-  const value = point ? [point.x, point.y, radius(node) * graph.zoom()] : null;
-  if (value && !value.every(Number.isFinite)) return;
-  const rounded = value?.map(v => Math.round(v * 2) / 2) ?? null;
-  const identity = JSON.stringify([selected, rounded]);
-  if (identity === lastAnchor) return;
-  lastAnchor = identity;
-  post('anchor', { id: selected, value: rounded });
-}
-
 /** Give immediate visual feedback before Swift's next update pass. The native side still
- * owns path computation and loading; post selection before coordinates so stale anchors are rejected.
+ * owns loading and receives selection even if the card is already showing this user.
  */
 function selectNode(id) {
   if (selected === id) {
     post('select', { id });
-    publishAnchor();
     return;
   }
   selected = id;
@@ -212,7 +187,6 @@ function selectNode(id) {
   redrawSelection();
   syncAnimation();
   post('select', { id });
-  publishAnchor();
 }
 
 /** Stable BFS mirrors native numeric-ID ordering and never invents a direct root edge. */
@@ -451,7 +425,6 @@ function update(payload) {
   else if (payload.viewport || 'focus' in payload) { pendingView = null; applyView(); }
   if ('active' in payload) active = payload.active;
   syncAnimation();
-  publishAnchor();
 }
 
 // Track actual gestures separately from programmatic zoom events, which also invoke onZoomEnd.
@@ -460,7 +433,6 @@ container.addEventListener('pointerdown', touchViewport);
 container.addEventListener('wheel', touchViewport, { passive: true });
 const resize = new ResizeObserver(() => {
   graph.width(innerWidth).height(innerHeight);
-  scheduleAnchor();
 });
 resize.observe(container);
 document.addEventListener('visibilitychange', syncAnimation);
@@ -474,8 +446,6 @@ window.followGraph = {
     placed.clear();
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
-    clearTimeout(anchorTimer);
-    anchorTimer = null;
     pendingView = null;
     resize.disconnect();
     container.removeEventListener('pointerdown', touchViewport);

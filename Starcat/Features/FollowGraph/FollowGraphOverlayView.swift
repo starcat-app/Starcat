@@ -17,7 +17,8 @@ struct FollowGraphOverlayView: View {
     let onClose: () -> Void
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
-    @State private var cardSize = CGSize(width: 320, height: 180)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var cardContentHeight: CGFloat = 280
     @State private var toolbarHeight: CGFloat = 100
     @State private var canvasSize = CGSize.zero
 
@@ -29,19 +30,9 @@ struct FollowGraphOverlayView: View {
                 .id(model.rendererRevision)
                 .ignoresSafeArea()
             // 只放实际大小的卡片，避免透明的全屏布局容器参与画布事件命中。
-            if let node = model.selected, let anchor = model.selectionAnchor,
-               anchor.x >= 0, anchor.x <= canvasSize.width,
-               anchor.y >= 0, anchor.y <= canvasSize.height {
-                let width = min(320, max(1, canvasSize.width - 32))
-                let origin = anchor.cardOrigin(
-                    width: width, height: cardSize.height,
-                    canvasWidth: canvasSize.width, canvasHeight: canvasSize.height,
-                    topInset: toolbarHeight + 24
-                )
+            if let node = model.selected {
                 selectedInfo(node)
-                    .frame(width: width)
-                    .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
-                    .offset(x: origin.x, y: origin.y)
+                    .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity))
             }
             VStack(spacing: 8) {
                 HStack(alignment: .top) {
@@ -65,6 +56,7 @@ struct FollowGraphOverlayView: View {
             .padding(16)
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
+        .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
         .task { model.open(user: user, client: client) }
         .onDisappear { model.stop() }
         .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
@@ -158,40 +150,25 @@ struct FollowGraphOverlayView: View {
     }
 
     private func selectedInfo(_ node: FollowGraphNode) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                AsyncImage(url: URL(string: node.avatarURL ?? "")) { image in image.resizable() }
-                    placeholder: { Image(systemName: "person.crop.circle").resizable().foregroundStyle(.secondary) }
-                    .frame(width: 36, height: 36).clipShape(Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: node.name ?? node.login).font(.headline).lineLimit(1)
-                    Text(verbatim: "@\(node.login)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                SheetCloseButton { model.select(nil, expand: false) }
-                    .accessibilityLabel(Text("common.close"))
-            }
-            HStack(spacing: 10) {
-                if model.displayedSnapshot?.progress[node.id]?.complete != true {
-                    Button("followGraph.action.more") { model.loadMore(node.id) }.disabled(model.isLoading)
-                }
-                Spacer(minLength: 0)
-                tool("scope", "followGraph.action.locate") { model.focus(node.id) }
-                tool("arrow.up.right.square", "followGraph.action.github") {
-                    NSWorkspace.shared.open(GitHubURLs.userProfile(login: node.login))
-                }
-            }
-            ScrollView(.horizontal) {
-                Text(verbatim: model.path.compactMap { model.snapshot?.nodes[$0]?.login }.joined(separator: " → "))
-                    .font(.caption).textSelection(.enabled)
-            }
-            Text(model.displayedSnapshot?.progress[node.id]?.complete == true ?
-                 "followGraph.status.complete" : "followGraph.status.partial")
-                .font(.caption).foregroundStyle(.secondary)
+        let width = min(370, max(1, canvasSize.width - 40))
+        let height = min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
+        return ScrollView {
+            FollowGraphUserCard(node: node, model: model)
+                .id(node.id)
+                .transition(.opacity)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardContentHeight = $0 }
         }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: width, height: height)
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
+        // 用实际卡片尺寸定位，卡片以外的画布保持命中；节点移出视野也不隐藏资料。
+        .offset(x: max(20, canvasSize.width - width - 20), y: max(toolbarHeight + 40, canvasSize.height - height - 20))
+        .animation(.easeInOut(duration: 0.16), value: node.id)
     }
 
     private var status: some View {
