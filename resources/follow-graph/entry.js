@@ -8,6 +8,7 @@ let destroyed = false, active = true, lastDrag = -Infinity, activeImages = 0;
 let viewportTouched = false, lastSequence = 0;
 let pendingView = null;
 let pathEdges = new Set(), highlightedNodes = new Set();
+let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
 let adjacentNodes = new Set(), lastAnchor = '', anchorTimer = null;
 const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
 const endpoint = value => typeof value === 'object' ? value.id : value;
@@ -147,7 +148,7 @@ const graph = new ForceGraph(container)
     if (!viewportTouched && nodes.size > 1) fit();
     publishAnchor();
   })
-  .onRenderFramePost(() => scheduleAnchor())
+  .onRenderFramePost((ctx, scale) => { drawPathFlow(ctx, scale); scheduleAnchor(); })
   .onNodeClick(node => { if (performance.now() - lastDrag > 250) selectNode(node.id); })
   .onBackgroundClick(() => selectNode(null))
   .onNodeDrag(() => { lastDrag = performance.now(); viewportTouched = true; })
@@ -193,12 +194,70 @@ function selectNode(id) {
     return;
   }
   selected = id;
-  pathEdges = new Set();
-  highlightedNodes = new Set();
+  // Compute from the same loaded directed graph immediately. Waiting for a SwiftUI
+  // representable update left only the final adjacent edge visible after clicks.
+  setPath(pathFromRoot(id));
   updateAdjacency();
   redrawSelection();
+  syncAnimation();
   post('select', { id });
   publishAnchor();
+}
+
+/** Stable BFS mirrors native numeric-ID ordering and never invents a direct root edge. */
+function pathFromRoot(id) {
+  if (!id || !nodes.has(id)) return [];
+  const outgoing = new Map();
+  for (const link of links.values()) {
+    const source = endpoint(link.source), target = endpoint(link.target);
+    if (!outgoing.has(source)) outgoing.set(source, []);
+    outgoing.get(source).push(target);
+  }
+  for (const targets of outgoing.values()) targets.sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+  const queue = [root], parents = new Map([[root, null]]);
+  for (let i = 0; i < queue.length && !parents.has(id); i++) {
+    for (const target of outgoing.get(queue[i]) || []) {
+      if (!parents.has(target)) { parents.set(target, queue[i]); queue.push(target); }
+    }
+  }
+  if (!parents.has(id)) return [];
+  const path = [];
+  for (let current = id; current != null; current = parents.get(current)) path.push(current);
+  return path.reverse();
+}
+
+function setPath(path) {
+  selectedPath = path;
+  highlightedNodes = new Set(path);
+  pathEdges = new Set(path.slice(1).map((id, i) => edgeKey(path[i], id)));
+}
+
+/** One shared phase traverses every directed hop. Clip at avatar rims instead of painting faces. */
+function drawPathFlow(ctx, scale = 1) {
+  if (!ctx || reduceMotion || !selected || selectedPath.length < 2) return;
+  const spacing = 90 / scale, phase = performance.now() * 0.065 / scale;
+  let traveled = 0;
+  ctx.save();
+  ctx.strokeStyle = dark ? '#b9e7ff' : '#59c4ff';
+  ctx.lineWidth = 3 / scale;
+  ctx.lineCap = 'round';
+  for (let i = 1; i < selectedPath.length; i++) {
+    const source = nodes.get(selectedPath[i - 1]), target = nodes.get(selectedPath[i]);
+    if (!source || !target || !pathEdges.has(edgeKey(source.id, target.id))) continue;
+    const dx = target.x - source.x, dy = target.y - source.y, length = Math.hypot(dx, dy);
+    if (!Number.isFinite(length) || length <= 0) continue;
+    const start = radius(source) + 2 / scale, end = length - radius(target) - 2 / scale;
+    for (let d = ((phase - traveled) % spacing + spacing) % spacing; d < end; d += spacing) {
+      if (d < start) continue;
+      const tail = Math.max(start, d - 12 / scale);
+      ctx.beginPath();
+      ctx.moveTo(source.x + dx * tail / length, source.y + dy * tail / length);
+      ctx.lineTo(source.x + dx * d / length, source.y + dy * d / length);
+      ctx.stroke();
+    }
+    traveled += length;
+  }
+  ctx.restore();
 }
 
 function updateAdjacency() {
@@ -239,6 +298,20 @@ function applyPendingView() {
 function syncAnimation() {
   if (active && !document.hidden) graph.resumeAnimation();
   else graph.pauseAnimation();
+  if (destroyed || !active || document.hidden || reduceMotion || selectedPath.length < 2) {
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    animationFrame = null;
+  } else if (animationFrame === null) animationFrame = requestAnimationFrame(animate);
+}
+
+/** Invalidate at most 30 frames/sec; no extra pump survives deselection, backgrounding or teardown. */
+function animate() {
+  animationFrame = null;
+  if (performance.now() - lastAnimationDraw >= 32) {
+    lastAnimationDraw = performance.now();
+    graph.nodeCanvasObject(drawNode);
+  }
+  syncAnimation();
 }
 
 /** Apply ordered native batches without rebuilding existing node positions or user pan/zoom. */
@@ -257,10 +330,7 @@ function update(payload) {
     graph.cooldownTicks(reduceMotion ? 0 : 120);
   }
   if ('selected' in payload) selected = payload.selected;
-  if (payload.path) {
-    highlightedNodes = new Set(payload.path);
-    pathEdges = new Set(payload.path.slice(1).map((id, i) => edgeKey(payload.path[i], id)));
-  }
+  if (payload.path) setPath(payload.path);
   if (payload.viewport) viewportTouched = true;
   if (payload.nodes) {
     const incoming = new Set(payload.nodes.map(node => node.id));
@@ -298,6 +368,7 @@ function update(payload) {
     });
     links.clear(); for (const [key, link] of newLinks) links.set(key, link);
     graph.graphData({ nodes: [...nodes.values()], links: [...links.values()] });
+    setPath(pathFromRoot(selected));
   }
   if ('selected' in payload || payload.nodes) {
     updateAdjacency();
@@ -341,6 +412,8 @@ window.followGraph = {
   update,
   destroy() {
     destroyed = true;
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    animationFrame = null;
     clearTimeout(anchorTimer);
     anchorTimer = null;
     pendingView = null;

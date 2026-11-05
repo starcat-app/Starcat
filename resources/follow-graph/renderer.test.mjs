@@ -12,8 +12,9 @@ const source = transformSync(fs.readFileSync(new URL('entry.js', import.meta.url
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
 function renderer() {
-  const props = new Map(), calls = [], messages = [], images = [], timers = new Map();
+  const props = new Map(), calls = [], messages = [], images = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
+  let clock = 1000;
   const target = () => ({
     listeners: new Map(),
     addEventListener(name, fn) { this.listeners.set(name, fn); },
@@ -50,7 +51,9 @@ function renderer() {
   } } };
   vm.runInNewContext(source, {
     require: name => name === 'force-graph' ? function () { return graph; } : forces,
-    window, document, innerWidth: 1200, innerHeight: 800, URL, performance,
+    window, document, innerWidth: 1200, innerHeight: 800, URL, performance: { now: () => clock },
+    requestAnimationFrame: fn => { frames.set(++nextTimer, fn); return nextTimer; },
+    cancelAnimationFrame: id => frames.delete(id),
     setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; },
     clearTimeout: id => timers.delete(id),
     Image: class { constructor() { images.push(this); } },
@@ -66,7 +69,8 @@ function renderer() {
     })),
     links: Array.from({ length: count - 1 }, (_, i) => ({ source: '1', target: String(i + 2) }))
   });
-  return { props, calls, messages, images, timers, container, document, window, update, data, canvasContext,
+  return { props, calls, messages, images, timers, frames, container, document, window, update, data, canvasContext,
+    frame(ms = 34) { clock += ms; const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(clock)); },
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
 
@@ -168,6 +172,52 @@ test('a real click callback highlights and sends the card anchor before any nati
   assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
   r.props.get('onBackgroundClick')();
   assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
+});
+
+test('clicking a second-level node highlights every directed hop from root and runs a continuous flow', () => {
+  const r = renderer(), data = r.data(4);
+  data.links = [{ source: '1', target: '2' }, { source: '2', target: '3' }, { source: '4', target: '3' }];
+  r.update(1, data);
+  const { nodes, links } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 250; node.y = 0; });
+  // Match force-graph's mutation of string endpoints into shared node objects.
+  links.forEach(link => {
+    link.source = nodes.find(node => node.id === link.source);
+    link.target = nodes.find(node => node.id === link.target);
+  });
+  r.props.get('onNodeClick')(nodes[2]);
+  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[1]), '#007aff');
+  assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
+  assert.equal(r.frames.size, 1);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  const initial = r.calls.filter(([name]) => name === 'lineTo');
+  assert.ok(initial.some(([, x]) => x > 20 && x < 239));
+  assert.ok(initial.some(([, x]) => x > 261 && x < 483));
+  r.frame(100);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.notDeepEqual(r.calls.filter(([name]) => name === 'lineTo'), initial);
+  r.update(2, { reduceMotion: true });
+  assert.equal(r.frames.size, 0);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.ok(!r.calls.some(([name]) => name === 'lineTo'));
+  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  r.update(3, { reduceMotion: false, active: true });
+  assert.equal(r.frames.size, 1);
+  r.document.hidden = true;
+  r.document.listeners.get('visibilitychange')();
+  assert.equal(r.frames.size, 0);
+  r.document.hidden = false;
+  r.document.listeners.get('visibilitychange')();
+  r.props.get('onBackgroundClick')();
+  assert.equal(r.frames.size, 0);
+  r.props.get('onNodeClick')(nodes[2]);
+  r.window.followGraph.destroy();
+  assert.equal(r.frames.size, 0);
 });
 
 test('native card anchor follows pan/zoom and movement, coalesces frames, and stops after teardown', () => {

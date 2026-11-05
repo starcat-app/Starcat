@@ -69,6 +69,12 @@
 - 实际 WebKit / SwiftUI 鼠标命中及浮层外观仍待人工复验；本轮未使用桌面控制，也未宣称 GUI 验收通过。
 - `make run-direct` 已稳定启动修复版（PID 59499），进程路径确认属于本 worktree。日志：`/tmp/starcat-follow-graph-bounded-launch.log`。
 
+## 完整路径流水（2026-11-06）
+
+- 已实现点击后立即从本人算起的完整有向路径高亮、跨每一跳的流水光带，并强化原生选中状态同步。其他入边 / 出边保留次级加重。
+- 渲染回归 7 项通过，原生图谱 3 个 suite、19 项通过；日志：`/tmp/starcat-follow-graph-flow-tests.log`。渲染测试使用 Canvas API 替身，未代替桌面视觉验收。
+- 与逐个弹出加载动画分别提交。MVP 基础提交单独保留，便于审阅后续交互差异。
+
 ## 原 3D MVP 自动验证（历史记录）
 
 - `xcodegen generate` 已执行。

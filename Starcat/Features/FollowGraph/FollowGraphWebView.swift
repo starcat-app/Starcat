@@ -12,6 +12,10 @@ import WebKit
 /// 一个遮盖层对应一个临时 WebView，缓存与会话视口由外部模型持有。
 struct FollowGraphWebView: NSViewRepresentable {
     @Bindable var model: FollowGraphViewModel
+    // 显式值输入让 SwiftUI 比较真正的渲染身份，而非只比较同一个引用模型。
+    let graphRevision: Int
+    let selectionID: String?
+    let viewportRevision: Int
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -87,6 +91,8 @@ struct FollowGraphWebView: NSViewRepresentable {
                 if let id = body["id"] as? String, id.count < 64, model.snapshot?.nodes[id] != nil {
                     model.select(id, expand: true)
                 } else if body["id"] is NSNull { model.select(nil, expand: false) }
+                // 文本卡片与 WebView 必须同批更新完整路径，不依赖宿主下一次重算。
+                flush()
             case "viewport":
                 if let values = body["value"] as? [Double],
                    let viewport = FollowGraphViewport(values: values) { model.viewport = viewport }

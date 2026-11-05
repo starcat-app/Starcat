@@ -24,7 +24,8 @@ struct FollowGraphOverlayView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-            FollowGraphWebView(model: model)
+            FollowGraphWebView(model: model, graphRevision: model.revision,
+                               selectionID: model.selectedID, viewportRevision: model.viewportRevision)
                 .id(model.rendererRevision)
                 .ignoresSafeArea()
             // 只放实际大小的卡片，避免透明的全屏布局容器参与画布事件命中。
