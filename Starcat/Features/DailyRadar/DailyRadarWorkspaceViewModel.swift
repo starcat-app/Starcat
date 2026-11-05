@@ -59,6 +59,8 @@ final class DailyRadarWorkspaceViewModel {
     /// 侧边栏计数徽标数据源：catalog 未加载或旧后端无计数字段时为空，徽标隐藏。
     var categoryCounts: [String: Int] { catalog?.categoryCounts ?? [:] }
     var totalCount: Int? { catalog?.totalCount }
+    /// 失败只是重验证未完成；已有成功内容继续可读，界面明确标注缓存状态
+    var isShowingCachedContent: Bool { failed && publishedIdentity == identity && !items.isEmpty }
     /// 目录日期已按业务日期排序；查找相邻期次必须跳过断更，而不是简单加减一天。
     /// 日期切换会先更新 selectedEdition、再由身份驱动异步 reload，因此这里必须
     /// 优先使用用户刚选择的日期，否则连续点击会按旧 edition 计算出错误目标。
@@ -109,7 +111,7 @@ final class DailyRadarWorkspaceViewModel {
         isLoadingMore = false
         failed = false
         defer { if generation == token { isLoading = false } }
-        var base = query
+        let snapshotQuery = query
         let catalogParameters = [
             URLQueryItem(name: "language", value: contentLanguage),
             URLQueryItem(name: "fallback", value: "false")
@@ -117,9 +119,14 @@ final class DailyRadarWorkspaceViewModel {
         // 磁盘快照优先：首次加载与身份切换都尝试命中；同身份手动刷新内容已在屏，
         // 跳过快照避免无意义的重复解码。
         if !force || isStaleContent {
-            if let cached = await repository.cached(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters) {
+            if let home = await repository.restoreHome(query: snapshotQuery) {
+                guard generation == token, identity == expectedIdentity else { return }
+                publish(catalog: home.catalog, dates: home.dates, page: home.page, edition: home.edition)
+            } else if let cached = await repository.cached(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters) {
                 guard generation == token, identity == expectedIdentity else { return }
                 catalog = cached.value
+                // 首次升级尚无完整快照时仍可恢复既有接口缓存；先恢复目录再计算周期
+                var base = query
                 base.catalogRevision = cached.value.catalogRevision
                 base.dateTo = nil
                 if let cachedDates = await repository.cached(DailyRadarDates.self, path: "\(Self.root)/dates", parameters: base.parameters),
@@ -146,7 +153,7 @@ final class DailyRadarWorkspaceViewModel {
         for attempt in 0...1 {
             do {
                 let loadedCatalog = try await repository.fetch(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters, force: force || attempt > 0)
-                var request = query
+                var request = requestWithCurrentPeriod(query, catalog: loadedCatalog.value)
                 request.catalogRevision = loadedCatalog.value.catalogRevision
                 request.dateTo = nil
                 let loadedDates = try await repository.fetch(DailyRadarDates.self, path: "\(Self.root)/dates", parameters: request.parameters, force: force || attempt > 0)
@@ -154,7 +161,11 @@ final class DailyRadarWorkspaceViewModel {
                 request.dateTo = selectedEdition ?? loadedDates.value.latestAvailableDate
                 let page = try await repository.fetch(DailyRadarPage.self, path: "\(Self.root)/reports", parameters: request.parameters, force: force || attempt > 0)
                 guard generation == token, identity == expectedIdentity else { return }
-                guard loadedDates.value.catalogRevision == page.value.catalogRevision else { throw DailyRadarError.server(code: "CATALOG_CHANGED") }
+                guard loadedCatalog.value.catalogRevision == page.value.catalogRevision,
+                      loadedDates.value.catalogRevision == page.value.catalogRevision else { throw DailyRadarError.server(code: "CATALOG_CHANGED") }
+                await repository.saveHome(query: requestWithCurrentPeriod(snapshotQuery, catalog: loadedCatalog.value),
+                                          catalogRevision: loadedCatalog.value.catalogRevision, edition: request.dateTo)
+                guard generation == token, identity == expectedIdentity else { return }
                 publish(catalog: loadedCatalog.value, dates: loadedDates.value, page: page.value, edition: request.dateTo)
                 return
             } catch {
@@ -164,6 +175,13 @@ final class DailyRadarWorkspaceViewModel {
                 return
             }
         }
+    }
+
+    /// 查询周期以本次成功目录为准，避免冷启动周刊沿用空目录的 daily 默认值
+    private func requestWithCurrentPeriod(_ query: DailyRadarQuery, catalog: DailyRadarCatalog) -> DailyRadarQuery {
+        var result = query
+        result.period = catalog.categories.first(where: { $0.id == query.category })?.period ?? "daily"
+        return result
     }
 
     /// 翻页绑定已发布目录版本；目录变化仅替换新首屏，不把旧游标接到新集合。

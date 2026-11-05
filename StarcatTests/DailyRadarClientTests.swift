@@ -11,6 +11,92 @@ import Testing
 @testable import Starcat
 
 struct DailyRadarClientTests {
+    /// 冷启动断网仍恢复整套首屏；网络失败不能推进原来的成功时间
+    @Test @MainActor func offlineRestartRestoresCompleteHomeAndCachedArticle() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let first = DailyRadarWorkspaceViewModel()
+        first.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await first.reload()
+        let report = try #require(first.items.first)
+        await first.open(report)
+        #expect(first.detail?.markdown == "# Report")
+        try fixture.expireCache()
+        fixture.state.mutate { $0.networkError = true }
+
+        // 新建 repository 与模型，避免把内存状态保留误判为磁盘恢复成功
+        let repository = DailyRadarRepository(api: fixture.api, directory: fixture.directory)
+        let restarted = DailyRadarWorkspaceViewModel()
+        restarted.configure(repository: repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await restarted.reload(force: true)
+        #expect(restarted.items.map(\.contentIdentity) == first.items.map(\.contentIdentity))
+        #expect(restarted.isShowingCachedContent)
+        await restarted.open(try #require(restarted.items.first))
+        #expect(restarted.detail?.markdown == "# Report")
+        #expect(restarted.detailFailed)
+        let entry = await repository.cached(DailyRadarReport.self, path: "\(DailyRadarWorkspaceViewModel.root)/reports/\(report.id)",
+                                            parameters: [.init(name: "language", value: report.contentLanguage),
+                                                         .init(name: "fallback", value: "false"),
+                                                         .init(name: "revision", value: report.revision)])
+        #expect(entry?.validatedAt == Date(timeIntervalSinceReferenceDate: 0))
+    }
+
+    /// 新目录已落盘但日期请求失败时，上一份完整首屏必须仍可离线恢复
+    @Test @MainActor func partialRefreshDoesNotReplaceLastCompleteHome() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        fixture.state.mutate { $0.revision = "2"; $0.failedPaths = ["/api/v1/daily-radar/dates"] }
+        await model.reload(force: true)
+        #expect(model.catalog?.catalogRevision == "1")
+        fixture.state.mutate { $0.networkError = true }
+        let restarted = DailyRadarWorkspaceViewModel()
+        restarted.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await restarted.reload(force: true)
+        #expect(restarted.catalog?.catalogRevision == "1")
+        #expect(!restarted.items.isEmpty)
+        #expect(restarted.isShowingCachedContent)
+    }
+
+    /// 周刊在空目录冷启动时不能按 daily 查询缓存；未缓存的筛选不能展示另一分类内容
+    @Test @MainActor func offlineWeeklySnapshotKeepsPeriodAndFilterIsolation() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        model.selectCategory("ai-weekly-events")
+        await model.reload()
+        let request = try #require(fixture.state.requests.first { $0.url?.path.hasSuffix("/dates") == true })
+        #expect(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.contains(.init(name: "period", value: "weekly")) == true)
+        try fixture.expireCache()
+        fixture.state.mutate { $0.networkError = true }
+        let restarted = DailyRadarWorkspaceViewModel()
+        restarted.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        restarted.selectCategory("ai-weekly-events")
+        await restarted.reload(force: true)
+        #expect(restarted.categoryPeriod == "weekly")
+        #expect(restarted.isShowingCachedContent)
+        restarted.selectCategory("ai-cli")
+        await restarted.reload(force: true)
+        #expect(restarted.items.isEmpty)
+        #expect(!restarted.isShowingCachedContent)
+    }
+
+    /// 快照沿用服务/凭据及语言边界，不借离线恢复展示其它身份的内容
+    @Test @MainActor func completeHomeSnapshotKeepsCredentialAndLanguageIsolation() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reload()
+        #expect(await fixture.repository.restoreHome(query: .init()) != nil)
+        #expect(await fixture.repository.restoreHome(query: .init(language: "zh-Hans")) == nil)
+        await fixture.api.update(apiKey: "different", replacesKey: true)
+        #expect(await fixture.repository.restoreHome(query: .init()) == nil)
+    }
+
     /// 新周报必须使用服务目录的 weekly 周期，避免沿用默认 daily 而查询不到内容
     @Test @MainActor func weeklyEventsSelectionUsesWeeklyRequests() async throws {
         let fixture = DailyRadarFixture()
@@ -346,6 +432,8 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
         var revision = "1"
         var notModified = false
         var error = false
+        var networkError = false
+        var failedPaths: Set<String> = []
         var hasNext = false
         var hasPage = false
         var historyDates: [String]? = nil
@@ -355,6 +443,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
     private let lock = NSLock()
     private var values = Values()
     var requests: [URLRequest] { lock.withLock { values.requests } }
+    var networkError: Bool { lock.withLock { values.networkError } }
     func mutate(_ body: (inout Values) -> Void) { lock.withLock { body(&values) } }
     func response(_ request: URLRequest) -> (HTTPURLResponse, Data) {
         lock.withLock {
@@ -366,7 +455,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: "HTTP/1.1", headerFields: [:])!
                 return (response, Data(#"{"schema_version":1,"error":{"code":"CATALOG_CHANGED","message":"changed"}}"#.utf8))
             }
-            let status = values.error ? 503 : (values.notModified ? 304 : 200)
+            let status = values.error || values.failedPaths.contains(request.url!.path) ? 503 : (values.notModified ? 304 : 200)
             let path = request.url!.path
             let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let dateTo = queryItems.first { $0.name == "date_to" }?.value
@@ -455,6 +544,14 @@ private struct DailyRadarFixture {
         DailyRadarTestProtocol.unregister(host: host)
         try? FileManager.default.removeItem(at: directory)
     }
+    /// 仅修改测试临时目录的成功时间，强制走真实过期重验证而非 TTL 内直接返回
+    func expireCache() throws {
+        for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            var entry = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+            entry["validatedAt"] = 0
+            try JSONSerialization.data(withJSONObject: entry).write(to: url, options: .atomic)
+        }
+    }
 }
 
 private final class DailyRadarTestProtocol: URLProtocol, @unchecked Sendable {
@@ -470,6 +567,10 @@ private final class DailyRadarTestProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         let (response, data) = handler.response(request)
+        if handler.networkError {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            return
+        }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)

@@ -15,6 +15,19 @@ struct DailyRadarCachedValue<Value: Sendable>: Sendable {
 }
 
 actor DailyRadarRepository {
+    /// 完整首屏以一份原子文件保存，独立于各接口逐次推进的缓存版本
+    struct HomeSnapshot: Sendable {
+        let catalog: DailyRadarCatalog
+        let dates: DailyRadarDates
+        let page: DailyRadarPage
+        let edition: String?
+    }
+    private struct HomeEntry: Codable {
+        let catalog: Entry
+        let dates: Entry
+        let page: Entry
+        let edition: String?
+    }
     private struct Entry: Codable, Sendable {
         let data: Data
         let etag: String?
@@ -45,6 +58,51 @@ actor DailyRadarRepository {
         guard let entry = read(key: key(path, parameters, config)),
               (await api.configuration()).generation == config.generation else { return nil }
         return decode(type, entry: entry)
+    }
+
+    /// 使用当前凭据命名空间恢复最后一份完整首屏，不能跨服务或凭据查找旧内容
+    func restoreHome(query: DailyRadarQuery) async -> HomeSnapshot? {
+        let config = await api.configuration()
+        guard let entry = read(key: homeKey(query, config)),
+              let home = try? JSONDecoder().decode(HomeEntry.self, from: entry.data),
+              let catalog = decode(DailyRadarCatalog.self, entry: home.catalog)?.value,
+              let dates = decode(DailyRadarDates.self, entry: home.dates)?.value,
+              let page = decode(DailyRadarPage.self, entry: home.page)?.value,
+              catalog.catalogRevision == dates.catalogRevision,
+              dates.catalogRevision == page.catalogRevision,
+              (await api.configuration()).generation == config.generation else { return nil }
+        return HomeSnapshot(catalog: catalog, dates: dates, page: page, edition: home.edition)
+    }
+
+    /// 只有三段读取全部成功且版本一致才替换快照；刷新中途失败不破坏上一份完整结果
+    func saveHome(query: DailyRadarQuery, catalogRevision: String, edition: String?) async {
+        let config = await api.configuration()
+        let catalogParameters = [
+            URLQueryItem(name: "language", value: query.language),
+            URLQueryItem(name: "fallback", value: query.fallback ? "true" : "false")
+        ]
+        var request = query
+        request.catalogRevision = catalogRevision
+        request.dateTo = nil
+        guard let catalog = read(key: key("/api/v1/daily-radar/catalog", catalogParameters, config)),
+              let dates = read(key: key("/api/v1/daily-radar/dates", request.parameters, config)) else { return }
+        request.dateTo = edition
+        guard let page = read(key: key("/api/v1/daily-radar/reports", request.parameters, config)),
+              decode(DailyRadarCatalog.self, entry: catalog)?.value.catalogRevision == catalogRevision,
+              decode(DailyRadarDates.self, entry: dates)?.value.catalogRevision == catalogRevision,
+              decode(DailyRadarPage.self, entry: page)?.value.catalogRevision == catalogRevision,
+              let data = try? JSONEncoder().encode(HomeEntry(catalog: catalog, dates: dates, page: page, edition: edition)),
+              (await api.configuration()).generation == config.generation else { return }
+        write(Entry(data: data, etag: nil, validatedAt: page.validatedAt), key: homeKey(query, config))
+    }
+
+    private func homeKey(_ query: DailyRadarQuery, _ config: DailyRadarAPI.Configuration) -> String {
+        // 周期来自目录，冷启动时尚未恢复；同一分类的快照不能因默认 daily 而漏命中
+        var filter = query
+        filter.period = ""
+        filter.catalogRevision = nil
+        filter.cursor = nil
+        return key("/daily-radar-home-v1", filter.parameters, config)
     }
 
     /// 同条件并发请求合并；304 仅更新成功校验时间，409 不允许用旧缓存伪装成功。

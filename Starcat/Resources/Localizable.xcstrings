@@ -176813,6 +176813,112 @@
         "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "每週 AI 大事" } }
       }
     },
+    "dailyRadar.cachedContent" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualisierung fehlgeschlagen. Zwischengespeicherte Inhalte werden angezeigt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Update failed. Showing cached content."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo actualizar. Se muestra el contenido en caché."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Échec de la mise à jour. Affichage du contenu en cache."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pembaruan gagal. Menampilkan konten dari cache."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiornamento non riuscito. Vengono mostrati i contenuti nella cache."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新に失敗しました。キャッシュ済みの内容を表示しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업데이트하지 못했습니다. 캐시된 콘텐츠를 표시합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bijwerken mislukt. Inhoud uit de cache wordt weergegeven."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizacja nie powiodła się. Wyświetlana jest zawartość z pamięci podręcznej."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Falha na atualização. Exibindo conteúdo em cache."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось обновить. Показано содержимое из кеша."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Güncelleme başarısız. Önbellekteki içerik gösteriliyor."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося оновити. Показано вміст із кешу."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cập nhật thất bại. Đang hiển thị nội dung đã lưu trong bộ nhớ đệm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新失败，正在显示缓存内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新失敗，正在顯示快取內容。"
+          }
+        }
+      }
+    },
     "dailyRadar.close" : {
       "localizations" : {
         "en" : {

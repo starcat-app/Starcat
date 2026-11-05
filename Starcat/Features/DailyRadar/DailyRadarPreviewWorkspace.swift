@@ -189,7 +189,12 @@ struct DailyRadarPreviewWorkspace: View {
                     heading
                     if model.failed {
                         HStack {
-                            Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                            if model.isShowingCachedContent {
+                                Label("dailyRadar.cachedContent", systemImage: "exclamationmark.triangle")
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                            }
                             Spacer()
                             Button("action.retry") { Task { await model.reload(force: true) } }
                         }
