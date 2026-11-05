@@ -75,6 +75,15 @@
 - 渲染回归 7 项通过，原生图谱 3 个 suite、19 项通过；日志：`/tmp/starcat-follow-graph-flow-tests.log`。渲染测试使用 Canvas API 替身，未代替桌面视觉验收。
 - 与逐个弹出加载动画分别提交。MVP 基础提交单独保留，便于审阅后续交互差异。
 
+## 逐个弹出的加载动画（2026-11-06）
+
+- 已实现先本人、再按层级逐个放出头像；新头像从父节点附近播种，使用 360 ms 淡入 / 缩放 / 轻回弹，缓存与增量批次共享队列，旧节点不重播。
+- 顶部节点 / 关系数量由实际可见图上报；只接受当前 revision 和合法范围。搜索定位可立即显示完整目标路径，已有可见节点持续可交互。
+- 队列逐渐加速，数据批次不逐节点重置视口；Reduce Motion 直接显示，后台暂停时间轴，关闭取消帧任务并清队列。
+- 渲染回归 10 项通过，包含完整路径流水、实际可见计数、父节点附近出现、增量对象复用、暂停 / 删除 / 释放和一万节点调度加速；一万节点测试是虚拟时间调度验证，不能用作真实帧率结论。
+- 原生图谱 3 个 suite、19 项通过（0.257 秒），日志：`/tmp/starcat-follow-graph-reveal-tests.log`。真实桌面观感仍待人工验收。
+- 最终 App Store / Direct 构建及产物校验通过，两渠道 3 份离线资源均逐字节匹配源码；日志：`/tmp/starcat-follow-graph-animated-appstore.log`、`/tmp/starcat-follow-graph-animated-direct.log`。
+
 ## 原 3D MVP 自动验证（历史记录）
 
 - `xcodegen generate` 已执行。
@@ -113,4 +122,4 @@ make run-appstore
 - 缓存按账户限制单份快照最多 20 MB，未实现跨账户总量淘汰。
 - 明暗主题、窄窗口、长译文、Reduce Motion、键盘焦点与屏幕阅读器待人工验证；翻译尚未人工审核。
 
-启动仅通过 `make run-direct`，没有执行 GUI 控制、提交、推送、合并或发布；没有修改功能实现总览与 Changelog。
+启动仅通过 `make run-direct`，没有执行 GUI 控制、推送、合并或发布；没有修改功能实现总览与 Changelog。2026-11-06 按 dong4j 授权，先提交 MVP 基础，再将路径流水与逐个弹出分别提交。

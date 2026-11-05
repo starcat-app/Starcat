@@ -102,6 +102,11 @@ struct FollowGraphWebView: NSViewRepresentable {
                       let values = body["value"] as? [Double],
                       let anchor = FollowGraphSelectionAnchor(values: values) else { return }
                 if model.selectionAnchor != anchor { model.selectionAnchor = anchor }
+            case "progress":
+                if let nodes = body["nodes"] as? Int, let edges = body["edges"] as? Int,
+                   let revision = body["revision"] as? Int {
+                    model.reportRenderedCounts(nodes: nodes, edges: edges, revision: revision)
+                }
             case "error": model.rendererError = true
             default: break
             }
@@ -113,6 +118,7 @@ struct FollowGraphWebView: NSViewRepresentable {
             sequence += 1
             var payload: [String: Any] = ["session": session, "root": snapshot.rootID, "sequence": sequence]
             if sentRevision != model.revision {
+                payload["revision"] = model.revision
                 payload["nodes"] = snapshot.nodes.values.map {
                     ["id": $0.id, "login": $0.login, "name": $0.name ?? $0.login,
                      "avatar": Self.allowedAvatar($0.avatarURL)] as [String: Any]

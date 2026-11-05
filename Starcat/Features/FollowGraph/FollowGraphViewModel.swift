@@ -15,6 +15,7 @@ final class FollowGraphViewModel {
     private(set) var snapshot: FollowGraphSnapshot?
     private(set) var displayedSnapshot: FollowGraphSnapshot?
     private var expandedSources: [String: Int] = [:]
+    private(set) var renderedCounts: (nodes: Int, edges: Int)?
     private(set) var isLoading = false
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
@@ -89,6 +90,7 @@ final class FollowGraphViewModel {
         stop()
         snapshot = nil
         displayedSnapshot = nil
+        renderedCounts = nil
         expandedSources = [:]
         store = nil
         selectedID = nil
@@ -235,6 +237,17 @@ final class FollowGraphViewModel {
         displayedSnapshot = snapshot?.presentation(expanded: expandedSources)
         if let selectedID, displayedSnapshot?.nodes[selectedID] == nil { self.selectedID = nil }
         revision += 1
+        renderedCounts = nil
+    }
+
+    /// 只接受当前展示批次的真实绘制数量，迟到消息不能让顶部计数回退或越界。
+    func reportRenderedCounts(nodes: Int, edges: Int, revision: Int) {
+        guard revision == self.revision, let displayedSnapshot,
+              (0...displayedSnapshot.nodes.count).contains(nodes),
+              (0...displayedSnapshot.edges.count).contains(edges) else { return }
+        if renderedCounts?.nodes != nodes || renderedCounts?.edges != edges {
+            renderedCounts = (nodes, edges)
+        }
     }
 
     private func handle(_ error: Error, session: UUID, store: FollowGraphStore) async {

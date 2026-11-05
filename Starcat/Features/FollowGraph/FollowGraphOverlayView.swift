@@ -199,9 +199,10 @@ struct FollowGraphOverlayView: View {
             HStack(spacing: 8) {
                 Text(LocalizedStringKey(model.statusKey))
                 if let snapshot = model.displayedSnapshot {
-                    Text(verbatim: "\(snapshot.nodes.count.formatted(.number.locale(locale))) · \(snapshot.edges.count.formatted(.number.locale(locale)))")
+                    let counts = model.renderedCounts ?? (nodes: 0, edges: 0)
+                    Text(verbatim: "\(counts.nodes.formatted(.number.locale(locale))) · \(counts.edges.formatted(.number.locale(locale)))")
                         .accessibilityLabel(Text("followGraph.status.counts") +
-                            Text(verbatim: " \(snapshot.nodes.count) · \(snapshot.edges.count)"))
+                            Text(verbatim: " \(counts.nodes) · \(counts.edges)"))
                         .help(Text("followGraph.status.counts") + Text(verbatim: "\n") +
                               Text("followGraph.status.snapshot") + Text(verbatim: "\n") +
                               Text(snapshot.savedAt, format: .dateTime.month().day().hour().minute().locale(locale)))

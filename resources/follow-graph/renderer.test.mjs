@@ -2,16 +2,19 @@
 // Only the Canvas component is substituted; the renderer and D3 forces are real.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { ProgressiveReveal } from './progressive-reveal.mjs';
 import * as forces from 'd3-force-3d';
 
-const source = transformSync(fs.readFileSync(new URL('entry.js', import.meta.url), 'utf8'),
-  { format: 'cjs' }).code;
+const source = buildSync({
+  entryPoints: [fileURLToPath(new URL('entry.js', import.meta.url))],
+  bundle: true, write: false, format: 'cjs', external: ['force-graph', 'd3-force-3d']
+}).outputFiles[0].text;
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
-function renderer() {
+function renderer({ reduced = true } = {}) {
   const props = new Map(), calls = [], messages = [], images = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
@@ -60,7 +63,8 @@ function renderer() {
     ResizeObserver: class { observe() {} disconnect() {} }
   });
   const update = (sequence, extra = {}) => window.followGraph.update({
-    session: 'test', root: '1', sequence, ...extra
+    session: 'test', root: '1', sequence, revision: sequence,
+    ...(sequence === 1 ? { reduceMotion: reduced } : {}), ...extra
   });
   const data = count => ({
     nodes: Array.from({ length: count }, (_, i) => ({
@@ -178,6 +182,7 @@ test('clicking a second-level node highlights every directed hop from root and r
   const r = renderer(), data = r.data(4);
   data.links = [{ source: '1', target: '2' }, { source: '2', target: '3' }, { source: '4', target: '3' }];
   r.update(1, data);
+  r.update(2, { reduceMotion: false });
   const { nodes, links } = r.props.get('graphData');
   nodes.forEach((node, i) => { node.x = i * 250; node.y = 0; });
   // Match force-graph's mutation of string endpoints into shared node objects.
@@ -200,13 +205,13 @@ test('clicking a second-level node highlights every directed hop from root and r
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   assert.notDeepEqual(r.calls.filter(([name]) => name === 'lineTo'), initial);
-  r.update(2, { reduceMotion: true });
+  r.update(3, { reduceMotion: true });
   assert.equal(r.frames.size, 0);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   assert.ok(!r.calls.some(([name]) => name === 'lineTo'));
   assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
-  r.update(3, { reduceMotion: false, active: true });
+  r.update(4, { reduceMotion: false, active: true });
   assert.equal(r.frames.size, 1);
   r.document.hidden = true;
   r.document.listeners.get('visibilitychange')();
@@ -218,6 +223,86 @@ test('clicking a second-level node highlights every directed hop from root and r
   r.props.get('onNodeClick')(nodes[2]);
   r.window.followGraph.destroy();
   assert.equal(r.frames.size, 0);
+});
+
+test('cached snapshots visibly reveal root then children, reuse objects and report actual canvas counts', () => {
+  const r = renderer({ reduced: false }), data = r.data(20);
+  data.links = data.links.filter(link => link.target !== '3');
+  data.links.push({ source: '2', target: '3' });
+  r.update(1, data);
+  assert.equal(r.props.get('graphData').nodes.length, 1);
+  assert.equal(r.props.get('graphData').links.length, 0);
+  assert.equal(r.messages.findLast(m => m.type === 'progress').nodes, 1);
+  const root = r.props.get('graphData').nodes[0];
+  r.frame(50);
+  let displayed = r.props.get('graphData');
+  assert.equal(displayed.nodes.length, 2);
+  assert.equal(displayed.nodes[0], root);
+  assert.equal(displayed.nodes[1].id, '2');
+  assert.ok(Math.hypot(displayed.nodes[1].x - root.x, displayed.nodes[1].y - root.y) <= 45);
+  r.calls.length = 0;
+  r.props.get('nodeCanvasObject')(displayed.nodes[1], r.canvasContext, 1);
+  const initialSize = r.calls.findLast(([name]) => name === 'arc')[3];
+  r.frame(150);
+  r.calls.length = 0;
+  r.props.get('nodeCanvasObject')(displayed.nodes[1], r.canvasContext, 1);
+  assert.ok(r.calls.findLast(([name]) => name === 'arc')[3] > initialSize);
+  for (let i = 0; i < 80; i++) r.frame(34);
+  displayed = r.props.get('graphData');
+  assert.equal(displayed.nodes.length, 20);
+  assert.equal(displayed.links.length, data.links.length);
+  assert.equal(r.messages.findLast(m => m.type === 'progress').nodes, 20);
+  assert.equal(r.frames.size, 0);
+  // Already-visible avatars survive a new batch; no replay of the original animation.
+  r.update(2, { ...r.data(21), revision: 2 });
+  assert.equal(r.props.get('graphData').nodes.length, 20);
+  assert.equal(r.props.get('graphData').nodes[0], root);
+  r.props.get('onEngineStop')();
+  assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
+  r.frame(50);
+  assert.equal(r.props.get('graphData').nodes.length, 21);
+  r.window.followGraph.destroy();
+  assert.equal(r.frames.size, 0);
+});
+
+test('reveal queue preserves BFS order and pause time; removed pending nodes never resurrect', () => {
+  const q = new ProgressiveReveal();
+  const nodes = new Map(['1', '2', '3', '4'].map(id => [id, { id }]));
+  const links = new Map([
+    ['a', { source: '1', target: '2' }], ['b', { source: '2', target: '3' }],
+    ['c', { source: '1', target: '4' }]
+  ]);
+  q.sync(nodes, links, '1', 0, false);
+  assert.deepEqual([...q.visible], ['1']);
+  q.advance(50);
+  assert.deepEqual([...q.visible], ['1', '2']);
+  q.setRunning(false, 50);
+  q.advance(10_000);
+  assert.equal(q.visible.size, 2);
+  q.setRunning(true, 10_050);
+  assert.equal(q.progress('2', 10_050), 0);
+  assert.equal(q.advance(10_050), false);
+  q.advance(10_100);
+  assert.deepEqual([...q.visible], ['1', '2', '4']);
+  nodes.delete('3');
+  q.sync(nodes, new Map([...links].filter(([id]) => id !== 'b')), '1', 10_100, false);
+  q.advance(20_000);
+  assert.equal(q.visible.has('3'), false);
+  q.sync(nodes, links, '1', 20_000, true);
+  assert.equal(q.animating, false);
+  assert.equal(q.visible.size, 3);
+});
+
+test('large cached graphs accelerate to completion without a minute-long serial wait', () => {
+  const q = new ProgressiveReveal();
+  const nodes = new Map(Array.from({ length: 10_000 }, (_, i) => [String(i + 1), { id: String(i + 1) }]));
+  const links = new Map([...nodes.keys()].slice(1).map(id => [id, { source: '1', target: id }]));
+  q.sync(nodes, links, '1', 0, false);
+  let time = 0;
+  while (q.animating && time < 15_000) { time += 34; q.advance(time); }
+  assert.equal(q.visible.size, 10_000);
+  assert.equal(q.animating, false);
+  assert.ok(time < 15_000);
 });
 
 test('native card anchor follows pan/zoom and movement, coalesces frames, and stops after teardown', () => {

@@ -1,6 +1,7 @@
 // Offline 2D Canvas renderer. Swift owns authentication, graph semantics and caching.
 import ForceGraph from 'force-graph';
 import { forceCollide } from 'd3-force-3d';
+import { ProgressiveReveal } from './progressive-reveal.mjs';
 
 const container = document.getElementById('graph');
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
@@ -9,6 +10,8 @@ let viewportTouched = false, lastSequence = 0;
 let pendingView = null;
 let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
+const reveal = new ProgressiveReveal(), placed = new Set();
+let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let adjacentNodes = new Set(), lastAnchor = '', anchorTimer = null;
 const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
 const endpoint = value => typeof value === 'object' ? value.id : value;
@@ -89,11 +92,15 @@ function avatar(node) {
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
 function drawNode(node, ctx, scale) {
-  const r = radius(node);
+  const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
+  // A short ease-out-back gives a readable pop without a perpetual spring simulation.
+  const overshoot = progress - 1;
+  const pop = progress === 0 ? 0 : 1 + 2.70158 * overshoot ** 3 + 1.70158 * overshoot ** 2;
+  const r = radius(node) * Math.max(0.01, pop);
   const emphasized = node.id === root || node.id === selected ||
     highlightedNodes.has(node.id) || adjacentNodes.has(node.id);
   ctx.save();
-  ctx.globalAlpha = !selected || emphasized ? 1 : 0.3;
+  ctx.globalAlpha = (!selected || emphasized ? 1 : 0.3) * Math.min(1, progress * 3);
   if (r * scale < 3 && !emphasized) {
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
@@ -145,7 +152,7 @@ const graph = new ForceGraph(container)
   .onEngineTick(applyPendingView)
   .onEngineStop(() => {
     applyPendingView();
-    if (!viewportTouched && nodes.size > 1) fit();
+    if (!viewportTouched && nodes.size > 1 && !reveal.animating) fit();
     publishAnchor();
   })
   .onRenderFramePost((ctx, scale) => { drawPathFlow(ctx, scale); scheduleAnchor(); })
@@ -197,6 +204,10 @@ function selectNode(id) {
   // Compute from the same loaded directed graph immediately. Waiting for a SwiftUI
   // representable update left only the final adjacent edge visible after clicks.
   setPath(pathFromRoot(id));
+  const oldCount = reveal.visible.size;
+  reveal.show(selectedPath, performance.now());
+  if (reduceMotion) reveal.finish();
+  if (oldCount !== reveal.visible.size) applyVisibleGraph();
   updateAdjacency();
   redrawSelection();
   syncAnimation();
@@ -296,9 +307,11 @@ function applyPendingView() {
 }
 
 function syncAnimation() {
-  if (active && !document.hidden) graph.resumeAnimation();
+  const running = active && !document.hidden;
+  reveal.setRunning(running, performance.now());
+  if (running) graph.resumeAnimation();
   else graph.pauseAnimation();
-  if (destroyed || !active || document.hidden || reduceMotion || selectedPath.length < 2) {
+  if (destroyed || !running || reduceMotion || (selectedPath.length < 2 && !reveal.animating)) {
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
   } else if (animationFrame === null) animationFrame = requestAnimationFrame(animate);
@@ -309,9 +322,37 @@ function animate() {
   animationFrame = null;
   if (performance.now() - lastAnimationDraw >= 32) {
     lastAnimationDraw = performance.now();
-    graph.nodeCanvasObject(drawNode);
+    if (reveal.advance(performance.now())) applyVisibleGraph();
+    else graph.nodeCanvasObject(drawNode);
   }
   syncAnimation();
+}
+
+/** Only revealed objects enter the force simulation and pointer canvas. Newly admitted
+ * children start next to their actual parent; shared node objects preserve the rest of the layout.
+ */
+function applyVisibleGraph() {
+  for (const id of reveal.visible) {
+    if (placed.has(id)) continue;
+    const node = nodes.get(id), parent = nodes.get(reveal.parents.get(id));
+    if (!node) continue;
+    if (parent && !reduceMotion) {
+      const angle = placed.size * 2.39996323, distance = radius(parent) + 24;
+      node.x = parent.x + Math.cos(angle) * distance;
+      node.y = parent.y + Math.sin(angle) * distance;
+    }
+    placed.add(id);
+  }
+  const visibleLinks = [...links.values()].filter(link =>
+    reveal.visible.has(endpoint(link.source)) && reveal.visible.has(endpoint(link.target)));
+  graph.graphData({
+    nodes: [...nodes.values()].filter(node => reveal.visible.has(node.id)), links: visibleLinks
+  });
+  const identity = `${graphRevision}:${reveal.visible.size}:${visibleLinks.length}`;
+  if (lastProgress !== identity) {
+    lastProgress = identity;
+    post('progress', { revision: graphRevision, nodes: reveal.visible.size, edges: visibleLinks.length });
+  }
 }
 
 /** Apply ordered native batches without rebuilding existing node positions or user pan/zoom. */
@@ -328,6 +369,7 @@ function update(payload) {
   if ('reduceMotion' in payload) {
     reduceMotion = payload.reduceMotion;
     graph.cooldownTicks(reduceMotion ? 0 : 120);
+    if (reduceMotion) reveal.finish();
   }
   if ('selected' in payload) selected = payload.selected;
   if (payload.path) setPath(payload.path);
@@ -337,6 +379,7 @@ function update(payload) {
     for (const id of nodes.keys()) {
       if (!incoming.has(id)) {
         nodes.delete(id);
+        placed.delete(id);
         const resource = resources.get(id);
         resources.delete(id);
         resource?.cancel?.();
@@ -367,9 +410,24 @@ function update(payload) {
       newLinks.set(key, links.get(key) || value);
     });
     links.clear(); for (const [key, link] of newLinks) links.set(key, link);
-    graph.graphData({ nodes: [...nodes.values()], links: [...links.values()] });
+    graphRevision = payload.revision;
+    reveal.sync(nodes, links, root, performance.now(), reduceMotion);
+    if (!overviewStarted && !reduceMotion) {
+      overviewStarted = true;
+      // A non-default zoom disables the component's per-graphData automatic zoom.
+      // Fit once when the reveal/layout settles; never jump for each arriving avatar.
+      if (!payload.viewport) graph.zoom(0.8, 0).centerAt(0, 0, 0);
+    }
+    applyVisibleGraph();
     setPath(pathFromRoot(selected));
   }
+  if (selected) {
+    const oldCount = reveal.visible.size;
+    reveal.show(selectedPath, performance.now());
+    if (reduceMotion) reveal.finish();
+    if (oldCount !== reveal.visible.size) applyVisibleGraph();
+  }
+  if (!payload.nodes && 'reduceMotion' in payload) applyVisibleGraph();
   if ('selected' in payload || payload.nodes) {
     updateAdjacency();
   }
@@ -385,7 +443,7 @@ function update(payload) {
       viewportTouched = true;
       if (node) graph.centerAt(node.x, node.y, duration).zoom(Math.max(1, graph.zoom()), duration);
       else fit(duration);
-    } else if (!viewportTouched && nodes.size > 1) fit();
+    } else if (!viewportTouched && nodes.size > 1 && !reveal.animating) fit();
   };
   if (payload.nodes) {
     if (!pendingView || payload.viewport || 'focus' in payload) pendingView = applyView;
@@ -412,6 +470,8 @@ window.followGraph = {
   update,
   destroy() {
     destroyed = true;
+    reveal.clear();
+    placed.clear();
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
     clearTimeout(anchorTimer);
