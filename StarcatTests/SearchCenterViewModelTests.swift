@@ -77,6 +77,174 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.candidates.count == 2)
     }
 
+    @Test("翻页后提交新词从首页开始，下一次继续第二页")
+    func newQueryResetsGitHubRequestPage() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1, name: "one"),
+            Self.makeCandidate(id: 2, name: "two"),
+            Self.makeCandidate(id: 3, name: "three")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: history
+        )
+        viewModel.scope = .github
+        viewModel.query = "swift"
+        await viewModel.submit()
+        await viewModel.loadMoreGitHub()
+        viewModel.query = "rust"
+        await viewModel.submit()
+        #expect(viewModel.currentGitHubPage == 1)
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [1])
+        await viewModel.loadMoreGitHub()
+
+        let requests = await provider.requests
+        #expect(requests.map(\.query) == ["swift", "swift", "rust", "rust"])
+        #expect(requests.map(\.page) == [1, 2, 1, 2])
+    }
+
+    @Test("范围往返保留已加载页并继续加载第三页")
+    func scopeRoundTripPreservesPagination() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1, name: "one"),
+            Self.makeCandidate(id: 2, name: "two"),
+            Self.makeCandidate(id: 3, name: "three")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: history
+        )
+        viewModel.scope = .github
+        viewModel.query = "swift"
+        await viewModel.submit()
+        await viewModel.loadMoreGitHub()
+        await viewModel.changeScope(.local)
+        #expect(viewModel.candidates.isEmpty)
+        await viewModel.changeScope(.github)
+        #expect(viewModel.currentGitHubPage == 2)
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [1, 2])
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [1, 2, 3])
+        #expect(await provider.requests.map(\.page) == [1, 2, 3])
+    }
+
+    @Test("分页失败保留成功页码，重试仍请求失败的那一页")
+    func failedPaginationCanRetrySamePage() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let provider = SearchCenterRecordingPagingProvider(
+            candidates: [Self.makeCandidate(id: 1, name: "one"), Self.makeCandidate(id: 2, name: "two")],
+            failSecondPageOnce: true
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: history
+        )
+        viewModel.scope = .github
+        viewModel.query = "swift"
+        await viewModel.submit()
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.currentGitHubPage == 1)
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [1])
+        #expect(viewModel.canLoadMoreGitHub)
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [1, 2])
+        #expect(await provider.requests.map(\.page) == [1, 2, 2])
+    }
+
+    @Test("独立远端范围在请求结束前保持加载态", arguments: [SearchScope.github, .web])
+    func remoteScopeLoadingState(scope: SearchScope) async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let gate = SearchHoldGate()
+        let provider = SearchCenterGatedStubProvider(
+            source: scope == .github ? .github : .web,
+            gate: gate,
+            page: .empty
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: history
+        )
+        viewModel.scope = scope
+        viewModel.query = "swift"
+        let task = Task { await viewModel.submit() }
+        await gate.waitUntilBlocked()
+        #expect(viewModel.isSearching)
+        #expect(viewModel.shouldShowSearchSkeleton)
+        #expect(!viewModel.hasSettledSearchProvider)
+        #expect(viewModel.processChips.isEmpty)
+        await gate.resume()
+        await task.value
+        #expect(!viewModel.isSearching)
+        #expect(!viewModel.shouldShowSearchSkeleton)
+        #expect(viewModel.hasSettledSearchProvider)
+    }
+
+    @Test("应用 GitHub 筛选重置首页并保留兼容的本地快照")
+    func applyingGitHubFiltersPreservesLocalSnapshot() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword, candidate: Self.makeCandidate(id: 10, name: "local")
+        )
+        let github = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1, name: "one"), Self.makeCandidate(id: 2, name: "two")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local, github]), historyRepository: history
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        await viewModel.changeScope(.github)
+        await viewModel.loadMoreGitHub()
+        viewModel.githubFilters.language = "Rust"
+        await viewModel.applyGitHubFilters()
+        #expect(viewModel.currentGitHubPage == 1)
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [1])
+        await viewModel.changeScope(.all)
+        #expect(local.callCount == 1)
+        #expect(viewModel.coordinator.repositories.map(\.card.ghRepoId) == [10, 1])
+        let requests = await github.requests
+        #expect(requests.map(\.page) == [1, 2, 1])
+        #expect(requests.last?.githubFilters.language == "Rust")
+    }
+
+    @Test("网页加载更多后切换范围保留累计结果与请求上限")
+    func webScopeRoundTripPreservesExpandedResults() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let provider = WebLoadMoreStubProvider()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]), historyRepository: history
+        )
+        viewModel.scope = .web
+        viewModel.query = "swift"
+        await viewModel.submit()
+        await viewModel.loadMoreWeb()
+        await viewModel.changeScope(.local)
+        await viewModel.changeScope(.web)
+        #expect(viewModel.candidates.count == 2)
+        #expect(viewModel.externalSearchFilters.maxResults == 20)
+        #expect(provider.maxResultsRequests == [10, 20])
+    }
+
+    @Test("切换到 GitHub 范围后不展示隐藏语义来源的错误")
+    func remoteScopeExcludesHiddenSourceErrors() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterSemanticFailureStubProvider(),
+                SearchCenterSessionStubProvider(candidate: Self.makeCandidate())
+            ]),
+            historyRepository: history
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        #expect(viewModel.footerErrors.count == 1)
+        await viewModel.changeScope(.github)
+        #expect(viewModel.footerErrors.isEmpty)
+        #expect(!viewModel.isSearching)
+    }
+
     @Test("submit: 非空搜索会完成开始使用清单的搜索步骤")
     func submitPostsGettingStartedSearchNotification() async throws {
         let db = try InMemoryDatabaseManager()
@@ -524,6 +692,33 @@ private struct SearchCenterPagingStubProvider: SearchProvider {
             references: [],
             totalCount: 2,
             hasNextPage: false
+        )
+    }
+}
+
+/// 记录真实页码序列，并用一次失败模拟网络恢复，避免只验证最终条数
+private actor SearchCenterRecordingPagingProvider: SearchProvider {
+    nonisolated let source: SearchSource = .github
+    let candidates: [RepositoryCandidate]
+    var failSecondPageOnce: Bool
+    private(set) var requests: [SearchRequest] = []
+
+    init(candidates: [RepositoryCandidate], failSecondPageOnce: Bool = false) {
+        self.candidates = candidates
+        self.failSecondPageOnce = failSecondPageOnce
+    }
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        requests.append(request)
+        if request.page == 2, failSecondPageOnce {
+            failSecondPageOnce = false
+            throw SearchCenterSemanticFailure.unavailable
+        }
+        return SearchProviderPage(
+            repositories: Array(candidates.dropFirst(request.page - 1).prefix(1)),
+            references: [],
+            totalCount: candidates.count,
+            hasNextPage: request.page < candidates.count
         )
     }
 }
