@@ -65,6 +65,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     case discovery
     /// 公开仓库 Star 历史后端（GET /api/v1/repos/{owner}/{repo}/star-history）。
     case history
+    /// 独立编辑的每周 AI 大事，生产装配在聚合网关
+    case aiEvents = "ai-events"
 
     var id: String { rawValue }
 
@@ -78,6 +80,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .recommend: return "STARCAT_PRODUCTION_API_KEY_RECOMMEND"
         case .discovery: return "STARCAT_PRODUCTION_API_KEY_DISCOVERY"
         case .history:   return "STARCAT_PRODUCTION_API_KEY_HISTORY"
+        case .aiEvents: return "STARCAT_PRODUCTION_API_KEY_AI_EVENTS"
         }
     }
 
@@ -93,6 +96,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .recommend: return "settings.services.recommend.title"
         case .discovery: return "settings.services.discovery.title"
         case .history:   return "settings.services.history.title"
+        case .aiEvents: return "settings.services.aiEvents.title"
         }
     }
 
@@ -106,6 +110,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .recommend: return "settings.services.recommend.description"
         case .discovery: return "settings.services.discovery.description"
         case .history:   return "settings.services.history.description"
+        case .aiEvents: return "settings.services.aiEvents.description"
         }
     }
 
@@ -122,6 +127,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .recommend: return .business(.recommendations)
         case .discovery: return .system("safari")
         case .history:   return .system("chart.xyaxis.line")
+        case .aiEvents: return .business(.weekly)
         }
     }
 
@@ -135,6 +141,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .wiki:     return "#8B5CF6" // Violet：与知识库 / 文档入口区分现有三个服务
         case .recommend: return "#34D399" // Emerald：与"发现相似项目"的推荐语义区分现有服务
         case .discovery: return "#F59E0B" // Amber：探索入口用暖色，与推荐 emerald 区分
+        case .aiEvents: return "#00A89C"
         case .history:   return "#007AFF" // System blue：与洞察页 Star 趋势图保持同一语义
         }
     }
@@ -165,6 +172,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .recommend: return URL(string: "https://github.com/starcat-app/starcat-recommend-api")!
         case .discovery: return URL(string: "https://github.com/starcat-app/starcat-discovery-api")!
         case .history:   return URL(string: "https://github.com/starcat-app/starcat-history-api")!
+        case .aiEvents: return URL(string: "https://github.com/starcat-app/starcat-ai-events-api")!
         }
     }
 
@@ -185,6 +193,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     func pingURL(base: URL) -> URL {
         let normalized = normalizedBaseURL(base)
         switch self {
+        case .aiEvents:
+            return AppEndpoints.appendPath("/api/v1/ping", to: normalized)
         case .weekly:
             return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.ping, to: normalized)
         case .trending:
@@ -209,6 +219,8 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     func healthURL(base: URL) -> URL {
         let normalized = normalizedBaseURL(base)
         switch self {
+        case .aiEvents:
+            return AppEndpoints.appendPath("/healthz", to: normalized)
         case .weekly:
             return AppEndpoints.appendPath(AppEndpoints.Weekly.Paths.healthz, to: normalized)
         case .trending:

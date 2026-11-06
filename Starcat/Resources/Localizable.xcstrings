@@ -179492,6 +179492,133 @@
         "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "生態週報" } }
       }
     },
+    "dailyRadar.category.ai-weekly-events" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "KI-Highlights der Woche" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Weekly AI Highlights" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Lo más destacado de IA de la semana" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Les temps forts de l’IA de la semaine" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorotan AI Mingguan" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Le novità IA della settimana" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "今週のAI重要ニュース" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이번 주 AI 주요 소식" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "AI-hoogtepunten van de week" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Najważniejsze wydarzenia AI tygodnia" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Destaques de IA da semana" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Главные события ИИ за неделю" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Haftanın Yapay Zekâ Gelişmeleri" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Головні події ШІ за тиждень" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tin AI nổi bật trong tuần" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "每周 AI 大事" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "每週 AI 大事" } }
+      }
+    },
+    "dailyRadar.cachedContent" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualisierung fehlgeschlagen. Zwischengespeicherte Inhalte werden angezeigt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Update failed. Showing cached content."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo actualizar. Se muestra el contenido en caché."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Échec de la mise à jour. Affichage du contenu en cache."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pembaruan gagal. Menampilkan konten dari cache."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiornamento non riuscito. Vengono mostrati i contenuti nella cache."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新に失敗しました。キャッシュ済みの内容を表示しています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "업데이트하지 못했습니다. 캐시된 콘텐츠를 표시합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bijwerken mislukt. Inhoud uit de cache wordt weergegeven."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizacja nie powiodła się. Wyświetlana jest zawartość z pamięci podręcznej."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Falha na atualização. Exibindo conteúdo em cache."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось обновить. Показано содержимое из кеша."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Güncelleme başarısız. Önbellekteki içerik gösteriliyor."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося оновити. Показано вміст із кешу."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cập nhật thất bại. Đang hiển thị nội dung đã lưu trong bộ nhớ đệm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新失败，正在显示缓存内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新失敗，正在顯示快取內容。"
+          }
+        }
+      }
+    },
     "dailyRadar.close" : {
       "localizations" : {
         "en" : {
@@ -577571,6 +577698,218 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示 API 金鑰"
+          }
+        }
+      }
+    },
+    "settings.services.aiEvents.description" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geprüfte KI-Nachrichten mit Originalbildern und Berichten auf Chinesisch und Englisch."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified AI news with source images and reports in Chinese and English."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noticias de IA verificadas, con imágenes originales e informes en chino e inglés."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualités IA vérifiées, images des sources et rapports en chinois et en anglais."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Berita AI terverifikasi dengan gambar sumber serta laporan berbahasa Mandarin dan Inggris."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notizie sull’IA verificate, con immagini dalle fonti e rapporti in cinese e inglese."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "出典を確認したAIニュースを、原文の画像と中国語・英語のレポートで紹介します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "출처를 확인한 AI 뉴스를 원문 이미지와 중국어·영어 보고서로 제공합니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geverifieerd AI-nieuws met bronafbeeldingen en verslagen in het Chinees en Engels."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zweryfikowane wiadomości o AI z ilustracjami ze źródeł oraz raportami po chińsku i angielsku."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Notícias de IA verificadas, com imagens das fontes e relatórios em chinês e inglês."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Проверенные новости ИИ с изображениями из источников и отчётами на китайском и английском."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kaynak görselleri ve Çince ile İngilizce raporlarla doğrulanmış yapay zekâ haberleri."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Перевірені новини ШІ із зображеннями з джерел і звітами китайською та англійською."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tin AI đã xác minh, có ảnh từ nguồn và báo cáo bằng tiếng Trung và tiếng Anh."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "经来源核实的 AI 新闻，配原文图片，提供中英双版报告。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "經來源核實的 AI 新聞，附原文圖片，提供中英雙版報告。"
+          }
+        }
+      }
+    },
+    "settings.services.aiEvents.title" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wöchentliche KI-Ereignisse"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weekly AI Highlights"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Noticias semanales de IA"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualités IA de la semaine"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sorotan AI Mingguan"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Novità settimanali sull’IA"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今週のAIトピック"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "주간 AI 주요 소식"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wekelijks AI-nieuws"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Najważniejsze wydarzenia AI"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Destaques semanais de IA"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Главные события ИИ за неделю"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Haftalık Yapay Zekâ Gündemi"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Головні події ШІ за тиждень"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Điểm tin AI hằng tuần"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每周 AI 大事"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "每週 AI 大事"
           }
         }
       }

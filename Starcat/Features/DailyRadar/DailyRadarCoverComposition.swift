@@ -41,6 +41,7 @@ struct DailyRadarCoverComposition: Equatable, Sendable {
         case "ai-hf": preferred = .terrain; baseHue = 0.13
         case "ai-community": preferred = .network; baseHue = 0.40
         case "ai-weekly": preferred = .orbital; baseHue = 0.78
+        case "ai-weekly-events": preferred = .network; baseHue = 0.46
         case "ai-monthly": preferred = .interference; baseHue = 0.62
         default: preferred = .terrain; baseHue = 0.58
         }

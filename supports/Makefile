@@ -287,3 +287,10 @@ _fly-wipe-data:
 	if [ "$$state" != "started" ]; then fly machine start "$$mid" -a "$(APP)"; sleep 15; fi; \
 	fly ssh console -a "$(APP)" -C "sh -c 'rm -rf /data/* /data/.[!.]* 2>/dev/null; ls -la /data'"; \
 	fly machine restart "$$mid" -a "$(APP)"
+
+# AI Events 不进入 APIS/FLY_APPS：生产只部署现有聚合 App
+.PHONY: check-ai-events run-ai-events
+check-ai-events: ## 本地验证独立编辑周报服务，不部署
+	$(MAKE) -C starcat-ai-events-api check
+run-ai-events: ## 本地独立开发入口；生产走 fly-deploy-api
+	$(MAKE) -C starcat-ai-events-api run

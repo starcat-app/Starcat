@@ -1486,7 +1486,9 @@ final class AppDependencies {
         self.weeklyAPI = weeklyAPIInstance
         let dailyRadarAPI = DailyRadarAPI(
             baseURL: AppEndpoints.Weekly.baseURL,
-            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
+            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly),
+            eventsBaseURL: AppEndpoints.AIEvents.baseURL,
+            eventsAPIKey: StarcatAPIKeyResolver.resolve(for: .aiEvents)
         )
         self.dailyRadarAPI = dailyRadarAPI
         self.dailyRadarRepository = DailyRadarRepository(api: dailyRadarAPI)
@@ -2109,6 +2111,10 @@ final class AppDependencies {
             await dailyRadarAPI.update(baseURL: target)
             await dailyRadarRepository.cancelRequests()
             dailyRadarConfigurationRevision &+= 1
+        case .aiEvents:
+            await dailyRadarAPI.updateEvents(baseURL: target)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
@@ -2164,6 +2170,10 @@ final class AppDependencies {
         case .weekly:
             await weeklyAPI.updateAPIKey(resolved)
             await dailyRadarAPI.update(apiKey: resolved, replacesKey: true)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
+        case .aiEvents:
+            await dailyRadarAPI.updateEvents(apiKey: resolved, replacesKey: true)
             await dailyRadarRepository.cancelRequests()
             dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateAPIKey(resolved)

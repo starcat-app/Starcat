@@ -4,6 +4,8 @@
 
 !starcat-api/
 !starcat-api/**
+!starcat-ai-events-api/
+!starcat-ai-events-api/**
 !starcat-api-kit/
 !starcat-api-kit/**
 !starcat-recommend-api/
