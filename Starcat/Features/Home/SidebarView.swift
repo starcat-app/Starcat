@@ -132,6 +132,7 @@ struct SidebarView: View {
 
     /// 与右侧覆盖层共享的每日热点目录/分类状态；左栏不创建第二套请求。
     @Bindable var dailyRadarModel: DailyRadarWorkspaceViewModel
+    var onOpenFollowGraph: () -> Void = {}
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
@@ -855,6 +856,7 @@ struct SidebarView: View {
     private var sidebarFixedHeader: some View {
         VStack(spacing: 0) {
             SidebarHeaderView(
+                onOpenFollowGraph: onOpenFollowGraph,
                 trendingRepo: currentTrendingRepo,
                 activityTintColor: currentActivityTintColor
             )
