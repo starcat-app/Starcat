@@ -158,3 +158,13 @@ make run-appstore
 - 原生相关 5 个 suite、35 项测试通过（0.281 秒），覆盖重开及重载时清空首帧可见状态；日志 `/tmp/starcat-graph-opening-tests.log`。JS 16 项通过，新增主题 / 真实绘制帧门控、加载完成不适配、后续批次 / 头像 / ResizeObserver 不适配、模拟库自动缩放后恢复，以及主动重置 / 定位仍有效。
 - 测试使用 Canvas 库替身，未执行桌面控制、截图或真实 WebKit 视觉验收；闪烁与镜头连续性的最终观感需人工确认。未改数据加载预算、账户缓存、数据库、全语言文案、功能实现总览或 Changelog。
 - `make build-appstore` / `make build-direct` 构建及产物校验通过；两渠道的 JS、HTML、许可证三份资源与源码逐字节一致。日志 `/tmp/starcat-graph-opening-appstore.log`、`/tmp/starcat-graph-opening-direct.log`；`git diff --check` 通过。
+
+## 头像持久缓存接入（2026-11-06）
+
+- 原实现每次创建 nonPersistent WebView，页面 Map 与 Image 请求随关闭丢失；关系 JSON 只有头像地址，不包含图片。现通过受控 scheme 读取原生 `ImageCache.default`，保留重开初始化画布行为，头像独立复用。
+- 64px 地址复用 `GitHubAvatarURL`，原生相同 URL / 尺寸缓存可互通；本地探测并发 8、下载并发 4，预取本人及后续 16 个待展示节点。缓存命中直接显示，真正下载后渐入；本人首帧只等待本地探测，未命中不等待网络。不同尺寸、已过期或未落盘的历史图片仍需要下载。
+- 新增缓存及 handler 回归，使用临时目录和可控下载器，验证首次 miss 零网络、首次下载、重建实例后断网命中、原生缓存键互通、过期及损坏重下、失败不落盘，以及 stop / 拆除后的迟到结果不交付、不落盘。
+- `make test` 指定 8 个相关 suite 通过：Swift Testing 40 项 / 7 suite，XCTest 10 项；日志 `/tmp/starcat-follow-graph-avatar-tests.log`。首次测试夹具使用 `.expired` 写入模拟过期，但 Kingfisher 对此直接 no-op，已改为新 key 的短 TTL 到期，并确认回归通过。
+- JS 19 项通过，覆盖缓存命中不渐入、下载渐入、独立并发和限量预取、旧请求清理，以及既有首帧、路径、视角、大小与渐进展示。离线 bundle 重建成功，30 个运行时依赖许可证保持一致。
+- 以上是离线缓存及 delegate / Canvas 替身测试，不代表真实屏幕观感或 FPS 验收；未控制桌面、修改用户缓存或触发真实关注请求。无新增文案、数据库、功能实现总览或 Changelog 修改。
+- 双渠道 `make build-appstore` / `make build-direct` 及产物校验通过，包内 HTML、JS、许可证均与源码逐字节一致。日志 `/tmp/starcat-follow-graph-avatar-appstore.log`、`/tmp/starcat-follow-graph-avatar-direct.log`。

@@ -24,6 +24,7 @@ struct FollowGraphWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(context.coordinator.avatars, forURLScheme: FollowGraphAvatarURL.scheme)
         configuration.userContentController.add(context.coordinator, name: "followGraph")
         let web = WKWebView(frame: .zero, configuration: configuration)
         // 复用 README WebView 的透明底色策略，文档首次提交前不绘制 WebKit 默认白底。
@@ -49,6 +50,7 @@ struct FollowGraphWebView: NSViewRepresentable {
 
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) {
         coordinator.ready = false
+        coordinator.avatars.cancelAll()
         web.configuration.userContentController.removeScriptMessageHandler(forName: "followGraph")
         web.evaluateJavaScript("window.followGraph?.destroy()")
         web.stopLoading()
@@ -58,6 +60,7 @@ struct FollowGraphWebView: NSViewRepresentable {
     /// Coordinator 不持有 WebView；避免 userContentController → handler → web 的保留环。
     @MainActor final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var web: WKWebView?
+        let avatars = FollowGraphAvatarSchemeHandler()
         var model: FollowGraphViewModel
         var initialURL: URL?
         var ready = false
@@ -119,7 +122,7 @@ struct FollowGraphWebView: NSViewRepresentable {
                 payload["revision"] = model.revision
                 payload["nodes"] = snapshot.nodes.values.map {
                     ["id": $0.id, "login": $0.login, "name": $0.name ?? $0.login,
-                     "avatar": Self.allowedAvatar($0.avatarURL)] as [String: Any]
+                     "avatar": FollowGraphAvatarURL.source($0.avatarURL)] as [String: Any]
                 }
                 payload["links"] = snapshot.edges.map { ["source": $0.source, "target": $0.target] }
                 sentRevision = model.revision
@@ -172,12 +175,6 @@ struct FollowGraphWebView: NSViewRepresentable {
                 self?.isSending = false
                 self?.sendNext()
             }
-        }
-
-        private static func allowedAvatar(_ raw: String?) -> String {
-            guard let raw, let url = URL(string: raw), url.scheme == "https",
-                  url.host == "avatars.githubusercontent.com" else { return "" }
-            return raw
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,

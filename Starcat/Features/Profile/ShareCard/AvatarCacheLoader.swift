@@ -203,7 +203,8 @@ enum AvatarCacheLoader {
 
     /// URLSession 下载 + 校验（5s 超时 / 5MB 上限 / 必须 image/* MIME）。
     /// 返回 `(data, mime)` 或 nil。
-    private static func downloadFromNetwork(url: URL) async -> (data: Data, mime: String)? {
+    // 图谱图片桥复用二进制下载，避免先 base64 编码再解码；缓存策略由调用方控制。
+    static func downloadFromNetwork(url: URL) async -> (data: Data, mime: String)? {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = requestTimeout
         config.timeoutIntervalForResource = resourceTimeout

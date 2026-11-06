@@ -70,7 +70,7 @@ function renderer({ reduced = true } = {}) {
   const data = count => ({
     nodes: Array.from({ length: count }, (_, i) => ({
       id: String(i + 1), login: `user${i + 1}`, name: `User ${i + 1}`,
-      avatar: `https://avatars.githubusercontent.com/u/${i + 1}`
+      avatar: `starcat-follow-avatar://cache/image?url=${encodeURIComponent(`https://avatars.githubusercontent.com/u/${i + 1}?s=64`)}`
     })),
     links: Array.from({ length: count - 1 }, (_, i) => ({ source: '1', target: String(i + 2) }))
   });
@@ -171,6 +171,12 @@ test('native presentation waits for a themed root paint and is sent once per ren
     r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[0], r.canvasContext, 1);
     assert.equal(presented().length, 0);
     r.props.get('onRenderFramePost')(r.canvasContext, 1);
+    assert.equal(presented().length, 0);
+    // First frame waits only for local probing, never a network request.
+    if (reduced) r.images[0].onerror();
+    else r.images[0].onload();
+    r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[0], r.canvasContext, 1);
+    r.props.get('onRenderFramePost')(r.canvasContext, 1);
     assert.equal(presented().length, 1);
     assert.equal(presented()[0].session, 'test');
     r.update(2, { dark: false });
@@ -187,7 +193,7 @@ test('avatar hit areas, directed path highlight and image redraw survive settled
   assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
   assert.equal(r.props.get('linkDirectionalArrowLength')({ source: '2', target: '1' }), 6);
   r.props.get('nodeCanvasObject')(nodes[1], r.canvasContext, 1);
-  assert.equal(r.images.length, 1);
+  assert.equal(r.images.length, 2); // Root is prefetched; the selected node loads on draw.
   r.calls.length = 0;
   r.images[0].onload();
   assert.ok(r.calls.some(([name]) => name === 'nodeCanvasObject'));
@@ -408,7 +414,7 @@ test('hidden/inactive canvas stays paused; teardown releases avatar loads and li
   for (const node of r.props.get('graphData').nodes) {
     r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
   }
-  assert.equal(r.images.length, 4);
+  assert.equal(r.images.length, 6); // Cache probes have their own eight-request budget.
   r.document.listeners.get('visibilitychange')();
   assert.equal(r.calls.at(-1)[0], 'pauseAnimation');
   r.window.followGraph.destroy();
@@ -431,7 +437,9 @@ test('downloaded avatars crossfade after layout settles and stop scheduling afte
   });
   const draw = () => { alphas.length = 0; r.props.get('nodeCanvasObject')(node, ctx, 1); return alphas.at(-1); };
   draw();
-  r.images[0].onload();
+  const cached = r.images.find(image => decodeURIComponent(image.src).includes('/u/2?'));
+  cached.onerror();
+  r.images.at(-1).onload();
   assert.equal(draw(), 0);
   assert.equal(r.frames.size, 1);
   r.frame(140);
@@ -441,6 +449,52 @@ test('downloaded avatars crossfade after layout settles and stop scheduling afte
   assert.equal(r.frames.size, 0);
   r.update(3, { reduceMotion: true });
   assert.equal(draw(), 1);
+});
+
+test('cached avatars display immediately without replaying download fades', () => {
+  const r = renderer();
+  r.update(1, r.data(1));
+  r.update(2, { reduceMotion: false });
+  r.images[0].onload();
+  const alphas = [];
+  const ctx = new Proxy({}, {
+    get: () => () => {},
+    set: (_, key, value) => { if (key === 'globalAlpha') alphas.push(value); return true; }
+  });
+  r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[0], ctx, 1);
+  assert.equal(alphas.at(-1), 1);
+  assert.equal(r.frames.size, 0);
+  assert.ok(r.images.every(image => new URL(image.src).hostname === 'cache'));
+});
+
+test('bounded lookahead probes cache independently of slow downloads', () => {
+  const r = renderer({ reduced: false });
+  r.update(1, r.data(10_000));
+  assert.equal(r.images.length, 8);
+  // Cache misses fill only four remote slots; remaining local hits keep flowing.
+  for (let i = 0; i < 4; i++) r.images.filter(image => new URL(image.src).hostname === 'cache')[i].onerror();
+  assert.equal(r.images.filter(image => new URL(image.src).hostname === 'load').length, 4);
+  while (true) {
+    const next = r.images.find(image => image.onload && new URL(image.src).hostname === 'cache');
+    if (!next) break;
+    next.onload();
+  }
+  // Only root plus sixteen future nodes have allocated resources, not the whole graph.
+  assert.equal(r.images.filter(image => new URL(image.src).hostname === 'cache').length, 17);
+  assert.equal(r.images.filter(image => image.onload && new URL(image.src).hostname === 'load').length, 4);
+  r.window.followGraph.destroy();
+  assert.ok(r.images.every(image => image.onload === null && image.onerror === null));
+});
+
+test('removed avatar requests cannot resurrect or enqueue a download', () => {
+  const r = renderer();
+  r.update(1, r.data(1));
+  const stale = r.images[0].onerror;
+  r.update(2, { nodes: [], links: [] });
+  stale();
+  assert.equal(r.images.length, 1);
+  r.window.followGraph.destroy();
+  assert.equal(r.frames.size, 0);
 });
 
 test('degree sizes count incoming/outgoing loaded edges and selection never changes geometry', () => {

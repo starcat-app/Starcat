@@ -5,7 +5,7 @@ import { ProgressiveReveal, compareIDs } from './progressive-reveal.mjs';
 
 const container = document.getElementById('graph');
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
-let destroyed = false, active = true, lastDrag = -Infinity, activeImages = 0;
+let destroyed = false, active = true, lastDrag = -Infinity;
 let lastSequence = 0;
 let pendingView = null;
 let pathEdges = new Set(), highlightedNodes = new Set();
@@ -14,7 +14,10 @@ const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let hasAppearance = false, rootPainted = false, presented = false;
 let adjacentNodes = new Set();
-const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
+const nodes = new Map(), links = new Map(), resources = new Map();
+// Local reads must keep moving even when four remote downloads are slow/offline.
+const cacheQueue = { pending: [], active: 0, limit: 8, cacheOnly: true };
+const downloadQueue = { pending: [], active: 0, limit: 4, cacheOnly: false };
 const avatarFades = new Set();
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
@@ -52,35 +55,52 @@ function paint(resource, node, placeholder = false) {
 }
 
 /** Bound avatar requests; removed nodes and teardown release in-flight handlers too. */
-function drainImages() {
-  while (!destroyed && activeImages < 4 && imageQueue.length) {
-    const [node, resource] = imageQueue.shift();
+function drainImages(queue) {
+  while (!destroyed && queue.active < queue.limit && queue.pending.length) {
+    const [node, resource] = queue.pending.shift();
     if (resources.get(node.id) !== resource) continue;
-    activeImages++;
+    queue.active++;
     const image = new Image();
     resource.image = image;
+    let finished = false;
     const finish = () => {
+      if (finished) return;
+      finished = true;
       image.onload = image.onerror = null;
       resource.cancel = null;
-      activeImages--;
-      drainImages();
+      queue.active--;
+      drainImages(queue);
     };
     resource.cancel = () => { finish(); image.src = ''; };
     image.onload = () => {
+      if (finished) return;
       if (!destroyed && resources.get(node.id) === resource) {
+        resource.probing = false;
         resource.loaded = true;
-        resource.loadedAt = performance.now();
+        // Disk/memory hits are already available content: never replay a download fade.
+        resource.loadedAt = queue.cacheOnly ? -Infinity : performance.now();
         paint(resource, node);
-        if (!reduceMotion) avatarFades.add(resource);
+        if (!reduceMotion && !queue.cacheOnly) avatarFades.add(resource);
         // Invalidate one frame even after the force simulation has stopped.
         graph.nodeCanvasObject(drawNode);
         syncAnimation();
       }
       finish();
     };
-    image.onerror = finish;
+    image.onerror = () => {
+      if (finished) return;
+      finish();
+      if (queue.cacheOnly && !destroyed && resources.get(node.id) === resource) {
+        resource.probing = false;
+        // A local miss releases first-frame presentation immediately, without
+        // waiting for the network. Keep the existing placeholder/download fade.
+        graph.nodeCanvasObject(drawNode);
+        downloadQueue.pending.push([node, resource]);
+        drainImages(downloadQueue);
+      }
+    };
     const url = new URL(node.avatar);
-    url.searchParams.set('s', '64');
+    if (!queue.cacheOnly) url.hostname = 'load';
     image.src = url.href;
   }
 }
@@ -91,17 +111,20 @@ function avatar(node) {
     const placeholder = document.createElement('canvas');
     canvas.width = canvas.height = 64;
     placeholder.width = placeholder.height = 64;
-    const resource = { canvas, placeholder, loaded: false };
+    const resource = { canvas, placeholder, loaded: false, probing: Boolean(node.avatar) };
     resources.set(node.id, resource);
     paint(resource, node);
     paint(resource, node, true);
-    if (node.avatar) { imageQueue.push([node, resource]); drainImages(); }
+    if (node.avatar) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }
   }
   return resources.get(node.id);
 }
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
 function drawNode(node, ctx, scale) {
+  // Only the root's bounded local probe gates initial presentation. A cached root
+  // should not flash its letter first; no remote request can hold this gate.
+  if (node.id === root && avatar(node).probing) return;
   if (node.id === root) rootPainted = true;
   const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
@@ -344,6 +367,12 @@ function animate() {
  * children start next to their actual parent; shared node objects preserve the rest of the layout.
  */
 function applyVisibleGraph() {
+  // Decode a bounded lookahead before these nodes pop in. Do not allocate avatar
+  // canvases for the entire graph (10,000 nodes would cost hundreds of MB).
+  if (nodes.has(root)) avatar(nodes.get(root));
+  for (const id of reveal.pending.slice(0, 16)) {
+    if (nodes.has(id)) avatar(nodes.get(id));
+  }
   for (const id of reveal.visible) {
     if (placed.has(id)) continue;
     const node = nodes.get(id), parent = nodes.get(reveal.parents.get(id));
@@ -509,7 +538,8 @@ window.followGraph = {
     document.removeEventListener('visibilitychange', syncAnimation);
     window.removeEventListener('error', onError);
     for (const resource of resources.values()) resource.cancel?.();
-    resources.clear(); imageQueue.length = 0;
+    resources.clear();
+    cacheQueue.pending.length = downloadQueue.pending.length = 0;
     avatarFades.clear();
     graph._destructor();
   }
