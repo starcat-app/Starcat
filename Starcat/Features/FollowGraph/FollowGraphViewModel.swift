@@ -27,7 +27,11 @@ final class FollowGraphViewModel {
     var focusID: String?
     var viewportRevision = 0
     var rendererError = false
-    var rendererRevision = 0
+    var rendererPresented = false
+    // 无论重开还是手动重载，都必须等新 WebView 的首帧；旧画面的可见状态不能复用。
+    var rendererRevision = 0 {
+        didSet { rendererPresented = false }
+    }
     private var store: FollowGraphStore?
     private var task: Task<Void, Never>?
     private var generation = UUID()

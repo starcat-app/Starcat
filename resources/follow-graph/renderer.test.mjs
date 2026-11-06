@@ -106,6 +106,28 @@ test('2D viewport survives batches; gestures stop auto-fit and stale batches are
   assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', 25, 40, 0]);
 });
 
+test('native presentation waits for a themed root paint and is sent once per renderer', () => {
+  for (const reduced of [false, true]) {
+    const r = renderer({ reduced });
+    const presented = () => r.messages.filter(message => message.type === 'presented');
+    r.props.get('onRenderFramePost')(r.canvasContext, 1);
+    assert.equal(presented().length, 0);
+    r.update(1, { ...r.data(3), dark: true });
+    // Script readiness and data admission alone must not expose an empty WebView.
+    r.props.get('onRenderFramePost')(r.canvasContext, 1);
+    assert.equal(presented().length, 0);
+    r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[0], r.canvasContext, 1);
+    assert.equal(presented().length, 0);
+    r.props.get('onRenderFramePost')(r.canvasContext, 1);
+    assert.equal(presented().length, 1);
+    assert.equal(presented()[0].session, 'test');
+    r.update(2, { dark: false });
+    r.props.get('onRenderFramePost')(r.canvasContext, 1);
+    assert.equal(presented().length, 1);
+    r.window.followGraph.destroy();
+  }
+});
+
 test('avatar hit areas, directed path highlight and image redraw survive settled simulation', () => {
   const r = renderer();
   r.update(1, { ...r.data(3), selected: '2', path: ['1', '2'] });

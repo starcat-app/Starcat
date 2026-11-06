@@ -26,6 +26,8 @@ struct FollowGraphWebView: NSViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "followGraph")
         let web = WKWebView(frame: .zero, configuration: configuration)
+        // 复用 README WebView 的透明底色策略，文档首次提交前不绘制 WebKit 默认白底。
+        web.setValue(false, forKey: "drawsBackground")
         web.navigationDelegate = context.coordinator
         context.coordinator.web = web
         if let url = Bundle.main.url(forResource: "follow-graph", withExtension: "html") {
@@ -86,6 +88,9 @@ struct FollowGraphWebView: NSViewRepresentable {
             }
             guard ready, body["session"] as? String == session else { return }
             switch type {
+            case "presented":
+                // ready 只表示脚本已装载；必须等主题、数据和本人节点的首帧绘制完成才显示。
+                model.rendererPresented = true
             case "select":
                 if let id = body["id"] as? String, id.count < 64, model.snapshot?.nodes[id] != nil {
                     model.select(id, expand: true)

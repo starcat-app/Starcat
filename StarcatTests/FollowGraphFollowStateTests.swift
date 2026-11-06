@@ -50,6 +50,7 @@ struct FollowGraphFollowStateTests {
         model.focusID = "2"
         model.viewport = FollowGraphViewport(values: [120, -80, 3])
         model.rendererError = true
+        model.rendererPresented = true
         let revision = model.rendererRevision
         model.resetCanvas()
         #expect(model.selectedID == nil)
@@ -57,8 +58,12 @@ struct FollowGraphFollowStateTests {
         #expect(model.focusID == nil)
         #expect(model.viewport == nil)
         #expect(!model.rendererError)
+        #expect(!model.rendererPresented)
         #expect(model.rendererRevision == revision + 1)
         #expect(model.followState === followState)
+        model.rendererPresented = true
+        model.rendererRevision += 1
+        #expect(!model.rendererPresented)
     }
 
     @Test("失败保留原状态，重试成功后才能回写图谱，并支持取消关注")

@@ -18,19 +18,27 @@ struct FollowGraphOverlayView: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var canvasPrepared = false
     @State private var cardContentHeight: CGFloat = 280
     @State private var toolbarHeight: CGFloat = 100
     @State private var canvasSize = CGSize.zero
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-            FollowGraphWebView(model: model, graphRevision: model.revision,
-                               selectionID: model.selectedID, viewportRevision: model.viewportRevision)
-                .id(model.rendererRevision)
-                .ignoresSafeArea()
+            // 与 Canvas 的主题底色一致，WebKit 加载期间也不会露出另一种颜色。
+            Color(white: colorScheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
+            if canvasPrepared {
+                FollowGraphWebView(model: model, graphRevision: model.revision,
+                                   selectionID: model.selectedID, viewportRevision: model.viewportRevision)
+                    .id(model.rendererRevision)
+                    .ignoresSafeArea()
+                    .opacity(model.rendererPresented ? 1 : 0)
+                    .allowsHitTesting(model.rendererPresented)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: model.rendererPresented)
+            }
             // 只放实际大小的卡片，避免透明的全屏布局容器参与画布事件命中。
-            if let node = model.selected {
+            if canvasPrepared, let node = model.selected {
                 selectedInfo(node)
                     .transition(reduceMotion ? .opacity : .offset(y: 12).combined(with: .opacity))
                     // 移除过渡仍需位于不透明画布之上，否则关闭会直接消失。
@@ -60,7 +68,11 @@ struct FollowGraphOverlayView: View {
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
-        .task { model.open(user: user, client: client) }
+        .task {
+            // open 会重置 rendererRevision；先初始化再挂载，避免初次出现就销毁重建 WebView。
+            model.open(user: user, client: client)
+            canvasPrepared = true
+        }
         .onDisappear { model.stop() }
         .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
     }

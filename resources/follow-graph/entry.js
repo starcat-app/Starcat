@@ -12,6 +12,7 @@ let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
 const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
+let hasAppearance = false, rootPainted = false, presented = false;
 let adjacentNodes = new Set();
 const nodes = new Map(), links = new Map(), resources = new Map(), imageQueue = [];
 const avatarFades = new Set();
@@ -101,6 +102,7 @@ function avatar(node) {
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
 function drawNode(node, ctx, scale) {
+  if (node.id === root) rootPainted = true;
   const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
   const overshoot = progress - 1;
@@ -173,7 +175,15 @@ const graph = new ForceGraph(container)
     applyPendingView();
     if (!viewportTouched && nodes.size > 1 && !reveal.animating) fit();
   })
-  .onRenderFramePost((ctx, scale) => drawPathFlow(ctx, scale))
+  .onRenderFramePost((ctx, scale) => {
+    drawPathFlow(ctx, scale);
+    // Script readiness is earlier than the first real Canvas frame. Keep native
+    // presentation hidden until the themed graph has actually painted its root.
+    if (!presented && hasAppearance && rootPainted && session) {
+      presented = true;
+      post('presented');
+    }
+  })
   .onNodeClick(node => { if (performance.now() - lastDrag > 250) selectNode(node.id); })
   .onBackgroundClick(() => selectNode(null))
   // Fine edges occupy much of a dense canvas. The library dispatches link hits
@@ -353,6 +363,7 @@ function update(payload) {
   session = payload.session;
   root = payload.root;
   if ('dark' in payload) {
+    hasAppearance = true;
     dark = payload.dark;
     graph.backgroundColor(dark ? '#1c1c1e' : '#f5f5f7');
     for (const [id, resource] of resources) {
