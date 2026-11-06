@@ -130,7 +130,7 @@ struct FollowGraphWebView: NSViewRepresentable {
                 sentSelection = model.selectedID
             }
             if sentViewportRevision != model.viewportRevision {
-                // 首帧无视口也无定位时交给渲染器自动适配，后续数据批次仍可继续适配。
+                // 首帧没有显式指令时使用固定初始镜头；只有主动重置才发送空 focus 做全图适配。
                 if sentViewportRevision != -1 || model.focusID != nil {
                     payload["focus"] = model.focusID as Any? ?? NSNull()
                 }

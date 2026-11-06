@@ -18,6 +18,7 @@ function renderer({ reduced = true } = {}) {
   const props = new Map(), calls = [], messages = [], images = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
+  let onResize;
   const target = () => ({
     listeners: new Map(),
     addEventListener(name, fn) { this.listeners.set(name, fn); },
@@ -60,7 +61,7 @@ function renderer({ reduced = true } = {}) {
     setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; },
     clearTimeout: id => timers.delete(id),
     Image: class { constructor() { images.push(this); } },
-    ResizeObserver: class { observe() {} disconnect() {} }
+    ResizeObserver: class { constructor(fn) { onResize = fn; } observe() {} disconnect() {} }
   });
   const update = (sequence, extra = {}) => window.followGraph.update({
     session: 'test', root: '1', sequence, revision: sequence,
@@ -73,16 +74,18 @@ function renderer({ reduced = true } = {}) {
     })),
     links: Array.from({ length: count - 1 }, (_, i) => ({ source: '1', target: String(i + 2) }))
   });
-  return { props, calls, messages, images, timers, frames, container, document, window, update, data, canvasContext,
+  return { props, calls, messages, images, timers, frames, container, document, window, graph, update, data, canvasContext,
+    resize() { onResize(); },
     frame(ms = 34) { clock += ms; const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(clock)); },
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
 
-test('2D viewport survives batches; gestures stop auto-fit and stale batches are ignored', () => {
+test('2D viewport survives batches without auto-fit and stale batches are ignored', () => {
   const r = renderer();
   r.update(1, r.data(3));
   r.props.get('onEngineTick')();
-  assert.ok(r.calls.some(([name]) => name === 'zoomToFit'));
+  assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
+  assert.equal(r.props.get('zoom'), 0.8);
   const original = r.props.get('graphData').nodes[1];
   original.x = 200;
   r.container.listeners.get('wheel')();
@@ -91,6 +94,7 @@ test('2D viewport survives batches; gestures stop auto-fit and stale batches are
   assert.equal(r.props.get('graphData').nodes[1], original);
   assert.equal(original.x, 200);
   assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
+  r.props.get('onEngineTick')();
   r.update(1, r.data(1));
   assert.equal(r.props.get('graphData').nodes.length, 4);
   r.update(3, { viewport: [120, -80, 1.5] });
@@ -104,6 +108,54 @@ test('2D viewport survives batches; gestures stop auto-fit and stale batches are
   r.update(4, { ...r.data(4), viewport: [25, 40, 1] });
   r.props.get('onEngineStop')();
   assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', 25, 40, 0]);
+});
+
+test('completion, avatars, new batches and resizing never fit; explicit reset still fits', () => {
+  for (const reduced of [false, true]) {
+    const r = renderer({ reduced });
+    r.update(1, r.data(20));
+    r.props.get('onEngineTick')();
+    const initialZoom = r.props.get('zoom'), initialCenter = r.props.get('centerAt');
+    r.calls.length = 0;
+    for (let i = 0; i < 100; i++) {
+      r.frame();
+      r.props.get('onEngineTick')();
+    }
+    r.props.get('onEngineStop')();
+    assert.equal(r.props.get('graphData').nodes.length, 20);
+    assert.equal(r.props.get('zoom'), initialZoom);
+    assert.equal(JSON.stringify(r.props.get('centerAt')), JSON.stringify(initialCenter));
+    const node = r.props.get('graphData').nodes[0];
+    r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+    r.images[0].onload();
+    r.frame(300);
+    r.update(2, r.data(21));
+    r.props.get('onEngineStop')();
+    r.resize();
+    assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
+    assert.ok(!r.calls.some(([name]) => name === 'zoom' || name === 'centerAt'));
+    r.update(3, { focus: null });
+    assert.equal(r.calls.filter(([name]) => name === 'zoomToFit').length, 1);
+    r.window.followGraph.destroy();
+  }
+});
+
+test('preserve exact 1x camera against library auto-zoom before drawing; explicit focus wins', () => {
+  const r = renderer();
+  r.update(1, r.data(3));
+  r.props.get('onEngineStop')();
+  r.update(2, { viewport: [50, -30, 1] });
+  r.update(3, r.data(4));
+  // Simulate force-graph's onFinishUpdate default-scale auto-zoom, which precedes engine callbacks.
+  r.graph.zoom(0.25, 0).centerAt(0, 0, 0);
+  r.props.get('onEngineTick')();
+  assert.equal(r.props.get('zoom'), 1);
+  assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', 50, -30, 0]);
+  r.update(4, { ...r.data(5), focus: '2' });
+  r.props.get('onEngineStop')();
+  const target = r.props.get('graphData').nodes[1];
+  assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', target.x, target.y, 0]);
+  assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
 });
 
 test('native presentation waits for a themed root paint and is sent once per renderer', () => {

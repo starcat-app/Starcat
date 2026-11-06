@@ -6,7 +6,7 @@ import { ProgressiveReveal, compareIDs } from './progressive-reveal.mjs';
 const container = document.getElementById('graph');
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
 let destroyed = false, active = true, lastDrag = -Infinity, activeImages = 0;
-let viewportTouched = false, lastSequence = 0;
+let lastSequence = 0;
 let pendingView = null;
 let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
@@ -171,10 +171,7 @@ const graph = new ForceGraph(container)
   .linkDirectionalArrowRelPos(1)
   .cooldownTicks(120)
   .onEngineTick(applyPendingView)
-  .onEngineStop(() => {
-    applyPendingView();
-    if (!viewportTouched && nodes.size > 1 && !reveal.animating) fit();
-  })
+  .onEngineStop(applyPendingView)
   .onRenderFramePost((ctx, scale) => {
     drawPathFlow(ctx, scale);
     // Script readiness is earlier than the first real Canvas frame. Keep native
@@ -189,7 +186,7 @@ const graph = new ForceGraph(container)
   // Fine edges occupy much of a dense canvas. The library dispatches link hits
   // separately from background hits; both mean deselect in this product.
   .onLinkClick(() => selectNode(null))
-  .onNodeDrag(() => { lastDrag = performance.now(); viewportTouched = true; })
+  .onNodeDrag(() => { lastDrag = performance.now(); })
   .onNodeDragEnd(node => {
     lastDrag = performance.now();
     node.fx = node.id === root ? 0 : node.x;
@@ -295,12 +292,26 @@ function fit(duration = 0) {
 }
 
 /** The component applies graphData asynchronously and may auto-zoom on that update.
- * Restore the native viewport only after its layout update, including zero-tick Reduce Motion.
+ * Restore the preserved viewport before painting, including zero-tick Reduce Motion.
  */
 function applyPendingView() {
   const action = pendingView;
   pendingView = null;
   action?.();
+}
+
+/** Keep the same camera across graphData. The library can otherwise auto-zoom
+ * whenever scale returns to exactly 1, even after the initial view was set.
+ */
+function preserveView() {
+  const { x, y } = graph.centerAt(), zoom = graph.zoom();
+  return () => {
+    // Most batches do not move the camera. Avoid generating redundant zoom-end
+    // messages and native observation updates on every reveal frame.
+    if (graph.zoom() !== zoom) graph.zoom(zoom, 0);
+    const center = graph.centerAt();
+    if (center.x !== x || center.y !== y) graph.centerAt(x, y, 0);
+  };
 }
 
 function syncAnimation() {
@@ -346,6 +357,8 @@ function applyVisibleGraph() {
   }
   const visibleLinks = [...links.values()].filter(link =>
     reveal.visible.has(endpoint(link.source)) && reveal.visible.has(endpoint(link.target)));
+  // Retain an already queued explicit focus/restore command over this neutral preservation.
+  if (!pendingView) pendingView = preserveView();
   graph.graphData({
     nodes: [...nodes.values()].filter(node => reveal.visible.has(node.id)), links: visibleLinks
   });
@@ -378,7 +391,6 @@ function update(payload) {
   }
   if ('selected' in payload) selected = payload.selected;
   if (payload.path) setPath(payload.path);
-  if (payload.viewport) viewportTouched = true;
   if (payload.nodes) {
     const incoming = new Set(payload.nodes.map(node => node.id));
     for (const id of nodes.keys()) {
@@ -430,11 +442,11 @@ function update(payload) {
     collision.radius(node => radius(node) + 6);
     graphRevision = payload.revision;
     reveal.sync(nodes, links, root, performance.now(), reduceMotion);
-    if (!overviewStarted && !reduceMotion) {
+    if (!overviewStarted) {
       overviewStarted = true;
-      // A non-default zoom disables the component's per-graphData automatic zoom.
-      // Fit once when the reveal/layout settles; never jump for each arriving avatar.
-      if (!payload.viewport) graph.zoom(0.8, 0).centerAt(0, 0, 0);
+      // Fix the camera once before the first root frame, independent of arrival count
+      // or Reduce Motion. New nodes animate into this view; completion never fits it.
+      graph.zoom(0.8, 0).centerAt(0, 0, 0);
     }
     applyVisibleGraph();
     setPath(pathFromRoot(selected));
@@ -458,21 +470,21 @@ function update(payload) {
     } else if ('focus' in payload) {
       const node = nodes.get(payload.focus);
       const duration = reduceMotion ? 0 : 300;
-      viewportTouched = true;
       if (node) graph.centerAt(node.x, node.y, duration).zoom(Math.max(1, graph.zoom()), duration);
       else fit(duration);
-    } else if (!viewportTouched && nodes.size > 1 && !reveal.animating) fit();
+    }
   };
-  if (payload.nodes) {
-    if (!pendingView || payload.viewport || 'focus' in payload) pendingView = applyView;
+  if (payload.viewport || 'focus' in payload) {
+    if (pendingView) pendingView = applyView;
+    else applyView();
   }
-  else if (payload.viewport || 'focus' in payload) { pendingView = null; applyView(); }
   if ('active' in payload) active = payload.active;
   syncAnimation();
 }
 
-// Track actual gestures separately from programmatic zoom events, which also invoke onZoomEnd.
-const touchViewport = () => { viewportTouched = true; };
+// A real gesture takes precedence over a viewport captured before that gesture.
+// Library zoom callbacks also fire for automatic transforms, so use DOM input here.
+const touchViewport = () => { pendingView = null; };
 container.addEventListener('pointerdown', touchViewport);
 container.addEventListener('wheel', touchViewport, { passive: true });
 const resize = new ResizeObserver(() => {

@@ -150,3 +150,11 @@ make run-appstore
 - 合成 CPU 基准（队列初始化中位数，ms）：1,000 节点 / 2,986 边从 5.60 降至 0.77；5,000 / 14,986 从 28.62 降至 3.15；10,000 / 29,986 从 56.27 降至 5.45。同机同数据，预热 2 次后 7 次采样；主要优化为复用数字排序器，另复用 BFS 父节点树避免每次点击重新排序整图。
 - 此基准不代表实际 Canvas FPS 或 GUI 验收；缩放重开、头像渐入、密集区域点击以及明暗主题仍需人工查看。未改用户缓存、数据库或全局图谱加载预算。
 - 双渠道 `make build-appstore` / `make build-direct` 构建及产物校验通过，三份离线资源逐字节一致。日志 `/tmp/starcat-graph-canvas-appstore.log`、`/tmp/starcat-graph-canvas-direct.log`；未新增文案或修改 Catalog。
+
+## 首帧与加载完成跳变修复（2026-11-06）
+
+- 首帧修复提交 `9fc901a6`：先 open 再挂载 WebView，避免初次创建后立即重建；透明 WebKit / HTML 底色与统一主题背景避免空白页面露出。带主题的本人节点真实绘制后，JS 发送单次 presented，原生淡入 120ms；Reduce Motion 直接显示。重开与重载均重置可见状态，保留错误入口。
+- 镜头修复：初始中心为本人、缩放固定 0.8；移除布局停止和完成后的自动 fit。逐步加载、头像到达和数据批次不移动镜头，只有主动重置适配全图；定位继续响应用户指令。为避免组件在 1 倍缩放时自动 re-zoom，数据更新前保存当前镜头，在布局更新后、绘制前按需恢复，不产生每帧无意义的原生 viewport 消息。
+- 原生相关 5 个 suite、35 项测试通过（0.281 秒），覆盖重开及重载时清空首帧可见状态；日志 `/tmp/starcat-graph-opening-tests.log`。JS 16 项通过，新增主题 / 真实绘制帧门控、加载完成不适配、后续批次 / 头像 / ResizeObserver 不适配、模拟库自动缩放后恢复，以及主动重置 / 定位仍有效。
+- 测试使用 Canvas 库替身，未执行桌面控制、截图或真实 WebKit 视觉验收；闪烁与镜头连续性的最终观感需人工确认。未改数据加载预算、账户缓存、数据库、全语言文案、功能实现总览或 Changelog。
+- `make build-appstore` / `make build-direct` 构建及产物校验通过；两渠道的 JS、HTML、许可证三份资源与源码逐字节一致。日志 `/tmp/starcat-graph-opening-appstore.log`、`/tmp/starcat-graph-opening-direct.log`；`git diff --check` 通过。
