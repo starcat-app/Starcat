@@ -31,9 +31,14 @@ enum FollowGraphAvatarURL {
               local.path == "/image", local.user == nil, local.password == nil,
               local.port == nil, local.fragment == nil,
               let items = URLComponents(url: local, resolvingAgainstBaseURL: false)?.queryItems,
-              items.count == 1, items[0].name == "url",
+              (1...2).contains(items.count), items[0].name == "url",
               let raw = items[0].value, let remote = URL(string: raw), isAllowed(remote),
               let normalized = GitHubAvatarURL.imageURL(from: raw, displayDiameter: 32) else { return nil }
+        // 重试换图片请求身份，避免 WebKit 复用本页已失败的响应；不参与原生缓存键。
+        if items.count == 2 {
+            guard items[1].name == "attempt", let value = items[1].value,
+                  let attempt = UInt64(value), attempt > 0 else { return nil }
+        }
         return (normalized, local.host == "cache")
     }
 
@@ -70,11 +75,7 @@ actor FollowGraphAvatarCache {
         guard let request = FollowGraphAvatarURL.request(local) else { throw URLError(.unsupportedURL) }
         try Task.checkCancellation()
         let cache = try storage(), key = request.remote.absoluteString
-        if let data = try? cache.diskStorage.value(forKey: key), let image = Self.validated(data) {
-            return image
-        }
-        if let image = cache.retrieveImageInMemoryCache(forKey: key),
-           let data = image.kf.pngRepresentation(), let value = Self.validated(data) { return value }
+        if let image = cachedImage(for: request.remote, cache: cache) { return image }
         guard !request.cacheOnly else { throw URLError(.resourceUnavailable) }
         guard let data = await loader(request.remote) else { throw URLError(.cannotLoadFromNetwork) }
         try Task.checkCancellation()
@@ -82,6 +83,40 @@ actor FollowGraphAvatarCache {
         // 缓存故障不应使本次成功的下载变成裂图；不缓存错误页或截断图片。
         try? cache.diskStorage.store(value: data, forKey: key, writeOptions: .atomic)
         return image
+    }
+
+    /// 卡片成功回调发生时内存缓存已可读，不依赖 Kingfisher 异步写盘是否完成。
+    /// 保留真实 URL 的其它参数，只把尺寸归一到节点 key；不合并不同用户或头像版本。
+    func promoteCardImage(from url: URL) throws -> Bool {
+        guard !FollowGraphAvatarURL.source(url.absoluteString).isEmpty else { return false }
+        let cache = try storage()
+        guard let image = read(key: url.absoluteString, cache: cache),
+              let nodeURL = GitHubAvatarURL.imageURL(from: url.absoluteString, displayDiameter: 32) else { return false }
+        try? cache.diskStorage.store(value: image.data, forKey: nodeURL.absoluteString, writeOptions: .atomic)
+        return true
+    }
+
+    /// 同一头像的常用较大尺寸可缩绘到 64px；先查内存，避免刚加载的卡片还没写盘。
+    private func cachedImage(for url: URL, cache: ImageCache) -> FollowGraphAvatarImage? {
+        let candidates = [32, 112, 56, 64, 128].compactMap {
+            GitHubAvatarURL.imageURL(from: url.absoluteString, displayDiameter: CGFloat($0))?.absoluteString
+        }
+        for key in candidates {
+            if let image = read(key: key, cache: cache) {
+                if key != url.absoluteString {
+                    try? cache.diskStorage.store(value: image.data, forKey: url.absoluteString, writeOptions: .atomic)
+                }
+                return image
+            }
+        }
+        return nil
+    }
+
+    private func read(key: String, cache: ImageCache) -> FollowGraphAvatarImage? {
+        if let image = cache.retrieveImageInMemoryCache(forKey: key),
+           let data = image.kf.pngRepresentation(), let value = Self.validated(data) { return value }
+        if let data = try? cache.diskStorage.value(forKey: key) { return Self.validated(data) }
+        return nil
     }
 
     private func storage() throws -> ImageCache {

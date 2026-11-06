@@ -471,9 +471,9 @@ test('bounded lookahead probes cache independently of slow downloads', () => {
   const r = renderer({ reduced: false });
   r.update(1, r.data(10_000));
   assert.equal(r.images.length, 8);
-  // Cache misses fill only four remote slots; remaining local hits keep flowing.
-  for (let i = 0; i < 4; i++) r.images.filter(image => new URL(image.src).hostname === 'cache')[i].onerror();
-  assert.equal(r.images.filter(image => new URL(image.src).hostname === 'load').length, 4);
+  // Cache misses fill eight remote slots; remaining local hits keep flowing.
+  for (let i = 0; i < 8; i++) r.images.filter(image => new URL(image.src).hostname === 'cache')[i].onerror();
+  assert.equal(r.images.filter(image => new URL(image.src).hostname === 'load').length, 8);
   while (true) {
     const next = r.images.find(image => image.onload && new URL(image.src).hostname === 'cache');
     if (!next) break;
@@ -481,9 +481,109 @@ test('bounded lookahead probes cache independently of slow downloads', () => {
   }
   // Only root plus sixteen future nodes have allocated resources, not the whole graph.
   assert.equal(r.images.filter(image => new URL(image.src).hostname === 'cache').length, 17);
-  assert.equal(r.images.filter(image => image.onload && new URL(image.src).hostname === 'load').length, 4);
+  assert.equal(r.images.filter(image => image.onload && new URL(image.src).hostname === 'load').length, 8);
   r.window.followGraph.destroy();
   assert.ok(r.images.every(image => image.onload === null && image.onerror === null));
+});
+
+/** Finish local probes without completing remote loads, creating a deterministic backlog. */
+function missLocalProbes(r) {
+  while (true) {
+    const image = r.images.find(value => value.onerror && new URL(value.src).hostname === 'cache');
+    if (!image) break;
+    image.onerror();
+  }
+}
+
+const imageUser = image => /\/u\/(\d+)/.exec(new URL(image.src).searchParams.get('url'))?.[1];
+
+test('eight downloads stay bounded and selected queued avatar starts before background work', () => {
+  const r = renderer();
+  r.update(1, r.data(20));
+  const nodes = r.props.get('graphData').nodes;
+  for (const node of nodes) r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  missLocalProbes(r);
+  let active = r.images.filter(image => image.onload && new URL(image.src).hostname === 'load');
+  assert.equal(active.length, 8);
+  const selected = nodes[19];
+  r.props.get('onNodeClick')(selected);
+  active[0].onload();
+  assert.equal(imageUser(r.images.at(-1)), selected.id);
+  let waves = 1, completed = 1;
+  while ((active = r.images.filter(image => image.onload && new URL(image.src).hostname === 'load')).length) {
+    assert.ok(active.length <= 8);
+    const batch = [...active];
+    batch.forEach(image => image.onload());
+    completed += batch.length;
+    waves++;
+  }
+  assert.equal(completed, 20);
+  assert.equal(waves, 4); // One selected completion, then three bounded batches.
+  r.window.followGraph.destroy();
+});
+
+test('failed selected avatar retries only on a deliberate click with a fresh request identity', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  const node = r.props.get('graphData').nodes[1];
+  r.props.get('onNodeClick')(node);
+  missLocalProbes(r);
+  const failed = r.images.find(image => image.onerror && new URL(image.src).hostname === 'load' && imageUser(image) === '2');
+  failed.onerror();
+  const count = r.images.length;
+  for (let i = 0; i < 10; i++) r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  r.update(2, { selected: '2' }); // Native echo must not repeatedly retry a failure.
+  assert.equal(r.images.length, count);
+  r.props.get('onNodeClick')(node);
+  assert.equal(r.images.length, count + 1);
+  assert.notEqual(r.images.at(-1).src, failed.src);
+  assert.equal(new URL(r.images.at(-1).src).hostname, 'cache');
+  r.images.at(-1).onload();
+  const done = r.images.length;
+  r.props.get('onNodeClick')(node);
+  assert.equal(r.images.length, done);
+  r.window.followGraph.destroy();
+});
+
+test('card completion cancels stale node load and reads cache without layout or camera changes', () => {
+  const r = renderer();
+  r.update(1, { ...r.data(3), selected: '2' });
+  missLocalProbes(r);
+  const old = r.images.find(image => image.onload && new URL(image.src).hostname === 'load' && imageUser(image) === '2');
+  const stale = old.onload;
+  r.calls.length = 0;
+  const source = r.data(3).nodes[1].avatar;
+  r.update(2, { avatarReady: { id: '2', source, revision: 1 } });
+  assert.equal(old.onload, null);
+  assert.equal(old.src, '');
+  const fresh = r.images.at(-1);
+  assert.equal(new URL(fresh.src).hostname, 'cache');
+  stale();
+  fresh.onload();
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'zoom', 'centerAt', 'zoomToFit'].includes(name)));
+  const count = r.images.length;
+  r.update(3, { avatarReady: { id: '2', source, revision: 1 } });
+  assert.equal(r.images.length, count);
+  const user2Count = r.images.filter(image => image.src && imageUser(image) === '2').length;
+  r.update(4, { selected: '3', avatarReady: { id: '2', source, revision: 2 } });
+  assert.equal(r.images.filter(image => image.src && imageUser(image) === '2').length, user2Count);
+  r.window.followGraph.destroy();
+});
+
+test('new card avatar source survives older relationship batches without another image load', () => {
+  const r = renderer();
+  r.update(1, { ...r.data(3), selected: '2' });
+  const node = r.props.get('graphData').nodes[1];
+  const updated = new URL(node.avatar);
+  updated.searchParams.set('url', 'https://avatars.githubusercontent.com/u/2?v=5&s=64');
+  r.update(2, { avatarReady: { id: '2', source: updated.href, revision: 1 } });
+  r.images.at(-1).onload();
+  const count = r.images.length;
+  r.update(3, r.data(3));
+  assert.equal(r.props.get('graphData').nodes[1], node);
+  assert.equal(node.avatar, updated.href);
+  assert.equal(r.images.length, count);
+  r.window.followGraph.destroy();
 });
 
 test('removed avatar requests cannot resurrect or enqueue a download', () => {

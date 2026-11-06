@@ -21,7 +21,9 @@ struct FollowGraphUserCard: View {
     @State private var followRetry = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // 捕获创建该卡片时的画布身份，不能在迟到回调中重新读取新画布的 revision。
+        let renderer = model.rendererRevision
+        return VStack(alignment: .leading, spacing: 12) {
             OwnerCardView(
                 avatarURL: profile?.avatarUrl ?? node.avatarURL,
                 displayName: displayName,
@@ -44,7 +46,13 @@ struct FollowGraphUserCard: View {
                 onComposeEmail: composeEmail,
                 onOpenFollowers: { open(GitHubURLs.userFollowersTab(login: node.login)) },
                 onOpenFollowing: { open(GitHubURLs.userFollowingTab(login: node.login)) },
-                onToggleFollow: { model.toggleFollow(node, service: dependencies.ownerFollowService) }
+                onToggleFollow: { model.toggleFollow(node, service: dependencies.ownerFollowService) },
+                onAvatarLoaded: { url in
+                    Task { @MainActor in
+                        guard (try? await FollowGraphAvatarCache.shared.promoteCardImage(from: url)) == true else { return }
+                        model.avatarDidLoad(nodeID: node.id, source: url.absoluteString, renderer: renderer)
+                    }
+                }
             )
 
             if let error = model.followState.errors[node.id] {

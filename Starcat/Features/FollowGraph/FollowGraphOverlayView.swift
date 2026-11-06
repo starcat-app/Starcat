@@ -30,7 +30,8 @@ struct FollowGraphOverlayView: View {
             Color(white: colorScheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
             if canvasPrepared {
                 FollowGraphWebView(model: model, graphRevision: model.revision,
-                                   selectionID: model.selectedID, viewportRevision: model.viewportRevision)
+                                   selectionID: model.selectedID, viewportRevision: model.viewportRevision,
+                                   avatarRevision: model.avatarUpdate?.revision ?? 0)
                     .id(model.rendererRevision)
                     .ignoresSafeArea()
                     .opacity(model.rendererPresented ? 1 : 0)

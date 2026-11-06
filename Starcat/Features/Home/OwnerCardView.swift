@@ -43,6 +43,8 @@ struct OwnerCardView: View {
     var onOpenFollowers: () -> Void = {}
     var onOpenFollowing: () -> Void = {}
     var onToggleFollow: () -> Void = {}
+    /// 图谱可在缓存写盘完成前从内存复用头像；其它入口无需订阅。
+    var onAvatarLoaded: (URL) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.locale) private var locale
@@ -366,6 +368,7 @@ struct OwnerCardView: View {
                 )
             )
             .resizable()
+            .onSuccess { _ in onAvatarLoaded(imageURL) }
             .cancelOnDisappear(true)
             .placeholder { avatarPlaceholder }
             .fade(duration: reduceMotion ? 0 : 0.2)

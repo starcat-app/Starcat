@@ -20,8 +20,15 @@ final class FollowGraphViewModel {
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
     private(set) var revision = 0
+    private(set) var avatarUpdate: (revision: Int, id: String, source: String)?
+    private var avatarRevision = 0
     private(set) var followState = FollowGraphFollowState()
-    var selectedID: String?
+    var selectedID: String? {
+        didSet {
+            // 成功通知只在本次选中内去重；切走再回来仍需让卡片唤醒节点的缓存探测。
+            if oldValue != selectedID { avatarUpdate = nil }
+        }
+    }
     var search = ""
     var viewport: FollowGraphViewport?
     var focusID: String?
@@ -82,6 +89,7 @@ final class FollowGraphViewModel {
 
     /// 每次进入重新展示默认图谱；账户缓存和在途关注写入仍属于原来的 Store。
     func resetCanvas() {
+        avatarUpdate = nil
         expandedSources = [:]
         selectedID = nil
         viewport = nil
@@ -90,6 +98,15 @@ final class FollowGraphViewModel {
         rendererError = false
         rendererRevision += 1
         rebuildPresentation()
+    }
+
+    /// 只刷新当前画布的当前选中用户；旧卡片的异步成功不能复活已关闭或换人的节点。
+    func avatarDidLoad(nodeID: String, source: String, renderer: Int) {
+        guard renderer == rendererRevision, selectedID == nodeID else { return }
+        let local = FollowGraphAvatarURL.source(source)
+        guard !local.isEmpty, avatarUpdate?.id != nodeID || avatarUpdate?.source != local else { return }
+        avatarRevision += 1
+        avatarUpdate = (avatarRevision, nodeID, local)
     }
 
     func stop() {
@@ -102,6 +119,7 @@ final class FollowGraphViewModel {
 
     func clearAccount() {
         stop()
+        avatarUpdate = nil
         snapshot = nil
         displayedSnapshot = nil
         renderedCounts = nil

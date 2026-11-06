@@ -66,6 +66,36 @@ struct FollowGraphFollowStateTests {
         #expect(!model.rendererPresented)
     }
 
+    @Test("卡片头像仅通知当前选中与当前画布，重复成功不触发循环")
+    func avatarNotificationIdentity() throws {
+        let model = FollowGraphViewModel()
+        let source = "https://avatars.githubusercontent.com/u/2?v=4&s=224"
+        model.selectedID = "2"
+        let renderer = model.rendererRevision
+        model.avatarDidLoad(nodeID: "2", source: source, renderer: renderer)
+        let revision = try #require(model.avatarUpdate?.revision)
+        #expect(model.avatarUpdate?.id == "2")
+        #expect(model.avatarUpdate?.source == FollowGraphAvatarURL.source(source))
+        model.avatarDidLoad(nodeID: "2", source: source, renderer: renderer)
+        #expect(model.avatarUpdate?.revision == revision)
+        model.selectedID = "3"
+        model.avatarDidLoad(nodeID: "2", source: source + "&v=5", renderer: renderer)
+        #expect(model.avatarUpdate == nil)
+        model.selectedID = "2"
+        model.avatarDidLoad(nodeID: "2", source: source, renderer: renderer)
+        #expect(model.avatarUpdate?.revision == revision + 1)
+        model.resetCanvas()
+        model.selectedID = "2"
+        model.avatarDidLoad(nodeID: "2", source: source, renderer: renderer)
+        #expect(model.avatarUpdate == nil)
+        model.avatarDidLoad(nodeID: "2", source: "file:///tmp/image", renderer: model.rendererRevision)
+        #expect(model.avatarUpdate == nil)
+        model.avatarDidLoad(nodeID: "2", source: source, renderer: model.rendererRevision)
+        #expect(model.avatarUpdate?.revision == revision + 2)
+        model.clearAccount()
+        #expect(model.avatarUpdate == nil)
+    }
+
     @Test("失败保留原状态，重试成功后才能回写图谱，并支持取消关注")
     func successAndFailure() async {
         let mock = MockGitHubAPIClient()

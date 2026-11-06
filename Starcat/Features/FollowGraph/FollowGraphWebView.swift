@@ -16,6 +16,7 @@ struct FollowGraphWebView: NSViewRepresentable {
     let graphRevision: Int
     let selectionID: String?
     let viewportRevision: Int
+    let avatarRevision: Int
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -70,6 +71,7 @@ struct FollowGraphWebView: NSViewRepresentable {
         private let session = UUID().uuidString
         private var sentRevision = -1
         private var sentSelection: String?
+        private var sentAvatarRevision = 0
         private var sentViewportRevision = -1
         private var sentAppearance = ""
         private var initialNavigationAllowed = false
@@ -118,6 +120,10 @@ struct FollowGraphWebView: NSViewRepresentable {
             guard ready, let snapshot = model.displayedSnapshot else { return }
             sequence += 1
             var payload: [String: Any] = ["session": session, "root": snapshot.rootID, "sequence": sequence]
+            if let update = model.avatarUpdate, sentAvatarRevision != update.revision {
+                payload["avatarReady"] = ["id": update.id, "source": update.source, "revision": update.revision] as [String: Any]
+                sentAvatarRevision = update.revision
+            }
             if sentRevision != model.revision {
                 payload["revision"] = model.revision
                 payload["nodes"] = snapshot.nodes.values.map {

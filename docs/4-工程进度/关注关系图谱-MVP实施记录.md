@@ -168,3 +168,13 @@ make run-appstore
 - JS 19 项通过，覆盖缓存命中不渐入、下载渐入、独立并发和限量预取、旧请求清理，以及既有首帧、路径、视角、大小与渐进展示。离线 bundle 重建成功，30 个运行时依赖许可证保持一致。
 - 以上是离线缓存及 delegate / Canvas 替身测试，不代表真实屏幕观感或 FPS 验收；未控制桌面、修改用户缓存或触发真实关注请求。无新增文案、数据库、功能实现总览或 Changelog 修改。
 - 双渠道 `make build-appstore` / `make build-direct` 及产物校验通过，包内 HTML、JS、许可证均与源码逐字节一致。日志 `/tmp/starcat-follow-graph-avatar-appstore.log`、`/tmp/starcat-follow-graph-avatar-direct.log`。
+
+## 卡片头像同步与下载并发（2026-11-06）
+
+- 原节点仅查 64px 完整 URL，卡片使用 224px，且二者没有完成通知；同用缓存目录仍可能重复下载。现节点探测同用户、同版本的常用较大尺寸，命中后补齐节点 key；卡片成功先复用实际 URL 的内存 / 磁盘图片，再发送轻量 avatarReady 事件刷新对应节点。
+- 卡片通知校验原画布 revision 与当前选中 ID，重复成功去重；JS 取消旧节点图片请求并重新探测，旧关系批次不能覆盖本会话卡片的新头像地址。整图、镜头与布局不重建。
+- 图谱头像下载上限改为 8，本地探测独立保持 8。选中节点排到队首，保持总上限，不抢占其它节点的在途请求；失败后再次点击才重试，不在每帧自动重试。重试 attempt 不进入原生缓存键。
+- 并发评估：小头像沿用现有超时、取消、限量预取，8 个请求可控；关系 API 并发保持 4。离线队列回归验证同时不超过 8 张、选中项优先和本地读取不受慢下载阻塞，不把并发翻倍当成真实下载耗时减半。
+- JS 23 项通过，包括旧回调拒绝、卡片通知不移动镜头、刷新后旧数据不覆盖头像，以及既有首帧、路径、渐入、大小和销毁回归。原生相关 8 个 suite 通过：42 项 Swift Testing / 7 suite 与 10 项 XCTest；日志 `/tmp/starcat-follow-graph-avatar-sync-tests.log`。
+- 未控制桌面、读取屏幕或宣称真实 CDN 性能已验收；无新增文案、数据库、功能实现总览或 Changelog 修改。
+- 双渠道构建、产物校验及包内 HTML / JS / 许可证逐字节核验通过；日志 `/tmp/starcat-follow-graph-avatar-sync-appstore.log`、`/tmp/starcat-follow-graph-avatar-sync-direct.log`。最终原生回归包含切走再选回后可重新通知，保持 42 + 10 项全部通过。

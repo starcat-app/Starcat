@@ -7,6 +7,7 @@ const container = document.getElementById('graph');
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
 let destroyed = false, active = true, lastDrag = -Infinity;
 let lastSequence = 0;
+let imageAttempt = 0, lastAvatarRevision = 0;
 let pendingView = null;
 let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
@@ -15,9 +16,10 @@ let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let hasAppearance = false, rootPainted = false, presented = false;
 let adjacentNodes = new Set();
 const nodes = new Map(), links = new Map(), resources = new Map();
-// Local reads must keep moving even when four remote downloads are slow/offline.
+const avatarOverrides = new Map();
+// Local reads must keep moving even when remote downloads are slow/offline.
 const cacheQueue = { pending: [], active: 0, limit: 8, cacheOnly: true };
-const downloadQueue = { pending: [], active: 0, limit: 4, cacheOnly: false };
+const downloadQueue = { pending: [], active: 0, limit: 8, cacheOnly: false };
 const avatarFades = new Set();
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
@@ -89,20 +91,71 @@ function drainImages(queue) {
     };
     image.onerror = () => {
       if (finished) return;
+      resource.failed = !queue.cacheOnly;
       finish();
       if (queue.cacheOnly && !destroyed && resources.get(node.id) === resource) {
         resource.probing = false;
         // A local miss releases first-frame presentation immediately, without
         // waiting for the network. Keep the existing placeholder/download fade.
         graph.nodeCanvasObject(drawNode);
-        downloadQueue.pending.push([node, resource]);
+        if (node.id === selected) downloadQueue.pending.unshift([node, resource]);
+        else downloadQueue.pending.push([node, resource]);
         drainImages(downloadQueue);
       }
     };
     const url = new URL(node.avatar);
     if (!queue.cacheOnly) url.hostname = 'load';
+    url.searchParams.set('attempt', String(++imageAttempt));
     image.src = url.href;
   }
+}
+
+/** Selection promotes queued work without exceeding eight downloads or cancelling
+ * unrelated requests. Explicit re-click retries a failed avatar once, never in a render loop.
+ */
+function prioritizeAvatar(id) {
+  const node = nodes.get(id);
+  if (!node?.avatar) return;
+  let resource = resources.get(id);
+  if (resource?.failed) {
+    discardAvatar(id);
+    resource = null;
+  }
+  resource ??= avatar(node);
+  for (const queue of [cacheQueue, downloadQueue]) {
+    const index = queue.pending.findIndex(([, value]) => value === resource);
+    if (index > 0) queue.pending.unshift(...queue.pending.splice(index, 1));
+    drainImages(queue);
+  }
+}
+
+/** Drop queued work before cancelling: cancellation drains its queue synchronously.
+ * Deleting identity first prevents a captured stale callback from reviving the old image.
+ */
+function discardAvatar(id) {
+  const resource = resources.get(id);
+  resources.delete(id);
+  avatarFades.delete(resource);
+  for (const queue of [cacheQueue, downloadQueue]) {
+    queue.pending = queue.pending.filter(([node]) => node.id !== id);
+  }
+  resource?.cancel?.();
+}
+
+/** The card has made this avatar available in native cache. Restart only its
+ * image probe with a fresh request identity, without rebuilding graphData or camera.
+ */
+function refreshCardAvatar(event) {
+  if (event.revision <= lastAvatarRevision) return;
+  lastAvatarRevision = event.revision;
+  if (event.id !== selected || !nodes.has(event.id)) return;
+  const node = nodes.get(event.id);
+  const resource = resources.get(event.id);
+  if (resource?.loaded && node.avatar === event.source) return;
+  discardAvatar(event.id);
+  avatarOverrides.set(event.id, event.source);
+  node.avatar = event.source;
+  prioritizeAvatar(event.id);
 }
 
 function avatar(node) {
@@ -223,6 +276,7 @@ const graph = new ForceGraph(container)
  * owns loading and receives selection even if the card is already showing this user.
  */
 function selectNode(id) {
+  prioritizeAvatar(id);
   if (selected === id) {
     post('select', { id });
     return;
@@ -418,6 +472,7 @@ function update(payload) {
     graph.cooldownTicks(reduceMotion ? 0 : 120);
     if (reduceMotion) reveal.finish();
   }
+  const oldSelection = selected;
   if ('selected' in payload) selected = payload.selected;
   if (payload.path) setPath(payload.path);
   if (payload.nodes) {
@@ -425,11 +480,9 @@ function update(payload) {
     for (const id of nodes.keys()) {
       if (!incoming.has(id)) {
         nodes.delete(id);
+        avatarOverrides.delete(id);
         placed.delete(id);
-        const resource = resources.get(id);
-        resources.delete(id);
-        avatarFades.delete(resource);
-        resource?.cancel?.();
+        discardAvatar(id);
       }
     }
     // Sorted phyllotaxis is deterministic on reopen and valid even with Reduce Motion.
@@ -437,13 +490,13 @@ function update(payload) {
       a.id === b.id ? 0 : a.id === root ? -1 : b.id === root ? 1 :
         compareIDs(a.id, b.id));
     sorted.forEach((value, index) => {
+      // A later relationship batch may still carry the older snapshot avatar URL.
+      // Keep the selected card's newer profile source for this Canvas session.
+      if (avatarOverrides.has(value.id)) value = { ...value, avatar: avatarOverrides.get(value.id) };
       if (nodes.has(value.id)) {
         const node = nodes.get(value.id);
         if (node.avatar !== value.avatar || node.login !== value.login) {
-          const resource = resources.get(value.id);
-          resources.delete(value.id);
-          avatarFades.delete(resource);
-          resource?.cancel?.();
+          discardAvatar(value.id);
         }
         Object.assign(node, value);
       } else {
@@ -490,6 +543,8 @@ function update(payload) {
   if ('selected' in payload || payload.nodes) {
     updateAdjacency();
   }
+  if (selected !== oldSelection) prioritizeAvatar(selected);
+  if (payload.avatarReady) refreshCardAvatar(payload.avatarReady);
   // Request redraws for selection/avatars without keeping a settled canvas rendering forever.
   redrawSelection();
   const applyView = () => {
@@ -539,6 +594,7 @@ window.followGraph = {
     window.removeEventListener('error', onError);
     for (const resource of resources.values()) resource.cancel?.();
     resources.clear();
+    avatarOverrides.clear();
     cacheQueue.pending.length = downloadQueue.pending.length = 0;
     avatarFades.clear();
     graph._destructor();

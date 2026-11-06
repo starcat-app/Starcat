@@ -118,6 +118,37 @@ struct FollowGraphAvatarCacheTests {
         #expect(await downloads.count == 3)
     }
 
+    @Test("节点复用卡片 224px 缓存，卡片成功后可补齐 64px key")
+    func cardSizeReuse() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let native = try ImageCache(name: "avatars", cacheDirectoryURL: directory)
+        let cardURL = try #require(GitHubAvatarURL.imageURL(from: Self.remote, displayDiameter: 112))
+        #expect(URLComponents(url: cardURL, resolvingAgainstBaseURL: false)?.queryItems?.last?.value == "224")
+        try native.diskStorage.store(value: Self.gif, forKey: cardURL.absoluteString)
+        let downloads = Downloads(offline: true)
+        let graph = FollowGraphAvatarCache(
+            cacheName: "avatars", directory: directory, loader: { _ in await downloads.load() }
+        )
+        #expect(try await graph.image(for: Self.local).data == Self.gif)
+        let key = try #require(FollowGraphAvatarURL.request(Self.local)?.remote.absoluteString)
+        #expect(try native.diskStorage.value(forKey: key) == Self.gif)
+        try native.diskStorage.remove(forKey: key)
+        #expect(try await graph.promoteCardImage(from: cardURL))
+        #expect(try native.diskStorage.value(forKey: key) == Self.gif)
+        #expect(await downloads.count == 0)
+        // 不把其他版本或其他用户的头像误当成同一张缓存。
+        for raw in [Self.remote.replacingOccurrences(of: "v=4", with: "v=5"),
+                    Self.remote.replacingOccurrences(of: "/42", with: "/43")] {
+            let url = try #require(URL(string: FollowGraphAvatarURL.source(raw)))
+            do {
+                _ = try await graph.image(for: url)
+                Issue.record("不能跨用户或头像版本复用")
+            } catch {}
+        }
+        #expect(await downloads.count == 0)
+    }
+
     /// 隔离计数与可控失败，不依赖 URLSession 或用户网络环境。
     actor Downloads {
         var count = 0
