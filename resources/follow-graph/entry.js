@@ -16,6 +16,7 @@ const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let hasAppearance = false, rootPainted = false, presented = false;
 let adjacentNodes = new Set();
+let directionLinks = [], hoveredLink = null;
 const nodes = new Map(), links = new Map(), resources = new Map();
 const avatarOverrides = new Map();
 // Local reads must keep moving even when remote downloads are slow/offline.
@@ -31,7 +32,7 @@ const isPath = link => pathEdges.has(edgeKey(endpoint(link.source), endpoint(lin
 const isAdjacent = link => selected != null &&
   (endpoint(link.source) === selected || endpoint(link.target) === selected);
 const linkColor = link => isPath(link) ? '#007aff' : isAdjacent(link) ?
-  (dark ? '#c3cdd9' : '#465d73') : (dark ? '#65788b45' : '#8196ab40');
+  (dark ? '#9aafbf70' : '#526c8068') : (dark ? '#65788b45' : '#8196ab40');
 const post = (type, extra = {}) => {
   if (!destroyed) window.webkit?.messageHandlers.followGraph.postMessage({ type, session, ...extra });
 };
@@ -240,16 +241,18 @@ const graph = new ForceGraph(container)
     label.textContent = `${node.name} (@${node.login})`;
     return label;
   })
-  .linkWidth(link => isPath(link) ? 3 : isAdjacent(link) ? 2.4 : selected ? 0.3 : 0.6)
+  .linkWidth(link => isPath(link) ? 1.25 : isAdjacent(link) ? 0.8 : selected ? 0.3 : 0.6)
   .linkColor(link => !isPath(link) && !isAdjacent(link) && selected ?
     (dark ? '#65788b18' : '#8196ab18') : linkColor(link))
   .linkDirectionalArrowColor(linkColor)
-  .linkDirectionalArrowLength(link => isPath(link) || isAdjacent(link) ? 6 : 0)
+  // Native arrow lengths live in graph coordinates and become spikes when zoomed.
+  .linkDirectionalArrowLength(() => 0)
   .linkDirectionalArrowRelPos(1)
   .cooldownTicks(120)
   .onEngineTick(applyPendingView)
   .onEngineStop(applyPendingView)
   .onRenderFramePost((ctx, scale) => {
+    drawDirections(ctx, scale);
     drawPathFlow(ctx, scale);
     // Script readiness is earlier than the first real Canvas frame. Keep native
     // presentation hidden until the themed graph has actually painted its root.
@@ -263,6 +266,7 @@ const graph = new ForceGraph(container)
   // Fine edges occupy much of a dense canvas. The library dispatches link hits
   // separately from background hits; both mean deselect in this product.
   .onLinkClick(() => selectNode(null))
+  .onLinkHover(link => { hoveredLink = link; redrawSelection(); })
   .onNodeDrag(() => { lastDrag = performance.now(); })
   .onNodeDragEnd(node => {
     lastDrag = performance.now();
@@ -344,12 +348,46 @@ function drawPathFlow(ctx, scale = 1) {
 
 function updateAdjacency() {
   adjacentNodes = new Set();
+  const adjacent = [];
   for (const link of links.values()) {
     if (isAdjacent(link)) {
+      adjacent.push(link);
       adjacentNodes.add(endpoint(link.source));
       adjacentNodes.add(endpoint(link.target));
     }
   }
+  // Hubs should not acquire a crown of arrows. Keep the full selected path,
+  // and reveal a dense hub's other directions only on the hovered relationship.
+  directionLinks = [...links.values()].filter(isPath);
+  if (adjacent.length <= 12) directionLinks.push(...adjacent.filter(link => !isPath(link)));
+}
+
+/** Small open chevrons stay six screen points long at every zoom level. */
+function drawDirections(ctx, scale = 1) {
+  if (!ctx || !selected) return;
+  const candidates = hoveredLink && isAdjacent(hoveredLink) && !directionLinks.includes(hoveredLink) ?
+    [...directionLinks, hoveredLink] : directionLinks;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.1 / scale;
+  for (const link of candidates) {
+    const source = nodes.get(endpoint(link.source)), target = nodes.get(endpoint(link.target));
+    if (!source || !target || !reveal.visible.has(source.id) || !reveal.visible.has(target.id)) continue;
+    const dx = target.x - source.x, dy = target.y - source.y, length = Math.hypot(dx, dy);
+    const start = radius(source) + 8 / scale, end = length - radius(target) - 8 / scale;
+    if (!Number.isFinite(length) || end - start < 16 / scale) continue;
+    const d = start + (end - start) * 0.7, ux = dx / length, uy = dy / length;
+    const x = source.x + ux * d, y = source.y + uy * d;
+    const size = 6 / scale, wing = 2.5 / scale;
+    ctx.strokeStyle = linkColor(link);
+    ctx.beginPath();
+    ctx.moveTo(x - ux * size - uy * wing, y - uy * size + ux * wing);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x - ux * size + uy * wing, y - uy * size - ux * wing);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function redrawSelection() {

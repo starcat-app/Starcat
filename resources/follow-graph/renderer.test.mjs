@@ -190,8 +190,8 @@ test('avatar hit areas, directed path highlight and image redraw survive settled
   const r = renderer();
   r.update(1, { ...r.data(3), selected: '2', path: ['1', '2'] });
   const { nodes, links } = r.props.get('graphData');
-  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
-  assert.equal(r.props.get('linkDirectionalArrowLength')({ source: '2', target: '1' }), 6);
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
+  assert.equal(r.props.get('linkDirectionalArrowLength')({ source: '2', target: '1' }), 0);
   r.props.get('nodeCanvasObject')(nodes[1], r.canvasContext, 1);
   assert.equal(r.images.length, 2); // Root is prefetched; the selected node loads on draw.
   r.calls.length = 0;
@@ -223,7 +223,7 @@ test('selection emphasizes every incoming/outgoing edge, keeps path distinct, an
   assert.equal(width(incoming), width(outgoing));
   assert.equal(color(path), '#007aff');
   assert.notEqual(color(incoming), color(path));
-  assert.equal(arrow(incoming), 6);
+  assert.equal(arrow(incoming), 0);
   assert.equal(arrow(unrelated), 0);
   const ctx = new Proxy({}, { get: () => () => {}, set: (obj, key, value) => { obj[key] = value; return true; } });
   const alpha = [];
@@ -248,7 +248,7 @@ test('a real click callback highlights and selects before any native selection e
   assert.equal(r.messages[0].type, 'select');
   assert.equal(r.messages[0].id, '2');
   assert.equal(r.messages.length, 1);
-  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
   assert.ok(r.props.get('linkWidth')(links[0]) > r.props.get('linkWidth')(links[1]));
   r.update(2, { selected: '2', path: ['1', '2'] });
   r.props.get('onNodeClick')(nodes[1]);
@@ -278,7 +278,7 @@ test('clicking a second-level node highlights every directed hop from root and r
   assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
   assert.equal(r.props.get('linkColor')(links[1]), '#007aff');
   assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
-  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
   assert.equal(r.frames.size, 1);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
@@ -293,7 +293,7 @@ test('clicking a second-level node highlights every directed hop from root and r
   assert.equal(r.frames.size, 0);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
-  assert.ok(!r.calls.some(([name]) => name === 'lineTo'));
+  assert.ok(r.calls.some(([name]) => name === 'lineTo')); // Static direction markers remain.
   assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
   r.update(4, { reduceMotion: false, active: true });
   assert.equal(r.frames.size, 1);
@@ -667,8 +667,11 @@ test('followers selection highlights and animates selected user to root, never t
   assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
-  const starts = r.calls.filter(([name]) => name === 'moveTo');
-  const ends = r.calls.filter(([name]) => name === 'lineTo');
+  // Flow strokes have one segment; open direction markers have two.
+  const segments = r.calls.filter((call, i) => call[0] === 'moveTo' &&
+    r.calls[i + 1]?.[0] === 'lineTo' && r.calls[i + 2]?.[0] === 'stroke');
+  const starts = segments;
+  const ends = segments.map(call => r.calls[r.calls.indexOf(call) + 1]);
   assert.ok(ends.length > 0);
   assert.ok(ends.every(([, x], i) => x < starts[i][1]));
   assert.ok(ends.some(([, x]) => x > 20 && x < 239));
@@ -677,4 +680,30 @@ test('followers selection highlights and animates selected user to root, never t
   assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
   r.props.get('onBackgroundClick')();
   assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
+});
+
+
+test('open direction marks stay screen-sized, avoid avatar rims and suppress dense hub arrows', () => {
+  const r = renderer();
+  r.update(1, r.data(30));
+  const { nodes, links } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 300; node.y = 0; });
+  r.props.get('onNodeClick')(nodes[0]);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.equal(r.calls.filter(([name]) => name === 'lineTo').length, 0);
+  r.props.get('onLinkHover')(links[0]);
+  for (const scale of [0.5, 1, 8]) {
+    r.calls.length = 0;
+    r.props.get('onRenderFramePost')(r.canvasContext, scale);
+    const points = r.calls.filter(([name]) => name === 'lineTo');
+    assert.equal(points.length, 2);
+    assert.ok(Math.abs((points[0][1] - points[1][1]) * scale - 6) < 1e-8);
+    assert.ok(points[0][1] > nodes[0].radius && points[0][1] < nodes[1].x - nodes[1].radius);
+  }
+  r.props.get('onLinkHover')(null);
+  r.props.get('onNodeClick')(nodes[1]);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.equal(r.calls.filter(([name]) => name === 'lineTo').length, 2);
 });
