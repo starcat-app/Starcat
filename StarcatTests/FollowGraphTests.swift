@@ -22,6 +22,64 @@ private func page(_ source: Int, _ targets: [Int], next: String? = nil, remainin
 
 @Suite("FollowGraph graph semantics")
 struct FollowGraphEngineTests {
+    @Test("Followers 沿入边探索，路径保持真实方向，默认只展示首层")
+    func followersProjection() {
+        var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
+        graph.merge(page(1, [2, 10]))
+        graph.merge(page(2, [3, 4]))
+        graph.merge(page(10, [4]))
+        graph.merge(page(4, [2]))
+        #expect(graph.path(to: "4") == ["4", "2", "1"])
+        #expect(graph.edges.contains(.init(source: "2", target: "1")))
+        #expect(!graph.edges.contains(.init(source: "1", target: "2")))
+        #expect(Set(graph.presentation().nodes.keys) == ["1", "2", "10"])
+        #expect(graph.presentation().progress["2"]?.complete == false)
+        #expect(graph.presentation(expanded: ["2": 50]).path(to: "3") == ["3", "2", "1"])
+        #expect(graph.presentation(selectedID: "4").path(to: "4") == ["4", "2", "1"])
+    }
+
+    @Test("Followers 回关和取消回关保留粉丝边及本人入边计数")
+    func followersFollowAction() {
+        var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, [3]))
+        graph.setFollowing(true, node: node(2))
+        #expect(graph.edges.contains(.init(source: "1", target: "2")))
+        #expect(graph.progress["1"]?.totalCount == 1)
+        #expect(graph.progress["2"]?.totalCount == 2)
+        graph.setFollowing(false, node: node(2))
+        #expect(graph.path(to: "3") == ["3", "2", "1"])
+        #expect(graph.edges.contains(.init(source: "2", target: "1")))
+        #expect(graph.progress["1"]?.totalCount == 1)
+        #expect(graph.progress["2"]?.totalCount == 1)
+        graph.setFollowing(true, node: node(99))
+        #expect(graph.nodes["99"] == nil)
+    }
+
+    @Test("Followers 完整刷新替换入边，不误删本人已确认的出边")
+    func followersRefresh() {
+        var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
+        graph.merge(page(1, [2, 3]))
+        graph.merge(page(3, [2]))
+        graph.setFollowing(true, node: node(2))
+        graph.merge(page(1, [3]), replacing: ["3"])
+        graph.pruneUnreachable()
+        #expect(!graph.edges.contains(.init(source: "2", target: "1")))
+        #expect(graph.edges.contains(.init(source: "1", target: "2")))
+        #expect(graph.path(to: "2") == ["2", "3", "1"])
+    }
+
+    @Test("缺少方向字段的旧 JSON 只能解码为 following")
+    func legacySnapshot() throws {
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2]))
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(graph)) as! [String: Any]
+        json.removeValue(forKey: "relation")
+        let restored = try JSONDecoder().decode(FollowGraphSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(restored.relation == .following)
+        #expect(restored.path(to: "2") == ["1", "2"])
+    }
+
     @Test("关注缩短路径，取消后保留间接可达用户并清理失联分量")
     func confirmedFollowChanges() {
         var graph = FollowGraphSnapshot(root: node(1))
@@ -193,6 +251,64 @@ struct FollowGraphStoreTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return (root, FollowGraphDiskCache(root: root))
+    }
+
+    @Test("双方向缓存共存，关注确认同步出边，恢复出厂也删除仅 followers 的目录")
+    func relationCacheIsolation() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var following = FollowGraphSnapshot(root: node(1))
+        following.merge(page(1, [9]))
+        var followers = FollowGraphSnapshot(root: node(1), relation: .followers)
+        followers.merge(page(1, [2]))
+        try await cache.save(following)
+        try await cache.save(followers)
+        #expect(await cache.load(account: "1") == following)
+        #expect(await cache.load(account: "1", relation: .followers) == followers)
+        try await cache.setFollowing(true, node: node(2), accountID: "1")
+        #expect(await cache.load(account: "1")?.path(to: "2") == ["1", "2"])
+        #expect(await cache.load(account: "1", relation: .followers)?.path(to: "2") == ["2", "1"])
+        try await cache.setFollowing(false, node: node(2), accountID: "1")
+        #expect(await cache.load(account: "1", relation: .followers)?.edges.contains(.init(source: "2", target: "1")) == true)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("1/snapshot.json"))
+        #expect(await cache.bytes(account: "1", relation: .followers) > 0)
+        try await cache.remove(account: "1")
+        #expect(await cache.load(account: "1", relation: .followers) == nil)
+    }
+
+    @Test("Followers 分页只创建入边，完整刷新清理已离开的关注者")
+    func followersPagination() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let provider = ScriptedFollowGraphProvider([page(1, [2], next: "next"), page(1, [3]), page(1, [3])])
+        let store = FollowGraphStore(provider: provider, cache: cache)
+        let session = UUID()
+        await store.begin(.init(root: node(1), relation: .followers), session: session)
+        _ = try await store.load(userID: "1", session: session)
+        let value = try await store.load(userID: "1", session: session)
+        #expect(value.edges == [.init(source: "2", target: "1"), .init(source: "3", target: "1")])
+        _ = try await store.load(userID: "1", session: session, refresh: true)
+        let refreshed = try await store.finishRefresh(session: session)
+        #expect(refreshed?.nodes["2"] == nil)
+        #expect(refreshed?.path(to: "3") == ["3", "1"])
+    }
+
+    @Test("切换方向后的旧分页响应不能污染新快照")
+    func lateResponseAcrossRelation() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let provider = SuspendedFollowGraphProvider()
+        let store = FollowGraphStore(provider: provider, cache: cache)
+        let first = UUID()
+        await store.begin(.init(root: node(1)), session: first)
+        let loading = Task { try await store.load(userID: "1", session: first) }
+        await provider.waitForRequest()
+        let second = UUID()
+        await store.begin(.init(root: node(1), relation: .followers), session: second)
+        await provider.release(page(1, [2]))
+        await #expect(throws: FollowGraphStoreError.self) { try await loading.value }
+        #expect(await store.read(session: second)?.edges.isEmpty == true)
+        #expect(await store.read(session: second)?.relation == .followers)
     }
 
     @Test("已确认关注同步缓存，其他账户无法写入")
@@ -476,8 +592,76 @@ struct FollowGraphStoreTests {
 
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
-    @Test("GraphQL 变量、头像和完整性映射遵循接口契约")
-    func mapping() async throws {
+    @MainActor
+    @Test("Followers 初次仅分页本人，点击不采集，手动展开与重开缓存方向隔离")
+    func followersLifecycle() async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let cache = FollowGraphDiskCache(root: folder)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let variables = json["variables"] as! [String: Any]
+            let owner = variables["login"] as! String
+            let isRoot = owner == "user1"
+            let body = """
+            {"data":{"user":{"databaseId":\(isRoot ? 1 : 2),"login":"\(owner)","name":null,"avatarUrl":null,
+            "followers":{"totalCount":1,"pageInfo":{"endCursor":null,"hasNextPage":false},
+            "nodes":[{"databaseId":\(isRoot ? 2 : 3),"login":"\(isRoot ? "user2" : "user3")","name":null,"avatarUrl":null}]}},
+            "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
+            """
+            #expect((json["query"] as? String)?.contains("followers(first:") == true)
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let user = GitHubUserDTO(id: 1, login: "user1", name: nil, avatarUrl: nil)
+        let model = FollowGraphViewModel(cache: cache)
+        defer { model.stop() }
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+            #expect(model.errorText == nil)
+        }
+        model.open(user: user, client: client, relation: .followers)
+        try await settle()
+        #expect(model.snapshot?.nodes.count == 2)
+        #expect(model.snapshot?.progress.count == 1)
+        model.select("2", expand: true)
+        #expect(!model.isLoading)
+        #expect(model.path == ["2", "1"])
+        model.loadMore("2")
+        try await settle()
+        #expect(model.displayedSnapshot?.nodes["3"] != nil)
+        model.select("3", expand: true)
+        #expect(model.path == ["3", "2", "1"])
+        // A reopen must not fetch the root again or reveal cached grandchildren automatically.
+        URLProtocolStub.requestHandler = { _ in
+            Issue.record("缓存重开不应采集网络")
+            throw URLError(.notConnectedToInternet)
+        }
+        model.open(user: user, client: client, relation: .followers)
+        try await settle()
+        #expect(model.displayedSnapshot?.nodes.count == 2)
+        #expect(model.selectedID == nil)
+        var following = FollowGraphSnapshot(root: node(1))
+        following.merge(page(1, [9]))
+        following.merge(page(9, []))
+        try await cache.save(following)
+        model.open(user: user, client: client, relation: .following)
+        try await settle()
+        #expect(model.snapshot?.path(to: "9") == ["1", "9"])
+        #expect(model.snapshot?.nodes["2"] == nil)
+        model.open(user: user, client: client, relation: .followers)
+        try await settle()
+        #expect(model.snapshot?.path(to: "3") == ["3", "2", "1"])
+        #expect(model.snapshot?.nodes["9"] == nil)
+    }
+
+    @Test("GraphQL 双方向变量、头像和完整性映射遵循接口契约", arguments: FollowGraphRelation.allCases)
+    func mapping(relation: FollowGraphRelation) async throws {
         URLProtocolStub.reset()
         defer { URLProtocolStub.reset() }
         URLProtocolStub.requestHandler = { request in
@@ -487,9 +671,10 @@ struct FollowGraphAPITests {
             #expect(variables["login"] as? String == "user1")
             #expect(variables["after"] as? String == "previous")
             #expect(variables["first"] as? Int == 100)
+            #expect((json["query"] as? String)?.contains("\(relation.rawValue)(first:") == true)
             let body = """
             {"data":{"user":{"databaseId":1,"login":"user1","name":null,"avatarUrl":null,
-            "following":{"totalCount":2,"pageInfo":{"endCursor":"next","hasNextPage":true},
+            "\(relation.rawValue)":{"totalCount":2,"pageInfo":{"endCursor":"next","hasNextPage":true},
             "nodes":[{"databaseId":2,"login":"user2","name":"Two","avatarUrl":"https://avatars.githubusercontent.com/u/2"}]}},
             "rateLimit":{"remaining":4000,"resetAt":"2026-11-05T12:00:00Z"}}}
             """
@@ -499,7 +684,7 @@ struct FollowGraphAPITests {
         let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
                                     session: URLProtocolStub.ephemeralSession(),
                                     tokenProvider: StubTokenProvider(token: "test"))
-        let result = try await FollowGraphAPI(client: client).page(login: "user1", cursor: "previous", count: 200)
+        let result = try await FollowGraphAPI(client: client, relation: relation).page(login: "user1", cursor: "previous", count: 200)
         #expect(result.source.id == "1")
         #expect(result.nodes.first?.name == "Two")
         #expect(result.cursor == "next")

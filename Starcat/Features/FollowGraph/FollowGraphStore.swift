@@ -35,11 +35,11 @@ actor FollowGraphStore {
     /// 重开窗口的缓存读取可能早于刚完成的关注确认，不允许用旧快照覆盖同账户的新状态。
     @discardableResult
     func begin(_ snapshot: FollowGraphSnapshot, session: UUID) -> FollowGraphSnapshot {
-        if self.snapshot?.accountID != snapshot.accountID {
+        if (self.snapshot?.accountID != snapshot.accountID || self.snapshot?.relation != snapshot.relation) {
             followRevision = 0
             followChanges = [:]
         }
-        if self.snapshot?.accountID != snapshot.accountID ||
+        if (self.snapshot?.accountID != snapshot.accountID || self.snapshot?.relation != snapshot.relation) ||
             snapshot.savedAt >= (self.snapshot?.savedAt ?? .distantPast) {
             self.snapshot = snapshot
         }
@@ -82,7 +82,7 @@ actor FollowGraphStore {
             guard self.session == session, var value = snapshot else { throw FollowGraphStoreError.staleSession }
             let nodeIDs = Set(page.nodes.map(\.id)).union(value.nodes.keys)
             let newEdges = Set(page.nodes.filter { $0.id != userID }.map {
-                FollowGraphEdge(source: userID, target: $0.id)
+                value.relation.edge(owner: userID, neighbor: $0.id)
             })
             guard nodeIDs.count <= 10_000, value.edges.union(newEdges).count <= 30_000 else {
                 throw FollowGraphStoreError.budget

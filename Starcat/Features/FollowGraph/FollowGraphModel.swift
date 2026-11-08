@@ -2,11 +2,25 @@
 //  FollowGraphModel.swift
 //  Starcat
 //
-//  可重建的 following 快照与纯图算法。使用数值用户 ID 作为跨 REST / GraphQL 的
+//  可重建的双方向关系快照与纯图算法。使用数值用户 ID 作为跨 REST / GraphQL 的
 //  共同身份，用户名只用于查询和展示；分页完整性不能从 totalCount 推断。
 //
 
 import Foundation
+
+/// 探索方向与真实关注边分离：followers 沿入边查找，边本身永远是关注者指向被关注者。
+enum FollowGraphRelation: String, Codable, CaseIterable, Sendable {
+    case following, followers
+
+    var ownerKey: KeyPath<FollowGraphEdge, String> { self == .following ? \.source : \.target }
+    var neighborKey: KeyPath<FollowGraphEdge, String> { self == .following ? \.target : \.source }
+    var defaultSampleCount: Int { self == .following ? 20 : 0 }
+    var titleKey: String { self == .following ? "sidebar.stats.following" : "sidebar.stats.followers" }
+
+    func edge(owner: String, neighbor: String) -> FollowGraphEdge {
+        self == .following ? .init(source: owner, target: neighbor) : .init(source: neighbor, target: owner)
+    }
+}
 
 /// 图谱只保留展示与查询所需的公开资料，不保存凭据。
 struct FollowGraphNode: Codable, Hashable, Sendable, Identifiable {
@@ -51,6 +65,7 @@ struct FollowGraphViewport: Equatable {
 
 /// 账户隔离快照。界面选择与视口只在同一会话保留，不污染关系数据。
 struct FollowGraphSnapshot: Codable, Equatable, Sendable {
+    let relation: FollowGraphRelation
     var formatVersion = 1
     let accountID: String
     let rootID: String
@@ -59,18 +74,40 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
     var progress: [String: FollowGraphProgress] = [:]
     var savedAt = Date()
 
-    init(root: FollowGraphNode) {
+    init(root: FollowGraphNode, relation: FollowGraphRelation = .following) {
+        self.relation = relation
         accountID = root.id
         rootID = root.id
         nodes = [root.id: root]
     }
 
-    /// 磁盘是关系缓存，不代表每次打开都要绘制全部缓存。默认保留本人关注者和每人
-    /// 20 个二层样本；手动展开只增加对应源的预算，不删除磁盘中已取得的关系。
+    private enum CodingKeys: String, CodingKey {
+        case relation, formatVersion, accountID, rootID, nodes, edges, progress, savedAt
+    }
+
+    /// 已发布的旧快照没有方向字段，仅解释为 following，绝不当成 followers 数据。
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        relation = try values.decodeIfPresent(FollowGraphRelation.self, forKey: .relation) ?? .following
+        formatVersion = try values.decode(Int.self, forKey: .formatVersion)
+        accountID = try values.decode(String.self, forKey: .accountID)
+        rootID = try values.decode(String.self, forKey: .rootID)
+        nodes = try values.decode([String: FollowGraphNode].self, forKey: .nodes)
+        edges = try values.decode(Set<FollowGraphEdge>.self, forKey: .edges)
+        progress = try values.decode([String: FollowGraphProgress].self, forKey: .progress)
+        savedAt = try values.decode(Date.self, forKey: .savedAt)
+    }
+
+    func relationCount(for id: String) -> Int {
+        edges.filter { $0[keyPath: relation.ownerKey] == id }.count
+    }
+
+    /// 磁盘是关系缓存，不代表每次打开都要绘制全部缓存。following 保留本人关注对象和每人
+    /// 20 个二层样本；followers 只默认展示首层；手动展开只增加对应源的预算，不删除磁盘中已取得的关系。
     func presentation(expanded: [String: Int] = [:], selectedID: String? = nil) -> FollowGraphSnapshot {
-        let outgoing = Dictionary(grouping: edges, by: \.source)
+        let outgoing = Dictionary(grouping: edges, by: { $0[keyPath: relation.ownerKey] })
         func targets(_ source: String) -> [String] {
-            (outgoing[source] ?? []).map(\.target).sorted {
+            (outgoing[source] ?? []).map { $0[keyPath: relation.neighborKey] }.sorted {
                 if let a = Int64($0), let b = Int64($1) { return a < b }
                 return $0 < $1
             }
@@ -81,7 +118,7 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         if let selectedID { visible.formUnion(path(to: selectedID)) }
         let limit = min(10_000, max(5_000, visible.count) + expanded.values.reduce(0, +))
         for source in firstLevel {
-            for id in targets(source).prefix(expanded[source] ?? 20) where visible.count < limit {
+            for id in targets(source).prefix(expanded[source] ?? relation.defaultSampleCount) where visible.count < limit {
                 visible.insert(id)
             }
         }
@@ -98,25 +135,25 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         // 可见节点之间的已知入边 / 出边全部保留，避免人为隐藏交叉关系。
         result.edges = edges.filter { visible.contains($0.source) && visible.contains($0.target) }
         result.progress = progress.filter { visible.contains($0.key) }
-        let visibleOutgoing = Dictionary(grouping: result.edges, by: \.source)
+        let visibleOutgoing = Dictionary(grouping: result.edges, by: { $0[keyPath: relation.ownerKey] })
         for id in result.progress.keys where (visibleOutgoing[id]?.count ?? 0) < (outgoing[id]?.count ?? 0) {
             result.progress[id]?.complete = false
         }
         return result
     }
 
-    /// 仅在完整刷新成功后替换旧出边；失败、限流、预算中止都不能删除旧边。
+    /// 只有完整刷新成功才替换当前方向的旧边；失败、限流、预算中止不能删除旧边。
     mutating func merge(_ page: FollowGraphPage, replacing: Set<String>? = nil) {
         nodes[page.source.id] = page.source
         for node in page.nodes { nodes[node.id] = node }
         if let replacing {
-            edges = edges.filter { $0.source != page.source.id }
+            edges = edges.filter { $0[keyPath: relation.ownerKey] != page.source.id }
             for id in replacing where id != page.source.id {
-                edges.insert(.init(source: page.source.id, target: id))
+                edges.insert(relation.edge(owner: page.source.id, neighbor: id))
             }
         } else {
             for node in page.nodes where node.id != page.source.id {
-                edges.insert(.init(source: page.source.id, target: node.id))
+                edges.insert(relation.edge(owner: page.source.id, neighbor: node.id))
             }
         }
         progress[page.source.id] = .init(
@@ -128,7 +165,7 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
 
     /// 只在远端关注操作成功后使用；取消关注不删除仍经其他路径可达的用户。
     mutating func setFollowing(_ following: Bool, node: FollowGraphNode) {
-        guard node.id != rootID else { return }
+        guard node.id != rootID, relation == .following || nodes[node.id] != nil else { return }
         let edge = FollowGraphEdge(source: rootID, target: node.id)
         let wasFollowing = edges.contains(edge)
         if following {
@@ -138,18 +175,20 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
             edges.remove(edge)
             pruneUnreachable()
         }
-        if progress[rootID]?.complete == true {
-            let count = edges.filter { $0.source == rootID }.count
-            progress[rootID]?.totalCount = count
-        } else if wasFollowing != following, let total = progress[rootID]?.totalCount {
-            progress[rootID]?.totalCount = max(0, total + (following ? 1 : -1))
+        // followers 的 root 分页统计入边；本人关注操作只影响被关注节点的入边统计。
+        let owner = relation == .following ? rootID : node.id
+        if progress[owner]?.complete == true {
+            let count = relationCount(for: owner)
+            progress[owner]?.totalCount = count
+        } else if wasFollowing != following, let total = progress[owner]?.totalCount {
+            progress[owner]?.totalCount = max(0, total + (following ? 1 : -1))
         }
         savedAt = Date()
     }
 
     /// 排序后 BFS 保证等长路径稳定，并用 visited 正确处理互相关注和环路。
     func paths() -> [String: String] {
-        let adjacency = Dictionary(grouping: edges, by: \.source)
+        let adjacency = Dictionary(grouping: edges, by: { $0[keyPath: relation.ownerKey] })
         var parents: [String: String] = [:]
         var visited: Set<String> = [rootID]
         var queue = [rootID]
@@ -157,7 +196,7 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         while index < queue.count {
             let source = queue[index]
             index += 1
-            let targets = (adjacency[source] ?? []).map(\.target).sorted {
+            let targets = (adjacency[source] ?? []).map { $0[keyPath: relation.neighborKey] }.sorted {
                 if let a = Int64($0), let b = Int64($1) { return a < b }
                 return $0 < $1
             }
@@ -175,7 +214,7 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         guard parents[target] != nil else { return [] }
         var result = [target]
         while let parent = parents[result.last!] { result.append(parent) }
-        return result.reversed()
+        return relation == .following ? result.reversed() : result
     }
 
     /// 刷新最终成功后只保留根可达节点；不在部分分页期间执行。

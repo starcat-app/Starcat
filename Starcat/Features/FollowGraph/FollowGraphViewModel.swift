@@ -39,9 +39,16 @@ final class FollowGraphViewModel {
     var rendererRevision = 0 {
         didSet { rendererPresented = false }
     }
+    private let cache: FollowGraphDiskCache
     private var store: FollowGraphStore?
+    private var stores: [FollowGraphRelation: FollowGraphStore] = [:]
     private var task: Task<Void, Never>?
     private var generation = UUID()
+
+    /// 测试可注入独立目录，不接触真实登录账户的图谱缓存。
+    init(cache: FollowGraphDiskCache = .shared) {
+        self.cache = cache
+    }
 
     var selected: FollowGraphNode? { selectedID.flatMap { displayedSnapshot?.nodes[$0] } }
     var path: [String] { selectedID.flatMap { displayedSnapshot?.path(to: $0) } ?? [] }
@@ -54,23 +61,33 @@ final class FollowGraphViewModel {
     }
 
     /// API 复用依赖装配中的真实 client，保留应用统一的授权失效回调。
-    func open(user: GitHubUserDTO, client: GitHubAPIClient) {
+    func open(user: GitHubUserDTO, client: GitHubAPIClient, relation: FollowGraphRelation = .following) {
         stop()
         let session = generation
         let root = FollowGraphNode(id: String(user.id), login: user.login, name: user.name, avatarURL: user.avatarUrl)
         if snapshot?.accountID != root.id {
-            snapshot = .init(root: root)
+            stores = [:]
+            snapshot = nil
             followState = FollowGraphFollowState()
             store = nil
         }
+        if snapshot?.relation != relation {
+            snapshot = .init(root: root, relation: relation)
+            // 空壳不能凭创建时间覆盖该方向 Store 中尚未落盘的有效快照。
+            snapshot?.savedAt = .distantPast
+        }
+        store = stores[relation]
         resetCanvas()
         // 同账户重开沿用 Store，卡片关闭后仍在进行的关注确认可以写回同一份关系。
-        if store == nil { store = FollowGraphStore(provider: FollowGraphAPI(client: client)) }
+        if store == nil {
+            store = FollowGraphStore(provider: FollowGraphAPI(client: client, relation: relation), cache: cache)
+            stores[relation] = store
+        }
         isLoading = true
         errorText = nil
         statusKey = "followGraph.status.loading"
         task = Task {
-            let cached = await FollowGraphDiskCache.shared.load(account: root.id)
+            let cached = await cache.load(account: root.id, relation: relation)
             guard !Task.isCancelled, generation == session else { return }
             if let cached, cached.savedAt > (snapshot?.savedAt ?? .distantPast) ||
                 (snapshot?.nodes.count ?? 0) <= 1 { snapshot = cached }
@@ -125,6 +142,7 @@ final class FollowGraphViewModel {
         renderedCounts = nil
         expandedSources = [:]
         store = nil
+        stores = [:]
         selectedID = nil
         viewport = nil
         focusID = nil
@@ -134,25 +152,34 @@ final class FollowGraphViewModel {
 
     /// 写请求由账户会话持有，切换节点不会重发；退出账户后不再写入原图谱。
     func toggleFollow(_ node: FollowGraphNode, service: OwnerFollowService) {
-        guard let accountID = snapshot?.accountID, let store, node.id != accountID else { return }
+        guard let accountID = snapshot?.accountID, store != nil, node.id != accountID else { return }
         let state = followState
         Task {
             await state.toggle(node, service: service) { following in
-                guard self.store === store, self.snapshot?.accountID == accountID else { return }
-                do {
-                    let value = try await store.setFollowing(following, node: node, accountID: accountID)
-                    guard self.store === store, self.snapshot?.accountID == accountID else { return }
-                    self.publish(value, session: self.generation)
-                } catch {
-                    // 远端成功不回滚按钮；缓存失败时仍显示 Store 中已确认的真实关系。
-                    guard self.store === store, self.snapshot?.accountID == accountID else { return }
-                    if let value = await store.read(accountID: accountID),
-                       self.store === store, self.snapshot?.accountID == accountID {
-                        self.publish(value, session: self.generation)
+                guard self.followState === state, self.snapshot?.accountID == accountID else { return }
+                // 两方向保存同一条真实出边，分页状态仍各自独立。磁盘失败不能
+                // 阻止内存确认；逐个 Store 的 revision 保护正在执行的旧分页响应。
+                var failure: Error?
+                do { try await self.cache.setFollowing(following, node: node, accountID: accountID) }
+                catch { failure = error }
+                for relation in FollowGraphRelation.allCases {
+                    guard self.followState === state else { return }
+                    guard let target = self.stores[relation],
+                          await target.read(accountID: accountID) != nil else { continue }
+                    do {
+                        let value = try await target.setFollowing(following, node: node, accountID: accountID)
+                        guard self.followState === state else { return }
+                        if self.store === target { self.publish(value, session: self.generation) }
+                    } catch {
+                        failure = error
+                        if let value = await target.read(accountID: accountID),
+                           self.followState === state, self.store === target {
+                            self.publish(value, session: self.generation)
+                        }
                     }
-                    guard self.store === store, self.snapshot?.accountID == accountID else { return }
-                    self.errorText = error.localizedDescription
                 }
+                guard self.followState === state else { return }
+                if let failure { self.errorText = failure.localizedDescription }
             }
         }
     }
@@ -160,7 +187,7 @@ final class FollowGraphViewModel {
     func select(_ id: String?, expand: Bool) {
         guard id == nil || snapshot?.nodes[id!] != nil else { return }
         selectedID = id
-        if expand, let id, snapshot?.progress[id] == nil, !isLoading { loadMore(id) }
+        if expand, snapshot?.relation == .following, let id, snapshot?.progress[id] == nil, !isLoading { loadMore(id) }
     }
 
     func focus(_ id: String?) {
@@ -173,9 +200,9 @@ final class FollowGraphViewModel {
     /// 单页手动加载不会继续递归，也不会因为查找定位而触发。
     func loadMore(_ id: String) {
         guard !isLoading, let snapshot else { return }
-        let visibleCount = displayedSnapshot?.edges.filter { $0.source == id }.count ?? 0
-        let cachedCount = snapshot.edges.filter { $0.source == id }.count
-        expandedSources[id] = max(expandedSources[id] ?? 20, visibleCount) + 50
+        let visibleCount = displayedSnapshot?.relationCount(for: id) ?? 0
+        let cachedCount = snapshot.relationCount(for: id)
+        expandedSources[id] = max(expandedSources[id] ?? snapshot.relation.defaultSampleCount, visibleCount) + 50
         if cachedCount > visibleCount {
             rebuildPresentation()
             return
@@ -193,8 +220,10 @@ final class FollowGraphViewModel {
     func refresh() {
         run { session, store in
             guard let displayed = self.displayedSnapshot else { return }
-            let ids = displayed.progress.keys.sorted()
-            let counts = Dictionary(grouping: displayed.edges, by: \.source).mapValues(\.count)
+            let ids = displayed.progress.keys.filter {
+                displayed.relation == .following || $0 == displayed.rootID || self.expandedSources[$0] != nil
+            }.sorted()
+            let counts = Dictionary(grouping: displayed.edges, by: { $0[keyPath: displayed.relation.ownerKey] }).mapValues(\.count)
             var allSucceeded = true
             // 刷新只覆盖当前展示预算，不能把二层样本翻页成数千个关注对象。
             for id in ids {
@@ -202,8 +231,10 @@ final class FollowGraphViewModel {
                 do {
                     self.publish(try await store.load(
                         userID: id, session: session, count: 100, refresh: true,
-                        refreshLimit: id == displayed.rootID ? max(1, counts[id] ?? 100) :
-                            max(1, min(counts[id] ?? 20, self.expandedSources[id] ?? 20))
+                        refreshLimit: id == displayed.rootID && displayed.relation == .followers ? nil :
+                            id == displayed.rootID ? max(1, counts[id] ?? 100) :
+                            max(1, min(counts[id] ?? displayed.relation.defaultSampleCount,
+                                       self.expandedSources[id] ?? displayed.relation.defaultSampleCount))
                     ), session: session)
                 }
                 catch {
@@ -250,6 +281,11 @@ final class FollowGraphViewModel {
             while snapshot?.progress[rootID]?.complete != true {
                 publish(try await store.load(userID: rootID, session: session, count: 100), session: session)
             }
+            // Followers 默认只完整分页本人首层，二层必须由资料卡显式展开。
+            if snapshot?.relation == .followers {
+                statusKey = "followGraph.status.ready"
+                return
+            }
             let firstLevel = Set(snapshot?.edges.filter { $0.source == rootID }.map(\.target) ?? [])
                 .filter { snapshot?.progress[$0] == nil }.sorted()
             for start in stride(from: 0, to: firstLevel.count, by: 4) {
@@ -288,6 +324,7 @@ final class FollowGraphViewModel {
 
     private func publish(_ value: FollowGraphSnapshot, session: UUID) {
         guard generation == session, !Task.isCancelled,
+              value.accountID == snapshot?.accountID, value.relation == snapshot?.relation,
               value.savedAt >= (snapshot?.savedAt ?? .distantPast) else { return }
         snapshot = value
         rebuildPresentation()
