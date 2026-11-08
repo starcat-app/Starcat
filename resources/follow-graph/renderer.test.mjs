@@ -221,7 +221,7 @@ test('selection emphasizes every incoming/outgoing edge, keeps path distinct, an
   const unrelated = { source: '1', target: '5' };
   assert.ok(width(incoming) > width(unrelated));
   assert.equal(width(incoming), width(outgoing));
-  assert.equal(color(path), '#007aff');
+  assert.equal(color(path), '#087f758c');
   assert.notEqual(color(incoming), color(path));
   assert.equal(arrow(incoming), 0);
   assert.equal(arrow(unrelated), 0);
@@ -252,7 +252,7 @@ test('a real click callback highlights and selects before any native selection e
   assert.ok(r.props.get('linkWidth')(links[0]) > r.props.get('linkWidth')(links[1]));
   r.update(2, { selected: '2', path: ['1', '2'] });
   r.props.get('onNodeClick')(nodes[1]);
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
   r.props.get('onBackgroundClick')();
   assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
   r.props.get('onNodeClick')(nodes[1]);
@@ -275,11 +275,12 @@ test('clicking a second-level node highlights every directed hop from root and r
     link.target = nodes.find(node => node.id === link.target);
   });
   r.props.get('onNodeClick')(nodes[2]);
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
-  assert.equal(r.props.get('linkColor')(links[1]), '#007aff');
-  assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
+  assert.equal(r.props.get('linkColor')(links[1]), '#087f758c');
+  assert.notEqual(r.props.get('linkColor')(links[2]), '#087f758c');
   assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
   assert.equal(r.frames.size, 1);
+  r.frame(200);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   const initial = r.calls.filter(([name]) => name === 'lineTo');
@@ -294,7 +295,7 @@ test('clicking a second-level node highlights every directed hop from root and r
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   assert.ok(r.calls.some(([name]) => name === 'lineTo')); // Static direction markers remain.
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
   r.update(4, { reduceMotion: false, active: true });
   assert.equal(r.frames.size, 1);
   r.document.hidden = true;
@@ -303,6 +304,8 @@ test('clicking a second-level node highlights every directed hop from root and r
   r.document.hidden = false;
   r.document.listeners.get('visibilitychange')();
   r.props.get('onBackgroundClick')();
+  assert.equal(r.frames.size, 1); // Brief fade-out, then no idle animation pump.
+  r.frame(200);
   assert.equal(r.frames.size, 0);
   r.props.get('onNodeClick')(nodes[2]);
   r.window.followGraph.destroy();
@@ -627,14 +630,14 @@ test('cached BFS respects numeric tie breaks, cycles and edge removal on the nex
   r.update(1, data);
   r.props.get('onNodeClick')(r.props.get('graphData').nodes.find(node => node.id === '3'));
   const color = r.props.get('linkColor');
-  assert.equal(color(data.links[2]), '#007aff');
-  assert.equal(color(data.links[3]), '#007aff');
-  assert.notEqual(color(data.links[0]), '#007aff');
+  assert.equal(color(data.links[2]), '#087f758c');
+  assert.equal(color(data.links[3]), '#087f758c');
+  assert.notEqual(color(data.links[0]), '#087f758c');
   r.update(2, { ...data, links: data.links.filter(link => link.source !== '2') });
-  assert.equal(color(data.links[0]), '#007aff');
-  assert.equal(color(data.links[1]), '#007aff');
+  assert.equal(color(data.links[0]), '#087f758c');
+  assert.equal(color(data.links[1]), '#087f758c');
   r.update(3, { ...data, links: [] });
-  assert.notEqual(color(data.links[0]), '#007aff');
+  assert.notEqual(color(data.links[0]), '#087f758c');
 });
 
 // Followers changes traversal only; native payloads and Canvas arrows retain real direction.
@@ -662,9 +665,10 @@ test('followers selection highlights and animates selected user to root, never t
   const { nodes, links } = r.props.get('graphData');
   nodes.forEach((node, i) => { node.x = i * 250; node.y = 0; });
   r.props.get('onNodeClick')(nodes.find(node => node.id === '3'));
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
-  assert.equal(r.props.get('linkColor')(links[1]), '#007aff');
-  assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
+  assert.equal(r.props.get('linkColor')(links[1]), '#087f758c');
+  assert.notEqual(r.props.get('linkColor')(links[2]), '#087f758c');
+  r.frame(200);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   // Flow strokes have one segment; open direction markers have two.
@@ -677,7 +681,7 @@ test('followers selection highlights and animates selected user to root, never t
   assert.ok(ends.some(([, x]) => x > 20 && x < 239));
   assert.ok(ends.some(([, x]) => x > 261 && x < 483));
   r.update(3, { selected: '3', path: ['3', '2', '1'] });
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
   r.props.get('onBackgroundClick')();
   assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
 });
@@ -706,4 +710,35 @@ test('open direction marks stay screen-sized, avoid avatar rims and suppress den
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   assert.equal(r.calls.filter(([name]) => name === 'lineTo').length, 2);
+});
+
+
+test('flow has bounded fading tails and fades out without animating reduced-motion paths', () => {
+  const r = renderer();
+  r.update(1, r.data(3));
+  const { nodes } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 400; node.y = 0; });
+  r.update(2, { reduceMotion: false });
+  r.props.get('onNodeClick')(nodes[1]);
+  r.frame(200);
+  const alpha = [], radii = [];
+  const ctx = new Proxy({}, {
+    get: (_, key) => (...args) => { if (key === 'arc') radii.push(args[2]); },
+    set: (_, key, value) => { if (key === 'globalAlpha') alpha.push(value); return true; }
+  });
+  r.props.get('onRenderFramePost')(ctx, 1);
+  assert.ok(alpha.some(value => value > 0 && value < 0.1));
+  assert.ok(radii.includes(4.5) && radii.includes(1));
+  r.props.get('onBackgroundClick')();
+  r.frame(90);
+  alpha.length = 0;
+  r.props.get('onRenderFramePost')(ctx, 1);
+  assert.ok(alpha.length && alpha.every(value => value <= 0.5));
+  r.frame(100);
+  assert.equal(r.frames.size, 0);
+  r.update(3, { reduceMotion: true, selected: '2', path: ['1', '2'] });
+  alpha.length = 0;
+  r.props.get('onRenderFramePost')(ctx, 1);
+  assert.equal(alpha.length, 0);
+  assert.equal(r.frames.size, 0);
 });

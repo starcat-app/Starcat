@@ -12,6 +12,7 @@ let imageAttempt = 0, lastAvatarRevision = 0;
 let pendingView = null;
 let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
+let outgoingPath = [], pathChangedAt = -Infinity;
 const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let hasAppearance = false, rootPainted = false, presented = false;
@@ -31,7 +32,8 @@ const radius = node => node.radius ?? 10;
 const isPath = link => pathEdges.has(edgeKey(endpoint(link.source), endpoint(link.target)));
 const isAdjacent = link => selected != null &&
   (endpoint(link.source) === selected || endpoint(link.target) === selected);
-const linkColor = link => isPath(link) ? '#007aff' : isAdjacent(link) ?
+const pathColor = () => dark ? '#53c9b5a0' : '#087f758c';
+const linkColor = link => isPath(link) ? pathColor() : isAdjacent(link) ?
   (dark ? '#9aafbf70' : '#526c8068') : (dark ? '#65788b45' : '#8196ab40');
 const post = (type, extra = {}) => {
   if (!destroyed) window.webkit?.messageHandlers.followGraph.postMessage({ type, session, ...extra });
@@ -209,7 +211,7 @@ function drawNode(node, ctx, scale) {
     ctx.restore();
     ctx.beginPath();
     ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = emphasized ? '#007aff' : (dark ? '#8b99a8' : '#ffffff');
+    ctx.strokeStyle = emphasized ? (dark ? '#64d8c6' : '#168f83') : (dark ? '#8b99a8' : '#ffffff');
     ctx.lineWidth = (emphasized ? 2 : 1) / scale;
     ctx.stroke();
   }
@@ -313,32 +315,66 @@ function pathFromRoot(id) {
 }
 
 function setPath(path) {
+  if (path.join(':') !== selectedPath.join(':')) {
+    // Keep one outgoing path only; fast switching must not accumulate animation layers.
+    outgoingPath = selectedPath;
+    pathChangedAt = performance.now();
+  }
   selectedPath = path;
   highlightedNodes = new Set(path);
   pathEdges = new Set(path.slice(1).map((id, i) => edgeKey(path[i], id)));
 }
 
-/** One shared phase traverses every directed hop. Clip at avatar rims instead of painting faces. */
+/** One shared screen-space phase traverses every directed hop, including hidden
+ * distances beneath avatars. Bounded segmented tails avoid blur filters per edge.
+ */
 function drawPathFlow(ctx, scale = 1) {
-  if (!ctx || reduceMotion || !selected || selectedPath.length < 2) return;
-  const spacing = 90 / scale, phase = performance.now() * 0.065 / scale;
+  if (!ctx || reduceMotion) return;
+  const blend = Math.min(1, (performance.now() - pathChangedAt) / 180);
+  if (outgoingPath.length > 1 && blend < 1) drawFlow(ctx, scale, outgoingPath, 1 - blend);
+  if (selectedPath.length > 1) drawFlow(ctx, scale, selectedPath, blend);
+}
+
+function drawFlow(ctx, scale, path, opacity) {
+  if (opacity <= 0) return;
+  const spacing = 220 / scale, phase = performance.now() * 0.075 / scale;
   let traveled = 0;
   ctx.save();
-  ctx.strokeStyle = dark ? '#b9e7ff' : '#59c4ff';
-  ctx.lineWidth = 3 / scale;
+  ctx.strokeStyle = dark ? '#8cf5dc' : '#098c7e';
+  ctx.lineWidth = 1.6 / scale;
   ctx.lineCap = 'round';
-  for (let i = 1; i < selectedPath.length; i++) {
-    const source = nodes.get(selectedPath[i - 1]), target = nodes.get(selectedPath[i]);
-    if (!source || !target || !pathEdges.has(edgeKey(source.id, target.id))) continue;
+  for (let i = 1; i < path.length; i++) {
+    const source = nodes.get(path[i - 1]), target = nodes.get(path[i]);
+    if (!source || !target || !links.has(edgeKey(source.id, target.id))) continue;
     const dx = target.x - source.x, dy = target.y - source.y, length = Math.hypot(dx, dy);
     if (!Number.isFinite(length) || length <= 0) continue;
     const start = radius(source) + 2 / scale, end = length - radius(target) - 2 / scale;
     for (let d = ((phase - traveled) % spacing + spacing) % spacing; d < end; d += spacing) {
       if (d < start) continue;
-      const tail = Math.max(start, d - 12 / scale);
+      for (let segment = 0; segment < 7; segment++) {
+        const head = d - segment * 4 / scale, tail = Math.max(start, head - 4 / scale);
+        if (head <= start) break;
+        ctx.globalAlpha = opacity * (1 - segment / 7) ** 2;
+        ctx.beginPath();
+        ctx.moveTo(source.x + dx * tail / length, source.y + dy * tail / length);
+        ctx.lineTo(source.x + dx * head / length, source.y + dy * head / length);
+        ctx.stroke();
+      }
+      const x = source.x + dx * d / length, y = source.y + dy * d / length;
+      for (const [size, alpha] of [[4.5, 0.12], [2.2, 0.5], [1, 1]]) {
+        ctx.globalAlpha = opacity * alpha;
+        ctx.fillStyle = dark ? '#c6fff0' : '#08776c';
+        ctx.beginPath();
+        ctx.arc(x, y, size / scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // A brief rim pulse at arrival echoes the flow without washing out the avatar.
+    const arrival = ((phase - traveled - end) % spacing + spacing) % spacing * scale;
+    if (arrival < 24) {
+      ctx.globalAlpha = opacity * 0.35 * (1 - arrival / 24);
       ctx.beginPath();
-      ctx.moveTo(source.x + dx * tail / length, source.y + dy * tail / length);
-      ctx.lineTo(source.x + dx * d / length, source.y + dy * d / length);
+      ctx.arc(target.x, target.y, radius(target) + (2 + arrival / 8) / scale, 0, Math.PI * 2);
       ctx.stroke();
     }
     traveled += length;
@@ -439,7 +475,8 @@ function syncAnimation() {
     if (reduceMotion || performance.now() - resource.loadedAt >= 280) avatarFades.delete(resource);
   }
   if (destroyed || !running || reduceMotion ||
-      (selectedPath.length < 2 && !reveal.animating && !avatarFades.size)) {
+      (selectedPath.length < 2 && !(outgoingPath.length > 1 && performance.now() - pathChangedAt < 180) &&
+        !reveal.animating && !avatarFades.size)) {
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
   } else if (animationFrame === null) animationFrame = requestAnimationFrame(animate);
