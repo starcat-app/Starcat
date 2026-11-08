@@ -687,7 +687,7 @@ test('followers selection highlights and animates selected user to root, never t
 });
 
 
-test('open direction marks stay screen-sized, avoid avatar rims and suppress dense hub arrows', () => {
+test('open direction marks stay screen-sized at target rims and suppress dense hub arrows', () => {
   const r = renderer();
   r.update(1, r.data(30));
   const { nodes, links } = r.props.get('graphData');
@@ -704,12 +704,40 @@ test('open direction marks stay screen-sized, avoid avatar rims and suppress den
     assert.equal(points.length, 2);
     assert.ok(Math.abs((points[0][1] - points[1][1]) * scale - 6) < 1e-8);
     assert.ok(points[0][1] > nodes[0].radius && points[0][1] < nodes[1].x - nodes[1].radius);
+    assert.ok(Math.abs((nodes[1].x - points[0][1] - nodes[1].radius) * scale - 3) < 1e-8);
   }
   r.props.get('onLinkHover')(null);
   r.props.get('onNodeClick')(nodes[1]);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   assert.equal(r.calls.filter(([name]) => name === 'lineTo').length, 2);
+});
+
+test('direction tips follow the real target rim in both graph modes, including diagonal edges', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer(), data = r.data(2);
+    if (relation === 'followers') data.links = [{ source: '2', target: '1' }];
+    r.update(1, { ...data, relation });
+    const { nodes } = r.props.get('graphData');
+    nodes[0].x = nodes[0].y = 0;
+    nodes[1].x = 300; nodes[1].y = 200;
+    r.props.get('onNodeClick')(nodes[1]);
+    const source = nodes[relation === 'following' ? 0 : 1];
+    const target = nodes[relation === 'following' ? 1 : 0];
+    for (const scale of [0.5, 1, 8]) {
+      r.calls.length = 0;
+      r.props.get('onRenderFramePost')(r.canvasContext, scale);
+      const points = r.calls.filter(([name]) => name === 'lineTo');
+      assert.equal(points.length, 2);
+      const [, x, y] = points[0];
+      assert.ok(Math.abs((Math.hypot(x - target.x, y - target.y) - target.radius) * scale - 3) < 1e-8);
+      // The open wings point back toward the source, regardless of exploration direction.
+      const length = Math.hypot(target.x - source.x, target.y - source.y);
+      const projection = ((x - points[1][1]) * (target.x - source.x) +
+        (y - points[1][2]) * (target.y - source.y)) / length;
+      assert.ok(Math.abs(projection * scale - 6) < 1e-8);
+    }
+  }
 });
 
 

@@ -202,3 +202,10 @@ make run-appstore
 - JS 27 项通过，新增缩放后的方向标记尺寸、密集节点箭头抑制、渐隐拖尾和取消后停止调度回归；既有 Followers / Following 方向、头像缓存、渐进展示与镜头保护保持通过。日志 `/tmp/starcat-followers-ui-js.log`。
 - 原生相关 41 项 / 5 suites 通过，日志 `/tmp/starcat-followers-ui-tests.log`。`make build-appstore`、`make build-direct` 及产物校验通过，两渠道图谱 HTML / JS / 许可证与源码逐字节一致；日志 `/tmp/starcat-followers-ui-appstore.log`、`/tmp/starcat-followers-ui-direct.log`。
 - 沿用现有本地化 key，无新增文案或依赖。未修改总览、Changelog、数据采集预算或用户缓存。未执行 GUI 自动化；以上回归不代替箭头密度、流光观感、长路径布局与鼠标 / 键盘交互的人工验收。
+
+
+## 箭头回到目标节点（2026-11-09）
+
+- 根据 dong4j 人工反馈，将开口箭头由线段内部移到真实 target 头像外沿，尖端间距保持屏幕 3pt、长度保持 6pt；保留密集节点方向标记控制、弱化连线和青绿流光。
+- JS 28 项通过，新增两种探索方向下斜向边的目标半径 / 间距 / 箭头朝向校验，并校验缩放后的屏幕尺寸；日志 `/tmp/starcat-followers-arrow-rim-tests.log`。
+- 双渠道构建及产物校验通过，两渠道 HTML / JS / 许可证与源码逐字节一致；日志 `/tmp/starcat-followers-arrow-rim-appstore.log`、`/tmp/starcat-followers-arrow-rim-direct.log`。本次仅修改 Canvas 与相关规格，无 Swift 或本地化改动；未重复原生单测，未执行 GUI 自动化，观感仍待人工验收。

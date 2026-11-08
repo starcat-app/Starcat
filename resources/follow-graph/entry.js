@@ -398,7 +398,9 @@ function updateAdjacency() {
   if (adjacent.length <= 12) directionLinks.push(...adjacent.filter(link => !isPath(link)));
 }
 
-/** Small open chevrons stay six screen points long at every zoom level. */
+/** Small open chevrons stay six screen points long, with tips three points
+ * outside the target avatar. Both dimensions remain stable while zooming.
+ */
 function drawDirections(ctx, scale = 1) {
   if (!ctx || !selected) return;
   const candidates = hoveredLink && isAdjacent(hoveredLink) && !directionLinks.includes(hoveredLink) ?
@@ -411,9 +413,9 @@ function drawDirections(ctx, scale = 1) {
     const source = nodes.get(endpoint(link.source)), target = nodes.get(endpoint(link.target));
     if (!source || !target || !reveal.visible.has(source.id) || !reveal.visible.has(target.id)) continue;
     const dx = target.x - source.x, dy = target.y - source.y, length = Math.hypot(dx, dy);
-    const start = radius(source) + 8 / scale, end = length - radius(target) - 8 / scale;
+    const start = radius(source) + 8 / scale, end = length - radius(target) - 3 / scale;
     if (!Number.isFinite(length) || end - start < 16 / scale) continue;
-    const d = start + (end - start) * 0.7, ux = dx / length, uy = dy / length;
+    const d = end, ux = dx / length, uy = dy / length;
     const x = source.x + ux * d, y = source.y + uy * d;
     const size = 6 / scale, wing = 2.5 / scale;
     ctx.strokeStyle = linkColor(link);
