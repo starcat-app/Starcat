@@ -8,6 +8,20 @@
 
 import Foundation
 
+/// 展示范围独立于完整关系缓存；分页游标仍由快照持有，不保存视角或选中状态。
+struct FollowGraphSavedRange: Codable, Equatable, Sendable {
+    var formatVersion = 1
+    let expandedSources: [String: Int]
+
+    /// 拒绝损坏或无界的展示预算，避免恢复时绕过图谱容量保护。
+    var isValid: Bool {
+        formatVersion == 1 && expandedSources.count <= 10_000 &&
+            expandedSources.allSatisfy { id, count in
+                Int64(id).map { $0 > 0 && String($0) == id } == true && (0...10_000).contains(count)
+            }
+    }
+}
+
 /// 缓存只接受正数账户 ID，不能用任意用户名构造磁盘路径。
 actor FollowGraphDiskCache {
     static let shared = FollowGraphDiskCache()
@@ -50,6 +64,31 @@ actor FollowGraphDiskCache {
         guard let url = file(account, relation: relation),
               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return 0 }
         return Int64(size)
+    }
+
+    /// 使用独立 sidecar，网络分页写入快照时不会覆盖用户刚调整的展示范围。
+    private func rangeFile(_ account: String, relation: FollowGraphRelation) -> URL? {
+        file(account, relation: relation)?.deletingLastPathComponent()
+            .appendingPathComponent("\(relation.rawValue)-range.json")
+    }
+
+    func loadRange(account: String, relation: FollowGraphRelation) -> FollowGraphSavedRange? {
+        guard let url = rangeFile(account, relation: relation),
+              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size <= 1024 * 1024, let data = try? Data(contentsOf: url),
+              let range = try? JSONDecoder().decode(FollowGraphSavedRange.self, from: data),
+              range.isValid else { return nil }
+        return range
+    }
+
+    /// 与快照相同的原子落盘约束；初始化写入空预算，而不是删除关系缓存。
+    func saveRange(_ range: FollowGraphSavedRange, account: String, relation: FollowGraphRelation) throws {
+        guard range.isValid, let url = rangeFile(account, relation: relation) else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+        let data = try JSONEncoder().encode(range)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
     }
 
     /// 关注写入跨两种视角共享，但各自的分页完整性和探索方向仍独立。

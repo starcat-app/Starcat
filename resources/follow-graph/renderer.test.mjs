@@ -402,6 +402,29 @@ test('cached snapshots visibly reveal root then children, reuse objects and repo
   assert.equal(r.frames.size, 0);
 });
 
+test('restored and initialized canvases replay cached nodes without fitting at completion', () => {
+  // Native restoration and initialization both replace the WebView identity.
+  // Reusing data must not reuse the previous canvas reveal queue.
+  for (const relation of ['following', 'followers']) {
+    for (const count of [24, 12]) {
+      const r = renderer({ reduced: false }), data = r.data(count);
+      data.relation = relation;
+      if (relation === 'followers') data.links = data.links.map(({ source, target }) => ({ source: target, target: source }));
+      r.update(1, data);
+      assert.equal(r.props.get('graphData').nodes.length, 1);
+      assert.equal(r.props.get('graphData').nodes[0].id, '1');
+      r.frame(50);
+      assert.equal(r.props.get('graphData').nodes.length, 2);
+      for (let i = 0; i < 100; i++) r.frame(34);
+      assert.equal(r.props.get('graphData').nodes.length, count);
+      r.props.get('onEngineStop')();
+      assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
+      r.window.followGraph.destroy();
+      assert.equal(r.frames.size, 0);
+    }
+  }
+});
+
 test('reveal queue preserves BFS order and pause time; removed pending nodes never resurrect', () => {
   const q = new ProgressiveReveal();
   const nodes = new Map(['1', '2', '3', '4'].map(id => [id, { id }]));

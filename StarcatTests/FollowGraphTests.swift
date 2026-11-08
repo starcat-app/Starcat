@@ -336,6 +336,24 @@ private actor SuspendedFollowGraphProvider: FollowGraphProviding {
 
 @Suite("FollowGraph store and cache")
 struct FollowGraphStoreTests {
+    @Test("展示预算独立存储，按账户与方向隔离且恢复出厂清理", arguments: FollowGraphRelation.allCases)
+    func savedRangeIsolation(relation: FollowGraphRelation) async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let range = FollowGraphSavedRange(expandedSources: ["2": 70])
+        try await cache.saveRange(range, account: "1", relation: relation)
+        #expect(await cache.loadRange(account: "1", relation: relation) == range)
+        let opposite: FollowGraphRelation = relation == .following ? .followers : .following
+        #expect(await cache.loadRange(account: "1", relation: opposite) == nil)
+        #expect(await cache.loadRange(account: "3", relation: relation) == nil)
+        #expect(await cache.loadRange(account: "../1", relation: relation) == nil)
+        #expect(!FollowGraphSavedRange(expandedSources: ["2": 10_001]).isValid)
+        #expect(!FollowGraphSavedRange(expandedSources: ["../2": 70]).isValid)
+        #expect(!FollowGraphSavedRange(formatVersion: 2, expandedSources: [:]).isValid)
+        try await cache.remove(account: "1")
+        #expect(await cache.loadRange(account: "1", relation: relation) == nil)
+    }
+
     @Test("已完成分页不再从空 cursor 重读第一页，显式刷新仍请求远端")
     func completedPaginationDoesNotRequest() async throws {
         let (folder, cache) = try temporaryCache()
@@ -713,6 +731,58 @@ struct FollowGraphStoreTests {
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
     @MainActor
+    @Test("两方向重开与新模型恢复已展开范围，保持初始视角和新画布", arguments: FollowGraphRelation.allCases)
+    func restoreLoadedRange(relation: FollowGraphRelation) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, Array(3...82)))
+        try await cache.save(graph)
+        URLProtocolStub.requestHandler = { _ in
+            Issue.record("已有范围恢复不得触发关系网络请求")
+            throw URLError(.notConnectedToInternet)
+        }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let user = GitHubUserDTO(id: 1, login: "user1", name: nil, avatarUrl: nil)
+        func settle(_ model: FollowGraphViewModel) async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+            #expect(!model.isPreparing)
+            #expect(model.errorText == nil)
+        }
+        let model = FollowGraphViewModel(cache: cache)
+        model.open(user: user, client: client, relation: relation)
+        try await settle(model)
+        #expect(model.displayedSnapshot?.relationCount(for: "2") == 20)
+        model.loadMore("2")
+        let visible = try #require(model.displayedSnapshot)
+        #expect(visible.relationCount(for: "2") == 70)
+        model.selectedID = "2"
+        model.search = "user"
+        model.viewport = FollowGraphViewport(values: [100, 50, 4])
+        model.rendererPresented = true
+        let renderer = model.rendererRevision
+        model.open(user: user, client: client, relation: relation)
+        try await settle(model)
+        #expect(model.displayedSnapshot?.nodes == visible.nodes)
+        #expect(model.displayedSnapshot?.edges == visible.edges)
+        #expect(model.selectedID == nil && model.search.isEmpty && model.viewport == nil)
+        #expect(model.rendererRevision > renderer && !model.rendererPresented)
+        let restarted = FollowGraphViewModel(cache: FollowGraphDiskCache(root: folder))
+        restarted.open(user: user, client: client, relation: relation)
+        try await settle(restarted)
+        #expect(restarted.displayedSnapshot?.nodes == visible.nodes)
+        #expect(restarted.snapshot?.nodes.count == 82)
+        // 取消无进行中的网络，不产生异步关闭写入，临时目录可在测试结束时安全删除。
+    }
+
+    @MainActor
     @Test("旧首层缓存自动补齐55个分支的一千条样本，重开不再次请求或递归")
     func followersUpgradesFirstLevelCache() async throws {
         URLProtocolStub.reset()
@@ -1071,15 +1141,15 @@ struct FollowGraphAPITests {
         model.loadMore("3")
         try await settle()
         #expect(model.displayedSnapshot?.path(to: "4") == ["4", "3", "2", "1"])
-        // 重开复用默认三层样本，手动展开的第四层仍留缓存，但不自动显示。
+        // 重开恢复手动展开的第四层；搜索、选中和视角仍重置。
         URLProtocolStub.requestHandler = { _ in
             Issue.record("缓存重开不应采集网络")
             throw URLError(.notConnectedToInternet)
         }
         model.open(user: user, client: client, relation: .followers)
         try await settle()
-        #expect(model.displayedSnapshot?.nodes.count == 3)
-        #expect(model.displayedSnapshot?.nodes["4"] == nil)
+        #expect(model.displayedSnapshot?.nodes.count == 4)
+        #expect(model.displayedSnapshot?.nodes["4"] != nil)
         #expect(model.selectedID == nil)
         var following = FollowGraphSnapshot(root: node(1))
         following.merge(page(1, [9]))

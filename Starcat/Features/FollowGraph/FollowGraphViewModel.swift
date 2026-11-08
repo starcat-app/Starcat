@@ -19,6 +19,7 @@ final class FollowGraphViewModel {
     private(set) var renderedSelectedCount: Int?
     private(set) var selectionRevision = 0
     private(set) var isLoading = false
+    private(set) var isPreparing = false
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
     var toastMessage: String?
@@ -55,6 +56,8 @@ final class FollowGraphViewModel {
     private var store: FollowGraphStore?
     private var stores: [FollowGraphRelation: FollowGraphStore] = [:]
     private var task: Task<Void, Never>?
+    // 串行衔接范围写入；关闭后立即重开也必须先等最后一次预算保存完成。
+    private var rangeSaveTask: Task<Void, Never>?
     private var generation = UUID()
 
     /// 测试可注入独立目录，不接触真实登录账户的图谱缓存。
@@ -89,6 +92,7 @@ final class FollowGraphViewModel {
             snapshot?.savedAt = .distantPast
         }
         store = stores[relation]
+        expandedSources = [:]
         resetCanvas()
         // 同账户重开沿用 Store，卡片关闭后仍在进行的关注确认可以写回同一份关系。
         if store == nil {
@@ -96,19 +100,28 @@ final class FollowGraphViewModel {
             stores[relation] = store
         }
         isLoading = true
+        isPreparing = true
         errorText = nil
         statusKey = "followGraph.status.loading"
         task = Task {
+            await rangeSaveTask?.value
+            guard !Task.isCancelled, generation == session else { return }
             let cached = await cache.load(account: root.id, relation: relation)
+            let savedRange = await cache.loadRange(account: root.id, relation: relation)
             guard !Task.isCancelled, generation == session else { return }
             if let cached, cached.savedAt > (snapshot?.savedAt ?? .distantPast) ||
                 (snapshot?.nodes.count ?? 0) <= 1 { snapshot = cached }
             guard let store, let snapshot else { return }
             let current = await store.begin(snapshot, session: session)
             guard !Task.isCancelled, generation == session else { return }
+            // 只恢复已缓存图中的预算；账户切换、缓存清理后的孤立范围不能触发隐式网络展开。
+            if let savedRange {
+                expandedSources = savedRange.expandedSources.filter { current.nodes[$0.key] != nil }
+            }
             publish(current, session: session)
+            isPreparing = false
             // Followers 旧快照可能只有本人首层，只补缺少的默认样本；满足预算后重开纯读缓存。
-            if current.progress.isEmpty || (relation == .followers && current.needsDefaultExpansion) {
+            if current.progress.isEmpty || (savedRange == nil && relation == .followers && current.needsDefaultExpansion) {
                 await explore(session: session, store: store)
             }
             else {
@@ -118,11 +131,10 @@ final class FollowGraphViewModel {
         }
     }
 
-    /// 每次进入重新展示默认图谱；账户缓存和在途关注写入仍属于原来的 Store。
+    /// 重建临时画布以重播入场；展示预算与视角生命周期分离，重开不再丢失手动展开。
     func resetCanvas() {
         toastMessage = nil
         avatarUpdate = nil
-        expandedSources = [:]
         selectedID = nil
         viewport = nil
         focusID = nil
@@ -142,12 +154,32 @@ final class FollowGraphViewModel {
     }
 
     func stop() {
+        saveRange()
         toastMessage = nil
         generation = UUID()
         task?.cancel()
         task = nil
         isLoading = false
+        isPreparing = false
         statusKey = "followGraph.status.stopped"
+    }
+
+    /// 捕获当前账户与方向再异步写入，不能让切换后的身份污染上一方向的预算。
+    private func saveRange() {
+        guard let snapshot, !snapshot.progress.isEmpty else { return }
+        let range = FollowGraphSavedRange(expandedSources: expandedSources)
+        let accountID = snapshot.accountID
+        let relation = snapshot.relation
+        let previous = rangeSaveTask
+        let cache = cache
+        rangeSaveTask = Task {
+            await previous?.value
+            do { try await cache.saveRange(range, account: accountID, relation: relation) }
+            catch {
+                // 缓存写入失败不能打断关闭或网络操作，但须留下可诊断证据。
+                NSLog("FollowGraph range cache write failed: %@", error.localizedDescription)
+            }
+        }
     }
 
     func clearAccount() {
@@ -239,7 +271,8 @@ final class FollowGraphViewModel {
         let before = displayedSnapshot
         let visibleCount = displayedSnapshot?.relationCount(for: id) ?? 0
         let cachedCount = snapshot.relationCount(for: id)
-        expandedSources[id] = max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0, visibleCount) + 50
+        expandedSources[id] = min(10_000, max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0, visibleCount) + 50)
+        saveRange()
         if cachedCount > visibleCount {
             rebuildPresentation()
             reportLoadResult(id, before: before)

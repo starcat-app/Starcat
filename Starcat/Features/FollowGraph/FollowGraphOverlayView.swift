@@ -33,7 +33,7 @@ struct FollowGraphOverlayView: View {
         ZStack(alignment: .topLeading) {
             // 与 Canvas 的主题底色一致，WebKit 加载期间也不会露出另一种颜色。
             Color(white: colorScheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
-            if canvasPrepared {
+            if canvasPrepared, !model.isPreparing {
                 FollowGraphWebView(model: model, graphRevision: model.revision,
                                    selectionID: model.selectedID, viewportRevision: model.viewportRevision,
                                    avatarRevision: model.avatarUpdate?.revision ?? 0)
