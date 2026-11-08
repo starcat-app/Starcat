@@ -194,3 +194,11 @@ make run-appstore
 - JS 23 项通过，包括旧回调拒绝、卡片通知不移动镜头、刷新后旧数据不覆盖头像，以及既有首帧、路径、渐入、大小和销毁回归。原生相关 8 个 suite 通过：42 项 Swift Testing / 7 suite 与 10 项 XCTest；日志 `/tmp/starcat-follow-graph-avatar-sync-tests.log`。
 - 未控制桌面、读取屏幕或宣称真实 CDN 性能已验收；无新增文案、数据库、功能实现总览或 Changelog 修改。
 - 双渠道构建、产物校验及包内 HTML / JS / 许可证逐字节核验通过；日志 `/tmp/starcat-follow-graph-avatar-sync-appstore.log`、`/tmp/starcat-follow-graph-avatar-sync-direct.log`。最终原生回归包含切走再选回后可重新通知，保持 42 + 10 项全部通过。
+
+
+## Followers 图谱视觉优化（2026-11-09）
+
+- 在 `codex/followers-graph` worktree 实施，未修改主工作区：`680f1858` 弱化邻接线与固定尺寸开口方向标记；`5d263e60` 青绿流光、渐隐拖尾、到达轮廓及切换淡出；`494e76d5` 资料卡底部压缩为两行；`9dc5da6a` 刷新 / 停止共用按钮，支持悬停和键盘焦点。
+- JS 27 项通过，新增缩放后的方向标记尺寸、密集节点箭头抑制、渐隐拖尾和取消后停止调度回归；既有 Followers / Following 方向、头像缓存、渐进展示与镜头保护保持通过。日志 `/tmp/starcat-followers-ui-js.log`。
+- 原生相关 41 项 / 5 suites 通过，日志 `/tmp/starcat-followers-ui-tests.log`。`make build-appstore`、`make build-direct` 及产物校验通过，两渠道图谱 HTML / JS / 许可证与源码逐字节一致；日志 `/tmp/starcat-followers-ui-appstore.log`、`/tmp/starcat-followers-ui-direct.log`。
+- 沿用现有本地化 key，无新增文案或依赖。未修改总览、Changelog、数据采集预算或用户缓存。未执行 GUI 自动化；以上回归不代替箭头密度、流光观感、长路径布局与鼠标 / 键盘交互的人工验收。
