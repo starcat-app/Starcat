@@ -58,20 +58,50 @@ struct FollowGraphEngineTests {
         #expect(graph.progress["1"]?.complete == false)
     }
 
-    @Test("Followers 沿入边探索，路径保持真实方向，默认只展示首层")
+    @Test("Followers 沿入边默认展示三层，第四层只按需展开")
     func followersProjection() {
         var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
         graph.merge(page(1, [2, 10]))
         graph.merge(page(2, [3, 4]))
         graph.merge(page(10, [4]))
-        graph.merge(page(4, [2]))
+        graph.merge(page(4, [2, 5]))
         #expect(graph.path(to: "4") == ["4", "2", "1"])
         #expect(graph.edges.contains(.init(source: "2", target: "1")))
         #expect(!graph.edges.contains(.init(source: "1", target: "2")))
-        #expect(Set(graph.presentation().nodes.keys) == ["1", "2", "10"])
-        #expect(graph.presentation().progress["2"]?.complete == false)
+        #expect(Set(graph.presentation().nodes.keys) == ["1", "2", "3", "4", "10"])
+        #expect(graph.presentation().nodes["5"] == nil)
+        #expect(graph.presentation().progress["2"]?.complete == true)
+        #expect(graph.presentation(expanded: ["4": 50]).path(to: "5") == ["5", "4", "2", "1"])
         #expect(graph.presentation(expanded: ["2": 50]).path(to: "3") == ["3", "2", "1"])
         #expect(graph.presentation(selectedID: "4").path(to: "4") == ["4", "2", "1"])
+    }
+
+    @Test("55 位关注者均分第三层预算，缓存和网络共享上限且不改变真实方向")
+    func followersDefaultBudget() {
+        var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
+        graph.merge(page(1, Array(2...56)))
+        for owner in 2...56 { graph.merge(page(owner, Array((owner * 100)...(owner * 100 + 29)))) }
+        let budgets = graph.defaultExpansionBudgets
+        #expect(budgets.count == 55)
+        #expect(budgets.values.reduce(0, +) == 1_000)
+        #expect(budgets.values.allSatisfy { (18...19).contains($0) })
+        let displayed = graph.presentation()
+        #expect(displayed.nodes.count == 1_056)
+        #expect(displayed.edges.allSatisfy { $0.target == "1" || budgets[$0.target] != nil })
+        #expect(!graph.needsDefaultExpansion)
+        #expect(graph.presentation().nodes == displayed.nodes)
+    }
+
+    @Test("超多关注者的默认第三层预算仍不超过一千，未完成样本可补齐")
+    func followersSparseBudget() {
+        var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
+        graph.merge(page(1, Array(2...1_101)))
+        #expect(graph.defaultExpansionBudgets.values.reduce(0, +) == 1_000)
+        #expect(graph.defaultExpansionBudgets.values.allSatisfy { (0...1).contains($0) })
+        #expect(graph.needsDefaultExpansion)
+        graph.merge(page(2, [2_000], next: "next"))
+        #expect(graph.defaultExpansionBudgets["2"] == 1)
+        #expect(graph.presentation().nodes["2000"] != nil)
     }
 
     @Test("Followers 回关和取消回关保留粉丝边及本人入边计数")
@@ -642,6 +672,16 @@ struct FollowGraphAPITests {
         URLProtocolStub.requestHandler = { request in
             let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             let variables = json["variables"] as! [String: Any]
+            let owner = variables["login"] as! String
+            if owner != "user1" {
+                let id = Int(owner.dropFirst(4))!
+                let body = """
+                {"data":{"user":{"databaseId":\(id),"login":"\(owner)","name":null,"avatarUrl":null,
+                "\(relation.rawValue)":{"totalCount":0,"pageInfo":{"endCursor":null,"hasNextPage":false},"nodes":[]}},
+                "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
+                """
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+            }
             let lastPage = variables["after"] as? String == "next"
             let id = lastPage ? 3 : 2
             let body = """
@@ -665,7 +705,7 @@ struct FollowGraphAPITests {
         }
         model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
         try await settle()
-        #expect(model.snapshot?.progress["1"]?.complete == false)
+        #expect(model.snapshot?.progress["1"]?.complete == (relation == .followers))
         model.refresh()
         try await settle()
         #expect(model.snapshot?.progress["1"]?.complete == true)
@@ -709,7 +749,7 @@ struct FollowGraphAPITests {
     }
 
     @MainActor
-    @Test("Followers 初次仅分页本人，点击不采集，手动展开与重开缓存方向隔离")
+    @Test("Followers 默认采集三层，第四层按需展开，重开缓存方向隔离")
     func followersLifecycle() async throws {
         URLProtocolStub.reset()
         defer { URLProtocolStub.reset() }
@@ -720,11 +760,11 @@ struct FollowGraphAPITests {
             let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             let variables = json["variables"] as! [String: Any]
             let owner = variables["login"] as! String
-            let isRoot = owner == "user1"
+            let source = Int(owner.dropFirst(4))!
             let body = """
-            {"data":{"user":{"databaseId":\(isRoot ? 1 : 2),"login":"\(owner)","name":null,"avatarUrl":null,
+            {"data":{"user":{"databaseId":\(source),"login":"\(owner)","name":null,"avatarUrl":null,
             "followers":{"totalCount":1,"pageInfo":{"endCursor":null,"hasNextPage":false},
-            "nodes":[{"databaseId":\(isRoot ? 2 : 3),"login":"\(isRoot ? "user2" : "user3")","name":null,"avatarUrl":null}]}},
+            "nodes":[{"databaseId":\(source + 1),"login":"user\(source + 1)","name":null,"avatarUrl":null}]}},
             "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
             """
             #expect((json["query"] as? String)?.contains("followers(first:") == true)
@@ -743,24 +783,27 @@ struct FollowGraphAPITests {
         }
         model.open(user: user, client: client, relation: .followers)
         try await settle()
-        #expect(model.snapshot?.nodes.count == 2)
-        #expect(model.snapshot?.progress.count == 1)
+        #expect(model.snapshot?.nodes.count == 3)
+        #expect(model.snapshot?.progress.count == 2)
         model.select("2", expand: true)
         #expect(!model.isLoading)
         #expect(model.path == ["2", "1"])
-        model.loadMore("2")
-        try await settle()
         #expect(model.displayedSnapshot?.nodes["3"] != nil)
         model.select("3", expand: true)
         #expect(model.path == ["3", "2", "1"])
-        // A reopen must not fetch the root again or reveal cached grandchildren automatically.
+        #expect(!model.isLoading)
+        model.loadMore("3")
+        try await settle()
+        #expect(model.displayedSnapshot?.path(to: "4") == ["4", "3", "2", "1"])
+        // 重开复用默认三层样本，手动展开的第四层仍留缓存，但不自动显示。
         URLProtocolStub.requestHandler = { _ in
             Issue.record("缓存重开不应采集网络")
             throw URLError(.notConnectedToInternet)
         }
         model.open(user: user, client: client, relation: .followers)
         try await settle()
-        #expect(model.displayedSnapshot?.nodes.count == 2)
+        #expect(model.displayedSnapshot?.nodes.count == 3)
+        #expect(model.displayedSnapshot?.nodes["4"] == nil)
         #expect(model.selectedID == nil)
         var following = FollowGraphSnapshot(root: node(1))
         following.merge(page(1, [9]))

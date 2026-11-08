@@ -95,8 +95,10 @@ final class FollowGraphViewModel {
             let current = await store.begin(snapshot, session: session)
             guard !Task.isCancelled, generation == session else { return }
             publish(current, session: session)
-            // 已有快照先离线展示，由用户主动继续或刷新，避免每次重开消耗配额。
-            if current.progress.isEmpty { await explore(session: session, store: store) }
+            // Followers 旧快照可能只有本人首层，只补缺少的默认样本；满足预算后重开纯读缓存。
+            if current.progress.isEmpty || (relation == .followers && current.needsDefaultExpansion) {
+                await explore(session: session, store: store)
+            }
             else {
                 isLoading = false
                 statusKey = "followGraph.status.ready"
@@ -221,8 +223,10 @@ final class FollowGraphViewModel {
                 await self.explore(session: session, store: store)
                 return
             }
+            let budgets = self.snapshot?.defaultExpansionBudgets ?? [:]
             let ids = displayed.progress.keys.filter {
-                displayed.relation == .following || $0 == displayed.rootID || self.expandedSources[$0] != nil
+                displayed.relation == .following || $0 == displayed.rootID ||
+                    (budgets[$0] ?? 0) > 0 || self.expandedSources[$0] != nil
             }.sorted()
             let counts = Dictionary(grouping: displayed.edges, by: { $0[keyPath: displayed.relation.ownerKey] }).mapValues(\.count)
             var allSucceeded = true
@@ -234,8 +238,8 @@ final class FollowGraphViewModel {
                         userID: id, session: session, count: 100, refresh: true,
                         // 两种图谱均完整加载本人首层；停止后的刷新不能只重复已取得的半页。
                         refreshLimit: id == displayed.rootID ? nil :
-                            max(1, min(counts[id] ?? displayed.relation.defaultSampleCount,
-                                       self.expandedSources[id] ?? displayed.relation.defaultSampleCount))
+                            max(1, min(counts[id] ?? budgets[id] ?? 0,
+                                       self.expandedSources[id] ?? budgets[id] ?? 0))
                     ), session: session)
                 }
                 catch {
@@ -247,6 +251,9 @@ final class FollowGraphViewModel {
             if allSucceeded, let value = try? await store.finishRefresh(session: session) {
                 self.publish(value, session: session)
                 if let selectedID = self.selectedID, value.nodes[selectedID] == nil { self.selectedID = nil }
+                if value.relation == .followers, value.needsDefaultExpansion {
+                    await self.explore(session: session, store: store)
+                }
             }
         }
     }
@@ -272,7 +279,7 @@ final class FollowGraphViewModel {
         }
     }
 
-    /// 根分页优先，然后每位一级用户最多首批 20 条；每批四个，避免请求风暴。
+    /// 根分页优先，再按方向预算采集第三层；每批四个，避免请求风暴。
     private func explore(session: UUID, store: FollowGraphStore) async {
         guard generation == session, let rootID = snapshot?.rootID else { return }
         isLoading = true
@@ -282,13 +289,13 @@ final class FollowGraphViewModel {
             while snapshot?.progress[rootID]?.complete != true {
                 publish(try await store.load(userID: rootID, session: session, count: 100), session: session)
             }
-            // Followers 默认只完整分页本人首层，二层必须由资料卡显式展开。
-            if snapshot?.relation == .followers {
-                statusKey = "followGraph.status.ready"
-                return
-            }
-            let firstLevel = Set(snapshot?.edges.filter { $0.source == rootID }.map(\.target) ?? [])
-                .filter { snapshot?.progress[$0] == nil }.sorted()
+            guard let current = snapshot else { return }
+            let counts = Dictionary(grouping: current.edges, by: { $0[keyPath: current.relation.ownerKey] })
+                .mapValues(\.count)
+            let budgets = current.defaultExpansionBudgets
+            let firstLevel = budgets.keys.filter {
+                (budgets[$0] ?? 0) > (counts[$0] ?? 0) && current.progress[$0]?.complete != true
+            }.sorted()
             for start in stride(from: 0, to: firstLevel.count, by: 4) {
                 try Task.checkCancellation()
                 if (snapshot?.nodes.count ?? 0) >= 5_000 {
@@ -298,8 +305,9 @@ final class FollowGraphViewModel {
                 let batch = Array(firstLevel[start..<min(start + 4, firstLevel.count)])
                 let errors = await withTaskGroup(of: String?.self, returning: [String].self) { group in
                     for id in batch {
+                        let count = (budgets[id] ?? 0) - (counts[id] ?? 0)
                         group.addTask {
-                            do { _ = try await store.load(userID: id, session: session, count: 20); return nil }
+                            do { _ = try await store.load(userID: id, session: session, count: count); return nil }
                             catch is CancellationError { return nil }
                             catch FollowGraphStoreError.budget { return "followGraph.status.limit" }
                             catch FollowGraphStoreError.quota { return "followGraph.status.quota" }

@@ -14,7 +14,7 @@ enum FollowGraphRelation: String, Codable, CaseIterable, Sendable {
 
     var ownerKey: KeyPath<FollowGraphEdge, String> { self == .following ? \.source : \.target }
     var neighborKey: KeyPath<FollowGraphEdge, String> { self == .following ? \.target : \.source }
-    var defaultSampleCount: Int { self == .following ? 20 : 0 }
+    var defaultSampleCount: Int { 20 }
     var titleKey: String { self == .following ? "sidebar.stats.following" : "sidebar.stats.followers" }
 
     func edge(owner: String, neighbor: String) -> FollowGraphEdge {
@@ -108,8 +108,33 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         (relationCount(for: id), progress[id]?.totalCount ?? fallbackTotal)
     }
 
-    /// 磁盘是关系缓存，不代表每次打开都要绘制全部缓存。following 保留本人关注对象和每人
-    /// 20 个二层样本；followers 只默认展示首层；手动展开只增加对应源的预算，不删除磁盘中已取得的关系。
+    /// Followers 把第三层的 1,000 个名额稳定均分给直接关注者，每人最多 20 条。
+    /// 采集与展示共用预算，缓存命中不能绕过限制，也不为了凑满数量重复请求。
+    var defaultExpansionBudgets: [String: Int] {
+        let firstLevel = edges.filter { $0[keyPath: relation.ownerKey] == rootID }
+            .map { $0[keyPath: relation.neighborKey] }.sorted {
+                if let a = Int64($0), let b = Int64($1) { return a < b }
+                return $0 < $1
+            }
+        guard !firstLevel.isEmpty else { return [:] }
+        return Dictionary(uniqueKeysWithValues: firstLevel.enumerated().map { index, id in
+            let count = relation == .followers ?
+                min(20, 1_000 / firstLevel.count + (index < 1_000 % firstLevel.count ? 1 : 0)) : 20
+            return (id, count)
+        })
+    }
+
+    /// 仅补齐默认预算，已完成或缓存已足够的用户不再请求；也适用于旧版仅首层的缓存。
+    var needsDefaultExpansion: Bool {
+        guard progress[rootID]?.complete == true else { return true }
+        let counts = Dictionary(grouping: edges, by: { $0[keyPath: relation.ownerKey] }).mapValues(\.count)
+        return defaultExpansionBudgets.contains { id, budget in
+            budget > (counts[id] ?? 0) && progress[id]?.complete != true
+        }
+    }
+
+    /// 磁盘是关系缓存，不代表每次打开都绘制全部缓存。两方向默认三层节点，
+    /// 手动展开只增加对应源的预算，不删除磁盘中已取得的关系。
     func presentation(expanded: [String: Int] = [:], selectedID: String? = nil) -> FollowGraphSnapshot {
         let outgoing = Dictionary(grouping: edges, by: { $0[keyPath: relation.ownerKey] })
         func targets(_ source: String) -> [String] {
@@ -119,12 +144,13 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
             }
         }
         let firstLevel = targets(rootID)
+        let budgets = defaultExpansionBudgets
         var visible = Set(firstLevel).union([rootID])
         // 取消直接关注后，仍可达的选中用户和新路径不能被二层样本预算隐藏。
         if let selectedID { visible.formUnion(path(to: selectedID)) }
         let limit = min(10_000, max(5_000, visible.count) + expanded.values.reduce(0, +))
         for source in firstLevel {
-            for id in targets(source).prefix(expanded[source] ?? relation.defaultSampleCount) where visible.count < limit {
+            for id in targets(source).prefix(expanded[source] ?? budgets[source] ?? 0) where visible.count < limit {
                 visible.insert(id)
             }
         }
