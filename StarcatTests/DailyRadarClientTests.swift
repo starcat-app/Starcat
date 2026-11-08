@@ -433,6 +433,61 @@ struct DailyRadarClientTests {
         #expect(model.category == "ai-cli")
     }
 
+    /// 探索侧栏首次出现只预加载两份目录，不触发日期/正文，也不改变当前阅读状态
+    @Test @MainActor func sidebarCatalogPreloadShowsBothServiceCounts() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+
+        await model.reloadSidebarCatalogs()
+
+        #expect(model.categoryCounts == ["ai-cli": 12, "ai-weekly-events": 43])
+        #expect(model.totalCount == 55)
+        #expect(model.items.isEmpty)
+        #expect(model.dates.isEmpty)
+        #expect(model.category == nil)
+        #expect(!model.isLoading)
+        #expect(!model.failed)
+        #expect(fixture.state.requests.allSatisfy { $0.url?.path.hasSuffix("/catalog") == true })
+
+        let ids = model.availableCategories.map(\.id)
+        #expect(ids.last == "ai-weekly-events")
+        #expect(ids.dropLast().last == "ai-monthly")
+        #expect(ids.count == Set(ids).count)
+
+        model.selectCategory("ai-weekly-events")
+        await model.reload()
+        #expect(!model.failed)
+        #expect(ids == model.availableCategories.map(\.id))
+        #expect(model.categoryCounts == ["ai-cli": 12, "ai-weekly-events": 43])
+        model.selectCategory("ai-cli")
+        await model.reload()
+        #expect(!model.failed)
+        #expect(ids == model.availableCategories.map(\.id))
+    }
+
+    /// 侧栏目录重验证失败时保留磁盘计数；一方服务故障不隐藏另一方
+    @Test @MainActor func sidebarCatalogPreloadRestoresCountsWhenEventsNetworkFails() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let first = DailyRadarWorkspaceViewModel()
+        first.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await first.reloadSidebarCatalogs()
+
+        try fixture.expireCache()
+        fixture.state.mutate { $0.failedEventsCatalog = true }
+        let repository = DailyRadarRepository(api: fixture.api, directory: fixture.directory)
+        let restarted = DailyRadarWorkspaceViewModel()
+        restarted.configure(repository: repository, scope: "one", locale: Locale(identifier: "en_US"))
+
+        await restarted.reloadSidebarCatalogs(force: true)
+
+        #expect(restarted.categoryCounts == ["ai-cli": 12, "ai-weekly-events": 43])
+        #expect(restarted.totalCount == 55)
+        #expect(!restarted.failed)
+    }
+
     @Test @MainActor func switchingCategoryClearsStaleItemsButSameIdentityFailureKeepsContent() async throws {
         let fixture = DailyRadarFixture()
         defer { fixture.clean() }
@@ -483,6 +538,7 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
         var hasPage = false
         var historyDates: [String]? = nil
         var changeOnNext = false
+        var failedEventsCatalog = false
         var requests: [URLRequest] = []
     }
     private let lock = NSLock()
@@ -500,9 +556,12 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
                 let response = HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: "HTTP/1.1", headerFields: [:])!
                 return (response, Data(#"{"schema_version":1,"error":{"code":"CATALOG_CHANGED","message":"changed"}}"#.utf8))
             }
-            let status = values.error || values.failedPaths.contains(request.url!.path) ? 503 : (values.notModified ? 304 : 200)
             let path = request.url!.path
             let queryItems = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let isEvents = queryItems.contains { $0.name == "category" && $0.value == "ai-weekly-events" }
+            let status = values.error
+                || values.failedPaths.contains(path)
+                || (values.failedEventsCatalog && path.hasSuffix("/catalog") && isEvents) ? 503 : (values.notModified ? 304 : 200)
             let dateTo = queryItems.first { $0.name == "date_to" }?.value
             var summaries: [String] = []
             if values.hasPage && hasCursor {
@@ -544,10 +603,16 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
             let summary = summaries.joined(separator: ",")
             let payload: String
             if path.hasSuffix("/catalog") {
-                // 计数与 /reports 的 total=12 语义保持一致，供侧边栏徽标断言使用。
-                payload = """
-                {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"},{"id":"ai-weekly-events","title":"Weekly AI Highlights","period":"weekly"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":12},"total_count":12}
-                """
+                if isEvents {
+                    payload = """
+                    {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-weekly-events","title":"Weekly AI Highlights","period":"weekly"}],"available_languages":["en","zh-Hans"],"latest_available_date":"\(values.day)","category_counts":{"ai-weekly-events":43},"total_count":43}
+                    """
+                } else {
+                    // 计数与 /reports 的 total=12 语义保持一致，供侧边栏徽标断言使用。
+                    payload = """
+                    {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":12},"total_count":12}
+                    """
+                }
             } else if path.hasSuffix("/dates") {
                 // joined 已负责去掉最后一个元素后的分隔符，不能再 dropLast，
                 // 否则会截断最后一个日期对象导致 /dates 响应 JSON 非法。

@@ -72,6 +72,7 @@ struct SidebarView: View {
     /// 不在 sidebar 里主动触发任何加载。
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -1037,6 +1038,9 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .task(id: dailyRadarScope) {
+                await prepareDailyRadarSidebar()
+            }
             // 分类行自身挂有折叠/展开 transition；切 Explore mode 时不能复用
             // List(selection:) 的系统选中动画，否则旧筛选 section 退场与新 section
             // 入场会连续触发整窗 layout。手动点 header 的 disclosureSpring 是另一笔
@@ -1056,6 +1060,16 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
         }
+    }
+
+    /// 与阅读工作区使用相同身份，预加载目录后打开文章不会再次清空计数或选中分类
+    private var dailyRadarScope: String {
+        "\(dependencies.databaseScopeRevision)|\(dependencies.dailyRadarConfigurationRevision)|\(locale.identifier)"
+    }
+
+    private func prepareDailyRadarSidebar() async {
+        dailyRadarModel.configure(repository: dependencies.dailyRadarRepository, scope: dailyRadarScope, locale: locale)
+        await dailyRadarModel.reloadSidebarCatalogs()
     }
 
     @ViewBuilder

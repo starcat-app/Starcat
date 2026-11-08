@@ -16,7 +16,7 @@ struct DailyRadarCoverView: View {
     /// 必须传报告 id，避免多个调用方遗漏身份后生成完全相同的图片。
     let seed: String
     /// 左侧文字安全区占比（0~0.4）：featured 大卡左侧叠标题/摘要时传入，
-    /// 程序化封面主体右移避让；阅读页 hero / 普通卡 / 往期行保持 0。
+    /// 图案连续铺满，渐变保护文字；阅读页 hero / 普通卡 / 往期行保持 0。
     var textSafeLeading: CGFloat = 0
 
     var body: some View {

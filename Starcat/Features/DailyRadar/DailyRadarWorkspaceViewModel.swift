@@ -32,12 +32,12 @@ final class DailyRadarWorkspaceViewModel {
     var scope = ""
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var detailGeneration: UInt64 = 0
+    @ObservationIgnored private var catalogGeneration: UInt64 = 0
     /// 最近一次 publish 所属的筛选身份；用于识别「当前数据属于旧分类/旧期次」。
     @ObservationIgnored private var publishedIdentity: String?
     @ObservationIgnored private var repository: DailyRadarRepository?
-    private var weeklyCategoryCounts: [String: Int] = [:]
-    private var eventsCategoryCounts: [String: Int] = [:]
-    private var weeklyTotalCount: Int?
+    private var weeklyCatalog: DailyRadarCatalog?
+    private var eventsCatalog: DailyRadarCatalog?
 
     var categoryPeriod: String { availableCategories.first(where: { $0.id == category })?.period ?? "daily" }
     var identity: String { "\(scope)|\(category ?? "")|\(selectedEdition ?? "latest")|\(contentLanguage)" }
@@ -53,10 +53,15 @@ final class DailyRadarWorkspaceViewModel {
         return items.filter { $0.editionDate < edition }
     }
     var availableCategories: [DailyRadarCatalog.Category] {
-        // 两个服务分别返回自身目录，导航始终保留完整入口；一方故障不隐藏另一方栏目
-        let remote = catalog?.categories ?? []
-        let known = Set(remote.map(\.id))
-        return remote + DailyRadarCatalog.fallbackCategories.filter { !known.contains($0.id) }
+        // 两份目录只更新元数据，已知分类按固定顺序展示，不能随当前阅读服务重排
+        let remote = (weeklyCatalog?.categories ?? []) + (eventsCatalog?.categories ?? [])
+        let byID = Dictionary(remote.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        let known = Set(DailyRadarCatalog.fallbackCategories.map(\.id))
+        let ordered = DailyRadarCatalog.fallbackCategories.map { byID[$0.id] ?? $0 }
+        let additions = byID.values.filter { !known.contains($0.id) }.sorted { $0.id < $1.id }
+        // 远端新增分类默认可见，每周 AI 大事始终保持在末尾
+        return ordered.filter { $0.id != "ai-weekly-events" } + additions
+            + ordered.filter { $0.id == "ai-weekly-events" }
     }
     /// 标题与侧栏共用分类本地化；目录尚未返回时也立即跟随当前选择，不显示旧分类名。
     var workspaceTitle: String {
@@ -64,9 +69,17 @@ final class DailyRadarWorkspaceViewModel {
         return availableCategories.first(where: { $0.id == category })?.localizedTitle
             ?? DailyRadarCatalog.Category.localizedTitle(for: category)
     }
-    /// 侧边栏计数徽标数据源：catalog 未加载或旧后端无计数字段时为空，徽标隐藏。
-    var categoryCounts: [String: Int] { weeklyCategoryCounts.merging(eventsCategoryCounts) { _, events in events } }
-    var totalCount: Int? { weeklyTotalCount.map { $0 + (eventsCategoryCounts["ai-weekly-events"] ?? 0) } }
+    /// 侧栏使用独立目录快照，进入文章前即可从缓存和服务恢复计数
+    var categoryCounts: [String: Int] {
+        let weekly = (weeklyCatalog?.categoryCounts ?? [:]).filter { $0.key != "ai-weekly-events" }
+        let events = (eventsCatalog?.categoryCounts ?? [:]).filter { $0.key == "ai-weekly-events" }
+        return weekly.merging(events) { _, latest in latest }
+    }
+    var totalCount: Int? {
+        guard let total = weeklyCatalog?.totalCount else { return nil }
+        return total - (weeklyCatalog?.categoryCounts?["ai-weekly-events"] ?? 0)
+            + (eventsCatalog?.categoryCounts?["ai-weekly-events"] ?? 0)
+    }
     /// 失败只是重验证未完成；已有成功内容继续可读，界面明确标注缓存状态
     var isShowingCachedContent: Bool { failed && publishedIdentity == identity && !items.isEmpty }
     /// 目录日期已按业务日期排序；查找相邻期次必须跳过断更，而不是简单加减一天。
@@ -92,6 +105,7 @@ final class DailyRadarWorkspaceViewModel {
         guard self.scope != scope || self.contentLanguage != requestedLanguage else { return }
         generation &+= 1
         detailGeneration &+= 1
+        catalogGeneration &+= 1
         self.scope = scope
         contentLanguage = requestedLanguage
         catalog = nil
@@ -102,11 +116,51 @@ final class DailyRadarWorkspaceViewModel {
         edition = nil
         selectedEdition = nil
         category = nil
-        weeklyCategoryCounts = [:]
-        eventsCategoryCounts = [:]
-        weeklyTotalCount = nil
+        weeklyCatalog = nil
+        eventsCatalog = nil
         nextCursor = nil
         failed = false
+    }
+
+    /// 探索侧栏出现即加载两份轻量目录，与文章首页和当前分类解耦
+    /// 子任务分别恢复缓存和重验证，一方失败仍保留另一方的成功计数
+    func reloadSidebarCatalogs(force: Bool = false) async {
+        guard let repository else { return }
+        catalogGeneration &+= 1
+        let token = catalogGeneration
+        let language = contentLanguage
+        await withTaskGroup(of: Void.self) { group in
+            let categories: [String?] = [nil, "ai-weekly-events"]
+            for category in categories {
+                let query = DailyRadarQuery(category: category, language: language)
+                group.addTask {
+                    await self.reloadSidebarCatalog(repository: repository, query: query, token: token, force: force)
+                }
+            }
+        }
+    }
+
+    /// 只发布目录元数据，不能改变正在阅读的版本、日期、筛选或列表加载代次
+    private func reloadSidebarCatalog(repository: DailyRadarRepository, query: DailyRadarQuery,
+                                      token: UInt64, force: Bool) async {
+        let path = "\(Self.root)/catalog"
+        if let cached = await repository.cached(DailyRadarCatalog.self, path: path, parameters: query.catalogParameters) {
+            guard catalogGeneration == token, !Task.isCancelled else { return }
+            applyCatalog(cached.value, events: query.category == "ai-weekly-events")
+        }
+        do {
+            let loaded = try await repository.fetch(DailyRadarCatalog.self, path: path,
+                                                    parameters: query.catalogParameters, force: force)
+            guard catalogGeneration == token, !Task.isCancelled else { return }
+            applyCatalog(loaded.value, events: query.category == "ai-weekly-events")
+        } catch {
+            // 目录的网络失败不清除成功缓存，也不改变正文自己的加载状态
+        }
+    }
+
+    private func applyCatalog(_ catalog: DailyRadarCatalog, events: Bool) {
+        if events { eventsCatalog = catalog }
+        else { weeklyCatalog = catalog }
     }
 
     /// SWR 时序：身份变化先读磁盘快照，命中即无缝替换（不闪骨架、保留旧内容
@@ -283,13 +337,8 @@ final class DailyRadarWorkspaceViewModel {
 
     private func publish(catalog: DailyRadarCatalog, dates: DailyRadarDates, page: DailyRadarPage, edition: String?) {
         self.catalog = catalog
-        // 独立服务的单分类计数不能覆盖父级日报总数，两份目录分别保留最近成功值
-        if catalog.categories.allSatisfy({ $0.id == "ai-weekly-events" }) {
-            eventsCategoryCounts = ["ai-weekly-events": catalog.categoryCounts?["ai-weekly-events"] ?? 0]
-        } else {
-            weeklyCategoryCounts = (catalog.categoryCounts ?? [:]).filter { $0.key != "ai-weekly-events" }
-            weeklyTotalCount = catalog.totalCount.map { $0 - (catalog.categoryCounts?["ai-weekly-events"] ?? 0) }
-        }
+        // 来源由当前请求身份确定，不能用空目录或分类交集猜测服务归属
+        applyCatalog(catalog, events: category == "ai-weekly-events")
         self.dates = dates.dates
         self.items = page.items
         self.total = page.total
