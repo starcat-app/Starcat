@@ -4,6 +4,7 @@ import { forceCollide } from 'd3-force-3d';
 import { ProgressiveReveal, compareIDs } from './progressive-reveal.mjs';
 
 const container = document.getElementById('graph');
+let relation = 'following';
 let session = '', root = '', selected = null, dark = false, reduceMotion = false;
 let destroyed = false, active = true, lastDrag = -Infinity;
 let lastSequence = 0;
@@ -304,7 +305,7 @@ function pathFromRoot(id) {
   if (!parents.has(id)) return [];
   const path = [];
   for (let current = id; current != null; current = parents.get(current)) path.push(current);
-  return path.reverse();
+  return relation === 'followers' ? path : path.reverse();
 }
 
 function setPath(path) {
@@ -458,6 +459,7 @@ function update(payload) {
   lastSequence = payload.sequence;
   session = payload.session;
   root = payload.root;
+  if ('relation' in payload) relation = payload.relation;
   if ('dark' in payload) {
     hasAppearance = true;
     dark = payload.dark;
@@ -523,7 +525,7 @@ function update(payload) {
     // D3 caches collision radii. Refresh it when the graph changes, not on selection.
     collision.radius(node => radius(node) + 6);
     graphRevision = payload.revision;
-    reveal.sync(nodes, links, root, performance.now(), reduceMotion);
+    reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
     if (!overviewStarted) {
       overviewStarted = true;
       // Fix the camera once before the first root frame, independent of arrival count

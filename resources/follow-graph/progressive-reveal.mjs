@@ -17,7 +17,7 @@ export class ProgressiveReveal {
   root = null;
 
   /** Reconcile the latest full snapshot without restarting already-visible avatars. */
-  sync(nodes, links, root, now, reduced) {
+  sync(nodes, links, root, now, reduced, relation = 'following') {
     if (root !== this.root) {
       this.clear();
       this.root = root;
@@ -29,8 +29,11 @@ export class ProgressiveReveal {
     for (const link of links.values()) {
       const source = typeof link.source === 'object' ? link.source.id : link.source;
       const target = typeof link.target === 'object' ? link.target.id : link.target;
-      if (!outgoing.has(source)) outgoing.set(source, []);
-      outgoing.get(source).push(target);
+      // Exploration follows incoming edges for followers; keep actual links untouched.
+      const owner = relation === 'followers' ? target : source;
+      const neighbor = relation === 'followers' ? source : target;
+      if (!outgoing.has(owner)) outgoing.set(owner, []);
+      outgoing.get(owner).push(neighbor);
     }
     for (const targets of outgoing.values()) targets.sort(compareIDs);
     this.parents = new Map([[root, null]]);

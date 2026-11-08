@@ -11,20 +11,24 @@ import SwiftUI
 struct FollowGraphCacheStatisticsView: View {
     @Environment(AuthSession.self) private var auth
     @Environment(\.locale) private var locale
-    @State private var snapshot: FollowGraphSnapshot?
-    @State private var bytes: Int64 = 0
+    @State private var snapshots: [FollowGraphRelation: FollowGraphSnapshot] = [:]
+    @State private var sizes: [FollowGraphRelation: Int64] = [:]
 
     var body: some View {
         Section {
-            if let snapshot {
-                LabeledContent("followGraph.cache.size", value: bytes.formatted(.byteCount(style: .file).locale(locale)))
-                LabeledContent("followGraph.status.counts", value:
-                    "\(snapshot.nodes.count.formatted(.number.locale(locale))) · \(snapshot.edges.count.formatted(.number.locale(locale)))")
-                LabeledContent("followGraph.cache.saved") {
-                    Text(snapshot.savedAt, format: .dateTime.year().month().day().hour().minute().locale(locale))
+            ForEach(FollowGraphRelation.allCases, id: \.self) { relation in
+                Text(String.l10n(relation.titleKey)).font(.headline)
+                if let snapshot = snapshots[relation] {
+                    LabeledContent("followGraph.cache.size", value:
+                        (sizes[relation] ?? 0).formatted(.byteCount(style: .file).locale(locale)))
+                    LabeledContent("followGraph.status.counts", value:
+                        "\(snapshot.nodes.count.formatted(.number.locale(locale))) · \(snapshot.edges.count.formatted(.number.locale(locale)))")
+                    LabeledContent("followGraph.cache.saved") {
+                        Text(snapshot.savedAt, format: .dateTime.year().month().day().hour().minute().locale(locale))
+                    }
+                } else {
+                    Text("followGraph.cache.empty").foregroundStyle(.secondary)
                 }
-            } else {
-                Text("followGraph.cache.empty").foregroundStyle(.secondary)
             }
         } header: {
             Text("followGraph.title")
@@ -32,14 +36,16 @@ struct FollowGraphCacheStatisticsView: View {
             Text("followGraph.status.snapshot")
         }
         .task(id: auth.state.user?.id) {
-            snapshot = nil
-            bytes = 0
+            snapshots = [:]
+            sizes = [:]
             guard let id = auth.state.user?.id else { return }
-            let value = await FollowGraphDiskCache.shared.load(account: String(id))
-            let size = await FollowGraphDiskCache.shared.bytes(account: String(id))
-            guard !Task.isCancelled, auth.state.user?.id == id else { return }
-            snapshot = value
-            bytes = size
+            for relation in FollowGraphRelation.allCases {
+                let value = await FollowGraphDiskCache.shared.load(account: String(id), relation: relation)
+                let size = await FollowGraphDiskCache.shared.bytes(account: String(id), relation: relation)
+                guard !Task.isCancelled, auth.state.user?.id == id else { return }
+                snapshots[relation] = value
+                sizes[relation] = size
+            }
         }
     }
 }

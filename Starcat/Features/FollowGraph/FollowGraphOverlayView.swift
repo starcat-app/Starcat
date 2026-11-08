@@ -14,6 +14,7 @@ struct FollowGraphOverlayView: View {
     @Bindable var model: FollowGraphViewModel
     let user: GitHubUserDTO
     let client: GitHubAPIClient
+    var relation: FollowGraphRelation = .following
     let onClose: () -> Void
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -71,7 +72,7 @@ struct FollowGraphOverlayView: View {
         .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
         .task {
             // open 会重置 rendererRevision；先初始化再挂载，避免初次出现就销毁重建 WebView。
-            model.open(user: user, client: client)
+            model.open(user: user, client: client, relation: relation)
             canvasPrepared = true
         }
         .task(id: shouldAutoHideToolbar) {

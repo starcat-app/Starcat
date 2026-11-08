@@ -636,3 +636,45 @@ test('cached BFS respects numeric tie breaks, cycles and edge removal on the nex
   r.update(3, { ...data, links: [] });
   assert.notEqual(color(data.links[0]), '#007aff');
 });
+
+// Followers changes traversal only; native payloads and Canvas arrows retain real direction.
+test('followers reveal traverses incoming edges and keeps parents stable across cycles', () => {
+  const reveal = new ProgressiveReveal();
+  const nodes = new Map(['1', '2', '3', '10'].map(id => [id, { id }]));
+  const links = new Map([
+    ['2:1', { source: '2', target: '1' }], ['10:1', { source: '10', target: '1' }],
+    ['3:2', { source: '3', target: '2' }], ['3:10', { source: '3', target: '10' }],
+    ['2:3', { source: '2', target: '3' }]
+  ]);
+  reveal.sync(nodes, links, '1', 1000, false, 'followers');
+  assert.deepEqual([...reveal.visible], ['1']);
+  assert.deepEqual(reveal.pending, ['2', '10', '3']);
+  assert.equal(reveal.parents.get('3'), '2');
+  assert.equal(links.get('2:1').source, '2');
+});
+
+test('followers selection highlights and animates selected user to root, never the reciprocal edge', () => {
+  const r = renderer(), data = r.data(3);
+  data.links = [{ source: '2', target: '1' }, { source: '3', target: '2' },
+    { source: '1', target: '2' }];
+  r.update(1, { ...data, relation: 'followers' });
+  r.update(2, { reduceMotion: false });
+  const { nodes, links } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 250; node.y = 0; });
+  r.props.get('onNodeClick')(nodes.find(node => node.id === '3'));
+  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[1]), '#007aff');
+  assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  const starts = r.calls.filter(([name]) => name === 'moveTo');
+  const ends = r.calls.filter(([name]) => name === 'lineTo');
+  assert.ok(ends.length > 0);
+  assert.ok(ends.every(([, x], i) => x < starts[i][1]));
+  assert.ok(ends.some(([, x]) => x > 20 && x < 239));
+  assert.ok(ends.some(([, x]) => x > 261 && x < 483));
+  r.update(3, { selected: '3', path: ['3', '2', '1'] });
+  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  r.props.get('onBackgroundClick')();
+  assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
+});

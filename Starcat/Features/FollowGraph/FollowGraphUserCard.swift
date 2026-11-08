@@ -83,7 +83,8 @@ struct FollowGraphUserCard: View {
 
             HStack(alignment: .center, spacing: 10) {
                 Text(model.displayedSnapshot?.progress[node.id]?.complete == true ?
-                     "followGraph.status.complete" : "followGraph.status.partial")
+                     (model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" :
+                        "followGraph.status.complete") : "followGraph.status.partial")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)

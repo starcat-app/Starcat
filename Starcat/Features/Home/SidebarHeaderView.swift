@@ -23,7 +23,7 @@ import AppKit
 
 struct SidebarHeaderView: View {
     /// 图谱由主窗口承载，统计卡不自行创建窗口或持有网络任务。
-    var onOpenFollowGraph: () -> Void = {}
+    var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var viewModel
@@ -495,9 +495,9 @@ struct SidebarHeaderView: View {
 
     // MARK: - 三栏统计
 
-    /// 构建三栏统计数据行，每项均可点击并跳转到对应 GitHub 页面。
+    /// 构建三栏统计入口：Stars 打开网页，两类关注关系打开对应方向图谱。
     /// - Starred → https://github.com/{username}?tab=stars
-    /// - Followers → https://github.com/{username}?tab=followers
+    /// - Followers → 主窗口 followers 关系图谱遮盖层
     /// - Following → 主窗口 following 关系图谱遮盖层
     private func statsRow(user: GitHubUserDTO) -> some View {
         HStack(spacing: 0) {
@@ -511,8 +511,9 @@ struct SidebarHeaderView: View {
             StatCell(
                 value: user.followers ?? 0,
                 label: "sidebar.stats.followers",
-                helpText: String.l10n("sidebar.openGithubFollowers"),
-                url: GitHubURLs.userFollowersTab(login: user.login)
+                helpText: String.l10n("sidebar.stats.followers"),
+                url: nil,
+                action: { onOpenFollowGraph(.followers) }
             )
             Divider().frame(height: 26)
             StatCell(
@@ -520,7 +521,7 @@ struct SidebarHeaderView: View {
                 label: "sidebar.stats.following",
                 helpText: String.l10n("followGraph.title"),
                 url: nil,
-                action: onOpenFollowGraph
+                action: { onOpenFollowGraph(.following) }
             )
         }
         .padding(.top, 4)

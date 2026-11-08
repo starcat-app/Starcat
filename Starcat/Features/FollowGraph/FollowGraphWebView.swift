@@ -126,6 +126,7 @@ struct FollowGraphWebView: NSViewRepresentable {
             }
             if sentRevision != model.revision {
                 payload["revision"] = model.revision
+                payload["relation"] = snapshot.relation.rawValue
                 payload["nodes"] = snapshot.nodes.values.map {
                     ["id": $0.id, "login": $0.login, "name": $0.name ?? $0.login,
                      "avatar": FollowGraphAvatarURL.source($0.avatarURL)] as [String: Any]
