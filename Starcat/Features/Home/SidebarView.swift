@@ -1124,13 +1124,13 @@ struct SidebarView: View {
 
     private func dailyRadarCategoryRow(_ category: DailyRadarCatalog.Category?) -> some View {
         let id = category?.id
-        // 计数徽标：具体分类取该分类报告总数；「全部主题」行保持无数字。
+        // 「全部主题」与每日热点入口共用总数，避免侧栏两个入口的统计口径不一致。
         // catalog 未加载或旧后端无计数字段时为 nil，徽标自动隐藏。
         let count: Int?
         if let id {
             count = dailyRadarModel.categoryCounts[id]
         } else {
-            count = nil
+            count = dailyRadarModel.totalCount
         }
         return exploreSelectableRow(selection: .dailyRadarCategory(id), count: count) {
             DailyRadarCategoryIcon(categoryID: id, size: 14, isSidebar: true)
