@@ -85,6 +85,7 @@ struct ActivityViewModelTests {
     /// `pollCounter.count`：闭包记录被调次数，断言 refresh 路径 / load 路径是否调用 release poll。
     @MainActor
     private final class Harness {
+        let database: InMemoryDatabaseManager
         let viewModel: ActivityViewModel
         let mockClient: MockGitHubAPIClient
         let mockBlogClient: MockGitHubBlogRSSClient
@@ -104,6 +105,7 @@ struct ActivityViewModelTests {
             let cs = ActivityCategoryCountService()
             let counter = PollCounter()
 
+            self.database = db
             self.mockClient = mock
             self.mockBlogClient = mockBlog
             self.eventRepo = er
@@ -255,10 +257,68 @@ struct ActivityViewModelTests {
     func categoryCountServicePublishesLocalCountsImmediately() async throws {
         let service = ActivityCategoryCountService()
 
-        service.applyLocalCounts([.all: 2, .following: 1, .announcement: 1])
+        service.applyLocalCounts(
+            [.all: 2, .following: 1, .announcement: 1], scopeRevision: service.scopeRevision
+        )
         #expect(service.count(for: .all) == 2)
         #expect(service.count(for: .following) == 1)
         #expect(service.count(for: .announcement) == 1)
+    }
+
+    @Test("单类清空保留其它分类缓存，完整读取后用真实零校准")
+    func partialPrimePreservesOtherCounts() async throws {
+        let h = try Harness(login: nil)
+        h.countService.applyLocalCounts(
+            [.following: 30, .star: 30, .release: 5], scopeRevision: h.countService.scopeRevision
+        )
+        // 尚无聚合快照时清空公告，只能更新公告本身。
+        await h.viewModel.clearAnnouncementFeed()
+        #expect(h.countService.count(for: .following) == 30)
+        #expect(h.countService.count(for: .star) == 30)
+        #expect(h.countService.count(for: .release) == 5)
+
+        await h.viewModel.primeSidebarCategoryCountsIfNeeded()
+        #expect(h.countService.count(for: .following) == 0)
+        #expect(h.countService.count(for: .star) == 0)
+        #expect(h.countService.count(for: .release) == 0)
+        #expect(h.mockClient.receivedEventsCalls.isEmpty)
+    }
+
+    @Test("一条数据源读取失败时保留对应缓存，其它成功空查询仍归零")
+    func failedSourcePreservesCachedCount() async throws {
+        let h = try Harness(login: nil)
+        h.countService.applyLocalCounts(
+            [.all: 100, .following: 30, .release: 5], scopeRevision: h.countService.scopeRevision
+        )
+        // 只破坏独立内存库的关注表，使四路并行查询中恰好一路失败。
+        try await h.database.writer.write { db in
+            try db.execute(sql: "DROP TABLE activity_events")
+        }
+        await h.viewModel.primeSidebarCategoryCountsIfNeeded()
+        #expect(h.countService.count(for: .following) == 30)
+        #expect(h.countService.count(for: .all) == 100)
+        #expect(h.countService.count(for: .release) == 0)
+        #expect(h.countService.count(for: .star) == 0)
+    }
+
+    @Test("列表指纹不变时仍校准计数，避免旧数量永久残留")
+    func unchangedItemsStillPublishCounts() async throws {
+        let h = try Harness(login: nil)
+        await h.viewModel.primeSidebarCategoryCountsIfNeeded()
+        h.countService.applyLocalCounts([.following: 30], scopeRevision: h.countService.scopeRevision)
+        await h.viewModel.reload(category: .following, shouldPollReleases: false, cachePolicy: .respectTTL)
+        #expect(h.countService.count(for: .following) == 0)
+    }
+
+    @Test("旧账号模型完成预加载不能覆盖新账号侧栏")
+    func oldViewModelCannotPublishAfterAccountSwitch() async throws {
+        let h = try Harness(login: nil)
+        h.countService.prepareForAccountChange()
+        h.countService.activate(accountID: 202)
+        h.countService.applyLocalCounts([.following: 7], scopeRevision: h.countService.scopeRevision)
+        await h.viewModel.primeSidebarCategoryCountsIfNeeded()
+        #expect(h.countService.count(for: .following) == 7)
+        #expect(h.countService.count(for: .star) == nil)
     }
 
     // MARK: - SWR：TTL 内不走网络

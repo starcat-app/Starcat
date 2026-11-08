@@ -1495,7 +1495,10 @@ final class AppDependencies {
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
-        self.activityCategoryCountService = ActivityCategoryCountService()
+        self.activityCategoryCountService = ActivityCategoryCountService(
+            defaults: .standard,
+            accountID: db.currentUserId
+        )
         self.activityCategoryCountService.configure(undoStarRepository: self.undoStarHistoryRepository)
         self.sidebarAnimationCoordinator = SidebarAnimationCoordinator()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
@@ -1957,6 +1960,8 @@ final class AppDependencies {
     func switchUserDatabase(to userId: Int64?) async throws {
         let previousUserId = database.currentUserId
         if previousUserId != userId {
+            // 先阻断旧账号计数回写，再 await 数据库切换；新账号恢复不依赖活动页是否打开。
+            activityCategoryCountService.prepareForAccountChange()
             await syncManager.cancelAndWait()
             // 先停止服务拥有的子 Task，再等待协调器退出；反向等待会让旧快照迟迟无法取消。
             await githubStarListSyncService.resetForAccountChange()
@@ -1974,6 +1979,7 @@ final class AppDependencies {
         } catch {
             if previousUserId != userId {
                 await repositoryMetricsClient.endDatabaseScopeChange()
+                activityCategoryCountService.cancelAccountChange()
             }
             throw error
         }
@@ -1981,6 +1987,7 @@ final class AppDependencies {
             await repositoryMetricsClient.endDatabaseScopeChange()
         }
         guard database.currentUserId != previousUserId else { return }
+        activityCategoryCountService.activate(accountID: database.currentUserId)
         databaseScopeRevision &+= 1
         githubIssueSummaryStore.reset(scopeRevision: databaseScopeRevision)
         repositoryInsightsContextScopeState.update(
