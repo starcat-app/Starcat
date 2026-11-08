@@ -144,6 +144,21 @@ final class FollowGraphViewModel {
         rebuildPresentation()
     }
 
+    /// 只能由二次确认入口调用。丢弃当前方向的展示预算，保留完整关系与头像缓存；
+    /// rendererRevision 使新 WebView 从本人重播，不能复用旧 reveal 队列。
+    func initialize() {
+        guard !isPreparing, let snapshot else { return }
+        stop()
+        expandedSources = [:]
+        errorText = nil
+        statusKey = "followGraph.status.ready"
+        resetCanvas()
+        saveRange()
+        if snapshot.progress.isEmpty || snapshot.needsDefaultExpansion {
+            run { session, store in await self.explore(session: session, store: store) }
+        }
+    }
+
     /// 只刷新当前画布的当前选中用户；旧卡片的异步成功不能复活已关闭或换人的节点。
     func avatarDidLoad(nodeID: String, source: String, renderer: Int) {
         guard renderer == rendererRevision, selectedID == nodeID else { return }

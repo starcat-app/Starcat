@@ -1,6 +1,330 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "followGraph.action.initialize" : {
+      "comment" : "AI translation draft; pending maintainer review.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Initialize graph"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "初始化图谱"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "初始化圖譜"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "グラフを初期化"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "그래프 초기화"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Graph initialisieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Initialiser le graphe"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inicializar grafo"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inicializar grafo"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inizializza grafo"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Инициализировать граф"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Graaf initialiseren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zainicjuj graf"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ініціалізувати граф"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Grafiği başlat"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Khởi tạo đồ thị"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inisialisasi graf"
+          }
+        }
+      }
+    },
+    "followGraph.initialize.title" : {
+      "comment" : "AI translation draft; pending maintainer review.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Initialize this graph?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "初始化图谱？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "初始化圖譜？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "グラフを初期化しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "그래프를 초기화할까요?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diesen Graphen initialisieren?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Initialiser ce graphe ?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "¿Inicializar este grafo?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inicializar este grafo?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inizializzare questo grafo?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Инициализировать этот граф?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze graaf initialiseren?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zainicjować ten graf?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ініціалізувати цей граф?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu grafik yeniden başlatılsın mı?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Khởi tạo đồ thị này?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inisialisasi graf ini?"
+          }
+        }
+      }
+    },
+    "followGraph.initialize.message" : {
+      "comment" : "AI translation draft; pending maintainer review.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Clear manual expansions and restore the default three-layer view. Cached relationships and avatars will be kept."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "将清除当前图谱的手动展开记录，恢复默认三层展示。已缓存的关系数据和头像会保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "將清除目前圖譜的手動展開記錄，恢復預設三層顯示。已快取的關係資料和頭像會保留。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "手動で展開した範囲をリセットし、標準の3層表示に戻します。キャッシュ済みの関係データとアバターは保持されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "수동으로 확장한 범위를 지우고 기본 3단계 보기로 복원합니다. 캐시된 관계 데이터와 프로필 사진은 유지됩니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Manuelle Erweiterungen werden zurückgesetzt und die Standardansicht mit drei Ebenen wird wiederhergestellt. Zwischengespeicherte Beziehungen und Profilbilder bleiben erhalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les extensions manuelles seront effacées et la vue à trois niveaux par défaut sera rétablie. Les relations et les avatars en cache seront conservés."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se borrarán las expansiones manuales y se restaurará la vista predeterminada de tres niveles. Se conservarán las relaciones y los avatares en caché."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "As expansões manuais serão removidas e a visualização padrão de três níveis será restaurada. As relações e os avatares em cache serão mantidos."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le espansioni manuali verranno rimosse e sarà ripristinata la vista predefinita a tre livelli. Le relazioni e gli avatar nella cache verranno conservati."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Раскрытые вручную ветви будут сброшены, и восстановится стандартный вид с тремя уровнями. Связи и аватары в кэше сохранятся."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Handmatige uitbreidingen worden gewist en de standaardweergave met drie niveaus wordt hersteld. Relaties en avatars in de cache blijven behouden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ręczne rozwinięcia zostaną usunięte i zostanie przywrócony domyślny widok trzech poziomów. Relacje i awatary w pamięci podręcznej zostaną zachowane."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Розгорнуті вручну гілки буде скинуто й відновлено стандартний вигляд із трьома рівнями. Зв’язки та аватари в кеші збережуться."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elle genişletilen dallar temizlenir ve varsayılan üç katmanlı görünüm geri yüklenir. Önbellekteki ilişkiler ve profil resimleri korunur."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Xóa các nhánh đã mở rộng thủ công và khôi phục chế độ xem ba tầng mặc định. Dữ liệu quan hệ và ảnh đại diện đã lưu trong bộ nhớ đệm sẽ được giữ lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Perluasan manual akan dihapus dan tampilan tiga tingkat bawaan akan dipulihkan. Hubungan dan avatar dalam cache akan tetap disimpan."
+          }
+        }
+      }
+    },
     "followGraph.action.showToolbar" : {
       "comment" : "AI translation draft; pending maintainer review.",
       "extractionState" : "manual",

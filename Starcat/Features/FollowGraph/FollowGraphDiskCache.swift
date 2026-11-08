@@ -86,6 +86,10 @@ actor FollowGraphDiskCache {
         guard range.isValid, let url = rangeFile(account, relation: relation) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
+        // 恢复出厂可能先于排队的关闭保存执行；没有关系快照时不重建已删除的账户目录。
+        // 检查和写入在同一个 actor 同步方法内，与 remove 不能交错。
+        guard let snapshotURL = file(account, relation: relation),
+              FileManager.default.fileExists(atPath: snapshotURL.path) else { return }
         let data = try JSONEncoder().encode(range)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: .atomic)

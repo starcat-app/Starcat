@@ -341,6 +341,9 @@ struct FollowGraphStoreTests {
         let (root, cache) = try temporaryCache()
         defer { try? FileManager.default.removeItem(at: root) }
         let range = FollowGraphSavedRange(expandedSources: ["2": 70])
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        try await cache.save(graph)
         try await cache.saveRange(range, account: "1", relation: relation)
         #expect(await cache.loadRange(account: "1", relation: relation) == range)
         let opposite: FollowGraphRelation = relation == .following ? .followers : .following
@@ -350,8 +353,13 @@ struct FollowGraphStoreTests {
         #expect(!FollowGraphSavedRange(expandedSources: ["2": 10_001]).isValid)
         #expect(!FollowGraphSavedRange(expandedSources: ["../2": 70]).isValid)
         #expect(!FollowGraphSavedRange(formatVersion: 2, expandedSources: [:]).isValid)
-        try await cache.remove(account: "1")
+        let url = root.appendingPathComponent("1/\(relation.rawValue)-range.json")
+        try Data("broken".utf8).write(to: url)
         #expect(await cache.loadRange(account: "1", relation: relation) == nil)
+        try await cache.remove(account: "1")
+        try await cache.saveRange(range, account: "1", relation: relation)
+        #expect(await cache.loadRange(account: "1", relation: relation) == nil)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("1").path))
     }
 
     @Test("已完成分页不再从空 cursor 重读第一页，显式刷新仍请求远端")
@@ -731,6 +739,54 @@ struct FollowGraphStoreTests {
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
     @MainActor
+    @Test("部分图谱恢复不补采，确认初始化才补齐缺少的默认层级", arguments: FollowGraphRelation.allCases)
+    func initializePartialRange(relation: FollowGraphRelation) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        try await cache.save(graph)
+        try await cache.saveRange(.init(expandedSources: [:]), account: "1", relation: relation)
+        URLProtocolStub.requestHandler = { _ in
+            Issue.record("恢复上次部分范围不能自动采集")
+            throw URLError(.notConnectedToInternet)
+        }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+            #expect(model.errorText == nil)
+        }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        try await settle()
+        #expect(model.displayedSnapshot?.nodes.count == 2)
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            #expect((json["variables"] as? [String: Any])?["login"] as? String == "user2")
+            let body = """
+            {"data":{"user":{"databaseId":2,"login":"user2",
+            "\(relation.rawValue)":{"totalCount":1,"pageInfo":{"endCursor":null,"hasNextPage":false},
+            "nodes":[{"databaseId":3,"login":"user3"}]}},
+            "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
+            """
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let renderer = model.rendererRevision
+        model.initialize()
+        try await settle()
+        #expect(model.displayedSnapshot?.nodes.count == 3)
+        #expect(model.rendererRevision > renderer && !model.rendererPresented)
+        #expect(model.snapshot?.needsDefaultExpansion == false)
+        #expect(await cache.load(account: "1", relation: relation)?.nodes.count == 3)
+    }
+
+    @MainActor
     @Test("两方向重开与新模型恢复已展开范围，保持初始视角和新画布", arguments: FollowGraphRelation.allCases)
     func restoreLoadedRange(relation: FollowGraphRelation) async throws {
         URLProtocolStub.reset()
@@ -779,7 +835,18 @@ struct FollowGraphAPITests {
         try await settle(restarted)
         #expect(restarted.displayedSnapshot?.nodes == visible.nodes)
         #expect(restarted.snapshot?.nodes.count == 82)
-        // 取消无进行中的网络，不产生异步关闭写入，临时目录可在测试结束时安全删除。
+        // 初始化必须写在之前排队的展开记录之后，立即重开不能再次恢复 70 人。
+        let oldRenderer = restarted.rendererRevision
+        restarted.rendererPresented = true
+        restarted.initialize()
+        #expect(restarted.displayedSnapshot?.relationCount(for: "2") == 20)
+        #expect(restarted.snapshot?.nodes.count == 82)
+        #expect(restarted.rendererRevision > oldRenderer && !restarted.rendererPresented)
+        #expect(restarted.selectedID == nil && restarted.viewport == nil)
+        restarted.open(user: user, client: client, relation: relation)
+        try await settle(restarted)
+        #expect(restarted.displayedSnapshot?.relationCount(for: "2") == 20)
+        #expect(await cache.loadRange(account: "1", relation: relation)?.expandedSources.isEmpty == true)
     }
 
     @MainActor

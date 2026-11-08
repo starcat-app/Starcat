@@ -26,6 +26,7 @@ struct FollowGraphOverlayView: View {
     @State private var toolbarExpanded = false
     @State private var toolbarHovered = false
     @State private var refreshHovered = false
+    @State private var showsInitializeConfirmation = false
     // 每个控件使用唯一焦点值，Tab 移向操作按钮或结果后也不会被自动收起打断。
     @FocusState private var focusedControl: String?
 
@@ -74,6 +75,15 @@ struct FollowGraphOverlayView: View {
                duration: model.toastIsError ? 4 : 2,
                iconColor: model.toastIsError ? .orange : nil,
                bottomPadding: model.selected != nil && canvasSize.width < 1_100 ? cardHeight + 36 : 24)
+        .alert("followGraph.initialize.title", isPresented: $showsInitializeConfirmation) {
+            Button("common.cancel", role: .cancel) {}
+            Button("followGraph.action.initialize") {
+                focusedControl = nil
+                model.initialize()
+            }
+        } message: {
+            Text("followGraph.initialize.message")
+        }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
         .task {
@@ -153,7 +163,7 @@ struct FollowGraphOverlayView: View {
     }
 
     private var shouldAutoHideToolbar: Bool {
-        toolbarExpanded && !toolbarHovered && focusedControl == nil
+        toolbarExpanded && !toolbarHovered && focusedControl == nil && !showsInitializeConfirmation
     }
 
     private var toolbar: some View {
@@ -202,6 +212,12 @@ struct FollowGraphOverlayView: View {
                 .onHover { refreshHovered = $0 }
             tool("arrow.up.left.and.arrow.down.right", "followGraph.action.reset") { model.focus(nil) }
             tool("person.crop.circle", "followGraph.action.self") { model.focus(model.snapshot?.rootID) }
+            Divider().frame(height: 18)
+            // 初始化改变展示范围并重播入场，独立分组，不能与网络刷新或视角适配混淆。
+            tool("arrow.counterclockwise.circle", "followGraph.action.initialize") {
+                showsInitializeConfirmation = true
+            }
+            .disabled(model.isPreparing || model.snapshot == nil)
         }
     }
 
