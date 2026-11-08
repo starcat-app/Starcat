@@ -25,6 +25,7 @@ struct FollowGraphOverlayView: View {
     @State private var canvasSize = CGSize.zero
     @State private var toolbarExpanded = false
     @State private var toolbarHovered = false
+    @State private var refreshHovered = false
     // 每个控件使用唯一焦点值，Tab 移向操作按钮或结果后也不会被自动收起打断。
     @FocusState private var focusedControl: String?
 
@@ -183,14 +184,20 @@ struct FollowGraphOverlayView: View {
 
     private var actions: some View {
         HStack(spacing: 14) {
-            SyncIconButton(isRefreshing: model.isLoading, disabled: model.isLoading,
-                           tooltip: model.errorText ?? String.l10n("followGraph.action.refresh")) { model.refresh() }
-                .focused($focusedControl, equals: "refresh")
-            if model.isLoading {
-                tool("stop.fill", "followGraph.action.stop") { model.stop() }
-            } else {
-                tool("play.fill", "followGraph.action.continue") { model.resume() }
+            // 停止后的视觉状态必须立即与真实任务一致，关闭最短旋转兜底。
+            // 同一按钮在加载期间始终执行停止，悬停 / 键盘聚焦只改变图标。
+            SyncIconButton(isRefreshing: model.isLoading,
+                           showsStop: model.isLoading && (refreshHovered || focusedControl == "refresh"),
+                           minVisibleDuration: 0,
+                           tooltip: model.isLoading ? String.l10n("followGraph.action.stop") :
+                            (model.errorText ?? String.l10n("followGraph.action.refresh"))) {
+                if model.isLoading { model.stop() } else { model.refresh() }
             }
+                .focused($focusedControl, equals: "refresh")
+                .onHover { refreshHovered = $0 }
+            // 继续入口保持占位，加载切换不移动刷新按钮到鼠标外；任务运行时不可重复继续。
+            tool("play.fill", "followGraph.action.continue") { model.resume() }
+                .disabled(model.isLoading)
             tool("arrow.up.left.and.arrow.down.right", "followGraph.action.reset") { model.focus(nil) }
             tool("person.crop.circle", "followGraph.action.self") { model.focus(model.snapshot?.rootID) }
         }
