@@ -8,6 +8,17 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## 加载范围恢复与初始化（2026-11-09，待人工验收）
+
+- 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 分批实施。`6b3ee9bd` 保存和恢复加载范围；`7499cdb6` 加入独立初始化确认入口。本轮不合并、推送或修改主工作区。
+- 展开预算使用账户目录下独立的 `following-range.json` / `followers-range.json`，完整关系与分页游标仍在原快照内。关闭立即重开等待已排队预算写入；新模型也可恢复，不把完整缓存全部绘出。预算文件损坏或版本无效时忽略，恢复出厂后的迟到保存不重建目录。
+- 重开先恢复范围再挂载新 WebView，初始化也重建画布；两者均从本人按层级逐个入场。搜索、选中和视角重置，结束不自动适配；现有有效范围不补采。新节点仍增量入场，关系与头像缓存不清理。
+- 顶部新增竖线分隔的初始化图标，原生二次确认；确认后停止采集、写入默认预算，缺少默认层级时才补采。确认弹窗期间暂停工具栏自动隐藏。新增 3 条文案覆盖 17 语言，保留 AI `needs_review`，Catalog 仅新增原位条目。
+- 最终相关原生 **68 项 / 8 suites**、Canvas 桥接 **31 项**回归通过，覆盖两方向重开 / 新模型恢复、默认范围初始化、立即重开保存顺序、部分缓存按需补采、缓存损坏与恢复出厂迟到保存。重播从本人开始，结束不自动 fit；桥接替身测试不等于 WebKit 视觉验收。
+- `make build-appstore`、`make build-direct` 与产物校验通过；两渠道图谱 HTML / JS / 许可证逐字节匹配仓库资源，3 条新增文案 × 17 语言的编译 strings 与 Catalog 全部一致。原 Catalog 条目保持原字节，零删除。未使用 GUI 自动化，待人工验看，未关闭专项或写总览 / Changelog。
+- 日志：`/tmp/starcat-followers-initialize-final-tests.log`、`/tmp/starcat-followers-range-js.log`、`/tmp/starcat-followers-range-appstore.log`、`/tmp/starcat-followers-range-direct.log`；资源核验脚本为 `/tmp/starcat-followers-verify-range-artifacts.py`。
+- `make run-direct` 已通过 LaunchServices 稳定启动当前 Followers worktree 的 Direct Debug（PID 92435，单实例），进程路径已核实；启动日志 `/tmp/starcat-followers-range-launch.log`。视觉效果与真实账号交互由 dong4j 人工验看。
+
 ## 默认三层与加载反馈（2026-11-09，待人工验收）
 
 - 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 实施。三批代码提交：`8c632f13` 默认三层与分支预算；`bdb0ac80` 画布真实入场人数；`be063f71` 加载更多、手动容量分配与底部 Toast。本轮未修改主工作区，未合并或推送。
