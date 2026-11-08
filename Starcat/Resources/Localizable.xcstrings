@@ -631193,6 +631193,52 @@
         }
       }
     },
+    "sidebar.stats.openFollowGraph" : {
+      "comment" : "AI translation draft; pending maintainer review.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Open relationship graph" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "打开关注关系图谱" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "開啟關注關係圖譜" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "フォロー関係のグラフを開く" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "팔로우 관계 그래프 열기" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Beziehungsgraph öffnen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Ouvrir le graphe des relations" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Abrir el grafo de relaciones" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Abrir o grafo de relações" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Apri il grafo delle relazioni" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Открыть граф связей" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Relatiegrafiek openen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Otwórz graf relacji" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Відкрити граф зв’язків" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İlişki grafiğini aç" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Mở đồ thị quan hệ theo dõi" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Buka graf hubungan" } }
+      }
+    },
+    "sidebar.stats.todayStarred.help" : {
+      "comment" : "AI translation draft; pending maintainer review.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Starred today: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "今日新增星标：%@ 个" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "今日新增星標：%@ 個" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "今日スターを付けたリポジトリ：%@ 件" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "오늘 스타한 저장소: %@개" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Heute mit Stern markiert: %@" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Dépôts marqués d’une étoile aujourd’hui : %@" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositorios marcados con estrella hoy: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositórios com estrela hoje: %@" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository aggiunti ai preferiti oggi: %@" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Репозитории со звёздочкой за сегодня: %@" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Vandaag een ster gegeven: %@" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repozytoria oznaczone gwiazdką dzisiaj: %@" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Репозиторії із зірочкою за сьогодні: %@" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bugün yıldızlanan depolar: %@" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Kho mã đã gắn sao hôm nay: %@" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositori yang diberi bintang hari ini: %@" } }
+      }
+    },
     "sidebar.stats.starred" : {
       "extractionState" : "stale",
       "localizations" : {

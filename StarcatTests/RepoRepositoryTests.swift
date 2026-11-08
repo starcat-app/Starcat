@@ -84,6 +84,86 @@ struct RepoRepositoryTests {
         #expect(count == 1)
     }
 
+    @Test("今日 Star 快照：本地日界线、offset、小数秒及无效时间")
+    func starredCountsUseHalfOpenLocalDay() async throws {
+        let (repo, db) = try makeRepo()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-08T12:00:00+08:00"))
+        let interval = try #require(calendar.dateInterval(of: .day, for: now))
+        let timestamps = [
+            "2026-11-07T15:59:59Z",       // 昨天最后一秒。
+            "2026-11-07T16:00:00Z",       // 本地今天零点，应计入。
+            "2026-11-08T00:30:00+08:00",  // 带时区 offset，不能按字符串排序比较。
+            "2026-11-08T15:59:59.999Z",
+            "2026-11-08T16:00:00Z",       // 次日零点，必须排除。
+            "invalid",
+            "2026-11-08T01:00:00Z",
+            "2026-11-08T02:00:00Z"
+        ]
+        let dtos = timestamps.enumerated().map { index, timestamp in
+            StarredRepoDTO(starredAt: timestamp, repo: makeDTO(id: Int64(index + 1), name: "day\(index)").repo)
+        }
+        try await repo.upsertStarred(dtos, userID: 100, syncedAt: Date())
+        try await db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET starred_at = NULL WHERE id = 7")
+        }
+        try await repo.markUnstarred(repoId: 8, userID: 100)
+
+        let counts = try await repo.starredCounts(in: interval)
+        #expect(counts.total == 7)
+        #expect(counts.withinInterval == 3)
+    }
+
+    @Test("今日 Star 快照：夏令时结束当天含两次 01:30，不按固定 24 小时切分")
+    func starredCountsIncludeRepeatedDSTHour() async throws {
+        let (repo, _) = try makeRepo()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-01T12:00:00-08:00"))
+        let interval = try #require(calendar.dateInterval(of: .day, for: now))
+        #expect(interval.duration == 25 * 60 * 60)
+        let timestamps = [
+            "2026-11-01T06:59:59Z",
+            "2026-11-01T01:30:00-07:00",
+            "2026-11-01T01:30:00-08:00",
+            "2026-11-02T07:59:59Z",
+            "2026-11-02T08:00:00Z"
+        ]
+        let dtos = timestamps.enumerated().map { index, timestamp in
+            StarredRepoDTO(starredAt: timestamp, repo: makeDTO(id: Int64(index + 1), name: "dst\(index)").repo)
+        }
+        try await repo.upsertStarred(dtos, userID: 100, syncedAt: Date())
+
+        let counts = try await repo.starredCounts(in: interval)
+        #expect(counts.total == 5)
+        #expect(counts.withinInterval == 3)
+    }
+
+    @Test("今日 Star 快照：空库、重复同步、取消及重新 Star 不按操作次数累加")
+    func starredCountsFollowPersistedMembership() async throws {
+        let (repo, _) = try makeRepo()
+        let now = Date()
+        let interval = try #require(Calendar.current.dateInterval(of: .day, for: now))
+        let timestamp = ISO8601DateFormatter().string(from: now)
+        let empty = try await repo.starredCounts(in: interval)
+        #expect(empty.total == 0 && empty.withinInterval == 0)
+
+        let dto = StarredRepoDTO(starredAt: timestamp, repo: makeDTO(id: 1, name: "repeated").repo)
+        try await repo.upsertStarred([dto], userID: 100, syncedAt: now)
+        try await repo.upsertStarred([dto], userID: 100, syncedAt: now)
+        let synced = try await repo.starredCounts(in: interval)
+        #expect(synced.total == 1 && synced.withinInterval == 1)
+
+        try await repo.markUnstarred(repoId: 1, userID: 100)
+        let removed = try await repo.starredCounts(in: interval)
+        #expect(removed.total == 0 && removed.withinInterval == 0)
+
+        _ = try await repo.upsertSingleStarred(repoDTO: dto.repo, starredAt: timestamp, userID: 100, syncedAt: now)
+        let restored = try await repo.starredCounts(in: interval)
+        #expect(restored.total == 1 && restored.withinInterval == 1)
+    }
+
     @Test("upsertExternalRepoForLibrary: 未 star 外部 repo 只写 metadata,不创建 starred 关系")
     func upsertExternalRepoForLibraryCreatesUnstarredRepo() async throws {
         let (repo, db) = try makeRepo()
