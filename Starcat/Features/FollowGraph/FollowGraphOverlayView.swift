@@ -195,9 +195,6 @@ struct FollowGraphOverlayView: View {
             }
                 .focused($focusedControl, equals: "refresh")
                 .onHover { refreshHovered = $0 }
-            // 继续入口保持占位，加载切换不移动刷新按钮到鼠标外；任务运行时不可重复继续。
-            tool("play.fill", "followGraph.action.continue") { model.resume() }
-                .disabled(model.isLoading)
             tool("arrow.up.left.and.arrow.down.right", "followGraph.action.reset") { model.focus(nil) }
             tool("person.crop.circle", "followGraph.action.self") { model.focus(model.snapshot?.rootID) }
         }

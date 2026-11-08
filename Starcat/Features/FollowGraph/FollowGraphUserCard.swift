@@ -14,6 +14,7 @@ struct FollowGraphUserCard: View {
     let node: FollowGraphNode
     @Bindable var model: FollowGraphViewModel
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.locale) private var locale
 
     @State private var profile: GitHubUserDTO?
     @State private var socialAccounts: [GitHubSocialAccountDTO] = []
@@ -95,12 +96,12 @@ struct FollowGraphUserCard: View {
             }
 
             HStack(alignment: .center, spacing: 10) {
-                Text(model.displayedSnapshot?.progress[node.id]?.complete == true ?
-                     (model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" :
-                        "followGraph.status.complete") : "followGraph.status.partial")
+                Text(verbatim: loadCountLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(loadCountLabel + "\n" + String.l10n(loadStateKey))
                 Spacer(minLength: 0)
                 if model.displayedSnapshot?.progress[node.id]?.complete != true {
                     Button("followGraph.action.more") { model.loadMore(node.id) }
@@ -137,6 +138,24 @@ struct FollowGraphUserCard: View {
             return name
         }
         return node.name ?? node.login
+    }
+
+    /// 分页总数优先；尚未查询该用户时，按当前图谱方向复用已取得的公开资料人数。
+    private var loadCountLabel: String {
+        let graph = model.displayedSnapshot
+        let fallback = graph?.relation == .followers ? profile?.followers : profile?.following
+        let counts = graph?.relationLoadCounts(for: node.id, fallbackTotal: fallback) ?? (loaded: 0, total: nil)
+        let loaded = counts.loaded.formatted(.number.locale(locale))
+        if let total = counts.total {
+            return String(format: .l10n("followGraph.status.loadedCountKnown"), locale: locale,
+                          arguments: [loaded, total.formatted(.number.locale(locale))])
+        }
+        return String(format: .l10n("followGraph.status.loadedCount"), locale: locale, arguments: [loaded])
+    }
+
+    private var loadStateKey: String {
+        guard model.displayedSnapshot?.progress[node.id]?.complete == true else { return "followGraph.status.partial" }
+        return model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" : "followGraph.status.complete"
     }
 
     private func open(_ url: URL) { NSWorkspace.shared.open(url) }

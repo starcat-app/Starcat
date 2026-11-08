@@ -22,6 +22,42 @@ private func page(_ source: Int, _ targets: [Int], next: String? = nil, remainin
 
 @Suite("FollowGraph graph semantics")
 struct FollowGraphEngineTests {
+    @Test("加载数量只统计当前投影的对应方向，关系总数优先于资料卡", arguments: FollowGraphRelation.allCases)
+    func relationLoadCounts(relation: FollowGraphRelation) {
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, Array(3...27)))
+        let initial = graph.presentation()
+        let counts = initial.relationLoadCounts(for: "2", fallbackTotal: 99)
+        #expect(counts.loaded == relation.defaultSampleCount)
+        #expect(counts.total == 25)
+        #expect(graph.relationLoadCounts(for: "2").loaded == 25)
+        let expanded = graph.presentation(expanded: ["2": 1])
+        #expect(expanded.relationLoadCounts(for: "2").loaded == 1)
+        #expect(expanded.relationLoadCounts(for: "2").total == 25)
+        #expect(expanded.progress["2"]?.complete == false)
+    }
+
+    @Test("未知总数用资料卡回退，真实零值不能被旧资料覆盖")
+    func relationLoadCountFallback() {
+        var graph = FollowGraphSnapshot(root: node(1))
+        #expect(graph.relationLoadCounts(for: "1").total == nil)
+        #expect(graph.relationLoadCounts(for: "1", fallbackTotal: 76).total == 76)
+        #expect(graph.relationLoadCounts(for: "1", fallbackTotal: 0).total == 0)
+        graph.merge(page(1, []))
+        #expect(graph.relationLoadCounts(for: "1", fallbackTotal: 76).total == 0)
+        #expect(graph.relationLoadCounts(for: "1").loaded == 0)
+    }
+
+    @Test("加载人数等于总人数也不能代替分页完整状态")
+    func relationLoadCountDoesNotComplete() {
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2], next: "more"))
+        let counts = graph.relationLoadCounts(for: "1")
+        #expect(counts.loaded == counts.total)
+        #expect(graph.progress["1"]?.complete == false)
+    }
+
     @Test("Followers 沿入边探索，路径保持真实方向，默认只展示首层")
     func followersProjection() {
         var graph = FollowGraphSnapshot(root: node(1), relation: .followers)
@@ -592,6 +628,86 @@ struct FollowGraphStoreTests {
 
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
+    @MainActor
+    @Test("刷新会完成中断的本人首层，而不是仅重复已有样本", arguments: FollowGraphRelation.allCases)
+    func refreshCompletesPartialRoot(relation: FollowGraphRelation) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var cached = FollowGraphSnapshot(root: node(1), relation: relation)
+        cached.merge(page(1, [2], next: "old"))
+        try await cache.save(cached)
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let variables = json["variables"] as! [String: Any]
+            let lastPage = variables["after"] as? String == "next"
+            let id = lastPage ? 3 : 2
+            let body = """
+            {"data":{"user":{"databaseId":1,"login":"user1","name":null,"avatarUrl":null,
+            "\(relation.rawValue)":{"totalCount":2,
+            "pageInfo":{"endCursor":\(lastPage ? "null" : "\"next\""),"hasNextPage":\(lastPage ? "false" : "true")},
+            "nodes":[{"databaseId":\(id),"login":"user\(id)","name":null,"avatarUrl":null}]}},
+            "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
+            """
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        defer { model.stop() }
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+            #expect(model.errorText == nil)
+        }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        try await settle()
+        #expect(model.snapshot?.progress["1"]?.complete == false)
+        model.refresh()
+        try await settle()
+        #expect(model.snapshot?.progress["1"]?.complete == true)
+        #expect(model.displayedSnapshot?.relationLoadCounts(for: "1").loaded == 2)
+    }
+
+    @MainActor
+    @Test("移除继续按钮后，首次加载失败仍可由刷新重新开始", arguments: FollowGraphRelation.allCases)
+    func refreshRestartsMissingRoot(relation: FollowGraphRelation) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: FollowGraphDiskCache(root: folder))
+        defer { model.stop() }
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+        }
+        URLProtocolStub.requestHandler = { _ in throw URLError(.notConnectedToInternet) }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        try await settle()
+        #expect(model.snapshot?.progress["1"] == nil)
+        #expect(model.errorText != nil)
+        URLProtocolStub.requestHandler = { request in
+            let body = """
+            {"data":{"user":{"databaseId":1,"login":"user1","name":null,"avatarUrl":null,
+            "\(relation.rawValue)":{"totalCount":0,"pageInfo":{"endCursor":null,"hasNextPage":false},"nodes":[]}},
+            "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
+            """
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        model.refresh()
+        try await settle()
+        #expect(model.errorText == nil)
+        #expect(model.snapshot?.progress["1"]?.complete == true)
+        #expect(model.snapshot?.progress["1"]?.totalCount == 0)
+    }
+
     @MainActor
     @Test("Followers 初次仅分页本人，点击不采集，手动展开与重开缓存方向隔离")
     func followersLifecycle() async throws {

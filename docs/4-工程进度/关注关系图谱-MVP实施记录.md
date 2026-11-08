@@ -209,3 +209,13 @@ make run-appstore
 - 根据 dong4j 人工反馈，将开口箭头由线段内部移到真实 target 头像外沿，尖端间距保持屏幕 3pt、长度保持 6pt；保留密集节点方向标记控制、弱化连线和青绿流光。
 - JS 28 项通过，新增两种探索方向下斜向边的目标半径 / 间距 / 箭头朝向校验，并校验缩放后的屏幕尺寸；日志 `/tmp/starcat-followers-arrow-rim-tests.log`。
 - 双渠道构建及产物校验通过，两渠道 HTML / JS / 许可证与源码逐字节一致；日志 `/tmp/starcat-followers-arrow-rim-appstore.log`、`/tmp/starcat-followers-arrow-rim-direct.log`。本次仅修改 Canvas 与相关规格，无 Swift 或本地化改动；未重复原生单测，未执行 GUI 自动化，观感仍待人工验收。
+
+
+## 单行加载数量与工具栏收敛（2026-11-09）
+
+- 卡片状态改为单行“已加载 X / Y 人”，X 仅计当前展示投影中该用户对应方向的直接关系，Y 优先取分页总数、否则取已取得的资料卡对应人数；未知总数只显示 X，真实 0 保留。完整性仍依据分页游标；过长数量截断，悬停保留完整数量和状态。
+- 删除独立继续按钮及无用 resume 方法，顶部只剩刷新 / 停止、重置视角、本人定位。首次分页前停止或失败可从刷新恢复；两种图谱的本人首层均完整刷新，二层继续限制在展示预算。
+- 原生相关 46 项 / 5 suites 全部通过，包含两方向计数、投影预算、未知 / 零总数、数量相等不代表完整，以及空分页状态 / 首层中断后的刷新恢复；日志 `/tmp/starcat-followers-count-tests.log`。
+- 两条新增数量文案补齐 AppLocale 与 locales.json 一致的全部 17 语言，参数及占位符通过，原 Catalog 条目未改、仅新增 216 行，AI needs_review 保留。数字显式注入环境 locale。
+- `make build-appstore`、`make build-direct` 及产物校验通过。两渠道图谱资源逐字节匹配，两条文案的 17 语言编译 strings 均与 Catalog 一致；日志 `/tmp/starcat-followers-count-appstore.log`、`/tmp/starcat-followers-count-direct.log`。
+- 未执行 GUI 自动化，未新增依赖或修改数据库、功能总览与 Changelog；长语言 / 大字号下的真实视觉观感与译文仍待人工验收。

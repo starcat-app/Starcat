@@ -213,13 +213,14 @@ final class FollowGraphViewModel {
         }
     }
 
-    func resume() {
-        run { session, store in await self.explore(session: session, store: store) }
-    }
-
     func refresh() {
         run { session, store in
             guard let displayed = self.displayedSnapshot else { return }
+            // 独立继续按钮已移除。首次采集在第一页前停止或失败时，也必须能由刷新恢复。
+            guard displayed.progress[displayed.rootID] != nil else {
+                await self.explore(session: session, store: store)
+                return
+            }
             let ids = displayed.progress.keys.filter {
                 displayed.relation == .following || $0 == displayed.rootID || self.expandedSources[$0] != nil
             }.sorted()
@@ -231,8 +232,8 @@ final class FollowGraphViewModel {
                 do {
                     self.publish(try await store.load(
                         userID: id, session: session, count: 100, refresh: true,
-                        refreshLimit: id == displayed.rootID && displayed.relation == .followers ? nil :
-                            id == displayed.rootID ? max(1, counts[id] ?? 100) :
+                        // 两种图谱均完整加载本人首层；停止后的刷新不能只重复已取得的半页。
+                        refreshLimit: id == displayed.rootID ? nil :
                             max(1, min(counts[id] ?? displayed.relation.defaultSampleCount,
                                        self.expandedSources[id] ?? displayed.relation.defaultSampleCount))
                     ), session: session)

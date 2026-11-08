@@ -102,6 +102,12 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         edges.filter { $0[keyPath: relation.ownerKey] == id }.count
     }
 
+    /// 在展示投影上调用：分子只统计当前图内该用户对应方向的直接关系，不能使用全图
+    /// 节点数或完整磁盘缓存。未查询时总数未知；接口明确返回的 0 不能被资料人数覆盖。
+    func relationLoadCounts(for id: String, fallbackTotal: Int? = nil) -> (loaded: Int, total: Int?) {
+        (relationCount(for: id), progress[id]?.totalCount ?? fallbackTotal)
+    }
+
     /// 磁盘是关系缓存，不代表每次打开都要绘制全部缓存。following 保留本人关注对象和每人
     /// 20 个二层样本；followers 只默认展示首层；手动展开只增加对应源的预算，不删除磁盘中已取得的关系。
     func presentation(expanded: [String: Int] = [:], selectedID: String? = nil) -> FollowGraphSnapshot {
