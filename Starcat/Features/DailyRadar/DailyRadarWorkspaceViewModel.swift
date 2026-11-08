@@ -25,6 +25,9 @@ final class DailyRadarWorkspaceViewModel {
     private(set) var detailFailed = false
     private(set) var detail: DailyRadarReport?
     private(set) var selection: DailyRadarReport?
+    /// 首页专题封面独立于日报日期筛选，不能拿当天的日报响应拼出周报叠卡。
+    private(set) var weeklyTopicReports: [DailyRadarReport] = []
+    private(set) var weeklyTopicIsLoading = false
     var category: String?
     private(set) var edition: String?
     var selectedEdition: String?
@@ -33,6 +36,7 @@ final class DailyRadarWorkspaceViewModel {
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var detailGeneration: UInt64 = 0
     @ObservationIgnored private var catalogGeneration: UInt64 = 0
+    @ObservationIgnored private var weeklyTopicGeneration: UInt64 = 0
     /// 最近一次 publish 所属的筛选身份；用于识别「当前数据属于旧分类/旧期次」。
     @ObservationIgnored private var publishedIdentity: String?
     @ObservationIgnored private var repository: DailyRadarRepository?
@@ -59,9 +63,9 @@ final class DailyRadarWorkspaceViewModel {
         let known = Set(DailyRadarCatalog.fallbackCategories.map(\.id))
         let ordered = DailyRadarCatalog.fallbackCategories.map { byID[$0.id] ?? $0 }
         let additions = byID.values.filter { !known.contains($0.id) }.sorted { $0.id < $1.id }
-        // 远端新增分类默认可见，每周 AI 大事始终保持在末尾
-        return ordered.filter { $0.id != "ai-weekly-events" } + additions
-            + ordered.filter { $0.id == "ai-weekly-events" }
+        // 每周 AI 大事固定置首，其余分类和远端新增项保持原顺序，不随服务切换重排。
+        return ordered.filter { $0.id == "ai-weekly-events" }
+            + ordered.filter { $0.id != "ai-weekly-events" } + additions
     }
     /// 标题与侧栏共用分类本地化；目录尚未返回时也立即跟随当前选择，不显示旧分类名。
     var workspaceTitle: String {
@@ -101,11 +105,14 @@ final class DailyRadarWorkspaceViewModel {
     /// 账户/服务身份不同先清理可观察状态，避免新请求开始前露出上一会话内容。
     func configure(repository: DailyRadarRepository, scope: String, locale: Locale) {
         self.repository = repository
+        // 简体、繁体及港台地区的中文界面统一读取已发布的中文报告，
+        // zh-Hans 是内容版本标识，不要求再生成一份繁体文件或回退英语。
         let requestedLanguage = locale.language.languageCode?.identifier == "zh" ? "zh-Hans" : "en"
         guard self.scope != scope || self.contentLanguage != requestedLanguage else { return }
         generation &+= 1
         detailGeneration &+= 1
         catalogGeneration &+= 1
+        weeklyTopicGeneration &+= 1
         self.scope = scope
         contentLanguage = requestedLanguage
         catalog = nil
@@ -113,6 +120,8 @@ final class DailyRadarWorkspaceViewModel {
         items = []
         detail = nil
         selection = nil
+        weeklyTopicReports = []
+        weeklyTopicIsLoading = false
         edition = nil
         selectedEdition = nil
         category = nil
@@ -120,6 +129,66 @@ final class DailyRadarWorkspaceViewModel {
         eventsCatalog = nil
         nextCursor = nil
         failed = false
+    }
+
+    /// 请求与卡片使用同一个期数上限，避免接口取到六期后又被展示层截成四期。
+    static let weeklyTopicLimit = 6
+
+    /// 总分类专题只读取最近六期摘要，不拉正文，也不改变当前分类、日期或阅读修订。
+    /// 请求代次和账户/语言身份独立于日报分页；晚到响应不能覆盖切换后的中文或英文封面。
+    func reloadWeeklyTopic(force: Bool = false) async {
+        guard let repository else { return }
+        weeklyTopicGeneration &+= 1
+        let token = weeklyTopicGeneration
+        let expectedScope = scope
+        let language = contentLanguage
+        var request = DailyRadarQuery(category: "ai-weekly-events", period: "weekly", language: language, limit: Self.weeklyTopicLimit)
+        let catalogPath = "\(Self.root)/catalog"
+        let reportsPath = "\(Self.root)/reports"
+        weeklyTopicIsLoading = true
+        defer { if weeklyTopicGeneration == token { weeklyTopicIsLoading = false } }
+
+        if let cachedCatalog = await repository.cached(DailyRadarCatalog.self, path: catalogPath, parameters: request.catalogParameters) {
+            request.catalogRevision = cachedCatalog.value.catalogRevision
+            if let cachedPage = await repository.cached(DailyRadarPage.self, path: reportsPath, parameters: request.parameters),
+               weeklyTopicGeneration == token, scope == expectedScope, contentLanguage == language,
+               cachedPage.value.catalogRevision == cachedCatalog.value.catalogRevision {
+                publishWeeklyTopic(cachedPage.value, language: language)
+            }
+        }
+        for attempt in 0...1 {
+            do {
+                let catalog = try await repository.fetch(DailyRadarCatalog.self, path: catalogPath,
+                                                         parameters: request.catalogParameters, force: force || attempt > 0)
+                guard weeklyTopicGeneration == token, scope == expectedScope,
+                      contentLanguage == language, !Task.isCancelled else { return }
+                request.catalogRevision = catalog.value.catalogRevision
+                let page = try await repository.fetch(DailyRadarPage.self, path: reportsPath,
+                                                      parameters: request.parameters, force: force || attempt > 0)
+                guard weeklyTopicGeneration == token, scope == expectedScope,
+                      contentLanguage == language, !Task.isCancelled else { return }
+                guard page.value.catalogRevision == catalog.value.catalogRevision else {
+                    throw DailyRadarError.server(code: "CATALOG_CHANGED")
+                }
+                publishWeeklyTopic(page.value, language: language)
+                return
+            } catch {
+                guard weeklyTopicGeneration == token, !Task.isCancelled else { return }
+                if (error as? DailyRadarError)?.catalogChanged == true, attempt == 0 { continue }
+                // 专题封面获取失败不影响日报阅读或分类导航，已有摘要继续可用。
+                return
+            }
+        }
+    }
+
+    /// 每期最多一张封面；严格保留请求语言，不能把其他栏目或英语兜底混进中文叠卡。
+    private func publishWeeklyTopic(_ page: DailyRadarPage, language: String) {
+        var dates = Set<String>()
+        weeklyTopicReports = Array(page.items
+            .filter { $0.category == "ai-weekly-events" && $0.contentLanguage == language }
+            .sorted { $0.editionDate > $1.editionDate }
+            .filter { dates.insert($0.editionDate).inserted }
+            .prefix(Self.weeklyTopicLimit))
     }
 
     /// 探索侧栏出现即加载两份轻量目录，与文章首页和当前分类解耦

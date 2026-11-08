@@ -37,10 +37,27 @@ struct DailyRadarPreviewWorkspace: View {
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: readmeTranslationService))
     }
 
-    private var stories: [DailyRadarReport] { model.stories }
+    private var stories: [DailyRadarReport] {
+        guard model.category == nil else { return model.stories }
+        // 总分类的周报由独立专题承载，日报统一缩为小卡；OpenClaw 保持网格首位。
+        let daily = model.stories.filter { $0.category != "ai-weekly-events" }
+        return daily.filter { $0.category == "ai-agents" } + daily.filter { $0.category != "ai-agents" }
+    }
     private var olderStories: [DailyRadarReport] { model.olderStories }
     private var hasHistory: Bool { !olderStories.isEmpty || model.nextCursor != nil }
     private var story: DailyRadarReport? { model.selection }
+    private var isWeeklyTopicVisible: Bool {
+        !dependencies.settings.exploreCatalogPreferences.hiddenDailyRadarCategories.contains("ai-weekly-events")
+    }
+    private var showsWeeklyTopic: Bool { model.category == nil && isWeeklyTopicVisible }
+    /// scope 配置前后必须改变身份，否则先启动的 task 退出后不会重新拉取。
+    /// 不包含日历选择，周报专题始终展示最近几期，不能跟着日报日期变空。
+    private var weeklyTopicIdentity: String {
+        "\(workspaceScope)|\(model.scope)|\(model.category ?? "")|\(isWeeklyTopicVisible)"
+    }
+    private var isRefreshingHome: Bool {
+        model.isLoading || (showsWeeklyTopic && model.weeklyTopicIsLoading)
+    }
     private var workspaceScope: String {
         "\(dependencies.databaseScopeRevision)|\(dependencies.dailyRadarConfigurationRevision)|\(locale.identifier)"
     }
@@ -118,6 +135,10 @@ struct DailyRadarPreviewWorkspace: View {
             guard !model.scope.isEmpty else { return }
             await model.reload()
         }
+        .task(id: weeklyTopicIdentity) {
+            guard !model.scope.isEmpty, model.scope == workspaceScope, showsWeeklyTopic else { return }
+            await model.reloadWeeklyTopic()
+        }
         .onChange(of: story?.contentIdentity) { _, _ in
             // 工作区会跨分类保留挂载，文章会话结束或替换时必须同步清理项目，
             // 否则下一篇文章可能重新带出上一会话的仓库详情。
@@ -164,9 +185,9 @@ struct DailyRadarPreviewWorkspace: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 SyncIconButton(
-                    isRefreshing: model.isLoading, disabled: model.isLoading,
+                    isRefreshing: isRefreshingHome, disabled: isRefreshingHome,
                     tooltip: String.l10n("settings.general.shortcuts.refreshCurrentContent.title")
-                ) { Task { await model.reload(force: true) } }
+                ) { Task { await reloadHome() } }
                 SheetCloseButton(action: onExit, helpKey: "dailyRadar.close")
                     .accessibilityLabel(Text("dailyRadar.close"))
             }
@@ -196,19 +217,33 @@ struct DailyRadarPreviewWorkspace: View {
                                 Label("error.loadFailed", systemImage: "exclamationmark.triangle")
                             }
                             Spacer()
-                            Button("action.retry") { Task { await model.reload(force: true) } }
+                            Button("action.retry") { Task { await reloadHome() } }
                         }
                         .font(scale.font(size: 12))
                         .foregroundStyle(.secondary)
                     }
 
+                    if showsWeeklyTopic {
+                        DailyRadarWeeklyTopicCard(
+                            reports: model.weeklyTopicReports,
+                            isLoading: model.weeklyTopicIsLoading,
+                            availableWidth: min(1120, max(0, width - (width < 600 ? 40 : 64)))
+                        ) {
+                            // 整张叠卡仅进入分类；封面悬停和键盘预览均不打开文章。
+                            model.selectCategory("ai-weekly-events")
+                        }
+                    }
+
                     if let featured = stories.first {
-                        DailyRadarStoryCard(story: featured, featured: true) { openStory(featured) }
-                        if stories.count > 1 {
+                        if model.category != nil {
+                            DailyRadarStoryCard(story: featured, featured: true) { openStory(featured) }
+                        }
+                        let gridStories = model.category == nil ? stories : Array(stories.dropFirst())
+                        if !gridStories.isEmpty {
                             Text("dailyRadar.more")
                                 .font(scale.font(size: 17, weight: .semibold))
                             LazyVGrid(columns: columns(width: width), spacing: 20) {
-                                ForEach(stories.dropFirst()) { item in
+                                ForEach(gridStories) { item in
                                     DailyRadarStoryCard(story: item, featured: false) { openStory(item) }
                                 }
                             }
@@ -355,6 +390,17 @@ struct DailyRadarPreviewWorkspace: View {
 
     private func columns(width: CGFloat) -> [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: 20, alignment: .top), count: width >= 780 ? 2 : 1)
+    }
+
+    /// 两份内容独立更新，周报请求不改变主列表、日历筛选或阅读会话。
+    private func reloadHome() async {
+        if showsWeeklyTopic {
+            async let daily: Void = model.reload(force: true)
+            async let weekly: Void = model.reloadWeeklyTopic(force: true)
+            _ = await (daily, weekly)
+        } else {
+            await model.reload(force: true)
+        }
     }
 
     /// 路由仅更改预览状态；底层首页和文章保持挂载以保留原位置。

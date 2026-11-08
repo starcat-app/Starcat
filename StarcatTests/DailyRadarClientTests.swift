@@ -42,7 +42,7 @@ struct DailyRadarClientTests {
         #expect(await fixture.repository.cached(DailyRadarCatalog.self, path: path, parameters: []) != nil)
         #expect(await fixture.repository.cached(DailyRadarCatalog.self, path: path, parameters: parameters) == nil)
         let model = DailyRadarWorkspaceViewModel()
-        #expect(model.availableCategories.contains { $0.id == "ai-weekly-events" })
+        #expect(model.availableCategories.first?.id == "ai-weekly-events")
     }
 
     /// 远端目录未返回时也使用正确周期，不能因服务切换把周刊临时当作日报
@@ -260,14 +260,15 @@ struct DailyRadarClientTests {
         #expect(model.detail == nil)
     }
 
-    @Test @MainActor func contentLanguageFollowsAppLocaleAndNeverFallsBack() async throws {
+    @Test(arguments: ["zh-Hans", "zh-Hant", "zh_CN", "zh_TW", "zh_HK", "zh_MO"])
+    @MainActor func contentLanguageFollowsAppLocaleAndNeverFallsBack(chineseLocale: String) async throws {
         let fixture = DailyRadarFixture()
         defer { fixture.clean() }
         let model = DailyRadarWorkspaceViewModel()
         model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
         #expect(model.contentLanguage == "en")
         // locale 变化复用同一个模型时也必须重新加载，不能继续读旧语言缓存。
-        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "zh_CN"))
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: chineseLocale))
         #expect(model.contentLanguage == "zh-Hans")
         await model.reload()
         let requests = fixture.state.requests.filter { !$0.url!.path.contains("/reports/") }
@@ -277,6 +278,60 @@ struct DailyRadarClientTests {
             return queryItems.contains { $0.name == "language" && $0.value == "zh-Hans" } &&
                 queryItems.contains { $0.name == "fallback" && $0.value == "false" }
         })
+    }
+
+    /// 专题按自身最近期次取摘要，不沿用日报历史日期，更不能主动打开任意一篇正文。
+    @Test @MainActor func weeklyTopicLoadsRecentCoversWithoutChangingDailySelection() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en"))
+        await model.reload()
+        model.selectedEdition = "2026-10-24"
+        let dailyIDs = model.items.map(\.contentIdentity)
+        let dailyEdition = model.edition
+        let count = fixture.state.requests.count
+        await model.reloadWeeklyTopic()
+        #expect(model.weeklyTopicReports.map(\.editionDate) == [
+            "2026-11-05", "2026-11-01", "2026-10-25", "2026-10-18", "2026-10-11", "2026-10-04"
+        ])
+        #expect(model.items.map(\.contentIdentity) == dailyIDs)
+        #expect(model.edition == dailyEdition)
+        #expect(model.selectedEdition == "2026-10-24")
+        #expect(model.category == nil)
+        #expect(model.selection == nil)
+        #expect(!model.weeklyTopicIsLoading)
+        let requests = Array(fixture.state.requests.dropFirst(count))
+        #expect(requests.count == 2)
+        #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "X-SC-Svc") == "ai-events" })
+        let reportRequest = try #require(requests.first { $0.url?.path.hasSuffix("/reports") == true })
+        let query = try #require(URLComponents(url: reportRequest.url!, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(query.contains(.init(name: "limit", value: "6")))
+        #expect(query.contains(.init(name: "period", value: "weekly")))
+        #expect(!query.contains { $0.name == "date_to" || $0.name == "date_from" })
+    }
+
+    /// 离线仍可展示已缓存叠卡，切到繁中后不得借英语封面缓存冒充中文内容。
+    @Test @MainActor func weeklyTopicCachePreservesLanguageIsolation() async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let first = DailyRadarWorkspaceViewModel()
+        first.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en"))
+        await first.reloadWeeklyTopic()
+        #expect(first.weeklyTopicReports.count == 6)
+        try fixture.expireCache()
+        fixture.state.mutate { $0.networkError = true }
+        let restarted = DailyRadarWorkspaceViewModel()
+        restarted.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en"))
+        await restarted.reloadWeeklyTopic(force: true)
+        #expect(restarted.weeklyTopicReports.map(\.contentIdentity) == first.weeklyTopicReports.map(\.contentIdentity))
+        #expect(!restarted.weeklyTopicIsLoading)
+        restarted.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "zh-Hant"))
+        #expect(restarted.weeklyTopicReports.isEmpty)
+        fixture.state.mutate { $0.networkError = false }
+        await restarted.reloadWeeklyTopic()
+        #expect(restarted.weeklyTopicReports.count == 6)
+        #expect(restarted.weeklyTopicReports.allSatisfy { $0.contentLanguage == "zh-Hans" })
     }
 
     @Test @MainActor func adjacentEditionNavigationSkipsUnavailableDates() async throws {
@@ -452,8 +507,8 @@ struct DailyRadarClientTests {
         #expect(fixture.state.requests.allSatisfy { $0.url?.path.hasSuffix("/catalog") == true })
 
         let ids = model.availableCategories.map(\.id)
-        #expect(ids.last == "ai-weekly-events")
-        #expect(ids.dropLast().last == "ai-monthly")
+        #expect(ids.first == "ai-weekly-events")
+        #expect(ids.last == "ai-monthly")
         #expect(ids.count == Set(ids).count)
 
         model.selectCategory("ai-weekly-events")
@@ -598,6 +653,18 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
                             .replacingOccurrences(of: "agents-radar:2026-10-29:ai-cli", with: "agents-radar:\(day):ai-cli")
                             .replacingOccurrences(of: "\"edition_date\":\"\(values.day)\"", with: "\"edition_date\":\"\(day)\"")
                     }.joined(separator: ",")
+                }
+            }
+            if isEvents && path.hasSuffix("/reports") && dateTo == nil {
+                // 故意打乱并多给一期、重复一期，验证只保留最近六个不同日期。
+                let language = queryItems.first { $0.name == "language" }?.value ?? "en"
+                summaries = [
+                    "2026-10-18", "2026-11-05", "2026-10-04", "2026-10-25",
+                    "2026-09-27", "2026-11-01", "2026-10-11", "2026-10-25"
+                ].map { day in
+                    """
+                    {"id":"ai-weekly-events:\(day):ai-weekly-events","revision":"\(values.revision)","edition_date":"\(day)","category":"ai-weekly-events","period":"weekly","title":"Weekly \(day)","summary":"Summary","reading_minutes":8,"cover":{"kind":"category","card_url":null,"hero_url":null,"fallback":"orbit","alt":"AI"},"related_project_count":0,"content_language":"\(language)","available_languages":["en","zh-Hans"]}
+                    """
                 }
             }
             let summary = summaries.joined(separator: ",")
