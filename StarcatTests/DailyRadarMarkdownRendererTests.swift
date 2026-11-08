@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import JavaScriptCore
 import Testing
 @testable import Starcat
 
@@ -43,10 +44,230 @@ struct DailyRadarMarkdownRendererTests {
         #expect(html.contains("google-deepmind/detectorscope</a>"))
         #expect(html.contains("Tencent-Hunyuan/Hy-SimulMT</a>"))
         #expect(html.contains("https://github.com/google-deepmind.png?size=48"))
-        #expect(html.contains("alt=\"\" loading=\"lazy\""))
+        #expect(html.contains("alt=\"\" decoding=\"async\""))
         #expect(html.contains(">Release notes</a>"))
         #expect(html.contains(">Documentation</a>"))
         #expect(html.contains("repo?tab=readme\">GitHub</a>"))
+        // 头像复用原生可见范围加载，但不能替换 owner/repo 或生成嵌套的图片回退链接。
+        #expect(html.contains("class=\"article-image repository-image\""))
+        #expect(html.contains("class=\"repository-avatar\" data-source=\"https://github.com/google-deepmind.png?size=48\""))
+        #expect(!html.contains("image-fallback"))
+        #expect(html.range(of: #"<img\b[^>]*\ssrc\s*="#, options: .regularExpression) == nil)
+    }
+
+    /// 源地址只进入惰性数据属性；初始 HTML 不存在任何会自动发起正文图片请求的 src/srcset。
+    @Test func articleImagesReserveSpaceWithoutEagerSource() {
+        // 用行内代码保留字面双引号，避免 Markdown 的智能标点先将其转为弯引号。
+        let html = DailyRadarMarkdownRenderer.render("""
+        ![Figure `"quoted"` & details](https://images.example/figure.png?q=1&v=2 "ignored title")
+        """)
+        #expect(html.contains("class=\"article-image\" data-state=\"pending\" aria-busy=\"true\""))
+        #expect(html.contains("data-source=\"https://images.example/figure.png?q=1&amp;v=2\""))
+        #expect(html.contains("alt=\"Figure `&quot;quoted&quot;` &amp; details\""))
+        #expect(html.contains("class=\"image-placeholder\" aria-hidden=\"true\""))
+        #expect(html.contains("class=\"image-spinner\""))
+        #expect(html.contains("class=\"image-fallback\" href=\"https://images.example/figure.png?q=1&amp;v=2\""))
+        #expect(html.range(of: #"<img\b[^>]*\ssrc\s*="#, options: .regularExpression) == nil)
+        #expect(!html.contains("srcset"))
+        #expect(!html.contains("ignored title"))
+    }
+
+    @Test func lazyImageSourcesKeepHTTPSAndSafeHTMLBoundary() {
+        for source in [
+            "http://images.example/a.png", "https://user:pass@images.example/a.png",
+            "javascript:alert(1)", "data:image/png;base64,AAAA", "file:///tmp/a.png"
+        ] {
+            let html = DailyRadarMarkdownRenderer.render("![Unsafe](\(source))")
+            #expect(!html.contains("article-image"))
+            #expect(!html.contains("data-source="))
+            #expect(!html.contains("<img"))
+        }
+        let raw = DailyRadarMarkdownRenderer.render("""
+        <img src="https://images.example/a.png" srcset="https://images.example/b.png 2x" onload="alert(1)" style="position:fixed">
+        """)
+        // 来源 HTML 图片仍为惰性文本，不为加载功能扩展 SafeHTML 的标签/属性白名单。
+        #expect(!raw.contains("<img"))
+        #expect(raw.contains("&lt;img"))
+        let emptyAlt = DailyRadarMarkdownRenderer.render("![](https://images.example/a.png)")
+        #expect(emptyAlt.contains(">https://images.example/a.png</a>"))
+    }
+
+    @Test func linkedImageFallbackKeepsTheOriginalDestinationWithoutNestedAnchor() {
+        let html = DailyRadarMarkdownRenderer.render("""
+        [![Figure](https://images.example/a.png)](https://example.com/original)
+        """)
+        #expect(html.contains("<a href=\"https://example.com/original\">"))
+        #expect(html.contains("<span class=\"image-fallback\">Figure</span>"))
+        #expect(!html.contains("<a class=\"image-fallback\""))
+        #expect(html.components(separatedBy: "<a ").count == 2)
+    }
+
+    /// WebView 等高于全文：即使 JS 自身 viewport 足够大，未收到原生范围也不允许启动图片。
+    @Test func nativeVisibleRangeControlsRequestsAndRechecksExpandedContent() throws {
+        let context = try imageScriptContext()
+        #expect(context.evaluateScript("requests.length === 0 && messages.length === 1")?.toBool() == true)
+        #expect(context.evaluateScript("messages[0].height === 12000")?.toBool() == true)
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange("old-session",0,600,800);flush();
+        """)
+        #expect(context.evaluateScript("requests.length === 0")?.toBool() == true)
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange("test-session",0,600,800);flush();
+        """)
+        #expect(context.evaluateScript("requests.length === 1 && requests[0].endsWith('/near.png')")?.toBool() == true)
+        #expect(context.evaluateScript("!slots[1].image.src && !slots[2].image.src")?.toBool() == true)
+        // 第一张真实图增高，把第二张推远；后续范围检查必须读取新几何位置。
+        context.evaluateScript("""
+        slots[1].top=8000;
+        slots[0].image.emit("load");flush();
+        window.dailyRadarSetVisibleRange("test-session",4800,5400,800);flush();
+        """)
+        #expect(context.evaluateScript("!slots[1].image.src")?.toBool() == true)
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange("test-session",7800,8400,800);flush();
+        """)
+        #expect(context.evaluateScript("requests.length === 2 && slots[1].dataset.state === 'loading'")?.toBool() == true)
+        #expect(context.exception == nil)
+    }
+
+    @Test func imageFailureEndsBusyStateAndCollapsedImagesWaitForToggle() throws {
+        let context = try imageScriptContext()
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange("test-session",0,600,800);flush();
+        slots[0].image.emit("error");flush();
+        """)
+        #expect(context.evaluateScript("slots[0].dataset.state === 'error' && slots[0].attributes['aria-busy'] === 'false'")?.toBool() == true)
+        #expect(context.evaluateScript("!slots[2].image.src")?.toBool() == true)
+        context.evaluateScript("""
+        slots[2].hidden=false;
+        events.toggle();flush();
+        slots[2].image.emit("load");flush();
+        """)
+        #expect(context.evaluateScript("slots[2].dataset.state === 'loaded' && slots[2].attributes['aria-busy'] === 'false'")?.toBool() == true)
+        // 加载结束后 resize/toggle/滚动不能重新发起失败图片，避免重试风暴与永久转圈。
+        context.evaluateScript("resizeCallback();events.toggle();flush();")
+        #expect(context.evaluateScript("requests.length === 2")?.toBool() == true)
+        #expect(context.exception == nil)
+    }
+
+    @Test func emptyNativeViewportNeverFallsBackToFullWebView() throws {
+        let context = try imageScriptContext()
+        for range in ["0,0,800", "0,600,0", "NaN,600,800", "0,Infinity,800"] {
+            context.evaluateScript("window.dailyRadarSetVisibleRange('test-session',\(range));flush();")
+        }
+        #expect(context.evaluateScript("requests.length === 0")?.toBool() == true)
+        #expect(context.exception == nil)
+    }
+
+    @Test func repositoryAvatarsUseTheSameNativeVisibilityAndEndLoadingOnFailure() throws {
+        let context = try imageScriptContext(avatars: true)
+        #expect(context.evaluateScript("requests.length === 0")?.toBool() == true)
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange("test-session",0,600,800);flush();
+        slots[0].image.emit("error");flush();
+        """)
+        #expect(context.evaluateScript("requests.length === 1 && slots[0].dataset.state === 'error'")?.toBool() == true)
+        #expect(context.evaluateScript("slots[0].attributes['aria-busy'] === 'false' && !slots[1].image.src")?.toBool() == true)
+        context.evaluateScript("""
+        window.dailyRadarSetVisibleRange("test-session",4800,5400,800);flush();
+        """)
+        #expect(context.evaluateScript("requests.length === 2 && slots[1].dataset.state === 'loading'")?.toBool() == true)
+        #expect(context.exception == nil)
+    }
+
+    @Test func documentKeepsNonceAndReducedMotionImageStates() {
+        let document = DailyRadarMarkdownDocument.render(
+            "![Figure](https://images.example/a.png)", session: "test-session",
+            dark: false, fontSize: 16, reduceMotion: true
+        )
+        #expect(document.contains("default-src 'none'; img-src https:;"))
+        #expect(document.contains("script-src 'nonce-test-session'"))
+        #expect(document.contains("<script nonce=\"test-session\">"))
+        #expect(document.contains("data-reduce-motion=\"true\""))
+        #expect(document.contains("body[data-reduce-motion=\"true\"] .article-image>img{transition:none}"))
+        #expect(document.contains("body[data-reduce-motion=\"true\"] .image-spinner{animation:none!important}"))
+        #expect(document.contains(".article-image[data-state=\"loaded\"] .image-placeholder"))
+        #expect(document.contains(".article-image[data-state=\"error\"] .image-fallback{display:block}"))
+        #expect(!document.contains("window.addEventListener(\"load\""))
+        #expect(!document.contains("IntersectionObserver"))
+    }
+
+    /// 不创建 WebView；直接验证布局发布边界，确保同高 ready、旧会话失效及回调顺序。
+    @Test @MainActor func layoutReadyPublishesHeightBeforeCallbackOncePerSession() {
+        var height: CGFloat = 20
+        var readyHeights: [CGFloat] = []
+        let view = DailyRadarMarkdownView(
+            markdown: "", identity: "ready", onLink: { _ in },
+            height: .init(get: { height }, set: { height = $0 }),
+            onReady: { readyHeights.append(height) }
+        )
+        let coordinator = view.makeCoordinator()
+        coordinator.session = "first"
+        coordinator.publishLayout(height: 20, session: "first")
+        coordinator.publishLayout(height: 60, session: "first")
+        #expect(readyHeights == [20])
+        #expect(height == 60)
+        coordinator.session = "second"
+        coordinator.publishLayout(height: 500, session: "first")
+        coordinator.publishLayout(height: .infinity, session: "second")
+        coordinator.publishLayout(height: 0, session: "second")
+        #expect(height == 60)
+        coordinator.publishLayout(height: 120, session: "second")
+        #expect(readyHeights == [20, 120])
+        coordinator.session = ""
+        coordinator.publishLayout(height: 900, session: "second")
+        #expect(height == 120)
+    }
+
+    /// JavaScriptCore 中提供最小 DOM/动画队列；无网络、无窗口，运行生产脚本而非复刻加载判断。
+    /// URL 仅供已通过 Swift 白名单的测试地址使用，安全边界由上面的真实 Markdown 用例覆盖。
+    private func imageScriptContext(avatars: Bool = false) throws -> JSContext {
+        let context = try #require(JSContext())
+        context.evaluateScript("""
+        var requests=[],messages=[],frames=[],events={},resizeCallback;
+        var window=this;
+        window.innerWidth=800;window.innerHeight=12000;window.scrollY=0;
+        window.webkit={messageHandlers:{dailyHeight:{postMessage:value=>messages.push(value)}}};
+        class URL{
+            constructor(value){
+                this.protocol=value.split(":")[0]+":";
+                this.username=value.includes("@")?"user":"";
+                this.password="";
+            }
+        }
+        function slot(top,name,hidden=false){
+            const image={
+                dataset:{source:"https://images.example/"+name+".png"},listeners:{},
+                addEventListener(name,callback){this.listeners[name]=callback;},
+                emit(name){const callback=this.listeners[name];delete this.listeners[name];callback();},
+                set src(value){this.source=value;requests.push(value);},get src(){return this.source;}
+            };
+            return {
+                top,hidden,image,height:300,width:800,dataset:{state:"pending"},attributes:{"aria-busy":"true"},
+                querySelector:()=>image,
+                getClientRects(){return this.hidden?[]:[this.getBoundingClientRect()];},
+                getBoundingClientRect(){return {top:this.top,height:this.height,width:this.width};},
+                setAttribute(name,value){this.attributes[name]=value;}
+            };
+        }
+        var slots=[slot(100,"near"),slot(5000,"far"),slot(150,"collapsed",true)];
+        var mockContent={
+            querySelectorAll:()=>slots,getBoundingClientRect:()=>({height:12000})
+        };
+        var document={querySelector:()=>mockContent,addEventListener:(name,callback)=>events[name]=callback};
+        class ResizeObserver{constructor(callback){resizeCallback=callback;}observe(){}}
+        function requestAnimationFrame(callback){frames.push(callback);}
+        function flush(){const batch=frames.splice(0);batch.forEach(callback=>callback());}
+        """)
+        if avatars {
+            context.evaluateScript("""
+            slots=[slot(100,"avatar"),slot(5000,"far-avatar")];
+            slots.forEach(slot=>{slot.height=20;slot.width=20;});
+            """)
+        }
+        context.evaluateScript(DailyRadarMarkdownDocument.imageScript(session: "test-session"))
+        try #require(context.exception == nil)
+        return context
     }
 
     /// 仅验证可选委托方法的 Objective-C 注册，不创建 WebView 或读取应用窗口。

@@ -23,8 +23,10 @@ struct DailyRadarPreviewReader: View {
     let onClose: () -> Void
     let onProject: (DailyRadarReport.Project) -> Void
     @Environment(\.starcatInterfaceScale) private var scale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
     @State private var markdownHeight: CGFloat = 100
+    @State private var markdownReady = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,44 +100,75 @@ struct DailyRadarPreviewReader: View {
                             .foregroundStyle(.secondary)
                         }
                         Divider()
-                        if let detail, let markdown = detail.markdown {
-                            DailyRadarMarkdownView(markdown: article?.body ?? markdown, identity: detail.contentIdentity, onLink: openLink, height: $markdownHeight)
-                                .frame(height: markdownHeight)
-                            if let source = detail.source {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Divider()
-                                    Text("dailyRadar.source").font(scale.font(size: 12, weight: .semibold))
-                                    if let safe = DailyRadarMarkdownRenderer.safeURL(source.url.absoluteString) {
-                                        Link(destination: safe) {
-                                            Label(source.name, systemImage: "arrow.up.right")
+                        Group {
+                            if let detail, let markdown = detail.markdown {
+                                VStack(alignment: .leading, spacing: 28) {
+                                    DailyRadarMarkdownView(
+                                        markdown: article?.body ?? markdown, identity: detail.contentIdentity,
+                                        onLink: openLink, height: $markdownHeight,
+                                        onReady: { markdownReady = true }
+                                    )
+                                    .frame(height: markdownHeight)
+                                    if let source = detail.source {
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            Divider()
+                                            Text("dailyRadar.source").font(scale.font(size: 12, weight: .semibold))
+                                            if let safe = DailyRadarMarkdownRenderer.safeURL(source.url.absoluteString) {
+                                                Link(destination: safe) {
+                                                    Label(source.name, systemImage: "arrow.up.right")
+                                                }
+                                                .help("dailyRadar.openSource")
+                                            }
+                                            Text("dailyRadar.generatedNotice")
+                                                .font(scale.font(size: 11))
+                                                .foregroundStyle(.secondary)
                                         }
-                                        .help("dailyRadar.openSource")
                                     }
-                                    Text("dailyRadar.generatedNotice")
-                                        .font(scale.font(size: 11))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            if let projects = detail.relatedProjects, !projects.isEmpty {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    Text("dailyRadar.relatedProjects")
-                                        .font(scale.font(size: 20, weight: .semibold))
-                                        .accessibilityAddTraits(.isHeader)
-                                    ForEach(projects) { project in
-                                        DailyRadarRelatedProjectRow(project: project, store: projectStore) { onProject(project) }
+                                    if let projects = detail.relatedProjects, !projects.isEmpty {
+                                        VStack(alignment: .leading, spacing: 16) {
+                                            Text("dailyRadar.relatedProjects")
+                                                .font(scale.font(size: 20, weight: .semibold))
+                                                .accessibilityAddTraits(.isHeader)
+                                            ForEach(projects) { project in
+                                                DailyRadarRelatedProjectRow(project: project, store: projectStore) { onProject(project) }
+                                            }
+                                        }
                                     }
                                 }
+                            } else if failed {
+                                ContentUnavailableView {
+                                    Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                                } actions: {
+                                    Button("action.retry", action: retry)
+                                }
+                            } else {
+                                Color.clear.frame(height: 240)
                             }
-                        } else if failed {
-                            ContentUnavailableView {
-                                Label("error.loadFailed", systemImage: "exclamationmark.triangle")
-                            } actions: {
-                                Button("action.retry", action: retry)
+                        }
+                        // 详情响应到达不等于 WebKit 已排版完成。先挂载正文并收取高度，
+                        // 再同步淡出骨架、淡入正文；图片仍各自懒加载，不阻塞文章出现。
+                        // 动画只作用于透明度，避免后续图片撑高正文时整篇跟着缩放。
+                        .opacity(markdownReady || failed ? 1 : 0)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: markdownReady)
+                        .allowsHitTesting(markdownReady || failed)
+                        .accessibilityHidden(!markdownReady && !failed)
+                        .frame(minHeight: !markdownReady && !failed ? 240 : nil, alignment: .topLeading)
+                        .overlay(alignment: .topLeading) {
+                            ZStack {
+                                if !markdownReady && !failed {
+                                    DailyRadarReaderSkeleton()
+                                        .transition(.opacity)
+                                }
                             }
-                        } else {
-                            // 正文加载骨架：封面/标题/摘要来自列表即时数据不参与占位，
-                            // 只有等 detail 异步到达的 markdown 正文区用镜像骨架。
-                            DailyRadarReaderSkeleton()
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: markdownReady)
+                            .accessibilityHidden(true)
+                            .allowsHitTesting(false)
+                        }
+                        .onChange(of: detail?.contentIdentity) { _, _ in
+                            // 重试或替换正文时重新等待当前文档，不沿用上一份的就绪信号。
+                            if detail == nil {
+                                markdownReady = false
+                            }
                         }
                     }
                     .frame(maxWidth: DailyRadarReaderLayout.contentMaxWidth(in: availableWidth), alignment: .leading)
