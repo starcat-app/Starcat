@@ -10,6 +10,38 @@ import SwiftUI
 import WebKit
 import Markdown
 
+/// 周报元数据来自固定 Markdown；语言由文件名与请求选择，不进入可见文章头。
+struct DailyRadarArticle: Decodable {
+    let articleFormat: Int
+    let title: String
+    let summary: String
+    let editionDate: String
+    let readingMinutes: Int
+    var body = ""
+
+    private enum CodingKeys: String, CodingKey {
+        case articleFormat = "article_format", title, summary
+        case editionDate = "edition_date", readingMinutes = "reading_minutes"
+    }
+
+    /// H1 留在可独立阅读的 Markdown 中；宿主已有原生标题，正文渲染只取其后的内容。
+    static func parse(_ markdown: String) -> Self? {
+        guard markdown.hasPrefix("---\n") else { return nil }
+        let start = markdown.index(markdown.startIndex, offsetBy: 4)
+        guard let end = markdown.range(of: "\n---\n", range: start..<markdown.endIndex),
+              let data = String(markdown[markdown.index(markdown.startIndex, offsetBy: 4)..<end.lowerBound])
+                .data(using: .utf8),
+              var article = try? JSONDecoder().decode(Self.self, from: data),
+              article.articleFormat == 1, !article.title.isEmpty, !article.summary.isEmpty,
+              (1...1000).contains(article.readingMinutes) else { return nil }
+        let body = String(markdown[end.upperBound...]).trimmingCharacters(in: .newlines)
+        let heading = "# \(article.title)\n\n"
+        guard body.hasPrefix(heading) else { return nil }
+        article.body = String(body.dropFirst(heading.count))
+        return article
+    }
+}
+
 /// 不使用通用 HTMLFormatter：其原始 HTML、code 与链接属性不承担来源安全校验。
 enum DailyRadarMarkdownRenderer {
     static func render(_ markdown: String) -> String { renderNode(Document(parsing: markdown)) }
@@ -42,6 +74,14 @@ enum DailyRadarMarkdownRenderer {
         case is ThematicBreak: return "<hr>"
         case let link as Markdown.Link:
             guard let raw = link.destination, let url = safeURL(raw) else { return children() }
+            // 只增强仓库首页链接，不把 Issue、Release 或带业务含义的链接文字改成仓库名。
+            if let repository = repositoryName(url), ["GitHub", repository].contains(link.plainText) {
+                let owner = String(repository.split(separator: "/")[0])
+                let avatar = "https://github.com/\(owner).png?size=48"
+                return "<a class=\"repository\" href=\"\(escape(url.absoluteString))\">" +
+                    "<img class=\"repository-avatar\" src=\"\(escape(avatar))\" alt=\"\" loading=\"lazy\">" +
+                    "\(escape(repository))</a>"
+            }
             return "<a href=\"\(escape(url.absoluteString))\">\(children())</a>"
         case let image as Markdown.Image:
             guard let raw = image.source, let url = safeURL(raw), url.scheme == "https" else { return escape(image.plainText) }
@@ -71,6 +111,16 @@ enum DailyRadarMarkdownRenderer {
         case let html as InlineHTML: return DailyRadarSafeHTML.render(html.rawHTML)
         default: return children()
         }
+    }
+
+    /// 严格匹配 owner/repo，查询、片段和下级路径继续沿用原链接展示。
+    private static func repositoryName(_ url: URL) -> String? {
+        guard url.scheme == "https", url.host?.lowercased() == "github.com",
+              url.port == nil, url.query == nil, url.fragment == nil else { return nil }
+        let name = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard name.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#,
+                         options: .regularExpression) != nil else { return nil }
+        return name
     }
 
     /// 日报里常见“主体 + 两个短指标 + Summary”的四列表；项目表与文章表都使用同一布局规则。
@@ -166,6 +216,8 @@ struct DailyRadarMarkdownView: NSViewRepresentable {
         main{display:flow-root}
         h1,h2,h3{line-height:1.35;margin:1.5em 0 .6em}
         p{margin:.8em 0}a{color:#007aff}img{max-width:100%;height:auto}
+        a.repository{display:inline-flex;align-items:center;gap:.45em}
+        img.repository-avatar{width:1.25em;height:1.25em;border-radius:50%;object-fit:cover;flex-shrink:0}
         pre,.table{overflow-x:auto;max-width:100%}
         pre{padding:16px;background:\(dark ? "#2c2c2e" : "#f5f5f7");border-radius:8px}
         code{font:0.88em ui-monospace,monospace}

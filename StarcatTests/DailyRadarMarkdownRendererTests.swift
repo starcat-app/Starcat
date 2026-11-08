@@ -12,6 +12,43 @@ import Testing
 
 /// 只扩展日报需要的展示语义，避免修复格式时把来源 HTML 的执行能力一起放开。
 struct DailyRadarMarkdownRendererTests {
+    /// 同一文章头供原生展示，正文不再绘制第二个 H1 或摘要。
+    @Test func structuredWeeklyArticleKeepsOneHeaderAndTrustedMetadata() throws {
+        let metadata = """
+        {"article_format":1,"title":"Weekly report","summary":"Full report summary","edition_date":"2026-11-05","reading_minutes":7}
+        """
+        let markdown = "---\n\(metadata)\n---\n\n# Weekly report\n\n## News\n\nContent"
+        let article = try #require(DailyRadarArticle.parse(markdown))
+        #expect(article.title == "Weekly report")
+        #expect(article.summary == "Full report summary")
+        #expect(article.readingMinutes == 7)
+        let html = DailyRadarMarkdownRenderer.render(article.body)
+        #expect(html.contains("<h2>News</h2>"))
+        #expect(!html.contains("<h1>"))
+        #expect(!html.contains("Full report summary"))
+        #expect(DailyRadarArticle.parse(markdown.replacingOccurrences(of: "# Weekly report", with: "# Other")) == nil)
+        #expect(DailyRadarArticle.parse("---\n---\n") == nil)
+        #expect(DailyRadarArticle.parse("# Existing report\n\nBody") == nil)
+    }
+
+    /// 仓库首页有明确身份；深层链接与有语义的锚文字不被改写。
+    @Test func repositoryLinksShowOwnerAndNameWithSafeAvatar() {
+        let html = DailyRadarMarkdownRenderer.render("""
+        [GitHub](https://github.com/google-deepmind/detectorscope)
+        [Tencent-Hunyuan/Hy-SimulMT](https://github.com/Tencent-Hunyuan/Hy-SimulMT)
+        [Release notes](https://github.com/owner/repo/releases)
+        [Documentation](https://github.com/owner/repo)
+        [GitHub](https://github.com/owner/repo?tab=readme)
+        """)
+        #expect(html.contains("google-deepmind/detectorscope</a>"))
+        #expect(html.contains("Tencent-Hunyuan/Hy-SimulMT</a>"))
+        #expect(html.contains("https://github.com/google-deepmind.png?size=48"))
+        #expect(html.contains("alt=\"\" loading=\"lazy\""))
+        #expect(html.contains(">Release notes</a>"))
+        #expect(html.contains(">Documentation</a>"))
+        #expect(html.contains("repo?tab=readme\">GitHub</a>"))
+    }
+
     /// 仅验证可选委托方法的 Objective-C 注册，不创建 WebView 或读取应用窗口。
     @Test @MainActor func linkPolicyCallbackIsRegisteredWithWebKit() {
         let view = DailyRadarMarkdownView(

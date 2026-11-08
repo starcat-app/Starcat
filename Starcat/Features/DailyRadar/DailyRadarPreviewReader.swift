@@ -37,10 +37,6 @@ struct DailyRadarPreviewReader: View {
                     .font(scale.font(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Text(verbatim: languageLabel)
-                    .font(scale.font(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
                 SheetCloseButton(action: onClose, helpKey: "dailyRadar.backToHome")
                     .accessibilityLabel(Text("dailyRadar.backToHome"))
             }
@@ -70,31 +66,40 @@ struct DailyRadarPreviewReader: View {
                             HStack(spacing: 10) {
                                 Text(verbatim: DailyRadarCatalog.Category.localizedTitle(for: story.category))
                                 Text("·")
-                                Text(verbatim: DailyRadarDateFormatting.label(story.editionDate, locale: locale))
+                                Text(verbatim: DailyRadarDateFormatting.label(article?.editionDate ?? story.editionDate, locale: locale))
                             }
                             .font(scale.font(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            Text(verbatim: story.title.replacingOccurrences(of: "\n", with: ""))
+                            Text(verbatim: (article?.title ?? story.title).replacingOccurrences(of: "\n", with: ""))
                                 .font(scale.font(size: 32, weight: .bold))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityAddTraits(.isHeader)
-                            Text(verbatim: story.summary)
+                            Group {
+                                if let article {
+                                    DailyRadarArticleSummary(summary: article.summary)
+                                        .id(detail?.contentIdentity)
+                                } else if detail == nil, story.category == "ai-weekly-events" {
+                                    // 等固定正文到达再播放，避免先闪现列表全文摘要、随后倒退到首字。
+                                    Text(verbatim: story.summary).hidden().accessibilityHidden(true)
+                                } else {
+                                    Text(verbatim: story.summary)
+                                }
+                            }
                                 .font(scale.font(size: 17))
                                 .foregroundStyle(.secondary)
                                 .lineSpacing(5)
                             HStack(spacing: 12) {
                                 Label {
-                                    Text(verbatim: String(format: String.l10n("dailyRadar.readingTime"), locale: locale, story.minutes.formatted(.number.locale(locale))))
+                                    Text(verbatim: String(format: String.l10n("dailyRadar.readingTime"), locale: locale, (article?.readingMinutes ?? story.minutes).formatted(.number.locale(locale))))
                                 } icon: { Image(systemName: "clock") }
-                                Text(verbatim: languageLabel)
                             }
                             .font(scale.font(size: 11))
                             .foregroundStyle(.secondary)
                         }
                         Divider()
                         if let detail, let markdown = detail.markdown {
-                            DailyRadarMarkdownView(markdown: markdown, identity: detail.contentIdentity, onLink: openLink, height: $markdownHeight)
+                            DailyRadarMarkdownView(markdown: article?.body ?? markdown, identity: detail.contentIdentity, onLink: openLink, height: $markdownHeight)
                                 .frame(height: markdownHeight)
                             if let source = detail.source {
                                 VStack(alignment: .leading, spacing: 10) {
@@ -145,9 +150,8 @@ struct DailyRadarPreviewReader: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private var languageLabel: String {
-        String(format: String.l10n("dailyRadar.languageFormat"), locale: locale,
-               locale.localizedString(forIdentifier: story.contentLanguage) ?? story.contentLanguage)
+    private var article: DailyRadarArticle? {
+        detail?.markdown.flatMap(DailyRadarArticle.parse)
     }
 
     /// 仅已核验仓库首页接入项目面板；Issue/PR/Release 与新闻保持原链接含义。
@@ -160,6 +164,40 @@ struct DailyRadarPreviewReader: View {
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// 摘要由编辑时生成，打开只播放已有文本；预留全文高度避免逐字出现时推动正文。
+/// 状态属于本次文章会话，主题和字号变化不重播；减少动态效果时立即展示完整摘要。
+private struct DailyRadarArticleSummary: View {
+    let summary: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = ""
+    @State private var completed = false
+
+    var body: some View {
+        Text(verbatim: summary)
+            .hidden()
+            .overlay(alignment: .topLeading) { Text(verbatim: visible) }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: summary))
+            .task(id: reduceMotion) {
+                guard !completed else { return }
+                if reduceMotion {
+                    visible = summary
+                    completed = true
+                    return
+                }
+                // 最长约两秒，按字素切分，避免截断 emoji 或组合字符。
+                let characters = Array(summary)
+                let step = max(1, (characters.count + 79) / 80)
+                for count in stride(from: step, to: characters.count + step, by: step) {
+                    guard !Task.isCancelled else { return }
+                    visible = String(characters.prefix(count))
+                    do { try await Task.sleep(for: .milliseconds(25)) } catch { return }
+                }
+                completed = true
+            }
     }
 }
 
