@@ -554,6 +554,8 @@ function reportProgress() {
 /** Apply ordered native batches without rebuilding existing node positions or user pan/zoom. */
 function update(payload) {
   if (destroyed || payload.sequence <= lastSequence) return;
+  const previousRoot = root, previousRelation = relation, previousVisibleCount = reveal.visible.size;
+  let topologyChanged = false, graphApplied = false;
   lastSequence = payload.sequence;
   session = payload.session;
   root = payload.root;
@@ -578,6 +580,12 @@ function update(payload) {
   if (payload.path) setPath(payload.path);
   if (payload.nodes) {
     const incoming = new Set(payload.nodes.map(node => node.id));
+    // A new bridge revision can contain only profile changes. graphData() reheats
+    // D3 even with identical objects; compare identity sets, independent of order.
+    topologyChanged = previousRoot !== root || previousRelation !== relation ||
+      incoming.size !== nodes.size || [...incoming].some(id => !nodes.has(id)) ||
+      payload.links.length !== links.size ||
+      payload.links.some(link => !links.has(edgeKey(link.source, link.target)));
     for (const id of nodes.keys()) {
       if (!incoming.has(id)) {
         nodes.delete(id);
@@ -612,35 +620,38 @@ function update(payload) {
       newLinks.set(key, links.get(key) || value);
     });
     links.clear(); for (const [key, link] of newLinks) links.set(key, link);
-    const degrees = new Map();
-    for (const link of links.values()) {
-      for (const id of new Set([endpoint(link.source), endpoint(link.target)])) {
-        degrees.set(id, (degrees.get(id) || 0) + 1);
+    if (topologyChanged) {
+      const degrees = new Map();
+      for (const link of links.values()) {
+        for (const id of new Set([endpoint(link.source), endpoint(link.target)])) {
+          degrees.set(id, (degrees.get(id) || 0) + 1);
+        }
       }
+      for (const node of nodes.values()) {
+        node.radius = Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
+      }
+      // D3 caches collision radii. Profiles and pagination do not alter geometry.
+      collision.radius(node => radius(node) + 6);
+      reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
     }
-    for (const node of nodes.values()) {
-      node.radius = Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
-    }
-    // D3 caches collision radii. Refresh it when the graph changes, not on selection.
-    collision.radius(node => radius(node) + 6);
     graphRevision = payload.revision;
-    reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
     if (!overviewStarted) {
       overviewStarted = true;
       // Fix the camera once before the first root frame, independent of arrival count
       // or Reduce Motion. New nodes animate into this view; completion never fits it.
       graph.zoom(0.8, 0).centerAt(0, 0, 0);
     }
-    applyVisibleGraph();
+    if (topologyChanged) { applyVisibleGraph(); graphApplied = true; }
     setPath(pathFromRoot(selected));
   }
   if (selected) {
     const oldCount = reveal.visible.size;
     reveal.show(selectedPath, performance.now());
     if (reduceMotion) reveal.finish();
-    if (oldCount !== reveal.visible.size) applyVisibleGraph();
+    if (oldCount !== reveal.visible.size) { applyVisibleGraph(); graphApplied = true; }
   }
-  if (!payload.nodes && 'reduceMotion' in payload) applyVisibleGraph();
+  // Reducing motion can admit the rest of a pending queue even without new topology.
+  if (!graphApplied && reveal.visible.size !== previousVisibleCount) applyVisibleGraph();
   if ('selected' in payload || payload.nodes) {
     updateAdjacency();
   }

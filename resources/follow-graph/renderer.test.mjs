@@ -80,6 +80,49 @@ function renderer({ reduced = true } = {}) {
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
 
+test('unchanged or profile-only batches preserve simulation, positions and latest progress revision', () => {
+  const r = renderer();
+  r.update(1, r.data(4));
+  const original = r.props.get('graphData').nodes[1];
+  original.x = 123;
+  original.y = -45;
+  original.vx = 0;
+  r.calls.length = 0;
+  const unchanged = r.data(4);
+  unchanged.nodes.reverse();
+  unchanged.links.reverse();
+  r.update(2, unchanged);
+  assert.ok(!r.calls.some(([name]) => name === 'graphData'));
+  assert.equal(original.x, 123);
+  assert.equal(original.y, -45);
+  assert.equal(r.messages.findLast(m => m.type === 'progress').revision, 2);
+  const metadata = r.data(4);
+  metadata.nodes[1].name = 'Updated profile';
+  r.update(3, metadata);
+  assert.equal(original.name, 'Updated profile');
+  assert.ok(!r.calls.some(([name]) => name === 'graphData'));
+  r.update(4, { ...r.data(4), links: [
+    { source: '1', target: '2' }, { source: '1', target: '3' }, { source: '2', target: '4' }
+  ] });
+  assert.equal(r.calls.filter(([name]) => name === 'graphData').length, 1);
+  r.window.followGraph.destroy();
+});
+
+test('unchanged refresh does not restart a pending progressive reveal', () => {
+  const r = renderer({ reduced: false }), data = r.data(8);
+  r.update(1, data);
+  r.frame(50);
+  const visible = r.props.get('graphData').nodes.length;
+  r.calls.length = 0;
+  r.update(2, data);
+  assert.equal(r.props.get('graphData').nodes.length, visible);
+  assert.ok(!r.calls.some(([name]) => name === 'graphData'));
+  for (let i = 0; i < 60; i++) r.frame();
+  assert.equal(r.props.get('graphData').nodes.length, 8);
+  assert.equal(r.messages.findLast(m => m.type === 'progress').revision, 2);
+  r.window.followGraph.destroy();
+});
+
 test('2D viewport survives batches without auto-fit and stale batches are ignored', () => {
   const r = renderer();
   r.update(1, r.data(3));

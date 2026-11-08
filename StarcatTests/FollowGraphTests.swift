@@ -739,6 +739,58 @@ struct FollowGraphStoreTests {
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
     @MainActor
+    @Test("无变化刷新更新分页时间，保持图版本、已绘制人数和视角", arguments: FollowGraphRelation.allCases)
+    func unchangedRefreshKeepsCanvas(relation: FollowGraphRelation) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, []))
+        graph.progress["1"]?.fetchedAt = .distantPast
+        try await cache.save(graph)
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let login = (json["variables"] as! [String: Any])["login"] as! String
+            let id = login == "user1" ? 1 : 2
+            let users = id == 1 ? [["databaseId": 2, "login": "user2"] as [String: Any]] : []
+            let body: [String: Any] = ["data": [
+                "user": ["databaseId": id, "login": login,
+                         relation.rawValue: ["totalCount": users.count, "nodes": users,
+                                            "pageInfo": ["hasNextPage": false, "endCursor": NSNull()]]],
+                "rateLimit": ["remaining": 4_000, "resetAt": "2099-11-05T12:00:00Z"]
+            ]]
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    try JSONSerialization.data(withJSONObject: body))
+        }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+            #expect(model.errorText == nil)
+        }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        try await settle()
+        model.select("2", expand: false)
+        model.reportRenderedCounts(nodes: 2, edges: 1, revision: model.revision, renderer: model.rendererRevision,
+                                   selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 0)
+        model.viewport = FollowGraphViewport(values: [123, -45, 2])
+        model.rendererPresented = true
+        let revision = model.revision, renderer = model.rendererRevision, viewport = model.viewport
+        model.refresh()
+        try await settle()
+        #expect(model.snapshot?.progress["1"]?.fetchedAt != .distantPast)
+        #expect(model.revision == revision && model.rendererRevision == renderer)
+        #expect(model.renderedCounts?.nodes == 2 && model.renderedCounts?.edges == 1)
+        #expect(model.selectedID == "2" && model.viewport == viewport && model.rendererPresented)
+    }
+
+    @MainActor
     @Test("部分图谱恢复不补采，确认初始化才补齐缺少的默认层级", arguments: FollowGraphRelation.allCases)
     func initializePartialRange(relation: FollowGraphRelation) async throws {
         URLProtocolStub.reset()

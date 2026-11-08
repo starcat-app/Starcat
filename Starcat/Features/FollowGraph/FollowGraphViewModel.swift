@@ -458,10 +458,18 @@ final class FollowGraphViewModel {
 
     /// 只在图数据变化、关注确认或显式展开时更新展示快照。
     private func rebuildPresentation() {
-        displayedSnapshot = snapshot?.presentation(expanded: expandedSources, selectedID: selectedID)
+        let previous = displayedSnapshot
+        let next = snapshot?.presentation(expanded: expandedSources, selectedID: selectedID)
+        // fetchedAt / cursor / totalCount 仍实时更新卡片，但不属于 Canvas 的图数据。
+        // 否则刷新每个源都会发送整图并重启力导向，产生没有新增节点的抖动。
+        let graphChanged = previous?.rootID != next?.rootID || previous?.relation != next?.relation ||
+            previous?.nodes != next?.nodes || previous?.edges != next?.edges
+        displayedSnapshot = next
         if let selectedID, displayedSnapshot?.nodes[selectedID] == nil { self.selectedID = nil }
-        revision += 1
-        renderedCounts = nil
+        if graphChanged {
+            revision += 1
+            renderedCounts = nil
+        }
     }
 
     /// 新分页尚在逐个入场时继续保留已绘制人数，不提前跳到整页数量。
