@@ -75,18 +75,13 @@ struct FollowGraphUserCard: View {
 
             Divider()
 
-            Text(verbatim: model.path.compactMap { model.snapshot?.nodes[$0]?.login }.joined(separator: " → "))
-                .font(.caption)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-
+            // 操作与对应信息同排，保留按钮命中尺寸；长路径换行而不挤压定位入口。
             HStack(alignment: .center, spacing: 10) {
-                Text(model.displayedSnapshot?.progress[node.id]?.complete == true ?
-                     (model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" :
-                        "followGraph.status.complete") : "followGraph.status.partial")
+                Text(verbatim: model.path.compactMap { model.snapshot?.nodes[$0]?.login }.joined(separator: " → "))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
                 Spacer(minLength: 0)
                 Button { model.focus(node.id) } label: {
                     Label("followGraph.action.locate", systemImage: "scope")
@@ -99,10 +94,17 @@ struct FollowGraphUserCard: View {
                 .help("followGraph.action.locate")
             }
 
-            if model.displayedSnapshot?.progress[node.id]?.complete != true {
-                HStack {
-                    Spacer()
+            HStack(alignment: .center, spacing: 10) {
+                Text(model.displayedSnapshot?.progress[node.id]?.complete == true ?
+                     (model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" :
+                        "followGraph.status.complete") : "followGraph.status.partial")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if model.displayedSnapshot?.progress[node.id]?.complete != true {
                     Button("followGraph.action.more") { model.loadMore(node.id) }
+                        .fixedSize()
                         .disabled(model.isLoading)
                 }
             }
