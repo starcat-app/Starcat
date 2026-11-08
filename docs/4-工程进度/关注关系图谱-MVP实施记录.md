@@ -8,6 +8,22 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## Followers 扩展（2026-11-08，待验收）
+
+- 分支：`codex/followers-graph`，基于 `dev@11d3a8bd`。
+- Worktree：`../Starcat-followers-graph`；主工作区保留给并行功能，本轮不合并或推送。
+- 「关注者」新增真实 followers 图谱；「正在关注」保留既有 following 图谱。
+- Followers 默认完整本人首层、资料卡手动展开；真实边和流水始终指向被关注者。
+- 按方向隔离分页与缓存，旧 following 快照继续可读；回关不改变 follower 身份。
+- 原生相关回归：41 项、5 组通过，包含图模型、Store / Cache、API / ViewModel 生命周期、关注状态及恢复出厂；JS 25 项通过。
+- 新增状态文案覆盖 AppLocale 当前 17 种语言，原有 Catalog 条目未改变；AI 翻译仍为 `needs_review`。
+- 新 worktree 复用主工作区被忽略的本地签名配置与 Package.resolved。首次自动解析到更新的 MLX 分支出现无关枚举编译错误；恢复主工作区依赖锁定版本后测试通过，未修改 Local AI 模块或依赖声明。
+- 2026-11-09：`make build-appstore`、`make build-direct` 均通过；两渠道 HTML / JS / 许可证逐字节匹配源码，新增文案 17 语言编译资源全部匹配 Catalog。
+- 本地提交：`7a0f0308` 文档决议、`9cf2aed4` 模型 / 缓存 / 回归、`cdf89791` 入口 / UI / Canvas。未合并、推送或启动应用，真实账号 GUI 与视觉效果仍待人工验收。
+- 验证日志：`/tmp/starcat-followers-tests.log`、`/tmp/starcat-followers-js-tests.log`、`/tmp/starcat-followers-appstore.log`、`/tmp/starcat-followers-direct.log`。
+
+以下保留原 MVP 历史记录，入口以本轮双方向契约为准。
+
 ## 已实现范围
 
 - 左侧现有「关注者」统计入口打开全窗口遮盖层，覆盖原侧栏与工具栏，关闭后恢复原页面。

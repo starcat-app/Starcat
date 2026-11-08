@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/followers-graph` | 本地；`../Starcat-followers-graph` worktree，无远端分支 | 基于 `dev@11d3a8bd` 实现 followers 图谱：真实入边、首层加载、按需展开、方向隔离缓存，复用现有 2D UI。 | `开发中`；2026-11-08 dong4j 授权独立 worktree 实施。 | 验收后合回 `dev`；本轮仅本地提交，不自动推送、合并或清理。 |
+| `codex/followers-graph` | 本地；`../Starcat-followers-graph` worktree，无远端分支 | 基于 `dev@11d3a8bd` 实现 followers 图谱：真实入边、首层加载、按需展开、方向隔离缓存，复用现有 2D UI。 | `已实现，待验收`；2026-11-09 原生 / JS 回归与双渠道构建通过，保留独立 worktree。 | 验收后合回 `dev`；本轮仅本地提交，不自动推送、合并或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
