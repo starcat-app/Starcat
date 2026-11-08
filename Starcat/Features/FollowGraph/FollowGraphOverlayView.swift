@@ -72,7 +72,7 @@ struct FollowGraphOverlayView: View {
         }
         .toast(message: $model.toastMessage,
                icon: model.toastIsError ? "exclamationmark.circle.fill" : "info.circle.fill",
-               duration: model.toastIsError ? 4 : 2,
+               duration: 5,
                iconColor: model.toastIsError ? .orange : nil,
                bottomPadding: model.selected != nil && canvasSize.width < 1_100 ? cardHeight + 36 : 24)
         .alert("followGraph.initialize.title", isPresented: $showsInitializeConfirmation) {
