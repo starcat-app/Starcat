@@ -8,6 +8,17 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## 刷新稳定性与结果提示（2026-11-09，待人工验收）
+
+- 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 分批实施：`ed1e6125` 修复无变化刷新布局抖动；`c09aaef1` 增加刷新结果 Toast。本轮不修改主工作区，不合并或推送。
+- 原生分页元数据变化不再增加图版本；Canvas 对节点 ID 和边集合进行顺序无关比较，仅拓扑变化更新力导向数据。重复批次与资料更新保持节点对象、位置、镜头及正在执行的入场队列。
+- 成功结束分别报告展示图的用户和关系净新增 / 移除，无变化明确提示；不把隐藏缓存和重复分页计为新增。失败、限额、停止或过期会话不显示成功，刷新预算和安全删除规则保持不变。
+- 先复现重复 payload 引起布局更新的两项失败，再完成修复；JS **33 项**通过。最终原生 **70 项 / 8 suites**通过，包含两方向无变化刷新及用户变化、仅关系变化、失败和取消的参数化回归。
+- 新增 2 条提示覆盖全部 17 语言，4 个数量占位符一致，原 Catalog 条目未改；保留 AI `needs_review`，译文仍待人工审核。未修改总览、Changelog、数据库或用户缓存，未执行 GUI 自动化。
+- 测试日志：`/tmp/starcat-followers-refresh-stability-js.log`、`/tmp/starcat-followers-refresh-feedback-tests.log`。Canvas 替身回归验证布局调用和坐标保持，不代替真实 WebKit 视觉验收。
+- `make build-appstore`、`make build-direct` 与产物校验通过；两渠道图谱 HTML / JS / 许可证与源码逐字节一致，2 条新增提示 × 17 语言的编译 strings 与 Catalog 一致。日志：`/tmp/starcat-followers-refresh-appstore.log`、`/tmp/starcat-followers-refresh-direct.log`；核验脚本：`/tmp/starcat-followers-verify-refresh-artifacts.py`。
+- `make run-direct` 已通过 LaunchServices 稳定重启当前 worktree 的 Direct Debug，PID 68722、单实例，进程路径已核实。启动日志：`/tmp/starcat-followers-refresh-launch.log`；实际刷新观感与真实账号结果由 dong4j 人工验看。
+
 ## 加载范围恢复与初始化（2026-11-09，待人工验收）
 
 - 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 分批实施。`6b3ee9bd` 保存和恢复加载范围；`7499cdb6` 加入独立初始化确认入口。本轮不合并、推送或修改主工作区。
