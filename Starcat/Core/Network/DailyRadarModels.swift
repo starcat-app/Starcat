@@ -81,7 +81,9 @@ extension DailyRadarCatalog.Category {
     /// 只有分类 id 的场景（如 `DailyRadarReport.category`）用这个；
     /// id 未收录时回退 fallback，调用方不传则显示 id 原文（与旧行为一致）。
     static func localizedTitle(for id: String, fallback: String? = nil) -> String {
-        String.l10n("dailyRadar.category.\(id)", defaultValue: fallback ?? id)
+        // 栏目改名只切换展示文案，保持服务端分类身份与已有缓存不变。
+        let key = id == "ai-weekly-events" ? "dailyRadar.category.weeklyHighlights" : "dailyRadar.category.\(id)"
+        return String.l10n(key, defaultValue: fallback ?? id)
     }
 }
 

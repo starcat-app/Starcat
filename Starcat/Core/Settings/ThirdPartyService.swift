@@ -65,7 +65,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
     case discovery
     /// 公开仓库 Star 历史后端（GET /api/v1/repos/{owner}/{repo}/star-history）。
     case history
-    /// 独立编辑的每周 AI 大事，生产装配在聚合网关
+    /// 独立编辑的一周 AI 大事，生产装配在聚合网关
     case aiEvents = "ai-events"
 
     var id: String { rawValue }
@@ -96,7 +96,7 @@ enum ThirdPartyService: String, CaseIterable, Identifiable, Sendable {
         case .recommend: return "settings.services.recommend.title"
         case .discovery: return "settings.services.discovery.title"
         case .history:   return "settings.services.history.title"
-        case .aiEvents: return "settings.services.aiEvents.title"
+        case .aiEvents: return "settings.services.aiEvents.weeklyHighlights.title"
         }
     }
 
