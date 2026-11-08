@@ -497,8 +497,8 @@ struct SidebarHeaderView: View {
 
     /// 构建三栏统计数据行，每项均可点击并跳转到对应 GitHub 页面。
     /// - Starred → https://github.com/{username}?tab=stars
-    /// - Followers → 主窗口关注关系图谱遮盖层
-    /// - Following → https://github.com/{username}?tab=following
+    /// - Followers → https://github.com/{username}?tab=followers
+    /// - Following → 主窗口 following 关系图谱遮盖层
     private func statsRow(user: GitHubUserDTO) -> some View {
         HStack(spacing: 0) {
             StatCell(
@@ -511,16 +511,16 @@ struct SidebarHeaderView: View {
             StatCell(
                 value: user.followers ?? 0,
                 label: "sidebar.stats.followers",
-                helpText: String.l10n("followGraph.title"),
-                url: nil,
-                action: onOpenFollowGraph
+                helpText: String.l10n("sidebar.openGithubFollowers"),
+                url: GitHubURLs.userFollowersTab(login: user.login)
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.following ?? 0,
                 label: "sidebar.stats.following",
-                helpText: String.l10n("sidebar.openGithubFollowing"),
-                url: GitHubURLs.userFollowingTab(login: user.login)
+                helpText: String.l10n("followGraph.title"),
+                url: nil,
+                action: onOpenFollowGraph
             )
         }
         .padding(.top, 4)
