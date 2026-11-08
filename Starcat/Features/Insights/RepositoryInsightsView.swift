@@ -267,6 +267,27 @@ enum StarHistoryChartLayoutPolicy {
     }
 }
 
+/// 提交活动只抽稀日期标签，完整分类域继续供柱状图与悬停命中使用。
+enum CommitActivityChartLayoutPolicy {
+    /// 根据实际绘图区和字号预留日期间距；均分首尾索引，避免补末项时挤出相邻标签。
+    static func xAxisLabelIndices(
+        count: Int,
+        plotWidth: CGFloat,
+        scale: CGFloat
+    ) -> [Int] {
+        guard count > 0, plotWidth > 0 else { return [] }
+        let minimumSpacing = 88 * scale
+        let categoryWidth = plotWidth / CGFloat(count)
+        let minimumStride = max(1, Int(ceil(minimumSpacing / categoryWidth)))
+        let labelCount = min(6, 1 + (count - 1) / minimumStride)
+        guard labelCount > 1 else { return [0] }
+
+        return (0..<labelCount).map { index in
+            Int((Double(index) * Double(count - 1) / Double(labelCount - 1)).rounded())
+        }
+    }
+}
+
 enum StarHistoryRestrictionNoticePolicy {
     /// 已拿到 GitHub 官方历史时不再提示；私仓 / privateOnly 不适用「公开 API 限制」文案。
     /// 加载与失败状态也不抢占主反馈。
@@ -342,6 +363,8 @@ struct RepositoryInsightsView: View {
 
     /// Commit 柱图悬停选中的周序号（分类轴 index），与柱一一对应。
     @State private var selectedCommitWeekIndex: Int?
+    /// 使用绘图区实宽而非整张卡片宽度，避免 Y 轴占位和窗口缩放挤压日期。
+    @State private var commitPlotWidth: CGFloat = 0
     /// 时间线悬停行，用于光标聚焦高亮。
     @State private var hoveredTimelineItemID: String?
     /// Community / Security 信号行悬停，交互与时间线一致。
@@ -1834,11 +1857,13 @@ struct RepositoryInsightsView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: labelCategories) { value in
-                AxisValueLabel(centered: true) {
-                    if let category = value.as(String.self),
-                       let index = commitWeekIndex(fromCategory: category),
-                       points.indices.contains(index) {
+            AxisMarks(values: categories) { value in
+                // 在标签生成处明确过滤；未选中的分类仍保留柱和完整悬停日期。
+                if let category = value.as(String.self),
+                   labelCategories.contains(category),
+                   let index = commitWeekIndex(fromCategory: category),
+                   points.indices.contains(index) {
+                    AxisValueLabel(centered: false, collisionResolution: .greedy) {
                         Text(
                             points[index].weekStart,
                             format: Date.FormatStyle()
@@ -1847,6 +1872,7 @@ struct RepositoryInsightsView: View {
                                 .locale(locale)
                         )
                         .font(interfaceScale.font(.captionSmall))
+                        .lineLimit(1)
                     }
                 }
             }
@@ -1866,6 +1892,11 @@ struct RepositoryInsightsView: View {
                 let plot = proxy.plotFrame.map { geometry[$0] }
 
                 Color.clear
+                    .onGeometryChange(for: CGFloat.self) { _ in
+                        plot?.width ?? 0
+                    } action: { width in
+                        commitPlotWidth = width
+                    }
                     .contentShape(Rectangle())
                     .onContinuousHover { phase in
                         switch phase {
@@ -1964,22 +1995,13 @@ struct RepositoryInsightsView: View {
         return bestIndex
     }
 
-    /// 点少时每柱一个刻度；点多时抽稀，避免 X 轴挤成一团。
+    /// 标签密度随绘图区和界面字号调整，不影响每根柱的数据或命中范围。
     private func commitAxisLabelCategories(count: Int) -> [String] {
-        commitAxisLabelIndices(count: count).map(commitWeekCategory)
-    }
-
-    private func commitAxisLabelIndices(count: Int) -> [Int] {
-        guard count > 0 else { return [] }
-        if count <= 8 {
-            return Array(0..<count)
-        }
-        let step = max(1, count / 6)
-        var indices = Array(stride(from: 0, to: count, by: step))
-        if indices.last != count - 1 {
-            indices.append(count - 1)
-        }
-        return indices
+        CommitActivityChartLayoutPolicy.xAxisLabelIndices(
+            count: count,
+            plotWidth: commitPlotWidth,
+            scale: interfaceScale.multiplier
+        ).map(commitWeekCategory)
     }
 
     private func commitYAxisUpperBound(for points: [RepositoryCommitActivityPoint]) -> Double {
