@@ -8,6 +8,16 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## 默认三层与加载反馈（2026-11-09，待人工验收）
+
+- 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 实施。三批代码提交：`8c632f13` 默认三层与分支预算；`bdb0ac80` 画布真实入场人数；`be063f71` 加载更多、手动容量分配与底部 Toast。本轮未修改主工作区，未合并或推送。
+- Followers 默认本人、直接关注者、关注者的关注者三层；第三层稳定均分最多 1,000 条样本名额，每人最多 20 条。55 个分支的合成接口回归得到 1,056 个唯一节点，未采集第四层；旧首层缓存补齐后重开不再请求。该数量为测试样本，不代表真实账号本次结果。
+- 卡片人数跟随 Canvas 已入场关系增长，按方向统计；选择版本、图版本与画布会话共同拒绝旧回调。已完成分页不重读第一页，人数已满但分页未完整时只收起按钮，不改写完整标记；隐藏缓存仍可展开。手动名额在默认投影后单独分配，避免大图中被其他分支抢占。
+- 正常新增由节点与数字表达；只补关系、重复用户、完成、容量 / 配额与失败复用底部 Toast。普通提示 2 秒，受限 / 失败 4 秒；窄窗口避开资料卡，关闭与重开清理提示。新增 4 条文案覆盖本分支全部 17 语言，与 AppLocale、locales.json 及双渠道编译 strings 核对一致，保留 AI `needs_review`。
+- 最终相关原生回归 **65 项 / 8 suites**、JS **30 项**通过；覆盖旧缓存补齐、分支预算、真实计数、A → B → A 迟到回调、默认及更深节点手动容量、重复分页、网络失败与低配额反馈。原有配额测试改用未完成分页验证继续请求阻断，完整缓存读取另有测试。
+- `make build-appstore`、`make build-direct` 与产物校验通过；两渠道 HTML / JS / 许可证逐字节匹配仓库资源，4 条 Toast 文案的 17 语言编译资源与 Catalog 完全一致。未执行 GUI 自动化，动画、窄窗口视觉及真实账号加载仍由人工验看；未关闭专项，未改总览或 Changelog。
+- 日志：`/tmp/starcat-followers-loading-feedback-tests.log`、`/tmp/starcat-followers-dynamic-count-js.log`、`/tmp/starcat-followers-three-layers-appstore.log`、`/tmp/starcat-followers-three-layers-direct.log`。
+
 ## Followers 扩展（2026-11-08，待验收）
 
 - 分支：`codex/followers-graph`，基于 `dev@11d3a8bd`。
