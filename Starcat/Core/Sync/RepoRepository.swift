@@ -305,6 +305,30 @@ struct GRDBRepoRepository {
         }
     }
 
+    /// 今日角标统计当前仍 Star 的仓库，不统计历史操作次数，也不受列表分页和筛选影响。
+    ///
+    /// 自然日边界由调用方按本机时区计算；SQLite 用 julianday 比较绝对时刻，兼容
+    /// GitHub 的 UTC 时间、本地写入的小数秒和带 offset 的时间。上界排除次日零点，
+    /// NULL / 无效时间不计入今日数量；总数和今日数量在同一条查询里读取。
+    func starredCounts(in interval: DateInterval) async throws -> (total: Int, withinInterval: Int) {
+        let formatter = ISO8601DateFormatter()
+        let start = formatter.string(from: interval.start)
+        let end = formatter.string(from: interval.end)
+        return try await database.writer.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT COUNT(*) AS total,
+                       COALESCE(SUM(CASE
+                           WHEN julianday(starred_at) >= julianday(?)
+                            AND julianday(starred_at) < julianday(?) THEN 1
+                           ELSE 0
+                       END), 0) AS within_interval
+                FROM repos
+                WHERE is_starred = 1
+                """, arguments: [start, end])
+            return (row?["total"] ?? 0, row?["within_interval"] ?? 0)
+        }
+    }
+
     /// 当前用户私有知识库 repo 总数。
     func knowledgeCount() async throws -> Int {
         try await database.writer.read { db in

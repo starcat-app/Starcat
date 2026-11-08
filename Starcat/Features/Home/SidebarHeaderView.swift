@@ -20,6 +20,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 struct SidebarHeaderView: View {
     /// 图谱由主窗口承载，统计卡不自行创建窗口或持有网络任务。
@@ -495,35 +496,61 @@ struct SidebarHeaderView: View {
 
     // MARK: - 三栏统计
 
-    /// 构建三栏统计数据行，每项均可点击并跳转到对应 GitHub 页面。
+    /// 三栏主数字独立居中；今日 Star 标记与下方标签同行。
     /// - Starred → https://github.com/{username}?tab=stars
-    /// - Followers → https://github.com/{username}?tab=followers
-    /// - Following → 主窗口 following 关系图谱遮盖层
+    /// - Followers / Following → 主窗口关系图谱遮盖层
     private func statsRow(user: GitHubUserDTO) -> some View {
         HStack(spacing: 0) {
             StatCell(
                 value: viewModel.totalCount,
                 label: "sidebar.stats.starred",
                 helpText: String.l10n("sidebar.openGithubStarred"),
-                url: GitHubURLs.userStarsTab(login: user.login)
+                url: GitHubURLs.userStarsTab(login: user.login),
+                todayCount: viewModel.todayStarCount
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.followers ?? 0,
                 label: "sidebar.stats.followers",
-                helpText: String.l10n("sidebar.openGithubFollowers"),
-                url: GitHubURLs.userFollowersTab(login: user.login)
+                helpText: String.l10n("sidebar.stats.openFollowGraph"),
+                url: nil,
+                action: onOpenFollowGraph
             )
             Divider().frame(height: 26)
             StatCell(
                 value: user.following ?? 0,
                 label: "sidebar.stats.following",
-                helpText: String.l10n("followGraph.title"),
+                helpText: String.l10n("sidebar.stats.openFollowGraph"),
                 url: nil,
                 action: onOpenFollowGraph
             )
         }
         .padding(.top, 4)
+        .task(id: StarCountsRefreshIdentity(
+            userID: user.id,
+            databaseRevision: dependencies.databaseScopeRevision,
+            starredIDs: dependencies.starredRegistry.ids
+        )) {
+            // 所有 Star 入口均在持久化后更新 registry；观察集合而非只观察 count，
+            // 也覆盖一次取消、一次新增被 SwiftUI 合批后总数刚好不变的情况。
+            await refreshStarCounts()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .NSCalendarDayChanged)
+                .merge(with: NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange))
+                .merge(with: NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
+                .merge(with: NotificationCenter.default.publisher(for: .NSSystemClockDidChange))
+        ) { _ in
+            // 自然日变化只重读本地计数；从休眠恢复时也不能沿用昨天的角标。
+            Task { await refreshStarCounts() }
+        }
+    }
+
+    /// 等数据库真正切到当前账号再查询，防止缓存登录信息先于用户库恢复。
+    private func refreshStarCounts() async {
+        guard let userID = authSession.state.user?.id,
+              dependencies.database.currentUserId == userID else { return }
+        await viewModel.refreshStarCounts()
     }
 
     private func openGitHubProfile(login: String) {
@@ -538,6 +565,13 @@ struct SidebarHeaderView: View {
 
 // MARK: - 子组件
 
+/// 账号、数据库和 Star 集合共同标识一次统计任务，变化时由 SwiftUI 取消旧任务。
+private struct StarCountsRefreshIdentity: Equatable {
+    let userID: Int64
+    let databaseRevision: UInt64
+    let starredIDs: Set<Int64>
+}
+
 /// 单个统计列（数字 + 标签）。
 ///
 /// - Parameters:
@@ -551,42 +585,89 @@ private struct StatCell: View {
     let helpText: String
     let url: URL?
     var action: (() -> Void)? = nil
+    var todayCount: Int = 0
+
+    @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
+        if url != nil || action != nil {
+            // 整列作为同一个入口，今日标记与标签都能点击。
+            Button {
+                if let action { action() }
+                else if let url { NSWorkspace.shared.open(url) }
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .pressableHover()
+            .help(helpText)
+            .accessibilityLabel(Text(label))
+            .accessibilityValue(Text(verbatim: accessibilityValue))
+            .accessibilityHint(Text(verbatim: helpText))
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         // 2026-06-05 dong4j 反馈：数字与 label 字号差太小，视觉上几乎一样大。
         // 改为数字 19pt/.bold（约为 caption2 的 ~1.7x），形成明显的"主-辅"层级。
         // 间距 2 → 3：字号放大后保持 baseline 视觉呼吸。
         VStack(spacing: 3) {
-            if url != nil || action != nil {
-                // 2026-06-02 dong4j 要求统一 hover 反馈：sidebar 三栏统计数据
-                // （Starred / Followers / Following）加 `.pressableHover()`，
-                // 与详情页 Stats 按钮保持同款交互反馈。
-                Button {
-                    if let action { action() }
-                    else if let url { NSWorkspace.shared.open(url) }
-                } label: {
-                    Text(value, format: .number)
-                        .font(.system(size: 19, weight: .bold))
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .foregroundStyle(Color.accentColor)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .pressableHover()
-                .help(helpText)
-            } else {
-                Text(value, format: .number)
-                    .font(.system(size: 19, weight: .bold))
-                    .monospacedDigit()
+            Text(value, format: .number.locale(locale))
+                .font(.system(size: 19, weight: .bold))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(url != nil || action != nil ? Color.accentColor : .primary)
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                todayBadge
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: todayCount)
             }
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            // 三列共用同样的标签行高度，今日标记出现或消失时主数字仍然对齐。
+            .frame(height: 16)
         }
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+
+    /// 今日新增只在 Starred 标签旁显示；关注相关两列保持纯文字入口。
+    @ViewBuilder
+    private var todayBadge: some View {
+        if todayCount > 0 {
+            Text(verbatim: "+" + todayCount.formatted(.number.locale(locale)))
+                .font(.system(size: 10, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(.green)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(.green.opacity(0.14), in: Capsule())
+                .fixedSize()
+                // 与智能集合卡片一致；数值没变时不会重复播放，减少动态效果时静态更新。
+                .contentTransition(reduceMotion ? .identity : .numericText())
+                .transition(.opacity)
+                .help(todayHelp)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var todayHelp: String {
+        String(
+            format: String.l10n("sidebar.stats.todayStarred.help"),
+            locale: locale,
+            todayCount.formatted(.number.locale(locale))
+        )
+    }
+
+    private var accessibilityValue: String {
+        let count = value.formatted(.number.locale(locale))
+        return todayCount > 0 ? "\(count), \(todayHelp)" : count
     }
 }
