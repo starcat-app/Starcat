@@ -739,6 +739,71 @@ struct FollowGraphStoreTests {
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
     @MainActor
+    @Test("刷新结果区分用户与关系净变化，失败或停止不显示成功", arguments: FollowGraphRelation.allCases, ["users", "edges", "failure"])
+    func refreshResultFeedback(relation: FollowGraphRelation, scenario: String) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2, 3]))
+        graph.merge(page(2, [4]))
+        graph.merge(page(3, []))
+        try await cache.save(graph)
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+        }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        try await settle()
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let login = (json["variables"] as! [String: Any])["login"] as! String
+            let id = Int(login.dropFirst(4))!
+            if scenario == "failure", id == 2 { throw URLError(.notConnectedToInternet) }
+            let targets: [Int]
+            if id == 1 { targets = scenario == "edges" ? [2, 3] : [2, 5] }
+            else if id == 2 { targets = scenario == "edges" ? [3, 4] : [4] }
+            else { targets = [] }
+            let body: [String: Any] = ["data": [
+                "user": ["databaseId": id, "login": login, relation.rawValue: [
+                    "totalCount": targets.count,
+                    "nodes": targets.map { ["databaseId": $0, "login": "user\($0)"] as [String: Any] },
+                    "pageInfo": ["hasNextPage": false, "endCursor": NSNull()]]],
+                "rateLimit": ["remaining": 4_000, "resetAt": "2099-11-05T12:00:00Z"]
+            ]]
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    try JSONSerialization.data(withJSONObject: body))
+        }
+        model.refresh()
+        try await settle()
+        if scenario == "failure" {
+            #expect(model.toastMessage == "followGraph.toast.loadFailed" && model.toastIsError)
+        } else {
+            let userChange: Int64 = scenario == "users" ? 1 : 0
+            let removedEdges: Int64 = scenario == "users" ? 1 : 0
+            let expected = String(format: String.l10n("followGraph.toast.refreshed"),
+                                  locale: LocaleStore.shared.selection.effectiveLocale,
+                                  userChange, userChange, Int64(1), removedEdges)
+            #expect(model.toastMessage == expected && !model.toastIsError)
+            #expect(model.toastMessage?.contains("+1") == true)
+            #expect(model.displayedSnapshot?.nodes.count == 4)
+            if scenario == "users" {
+                #expect(model.displayedSnapshot?.nodes["3"] == nil && model.displayedSnapshot?.nodes["5"] != nil)
+            }
+        }
+        model.refresh()
+        model.stop()
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(model.toastMessage == nil && model.statusKey == "followGraph.status.stopped")
+    }
+
+    @MainActor
     @Test("无变化刷新更新分页时间，保持图版本、已绘制人数和视角", arguments: FollowGraphRelation.allCases)
     func unchangedRefreshKeepsCanvas(relation: FollowGraphRelation) async throws {
         URLProtocolStub.reset()
@@ -788,6 +853,8 @@ struct FollowGraphAPITests {
         #expect(model.revision == revision && model.rendererRevision == renderer)
         #expect(model.renderedCounts?.nodes == 2 && model.renderedCounts?.edges == 1)
         #expect(model.selectedID == "2" && model.viewport == viewport && model.rendererPresented)
+        #expect(model.toastMessage == "followGraph.toast.refreshUnchanged")
+        #expect(!model.toastIsError)
     }
 
     @MainActor

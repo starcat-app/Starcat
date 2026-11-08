@@ -1,6 +1,222 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "followGraph.toast.refreshUnchanged" : {
+      "comment" : "AI translation draft; pending maintainer review. Counts are visible users added/removed, then visible relationships added/removed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Refreshed: no user or relationship changes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已刷新，用户和关系均无变化"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已重新整理，使用者和關係均無變化"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新しました。ユーザーと関係に変更はありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새로 고침 완료: 사용자 및 관계 변경 없음"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualisiert: keine Änderungen bei Nutzern oder Beziehungen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualisé : aucun changement de personnes ou de relations"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualizado: sin cambios de usuarios ni relaciones"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Atualizado: sem alterações em usuários ou relações"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiornato: nessuna modifica a utenti o relazioni"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обновлено: пользователи и связи не изменились"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vernieuwd: geen wijzigingen in gebruikers of relaties"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odświeżono: bez zmian użytkowników i relacji"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Оновлено: користувачі та зв’язки не змінилися"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yenilendi: kullanıcı veya ilişki değişikliği yok"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã làm mới: không có thay đổi về người dùng hoặc quan hệ"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diperbarui: tidak ada perubahan pengguna atau hubungan"
+          }
+        }
+      }
+    },
+    "followGraph.toast.refreshed" : {
+      "comment" : "AI translation draft; pending maintainer review. Counts are visible users added/removed, then visible relationships added/removed.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Refreshed: users +%lld / -%lld; relationships +%lld / -%lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已刷新：用户 +%lld / -%lld，关系 +%lld / -%lld"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已重新整理：使用者 +%lld / -%lld，關係 +%lld / -%lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "更新完了：ユーザー +%lld / -%lld、関係 +%lld / -%lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "새로 고침 완료: 사용자 +%lld / -%lld, 관계 +%lld / -%lld"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualisiert: Nutzer +%lld / -%lld; Beziehungen +%lld / -%lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualisé : personnes +%lld / -%lld ; relations +%lld / -%lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualizado: usuarios +%lld / -%lld; relaciones +%lld / -%lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Atualizado: usuários +%lld / -%lld; relações +%lld / -%lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiornato: utenti +%lld / -%lld; relazioni +%lld / -%lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обновлено: пользователи +%lld / -%lld; связи +%lld / -%lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vernieuwd: gebruikers +%lld / -%lld; relaties +%lld / -%lld"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Odświeżono: użytkownicy +%lld / -%lld; relacje +%lld / -%lld"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Оновлено: користувачі +%lld / -%lld; зв’язки +%lld / -%lld"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yenilendi: kullanıcılar +%lld / -%lld; ilişkiler +%lld / -%lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã làm mới: người dùng +%lld / -%lld; quan hệ +%lld / -%lld"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diperbarui: pengguna +%lld / -%lld; hubungan +%lld / -%lld"
+          }
+        }
+      }
+    },
     "followGraph.action.initialize" : {
       "comment" : "AI translation draft; pending maintainer review.",
       "extractionState" : "manual",

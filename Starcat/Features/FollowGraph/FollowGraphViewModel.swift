@@ -332,6 +332,7 @@ final class FollowGraphViewModel {
             // 独立继续按钮已移除。首次采集在第一页前停止或失败时，也必须能由刷新恢复。
             guard displayed.progress[displayed.rootID] != nil else {
                 await self.explore(session: session, store: store)
+                self.reportRefreshResult(before: displayed, session: session)
                 return
             }
             let budgets = self.snapshot?.defaultExpansionBudgets ?? [:]
@@ -359,13 +360,38 @@ final class FollowGraphViewModel {
                     if error is FollowGraphStoreError { break }
                 }
             }
-            if allSucceeded, let value = try? await store.finishRefresh(session: session) {
+            guard allSucceeded, self.generation == session, !Task.isCancelled else { return }
+            do {
+                guard let value = try await store.finishRefresh(session: session),
+                      self.generation == session, !Task.isCancelled else { return }
                 self.publish(value, session: session)
                 if let selectedID = self.selectedID, value.nodes[selectedID] == nil { self.selectedID = nil }
                 if value.relation == .followers, value.needsDefaultExpansion {
                     await self.explore(session: session, store: store)
                 }
-            }
+                self.reportRefreshResult(before: displayed, session: session)
+            } catch { await self.handle(error, session: session, store: store) }
+        }
+    }
+
+    /// 只比较刷新前后展示图的净变化；分页重复、隐藏缓存及资料更新不冒充新增用户。
+    /// 失败或取消后的迟到收尾不能覆盖错误 Toast，也不能污染已重开的图谱。
+    private func reportRefreshResult(before: FollowGraphSnapshot, session: UUID) {
+        guard generation == session, !Task.isCancelled, errorText == nil,
+              statusKey == "followGraph.status.loading" || statusKey == "followGraph.status.ready",
+              let after = displayedSnapshot, before.accountID == after.accountID,
+              before.relation == after.relation else { return }
+        let previousUsers = Set(before.nodes.keys), currentUsers = Set(after.nodes.keys)
+        let addedUsers = currentUsers.subtracting(previousUsers).count
+        let removedUsers = previousUsers.subtracting(currentUsers).count
+        let addedEdges = after.edges.subtracting(before.edges).count
+        let removedEdges = before.edges.subtracting(after.edges).count
+        if addedUsers + removedUsers + addedEdges + removedEdges == 0 {
+            showToast("followGraph.toast.refreshUnchanged")
+        } else {
+            showToast(String(format: String.l10n("followGraph.toast.refreshed"),
+                             locale: LocaleStore.shared.selection.effectiveLocale,
+                             Int64(addedUsers), Int64(removedUsers), Int64(addedEdges), Int64(removedEdges)))
         }
     }
 
