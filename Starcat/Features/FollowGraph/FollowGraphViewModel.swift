@@ -21,6 +21,8 @@ final class FollowGraphViewModel {
     private(set) var isLoading = false
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
+    var toastMessage: String?
+    private(set) var toastIsError = false
     private(set) var revision = 0
     private(set) var avatarUpdate: (revision: Int, id: String, source: String)?
     private var avatarRevision = 0
@@ -118,6 +120,7 @@ final class FollowGraphViewModel {
 
     /// 每次进入重新展示默认图谱；账户缓存和在途关注写入仍属于原来的 Store。
     func resetCanvas() {
+        toastMessage = nil
         avatarUpdate = nil
         expandedSources = [:]
         selectedID = nil
@@ -139,6 +142,7 @@ final class FollowGraphViewModel {
     }
 
     func stop() {
+        toastMessage = nil
         generation = UUID()
         task?.cancel()
         task = nil
@@ -209,20 +213,69 @@ final class FollowGraphViewModel {
         viewportRevision += 1
     }
 
-    /// 单页手动加载不会继续递归，也不会因为查找定位而触发。
-    func loadMore(_ id: String) {
-        guard !isLoading, let snapshot else { return }
+    /// 展示预算与分页完整性分开：缓存尚有隐藏关系时允许展开；人数已满仅隐藏操作，
+    /// 不把根据交叉边或资料人数得出的结论写成“分页完整”。
+    func canLoadMore(_ id: String, fallbackTotal: Int? = nil) -> Bool {
+        guard let snapshot, let displayedSnapshot, displayedSnapshot.nodes[id] != nil else { return false }
+        let visible = displayedSnapshot.relationCount(for: id)
+        if snapshot.relationCount(for: id) > visible { return true }
+        if let total = snapshot.progress[id]?.totalCount ?? fallbackTotal, visible >= total { return false }
+        return snapshot.progress[id]?.complete != true
+    }
+
+    /// 本批正在逐个入场时不叠加下一批，避免连续点击一次排入数百个头像。
+    func isRevealingRelations(for id: String) -> Bool {
+        selectedID == id && renderedRelationCount(for: id) < (displayedSnapshot?.relationCount(for: id) ?? 0)
+    }
+
+    /// 单页手动加载不会继续递归；优先展示缓存，完成或无效动作不再重复读取第一页。
+    func loadMore(_ id: String, fallbackTotal: Int? = nil) {
+        guard !isLoading, let snapshot, displayedSnapshot?.nodes[id] != nil else { return }
+        toastMessage = nil
+        guard canLoadMore(id, fallbackTotal: fallbackTotal) else {
+            showToast("followGraph.toast.complete")
+            return
+        }
+        let before = displayedSnapshot
         let visibleCount = displayedSnapshot?.relationCount(for: id) ?? 0
         let cachedCount = snapshot.relationCount(for: id)
-        expandedSources[id] = max(expandedSources[id] ?? snapshot.relation.defaultSampleCount, visibleCount) + 50
+        expandedSources[id] = max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0, visibleCount) + 50
         if cachedCount > visibleCount {
             rebuildPresentation()
+            reportLoadResult(id, before: before)
             return
         }
         run { session, store in
-            do { self.publish(try await store.load(userID: id, session: session), session: session) }
+            do {
+                let result = try await store.load(userID: id, session: session)
+                guard self.generation == session, !Task.isCancelled else { return }
+                self.publish(result, session: session)
+                self.reportLoadResult(id, before: before)
+            }
             catch { await self.handle(error, session: session, store: store) }
         }
+    }
+
+    /// 正常新增由节点与动态数字表达；仅无新增头像时解释结果，避免每页成功都弹提示。
+    private func reportLoadResult(_ id: String, before: FollowGraphSnapshot?) {
+        guard let displayedSnapshot else { return }
+        if displayedSnapshot.nodes.keys.contains(where: { before?.nodes[$0] == nil }) { return }
+        if displayedSnapshot.relationCount(for: id) > (before?.relationCount(for: id) ?? 0) {
+            showToast("followGraph.toast.relationshipsAdded")
+        } else if !canLoadMore(id) {
+            showToast("followGraph.toast.complete")
+        } else if (snapshot?.relationCount(for: id) ?? 0) > displayedSnapshot.relationCount(for: id) {
+            // 预算已增加但画布容量不允许新端点进入，不能无反馈地吞掉这次点击。
+            showToast("followGraph.status.limit", isError: true)
+        } else {
+            showToast("followGraph.toast.alreadyVisible")
+        }
+    }
+
+    /// 复用底部 Toast；同一时刻只有一条，生命周期与自动关闭由现有组件管理。
+    private func showToast(_ key: String, isError: Bool = false) {
+        toastIsError = isError
+        toastMessage = key
     }
 
     func refresh() {
@@ -274,6 +327,7 @@ final class FollowGraphViewModel {
         generation = UUID()
         let session = generation
         isLoading = true
+        toastMessage = nil
         errorText = nil
         statusKey = "followGraph.status.loading"
         task = Task {
@@ -310,6 +364,7 @@ final class FollowGraphViewModel {
                 try Task.checkCancellation()
                 if (snapshot?.nodes.count ?? 0) >= 5_000 {
                     statusKey = "followGraph.status.limit"
+                    showToast(statusKey, isError: true)
                     return
                 }
                 let batch = Array(firstLevel[start..<min(start + 4, firstLevel.count)])
@@ -333,9 +388,13 @@ final class FollowGraphViewModel {
                 if let value = await store.read(session: session) { publish(value, session: session) }
                 if let reason = errors.first(where: { $0 != "followGraph.status.partial" }) {
                     statusKey = reason
+                    showToast(reason, isError: true)
                     return
                 }
-                if !errors.isEmpty { statusKey = "followGraph.status.partial" }
+                if !errors.isEmpty {
+                    statusKey = "followGraph.status.partial"
+                    showToast("followGraph.toast.loadFailed", isError: true)
+                }
             }
             if statusKey == "followGraph.status.loading" { statusKey = "followGraph.status.ready" }
         } catch { await handle(error, session: session, store: store) }
@@ -382,14 +441,23 @@ final class FollowGraphViewModel {
     private func handle(_ error: Error, session: UUID, store: FollowGraphStore) async {
         guard generation == session, !Task.isCancelled else { return }
         if let value = await store.read(session: session) { publish(value, session: session) }
+        // actor 读取期间可能关闭或切换图谱，旧错误也不能在新窗口弹出 Toast。
+        guard generation == session, !Task.isCancelled else { return }
         switch error {
-        case FollowGraphStoreError.budget: statusKey = "followGraph.status.limit"
-        case FollowGraphStoreError.quota: statusKey = "followGraph.status.quota"
-        case FollowGraphStoreError.authentication: statusKey = "network.error.unauthorized"
+        case FollowGraphStoreError.budget:
+            statusKey = "followGraph.status.limit"
+            showToast(statusKey, isError: true)
+        case FollowGraphStoreError.quota:
+            statusKey = "followGraph.status.quota"
+            showToast(statusKey, isError: true)
+        case FollowGraphStoreError.authentication:
+            statusKey = "network.error.unauthorized"
+            showToast(statusKey, isError: true)
         case FollowGraphStoreError.staleSession, is CancellationError: return
         default:
             statusKey = "followGraph.status.partial"
             errorText = error.localizedDescription
+            showToast("followGraph.toast.loadFailed", isError: true)
         }
     }
 }

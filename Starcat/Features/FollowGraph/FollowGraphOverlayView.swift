@@ -69,6 +69,11 @@ struct FollowGraphOverlayView: View {
             .padding(16)
             .zIndex(2)
         }
+        .toast(message: $model.toastMessage,
+               icon: model.toastIsError ? "exclamationmark.circle.fill" : "info.circle.fill",
+               duration: model.toastIsError ? 4 : 2,
+               iconColor: model.toastIsError ? .orange : nil,
+               bottomPadding: model.selected != nil && canvasSize.width < 1_100 ? cardHeight + 36 : 24)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
         .task {
@@ -245,7 +250,7 @@ struct FollowGraphOverlayView: View {
 
     private func selectedInfo(_ node: FollowGraphNode) -> some View {
         let width = min(370, max(1, canvasSize.width - 40))
-        let height = min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
+        let height = cardHeight
         return ScrollView {
             FollowGraphUserCard(node: node, model: model)
                 .id(node.id)
@@ -264,5 +269,10 @@ struct FollowGraphOverlayView: View {
         .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
         // 用实际卡片尺寸定位，卡片以外的画布保持命中；节点移出视野也不隐藏资料。
         .offset(x: max(20, canvasSize.width - width - 20), y: max(toolbarHeight + 40, canvasSize.height - height - 20))
+    }
+
+    /// 窄窗口把提示放在卡片上方，复用实际滚动高度，避免底部 Toast 覆盖加载按钮。
+    private var cardHeight: CGFloat {
+        min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
     }
 }

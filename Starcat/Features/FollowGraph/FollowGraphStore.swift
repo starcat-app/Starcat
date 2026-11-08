@@ -54,6 +54,9 @@ actor FollowGraphStore {
         guard self.session == session, let current = snapshot, let user = current.nodes[userID] else {
             throw FollowGraphStoreError.staleSession
         }
+        // cursor 在末页可能为 nil；不能把“已完成”误解为“尚未开始”而重复读取第一页。
+        // 显式刷新仍从头请求，已完成缓存的普通读取也不应受网络冷却时间影响。
+        if !refresh, current.progress[userID]?.complete == true { return current }
         if let blockedUntil, blockedUntil > Date() {
             throw FollowGraphStoreError.quota(blockedUntil.ISO8601Format())
         }

@@ -104,10 +104,10 @@ struct FollowGraphUserCard: View {
                     .truncationMode(.tail)
                     .help(loadCountLabel + "\n" + String.l10n(loadStateKey))
                 Spacer(minLength: 0)
-                if model.displayedSnapshot?.progress[node.id]?.complete != true {
-                    Button("followGraph.action.more") { model.loadMore(node.id) }
+                if model.canLoadMore(node.id, fallbackTotal: relationTotal) {
+                    Button("followGraph.action.more") { model.loadMore(node.id, fallbackTotal: relationTotal) }
                         .fixedSize()
-                        .disabled(model.isLoading)
+                        .disabled(model.isLoading || model.isRevealingRelations(for: node.id))
                 }
             }
         }
@@ -142,12 +142,15 @@ struct FollowGraphUserCard: View {
     }
 
     /// 分页总数优先；尚未查询该用户时，按当前图谱方向复用已取得的公开资料人数。
-    private var loadCountLabel: String {
+    private var relationTotal: Int? {
         let graph = model.displayedSnapshot
-        let fallback = graph?.relation == .followers ? profile?.followers : profile?.following
-        let counts = graph?.relationLoadCounts(for: node.id, fallbackTotal: fallback) ?? (loaded: 0, total: nil)
+        return graph?.progress[node.id]?.totalCount ??
+            (graph?.relation == .followers ? profile?.followers : profile?.following)
+    }
+
+    private var loadCountLabel: String {
         let loaded = model.renderedRelationCount(for: node.id).formatted(.number.locale(locale))
-        if let total = counts.total {
+        if let total = relationTotal {
             return String(format: .l10n("followGraph.status.loadedCountKnown"), locale: locale,
                           arguments: [loaded, total.formatted(.number.locale(locale))])
         }

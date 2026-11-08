@@ -148,14 +148,18 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         var visible = Set(firstLevel).union([rootID])
         // 取消直接关注后，仍可达的选中用户和新路径不能被二层样本预算隐藏。
         if let selectedID { visible.formUnion(path(to: selectedID)) }
-        let limit = min(10_000, max(5_000, visible.count) + expanded.values.reduce(0, +))
+        let defaultLimit = max(5_000, visible.count)
+        let limit = min(10_000, defaultLimit + expanded.values.reduce(0, +))
         for source in firstLevel {
-            for id in targets(source).prefix(expanded[source] ?? budgets[source] ?? 0) where visible.count < limit {
+            let count = min(budgets[source] ?? 0, expanded[source] ?? budgets[source] ?? 0)
+            for id in targets(source).prefix(count) where visible.count < min(10_000, defaultLimit) {
                 visible.insert(id)
             }
         }
-        // 显式展开的二层及更深节点必须先可达，孤立的旧会话选择不能重新引入分量。
-        var pending = Set(expanded.keys).subtracting(firstLevel).subtracting([rootID])
+        // 先保留默认图，再把新增容量明确给手动展开的分支。否则早排序分支的默认样本
+        // 会先吃掉新名额，点击晚排序节点只冒出其他人的头像，所选用户人数仍不变。
+        // 更深源必须已可达，孤立的旧会话选择不能重新引入分量。
+        var pending = Set(expanded.keys).subtracting([rootID])
         while let source = pending.sorted().first(where: { visible.contains($0) }) {
             pending.remove(source)
             for id in targets(source).prefix(expanded[source] ?? 0) where visible.count < limit {
