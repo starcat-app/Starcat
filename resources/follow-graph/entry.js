@@ -15,6 +15,8 @@ let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
 let outgoingPath = [], pathChangedAt = -Infinity;
 const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
+let selectionRevision = 0, visibleLinkCount = 0;
+const renderedRelations = new Map();
 let hasAppearance = false, rootPainted = false, presented = false;
 let adjacentNodes = new Set();
 let directionLinks = [], hoveredLink = null;
@@ -516,17 +518,36 @@ function applyVisibleGraph() {
     }
     placed.add(id);
   }
-  const visibleLinks = [...links.values()].filter(link =>
-    reveal.visible.has(endpoint(link.source)) && reveal.visible.has(endpoint(link.target)));
+  const visibleLinks = [];
+  renderedRelations.clear();
+  // Count actual admitted relationships in the existing visibility pass. Selection
+  // changes reuse this map instead of scanning the graph or sending every visible ID.
+  for (const link of links.values()) {
+    const source = endpoint(link.source), target = endpoint(link.target);
+    if (!reveal.visible.has(source) || !reveal.visible.has(target)) continue;
+    visibleLinks.push(link);
+    const owner = relation === 'followers' ? target : source;
+    renderedRelations.set(owner, (renderedRelations.get(owner) || 0) + 1);
+  }
+  visibleLinkCount = visibleLinks.length;
   // Retain an already queued explicit focus/restore command over this neutral preservation.
   if (!pendingView) pendingView = preserveView();
   graph.graphData({
     nodes: [...nodes.values()].filter(node => reveal.visible.has(node.id)), links: visibleLinks
   });
-  const identity = `${graphRevision}:${reveal.visible.size}:${visibleLinks.length}`;
+  reportProgress();
+}
+
+/** Bridge only real reveal changes (at most 30/sec) and selection acknowledgements.
+ * The native selection version rejects delayed counts even after A -> B -> A.
+ */
+function reportProgress() {
+  const selectedCount = renderedRelations.get(selected) || 0;
+  const identity = `${graphRevision}:${reveal.visible.size}:${visibleLinkCount}:${selected}:${selectionRevision}:${selectedCount}`;
   if (lastProgress !== identity) {
     lastProgress = identity;
-    post('progress', { revision: graphRevision, nodes: reveal.visible.size, edges: visibleLinks.length });
+    post('progress', { revision: graphRevision, nodes: reveal.visible.size, edges: visibleLinkCount,
+      selected, selectionRevision, selectedCount });
   }
 }
 
@@ -552,6 +573,7 @@ function update(payload) {
     if (reduceMotion) reveal.finish();
   }
   const oldSelection = selected;
+  if ('selectionRevision' in payload) selectionRevision = payload.selectionRevision;
   if ('selected' in payload) selected = payload.selected;
   if (payload.path) setPath(payload.path);
   if (payload.nodes) {
@@ -642,6 +664,7 @@ function update(payload) {
     else applyView();
   }
   if ('active' in payload) active = payload.active;
+  reportProgress();
   syncAnimation();
 }
 

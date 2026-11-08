@@ -98,6 +98,7 @@ struct FollowGraphUserCard: View {
             HStack(alignment: .center, spacing: 10) {
                 Text(verbatim: loadCountLabel)
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -145,7 +146,7 @@ struct FollowGraphUserCard: View {
         let graph = model.displayedSnapshot
         let fallback = graph?.relation == .followers ? profile?.followers : profile?.following
         let counts = graph?.relationLoadCounts(for: node.id, fallbackTotal: fallback) ?? (loaded: 0, total: nil)
-        let loaded = counts.loaded.formatted(.number.locale(locale))
+        let loaded = model.renderedRelationCount(for: node.id).formatted(.number.locale(locale))
         if let total = counts.total {
             return String(format: .l10n("followGraph.status.loadedCountKnown"), locale: locale,
                           arguments: [loaded, total.formatted(.number.locale(locale))])

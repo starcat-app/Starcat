@@ -659,6 +659,54 @@ struct FollowGraphStoreTests {
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
     @MainActor
+    @Test("画布实际人数逐步增加，拒绝旧批次、旧画布和切回同一用户的旧选择", arguments: FollowGraphRelation.allCases)
+    func renderedSelectionCounts(relation: FollowGraphRelation) async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, Array(3...52)))
+        try await cache.save(graph)
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        defer { model.stop() }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        let deadline = Date().addingTimeInterval(5)
+        while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!model.isLoading)
+        model.select("2", expand: false)
+        let selection = model.selectionRevision, revision = model.revision, renderer = model.rendererRevision
+        #expect(model.renderedRelationCount(for: "2") == 0)
+        func report(_ count: Int, version: Int? = nil, frame: Int? = nil, graph: Int? = nil) {
+            model.reportRenderedCounts(nodes: 10, edges: 9, revision: graph ?? revision,
+                                       renderer: frame ?? renderer, selectedID: "2",
+                                       selectionRevision: version ?? selection, selectedCount: count)
+        }
+        report(2)
+        #expect(model.renderedRelationCount(for: "2") == 2)
+        report(4)
+        #expect(model.renderedRelationCount(for: "2") == 4)
+        report(8, graph: revision - 1)
+        report(8, frame: renderer - 1)
+        report(-1)
+        report(99)
+        #expect(model.renderedRelationCount(for: "2") == 4)
+        model.select("1", expand: false)
+        model.select("2", expand: false)
+        report(9)
+        #expect(model.renderedRelationCount(for: "2") == 0)
+        report(3, version: model.selectionRevision)
+        #expect(model.renderedRelationCount(for: "2") == 3)
+        #expect(model.revision == revision)
+        model.resetCanvas()
+        model.select("2", expand: false)
+        report(9, version: model.selectionRevision, graph: model.revision)
+        #expect(model.renderedRelationCount(for: "2") == 0)
+    }
+
+    @MainActor
     @Test("刷新会完成中断的本人首层，而不是仅重复已有样本", arguments: FollowGraphRelation.allCases)
     func refreshCompletesPartialRoot(relation: FollowGraphRelation) async throws {
         URLProtocolStub.reset()

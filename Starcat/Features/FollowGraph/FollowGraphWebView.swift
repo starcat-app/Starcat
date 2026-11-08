@@ -69,8 +69,10 @@ struct FollowGraphWebView: NSViewRepresentable {
         var reduceMotion = false
         var active = true
         private let session = UUID().uuidString
+        private let renderer: Int
         private var sentRevision = -1
         private var sentSelection: String?
+        private var sentSelectionRevision = -1
         private var sentAvatarRevision = 0
         private var sentViewportRevision = -1
         private var sentAppearance = ""
@@ -79,10 +81,14 @@ struct FollowGraphWebView: NSViewRepresentable {
         private var pendingPayload: [String: Any] = [:]
         private var isSending = false
 
-        init(model: FollowGraphViewModel) { self.model = model }
+        init(model: FollowGraphViewModel) {
+            self.model = model
+            renderer = model.rendererRevision
+        }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.webView === web, message.frameInfo.isMainFrame,
+            guard model.rendererRevision == renderer,
+                  message.webView === web, message.frameInfo.isMainFrame,
                   let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
             if type == "ready" {
                 guard !ready else { return }
@@ -107,8 +113,13 @@ struct FollowGraphWebView: NSViewRepresentable {
                    let viewport = FollowGraphViewport(values: values) { model.viewport = viewport }
             case "progress":
                 if let nodes = body["nodes"] as? Int, let edges = body["edges"] as? Int,
-                   let revision = body["revision"] as? Int {
-                    model.reportRenderedCounts(nodes: nodes, edges: edges, revision: revision)
+                   let revision = body["revision"] as? Int,
+                   let selectionRevision = body["selectionRevision"] as? Int,
+                   let selectedCount = body["selectedCount"] as? Int,
+                   body["selected"] is NSNull || body["selected"] is String {
+                    model.reportRenderedCounts(nodes: nodes, edges: edges, revision: revision, renderer: renderer,
+                                               selectedID: body["selected"] as? String,
+                                               selectionRevision: selectionRevision, selectedCount: selectedCount)
                 }
             case "error": model.rendererError = true
             default: break
@@ -134,10 +145,12 @@ struct FollowGraphWebView: NSViewRepresentable {
                 payload["links"] = snapshot.edges.map { ["source": $0.source, "target": $0.target] }
                 sentRevision = model.revision
             }
-            if sentSelection != model.selectedID || payload["nodes"] != nil {
+            if sentSelection != model.selectedID || sentSelectionRevision != model.selectionRevision || payload["nodes"] != nil {
                 payload["selected"] = model.selectedID as Any? ?? NSNull()
+                payload["selectionRevision"] = model.selectionRevision
                 payload["path"] = model.path
                 sentSelection = model.selectedID
+                sentSelectionRevision = model.selectionRevision
             }
             if sentViewportRevision != model.viewportRevision {
                 // 首帧没有显式指令时使用固定初始镜头；只有主动重置才发送空 focus 做全图适配。

@@ -110,6 +110,56 @@ test('2D viewport survives batches without auto-fit and stale batches are ignore
   assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', 25, 40, 0]);
 });
 
+test('selected relationship count follows admitted nodes, never the incoming page size', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer({ reduced: false });
+    const data = count => {
+      const value = r.data(count);
+      if (relation === 'followers') value.links = value.links.map(({ source, target }) => ({ source: target, target: source }));
+      return value;
+    };
+    r.update(1, { ...data(4), relation, selected: '1', selectionRevision: 1 });
+    for (let i = 0; i < 30; i++) r.frame();
+    assert.equal(r.messages.filter(m => m.type === 'progress').at(-1).selectedCount, 3);
+    r.update(2, { ...data(54), selected: '1', selectionRevision: 1 });
+    const initial = r.messages.filter(m => m.type === 'progress').at(-1);
+    assert.equal(initial.selectedCount, 3);
+    const values = [];
+    for (let i = 0; i < 100; i++) {
+      r.frame();
+      const progress = r.messages.filter(m => m.type === 'progress').at(-1);
+      const visible = r.props.get('graphData');
+      assert.equal(progress.selectedCount, visible.links.length);
+      assert.equal(progress.revision, 2);
+      assert.equal(progress.selectionRevision, 1);
+      values.push(progress.selectedCount);
+    }
+    assert.ok(values.some(count => count > 3 && count < 53));
+    assert.equal(values.at(-1), 53);
+    r.window.followGraph.destroy();
+  }
+});
+
+test('selection acknowledgement reports the right direction without rebuilding the graph', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer();
+    const data = r.data(4);
+    data.links = [{ source: '1', target: '2' }, { source: '2', target: '3' }, { source: '4', target: '2' }];
+    r.update(1, { ...data, relation });
+    const rebuilds = r.calls.filter(([name]) => name === 'graphData').length;
+    for (const [sequence, selected, version] of [[2, '2', 1], [3, '1', 2], [4, '2', 3], [5, null, 4]]) {
+      r.update(sequence, { selected, selectionRevision: version });
+      const progress = r.messages.filter(m => m.type === 'progress').at(-1);
+      assert.equal(progress.selected, selected);
+      assert.equal(progress.selectionRevision, version);
+      assert.equal(progress.selectedCount, selected === null ? 0 : selected === '1' ?
+        (relation === 'followers' ? 0 : 1) : (relation === 'followers' ? 2 : 1));
+    }
+    assert.equal(r.calls.filter(([name]) => name === 'graphData').length, rebuilds);
+    r.window.followGraph.destroy();
+  }
+});
+
 test('completion, avatars, new batches and resizing never fit; explicit reset still fits', () => {
   for (const reduced of [false, true]) {
     const r = renderer({ reduced });

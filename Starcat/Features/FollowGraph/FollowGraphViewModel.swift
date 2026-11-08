@@ -16,6 +16,8 @@ final class FollowGraphViewModel {
     private(set) var displayedSnapshot: FollowGraphSnapshot?
     private var expandedSources: [String: Int] = [:]
     private(set) var renderedCounts: (nodes: Int, edges: Int)?
+    private(set) var renderedSelectedCount: Int?
+    private(set) var selectionRevision = 0
     private(set) var isLoading = false
     private(set) var statusKey = "followGraph.status.ready"
     private(set) var errorText: String?
@@ -26,7 +28,11 @@ final class FollowGraphViewModel {
     var selectedID: String? {
         didSet {
             // 成功通知只在本次选中内去重；切走再回来仍需让卡片唤醒节点的缓存探测。
-            if oldValue != selectedID { avatarUpdate = nil }
+            if oldValue != selectedID {
+                avatarUpdate = nil
+                renderedSelectedCount = nil
+                selectionRevision += 1
+            }
         }
     }
     var search = ""
@@ -37,7 +43,11 @@ final class FollowGraphViewModel {
     var rendererPresented = false
     // 无论重开还是手动重载，都必须等新 WebView 的首帧；旧画面的可见状态不能复用。
     var rendererRevision = 0 {
-        didSet { rendererPresented = false }
+        didSet {
+            rendererPresented = false
+            renderedCounts = nil
+            renderedSelectedCount = nil
+        }
     }
     private let cache: FollowGraphDiskCache
     private var store: FollowGraphStore?
@@ -347,14 +357,26 @@ final class FollowGraphViewModel {
         renderedCounts = nil
     }
 
-    /// 只接受当前展示批次的真实绘制数量，迟到消息不能让顶部计数回退或越界。
-    func reportRenderedCounts(nodes: Int, edges: Int, revision: Int) {
-        guard revision == self.revision, let displayedSnapshot,
+    /// 新分页尚在逐个入场时继续保留已绘制人数，不提前跳到整页数量。
+    func renderedRelationCount(for id: String) -> Int {
+        guard selectedID == id else { return 0 }
+        return min(renderedSelectedCount ?? 0, displayedSnapshot?.relationCount(for: id) ?? 0)
+    }
+
+    /// 图版本、画布身份与选择版本各自校验；仅比较用户 ID 无法拒绝 A → B → A 的旧消息。
+    /// 更新人数不改变图 revision，避免 SwiftUI 更新反向重发整图或重启入场动画。
+    func reportRenderedCounts(nodes: Int, edges: Int, revision: Int, renderer: Int,
+                              selectedID: String?, selectionRevision: Int, selectedCount: Int) {
+        guard renderer == rendererRevision, revision == self.revision, let displayedSnapshot,
               (0...displayedSnapshot.nodes.count).contains(nodes),
               (0...displayedSnapshot.edges.count).contains(edges) else { return }
         if renderedCounts?.nodes != nodes || renderedCounts?.edges != edges {
             renderedCounts = (nodes, edges)
         }
+        guard selectedID == self.selectedID, selectionRevision == self.selectionRevision,
+              let selectedID, (0...min(edges, displayedSnapshot.relationCount(for: selectedID))).contains(selectedCount)
+        else { return }
+        if renderedSelectedCount != selectedCount { renderedSelectedCount = selectedCount }
     }
 
     private func handle(_ error: Error, session: UUID, store: FollowGraphStore) async {
