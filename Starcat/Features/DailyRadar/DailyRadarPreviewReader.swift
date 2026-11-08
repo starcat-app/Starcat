@@ -200,7 +200,7 @@ struct DailyRadarPreviewReader: View {
     }
 }
 
-/// 摘要由编辑时生成，打开只播放已有文本；预留全文高度避免逐字出现时推动正文。
+/// 摘要由编辑时生成，打开只播放已有文本；预留全文和光标高度，避免逐字出现时推动正文。
 /// 状态属于本次文章会话，主题和字号变化不重播；减少动态效果时立即展示完整摘要。
 private struct DailyRadarArticleSummary: View {
     let summary: String
@@ -209,9 +209,11 @@ private struct DailyRadarArticleSummary: View {
     @State private var completed = false
 
     var body: some View {
-        Text(verbatim: summary)
+        Text(verbatim: summary + "▏")
             .hidden()
-            .overlay(alignment: .topLeading) { Text(verbatim: visible) }
+            .overlay(alignment: .topLeading) {
+                Text(verbatim: visible + (completed || reduceMotion ? "" : "▏"))
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(verbatim: summary))
             .task(id: reduceMotion) {
@@ -221,13 +223,11 @@ private struct DailyRadarArticleSummary: View {
                     completed = true
                     return
                 }
-                // 最长约两秒，按字素切分，避免截断 emoji 或组合字符。
-                let characters = Array(summary)
-                let step = max(1, (characters.count + 79) / 80)
-                for count in stride(from: step, to: characters.count + step, by: step) {
+                // 每 50ms 只追加一个完整字素，避免长摘要成批跳字；光标随文字末尾移动。
+                for character in summary {
                     guard !Task.isCancelled else { return }
-                    visible = String(characters.prefix(count))
-                    do { try await Task.sleep(for: .milliseconds(25)) } catch { return }
+                    visible.append(character)
+                    do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
                 }
                 completed = true
             }
