@@ -45,6 +45,8 @@ struct WorkspaceToolbarContent: ToolbarContent {
 
     @Bindable var chromeState: WorkspaceChromeState
     let onPinnedChange: (Bool) -> Void
+    /// Agent 在状态写入源头处理分栏事务；未传入时保留 RAG 既有的切换行为。
+    var onRightColumnToggle: (() -> Void)? = nil
     /// RAG 工作台传入设置动作；Agent 不传时复用同一组工具栏，只少一个按钮。
     var onSettings: (() -> Void)? = nil
 
@@ -59,7 +61,11 @@ struct WorkspaceToolbarContent: ToolbarContent {
         ToolbarItem(placement: .automatic) {
             ControlGroup {
                 Button {
-                    chromeState.isRightColumnCollapsed.toggle()
+                    if let onRightColumnToggle {
+                        onRightColumnToggle()
+                    } else {
+                        chromeState.isRightColumnCollapsed.toggle()
+                    }
                 } label: {
                     Image(systemName: "inset.filled.rightthird.rectangle")
                 }

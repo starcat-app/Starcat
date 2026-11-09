@@ -66,25 +66,39 @@ struct AgentWorkspaceSceneRoot: View {
             // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
             .navigationTitle(windowTitle)
             .toolbar(removing: .title)
+            .modifier(AgentWorkspaceWindowSizing(reference: windowReference))
+            .toolbar {
+                WorkspaceToolbarContent(
+                    chromeState: chromeState,
+                    onPinnedChange: { isPinned in
+                        windowReference.window?.level = isPinned ? .floating : .normal
+                    },
+                    onRightColumnToggle: {
+                        AgentWorkspaceColumnVisibility.toggleRight(in: chromeState)
+                    }
+                )
+            }
+            // 让内容表面延伸进系统 toolbar，中栏与 Inspector 顶部保持为同一条连续区域。
+            .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
+    }
+}
+
+/// 生产 Scene 与窗口回归共用尺寸入口，避免测试只约束内容容器而遗漏整窗变化。
+struct AgentWorkspaceWindowSizing: ViewModifier {
+    let reference: WorkspaceSceneWindowReference
+
+    /// 窗口下限与内容布局分离，具体 AppKit 配置仍由共享窗口探针管理。
+    func body(content: Content) -> some View {
+        content
             .frame(
                 minWidth: AgentWorkspaceWindowMetrics.minimumContentSize.width,
                 minHeight: AgentWorkspaceWindowMetrics.minimumContentSize.height
             )
             .background {
                 WorkspaceSceneWindowReader(
-                    reference: windowReference,
+                    reference: reference,
                     minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
                 )
             }
-            .toolbar {
-                WorkspaceToolbarContent(
-                    chromeState: chromeState,
-                    onPinnedChange: { isPinned in
-                        windowReference.window?.level = isPinned ? .floating : .normal
-                    }
-                )
-            }
-            // 让内容表面延伸进系统 toolbar，中栏与 Inspector 顶部保持为同一条连续区域。
-            .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
     }
 }

@@ -51,87 +51,23 @@ struct AgentWorkspaceView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
-    @AppStorage(AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
-    private var persistedLeftColumnWidth = Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
-    @AppStorage(AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
-    private var persistedRightColumnWidth = Double(AgentWorkspaceLayoutMetrics.rightDefaultWidth)
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var isHistoryExpanded = false
     /// 栏宽测量属于持久化缓存而不是渲染状态；引用对象内部变化不能让整棵工作台重新求值。
     @State private var columnWidthPersistence = AgentWorkspaceColumnWidthPersistence()
     @Bindable var chromeState: WorkspaceChromeState
 
-    private var restoredLeftColumnWidth: CGFloat {
-        AgentWorkspaceLayoutMetrics.clampedLeftWidth(persistedLeftColumnWidth)
-    }
-
-    private var restoredRightColumnWidth: CGFloat {
-        AgentWorkspaceLayoutMetrics.clampedRightWidth(persistedRightColumnWidth)
-    }
-
     var body: some View {
-        NavigationSplitView(columnVisibility: $chromeState.leftColumnVisibility) {
+        AgentWorkspaceColumns(chromeState: chromeState, columnWidths: columnWidthPersistence) {
             agentRail
-                .navigationSplitViewColumnWidth(
-                    min: AgentWorkspaceLayoutMetrics.leftMinimumWidth,
-                    ideal: restoredLeftColumnWidth,
-                    max: AgentWorkspaceLayoutMetrics.leftMaximumWidth
-                )
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear
-                            .onChange(of: proxy.size.width, initial: true) { _, width in
-                                scheduleLeftWidthPersistence(width)
-                            }
-                    }
-                }
-                // NavigationSplitView 的 Sidebar 是独立 preference 边界，尺寸不能再向
-                // 根视图上传；在列内直接监听 GeometryReader，才能可靠写回 @AppStorage。
-        } detail: {
-            GeometryReader { proxy in
-                AgentWorkspaceRunSurface(viewModel: viewModel)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-                    .clipped()
-            }
-            // 中栏只填充 NavigationSplitView 已分配的尺寸，不把内容固有宽度带回三栏协商；
-            // 否则在最小窗口拖动 Inspector 时，SwiftUI 会反复重算布局并导致主线程卡死。
-        }
-        // 任务检查器是语义明确的 trailing inspector。使用系统 Inspector 后，宽度
-        // 约束直接进入分栏控制器，不再依赖 HSplitView 对普通 idealWidth 的布局猜测。
-        .inspector(isPresented: $chromeState.isRightColumnPresented) {
-            // Inspector 也必须以系统分配的栏宽为边界；嵌套工具数据的固有宽度
-            // 不能反向撑大整栏，否则标题会随内容一起被相邻分栏遮住。
-            GeometryReader { proxy in
-                artifactInspector
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-                    .clipped()
-            }
-                .inspectorColumnWidth(
-                    min: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
-                    ideal: restoredRightColumnWidth,
-                    max: AgentWorkspaceLayoutMetrics.rightMaximumWidth
-                )
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear
-                            .onChange(of: proxy.size.width, initial: true) { _, width in
-                                scheduleRightWidthPersistence(width)
-                            }
-                    }
-                }
+        } runSurface: {
+            AgentWorkspaceRunSurface(viewModel: viewModel)
+        } inspector: {
+            artifactInspector
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
-        .animation(.easeInOut(duration: 0.16), value: chromeState.isRightColumnCollapsed)
-        .onDisappear {
-            // 用户可能拖完立即关闭窗口；同步提交最后测量值，不能依赖 debounce 任务来得及执行。
-            columnWidthPersistence.persistLastMeasuredWidths(
-                leftWidth: $persistedLeftColumnWidth,
-                rightWidth: $persistedRightColumnWidth
-            )
-            columnWidthPersistence.cancelPendingPersistence()
-        }
     }
 
     private var availableAgentDefinitions: [AgentDefinition] {
@@ -480,22 +416,4 @@ struct AgentWorkspaceView: View {
     private func agentIconFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         interfaceScale.font(size: size, weight: weight)
     }
-
-    /// 将连续 GeometryReader 测量交给非 Observable 缓存，避免测量值反向使根视图失效。
-    private func scheduleLeftWidthPersistence(_ measuredWidth: CGFloat) {
-        columnWidthPersistence.scheduleLeftWidthPersistence(
-            measuredWidth,
-            isCollapsed: chromeState.isLeftColumnCollapsed,
-            persistedWidth: $persistedLeftColumnWidth
-        )
-    }
-
-    private func scheduleRightWidthPersistence(_ measuredWidth: CGFloat) {
-        columnWidthPersistence.scheduleRightWidthPersistence(
-            measuredWidth,
-            isCollapsed: chromeState.isRightColumnCollapsed,
-            persistedWidth: $persistedRightColumnWidth
-        )
-    }
-
 }
