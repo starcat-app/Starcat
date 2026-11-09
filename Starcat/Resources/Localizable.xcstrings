@@ -524970,6 +524970,113 @@
         }
       }
     },
+    "settings.integration.runtimeDownload.unknownVersion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The installed version of %1$@ could not be compared. Download and configure version %2$@?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法比较 %1$@ 的已安装版本，是否下载并配置版本 %2$@？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法比較 %1$@ 的已安裝版本，是否下載並設定版本 %2$@？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ のインストール済みバージョンを比較できません。バージョン %2$@ をダウンロードして設定しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@의 설치된 버전을 비교할 수 없습니다. 버전 %2$@을(를) 다운로드하고 설정하시겠습니까?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die installierte Version von %1$@ konnte nicht verglichen werden. Version %2$@ herunterladen und einrichten?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de comparer la version installée de %1$@. Télécharger et configurer la version %2$@ ?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo comparar la versión instalada de %1$@. ¿Quieres descargar y configurar la versión %2$@?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível comparar a versão instalada de %1$@. Deseja baixar e configurar a versão %2$@?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile confrontare la versione installata di %1$@. Scaricare e configurare la versione %2$@?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось сравнить установленную версию %1$@. Скачать и настроить версию %2$@?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De geïnstalleerde versie van %1$@ kon niet worden vergeleken. Versie %2$@ downloaden en instellen?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie można porównać zainstalowanej wersji %1$@. Pobrać i skonfigurować wersję %2$@?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося порівняти встановлену версію %1$@. Завантажити й налаштувати версію %2$@?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ için yüklü sürüm karşılaştırılamadı. %2$@ sürümünü indirip yapılandırmak istiyor musunuz?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể so sánh phiên bản %1$@ đã cài đặt. Bạn có muốn tải xuống và cấu hình phiên bản %2$@ không?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versi %1$@ yang terpasang tidak dapat dibandingkan. Unduh dan konfigurasi versi %2$@?"
+          }
+        }
+      }
+    },
     "settings.integration.runtimeDownload.upgradeRequired" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -525073,6 +525180,434 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Instalasi DeepSeek Harness ini perlu ditingkatkan. Gunakan “Unduh dan konfigurasikan”."
+          }
+        }
+      }
+    },
+    "settings.integration.runtimeDetection.current" : {
+      "comment" : "Runtime 检测按钮左侧反馈，AI 翻译待审",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configured · current version (%@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已配置，已是当前版本（%@）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已設定，已是目前版本（%@）"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "設定済み · 現行バージョン（%@）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설정됨 · 현재 버전 (%@)"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konfiguriert · aktuelle Version (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configuré · version actuelle (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · versión actual (%@)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · versão atual (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurato · versione attuale (%@)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настроено · текущая версия (%@)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geconfigureerd · huidige versie (%@)"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skonfigurowano · bieżąca wersja (%@)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Налаштовано · поточна версія (%@)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapılandırıldı · mevcut sürüm (%@)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã cấu hình · phiên bản hiện tại (%@)"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dikonfigurasi · versi saat ini (%@)"
+          }
+        }
+      }
+    },
+    "settings.integration.runtimeDetection.updateAvailable" : {
+      "comment" : "Runtime 检测按钮左侧反馈，AI 翻译待审",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configured · update available (%@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已配置，可升级至 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已設定，可升級至 %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "設定済み · %@ に更新可能"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설정됨 · %@ 업데이트 가능"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konfiguriert · Update verfügbar (%@)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configuré · mise à jour disponible (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · actualización disponible (%@)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · atualização disponível (%@)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurato · aggiornamento disponibile (%@)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настроено · доступно обновление (%@)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geconfigureerd · update beschikbaar (%@)"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skonfigurowano · dostępna aktualizacja (%@)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Налаштовано · доступне оновлення (%@)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapılandırıldı · güncelleme mevcut (%@)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã cấu hình · có bản cập nhật (%@)"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dikonfigurasi · pembaruan tersedia (%@)"
+          }
+        }
+      }
+    },
+    "settings.integration.runtimeDetection.newer" : {
+      "comment" : "Runtime 检测按钮左侧反馈，AI 翻译待审",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configured · installed version is newer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已配置，本机版本高于可下载版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已設定，本機版本高於可下載版本"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "設定済み · インストール済みのバージョンが新しいです"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설정됨 · 설치된 버전이 더 최신입니다"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konfiguriert · installierte Version ist neuer"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configuré · la version installée est plus récente"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · la versión instalada es más reciente"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · a versão instalada é mais recente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurato · la versione installata è più recente"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настроено · установленная версия новее"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geconfigureerd · geïnstalleerde versie is nieuwer"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skonfigurowano · zainstalowana wersja jest nowsza"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Налаштовано · встановлена версія новіша"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapılandırıldı · yüklü sürüm daha yeni"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã cấu hình · phiên bản đã cài mới hơn"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dikonfigurasi · versi terpasang lebih baru"
+          }
+        }
+      }
+    },
+    "settings.integration.runtimeDetection.unknown" : {
+      "comment" : "Runtime 检测按钮左侧反馈，AI 翻译待审",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configured · version could not be identified"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已配置，无法识别版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已設定，無法辨識版本"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "設定済み · バージョンを識別できません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설정됨 · 버전을 확인할 수 없습니다"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Konfiguriert · Version nicht erkennbar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configuré · version non identifiable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · no se pudo identificar la versión"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurado · não foi possível identificar a versão"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Configurato · impossibile identificare la versione"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Настроено · не удалось определить версию"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geconfigureerd · versie kon niet worden bepaald"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skonfigurowano · nie można rozpoznać wersji"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Налаштовано · не вдалося визначити версію"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapılandırıldı · sürüm belirlenemedi"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã cấu hình · không xác định được phiên bản"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dikonfigurasi · versi tidak dapat dikenali"
           }
         }
       }
@@ -525398,6 +525933,113 @@
         }
       }
     },
+    "settings.integration.runtimeDownload.newerVersion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The installed %1$@ (%2$@) is newer than the available version %3$@. Download and configure the older version?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已安装的 %1$@（%2$@）高于可下载版本 %3$@，是否下载并配置较低版本？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已安裝的 %1$@（%2$@）高於可下載版本 %3$@，是否下載並設定較舊版本？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "インストール済みの %1$@（%2$@）はダウンロード可能なバージョン %3$@ より新しいバージョンです。古いバージョンをダウンロードして設定しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설치된 %1$@(%2$@)은(는) 다운로드 가능한 버전 %3$@보다 최신입니다. 이전 버전을 다운로드하고 설정하시겠습니까?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die installierte Version von %1$@ (%2$@) ist neuer als die verfügbare Version %3$@. Die ältere Version herunterladen und einrichten?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La version installée de %1$@ (%2$@) est plus récente que la version disponible %3$@. Télécharger et configurer la version antérieure ?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La versión instalada de %1$@ (%2$@) es más reciente que la versión disponible %3$@. ¿Quieres descargar y configurar la versión anterior?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A versão instalada de %1$@ (%2$@) é mais recente que a versão disponível %3$@. Deseja baixar e configurar a versão anterior?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La versione installata di %1$@ (%2$@) è più recente della versione disponibile %3$@. Scaricare e configurare la versione precedente?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Установленная версия %1$@ (%2$@) новее доступной версии %3$@. Скачать и настроить более старую версию?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De geïnstalleerde versie van %1$@ (%2$@) is nieuwer dan de beschikbare versie %3$@. De oudere versie downloaden en instellen?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zainstalowana wersja %1$@ (%2$@) jest nowsza niż dostępna wersja %3$@. Pobrać i skonfigurować starszą wersję?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Установлена версія %1$@ (%2$@) новіша за доступну версію %3$@. Завантажити й налаштувати старішу версію?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yüklü %1$@ (%2$@), indirilebilir %3$@ sürümünden daha yeni. Eski sürümü indirip yapılandırmak istiyor musunuz?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ đã cài đặt (%2$@) mới hơn phiên bản có thể tải xuống %3$@. Bạn có muốn tải xuống và cấu hình phiên bản cũ hơn không?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versi %1$@ yang terpasang (%2$@) lebih baru daripada versi yang tersedia, %3$@. Unduh dan konfigurasi versi yang lebih lama?"
+          }
+        }
+      }
+    },
     "settings.integration.runtimeDownload.reindex" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -525501,6 +526143,113 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Pengindeksan pertama dapat membangun ulang graf. Tutup sesi yang memakai CodebaseMemory versi lama sebelum menggunakan versi baru"
+          }
+        }
+      }
+    },
+    "settings.integration.runtimeDownload.reinstall" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download and configure again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重新下载并配置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "重新下載並設定"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "再ダウンロードして設定"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다시 다운로드 및 설정"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Erneut laden und einrichten"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Retélécharger et configurer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Volver a descargar y configurar"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Baixar e configurar novamente"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Scarica e configura di nuovo"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Скачать и настроить повторно"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opnieuw downloaden en instellen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pobierz i skonfiguruj ponownie"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Завантажити й налаштувати знову"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yeniden indir ve yapılandır"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tải xuống và cấu hình lại"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Unduh dan konfigurasi ulang"
           }
         }
       }
@@ -525929,6 +526678,113 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Checksum tidak cocok. Unduh lagi"
+          }
+        }
+      }
+    },
+    "settings.integration.runtimeDownload.currentVersion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ is already at the available version (%2$@). Download and configure it again?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ 已是当前可下载版本（%2$@），是否重新下载并配置？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ 已是目前可下載版本（%2$@），是否重新下載並設定？"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ はダウンロード可能なバージョン（%2$@）と同じです。再ダウンロードして設定しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@은(는) 이미 다운로드 가능한 버전(%2$@)입니다. 다시 다운로드하고 설정하시겠습니까?"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ entspricht bereits der verfügbaren Version (%2$@). Erneut herunterladen und einrichten?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ correspond déjà à la version disponible (%2$@). Télécharger et configurer à nouveau ?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ ya coincide con la versión disponible (%2$@). ¿Quieres descargarlo y configurarlo de nuevo?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ já corresponde à versão disponível (%2$@). Deseja baixar e configurar novamente?"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ corrisponde già alla versione disponibile (%2$@). Scaricare e configurare di nuovo?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ уже соответствует доступной версии (%2$@). Скачать и настроить повторно?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ komt al overeen met de beschikbare versie (%2$@). Opnieuw downloaden en instellen?"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ jest już w dostępnej wersji (%2$@). Pobrać i skonfigurować ponownie?"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ уже відповідає доступній версії (%2$@). Завантажити й налаштувати знову?"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ zaten indirilebilir sürümle (%2$@) aynı. Yeniden indirip yapılandırmak istiyor musunuz?"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ đã khớp với phiên bản có thể tải xuống (%2$@). Bạn có muốn tải xuống và cấu hình lại không?"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ sudah sama dengan versi yang tersedia (%2$@). Unduh dan konfigurasi ulang?"
           }
         }
       }

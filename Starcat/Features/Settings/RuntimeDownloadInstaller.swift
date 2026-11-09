@@ -13,6 +13,14 @@ import Foundation
 enum DownloadableRuntime: String, CaseIterable, Sendable {
     case codex, deepSeek, codebaseMemory
 
+    var displayName: String {
+        switch self {
+        case .codex: "Codex App Server"
+        case .deepSeek: "DeepSeek Harness"
+        case .codebaseMemory: "CodebaseMemory"
+        }
+    }
+
     var version: String {
         switch self {
         case .codex: "0.167.0"
@@ -51,6 +59,15 @@ enum DownloadableRuntime: String, CaseIterable, Sendable {
         return (URL(string: address)!, digest)
     }
 
+    /// PyPI 文件站在部分网络实测仅约 12 KB/s，90 MB 归档会长时间无反馈
+    /// TUNA 只镜像同一固定文件，仍须通过官方 SHA256；不可用时回退官方源
+    var downloadURLs: [URL] {
+        guard self == .deepSeek else { return [asset.url] }
+        var mirror = URLComponents(url: asset.url, resolvingAgainstBaseURL: false)!
+        mirror.host = "pypi.tuna.tsinghua.edu.cn"
+        return [mirror.url!, asset.url]
+    }
+
     var isSupported: Bool {
         #if arch(arm64)
         true
@@ -74,7 +91,7 @@ struct RuntimeDownloadInstallation: Sendable {
 }
 
 enum RuntimeDownloadError: LocalizedError {
-    case unavailable, busy, invalidDownload, checksum, invalidLayout(String), process(String)
+    case unavailable, busy, invalidDownload, checksum, invalidLayout(String), process(String), download(String)
 
     var errorDescription: String? {
         switch self {
@@ -82,7 +99,7 @@ enum RuntimeDownloadError: LocalizedError {
         case .busy: String.l10n("settings.integration.runtimeDownload.busy")
         case .invalidDownload: String.l10n("settings.integration.runtimeDownload.invalidDownload")
         case .checksum: String.l10n("settings.integration.runtimeDownload.checksum")
-        case .invalidLayout(let detail), .process(let detail):
+        case .invalidLayout(let detail), .process(let detail), .download(let detail):
             "\(String.l10n("settings.integration.runtimeDownload.failed"))\n\(detail)"
         }
     }
@@ -96,7 +113,12 @@ actor RuntimeDownloadInstaller {
     private let download: Download
 
     init(download: @escaping Download = { request, delegate in
-        try await URLSession.shared.download(for: request, delegate: delegate)
+        // shared 的资源超时可能持续数天；固定总时限才能让失败源真正回退
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForResource = 600
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        return try await session.download(for: request, delegate: delegate)
     }) {
         self.download = download
     }
@@ -120,17 +142,10 @@ actor RuntimeDownloadInstaller {
         try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: workspace) }
 
-        let asset = runtime.asset
-        let delegate = RuntimeDownloadProgress(report: progress)
-        let request = URLRequest(url: asset.url, timeoutInterval: 600)
-        let (download, response) = try await self.download(request, delegate)
+        let download = try await downloadArchive(runtime, progress: progress)
         defer { try? manager.removeItem(at: download) }
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-            throw RuntimeDownloadError.invalidDownload
-        }
         try Task.checkCancellation()
         progress(nil)
-        try Self.verifyChecksum(at: download, expected: asset.sha256)
         let payload = workspace.appendingPathComponent("payload", isDirectory: true)
         try manager.createDirectory(at: payload, withIntermediateDirectories: true)
         if runtime == .deepSeek {
@@ -152,6 +167,42 @@ actor RuntimeDownloadInstaller {
             configuration: checked.configuration.map { installed.appendingPathComponent($0.lastPathComponent) },
             reportedVersion: checked.reportedVersion
         )
+    }
+
+    /// 每个来源单独校验、清理；主动取消立即退出，不能误触发另一个来源继续下载
+    func downloadArchive(
+        _ runtime: DownloadableRuntime,
+        progress: @escaping @Sendable (Double?) -> Void
+    ) async throws -> URL {
+        var failures: [String] = []
+        for url in runtime.downloadURLs {
+            try Task.checkCancellation()
+            progress(0)
+            do {
+                let delegate = RuntimeDownloadProgress(report: progress)
+                let (archive, response) = try await download(
+                    URLRequest(url: url, timeoutInterval: 45), delegate
+                )
+                do {
+                    guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        throw RuntimeDownloadError.download("HTTP \(status)")
+                    }
+                    try Self.verifyChecksum(at: archive, expected: runtime.asset.sha256)
+                    return archive
+                } catch {
+                    try? FileManager.default.removeItem(at: archive)
+                    throw error
+                }
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError || (error as? URLError)?.code == .cancelled {
+                    throw CancellationError()
+                }
+                failures.append("\(url.host ?? ""): \(error.localizedDescription)")
+            }
+        }
+        throw RuntimeDownloadError.download(failures.joined(separator: "\n"))
     }
 
     /// 流式哈希避免把 100+ MB 的归档复制进主进程内存。

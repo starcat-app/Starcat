@@ -19,7 +19,9 @@ struct CodexRuntimeSettingsCard: View {
     @State private var resolvedRuntimeDirectoryPath = ""
     @State private var isExpanded = false
     @State private var isInstalling = false
-    @State private var actualVersion = ""
+    @State private var actualVersion: String?
+    @State private var isCheckingVersion = true
+    @State private var versionProbeID = 0
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -46,23 +48,24 @@ struct CodexRuntimeSettingsCard: View {
                 }
             }
 
-            if !actualVersion.isEmpty {
-                Text(verbatim: actualVersion)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-            RuntimeDownloadButton(runtime: .codex, isInstalling: $isInstalling) { installation in
+            RuntimeDownloadButton(
+                runtime: .codex, installedVersion: actualVersion,
+                isCheckingVersion: isCheckingVersion, isInstalling: $isInstalling
+            ) { installation in
                 customExecutablePath = installation.directory.path
                 refresh()
             }
             HStack(spacing: 8) {
-                AgentRuntimeFailureLabel(status: status)
+                RuntimeDetectionFeedback(
+                    runtime: .codex, status: status, installedVersion: actualVersion,
+                    isChecking: isCheckingVersion
+                )
                 Spacer()
                 AgentRuntimeInfoButton(kind: .codex)
                 Button("settings.integration.agentRuntime.detectAgain", action: refresh)
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
-                    .disabled(status.isChecking || isInstalling)
+                    .disabled(status.isChecking || isInstalling || isCheckingVersion)
             }
         } label: {
             HStack(spacing: 8) {
@@ -73,13 +76,22 @@ struct CodexRuntimeSettingsCard: View {
         }
         .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "Codex App Server")))
         .task { refresh() }
-        .task(id: resolvedRuntimeDirectoryPath) {
-            actualVersion = ""
-            guard let installation = try? CodexRuntimeInstallationResolver(executableResolver: resolver)
-                .resolve(configuredPath: customExecutablePath) else { return }
-            actualVersion = (try? await RuntimeDownloadInstaller.run(installation.executableURL, ["--version"]))?
+        .task(id: versionProbeID) { await detectVersion() }
+    }
+
+    /// 每次重新检测都探测真实版本；取消的旧路径结果不得覆盖新选择
+    @MainActor
+    private func detectVersion() async {
+        let requestID = versionProbeID
+        var version: String?
+        if let installation = try? CodexRuntimeInstallationResolver(executableResolver: resolver)
+            .resolve(configuredPath: customExecutablePath) {
+            version = (try? await RuntimeDownloadInstaller.run(installation.executableURL, ["--version"]))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         }
+        guard !Task.isCancelled, requestID == versionProbeID else { return }
+        actualVersion = version
+        isCheckingVersion = false
     }
 
     /// 检测目录布局与必要 Host，认证状态继续由 `codex login status` 负责。
@@ -87,6 +99,9 @@ struct CodexRuntimeSettingsCard: View {
     @MainActor
     private func refresh() {
         guard !status.isChecking else { return }
+        // 检测过程保留上次版本，避免内容移除导致设置分组跳动
+        isCheckingVersion = true
+        versionProbeID += 1
         status = .checking
         do {
             let installation = try CodexRuntimeInstallationResolver(executableResolver: resolver)

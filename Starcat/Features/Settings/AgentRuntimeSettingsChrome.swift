@@ -279,23 +279,6 @@ private struct AgentRuntimeInfoPopover: View {
     }
 }
 
-/// 检测操作行左侧的简短反馈；保留完整错误以供悬停查看与辅助功能读取。
-struct AgentRuntimeFailureLabel: View {
-    let status: AgentRuntimeSettingsStatus
-
-    var body: some View {
-        if case .failed(let message, let summaryKey) = status {
-            Label(LocalizedStringKey(summaryKey), systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(Text(verbatim: message))
-                .accessibilityHint(Text(verbatim: message))
-        }
-    }
-}
-
 /// 在 Finder 中打开路径所在目录：文件会选中该文件，目录则直接打开。
 enum AgentRuntimePathReveal {
     static func reveal(_ path: String) {

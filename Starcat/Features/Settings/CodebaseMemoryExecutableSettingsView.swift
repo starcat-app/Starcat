@@ -15,7 +15,6 @@ import SwiftUI
 struct CodebaseMemoryExecutableSettingsView: View {
     private enum ResolutionState: Equatable {
         case idle
-        case resolving
         case available(CodebaseMemoryExecutable)
         case unavailable(String)
     }
@@ -23,6 +22,8 @@ struct CodebaseMemoryExecutableSettingsView: View {
     @State private var resolutionState: ResolutionState = .idle
     @State private var hasUserSelection = false
     @State private var isInstalling = false
+    // 忙碌状态与上次结果分开，重新检测不会清空版本、副标题和路径
+    @State private var isResolving = false
 
     private let channel: DistributionChannel
     private let resolver: CodebaseMemoryBinaryResolver
@@ -50,13 +51,6 @@ struct CodebaseMemoryExecutableSettingsView: View {
                 executableStatus
             }
 
-            if case .unavailable(let message) = resolutionState {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-
             // App Store 始终使用内置程序，不展示外部路径选择或自动检测恢复入口。
             if channel.isDirect {
                 AgentRuntimePathRow(
@@ -77,12 +71,19 @@ struct CodebaseMemoryExecutableSettingsView: View {
             }
 
             if channel.isDirect {
-                RuntimeDownloadButton(runtime: .codebaseMemory, isInstalling: $isInstalling) { installation in
+                RuntimeDownloadButton(
+                    runtime: .codebaseMemory, installedVersion: installedVersion,
+                    isCheckingVersion: isResolving, isInstalling: $isInstalling
+                ) { installation in
                     resolutionState = .available(try await resolver.selectExecutable(installation.executable))
                     hasUserSelection = true
                 }
             }
             HStack(spacing: 8) {
+                RuntimeDetectionFeedback(
+                    runtime: .codebaseMemory, status: detectionStatus, installedVersion: installedVersion,
+                    isChecking: isResolving, comparesDownloadVersion: channel.isDirect
+                )
                 Spacer()
                 Button("settings.integration.codebaseMemory.executable.detectAgain") {
                     Task { await refresh() }
@@ -99,8 +100,8 @@ struct CodebaseMemoryExecutableSettingsView: View {
     @ViewBuilder
     private var executableStatus: some View {
         switch resolutionState {
-        case .idle, .resolving:
-            Text("settings.integration.codebaseMemory.executable.detecting")
+        case .idle:
+            Text("settings.integration.agentRuntime.notConfigured")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .available:
@@ -119,9 +120,18 @@ struct CodebaseMemoryExecutableSettingsView: View {
         return ""
     }
 
-    private var isResolving: Bool {
-        if case .resolving = resolutionState { return true }
-        return false
+    private var detectionStatus: AgentRuntimeSettingsStatus {
+        switch resolutionState {
+        case .idle: .idle
+        case .available: .ready
+        case .unavailable(let message):
+            .failed(message, summaryKey: "settings.integration.agentRuntime.status.failed")
+        }
+    }
+
+    private var installedVersion: String? {
+        if case .available(let executable) = resolutionState { return executable.version }
+        return nil
     }
 
     private func executableDescription(_ executable: CodebaseMemoryExecutable) -> String {
@@ -140,7 +150,8 @@ struct CodebaseMemoryExecutableSettingsView: View {
     @MainActor
     private func refresh() async {
         guard !isResolving else { return }
-        resolutionState = .resolving
+        isResolving = true
+        defer { isResolving = false }
         hasUserSelection = await resolver.hasUserSelectedExecutable()
         do {
             resolutionState = .available(try await resolver.resolveExecutableInfo())
@@ -160,8 +171,9 @@ struct CodebaseMemoryExecutableSettingsView: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        resolutionState = .resolving
+        isResolving = true
         Task {
+            defer { isResolving = false }
             do {
                 resolutionState = .available(try await resolver.selectExecutable(url))
                 hasUserSelection = true

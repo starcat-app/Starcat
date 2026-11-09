@@ -12,12 +12,16 @@ struct RuntimeDownloadButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let runtime: DownloadableRuntime
+    /// nil 表示未找到可用程序；空字符串表示程序存在但无法读取版本，仍须确认
+    let installedVersion: String?
+    let isCheckingVersion: Bool
     @Binding var isInstalling: Bool
     let configure: @MainActor (RuntimeDownloadInstallation) async throws -> Void
 
     @State private var task: Task<Void, Never>?
     @State private var progress: Double?
     @State private var message = ""
+    @State private var isConfirmingInstallation = false
 
     var body: some View {
         if DistributionChannel.current.isDirect, runtime.isSupported {
@@ -29,6 +33,11 @@ struct RuntimeDownloadButton: View {
                         Text("settings.integration.runtimeDownload.installing")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if let progress {
+                            Text(progress, format: .percent.precision(.fractionLength(0)))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
                     } else if !message.isEmpty {
                         Text(verbatim: message)
                             .font(.caption)
@@ -36,32 +45,29 @@ struct RuntimeDownloadButton: View {
                             .textSelection(.enabled)
                     }
                     Spacer(minLength: 8)
-                    if runtime == .codebaseMemory {
-                        // 胶囊标识待下载版本，与上方当前安装版本的检测结果区分
+                    // 绿色胶囊只表示确实有更新，不能把当前版或较低版本标成新版
+                    if !isCheckingVersion, versionRelationship == .updateAvailable {
                         HStack(spacing: 4) {
                             Image(systemName: "tag")
                                 .accessibilityHidden(true)
                             Text(verbatim: runtime.version)
                         }
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.green)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(.quaternary, in: Capsule())
+                        .background(.green.opacity(0.12), in: Capsule())
                         .overlay {
                             Capsule()
-                                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                                .strokeBorder(.green.opacity(0.3), lineWidth: 0.5)
                         }
                         .fixedSize()
-                    } else {
-                        Text(verbatim: runtime.version)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
                     }
-                    Button("settings.integration.runtimeDownload.action", action: install)
+                    Button("settings.integration.runtimeDownload.action", action: requestInstallation)
                         .buttonStyle(.bordered)
                         .controlSize(.regular)
-                        .disabled(isInstalling)
+                        .disabled(isInstalling || isCheckingVersion)
+                        .help(Text(verbatim: runtime.downloadURLs.map(\.absoluteString).joined(separator: "\n")))
                     if isInstalling {
                         Button("common.cancel") { task?.cancel() }
                             .buttonStyle(.bordered)
@@ -69,7 +75,53 @@ struct RuntimeDownloadButton: View {
                     }
                 }
             }
-            .onDisappear { task?.cancel() }
+            .alert("settings.integration.runtimeDownload.action", isPresented: $isConfirmingInstallation) {
+                if versionRelationship == .current {
+                    Button("settings.integration.runtimeDownload.reinstall", action: install)
+                } else {
+                    Button("settings.integration.runtimeDownload.action", action: install)
+                }
+                Button("common.cancel", role: .cancel) {}
+            } message: {
+                Text(verbatim: installationConfirmation)
+            }
+            .onChange(of: installedVersion) { isConfirmingInstallation = false }
+            .onChange(of: isCheckingVersion) {
+                if isCheckingVersion { isConfirmingInstallation = false }
+            }
+            .onDisappear {
+                isConfirmingInstallation = false
+                task?.cancel()
+            }
+        }
+    }
+
+    private var versionRelationship: RuntimeDownloadVersionRelationship {
+        RuntimeDownloadVersionRelationship(installedVersion: installedVersion ?? "", availableVersion: runtime.executableVersion)
+    }
+
+    /// 确认文案使用同一次检测结果；未知版本与降级不能伪装成普通更新
+    private var installationConfirmation: String {
+        switch versionRelationship {
+        case .current:
+            String(format: String.l10n("settings.integration.runtimeDownload.currentVersion"),
+                   runtime.displayName, installedVersion ?? "")
+        case .newer:
+            String(format: String.l10n("settings.integration.runtimeDownload.newerVersion"),
+                   runtime.displayName, installedVersion ?? "", runtime.version)
+        case .unknown, .updateAvailable:
+            String(format: String.l10n("settings.integration.runtimeDownload.unknownVersion"),
+                   runtime.displayName, runtime.version)
+        }
+    }
+
+    /// 未安装或确有更新时直接安装；已有程序的重复安装、降级和版本读取失败均先确认
+    private func requestInstallation() {
+        guard !isInstalling, !isCheckingVersion else { return }
+        if installedVersion == nil || versionRelationship == .updateAvailable {
+            install()
+        } else {
+            isConfirmingInstallation = true
         }
     }
 
@@ -99,7 +151,7 @@ struct RuntimeDownloadButton: View {
 
     /// configure 闭包仅在校验和取消检查通过之后执行；失败时维持已有配置。
     private func install() {
-        guard !isInstalling else { return }
+        guard !isInstalling, !isCheckingVersion else { return }
         isInstalling = true
         message = ""
         progress = nil

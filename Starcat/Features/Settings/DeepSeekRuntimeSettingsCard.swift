@@ -24,7 +24,9 @@ struct DeepSeekRuntimeSettingsCard: View {
     @State private var resolvedExecutablePath = ""
     @State private var isExpanded = false
     @State private var isInstalling = false
-    @State private var actualVersion = ""
+    @State private var actualVersion: String?
+    @State private var isCheckingVersion = true
+    @State private var versionProbeID = 0
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -56,24 +58,25 @@ struct DeepSeekRuntimeSettingsCard: View {
                 )
             }
 
-            if !actualVersion.isEmpty {
-                Text(verbatim: actualVersion)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-            }
-            RuntimeDownloadButton(runtime: .deepSeek, isInstalling: $isInstalling) { installation in
+            RuntimeDownloadButton(
+                runtime: .deepSeek, installedVersion: actualVersion,
+                isCheckingVersion: isCheckingVersion, isInstalling: $isInstalling
+            ) { installation in
                 executablePath = installation.executable.path
                 cordisConfigPath = installation.configuration?.path ?? ""
                 refresh()
             }
             HStack(spacing: 8) {
-                AgentRuntimeFailureLabel(status: status)
+                RuntimeDetectionFeedback(
+                    runtime: .deepSeek, status: status, installedVersion: actualVersion,
+                    isChecking: isCheckingVersion
+                )
                 Spacer()
                 AgentRuntimeInfoButton(kind: .deepSeek)
                 Button("settings.integration.agentRuntime.detectAgain", action: refresh)
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
-                    .disabled(status.isChecking || isInstalling)
+                    .disabled(status.isChecking || isInstalling || isCheckingVersion)
             }
         } label: {
             HStack(spacing: 8) {
@@ -84,13 +87,23 @@ struct DeepSeekRuntimeSettingsCard: View {
         }
         .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "DeepSeek Harness")))
         .task { refresh() }
-        .task(id: executablePath) {
-            actualVersion = ""
-            guard !executablePath.isEmpty else { return }
-            actualVersion = (try? await RuntimeDownloadInstaller.run(
-                URL(fileURLWithPath: executablePath), ["--version"]
-            ))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        .task(id: versionProbeID) { await detectVersion() }
+    }
+
+    /// 自动检测和手动选择共用真实版本；重新检测同一路径也能发现原位升级
+    @MainActor
+    private func detectVersion() async {
+        let requestID = versionProbeID
+        var version: String?
+        if let executable = try? resolver.resolve(
+            executableName: DeepSeekHarnessRuntime.executableName, explicitPath: executablePath
+        ) {
+            version = (try? await RuntimeDownloadInstaller.run(executable, ["--version"]))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         }
+        guard !Task.isCancelled, requestID == versionProbeID else { return }
+        actualVersion = version
+        isCheckingVersion = false
     }
 
     /// 解析成功用 resolver 给出的绝对路径；失败时仍展示用户刚选的路径，方便对照 Finder。
@@ -103,6 +116,9 @@ struct DeepSeekRuntimeSettingsCard: View {
     @MainActor
     private func refresh() {
         guard !status.isChecking else { return }
+        // 检测过程保留上次版本，反馈只更新在重新检测按钮旁
+        isCheckingVersion = true
+        versionProbeID += 1
         status = .checking
         do {
             let executable = try resolver.resolve(
