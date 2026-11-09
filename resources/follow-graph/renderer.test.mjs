@@ -15,7 +15,7 @@ const source = buildSync({
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
 function renderer({ reduced = true } = {}) {
-  const props = new Map(), calls = [], messages = [], images = [], timers = new Map(), frames = new Map();
+  const props = new Map(), calls = [], messages = [], images = [], canvases = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
   let onResize;
@@ -29,7 +29,11 @@ function renderer({ reduced = true } = {}) {
   const canvasContext = new Proxy({}, { get: (_, key) => (...args) => calls.push([key, ...args]) });
   const container = target(), document = { ...target(), hidden: false,
     getElementById: () => container,
-    createElement: () => ({ style: {}, getContext: () => canvasContext, remove() {} })
+    createElement: () => {
+      const canvas = { style: {}, getContext: () => canvasContext, remove() {} };
+      canvases.push(canvas);
+      return canvas;
+    }
   };
   let center = { x: 0, y: 0 }, zoom = 1;
   const force = { strength() { return this; }, distance() { return this; } };
@@ -76,7 +80,7 @@ function renderer({ reduced = true } = {}) {
     })),
     links: Array.from({ length: count - 1 }, (_, i) => ({ source: '1', target: String(i + 2) }))
   });
-  return { props, calls, messages, images, timers, frames, container, document, window, graph, update, data, canvasContext,
+  return { props, calls, messages, images, canvases, timers, frames, container, document, window, graph, update, data, canvasContext,
     resize() { onResize(); },
     frame(ms = 34) { clock += ms; const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(clock)); },
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
@@ -586,6 +590,73 @@ test('cached avatars display immediately without replaying download fades', () =
   assert.equal(alphas.at(-1), 1);
   assert.equal(r.frames.size, 0);
   assert.ok(r.images.every(image => new URL(image.src).hostname === 'cache'));
+});
+
+test('only network fades allocate a placeholder surface and release its pixels on completion', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  r.images[0].onload();
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 1);
+  r.update(2, { reduceMotion: false });
+  r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[1], r.canvasContext, 1);
+  r.images.at(-1).onerror();
+  r.images.at(-1).onload();
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 3);
+  const placeholder = r.canvases.at(-1);
+  r.frame(280);
+  assert.equal(placeholder.width, 0);
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 2);
+  r.window.followGraph.destroy();
+  assert.ok(r.canvases.every(canvas => canvas.width === 0));
+});
+
+test('avatar LRU retains all visible users, evicts only offscreen pixels and reuses cache on return', () => {
+  const r = renderer();
+  r.update(1, { ...r.data(700), selected: '700' });
+  const nodes = r.props.get('graphData').nodes;
+  for (const node of nodes) {
+    node.x = node.y = 0;
+    r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  }
+  while (true) {
+    const image = r.images.find(value => value.onload);
+    if (!image) break;
+    image.onload();
+  }
+  r.props.get('onRenderFramePre')();
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  // The budget is soft: retaining a fully visible graph prevents image churn.
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 700);
+  for (const node of nodes.slice(100)) node.x = 5000;
+  r.frame(500);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePre')();
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 512);
+  const before = r.images.length;
+  r.props.get('nodeCanvasObject')(nodes[699], r.canvasContext, 1);
+  assert.equal(r.images.length, before); // Selected user remains pinned, even offscreen.
+  nodes[149].x = 0;
+  r.props.get('nodeCanvasObject')(nodes[149], r.canvasContext, 1);
+  assert.equal(r.images.length, before + 1);
+  assert.equal(new URL(r.images.at(-1).src).hostname, 'cache');
+  r.images.at(-1).onload();
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'zoom', 'centerAt'].includes(name)));
+  r.window.followGraph.destroy();
+  assert.ok(r.canvases.every(canvas => canvas.width === 0));
+});
+
+test('offscreen avatars skip surface allocation while selection can still load them', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  const node = r.props.get('graphData').nodes[1];
+  node.x = 2000;
+  r.props.get('onRenderFramePre')();
+  r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  assert.equal(r.images.length, 1);
+  r.props.get('onNodeClick')(node);
+  assert.equal(r.images.length, 2);
+  r.window.followGraph.destroy();
 });
 
 test('bounded lookahead probes cache independently of slow downloads', () => {

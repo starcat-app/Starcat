@@ -26,6 +26,10 @@ const avatarOverrides = new Map();
 const cacheQueue = { pending: [], active: 0, limit: 8, cacheOnly: true };
 const downloadQueue = { pending: [], active: 0, limit: 8, cacheOnly: false };
 const avatarFades = new Set();
+// A soft budget evicts only offscreen, completed resources. Never evict visible
+// avatars to hit an arbitrary count: that would create placeholder/cache-read churn.
+const avatarBudget = 512;
+let viewportBounds = null, nextAvatarTrim = 0;
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
 // Degree describes only the loaded presentation graph. Logarithmic scaling keeps
@@ -43,7 +47,9 @@ const post = (type, extra = {}) => {
 
 /** Rasterize each avatar once; Canvas drawing never allocates GPU textures or images per frame. */
 function paint(resource, node, placeholder = false) {
-  const ctx = (placeholder ? resource.placeholder : resource.canvas).getContext('2d');
+  const surface = placeholder ? resource.placeholder : resource.canvas;
+  if (!surface) return;
+  const ctx = surface.getContext('2d');
   ctx.clearRect(0, 0, 64, 64);
   ctx.save();
   ctx.beginPath();
@@ -83,6 +89,11 @@ function drainImages(queue) {
     image.onload = () => {
       if (finished) return;
       if (!destroyed && resources.get(node.id) === resource) {
+        if (!reduceMotion && !queue.cacheOnly) {
+          // Keep a second surface only for the actual network crossfade.
+          resource.placeholder = avatarSurface();
+          resource.placeholder.getContext('2d').drawImage(resource.canvas, 0, 0);
+        }
         resource.probing = false;
         resource.loaded = true;
         // Disk/memory hits are already available content: never replay a download fade.
@@ -146,6 +157,56 @@ function discardAvatar(id) {
     queue.pending = queue.pending.filter(([node]) => node.id !== id);
   }
   resource?.cancel?.();
+  if (resource) {
+    if (resource.image) resource.image.src = '';
+    resource.image = null;
+    resource.canvas.width = resource.canvas.height = 0;
+    releasePlaceholder(resource);
+  }
+}
+
+/** Free the backing pixels explicitly; a detached Canvas can otherwise retain them until GC. */
+function releasePlaceholder(resource) {
+  if (!resource.placeholder) return;
+  resource.placeholder.width = resource.placeholder.height = 0;
+  resource.placeholder = null;
+}
+
+function avatarSurface() {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  return canvas;
+}
+
+/** Match current graph coordinates once per base frame, not once per avatar. */
+function updateViewportBounds() {
+  const center = graph.centerAt(), scale = graph.zoom();
+  viewportBounds = { left: center.x - innerWidth / (2 * scale), right: center.x + innerWidth / (2 * scale),
+    top: center.y - innerHeight / (2 * scale), bottom: center.y + innerHeight / (2 * scale), scale };
+}
+
+function avatarOnscreen(node) {
+  if (!viewportBounds || node.id === root || node.id === selected) return true;
+  // Include the pop overshoot and screen-space stroke so edge avatars don't disappear early.
+  const pad = radius(node) * 1.11 + 4 / viewportBounds.scale;
+  return node.x + pad >= viewportBounds.left && node.x - pad <= viewportBounds.right &&
+    node.y + pad >= viewportBounds.top && node.y - pad <= viewportBounds.bottom;
+}
+
+/** Trim at most twice per second; in-flight work, fades and all visible avatars stay pinned.
+ * Re-entering the viewport probes native cache first, so eviction is not a network refresh.
+ */
+function trimAvatars() {
+  const now = performance.now();
+  if (resources.size <= avatarBudget || now < nextAvatarTrim) return;
+  nextAvatarTrim = now + 500;
+  const candidates = [...resources].filter(([id, resource]) =>
+    resource.loaded && !resource.cancel && !avatarFades.has(resource) && !avatarOnscreen(nodes.get(id)));
+  candidates.sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+  for (const [id] of candidates) {
+    if (resources.size <= avatarBudget) break;
+    discardAvatar(id);
+  }
 }
 
 /** The card has made this avatar available in native cache. Restart only its
@@ -166,17 +227,14 @@ function refreshCardAvatar(event) {
 
 function avatar(node) {
   if (!resources.has(node.id)) {
-    const canvas = document.createElement('canvas');
-    const placeholder = document.createElement('canvas');
-    canvas.width = canvas.height = 64;
-    placeholder.width = placeholder.height = 64;
-    const resource = { canvas, placeholder, loaded: false, probing: Boolean(node.avatar) };
+    const resource = { canvas: avatarSurface(), placeholder: null, loaded: false, probing: Boolean(node.avatar) };
     resources.set(node.id, resource);
     paint(resource, node);
-    paint(resource, node, true);
     if (node.avatar) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }
   }
-  return resources.get(node.id);
+  const resource = resources.get(node.id);
+  resource.lastUsed = performance.now();
+  return resource;
 }
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
@@ -185,6 +243,7 @@ function drawNode(node, ctx, scale) {
   // should not flash its letter first; no remote request can hold this gate.
   if (node.id === root && avatar(node).probing) return;
   if (node.id === root) rootPainted = true;
+  if (!avatarOnscreen(node)) return;
   const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
   const overshoot = progress - 1;
@@ -253,6 +312,7 @@ const graph = new ForceGraph(container)
   .linkDirectionalArrowLength(() => 0)
   .linkDirectionalArrowRelPos(1)
   .cooldownTicks(120)
+  .onRenderFramePre(updateViewportBounds)
   .onEngineTick(applyPendingView)
   .onEngineStop(applyPendingView)
   .onRenderFramePost((ctx, scale) => {
@@ -260,6 +320,7 @@ const graph = new ForceGraph(container)
     // Geometry/zoom changes refresh the overlay in the same frame as the graph.
     // Settled path animation can then leave the base and picking canvases asleep.
     drawFlowOverlay(scale);
+    trimAvatars();
     // Script readiness is earlier than the first real Canvas frame. Keep native
     // presentation hidden until the themed graph has actually painted its root.
     if (!presented && hasAppearance && rootPainted && session) {
@@ -511,7 +572,10 @@ function syncAnimation() {
   if (running) graph.resumeAnimation();
   else graph.pauseAnimation();
   for (const resource of avatarFades) {
-    if (reduceMotion || performance.now() - resource.loadedAt >= 280) avatarFades.delete(resource);
+    if (reduceMotion || performance.now() - resource.loadedAt >= 280) {
+      avatarFades.delete(resource);
+      releasePlaceholder(resource);
+    }
   }
   if (destroyed || !running || reduceMotion ||
       (selectedPath.length < 2 && !(outgoingPath.length > 1 && performance.now() - pathChangedAt < 180) &&
@@ -742,8 +806,7 @@ window.followGraph = {
     container.removeEventListener('wheel', touchViewport);
     document.removeEventListener('visibilitychange', syncAnimation);
     window.removeEventListener('error', onError);
-    for (const resource of resources.values()) resource.cancel?.();
-    resources.clear();
+    for (const id of resources.keys()) discardAvatar(id);
     avatarOverrides.clear();
     cacheQueue.pending.length = downloadQueue.pending.length = 0;
     avatarFades.clear();
