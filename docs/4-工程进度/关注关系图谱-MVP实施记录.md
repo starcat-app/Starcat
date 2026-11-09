@@ -8,6 +8,26 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## 三批性能优化（2026-11-09，待人工视觉验收）
+
+- 在 `codex/followers-graph` / `../Starcat-followers-graph` 实施，保留两方向现有功能、逐个入场和视觉效果。
+- `89c77172`：流光独立绘制。1,000 节点稳定图连续 30 动画帧的替身回归中，基础绘制与命中回调配置、图数据更新均为 0 次，流光持续绘制；同时覆盖 Retina、缩放、后台暂停和关闭释放。
+- `293c8ee9`：头像渐入完成后释放临时占位表面；按视口回收头像，512 张软预算保护屏内、本人、选中、在途及渐入资源。700 张全部屏内时允许超预算，部分移出后可收敛；返回视口优先探测原生缓存。
+- `a694852e`：增量维护可见关系，缓存原生方向计数与 BFS 父节点。覆盖交叉边、自环、两方向、删除和减少动态效果；原生测试比较缓存路径与原图算法，校验动态人数。
+- JS **38 项**、原生 **70 项 / 8 suites**通过。日志：`/tmp/starcat-followers-perf-index-js.log`、`/tmp/starcat-followers-perf-index-tests.log`。
+
+| 节点 / 边 | 入场数据整理累计耗时：优化前 → 后 | 边检查次数：优化前 → 后 | graphData 调用次数（前后相同） |
+|---|---:|---:|---:|
+| 1,000 / 2,986 | 28.92 → 9.95ms | 421,026 → 7,959 | 141 |
+| 5,000 / 14,986 | 164.14 → 36.28ms | 3,506,724 → 39,959 | 234 |
+| 10,000 / 29,986 | 488.16 → 74.04ms | 10,315,184 → 79,959 | 344 |
+
+- 对比基线 `36f7b4b6`，同规模和 34ms 虚拟帧，5 轮去前 2 轮取中位数；真实渐进队列配合 Canvas / ForceGraph 替身。计时源码不插桩，边检查次数另跑一轮统计，避免计数回调污染耗时。前后出现数量、帧步数和数据提交数量一致。脚本及结果：`/tmp/starcat-followers-perf-compare.cjs`、`/tmp/starcat-followers-perf-before.jsonl`、`/tmp/starcat-followers-perf-after.jsonl`。
+- 耗时不含 Canvas 与 D3，不代表实际 FPS 或进程 CPU 百分比。单张头像 Canvas 像素预算 16KiB，512 张为 8MiB；原始 Image、流光背板、WebKit 和图结构另占内存，未测实际 RSS，不能宣称进程内存减半。
+- D3 参数及布局步数不变，大图物理计算仍是剩余成本。未执行 GUI 自动化，未改总览或 Changelog，未关闭专项，未推送或合回 dev。
+- `make build-appstore`、`make build-direct` 及渠道产物校验通过；两渠道 HTML / JS / 许可证与源码逐字节一致，已有 2 条刷新提示 × 17 语言的编译资源与 Catalog 一致。日志：`/tmp/starcat-followers-perf-appstore.log`、`/tmp/starcat-followers-perf-direct.log`；核验脚本：`/tmp/starcat-followers-verify-refresh-artifacts.py`。
+- `make run-direct` 已通过 LaunchServices 稳定启动本 worktree 的 Direct Debug，PID `64632`，进程路径及单实例核实通过，启动后再次核验离线资源一致。日志：`/tmp/starcat-followers-perf-launch.log`。实际视觉体验仍待人工查看。
+
 ## 五秒提示、同步 dev 与性能预研（2026-11-09）
 
 - `0be61184` 将图谱共用 Toast 时长统一为 5 秒，覆盖刷新结果与加载更多的普通、受限 / 失败提示；按 dong4j 要求直接提交，不测试、编译或重启，本节不能视为新产物验证。
