@@ -100,8 +100,13 @@ struct ReleaseTimelineView: View {
     private var header: some View {
         HStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "shippingbox")
-                    .foregroundStyle(.secondary)
+                // 与侧边栏入口共用线框包裹，保持 Release 窗口的身份图标一致。
+                BusinessIcon(
+                    .packageAsset,
+                    pointSize: 16 * interfaceScale.multiplier,
+                    weight: .semibold
+                )
+                .foregroundStyle(.secondary)
                 Text("releases.timeline.title")
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

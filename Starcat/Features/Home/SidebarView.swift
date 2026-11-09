@@ -2626,9 +2626,14 @@ struct SidebarView: View {
                     .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
             } icon: {
-                // 与探索「新发布」同语义色；对齐主导航其它行的彩色图标。
-                Image(systemName: "shippingbox.fill")
-                    .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
+                // 线框包裹与时间线标题共用素材，按主导航的 16pt 画布匹配视觉重量。
+                BusinessIcon(
+                    .packageAsset,
+                    pointSize: 16 * interfaceScale.multiplier,
+                    weight: .semibold
+                )
+                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
+                .frame(width: 16, height: 16)
             }
             .contentShape(Rectangle())
         }
