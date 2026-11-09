@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from appcast_xml_util import SPARKLE_NS, write_appcast_xml
+from release_changelog import release_body
 
 SPARKLE_SHORT_VERSION = f"{{{SPARKLE_NS}}}shortVersionString"
 ET.register_namespace("sparkle", SPARKLE_NS)
@@ -64,26 +65,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def extract_version_section(markdown: str, version: str) -> str | None:
-    """从 `## X.Y.Z` 起切到下一同级版本标题之前。"""
+    """提取目标版本正文，排除版本标题和其他版本内容。"""
 
-    lines = markdown.splitlines()
-    start: int | None = None
-    for index, line in enumerate(lines):
-        match = VERSION_HEADING_RE.match(line.strip())
-        if match and match.group("version") == version:
-            start = index
-            break
-    if start is None:
+    try:
+        # 兼容读取历史工作稿，但只渲染正文，不把待发布标题带进 Sparkle。
+        return release_body(markdown, version, allow_pending=True).strip()
+    except ValueError:
         return None
-
-    end = len(lines)
-    for index in range(start + 1, len(lines)):
-        match = VERSION_HEADING_RE.match(lines[index].strip())
-        if match:
-            end = index
-            break
-    section = "\n".join(lines[start:end]).strip()
-    return section or None
 
 
 def _inline_to_html(text: str) -> str:

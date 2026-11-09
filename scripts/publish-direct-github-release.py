@@ -18,6 +18,9 @@ import tempfile
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from release_changelog import release_body
+
 REPOSITORY = "starcat-app/Starcat"
 
 
@@ -88,15 +91,7 @@ def file_sha256(path: Path) -> str:
 
 def release_notes(changelog: Path, version: str, *, allow_pending: bool = False) -> str:
     """正式 Release 拒绝待发布标题；Beta prerelease 可以复用待发布说明。"""
-    heading_suffix = r"(?:-待发布)?" if allow_pending else ""
-    match = re.search(
-        rf"^## {re.escape(version)}{heading_suffix}\s*\n(.*?)(?=^## |\Z)",
-        changelog.read_text(encoding="utf-8"),
-        re.MULTILINE | re.DOTALL,
-    )
-    if not match or not match.group(1).strip():
-        raise ValueError(f"Changelog 缺少正式版本内容: {version}")
-    return match.group(1).strip() + "\n"
+    return release_body(changelog.read_text(encoding="utf-8"), version, allow_pending=allow_pending)
 
 
 def publish(

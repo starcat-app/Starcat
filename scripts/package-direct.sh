@@ -19,8 +19,8 @@
 #   STARCAT_DOWNLOAD_BASE_URL          appcast 下载前缀，默认 GitHub Release 的 v<version>/ 目录。
 #                                     生成后会从 CHANGELOG 注入 Sparkle 更新说明（description）。
 #   STARCAT_DIRECT_DIST_DIR            覆盖产物目录；Beta 版发布用独立目录避免覆盖正式产物。
-#   STARCAT_DIRECT_ALLOW_PENDING_CHANGELOG=1
-#                                     允许 Beta 版读取 `X.Y.Z-待发布` Changelog；正式发布禁止设置。
+#   STARCAT_RELEASE_VERSION            完整发布身份（Beta 为 X.Y.Z-beta.N）。
+#   STARCAT_RELEASE_CHANGELOG_DIR      本次发布固定的双语说明目录；续跑不读取后续工作稿。
 #   STARCAT_DMG_TOOL=create-dmg|hdiutil
 #                                     默认 create-dmg；仅显式设置 hdiutil 时生成裸 DMG。
 #   STARCAT_DMG_APPLESCRIPT_TIMEOUT_SECONDS
@@ -79,32 +79,24 @@ BUILD_LOG="${DIST_DIR}/xcodebuild-direct.log"
 BUILD_NUMBER="${STARCAT_DIRECT_BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 DMG_TOOL="${STARCAT_DMG_TOOL:-create-dmg}"
 DEFAULT_DIRECT_SIGN_IDENTITY="Developer ID Application: liwen gong (8WCUMGCWMB)"
+RELEASE_VERSION="${STARCAT_RELEASE_VERSION:-$VERSION}"
+RELEASE_NOTES_DIR="${STARCAT_RELEASE_CHANGELOG_DIR:-${DOWNLOADS_DIR}/release-notes-${RELEASE_VERSION}}"
 
 log() { printf '[direct] %s\n' "$1"; }
 fail() { printf '[direct] ERROR: %s\n' "$1" >&2; exit 1; }
 
-# Direct App 会把 Direct 渠道 Changelog（2026-11 起随 starcat-site 同仓维护，Starcat#202）
-# 签入 bundle；公开包只能接受与目标版本完全一致的正式标题，
-# 避免发布后才发现“待发布”仍显示在 App 内。
+# Beta 可从待发布目标节生成说明，但签入 App 的必须是去掉草稿标记的固定快照。
+# 正式版本仍拒绝待发布目标；两种路径都不能携带未来版本或其他待发布区段。
 verify_release_changelogs() {
-  local changelog
-  local changelog_root="${PROJECT_ROOT}/supports/starcat-site/direct"
-
-  for changelog in "$changelog_root/CHANGELOG.md" "$changelog_root/CHANGELOG-ZH.md"; do
-    [ -f "$changelog" ] || fail "缺少 Direct Changelog: $changelog"
-    if [ "${STARCAT_DIRECT_ALLOW_PENDING_CHANGELOG:-0}" = "1" ]; then
-      grep -Eq "^## ${VERSION}(-待发布)?$" "$changelog" || \
-        fail "Direct ${VERSION} Changelog 缺少待发布或正式版本标题: $changelog"
-      continue
-    fi
-    if grep -Fqx "## ${VERSION}-待发布" "$changelog"; then
-      fail "Direct ${VERSION} Changelog 仍标记为待发布: $changelog"
-    fi
-    grep -Fqx "## ${VERSION}" "$changelog" || \
-      fail "Direct ${VERSION} Changelog 缺少正式版本标题: $changelog"
-  done
-
-  log "Changelog 正式版本门禁通过: ${VERSION}"
+  if [ -n "${STARCAT_RELEASE_CHANGELOG_DIR:-}" ]; then
+    python3 "$SCRIPT_DIR/release_changelog.py" check \
+      --source-root "$RELEASE_NOTES_DIR" --version "$RELEASE_VERSION"
+  else
+    python3 "$SCRIPT_DIR/release_changelog.py" prepare \
+      --source-root "$PROJECT_ROOT/supports/starcat-site/direct" \
+      --output-root "$RELEASE_NOTES_DIR" --version "$RELEASE_VERSION"
+  fi
+  log "发布说明快照已核验: ${RELEASE_VERSION}"
 }
 
 command -v xcodegen >/dev/null 2>&1 || fail "xcodegen 未安装"
@@ -138,6 +130,8 @@ BUILD_SETTINGS=(
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
   STARCAT_MARKETING_VERSION_OVERRIDE="$VERSION"
   STARCAT_BUILD_VERSION_OVERRIDE="$BUILD_NUMBER"
+  STARCAT_RELEASE_VERSION="$RELEASE_VERSION"
+  STARCAT_RELEASE_CHANGELOG_DIR="$RELEASE_NOTES_DIR"
 )
 if [ -n "${STARCAT_SPARKLE_PUBLIC_ED_KEY:-}" ]; then
   BUILD_SETTINGS+=("STARCAT_SPARKLE_PUBLIC_ED_KEY=${STARCAT_SPARKLE_PUBLIC_ED_KEY}")
@@ -503,6 +497,7 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   log "注入 Sparkle 更新说明: ${VERSION}"
   python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
     --appcast "$CURRENT_APPCAST_PATH" \
+    --changelog-en "$RELEASE_NOTES_DIR/CHANGELOG.md" \
     --version "$VERSION"
 else
   log "跳过 appcast 生成；需要时设置 STARCAT_GENERATE_APPCAST=1"

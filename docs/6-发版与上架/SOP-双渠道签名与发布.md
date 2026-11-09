@@ -254,12 +254,14 @@ make release-direct-development VERSION=1.9.3-beta.1
 
 新构建要求 `dev` 分支和干净工作区，产物放在 `dist/direct-development/`，并且只会：
 
-1. 创建并推送 `vX.Y.Z-beta.N` tag。
-2. 生成 Developer ID 签名、公证并 staple 的 Release DMG。
-3. 创建 GitHub prerelease，上传并回读校验 DMG/SHA256。
-4. 合并并发布 `appcast-development.xml`。
+1. 从目标版本工作稿生成双语说明快照，去掉待发布标签，排除未来版本与其他未发布历史；缺少目标节时停止，不回退到顶部版本。
+2. 创建并推送 `vX.Y.Z-beta.N` tag。
+3. 生成 Developer ID 签名、公证并 staple 的 Release DMG，App 只内置当前版本与已发布历史。
+4. 从同次快照提取 GitHub 与 Sparkle 正文，创建 prerelease，上传并回读校验 DMG/SHA256。
+5. 合并并发布 `appcast-development.xml`，保留已有 item 的说明，不从当前工作稿重写历史。
+6. GitHub 与线上更新源核验成功后，去掉源目标版本标题的“待发布”；未来版本不变。
 
-它不会更新正式 `appcast.xml`、官网最新版、正式 Changelog、Homebrew Cask 或 App Store。
+它不会更新正式 `appcast.xml`、官网最新版、Homebrew Cask 或 App Store。源 Changelog 只登记本次 Beta 目标节，不把未来版本一起标为已发布。
 上传中断且本地最终产物仍完整时，使用：
 
 ```bash
@@ -293,6 +295,12 @@ DMG/SHA256 不再上传阿里云。正式 appcast 仍发布到
 Gatekeeper 接受状态，以及当前 appcast 的唯一 item、营销版本、构建号、下载 URL、
 大小、签名字段和更新说明；本地 tag 对象必须与远端一致，并回显原 tag 的源码 commit。
 它不要求当前 HEAD 等于 tag，也不检查当前源码分支或脏状态，不为上传 commit/stash 并行改动。
+
+新版 Beta 还要求保留 `downloads/release-notes-X.Y.Z-beta.N/` 的双语快照与
+`release-version.txt`。恢复只使用该次快照；旧产物若没有快照，先核对原始发布资料，
+不能用当前工作稿自动补造。同版本再次准备时只接受内容相同的快照，工作稿变化不得覆盖原快照。
+成功登记时，源目标正文若已被后续修改则停止自动登记，
+保留线上发布结果与本地稿件，待人工核对；不得覆盖后续编辑。
 
 原 `STARCAT_RELEASE_REUSE_ARTIFACTS=1` 和 `STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS=1`
 同样进入恢复模式，无需另外设置跳过 tag 或干净检查。该路径不打 tag、不重新打包或 staple，

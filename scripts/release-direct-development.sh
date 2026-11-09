@@ -4,7 +4,7 @@
 #
 # Beta 版仍是 Developer ID 签名并经过 Apple 公证的 Release 构建，只是 GitHub Release
 # 标记为 prerelease，且只公布到 appcast-development.xml。它不会修改正式 appcast、
-# 官网最新版、Changelog、Homebrew 或其它正式发布元数据。
+# 官网最新版、Homebrew 或其它正式发布元数据；成功后只登记源目标节为已发布。
 # 脚本名、环境变量和 feed 地址保留既有标识，避免中断已安装客户端与运维入口。
 
 set -euo pipefail
@@ -30,7 +30,7 @@ Starcat Direct Beta 版发布脚本
   - 新构建要求 dev 分支和干净工作区；--resume 校验原 tag 和最终产物。
   - 新构建必须设置 STARCAT_NOTARIZE=1；恢复会直接校验已有公证票据。
   - 只创建 GitHub prerelease 并更新 appcast-development.xml。
-  - 不更新 appcast.xml、官网最新版、Changelog 或 Homebrew。
+  - 不更新 appcast.xml、官网最新版或 Homebrew；成功后去掉目标 Changelog 的待发布标记。
 EOF
 }
 
@@ -59,6 +59,7 @@ SITE_ROOT="${STARCAT_SITE_ROOT:-${PROJECT_ROOT}/supports/starcat-site}"
 PAGES_DIR="${SITE_ROOT}/direct"
 DIST_DIR="${PROJECT_ROOT}/dist/direct-development"
 DOWNLOADS_DIR="${DIST_DIR}/downloads"
+RELEASE_NOTES_DIR="${DOWNLOADS_DIR}/release-notes-${DEVELOPMENT_VERSION}"
 DMG_PATH="${DOWNLOADS_DIR}/Starcat-${MARKETING_VERSION}-arm64.dmg"
 SHA_PATH="${DMG_PATH}.sha256"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
@@ -105,6 +106,9 @@ require_release_state() {
     run_or_print python3 "$SCRIPT_DIR/verify-direct-release-artifacts.py" \
       --version "$DEVELOPMENT_VERSION" --dmg "$DMG_PATH" --sha256 "$SHA_PATH" \
       --appcast "$CURRENT_APPCAST_PATH" --remote "$RELEASE_REMOTE"
+    # 旧产物缺少说明快照时停止，不能用当前工作稿伪造当次 App 内置说明。
+    run_or_print python3 "$SCRIPT_DIR/release_changelog.py" check \
+      --source-root "$RELEASE_NOTES_DIR" --version "$DEVELOPMENT_VERSION"
     return
   fi
 
@@ -120,6 +124,13 @@ require_release_state() {
 
   [ "${STARCAT_NOTARIZE:-0}" = "1" ] || [ "$DRY_RUN" = "1" ] \
     || fail "Beta 版外部分发也必须设置 STARCAT_NOTARIZE=1"
+}
+
+prepare_release_notes() {
+  # 在写 tag 或构建之前验证并固定两种语言，未来版本仍留在源工作稿中。
+  run_or_print python3 "$SCRIPT_DIR/release_changelog.py" prepare \
+    --source-root "$PAGES_DIR" --output-root "$RELEASE_NOTES_DIR" \
+    --version "$DEVELOPMENT_VERSION"
 }
 
 create_and_push_tag() {
@@ -145,7 +156,8 @@ package_development() {
   run_or_print env \
     STARCAT_NOTARIZE=1 \
     STARCAT_GENERATE_APPCAST=1 \
-    STARCAT_DIRECT_ALLOW_PENDING_CHANGELOG=1 \
+    STARCAT_RELEASE_VERSION="$DEVELOPMENT_VERSION" \
+    STARCAT_RELEASE_CHANGELOG_DIR="$RELEASE_NOTES_DIR" \
     STARCAT_DIRECT_DIST_DIR="$DIST_DIR" \
     STARCAT_DOWNLOAD_BASE_URL="$DOWNLOAD_BASE_URL" \
     "$SCRIPT_DIR/package-direct.sh" "$MARKETING_VERSION"
@@ -170,7 +182,7 @@ publish_github_prerelease() {
     --prerelease \
     --dmg "$DMG_PATH" \
     --sha256 "$SHA_PATH" \
-    --changelog "$PROJECT_ROOT/supports/starcat-site/direct/CHANGELOG.md"
+    --changelog "$RELEASE_NOTES_DIR/CHANGELOG.md"
 }
 
 merge_development_appcast() {
@@ -179,8 +191,7 @@ merge_development_appcast() {
     --base "$DEVELOPMENT_APPCAST_PATH" \
     --incoming "$CURRENT_APPCAST_PATH" \
     --output "$DEVELOPMENT_APPCAST_PATH"
-  python3 "$SCRIPT_DIR/inject-appcast-release-notes.py" \
-    --appcast "$DEVELOPMENT_APPCAST_PATH"
+  # 当前 item 在打包时已使用固定快照生成说明；合并保留原说明，不重写历史 item。
 }
 
 publish_development_appcast() {
@@ -227,6 +238,7 @@ main() {
   require_release_state
   run_or_print gh auth status
   if [ "${STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS:-0}" != "1" ]; then
+    prepare_release_notes
     create_and_push_tag
     package_development
   else
@@ -237,6 +249,9 @@ main() {
   merge_development_appcast
   publish_development_appcast
   verify_development_appcast
+  run_or_print python3 "$SCRIPT_DIR/release_changelog.py" finalize \
+    --source-root "$PAGES_DIR" --output-root "$RELEASE_NOTES_DIR" \
+    --version "$DEVELOPMENT_VERSION"
   log "Beta 版发布完成: $DEVELOPMENT_VERSION"
 }
 

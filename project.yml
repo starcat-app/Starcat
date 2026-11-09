@@ -220,6 +220,13 @@ targets:
     # 用 git 元数据改写产物 Info.plist 的 CFBundleVersion / CFBundleShortVersionString。
     # 详见 scripts/bump-version.sh 文件头注释。
     postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        # 不声明 inputFiles / outputFiles：希望每次 build 都跑（hash 可能变），
+        # 脚本本身极快（~50ms），不写依赖避免 Xcode incremental cache 跳过执行。
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
       - name: "Copy Changelog Resource"
         script: |
           set -euo pipefail
@@ -243,16 +250,12 @@ targets:
               exit 1
             fi
           fi
-          mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
-        runOnlyWhenInstalling: false
-        showEnvVarsInLog: false
-        basedOnDependencyAnalysis: false
-      - name: "Auto Bump Version (from git)"
-        script: '"${SRCROOT}/scripts/bump-version.sh"'
-        # 不声明 inputFiles / outputFiles：希望每次 build 都跑（hash 可能变），
-        # 脚本本身极快（~50ms），不写依赖避免 Xcode incremental cache 跳过执行。
+          # 必须按已写入 Info.plist 的实际版本筛选，不能把完整工作稿签入 App。
+          python3 "${SRCROOT}/scripts/release_changelog.py" bundle \
+            --source-root "${STARCAT_RELEASE_CHANGELOG_DIR:-$CHANGELOG_SOURCE_ROOT}" \
+            --output-root "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}" \
+            --plist "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}" \
+            --configuration "$CONFIGURATION" --version "${STARCAT_RELEASE_VERSION:-}"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false
@@ -382,6 +385,11 @@ targets:
         embed: true
         codeSign: true
     postBuildScripts:
+      - name: "Auto Bump Version (from git)"
+        script: '"${SRCROOT}/scripts/bump-version.sh"'
+        runOnlyWhenInstalling: false
+        showEnvVarsInLog: false
+        basedOnDependencyAnalysis: false
       - name: "Copy Changelog Resource"
         script: |
           set -euo pipefail
@@ -404,14 +412,12 @@ targets:
               exit 1
             fi
           fi
-          mkdir -p "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
-          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG.md"
-          cp "${CHANGELOG_SOURCE_ROOT}/CHANGELOG-ZH.md" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/CHANGELOG-ZH.md"
-        runOnlyWhenInstalling: false
-        showEnvVarsInLog: false
-        basedOnDependencyAnalysis: false
-      - name: "Auto Bump Version (from git)"
-        script: '"${SRCROOT}/scripts/bump-version.sh"'
+          # 必须按已写入 Info.plist 的实际版本筛选，不能把完整工作稿签入 App。
+          python3 "${SRCROOT}/scripts/release_changelog.py" bundle \
+            --source-root "${STARCAT_RELEASE_CHANGELOG_DIR:-$CHANGELOG_SOURCE_ROOT}" \
+            --output-root "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}" \
+            --plist "${TARGET_BUILD_DIR}/${INFOPLIST_PATH}" \
+            --configuration "$CONFIGURATION" --version "${STARCAT_RELEASE_VERSION:-}"
         runOnlyWhenInstalling: false
         showEnvVarsInLog: false
         basedOnDependencyAnalysis: false

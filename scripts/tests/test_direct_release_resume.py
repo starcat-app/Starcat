@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
 SPEC = importlib.util.spec_from_file_location(
     "release_artifacts", ROOT / "scripts/verify-direct-release-artifacts.py"
 )
@@ -165,7 +166,7 @@ if name == "git":
         sys.exit(97)
 elif name == "python3":
     target = Path(args[0]).name
-    if target in ("-", "verify-direct-release-artifacts.py"):
+    if target in ("-", "verify-direct-release-artifacts.py", "release_changelog.py"):
         os.execv(sys.executable, [sys.executable] + args)
     if target == "publish-direct-github-release.py":
         sys.exit(int(os.environ.get("PUBLISH_EXIT", "0")))
@@ -182,14 +183,24 @@ elif name == "curl" and "-fsSL" in args:
             path.write_text(replacement)
             path.chmod(0o755)
         shutil.copy(ROOT / "scripts/verify-direct-release-artifacts.py", self.scripts)
+        shutil.copy(ROOT / "scripts/release_changelog.py", self.scripts)
 
-    def run_entry(self, beta: bool, *, legacy=False, failure=False, resume=True, damaged=False, extra_args=()):
+    def run_entry(self, beta: bool, *, legacy=False, failure=False, resume=True, damaged=False,
+                  missing_notes=False, extra_args=()):
         """恢复入口不提供构建工具；意外调用任何构建或 Git 写路径都会失败。"""
         version = "9.9.9-beta.1" if beta else "9.9.9"
         name = "release-direct-development.sh" if beta else "release-direct.sh"
         shutil.copy(ROOT / "scripts" / name, self.scripts)
         downloads = self.root / ("dist/direct-development/downloads" if beta else "dist/direct/downloads")
         dmg, _, appcast = fixture_files(downloads, version)
+        if beta:
+            # 新版恢复只使用同次发布快照；源稿可保留任意未来内容。
+            from release_changelog import prepare
+            for filename in ("CHANGELOG.md", "CHANGELOG-ZH.md"):
+                (self.site / "direct" / filename).write_text(
+                    "## 10.0.0-待发布\n\nFuture.\n\n## 9.9.9-待发布\n\nBeta notes.\n")
+            if not missing_notes:
+                prepare(self.site / "direct", downloads / f"release-notes-{version}", version)
         if damaged:
             dmg.write_bytes(b"changed after notarization")
         for feed in ("appcast.xml", "appcast-development.xml"):
@@ -238,6 +249,29 @@ elif name == "curl" and "-fsSL" in args:
                 commands = self.commands()
                 self.assertFalse(any(cmd[0] in ("rsync", "ssh", "curl") for cmd in commands))
                 self.assertEqual(sum(cmd[0] == "python3" and Path(cmd[1]).name == "publish-direct-github-release.py" for cmd in commands), 1)
+                if beta:
+                    self.assertIn("## 9.9.9-待发布", (self.site / "direct/CHANGELOG.md").read_text())
+
+    def test_beta_resume_routes_fixed_notes_and_marks_only_successful_target(self):
+        result = self.run_entry(True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        publisher = next(cmd for cmd in commands if Path(cmd[1]).name == "publish-direct-github-release.py")
+        notes = Path(publisher[publisher.index("--changelog") + 1])
+        self.assertEqual(notes.parent.name, "release-notes-9.9.9-beta.1")
+        self.assertNotIn("10.0.0", notes.read_text())
+        self.assertFalse(any("inject-appcast-release-notes.py" in cmd[1] for cmd in commands))
+        text = (self.site / "direct/CHANGELOG.md").read_text()
+        self.assertIn("## 9.9.9\n", text)
+        self.assertIn("## 10.0.0-待发布", text)
+        self.assertEqual((self.site / "direct/appcast-development.xml").read_text(),
+                         (notes.parent.parent / "appcast-current.xml").read_text())
+
+    def test_legacy_beta_without_snapshot_stops_before_publishing(self):
+        result = self.run_entry(True, missing_notes=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(Path(cmd[1]).name == "publish-direct-github-release.py" or cmd[0] == "rsync"
+                             for cmd in self.commands()))
 
     def test_invalid_artifacts_stop_before_github_and_feed(self):
         for beta in (False, True):
