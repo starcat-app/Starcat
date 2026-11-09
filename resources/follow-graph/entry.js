@@ -28,6 +28,7 @@ const avatarOverrides = new Map();
 const cacheQueue = { pending: [], active: 0, limit: 8, cacheOnly: true };
 const downloadQueue = { pending: [], active: 0, limit: 8, cacheOnly: false };
 const avatarFades = new Set();
+const avatarPulses = new Set(), pulsedAvatars = new Set();
 // A soft budget evicts only offscreen, completed resources. Never evict visible
 // avatars to hit an arbitrary count: that would create placeholder/cache-read churn.
 const avatarBudget = 512;
@@ -155,6 +156,7 @@ function discardAvatar(id) {
   const resource = resources.get(id);
   resources.delete(id);
   avatarFades.delete(resource);
+  avatarPulses.delete(resource);
   for (const queue of [cacheQueue, downloadQueue]) {
     queue.pending = queue.pending.filter(([node]) => node.id !== id);
   }
@@ -189,8 +191,8 @@ function updateViewportBounds() {
 
 function avatarOnscreen(node) {
   if (!viewportBounds || node.id === root || node.id === selected) return true;
-  // Include the pop overshoot and screen-space stroke so edge avatars don't disappear early.
-  const pad = radius(node) * 1.11 + 4 / viewportBounds.scale;
+  // Include both entry/pop and avatar pulse overshoot, plus the screen-space stroke.
+  const pad = radius(node) * 1.31 + 4 / viewportBounds.scale;
   return node.x + pad >= viewportBounds.left && node.x - pad <= viewportBounds.right &&
     node.y + pad >= viewportBounds.top && node.y - pad <= viewportBounds.bottom;
 }
@@ -203,7 +205,8 @@ function trimAvatars() {
   if (resources.size <= avatarBudget || now < nextAvatarTrim) return;
   nextAvatarTrim = now + 500;
   const candidates = [...resources].filter(([id, resource]) =>
-    resource.loaded && !resource.cancel && !avatarFades.has(resource) && !avatarOnscreen(nodes.get(id)));
+    resource.loaded && !resource.cancel && !avatarFades.has(resource) &&
+      !avatarPulses.has(resource) && !avatarOnscreen(nodes.get(id)));
   candidates.sort((a, b) => a[1].lastUsed - b[1].lastUsed);
   for (const [id] of candidates) {
     if (resources.size <= avatarBudget) break;
@@ -239,6 +242,26 @@ function avatar(node) {
   return resource;
 }
 
+/** Start on the first visible avatar paint, not its prefetch completion. Keep the
+ * session identity after LRU eviction so cache reads and theme changes never replay it.
+ * This affects drawing only: force radii and pointer hit areas remain unchanged.
+ */
+function avatarPulse(node, resource) {
+  if (!resource.loaded) return 1;
+  if (!pulsedAvatars.has(node.id)) {
+    pulsedAvatars.add(node.id);
+    if (!reduceMotion) {
+      resource.pulseAt = performance.now();
+      avatarPulses.add(resource);
+      syncAnimation();
+    }
+  }
+  if (reduceMotion || !avatarPulses.has(resource)) return 1;
+  const progress = Math.min(1, (performance.now() - resource.pulseAt) / 240);
+  const phase = progress < 0.4 ? progress / 0.4 : (1 - progress) / 0.6;
+  return 1 + 0.18 * (1 - (1 - phase) ** 3);
+}
+
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
 function drawNode(node, ctx, scale) {
   // Only the root's bounded local probe gates initial presentation. A cached root
@@ -250,7 +273,7 @@ function drawNode(node, ctx, scale) {
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
   const overshoot = progress - 1;
   const pop = progress === 0 ? 0 : 1 + 2.70158 * overshoot ** 3 + 1.70158 * overshoot ** 2;
-  const r = radius(node) * Math.max(0.01, pop);
+  let r = radius(node) * Math.max(0.01, pop);
   const emphasized = node.id === root || node.id === selected ||
     highlightedNodes.has(node.id) || adjacentNodes.has(node.id);
   ctx.save();
@@ -263,6 +286,7 @@ function drawNode(node, ctx, scale) {
     ctx.fill();
   } else {
     const resource = avatar(node);
+    r *= avatarPulse(node, resource);
     const fade = !resource.loaded || reduceMotion ? 1 :
       Math.min(1, Math.max(0, (performance.now() - resource.loadedAt) / 280));
     // Keep the letter beneath the fading image, so a late download never flashes
@@ -576,9 +600,12 @@ function syncAnimation() {
       releasePlaceholder(resource);
     }
   }
+  for (const resource of avatarPulses) {
+    if (reduceMotion || performance.now() - resource.pulseAt >= 240) avatarPulses.delete(resource);
+  }
   if (destroyed || !running || reduceMotion ||
       (selectedPath.length < 2 && !(outgoingPath.length > 1 && performance.now() - pathChangedAt < 180) &&
-        !reveal.animating && !avatarFades.size)) {
+        !reveal.animating && !avatarFades.size && !avatarPulses.size)) {
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
   } else if (animationFrame === null) animationFrame = requestAnimationFrame(animate);
@@ -589,7 +616,7 @@ function animate() {
   animationFrame = null;
   if (performance.now() - lastAnimationDraw >= 32) {
     lastAnimationDraw = performance.now();
-    const needsBaseFrame = reveal.animating || avatarFades.size > 0;
+    const needsBaseFrame = reveal.animating || avatarFades.size > 0 || avatarPulses.size > 0;
     if (reveal.advance(performance.now())) applyVisibleGraph();
     else if (needsBaseFrame) graph.nodeCanvasObject(drawNode);
     drawFlowOverlay();
@@ -841,6 +868,8 @@ window.followGraph = {
     avatarOverrides.clear();
     cacheQueue.pending.length = downloadQueue.pending.length = 0;
     avatarFades.clear();
+    avatarPulses.clear();
+    pulsedAvatars.clear();
     flowCanvas.width = flowCanvas.height = 0;
     flowCanvas.remove();
     graph._destructor();

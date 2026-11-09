@@ -618,8 +618,86 @@ test('cached avatars display immediately without replaying download fades', () =
   });
   r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[0], ctx, 1);
   assert.equal(alphas.at(-1), 1);
+  assert.equal(r.frames.size, 1); // Cached content skips fading but still pulses once.
+  r.frame(240);
   assert.equal(r.frames.size, 0);
   assert.ok(r.images.every(image => new URL(image.src).hostname === 'cache'));
+});
+
+test('cached and downloaded avatars pulse once without changing layout or hit geometry', () => {
+  for (const network of [false, true]) {
+    const r = renderer();
+    r.update(1, r.data(2));
+    r.images[0].onload();
+    r.update(2, { reduceMotion: false });
+    const node = r.props.get('graphData').nodes[1];
+    node.x = 200; node.y = 0;
+    const initial = { radius: node.radius, x: node.x, y: node.y };
+    r.calls.length = 0;
+    const draw = () => {
+      r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+      return r.calls.findLast(([name]) => name === 'drawImage')[4] / 2;
+    };
+    const normal = draw();
+    if (network) r.images.at(-1).onerror();
+    r.images.at(-1).onload();
+    assert.equal(draw(), normal);
+    r.frame(96);
+    assert.ok(Math.abs(draw() / normal - 1.18) < 0.00001);
+    const pulseCalls = [...r.calls];
+    r.frame(144);
+    assert.equal(draw(), normal);
+    assert.deepEqual({ radius: node.radius, x: node.x, y: node.y }, initial);
+    r.props.get('nodePointerAreaPaint')(node, '#123456', r.canvasContext, 1);
+    assert.equal(r.calls.findLast(([name]) => name === 'arc')[3], Math.max(node.radius, 6));
+    r.update(3, { dark: true });
+    assert.equal(draw(), normal);
+    r.frame(96);
+    assert.equal(draw(), normal);
+    assert.equal(r.frames.size, 0);
+    assert.ok(!pulseCalls.some(([name]) => ['graphData', 'zoom', 'centerAt'].includes(name)));
+    r.frame(300);
+    assert.equal(r.frames.size, 0);
+    // Native card completion may replace a resource after it was discarded.
+    // A new image request for the same visible user must not replay the pulse.
+    r.update(4, { selected: '2' });
+    const source = `${node.avatar}&version=2`;
+    r.update(5, { avatarReady: { id: '2', source, revision: 1 } });
+    r.images.at(-1).onload();
+    assert.equal(draw(), normal);
+    r.frame(96);
+    assert.equal(draw(), normal);
+    r.window.followGraph.destroy();
+  }
+});
+
+test('reducing motion cancels an avatar pulse and backgrounding stops its frame pump', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  r.images[0].onload();
+  r.update(2, { reduceMotion: false });
+  const node = r.props.get('graphData').nodes[1];
+  const draw = () => {
+    r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+    return r.calls.findLast(([name]) => name === 'drawImage')[4] / 2;
+  };
+  draw();
+  r.images.at(-1).onload();
+  draw();
+  r.frame(96);
+  assert.ok(draw() > node.radius);
+  r.document.hidden = true;
+  r.document.listeners.get('visibilitychange')();
+  assert.equal(r.frames.size, 0);
+  r.document.hidden = false;
+  r.document.listeners.get('visibilitychange')();
+  r.update(3, { reduceMotion: true });
+  assert.equal(draw(), node.radius);
+  assert.equal(r.frames.size, 0);
+  r.update(4, { reduceMotion: false });
+  assert.equal(draw(), node.radius);
+  r.window.followGraph.destroy();
+  assert.equal(r.frames.size, 0);
 });
 
 test('only network fades allocate a placeholder surface and release its pixels on completion', () => {
