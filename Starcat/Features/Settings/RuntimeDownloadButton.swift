@@ -9,6 +9,8 @@ import SwiftUI
 
 /// 视图拥有按钮任务的生命周期；离开页面时取消安装，取消后不得提交配置。
 struct RuntimeDownloadButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let runtime: DownloadableRuntime
     @Binding var isInstalling: Bool
     let configure: @MainActor (RuntimeDownloadInstallation) async throws -> Void
@@ -22,7 +24,7 @@ struct RuntimeDownloadButton: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     if isInstalling {
-                        ProgressView(value: progress)
+                        downloadProgress
                             .frame(width: 64)
                         Text("settings.integration.runtimeDownload.installing")
                             .font(.caption)
@@ -54,6 +56,30 @@ struct RuntimeDownloadButton: View {
                 }
             }
             .onDisappear { task?.cancel() }
+        }
+    }
+
+    /// 沿用本地模型下载的 4pt 轨道；未知总量时使用同款滑块，避免把等待误报为 0%。
+    private var downloadProgress: some View {
+        Group {
+            if let progress {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.quaternary)
+                        Capsule()
+                            .fill(.tint)
+                            .frame(width: geometry.size.width * max(0, min(1, progress)))
+                    }
+                }
+                .frame(height: 4)
+            } else {
+                IndeterminateCapsuleBar(tint: .accentColor, reduceMotion: reduceMotion)
+            }
+        }
+        .accessibilityRepresentation {
+            ProgressView(value: progress) {
+                Text("settings.integration.runtimeDownload.installing")
+            }
         }
     }
 

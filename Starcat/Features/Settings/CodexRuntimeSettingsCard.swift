@@ -46,12 +46,6 @@ struct CodexRuntimeSettingsCard: View {
                 }
             }
 
-            if let message = status.failureMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
             if !actualVersion.isEmpty {
                 Text(verbatim: actualVersion)
                     .font(.caption.monospaced())
@@ -62,6 +56,7 @@ struct CodexRuntimeSettingsCard: View {
                 refresh()
             }
             HStack(spacing: 8) {
+                AgentRuntimeFailureLabel(status: status)
                 Spacer()
                 AgentRuntimeInfoButton(kind: .codex)
                 Button("settings.integration.agentRuntime.detectAgain", action: refresh)
@@ -100,7 +95,7 @@ struct CodexRuntimeSettingsCard: View {
             status = .ready
         } catch {
             resolvedRuntimeDirectoryPath = customExecutablePath
-            status = .failed(error.localizedDescription)
+            status = .failure(error)
         }
     }
 

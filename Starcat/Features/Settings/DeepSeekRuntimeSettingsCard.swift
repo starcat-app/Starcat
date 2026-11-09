@@ -56,12 +56,6 @@ struct DeepSeekRuntimeSettingsCard: View {
                 )
             }
 
-            if let message = status.failureMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
             if !actualVersion.isEmpty {
                 Text(verbatim: actualVersion)
                     .font(.caption.monospaced())
@@ -73,6 +67,7 @@ struct DeepSeekRuntimeSettingsCard: View {
                 refresh()
             }
             HStack(spacing: 8) {
+                AgentRuntimeFailureLabel(status: status)
                 Spacer()
                 AgentRuntimeInfoButton(kind: .deepSeek)
                 Button("settings.integration.agentRuntime.detectAgain", action: refresh)
@@ -123,7 +118,7 @@ struct DeepSeekRuntimeSettingsCard: View {
             status = .ready
         } catch {
             resolvedExecutablePath = executablePath
-            status = .failed(error.localizedDescription)
+            status = .failure(error)
         }
     }
 
