@@ -35,19 +35,25 @@ class FakeGitHub:
         self.commands = []
         self.fail_upload = None
         self.api_error = None
+        self.tag = "v9.9.9"
 
     def __call__(self, *args, check=True):
         """仅处理发布器使用的命令；未知命令立即失败，禁止落到真实网络。"""
         if args[0] == "api":
             if self.api_error:
                 return subprocess.CompletedProcess(args, 1, "", self.api_error)
-            if self.draft is None:
-                return subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
             payload = {
+                "tag_name": self.tag,
                 "draft": self.draft, "prerelease": self.prerelease,
                 "assets": [{"name": name} for name in self.assets],
                 "html_url": "https://github.com/starcat-app/Starcat/releases/tag/v9.9.9",
             }
+            if args[1].endswith("/releases?per_page=100"):
+                releases = [] if self.draft is None else [payload]
+                return subprocess.CompletedProcess(args, 0, json.dumps(releases), "")
+            # 复现本次线上行为：by-tag 查不到草稿，但 Release 列表能返回它。
+            if self.draft is None or self.draft:
+                return subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
             return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
         assert "--repo" in args and args[args.index("--repo") + 1] == release.REPOSITORY
         assert "--clobber" not in args
@@ -56,6 +62,8 @@ class FakeGitHub:
         self.events.append(action)
         if action == "create":
             assert "--draft" in args and "--verify-tag" in args
+            assert self.draft is None, "已有草稿时禁止重复创建 Release"
+            self.tag = args[2]
             self.draft = True
             self.prerelease = "--prerelease" in args
         elif action == "upload":
@@ -102,6 +110,30 @@ class DirectReleaseTests(unittest.TestCase):
         self.publish()
         self.assertEqual(self.github.events, ["create", "upload", "download", "upload", "download", "edit"])
         self.assertFalse(self.github.draft)
+
+    def test_existing_draft_is_resumed_when_by_tag_returns_404(self):
+        """首次查询必须复用列表中的草稿，避免每次续跑都创建重复 Release。"""
+        self.github.draft = True
+        self.publish()
+        self.assertEqual(self.github.events, ["upload", "download", "upload", "download", "edit"])
+        self.assertFalse(self.github.draft)
+
+    def test_duplicate_drafts_stop_before_remote_writes(self):
+        """同 tag 出现多份草稿时保留现场，不能任意选一份公开。"""
+        self.github.draft = True
+        original = self.github
+
+        def duplicate_drafts(*args, check=True):
+            result = original(*args, check=check)
+            if args[0] == "api" and args[1].endswith("/releases?per_page=100"):
+                drafts = json.loads(result.stdout)
+                result.stdout = json.dumps(drafts + drafts)
+            return result
+
+        with patch.object(release, "gh", duplicate_drafts):
+            with self.assertRaisesRegex(RuntimeError, "多个 tag"):
+                self.publish()
+        self.assertEqual(self.github.events, [])
 
     def test_beta_release_is_published_as_prerelease_without_becoming_latest(self):
         self.changelog.write_text(

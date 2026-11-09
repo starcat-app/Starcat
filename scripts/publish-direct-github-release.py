@@ -110,7 +110,8 @@ def publish(
         raise ValueError("本地 DMG 与 SHA256 不一致，禁止上传")
     notes = release_notes(changelog, marketing_version, allow_pending=prerelease)
     tag = f"v{version}"
-    release = get_release(tag)
+    # 续跑也必须查草稿；仅在创建后查列表仍会让首次 404 触发重复创建。
+    release = get_release_or_draft(tag)
     if release and release["prerelease"] != prerelease:
         raise ValueError("目标 tag 的正式版/预发布属性与本次发布策略不一致")
 
