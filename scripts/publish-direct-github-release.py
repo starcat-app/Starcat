@@ -15,27 +15,41 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPOSITORY = "starcat-app/Starcat"
 
 
 def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """固定通过参数数组调用 gh，避免发布说明或路径被 shell 解释。"""
-    result = subprocess.run(
-        ["gh", *args], capture_output=True, text=True, timeout=900
-    )
+    """每个命令只执行一次，立即显示发布阶段与耗时，失败不隐藏 stdout/stderr。"""
+    actions = {"create": "创建草稿", "upload": "上传附件", "download": "下载核验", "edit": "公开 Release"}
+    label = actions.get(args[1]) if args[0] == "release" else None
+    if label:
+        detail = args[3] if args[1] == "upload" else args[2]
+        if args[1] == "download":
+            detail = args[args.index("--pattern") + 1]
+        print(f"[github-release] 开始 {label}: {detail}", flush=True)
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, timeout=900
+        )
+    except subprocess.TimeoutExpired:
+        print("[github-release] 命令超时；先回读草稿/附件状态，禁止直接重建草稿", flush=True)
+        raise
+    if label:
+        state = "完成" if result.returncode == 0 else f"失败 exit={result.returncode}"
+        print(f"[github-release] {state} {label}，耗时 {time.monotonic() - started:.1f}s", flush=True)
     if check and result.returncode:
-        raise RuntimeError(result.stderr.strip() or "GitHub CLI 执行失败")
+        raise RuntimeError(
+            f"GitHub CLI 执行失败 ({result.returncode})\n{result.stdout}{result.stderr}"
+        )
     return result
 
 
 def get_release(tag: str) -> dict | None:
-    """Tag 关联 Release 或明确的 404 视为缺失；鉴权、网络错误不能触发创建流程。
-
-    GitHub 对草稿 Release 不暴露 by-tag 端点，即使其 tag_name 指向已有
-    Git tag；因此创建后必须回读 Release 列表，并精确匹配 tag_name。
-    """
+    """只查询 by-tag 端点；404 仍需查草稿列表，不能直接据此创建 Release。"""
     result = gh("api", f"repos/{REPOSITORY}/releases/tags/{tag}", check=False)
     if result.returncode:
         if "HTTP 404" in result.stderr:
@@ -45,17 +59,21 @@ def get_release(tag: str) -> dict | None:
 
 
 def get_release_or_draft(tag: str) -> dict | None:
-    """按 tag 查找已发布 Release 或草稿，兼容 GitHub 的草稿查询行为。"""
+    """本次实测 by-tag 查草稿返回 404；全量列表确认缺失后才允许创建。"""
     release = get_release(tag)
     if release is not None:
         return release
-    result = gh("api", f"repos/{REPOSITORY}/releases?per_page=100")
-    releases = json.loads(result.stdout)
-    matches = [item for item in releases if item.get("tag_name") == tag]
+    result = gh("api", f"repos/{REPOSITORY}/releases?per_page=100", "--paginate", "--slurp")
+    pages = json.loads(result.stdout)
+    matches = [item for page in pages for item in page if item.get("tag_name") == tag]
     if not matches:
         return None
     if len(matches) > 1:
-        raise RuntimeError(f"GitHub 存在多个 tag 为 {tag} 的 Release，需人工清理")
+        identifiers = ", ".join(str(item.get("id", "<unknown>")) for item in matches)
+        raise RuntimeError(
+            f"GitHub 存在多个 tag 为 {tag} 的 Release ({identifiers})；"
+            "停止写操作，先核对草稿归属和附件，禁止删除后盲目重跑"
+        )
     return matches[0]
 
 
@@ -110,6 +128,7 @@ def publish(
         raise ValueError("本地 DMG 与 SHA256 不一致，禁止上传")
     notes = release_notes(changelog, marketing_version, allow_pending=prerelease)
     tag = f"v{version}"
+    print(f"[github-release] 查询已有 Release/草稿: {tag}", flush=True)
     # 续跑也必须查草稿；仅在创建后查列表仍会让首次 404 触发重复创建。
     release = get_release_or_draft(tag)
     if release and release["prerelease"] != prerelease:
@@ -157,7 +176,7 @@ def publish(
         published = get_release(tag)
         if published is None or published["draft"] or published["prerelease"] != prerelease:
             raise RuntimeError("GitHub Release 状态与发布策略不一致，禁止发布 appcast")
-        print(f"GitHub Release 已核验: {published['html_url']}")
+        print(f"GitHub Release 已核验: {published['html_url']}", flush=True)
 
 
 def main() -> None:

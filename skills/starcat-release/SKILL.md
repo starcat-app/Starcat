@@ -1,22 +1,21 @@
 ---
 name: starcat-release
-description: Starcat macOS App 专用双渠道发版流程。用于用户要发布或排查 App Store archive、Direct 分发、DMG 打包、Sparkle appcast 生成或上传、starcat.ink 官网与 changelog 部署、notarization、公版 tag 处理，或询问 scripts/package-appstore.sh、scripts/release-direct.sh、scripts/package-direct.sh、legacy release-store.sh 应该如何选择和运行的场景。
+description: Starcat macOS App 的 App Store、Direct 正式版和 Beta 发布、已有 DMG 续传及故障恢复。用于签名公证、GitHub Release、Sparkle 更新源、官网部署和发布入口选择；支持只恢复已有产物而不重新构建。
 ---
 
 # Starcat 发版
 
-使用这个 skill 选择并执行正确的 Starcat 双渠道发版路径。正式入口是 App Store
-archive 与 Direct 公开发布两条；不要把 legacy 内测 DMG 流程或通用 macOS 发版流程
-当成本仓库的权威正式流程。
+选择 App Store archive、Direct 正式版或 Direct Beta，并先判断是新构建还是已有产物恢复。
+不要把 legacy 内测 DMG 流程当成本仓库的当前发布流程。
 
 ## 硬性规则
 
 - 始终用中文回复，并遵守仓库 `AGENTS.md`：先给方案并征求 dong4j 明确确认，再修改文件或运行有副作用的发版命令。
-- 修改脚本或 skill 的“开干 / 改吧”只授权对应文件修改；真实打包、公证、tag、push、GitHub Release、官网/appcast 上传仍须当前消息明确授权执行对应发布动作。
+- 修改脚本或 skill 的“开干 / 改吧”只授权约定的修改与测试，不自动授权真实发布。用户已明确授权当前任务的版本、渠道和发布范围后，同范围的故障恢复与收尾沿用该授权；不要因跨轮继续或可恢复失败反复征求许可。新版本、新渠道或范围外动作仍需授权；更高优先级规则要求暂停时说明具体来源。
 - 排查时先使用只读命令：`git status`、`git tag`、`git ls-remote`、`--help`、读取文件，以及脚本 dry-run 模式。
 - 不要为了发版手动修改 `project.yml` 里的版本号字段。Starcat 的版本来自 git tag 和构建脚本。
-- Starcat 已发布正式版；修改发版代码时保留线上用户、已发布 tag 和历史产物，不覆盖或复用既有版本。代码层废弃路径仍应一次性收口，不堆叠永久双轨。
-- 保留无关未提交文件。工作区不干净时，先判断这些改动是否与发版任务相关，再提出下一步。
+- Starcat 已发布正式版；保留线上用户、已发布 tag 和历史附件。同版本恢复只复用内容完全一致的原产物，不覆盖附件或改写 tag。
+- 新构建要求对应发布分支和干净源码；只上传已公证产物使用 `--resume`，以原 tag、DMG 摘要和 appcast 为校验边界。保留并行改动，不为上传而自动 commit、stash、清理或新建 worktree。
 
 ## 入口选择
 
@@ -26,13 +25,15 @@ archive 与 Direct 公开发布两条；不要把 legacy 内测 DMG 流程或通
 |---|---|---|
 | App Store 发布准备、archive、Validate、上传 App Store Connect | `scripts/package-appstore.sh` / `make package-appstore` | 构建并校验 `Starcat` archive；上传继续由 Xcode Organizer / Transporter 完成 |
 | Direct 公开发布、Sparkle 更新、starcat.ink 部署、上传 DMG/appcast | `scripts/release-direct.sh <X.Y.Z>` | Direct 渠道完整编排入口；发布后还要同步 Homebrew Cask |
+| Direct Beta / 预发布 | `scripts/release-direct-development.sh <X.Y.Z-beta.N>` | `dev` 分支新构建；GitHub prerelease，只更新 Beta feed |
+| 已有最终 DMG，上传或更新源中断 | 对应 Direct 脚本追加 `--resume` | 不构建、不改 tag；校验原产物后补 GitHub 附件和更新源 |
 | 只在本地构建 Direct 包 | `scripts/package-direct.sh <X.Y.Z>` | 构建 `StarcatDirect` DMG，可选 notarization/appcast |
 | 历史 ad-hoc 内测 tag + DMG 流程 | `scripts/release-store.sh vX.Y.Z` | legacy 入口；默认禁用，必须显式设置 `STARCAT_ALLOW_LEGACY_RELEASE=1` |
 
 如果用户只说“发版”但没有说明渠道，先确认是 App Store、Direct，还是双渠道。
 如果用户提到 `starcat.ink`、Sparkle、appcast、notarization 或上传 DMG，可以推断为
 Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App Store。
-两条路径都仍需先给方案并确认再执行。
+先检查当前任务是否已有明确发布授权；有则继续执行约定范围。
 
 ## 标准工作流
 
@@ -43,12 +44,37 @@ Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App S
    - `git tag --sort=-creatordate | head`
    - Direct 发版可补充：`scripts/release-direct.sh --help`
 3. 说明选择的入口、前提假设、副作用和验证标准。
-4. 除非用户当前轮已经明确授权执行，否则先等确认。
+4. 用户尚未授权该版本/渠道的真实发布时才等待确认；已授权任务的恢复直接继续。
 5. 真实发布前优先 dry-run：
    - Direct：`STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh <X.Y.Z>`
    - App Store 没有发布 dry-run；先完成只读门禁，获授权后运行
      `make package-appstore`，该命令只生成 archive、不上传
 6. 执行已确认的命令后，验证产物和 URL，并报告精确路径。
+
+## 先判断状态，再选择恢复阶段
+
+| 已核实状态 | 下一步 |
+|---|---|
+| 没有最终 DMG、SHA256 或当前 appcast | 处理构建/公证失败，不假装可续传 |
+| 最终产物完整且已公证 | 对应脚本使用 `--resume`，不重打包或 staple |
+| 草稿存在且缺附件 | 复用草稿，只上传缺失附件；已有附件下载核验 |
+| Release 已公开且附件一致 | 只验证 GitHub，继续更新源；不重建 Release |
+| GitHub 已公开、更新源已核验 | 提交发布元数据并按原授权推送，结束该阶段 |
+
+GitHub 按 tag 查询返回 404 不能证明草稿不存在。上传器会分页查询草稿列表，
+在首次判断和创建后回读都使用同一规则。出现重复草稿时，先核对 ID、归属和附件；
+仅清理确认由本次任务误建的空草稿，不任意删除未知或有附件的 Release。
+
+**重试边界**：发布器不自动重试写操作。超时或结果不明先回读实际状态；鉴权、重复草稿、
+摘要冲突等逻辑错误不得靠重跑解决。同一错误再次出现时停止原命令的写操作，检查调用路径，
+先用隔离测试复现并验证修复，再恢复。禁止“删除草稿 → 原样重跑”的循环，
+也禁止调用真实发布函数来做探测性测试。
+
+上传、下载核验和公开阶段必须立即输出进度与耗时。长阶段持续跟踪运行状态；
+失败时说明具体阶段、已经完成的内容和下一步，不把“脚本在跑”当成进度。
+网络读取只做有限重试，公开下载可用性可从本机验证，服务器出口故障不能直接推断附件缺失。
+
+命令、校验与 Beta 完成标准见 [发布脚本地图](references/release-map.md)。
 
 ## App Store 发布
 
@@ -100,34 +126,43 @@ STARCAT_NOTARIZE=1 ./scripts/release-direct.sh X.Y.Z
 STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh X.Y.Z
 ```
 
-tag 已存在时重跑：
+tag 已存在、尚需打包或续跑公证时：
 
 ```bash
-STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh X.Y.Z
+STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh X.Y.Z
 ```
 
-只重跑 Direct 更新文件发布：
-
-```bash
-STARCAT_RELEASE_SKIP_TAG=1 \
-STARCAT_RELEASE_SKIP_NGINX=1 \
-STARCAT_RELEASE_SKIP_SITE=1 \
-./scripts/release-direct.sh X.Y.Z
-```
+仅跳过 tag 不会跳过打包。最终产物已就绪时，使用下方 `--resume`。
 
 ### GitHub 上传失败后续跑
 
 保留最终 DMG、SHA256 和 `appcast-current.xml`，使用：
 
 ```bash
-STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 STARCAT_RELEASE_REUSE_ARTIFACTS=1 \
-./scripts/release-direct.sh X.Y.Z
+./scripts/release-direct.sh X.Y.Z --resume
 ```
 
 草稿只补缺失附件；已有附件必须下载核验与本地一致，不允许 `--clobber`。
-已公开且一致的 Release 只验证；冲突或缺失附件时停止。此路径不重新打包或 staple。
+已公开且一致的 Release 只验证；冲突或缺失附件时停止。此路径不重新打包或 staple，
+也不发布当前工作区的官网静态页。原 `STARCAT_RELEASE_REUSE_ARTIFACTS=1` 使用相同恢复语义，
+无需再组合跳过分支、脏状态或 tag 的开关。官网与 Homebrew 未完成时仍需按原范围收尾。
 
-### 同步 Homebrew Cask
+## Direct Beta
+
+```bash
+# 新构建；真实发布需已获授权。
+STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh X.Y.Z-beta.N
+
+# 最终 DMG 已有，只恢复 GitHub prerelease 和 Beta 更新源。
+./scripts/release-direct-development.sh X.Y.Z-beta.N --resume
+```
+
+App 营销版本与附件名使用 `X.Y.Z`，tag 使用 `vX.Y.Z-beta.N`。
+产物位于 `dist/direct-development/downloads/`；只公布 `appcast-development.xml`，
+不修改正式 feed、官网最新版、Homebrew 或 App Store。Beta 可复用对应版本待发布 Changelog。
+原 `STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS=1` 同样进入产物恢复模式。
+
+## 同步正式版 Homebrew Cask
 
 Direct 正式发布成功后，继续处理独立仓库
 `supports/homebrew-starcat/Casks/starcat.rb`：
