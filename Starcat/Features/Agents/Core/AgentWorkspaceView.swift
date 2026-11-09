@@ -90,7 +90,7 @@ struct AgentWorkspaceView: View {
         } detail: {
             GeometryReader { proxy in
                 AgentWorkspaceRunSurface(viewModel: viewModel)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                     .clipped()
             }
             // 中栏只填充 NavigationSplitView 已分配的尺寸，不把内容固有宽度带回三栏协商；
@@ -99,7 +99,13 @@ struct AgentWorkspaceView: View {
         // 任务检查器是语义明确的 trailing inspector。使用系统 Inspector 后，宽度
         // 约束直接进入分栏控制器，不再依赖 HSplitView 对普通 idealWidth 的布局猜测。
         .inspector(isPresented: $chromeState.isRightColumnPresented) {
-            artifactInspector
+            // Inspector 也必须以系统分配的栏宽为边界；嵌套工具数据的固有宽度
+            // 不能反向撑大整栏，否则标题会随内容一起被相邻分栏遮住。
+            GeometryReader { proxy in
+                artifactInspector
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                    .clipped()
+            }
                 .inspectorColumnWidth(
                     min: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
                     ideal: restoredRightColumnWidth,

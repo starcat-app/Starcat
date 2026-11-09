@@ -853,13 +853,15 @@ private struct AgentTraceStructuredValueView: View {
         case .object(let fields):
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
-                    HStack(alignment: .top, spacing: 10) {
+                    // 工具结果可递归嵌套多层；每层保留固定键列会累加最小宽度，
+                    // 在 320pt Inspector 中撑破整个分栏。键和值上下排，不按深度消耗栏宽。
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(field.key)
                             .font(interfaceScale.font(.captionSmall, weight: .semibold))
                             .foregroundStyle(.secondary)
-                            .frame(minWidth: 88, idealWidth: 112, maxWidth: 152, alignment: .leading)
+                            .lineLimit(2)
                         AgentTraceStructuredValueView(value: field.value)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }

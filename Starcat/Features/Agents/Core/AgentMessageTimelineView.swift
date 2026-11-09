@@ -75,6 +75,13 @@ struct AgentMessageTimelineView: View {
     }
 
     var body: some View {
+        GeometryReader { viewport in
+            timeline(viewportWidth: viewport.size.width)
+        }
+    }
+
+    /// 只读取本栏分配给时间线的宽度，不沿 NavigationSplitView 的容器链推导尺寸。
+    private func timeline(viewportWidth: CGFloat) -> some View {
         ScrollView {
             // 顶层节点数量有界，而 Markdown / 工具过程高度会动态变化。这里必须使用
             // eager stack，避免 LazyStack 在滚动时反复解析可见项位置并占满主线程。
@@ -137,10 +144,12 @@ struct AgentMessageTimelineView: View {
                         }
                 }
             }
+            // containerRelativeFrame 在原生分栏中会把容器测量宽度带回布局协商，
+            // 曾将 568pt 中栏撑成 5568pt，并把标题和 Composer 推到窗口外。
+            // 局部 GeometryReader 给出稳定视口宽度，宽表仍由自身的横向滚动承载。
+            .frame(width: max(0, viewportWidth - 56), alignment: .leading)
             .padding(.horizontal, 28)
             .padding(.vertical, 24)
-            // 中栏对话贴齐左右阅读边，不再用固定 maxWidth 居中成一条窄栏。
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .defaultScrollAnchor(
             messageTail.isFollowing ? .bottom : nil,
