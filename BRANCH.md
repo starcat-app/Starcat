@@ -32,10 +32,11 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev`（`016ec930`）实现每日推荐抽卡 MVP：透明整窗覆盖、多种子真实推荐、每日缓存与本地反馈。 | `开发中`；2026-11-09 审计确认分支无已提交独有提交，但 worktree 保留约 3,600 行未提交 MVP 实现，等待恢复、测试与验收。 | 不清理、不合并、不推送；先确认实现是否继续，再按功能分批提交。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-10-23 从 `dev` fast-forward 到 `9d4cc2c2` 并打出 Direct `v1.9.1`（仅 Direct 渠道，App Store 未发布）。 | 保持稳定；下一版本验收后再从 `dev` 提升，打包、上传和发布须另行授权。 |
+| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-09 已从 `dev` fast-forward 到 `13d4ce17`，与 `dev` 同步。 | 保持稳定；下一版本验收后再从 `dev` 提升，打包、上传和发布须另行授权。 |
 
 ## 每周 AI 大事跨仓工作区
 
@@ -45,7 +46,7 @@
 2026-11-09 dong4j 确认功能完成，内容与 API 仓库以 `v1.0.0` 标记发布输入，
 `origin/dev` 与 `origin/main` 同步；旧专项分支、远端分支和旧 worktree 删除。
 两仓远端默认分支均为 `dev`；内容仓后续 CI 修复单独同步到 `dev/main`，
-不改写已推送的 `v1.0.0`。Starcat 主仓仍在 `dev` 开发，本次不提升其 `main`。
+不改写已推送的 `v1.0.0`。Starcat 主仓已于 2026-11-09 将 `dev` 与 `main` 同步。
 
 | 仓库 | 当前开发目录（主工作区下） | 已整合功能提交 | 当前分支与归宿 |
 |---|---|---|---|
@@ -73,13 +74,13 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| `codex/followers-graph` | 已合并；本地分支与 worktree 保留 | 2026-11-09 dong4j 确认功能完成，授权将 `d4ffce59` 以 merge commit 合入本地 `dev`（合并前 `2de36506`）。包含双方向图谱、范围恢复、交互与三批性能优化；原基线 `11d3a8bd`，worktree 为 `../Starcat-followers-graph`。后续在主工作区 `dev` 继续，未推送、未发布，删除待单独授权。 |
+| `codex/followers-graph` | 已删除 | 2026-11-09 dong4j 授权清理；`d4ffce59` 已合入 `dev`，worktree 干净，已删除 `../Starcat-followers-graph` 与本地分支。 |
 | 主仓 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认每周 AI 大事完成，授权删除旧 worktree `../Starcat-weekly-ai-events-mvp` 及本地/远端同名分支；功能已合入主仓 `dev`，主仓 `main` 未在本次同步。 |
 | 内容 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`737aff73` 已是内容仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events` worktree 干净并已删除。 |
 | AI Events API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`ddf410b1` 已是该仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events-api` worktree 干净并已删除。 |
 | Weekly API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 清理同一专项遗留；`ed1402cb` 与 `dev` 相同，独有提交为 0，旧 worktree 登记及本地/远端同名分支已删除。 |
 | 聚合 API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 清理同一专项遗留；`0c069881` 已是 `dev` 的祖先，独有提交为 0，旧 worktree 登记及本地/远端同名分支已删除。 |
-| `codex/follow-graph-mvp` | 已合并；本地分支与 worktree 保留 | 2026-11-06 dong4j 验收后授权将 `e0021690` 以 merge commit 合入本地 `dev`；基线 `016ec930`，worktree 为 `../Starcat-follow-graph-mvp`。未推送、未发布，删除待单独授权。 |
+| `codex/follow-graph-mvp` | 已删除 | 2026-11-09 dong4j 授权清理；`e0021690` 已合入 `dev`，worktree 干净，已删除 `../Starcat-follow-graph-mvp` 与本地分支。 |
 | `codex/performance-optimization` | 已删除 | 截至 2026-10-11，本地与远端均已不存在该分支，且没有对应 worktree；性能专项改动已在 `dev`。 |
 | `feature/anthropic-cc-switch-import` | 已删除 | 2026-09-14 dong4j 确认删除。已以 merge commit（`1341600a`）合入 `dev`，删除前 `merge-base --is-ancestor` 成立、独有提交 0、`git cherry` 为空、diff 为空；`../Starcat-anthropic-cc-switch` worktree 干净后 `git worktree remove`，再 `git branch -d`（HEAD `2ab786f2`）。从未存在远端分支。 |
 | `feature/settings-ui-unify` | 已删除 | 2026-09-14 dong4j 确认删除。已以 merge commit（`a7a4c5c7`）合入 `dev`，删除前 `merge-base --is-ancestor` 成立、独有提交 0、`git cherry` 为空、`../Starcat-settings-ui-unify` worktree 干净后 `git worktree remove`，再 `git branch -d`（HEAD `bb013ab1`）。从未存在远端分支。 |
