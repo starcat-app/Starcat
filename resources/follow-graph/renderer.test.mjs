@@ -21,13 +21,15 @@ function renderer({ reduced = true } = {}) {
   let onResize;
   const target = () => ({
     listeners: new Map(),
+    style: {}, children: [],
+    appendChild(child) { this.children.push(child); },
     addEventListener(name, fn) { this.listeners.set(name, fn); },
     removeEventListener(name) { this.listeners.delete(name); }
   });
   const canvasContext = new Proxy({}, { get: (_, key) => (...args) => calls.push([key, ...args]) });
   const container = target(), document = { ...target(), hidden: false,
     getElementById: () => container,
-    createElement: () => ({ getContext: () => canvasContext })
+    createElement: () => ({ style: {}, getContext: () => canvasContext, remove() {} })
   };
   let center = { x: 0, y: 0 }, zoom = 1;
   const force = { strength() { return this; }, distance() { return this; } };
@@ -870,6 +872,7 @@ test('flow has bounded fading tails and fades out without animating reduced-moti
     get: (_, key) => (...args) => { if (key === 'arc') radii.push(args[2]); },
     set: (_, key, value) => { if (key === 'globalAlpha') alpha.push(value); return true; }
   });
+  r.container.children[0].getContext = () => ctx;
   r.props.get('onRenderFramePost')(ctx, 1);
   assert.ok(alpha.some(value => value > 0 && value < 0.1));
   assert.ok(radii.includes(4.5) && radii.includes(1));
@@ -885,4 +888,29 @@ test('flow has bounded fading tails and fades out without animating reduced-moti
   r.props.get('onRenderFramePost')(ctx, 1);
   assert.equal(alpha.length, 0);
   assert.equal(r.frames.size, 0);
+});
+
+test('settled flow redraws only its transparent overlay and follows Retina zoom transforms', () => {
+  const r = renderer();
+  r.update(1, r.data(1000));
+  const data = r.props.get('graphData');
+  data.nodes[1].x = 400;
+  data.nodes[1].y = 0;
+  r.update(2, { reduceMotion: false, selected: '2', path: ['1', '2'] });
+  r.graph.zoom(2).centerAt(25, -30);
+  r.window.devicePixelRatio = 2;
+  r.calls.length = 0;
+  for (let i = 0; i < 30; i++) r.frame();
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'nodeCanvasObject', 'nodePointerAreaPaint'].includes(name)));
+  assert.ok(r.calls.some(([name]) => name === 'stroke'));
+  const canvas = r.container.children[0];
+  assert.equal(canvas.style.pointerEvents, 'none');
+  assert.equal(canvas.width, 2400);
+  assert.equal(canvas.height, 1600);
+  assert.ok(r.calls.some(call => JSON.stringify(call) === JSON.stringify(['setTransform', 4, 0, 0, 4, 1100, 920])));
+  r.update(3, { active: false });
+  assert.equal(r.frames.size, 0);
+  r.window.followGraph.destroy();
+  assert.equal(canvas.width, 0);
+  assert.equal(canvas.height, 0);
 });

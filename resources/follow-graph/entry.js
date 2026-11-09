@@ -257,7 +257,9 @@ const graph = new ForceGraph(container)
   .onEngineStop(applyPendingView)
   .onRenderFramePost((ctx, scale) => {
     drawDirections(ctx, scale);
-    drawPathFlow(ctx, scale);
+    // Geometry/zoom changes refresh the overlay in the same frame as the graph.
+    // Settled path animation can then leave the base and picking canvases asleep.
+    drawFlowOverlay(scale);
     // Script readiness is earlier than the first real Canvas frame. Keep native
     // presentation hidden until the themed graph has actually painted its root.
     if (!presented && hasAppearance && rootPainted && session) {
@@ -280,6 +282,39 @@ const graph = new ForceGraph(container)
   .onZoomEnd(({ x, y, k }) => {
     post('viewport', { value: [x, y, k] });
   });
+
+// Keep the existing post-node compositing order, but do not let an animated
+// path invalidate thousands of static avatars/edges or the library's picking layer.
+const flowCanvas = document.createElement('canvas');
+flowCanvas.width = flowCanvas.height = 0;
+Object.assign(flowCanvas.style, { position: 'absolute', left: '0', top: '0',
+  width: '100%', height: '100%', pointerEvents: 'none' });
+container.style.position = 'relative';
+container.appendChild(flowCanvas);
+
+/** Mirror the library's graph-to-screen transform, including Retina backing size.
+ * Resize only when necessary: assigning canvas dimensions also clears its state.
+ */
+function drawFlowOverlay(scale = graph.zoom()) {
+  if (reduceMotion || destroyed ||
+      (selectedPath.length < 2 && !(outgoingPath.length > 1 && performance.now() - pathChangedAt < 180))) {
+    // No flow needs a backing store once deselection has finished fading.
+    if (flowCanvas.width) flowCanvas.width = flowCanvas.height = 0;
+    return;
+  }
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.round(innerWidth * ratio), height = Math.round(innerHeight * ratio);
+  if (flowCanvas.width !== width || flowCanvas.height !== height) {
+    flowCanvas.width = width;
+    flowCanvas.height = height;
+  }
+  const ctx = flowCanvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const origin = graph.graph2ScreenCoords(0, 0);
+  ctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * origin.x, ratio * origin.y);
+  drawPathFlow(ctx, scale);
+}
 
 /** Give immediate visual feedback before Swift's next update pass. The native side still
  * owns loading and receives selection even if the card is already showing this user.
@@ -491,8 +526,10 @@ function animate() {
   animationFrame = null;
   if (performance.now() - lastAnimationDraw >= 32) {
     lastAnimationDraw = performance.now();
+    const needsBaseFrame = reveal.animating || avatarFades.size > 0;
     if (reveal.advance(performance.now())) applyVisibleGraph();
-    else graph.nodeCanvasObject(drawNode);
+    else if (needsBaseFrame) graph.nodeCanvasObject(drawNode);
+    drawFlowOverlay();
   }
   syncAnimation();
 }
@@ -710,6 +747,8 @@ window.followGraph = {
     avatarOverrides.clear();
     cacheQueue.pending.length = downloadQueue.pending.length = 0;
     avatarFades.clear();
+    flowCanvas.width = flowCanvas.height = 0;
+    flowCanvas.remove();
     graph._destructor();
   }
 };
