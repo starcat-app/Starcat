@@ -15,19 +15,25 @@ const source = buildSync({
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
 function renderer({ reduced = true } = {}) {
-  const props = new Map(), calls = [], messages = [], images = [], timers = new Map(), frames = new Map();
+  const props = new Map(), calls = [], messages = [], images = [], canvases = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
   let onResize;
   const target = () => ({
     listeners: new Map(),
+    style: {}, children: [],
+    appendChild(child) { this.children.push(child); },
     addEventListener(name, fn) { this.listeners.set(name, fn); },
     removeEventListener(name) { this.listeners.delete(name); }
   });
   const canvasContext = new Proxy({}, { get: (_, key) => (...args) => calls.push([key, ...args]) });
   const container = target(), document = { ...target(), hidden: false,
     getElementById: () => container,
-    createElement: () => ({ getContext: () => canvasContext })
+    createElement: () => {
+      const canvas = { style: {}, getContext: () => canvasContext, remove() {} };
+      canvases.push(canvas);
+      return canvas;
+    }
   };
   let center = { x: 0, y: 0 }, zoom = 1;
   const force = { strength() { return this; }, distance() { return this; } };
@@ -74,11 +80,54 @@ function renderer({ reduced = true } = {}) {
     })),
     links: Array.from({ length: count - 1 }, (_, i) => ({ source: '1', target: String(i + 2) }))
   });
-  return { props, calls, messages, images, timers, frames, container, document, window, graph, update, data, canvasContext,
+  return { props, calls, messages, images, canvases, timers, frames, container, document, window, graph, update, data, canvasContext,
     resize() { onResize(); },
     frame(ms = 34) { clock += ms; const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(clock)); },
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
+
+test('unchanged or profile-only batches preserve simulation, positions and latest progress revision', () => {
+  const r = renderer();
+  r.update(1, r.data(4));
+  const original = r.props.get('graphData').nodes[1];
+  original.x = 123;
+  original.y = -45;
+  original.vx = 0;
+  r.calls.length = 0;
+  const unchanged = r.data(4);
+  unchanged.nodes.reverse();
+  unchanged.links.reverse();
+  r.update(2, unchanged);
+  assert.ok(!r.calls.some(([name]) => name === 'graphData'));
+  assert.equal(original.x, 123);
+  assert.equal(original.y, -45);
+  assert.equal(r.messages.findLast(m => m.type === 'progress').revision, 2);
+  const metadata = r.data(4);
+  metadata.nodes[1].name = 'Updated profile';
+  r.update(3, metadata);
+  assert.equal(original.name, 'Updated profile');
+  assert.ok(!r.calls.some(([name]) => name === 'graphData'));
+  r.update(4, { ...r.data(4), links: [
+    { source: '1', target: '2' }, { source: '1', target: '3' }, { source: '2', target: '4' }
+  ] });
+  assert.equal(r.calls.filter(([name]) => name === 'graphData').length, 1);
+  r.window.followGraph.destroy();
+});
+
+test('unchanged refresh does not restart a pending progressive reveal', () => {
+  const r = renderer({ reduced: false }), data = r.data(8);
+  r.update(1, data);
+  r.frame(50);
+  const visible = r.props.get('graphData').nodes.length;
+  r.calls.length = 0;
+  r.update(2, data);
+  assert.equal(r.props.get('graphData').nodes.length, visible);
+  assert.ok(!r.calls.some(([name]) => name === 'graphData'));
+  for (let i = 0; i < 60; i++) r.frame();
+  assert.equal(r.props.get('graphData').nodes.length, 8);
+  assert.equal(r.messages.findLast(m => m.type === 'progress').revision, 2);
+  r.window.followGraph.destroy();
+});
 
 test('2D viewport survives batches without auto-fit and stale batches are ignored', () => {
   const r = renderer();
@@ -108,6 +157,86 @@ test('2D viewport survives batches without auto-fit and stale batches are ignore
   r.update(4, { ...r.data(4), viewport: [25, 40, 1] });
   r.props.get('onEngineStop')();
   assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', 25, 40, 0]);
+});
+
+test('selected relationship count follows admitted nodes, never the incoming page size', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer({ reduced: false });
+    const data = count => {
+      const value = r.data(count);
+      if (relation === 'followers') value.links = value.links.map(({ source, target }) => ({ source: target, target: source }));
+      return value;
+    };
+    r.update(1, { ...data(4), relation, selected: '1', selectionRevision: 1 });
+    for (let i = 0; i < 30; i++) r.frame();
+    assert.equal(r.messages.filter(m => m.type === 'progress').at(-1).selectedCount, 3);
+    r.update(2, { ...data(54), selected: '1', selectionRevision: 1 });
+    const initial = r.messages.filter(m => m.type === 'progress').at(-1);
+    assert.equal(initial.selectedCount, 3);
+    const values = [];
+    for (let i = 0; i < 100; i++) {
+      r.frame();
+      const progress = r.messages.filter(m => m.type === 'progress').at(-1);
+      const visible = r.props.get('graphData');
+      assert.equal(progress.selectedCount, visible.links.length);
+      assert.equal(progress.revision, 2);
+      assert.equal(progress.selectionRevision, 1);
+      values.push(progress.selectedCount);
+    }
+    assert.ok(values.some(count => count > 3 && count < 53));
+    assert.equal(values.at(-1), 53);
+    r.window.followGraph.destroy();
+  }
+});
+
+test('incremental visible indexes preserve cross-edges, cycles, self-loops and topology deletion in both directions', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer({ reduced: false }), data = r.data(20);
+    data.links.push({ source: '2', target: '4' }, { source: '4', target: '2' },
+      { source: '3', target: '4' }, { source: '4', target: '4' });
+    if (relation === 'followers') {
+      data.links = data.links.map(({ source, target }) => ({ source: target, target: source }));
+    }
+    r.update(1, { ...data, relation, selected: '4', selectionRevision: 1 });
+    const check = () => {
+      const visible = r.props.get('graphData'), ids = new Set(visible.nodes.map(node => node.id));
+      const edges = data.links.filter(link => ids.has(link.source) && ids.has(link.target));
+      const keys = values => Array.from(values, link => `${link.source}:${link.target}`).sort();
+      assert.equal(ids.size, visible.nodes.length);
+      assert.deepEqual(keys(visible.links), keys(edges));
+      const expected = edges.filter(link => link[relation === 'followers' ? 'target' : 'source'] === '4').length;
+      assert.equal(r.messages.findLast(message => message.type === 'progress').selectedCount, expected);
+    };
+    for (let i = 0; i < 20; i++) { r.frame(); check(); }
+    data.nodes = data.nodes.filter(node => node.id !== '2');
+    data.links = data.links.filter(link => link.source !== '2' && link.target !== '2');
+    r.update(2, data);
+    check();
+    r.update(3, { reduceMotion: true });
+    check();
+    assert.equal(r.props.get('graphData').nodes.length, 19);
+    r.window.followGraph.destroy();
+  }
+});
+
+test('selection acknowledgement reports the right direction without rebuilding the graph', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer();
+    const data = r.data(4);
+    data.links = [{ source: '1', target: '2' }, { source: '2', target: '3' }, { source: '4', target: '2' }];
+    r.update(1, { ...data, relation });
+    const rebuilds = r.calls.filter(([name]) => name === 'graphData').length;
+    for (const [sequence, selected, version] of [[2, '2', 1], [3, '1', 2], [4, '2', 3], [5, null, 4]]) {
+      r.update(sequence, { selected, selectionRevision: version });
+      const progress = r.messages.filter(m => m.type === 'progress').at(-1);
+      assert.equal(progress.selected, selected);
+      assert.equal(progress.selectionRevision, version);
+      assert.equal(progress.selectedCount, selected === null ? 0 : selected === '1' ?
+        (relation === 'followers' ? 0 : 1) : (relation === 'followers' ? 2 : 1));
+    }
+    assert.equal(r.calls.filter(([name]) => name === 'graphData').length, rebuilds);
+    r.window.followGraph.destroy();
+  }
 });
 
 test('completion, avatars, new batches and resizing never fit; explicit reset still fits', () => {
@@ -190,8 +319,8 @@ test('avatar hit areas, directed path highlight and image redraw survive settled
   const r = renderer();
   r.update(1, { ...r.data(3), selected: '2', path: ['1', '2'] });
   const { nodes, links } = r.props.get('graphData');
-  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
-  assert.equal(r.props.get('linkDirectionalArrowLength')({ source: '2', target: '1' }), 6);
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
+  assert.equal(r.props.get('linkDirectionalArrowLength')({ source: '2', target: '1' }), 0);
   r.props.get('nodeCanvasObject')(nodes[1], r.canvasContext, 1);
   assert.equal(r.images.length, 2); // Root is prefetched; the selected node loads on draw.
   r.calls.length = 0;
@@ -221,9 +350,9 @@ test('selection emphasizes every incoming/outgoing edge, keeps path distinct, an
   const unrelated = { source: '1', target: '5' };
   assert.ok(width(incoming) > width(unrelated));
   assert.equal(width(incoming), width(outgoing));
-  assert.equal(color(path), '#007aff');
+  assert.equal(color(path), '#087f758c');
   assert.notEqual(color(incoming), color(path));
-  assert.equal(arrow(incoming), 6);
+  assert.equal(arrow(incoming), 0);
   assert.equal(arrow(unrelated), 0);
   const ctx = new Proxy({}, { get: () => () => {}, set: (obj, key, value) => { obj[key] = value; return true; } });
   const alpha = [];
@@ -248,11 +377,11 @@ test('a real click callback highlights and selects before any native selection e
   assert.equal(r.messages[0].type, 'select');
   assert.equal(r.messages[0].id, '2');
   assert.equal(r.messages.length, 1);
-  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
   assert.ok(r.props.get('linkWidth')(links[0]) > r.props.get('linkWidth')(links[1]));
   r.update(2, { selected: '2', path: ['1', '2'] });
   r.props.get('onNodeClick')(nodes[1]);
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
   r.props.get('onBackgroundClick')();
   assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
   r.props.get('onNodeClick')(nodes[1]);
@@ -275,11 +404,12 @@ test('clicking a second-level node highlights every directed hop from root and r
     link.target = nodes.find(node => node.id === link.target);
   });
   r.props.get('onNodeClick')(nodes[2]);
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
-  assert.equal(r.props.get('linkColor')(links[1]), '#007aff');
-  assert.notEqual(r.props.get('linkColor')(links[2]), '#007aff');
-  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 6);
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
+  assert.equal(r.props.get('linkColor')(links[1]), '#087f758c');
+  assert.notEqual(r.props.get('linkColor')(links[2]), '#087f758c');
+  assert.equal(r.props.get('linkDirectionalArrowLength')(links[0]), 0);
   assert.equal(r.frames.size, 1);
+  r.frame(200);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
   const initial = r.calls.filter(([name]) => name === 'lineTo');
@@ -293,8 +423,8 @@ test('clicking a second-level node highlights every directed hop from root and r
   assert.equal(r.frames.size, 0);
   r.calls.length = 0;
   r.props.get('onRenderFramePost')(r.canvasContext, 1);
-  assert.ok(!r.calls.some(([name]) => name === 'lineTo'));
-  assert.equal(r.props.get('linkColor')(links[0]), '#007aff');
+  assert.ok(r.calls.some(([name]) => name === 'lineTo')); // Static direction markers remain.
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
   r.update(4, { reduceMotion: false, active: true });
   assert.equal(r.frames.size, 1);
   r.document.hidden = true;
@@ -303,6 +433,8 @@ test('clicking a second-level node highlights every directed hop from root and r
   r.document.hidden = false;
   r.document.listeners.get('visibilitychange')();
   r.props.get('onBackgroundClick')();
+  assert.equal(r.frames.size, 1); // Brief fade-out, then no idle animation pump.
+  r.frame(200);
   assert.equal(r.frames.size, 0);
   r.props.get('onNodeClick')(nodes[2]);
   r.window.followGraph.destroy();
@@ -347,6 +479,29 @@ test('cached snapshots visibly reveal root then children, reuse objects and repo
   assert.equal(r.props.get('graphData').nodes.length, 21);
   r.window.followGraph.destroy();
   assert.equal(r.frames.size, 0);
+});
+
+test('restored and initialized canvases replay cached nodes without fitting at completion', () => {
+  // Native restoration and initialization both replace the WebView identity.
+  // Reusing data must not reuse the previous canvas reveal queue.
+  for (const relation of ['following', 'followers']) {
+    for (const count of [24, 12]) {
+      const r = renderer({ reduced: false }), data = r.data(count);
+      data.relation = relation;
+      if (relation === 'followers') data.links = data.links.map(({ source, target }) => ({ source: target, target: source }));
+      r.update(1, data);
+      assert.equal(r.props.get('graphData').nodes.length, 1);
+      assert.equal(r.props.get('graphData').nodes[0].id, '1');
+      r.frame(50);
+      assert.equal(r.props.get('graphData').nodes.length, 2);
+      for (let i = 0; i < 100; i++) r.frame(34);
+      assert.equal(r.props.get('graphData').nodes.length, count);
+      r.props.get('onEngineStop')();
+      assert.ok(!r.calls.some(([name]) => name === 'zoomToFit'));
+      r.window.followGraph.destroy();
+      assert.equal(r.frames.size, 0);
+    }
+  }
 });
 
 test('reveal queue preserves BFS order and pause time; removed pending nodes never resurrect', () => {
@@ -465,6 +620,73 @@ test('cached avatars display immediately without replaying download fades', () =
   assert.equal(alphas.at(-1), 1);
   assert.equal(r.frames.size, 0);
   assert.ok(r.images.every(image => new URL(image.src).hostname === 'cache'));
+});
+
+test('only network fades allocate a placeholder surface and release its pixels on completion', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  r.images[0].onload();
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 1);
+  r.update(2, { reduceMotion: false });
+  r.props.get('nodeCanvasObject')(r.props.get('graphData').nodes[1], r.canvasContext, 1);
+  r.images.at(-1).onerror();
+  r.images.at(-1).onload();
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 3);
+  const placeholder = r.canvases.at(-1);
+  r.frame(280);
+  assert.equal(placeholder.width, 0);
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 2);
+  r.window.followGraph.destroy();
+  assert.ok(r.canvases.every(canvas => canvas.width === 0));
+});
+
+test('avatar LRU retains all visible users, evicts only offscreen pixels and reuses cache on return', () => {
+  const r = renderer();
+  r.update(1, { ...r.data(700), selected: '700' });
+  const nodes = r.props.get('graphData').nodes;
+  for (const node of nodes) {
+    node.x = node.y = 0;
+    r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  }
+  while (true) {
+    const image = r.images.find(value => value.onload);
+    if (!image) break;
+    image.onload();
+  }
+  r.props.get('onRenderFramePre')();
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  // The budget is soft: retaining a fully visible graph prevents image churn.
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 700);
+  for (const node of nodes.slice(100)) node.x = 5000;
+  r.frame(500);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePre')();
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.equal(r.canvases.filter(canvas => canvas.width === 64).length, 512);
+  const before = r.images.length;
+  r.props.get('nodeCanvasObject')(nodes[699], r.canvasContext, 1);
+  assert.equal(r.images.length, before); // Selected user remains pinned, even offscreen.
+  nodes[149].x = 0;
+  r.props.get('nodeCanvasObject')(nodes[149], r.canvasContext, 1);
+  assert.equal(r.images.length, before + 1);
+  assert.equal(new URL(r.images.at(-1).src).hostname, 'cache');
+  r.images.at(-1).onload();
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'zoom', 'centerAt'].includes(name)));
+  r.window.followGraph.destroy();
+  assert.ok(r.canvases.every(canvas => canvas.width === 0));
+});
+
+test('offscreen avatars skip surface allocation while selection can still load them', () => {
+  const r = renderer();
+  r.update(1, r.data(2));
+  const node = r.props.get('graphData').nodes[1];
+  node.x = 2000;
+  r.props.get('onRenderFramePre')();
+  r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  assert.equal(r.images.length, 1);
+  r.props.get('onNodeClick')(node);
+  assert.equal(r.images.length, 2);
+  r.window.followGraph.destroy();
 });
 
 test('bounded lookahead probes cache independently of slow downloads', () => {
@@ -627,12 +849,169 @@ test('cached BFS respects numeric tie breaks, cycles and edge removal on the nex
   r.update(1, data);
   r.props.get('onNodeClick')(r.props.get('graphData').nodes.find(node => node.id === '3'));
   const color = r.props.get('linkColor');
-  assert.equal(color(data.links[2]), '#007aff');
-  assert.equal(color(data.links[3]), '#007aff');
-  assert.notEqual(color(data.links[0]), '#007aff');
+  assert.equal(color(data.links[2]), '#087f758c');
+  assert.equal(color(data.links[3]), '#087f758c');
+  assert.notEqual(color(data.links[0]), '#087f758c');
   r.update(2, { ...data, links: data.links.filter(link => link.source !== '2') });
-  assert.equal(color(data.links[0]), '#007aff');
-  assert.equal(color(data.links[1]), '#007aff');
+  assert.equal(color(data.links[0]), '#087f758c');
+  assert.equal(color(data.links[1]), '#087f758c');
   r.update(3, { ...data, links: [] });
-  assert.notEqual(color(data.links[0]), '#007aff');
+  assert.notEqual(color(data.links[0]), '#087f758c');
+});
+
+// Followers changes traversal only; native payloads and Canvas arrows retain real direction.
+test('followers reveal traverses incoming edges and keeps parents stable across cycles', () => {
+  const reveal = new ProgressiveReveal();
+  const nodes = new Map(['1', '2', '3', '10'].map(id => [id, { id }]));
+  const links = new Map([
+    ['2:1', { source: '2', target: '1' }], ['10:1', { source: '10', target: '1' }],
+    ['3:2', { source: '3', target: '2' }], ['3:10', { source: '3', target: '10' }],
+    ['2:3', { source: '2', target: '3' }]
+  ]);
+  reveal.sync(nodes, links, '1', 1000, false, 'followers');
+  assert.deepEqual([...reveal.visible], ['1']);
+  assert.deepEqual(reveal.pending, ['2', '10', '3']);
+  assert.equal(reveal.parents.get('3'), '2');
+  assert.equal(links.get('2:1').source, '2');
+});
+
+test('followers selection highlights and animates selected user to root, never the reciprocal edge', () => {
+  const r = renderer(), data = r.data(3);
+  data.links = [{ source: '2', target: '1' }, { source: '3', target: '2' },
+    { source: '1', target: '2' }];
+  r.update(1, { ...data, relation: 'followers' });
+  r.update(2, { reduceMotion: false });
+  const { nodes, links } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 250; node.y = 0; });
+  r.props.get('onNodeClick')(nodes.find(node => node.id === '3'));
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
+  assert.equal(r.props.get('linkColor')(links[1]), '#087f758c');
+  assert.notEqual(r.props.get('linkColor')(links[2]), '#087f758c');
+  r.frame(200);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  // Flow strokes have one segment; open direction markers have two.
+  const segments = r.calls.filter((call, i) => call[0] === 'moveTo' &&
+    r.calls[i + 1]?.[0] === 'lineTo' && r.calls[i + 2]?.[0] === 'stroke');
+  const starts = segments;
+  const ends = segments.map(call => r.calls[r.calls.indexOf(call) + 1]);
+  assert.ok(ends.length > 0);
+  assert.ok(ends.every(([, x], i) => x < starts[i][1]));
+  assert.ok(ends.some(([, x]) => x > 20 && x < 239));
+  assert.ok(ends.some(([, x]) => x > 261 && x < 483));
+  r.update(3, { selected: '3', path: ['3', '2', '1'] });
+  assert.equal(r.props.get('linkColor')(links[0]), '#087f758c');
+  r.props.get('onBackgroundClick')();
+  assert.equal(r.props.get('linkWidth')(links[0]), 0.6);
+});
+
+
+test('open direction marks stay screen-sized at target rims and suppress dense hub arrows', () => {
+  const r = renderer();
+  r.update(1, r.data(30));
+  const { nodes, links } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 300; node.y = 0; });
+  r.props.get('onNodeClick')(nodes[0]);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.equal(r.calls.filter(([name]) => name === 'lineTo').length, 0);
+  r.props.get('onLinkHover')(links[0]);
+  for (const scale of [0.5, 1, 8]) {
+    r.calls.length = 0;
+    r.props.get('onRenderFramePost')(r.canvasContext, scale);
+    const points = r.calls.filter(([name]) => name === 'lineTo');
+    assert.equal(points.length, 2);
+    assert.ok(Math.abs((points[0][1] - points[1][1]) * scale - 6) < 1e-8);
+    assert.ok(points[0][1] > nodes[0].radius && points[0][1] < nodes[1].x - nodes[1].radius);
+    assert.ok(Math.abs((nodes[1].x - points[0][1] - nodes[1].radius) * scale - 3) < 1e-8);
+  }
+  r.props.get('onLinkHover')(null);
+  r.props.get('onNodeClick')(nodes[1]);
+  r.calls.length = 0;
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  assert.equal(r.calls.filter(([name]) => name === 'lineTo').length, 2);
+});
+
+test('direction tips follow the real target rim in both graph modes, including diagonal edges', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer(), data = r.data(2);
+    if (relation === 'followers') data.links = [{ source: '2', target: '1' }];
+    r.update(1, { ...data, relation });
+    const { nodes } = r.props.get('graphData');
+    nodes[0].x = nodes[0].y = 0;
+    nodes[1].x = 300; nodes[1].y = 200;
+    r.props.get('onNodeClick')(nodes[1]);
+    const source = nodes[relation === 'following' ? 0 : 1];
+    const target = nodes[relation === 'following' ? 1 : 0];
+    for (const scale of [0.5, 1, 8]) {
+      r.calls.length = 0;
+      r.props.get('onRenderFramePost')(r.canvasContext, scale);
+      const points = r.calls.filter(([name]) => name === 'lineTo');
+      assert.equal(points.length, 2);
+      const [, x, y] = points[0];
+      assert.ok(Math.abs((Math.hypot(x - target.x, y - target.y) - target.radius) * scale - 3) < 1e-8);
+      // The open wings point back toward the source, regardless of exploration direction.
+      const length = Math.hypot(target.x - source.x, target.y - source.y);
+      const projection = ((x - points[1][1]) * (target.x - source.x) +
+        (y - points[1][2]) * (target.y - source.y)) / length;
+      assert.ok(Math.abs(projection * scale - 6) < 1e-8);
+    }
+  }
+});
+
+
+test('flow has bounded fading tails and fades out without animating reduced-motion paths', () => {
+  const r = renderer();
+  r.update(1, r.data(3));
+  const { nodes } = r.props.get('graphData');
+  nodes.forEach((node, i) => { node.x = i * 400; node.y = 0; });
+  r.update(2, { reduceMotion: false });
+  r.props.get('onNodeClick')(nodes[1]);
+  r.frame(200);
+  const alpha = [], radii = [];
+  const ctx = new Proxy({}, {
+    get: (_, key) => (...args) => { if (key === 'arc') radii.push(args[2]); },
+    set: (_, key, value) => { if (key === 'globalAlpha') alpha.push(value); return true; }
+  });
+  r.container.children[0].getContext = () => ctx;
+  r.props.get('onRenderFramePost')(ctx, 1);
+  assert.ok(alpha.some(value => value > 0 && value < 0.1));
+  assert.ok(radii.includes(4.5) && radii.includes(1));
+  r.props.get('onBackgroundClick')();
+  r.frame(90);
+  alpha.length = 0;
+  r.props.get('onRenderFramePost')(ctx, 1);
+  assert.ok(alpha.length && alpha.every(value => value <= 0.5));
+  r.frame(100);
+  assert.equal(r.frames.size, 0);
+  r.update(3, { reduceMotion: true, selected: '2', path: ['1', '2'] });
+  alpha.length = 0;
+  r.props.get('onRenderFramePost')(ctx, 1);
+  assert.equal(alpha.length, 0);
+  assert.equal(r.frames.size, 0);
+});
+
+test('settled flow redraws only its transparent overlay and follows Retina zoom transforms', () => {
+  const r = renderer();
+  r.update(1, r.data(1000));
+  const data = r.props.get('graphData');
+  data.nodes[1].x = 400;
+  data.nodes[1].y = 0;
+  r.update(2, { reduceMotion: false, selected: '2', path: ['1', '2'] });
+  r.graph.zoom(2).centerAt(25, -30);
+  r.window.devicePixelRatio = 2;
+  r.calls.length = 0;
+  for (let i = 0; i < 30; i++) r.frame();
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'nodeCanvasObject', 'nodePointerAreaPaint'].includes(name)));
+  assert.ok(r.calls.some(([name]) => name === 'stroke'));
+  const canvas = r.container.children[0];
+  assert.equal(canvas.style.pointerEvents, 'none');
+  assert.equal(canvas.width, 2400);
+  assert.equal(canvas.height, 1600);
+  assert.ok(r.calls.some(call => JSON.stringify(call) === JSON.stringify(['setTransform', 4, 0, 0, 4, 1100, 920])));
+  r.update(3, { active: false });
+  assert.equal(r.frames.size, 0);
+  r.window.followGraph.destroy();
+  assert.equal(canvas.width, 0);
+  assert.equal(canvas.height, 0);
 });

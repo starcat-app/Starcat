@@ -14,6 +14,7 @@ struct FollowGraphUserCard: View {
     let node: FollowGraphNode
     @Bindable var model: FollowGraphViewModel
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.locale) private var locale
 
     @State private var profile: GitHubUserDTO?
     @State private var socialAccounts: [GitHubSocialAccountDTO] = []
@@ -75,17 +76,13 @@ struct FollowGraphUserCard: View {
 
             Divider()
 
-            Text(verbatim: model.path.compactMap { model.snapshot?.nodes[$0]?.login }.joined(separator: " → "))
-                .font(.caption)
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-
+            // 操作与对应信息同排，保留按钮命中尺寸；长路径换行而不挤压定位入口。
             HStack(alignment: .center, spacing: 10) {
-                Text(model.displayedSnapshot?.progress[node.id]?.complete == true ?
-                     "followGraph.status.complete" : "followGraph.status.partial")
+                Text(verbatim: model.path.compactMap { model.snapshot?.nodes[$0]?.login }.joined(separator: " → "))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
                 Spacer(minLength: 0)
                 Button { model.focus(node.id) } label: {
                     Label("followGraph.action.locate", systemImage: "scope")
@@ -98,11 +95,19 @@ struct FollowGraphUserCard: View {
                 .help("followGraph.action.locate")
             }
 
-            if model.displayedSnapshot?.progress[node.id]?.complete != true {
-                HStack {
-                    Spacer()
-                    Button("followGraph.action.more") { model.loadMore(node.id) }
-                        .disabled(model.isLoading)
+            HStack(alignment: .center, spacing: 10) {
+                Text(verbatim: loadCountLabel)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(loadCountLabel + "\n" + String.l10n(loadStateKey))
+                Spacer(minLength: 0)
+                if model.canLoadMore(node.id, fallbackTotal: relationTotal) {
+                    Button("followGraph.action.more") { model.loadMore(node.id, fallbackTotal: relationTotal) }
+                        .fixedSize()
+                        .disabled(model.isLoading || model.isRevealingRelations(for: node.id))
                 }
             }
         }
@@ -134,6 +139,27 @@ struct FollowGraphUserCard: View {
             return name
         }
         return node.name ?? node.login
+    }
+
+    /// 分页总数优先；尚未查询该用户时，按当前图谱方向复用已取得的公开资料人数。
+    private var relationTotal: Int? {
+        let graph = model.displayedSnapshot
+        return graph?.progress[node.id]?.totalCount ??
+            (graph?.relation == .followers ? profile?.followers : profile?.following)
+    }
+
+    private var loadCountLabel: String {
+        let loaded = model.renderedRelationCount(for: node.id).formatted(.number.locale(locale))
+        if let total = relationTotal {
+            return String(format: .l10n("followGraph.status.loadedCountKnown"), locale: locale,
+                          arguments: [loaded, total.formatted(.number.locale(locale))])
+        }
+        return String(format: .l10n("followGraph.status.loadedCount"), locale: locale, arguments: [loaded])
+    }
+
+    private var loadStateKey: String {
+        guard model.displayedSnapshot?.progress[node.id]?.complete == true else { return "followGraph.status.partial" }
+        return model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" : "followGraph.status.complete"
     }
 
     private func open(_ url: URL) { NSWorkspace.shared.open(url) }

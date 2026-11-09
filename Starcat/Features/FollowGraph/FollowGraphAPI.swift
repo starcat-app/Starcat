@@ -7,9 +7,10 @@
 
 import Foundation
 
-/// following 查询只返回公开身份、游标与 GraphQL 配额，不允许 partial data 冒充成功。
+/// 两方向查询均只返回公开身份、游标与 GraphQL 配额，不允许 partial data 冒充成功。
 struct FollowGraphAPI: FollowGraphProviding {
     let client: GitHubAPIClient
+    var relation: FollowGraphRelation = .following
 
     func page(login: String, cursor: String?, count: Int) async throws -> FollowGraphPage {
         var variables: [String: Any] = ["login": login, "first": min(100, max(1, count))]
@@ -18,7 +19,7 @@ struct FollowGraphAPI: FollowGraphProviding {
         query($login: String!, $first: Int!, $after: String) {
           user(login: $login) {
             databaseId login name avatarUrl
-            following(first: $first, after: $after) {
+            \(relation.rawValue)(first: $first, after: $after) {
               totalCount pageInfo { endCursor hasNextPage }
               nodes { databaseId login name avatarUrl }
             }
@@ -29,7 +30,9 @@ struct FollowGraphAPI: FollowGraphProviding {
         guard let user = data.user, let source = user.node else {
             throw NetworkError.clientError(statusCode: 404, message: String.l10n("followGraph.status.unavailable"))
         }
-        let connection = user.following
+        guard let connection = relation == .following ? user.following : user.followers else {
+            throw NetworkError.clientError(statusCode: 502, message: String.l10n("followGraph.status.unavailable"))
+        }
         // 缺失用户身份不能被当成完整分页，否则下次刷新可能错误删除旧边。
         let nodes = connection.nodes.compactMap { $0?.node }
         guard nodes.count == connection.nodes.count,
@@ -51,7 +54,8 @@ struct FollowGraphAPI: FollowGraphProviding {
         let login: String
         let name: String?
         let avatarUrl: String?
-        let following: Connection
+        let following: Connection?
+        let followers: Connection?
         var node: FollowGraphNode? {
             databaseId.map { .init(id: String($0), login: login, name: name, avatarURL: avatarUrl) }
         }

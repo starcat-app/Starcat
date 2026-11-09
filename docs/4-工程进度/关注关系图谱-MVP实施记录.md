@@ -8,6 +8,90 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## 三批性能优化（2026-11-09，待人工视觉验收）
+
+- 在 `codex/followers-graph` / `../Starcat-followers-graph` 实施，保留两方向现有功能、逐个入场和视觉效果。
+- `89c77172`：流光独立绘制。1,000 节点稳定图连续 30 动画帧的替身回归中，基础绘制与命中回调配置、图数据更新均为 0 次，流光持续绘制；同时覆盖 Retina、缩放、后台暂停和关闭释放。
+- `293c8ee9`：头像渐入完成后释放临时占位表面；按视口回收头像，512 张软预算保护屏内、本人、选中、在途及渐入资源。700 张全部屏内时允许超预算，部分移出后可收敛；返回视口优先探测原生缓存。
+- `a694852e`：增量维护可见关系，缓存原生方向计数与 BFS 父节点。覆盖交叉边、自环、两方向、删除和减少动态效果；原生测试比较缓存路径与原图算法，校验动态人数。
+- JS **38 项**、原生 **70 项 / 8 suites**通过。日志：`/tmp/starcat-followers-perf-index-js.log`、`/tmp/starcat-followers-perf-index-tests.log`。
+
+| 节点 / 边 | 入场数据整理累计耗时：优化前 → 后 | 边检查次数：优化前 → 后 | graphData 调用次数（前后相同） |
+|---|---:|---:|---:|
+| 1,000 / 2,986 | 28.92 → 9.95ms | 421,026 → 7,959 | 141 |
+| 5,000 / 14,986 | 164.14 → 36.28ms | 3,506,724 → 39,959 | 234 |
+| 10,000 / 29,986 | 488.16 → 74.04ms | 10,315,184 → 79,959 | 344 |
+
+- 对比基线 `36f7b4b6`，同规模和 34ms 虚拟帧，5 轮去前 2 轮取中位数；真实渐进队列配合 Canvas / ForceGraph 替身。计时源码不插桩，边检查次数另跑一轮统计，避免计数回调污染耗时。前后出现数量、帧步数和数据提交数量一致。脚本及结果：`/tmp/starcat-followers-perf-compare.cjs`、`/tmp/starcat-followers-perf-before.jsonl`、`/tmp/starcat-followers-perf-after.jsonl`。
+- 耗时不含 Canvas 与 D3，不代表实际 FPS 或进程 CPU 百分比。单张头像 Canvas 像素预算 16KiB，512 张为 8MiB；原始 Image、流光背板、WebKit 和图结构另占内存，未测实际 RSS，不能宣称进程内存减半。
+- D3 参数及布局步数不变，大图物理计算仍是剩余成本。未执行 GUI 自动化，未改总览或 Changelog，未关闭专项，未推送或合回 dev。
+- `make build-appstore`、`make build-direct` 及渠道产物校验通过；两渠道 HTML / JS / 许可证与源码逐字节一致，已有 2 条刷新提示 × 17 语言的编译资源与 Catalog 一致。日志：`/tmp/starcat-followers-perf-appstore.log`、`/tmp/starcat-followers-perf-direct.log`；核验脚本：`/tmp/starcat-followers-verify-refresh-artifacts.py`。
+- `make run-direct` 已通过 LaunchServices 稳定启动本 worktree 的 Direct Debug，PID `64632`，进程路径及单实例核实通过，启动后再次核验离线资源一致。日志：`/tmp/starcat-followers-perf-launch.log`。实际视觉体验仍待人工查看。
+
+## 五秒提示、同步 dev 与性能预研（2026-11-09）
+
+- `0be61184` 将图谱共用 Toast 时长统一为 5 秒，覆盖刷新结果与加载更多的普通、受限 / 失败提示；按 dong4j 要求直接提交，不测试、编译或重启，本节不能视为新产物验证。
+- `2b9531ae` 将本地 `dev@d6b7b5f2` 合入 `codex/followers-graph`，保留 dev 的今日 Star 展示和本分支的两方向图谱入口。仅该侧栏文件发生内容冲突并已按两者语义解决；已确认 dev 为当前分支祖先。主工作区的未提交改动未带入，未推送或合回 dev。
+- 性能阶段仅分析和测量，未修改性能实现。临时脚本 `/tmp/starcat-followers-perf-audit.cjs` 直接读取当前源码，结果 `/tmp/starcat-followers-perf-audit.jsonl`；不执行测试、应用构建、GUI、网络或真实缓存写入。
+- 合成图包含根节点大 hub 和交叉路径。真实渐进逻辑配合 Canvas / ForceGraph 组件替身测量数据提交次数；真实 D3 使用当前 charge、link、按度数计算的碰撞半径和两次碰撞迭代，独立测量初始 8 tick 的每步耗时。渲染侧 5 轮去前 2 轮、D3 4 轮去前 1 轮，取中位数。D3 起始位置为确定性螺旋，不代表运行中全部布局形态。
+
+| 节点 / 边 | 入场期间 graphData 调用 | 渲染侧逻辑累计 CPU，不含 Canvas / D3 | 独立 D3 单步 CPU | 两张头像 Canvas 的 RGBA 像素估算 |
+|---|---:|---:|---:|---:|
+| 1,000 / 2,986 | 141 | 28.70ms | 8.55ms | 31.25MiB |
+| 5,000 / 14,986 | 234 | 167.61ms | 50.29ms | 156.25MiB |
+| 10,000 / 29,986 | 344 | 475.05ms | 106.64ms | 312.50MiB |
+
+- 内存列为所有节点均已创建两张 64×64、RGBA 四字节 Canvas 时的像素预算，未测实际进程占用；不含原始 Image 解码、Canvas / WebKit 对象和图结构开销。远景圆点不会全部创建头像，不能把该列当成实际常驻值。以上 Node / V8 CPU 测量不等于 WebKit FPS、CPU 百分比或真实账号验收。
+- 建议待确认后分批实施：① 稳定布局时将路径流光单独绘制，避免每次动画都重绘全图与命中层，模拟或交互时同步更新；② 完成渐入后释放占位表面，并对头像表面做可见优先的有界缓存；③ 为当前展示版本缓存有向邻接计数与稳定 BFS 路径，避免计数更新反复扫描边或重建路径；大图入场的全量扫描与物理重热另行拆分，保留逐个入场、实时计数和可操作性。
+
+## 刷新稳定性与结果提示（2026-11-09，待人工验收）
+
+- 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 分批实施：`ed1e6125` 修复无变化刷新布局抖动；`c09aaef1` 增加刷新结果 Toast。本轮不修改主工作区，不合并或推送。
+- 原生分页元数据变化不再增加图版本；Canvas 对节点 ID 和边集合进行顺序无关比较，仅拓扑变化更新力导向数据。重复批次与资料更新保持节点对象、位置、镜头及正在执行的入场队列。
+- 成功结束分别报告展示图的用户和关系净新增 / 移除，无变化明确提示；不把隐藏缓存和重复分页计为新增。失败、限额、停止或过期会话不显示成功，刷新预算和安全删除规则保持不变。
+- 先复现重复 payload 引起布局更新的两项失败，再完成修复；JS **33 项**通过。最终原生 **70 项 / 8 suites**通过，包含两方向无变化刷新及用户变化、仅关系变化、失败和取消的参数化回归。
+- 新增 2 条提示覆盖全部 17 语言，4 个数量占位符一致，原 Catalog 条目未改；保留 AI `needs_review`，译文仍待人工审核。未修改总览、Changelog、数据库或用户缓存，未执行 GUI 自动化。
+- 测试日志：`/tmp/starcat-followers-refresh-stability-js.log`、`/tmp/starcat-followers-refresh-feedback-tests.log`。Canvas 替身回归验证布局调用和坐标保持，不代替真实 WebKit 视觉验收。
+- `make build-appstore`、`make build-direct` 与产物校验通过；两渠道图谱 HTML / JS / 许可证与源码逐字节一致，2 条新增提示 × 17 语言的编译 strings 与 Catalog 一致。日志：`/tmp/starcat-followers-refresh-appstore.log`、`/tmp/starcat-followers-refresh-direct.log`；核验脚本：`/tmp/starcat-followers-verify-refresh-artifacts.py`。
+- `make run-direct` 已通过 LaunchServices 稳定重启当前 worktree 的 Direct Debug，PID 68722、单实例，进程路径已核实。启动日志：`/tmp/starcat-followers-refresh-launch.log`；实际刷新观感与真实账号结果由 dong4j 人工验看。
+
+## 加载范围恢复与初始化（2026-11-09，待人工验收）
+
+- 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 分批实施。`6b3ee9bd` 保存和恢复加载范围；`7499cdb6` 加入独立初始化确认入口。本轮不合并、推送或修改主工作区。
+- 展开预算使用账户目录下独立的 `following-range.json` / `followers-range.json`，完整关系与分页游标仍在原快照内。关闭立即重开等待已排队预算写入；新模型也可恢复，不把完整缓存全部绘出。预算文件损坏或版本无效时忽略，恢复出厂后的迟到保存不重建目录。
+- 重开先恢复范围再挂载新 WebView，初始化也重建画布；两者均从本人按层级逐个入场。搜索、选中和视角重置，结束不自动适配；现有有效范围不补采。新节点仍增量入场，关系与头像缓存不清理。
+- 顶部新增竖线分隔的初始化图标，原生二次确认；确认后停止采集、写入默认预算，缺少默认层级时才补采。确认弹窗期间暂停工具栏自动隐藏。新增 3 条文案覆盖 17 语言，保留 AI `needs_review`，Catalog 仅新增原位条目。
+- 最终相关原生 **68 项 / 8 suites**、Canvas 桥接 **31 项**回归通过，覆盖两方向重开 / 新模型恢复、默认范围初始化、立即重开保存顺序、部分缓存按需补采、缓存损坏与恢复出厂迟到保存。重播从本人开始，结束不自动 fit；桥接替身测试不等于 WebKit 视觉验收。
+- `make build-appstore`、`make build-direct` 与产物校验通过；两渠道图谱 HTML / JS / 许可证逐字节匹配仓库资源，3 条新增文案 × 17 语言的编译 strings 与 Catalog 全部一致。原 Catalog 条目保持原字节，零删除。未使用 GUI 自动化，待人工验看，未关闭专项或写总览 / Changelog。
+- 日志：`/tmp/starcat-followers-initialize-final-tests.log`、`/tmp/starcat-followers-range-js.log`、`/tmp/starcat-followers-range-appstore.log`、`/tmp/starcat-followers-range-direct.log`；资源核验脚本为 `/tmp/starcat-followers-verify-range-artifacts.py`。
+- `make run-direct` 已通过 LaunchServices 稳定启动当前 Followers worktree 的 Direct Debug（PID 92435，单实例），进程路径已核实；启动日志 `/tmp/starcat-followers-range-launch.log`。视觉效果与真实账号交互由 dong4j 人工验看。
+
+## 默认三层与加载反馈（2026-11-09，待人工验收）
+
+- 继续在 `codex/followers-graph` / `../Starcat-followers-graph` 实施。三批代码提交：`8c632f13` 默认三层与分支预算；`bdb0ac80` 画布真实入场人数；`be063f71` 加载更多、手动容量分配与底部 Toast。本轮未修改主工作区，未合并或推送。
+- Followers 默认本人、直接关注者、关注者的关注者三层；第三层稳定均分最多 1,000 条样本名额，每人最多 20 条。55 个分支的合成接口回归得到 1,056 个唯一节点，未采集第四层；旧首层缓存补齐后重开不再请求。该数量为测试样本，不代表真实账号本次结果。
+- 卡片人数跟随 Canvas 已入场关系增长，按方向统计；选择版本、图版本与画布会话共同拒绝旧回调。已完成分页不重读第一页，人数已满但分页未完整时只收起按钮，不改写完整标记；隐藏缓存仍可展开。手动名额在默认投影后单独分配，避免大图中被其他分支抢占。
+- 正常新增由节点与数字表达；只补关系、重复用户、完成、容量 / 配额与失败复用底部 Toast。普通提示 2 秒，受限 / 失败 4 秒；窄窗口避开资料卡，关闭与重开清理提示。新增 4 条文案覆盖本分支全部 17 语言，与 AppLocale、locales.json 及双渠道编译 strings 核对一致，保留 AI `needs_review`。
+- 最终相关原生回归 **65 项 / 8 suites**、JS **30 项**通过；覆盖旧缓存补齐、分支预算、真实计数、A → B → A 迟到回调、默认及更深节点手动容量、重复分页、网络失败与低配额反馈。原有配额测试改用未完成分页验证继续请求阻断，完整缓存读取另有测试。
+- `make build-appstore`、`make build-direct` 与产物校验通过；两渠道 HTML / JS / 许可证逐字节匹配仓库资源，4 条 Toast 文案的 17 语言编译资源与 Catalog 完全一致。未执行 GUI 自动化，动画、窄窗口视觉及真实账号加载仍由人工验看；未关闭专项，未改总览或 Changelog。
+- 日志：`/tmp/starcat-followers-loading-feedback-tests.log`、`/tmp/starcat-followers-dynamic-count-js.log`、`/tmp/starcat-followers-three-layers-appstore.log`、`/tmp/starcat-followers-three-layers-direct.log`。
+
+## Followers 扩展（2026-11-08，待验收）
+
+- 分支：`codex/followers-graph`，基于 `dev@11d3a8bd`。
+- Worktree：`../Starcat-followers-graph`；主工作区保留给并行功能，本轮不合并或推送。
+- 「关注者」新增真实 followers 图谱；「正在关注」保留既有 following 图谱。
+- Followers 默认完整本人首层、资料卡手动展开；真实边和流水始终指向被关注者。
+- 按方向隔离分页与缓存，旧 following 快照继续可读；回关不改变 follower 身份。
+- 原生相关回归：41 项、5 组通过，包含图模型、Store / Cache、API / ViewModel 生命周期、关注状态及恢复出厂；JS 25 项通过。
+- 新增状态文案覆盖 AppLocale 当前 17 种语言，原有 Catalog 条目未改变；AI 翻译仍为 `needs_review`。
+- 新 worktree 复用主工作区被忽略的本地签名配置与 Package.resolved。首次自动解析到更新的 MLX 分支出现无关枚举编译错误；恢复主工作区依赖锁定版本后测试通过，未修改 Local AI 模块或依赖声明。
+- 2026-11-09：`make build-appstore`、`make build-direct` 均通过；两渠道 HTML / JS / 许可证逐字节匹配源码，新增文案 17 语言编译资源全部匹配 Catalog。
+- 本地提交：`7a0f0308` 文档决议、`9cf2aed4` 模型 / 缓存 / 回归、`cdf89791` 入口 / UI / Canvas。未合并、推送或启动应用，真实账号 GUI 与视觉效果仍待人工验收。
+- 验证日志：`/tmp/starcat-followers-tests.log`、`/tmp/starcat-followers-js-tests.log`、`/tmp/starcat-followers-appstore.log`、`/tmp/starcat-followers-direct.log`。
+
+以下保留原 MVP 历史记录，入口以本轮双方向契约为准。
+
 ## 已实现范围
 
 - 左侧现有「关注者」统计入口打开全窗口遮盖层，覆盖原侧栏与工具栏，关闭后恢复原页面。
@@ -178,3 +262,28 @@ make run-appstore
 - JS 23 项通过，包括旧回调拒绝、卡片通知不移动镜头、刷新后旧数据不覆盖头像，以及既有首帧、路径、渐入、大小和销毁回归。原生相关 8 个 suite 通过：42 项 Swift Testing / 7 suite 与 10 项 XCTest；日志 `/tmp/starcat-follow-graph-avatar-sync-tests.log`。
 - 未控制桌面、读取屏幕或宣称真实 CDN 性能已验收；无新增文案、数据库、功能实现总览或 Changelog 修改。
 - 双渠道构建、产物校验及包内 HTML / JS / 许可证逐字节核验通过；日志 `/tmp/starcat-follow-graph-avatar-sync-appstore.log`、`/tmp/starcat-follow-graph-avatar-sync-direct.log`。最终原生回归包含切走再选回后可重新通知，保持 42 + 10 项全部通过。
+
+
+## Followers 图谱视觉优化（2026-11-09）
+
+- 在 `codex/followers-graph` worktree 实施，未修改主工作区：`680f1858` 弱化邻接线与固定尺寸开口方向标记；`5d263e60` 青绿流光、渐隐拖尾、到达轮廓及切换淡出；`494e76d5` 资料卡底部压缩为两行；`9dc5da6a` 刷新 / 停止共用按钮，支持悬停和键盘焦点。
+- JS 27 项通过，新增缩放后的方向标记尺寸、密集节点箭头抑制、渐隐拖尾和取消后停止调度回归；既有 Followers / Following 方向、头像缓存、渐进展示与镜头保护保持通过。日志 `/tmp/starcat-followers-ui-js.log`。
+- 原生相关 41 项 / 5 suites 通过，日志 `/tmp/starcat-followers-ui-tests.log`。`make build-appstore`、`make build-direct` 及产物校验通过，两渠道图谱 HTML / JS / 许可证与源码逐字节一致；日志 `/tmp/starcat-followers-ui-appstore.log`、`/tmp/starcat-followers-ui-direct.log`。
+- 沿用现有本地化 key，无新增文案或依赖。未修改总览、Changelog、数据采集预算或用户缓存。未执行 GUI 自动化；以上回归不代替箭头密度、流光观感、长路径布局与鼠标 / 键盘交互的人工验收。
+
+
+## 箭头回到目标节点（2026-11-09）
+
+- 根据 dong4j 人工反馈，将开口箭头由线段内部移到真实 target 头像外沿，尖端间距保持屏幕 3pt、长度保持 6pt；保留密集节点方向标记控制、弱化连线和青绿流光。
+- JS 28 项通过，新增两种探索方向下斜向边的目标半径 / 间距 / 箭头朝向校验，并校验缩放后的屏幕尺寸；日志 `/tmp/starcat-followers-arrow-rim-tests.log`。
+- 双渠道构建及产物校验通过，两渠道 HTML / JS / 许可证与源码逐字节一致；日志 `/tmp/starcat-followers-arrow-rim-appstore.log`、`/tmp/starcat-followers-arrow-rim-direct.log`。本次仅修改 Canvas 与相关规格，无 Swift 或本地化改动；未重复原生单测，未执行 GUI 自动化，观感仍待人工验收。
+
+
+## 单行加载数量与工具栏收敛（2026-11-09）
+
+- 卡片状态改为单行“已加载 X / Y 人”，X 仅计当前展示投影中该用户对应方向的直接关系，Y 优先取分页总数、否则取已取得的资料卡对应人数；未知总数只显示 X，真实 0 保留。完整性仍依据分页游标；过长数量截断，悬停保留完整数量和状态。
+- 删除独立继续按钮及无用 resume 方法，顶部只剩刷新 / 停止、重置视角、本人定位。首次分页前停止或失败可从刷新恢复；两种图谱的本人首层均完整刷新，二层继续限制在展示预算。
+- 原生相关 46 项 / 5 suites 全部通过，包含两方向计数、投影预算、未知 / 零总数、数量相等不代表完整，以及空分页状态 / 首层中断后的刷新恢复；日志 `/tmp/starcat-followers-count-tests.log`。
+- 两条新增数量文案补齐 AppLocale 与 locales.json 一致的全部 17 语言，参数及占位符通过，原 Catalog 条目未改、仅新增 216 行，AI needs_review 保留。数字显式注入环境 locale。
+- `make build-appstore`、`make build-direct` 及产物校验通过。两渠道图谱资源逐字节匹配，两条文案的 17 语言编译 strings 均与 Catalog 一致；日志 `/tmp/starcat-followers-count-appstore.log`、`/tmp/starcat-followers-count-direct.log`。
+- 未执行 GUI 自动化，未新增依赖或修改数据库、功能总览与 Changelog；长语言 / 大字号下的真实视觉观感与译文仍待人工验收。

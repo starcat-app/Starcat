@@ -162,6 +162,7 @@ struct HomeView: View {
     /// 图谱模型跨关闭保留；原页面选择不随遮盖层变化。
     @State private var showsFollowGraph = false
     @State private var followGraphModel = FollowGraphViewModel()
+    @State private var followGraphRelation: FollowGraphRelation = .following
 
     /// Trending 当前选中的 repo ID（用于驱动 README 加载）。
     @State private var selectedTrendingRepoID: String?
@@ -414,7 +415,7 @@ struct HomeView: View {
                 }) {
                     if let user = authSession.state.user,
                        let client = dependencies.apiClient as? GitHubAPIClient {
-                        FollowGraphOverlayView(model: followGraphModel, user: user, client: client) {
+                        FollowGraphOverlayView(model: followGraphModel, user: user, client: client, relation: followGraphRelation) {
                             showsFollowGraph = false
                         }
                         // 原页面 disabled，但独立宿主里的图谱必须保持可操作。
@@ -1379,7 +1380,8 @@ struct HomeView: View {
             currentActivityTintColor: derivedActivityTintColor,
             dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
             dailyRadarModel: dailyRadarModel,
-            onOpenFollowGraph: {
+            onOpenFollowGraph: { relation in
+                followGraphRelation = relation
                 showsDailyRadarPreview = false
                 showsFollowGraph = true
             }

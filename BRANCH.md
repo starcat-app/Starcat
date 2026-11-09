@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-06
+> 最后核对：2026-11-09
 
 ## 登记说明
 
@@ -68,6 +68,7 @@
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/followers-graph` | 已合并；本地分支与 worktree 保留 | 2026-11-09 dong4j 确认功能完成，授权将 `d4ffce59` 以 merge commit 合入本地 `dev`（合并前 `2de36506`）。包含双方向图谱、范围恢复、交互与三批性能优化；原基线 `11d3a8bd`，worktree 为 `../Starcat-followers-graph`。后续在主工作区 `dev` 继续，未推送、未发布，删除待单独授权。 |
 | `codex/weekly-ai-events-mvp` | 已合并；本地和远端功能分支、worktree 保留 | 2026-11-06 dong4j 授权将主仓 `f5e3895c` 及四个独立仓功能提交整合至各自本地 `dev`；后续直接在主工作区开发。原 worktree 为 `../Starcat-weekly-ai-events-mvp`，删除待单独授权。 |
 | `codex/follow-graph-mvp` | 已合并；本地分支与 worktree 保留 | 2026-11-06 dong4j 验收后授权将 `e0021690` 以 merge commit 合入本地 `dev`；基线 `016ec930`，worktree 为 `../Starcat-follow-graph-mvp`。未推送、未发布，删除待单独授权。 |
 | `codex/performance-optimization` | 已删除 | 截至 2026-10-11，本地与远端均已不存在该分支，且没有对应 worktree；性能专项改动已在 `dev`。 |

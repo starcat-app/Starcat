@@ -11,13 +11,14 @@ export class ProgressiveReveal {
   births = new Map();
   parents = new Map();
   pending = [];
+  added = [];
   nextAt = 0;
   burst = 0;
   pausedAt = null;
   root = null;
 
   /** Reconcile the latest full snapshot without restarting already-visible avatars. */
-  sync(nodes, links, root, now, reduced) {
+  sync(nodes, links, root, now, reduced, relation = 'following') {
     if (root !== this.root) {
       this.clear();
       this.root = root;
@@ -25,12 +26,16 @@ export class ProgressiveReveal {
     for (const id of this.visible) {
       if (!nodes.has(id)) { this.visible.delete(id); this.births.delete(id); }
     }
+    this.added = this.added.filter(id => nodes.has(id));
     const outgoing = new Map();
     for (const link of links.values()) {
       const source = typeof link.source === 'object' ? link.source.id : link.source;
       const target = typeof link.target === 'object' ? link.target.id : link.target;
-      if (!outgoing.has(source)) outgoing.set(source, []);
-      outgoing.get(source).push(target);
+      // Exploration follows incoming edges for followers; keep actual links untouched.
+      const owner = relation === 'followers' ? target : source;
+      const neighbor = relation === 'followers' ? source : target;
+      if (!outgoing.has(owner)) outgoing.set(owner, []);
+      outgoing.get(owner).push(neighbor);
     }
     for (const targets of outgoing.values()) targets.sort(compareIDs);
     this.parents = new Map([[root, null]]);
@@ -58,6 +63,7 @@ export class ProgressiveReveal {
     while (this.pending.length && now >= this.nextAt && batch++ < 60) {
       const id = this.pending.shift();
       this.visible.add(id);
+      this.added.push(id);
       this.births.set(id, now);
       changed = true;
       this.nextAt += Math.max(0.75, 45 / (1 + ++this.burst / 30));
@@ -68,13 +74,19 @@ export class ProgressiveReveal {
   /** Search/selection may immediately reveal a real path to a still-queued node. */
   show(ids, now) {
     for (const id of ids) {
-      if (!this.visible.has(id)) { this.visible.add(id); this.births.set(id, now); }
+      if (!this.visible.has(id)) {
+        this.visible.add(id);
+        this.added.push(id);
+        this.births.set(id, now);
+      }
     }
     this.pending = this.pending.filter(id => !this.visible.has(id));
   }
 
   finish() {
-    for (const id of this.pending) this.visible.add(id);
+    for (const id of this.pending) {
+      if (!this.visible.has(id)) { this.visible.add(id); this.added.push(id); }
+    }
     this.pending = [];
     this.births.clear();
   }
@@ -101,11 +113,19 @@ export class ProgressiveReveal {
 
   get animating() { return this.pending.length > 0 || this.births.size > 0; }
 
+  /** Drain just the newly admitted IDs; the renderer need not rescan all visible nodes each frame. */
+  takeAdded() {
+    const added = this.added;
+    this.added = [];
+    return added;
+  }
+
   clear() {
     this.visible.clear();
     this.births.clear();
     this.parents.clear();
     this.pending = [];
+    this.added = [];
     this.pausedAt = null;
   }
 }

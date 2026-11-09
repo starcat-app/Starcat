@@ -14,6 +14,7 @@ struct FollowGraphOverlayView: View {
     @Bindable var model: FollowGraphViewModel
     let user: GitHubUserDTO
     let client: GitHubAPIClient
+    var relation: FollowGraphRelation = .following
     let onClose: () -> Void
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -24,6 +25,8 @@ struct FollowGraphOverlayView: View {
     @State private var canvasSize = CGSize.zero
     @State private var toolbarExpanded = false
     @State private var toolbarHovered = false
+    @State private var refreshHovered = false
+    @State private var showsInitializeConfirmation = false
     // 每个控件使用唯一焦点值，Tab 移向操作按钮或结果后也不会被自动收起打断。
     @FocusState private var focusedControl: String?
 
@@ -31,7 +34,7 @@ struct FollowGraphOverlayView: View {
         ZStack(alignment: .topLeading) {
             // 与 Canvas 的主题底色一致，WebKit 加载期间也不会露出另一种颜色。
             Color(white: colorScheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
-            if canvasPrepared {
+            if canvasPrepared, !model.isPreparing {
                 FollowGraphWebView(model: model, graphRevision: model.revision,
                                    selectionID: model.selectedID, viewportRevision: model.viewportRevision,
                                    avatarRevision: model.avatarUpdate?.revision ?? 0)
@@ -67,11 +70,25 @@ struct FollowGraphOverlayView: View {
             .padding(16)
             .zIndex(2)
         }
+        .toast(message: $model.toastMessage,
+               icon: model.toastIsError ? "exclamationmark.circle.fill" : "info.circle.fill",
+               duration: 5,
+               iconColor: model.toastIsError ? .orange : nil,
+               bottomPadding: model.selected != nil && canvasSize.width < 1_100 ? cardHeight + 36 : 24)
+        .alert("followGraph.initialize.title", isPresented: $showsInitializeConfirmation) {
+            Button("common.cancel", role: .cancel) {}
+            Button("followGraph.action.initialize") {
+                focusedControl = nil
+                model.initialize()
+            }
+        } message: {
+            Text("followGraph.initialize.message")
+        }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
         .animation(.easeOut(duration: reduceMotion ? 0.16 : 0.22), value: model.selectedID != nil)
         .task {
             // open 会重置 rendererRevision；先初始化再挂载，避免初次出现就销毁重建 WebView。
-            model.open(user: user, client: client)
+            model.open(user: user, client: client, relation: relation)
             canvasPrepared = true
         }
         .task(id: shouldAutoHideToolbar) {
@@ -146,7 +163,7 @@ struct FollowGraphOverlayView: View {
     }
 
     private var shouldAutoHideToolbar: Bool {
-        toolbarExpanded && !toolbarHovered && focusedControl == nil
+        toolbarExpanded && !toolbarHovered && focusedControl == nil && !showsInitializeConfirmation
     }
 
     private var toolbar: some View {
@@ -182,16 +199,25 @@ struct FollowGraphOverlayView: View {
 
     private var actions: some View {
         HStack(spacing: 14) {
-            SyncIconButton(isRefreshing: model.isLoading, disabled: model.isLoading,
-                           tooltip: model.errorText ?? String.l10n("followGraph.action.refresh")) { model.refresh() }
-                .focused($focusedControl, equals: "refresh")
-            if model.isLoading {
-                tool("stop.fill", "followGraph.action.stop") { model.stop() }
-            } else {
-                tool("play.fill", "followGraph.action.continue") { model.resume() }
+            // 停止后的视觉状态必须立即与真实任务一致，关闭最短旋转兜底。
+            // 同一按钮在加载期间始终执行停止，悬停 / 键盘聚焦只改变图标。
+            SyncIconButton(isRefreshing: model.isLoading,
+                           showsStop: model.isLoading && (refreshHovered || focusedControl == "refresh"),
+                           minVisibleDuration: 0,
+                           tooltip: model.isLoading ? String.l10n("followGraph.action.stop") :
+                            (model.errorText ?? String.l10n("followGraph.action.refresh"))) {
+                if model.isLoading { model.stop() } else { model.refresh() }
             }
+                .focused($focusedControl, equals: "refresh")
+                .onHover { refreshHovered = $0 }
             tool("arrow.up.left.and.arrow.down.right", "followGraph.action.reset") { model.focus(nil) }
             tool("person.crop.circle", "followGraph.action.self") { model.focus(model.snapshot?.rootID) }
+            Divider().frame(height: 18)
+            // 初始化改变展示范围并重播入场，独立分组，不能与网络刷新或视角适配混淆。
+            tool("arrow.counterclockwise.circle", "followGraph.action.initialize") {
+                showsInitializeConfirmation = true
+            }
+            .disabled(model.isPreparing || model.snapshot == nil)
         }
     }
 
@@ -240,7 +266,7 @@ struct FollowGraphOverlayView: View {
 
     private func selectedInfo(_ node: FollowGraphNode) -> some View {
         let width = min(370, max(1, canvasSize.width - 40))
-        let height = min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
+        let height = cardHeight
         return ScrollView {
             FollowGraphUserCard(node: node, model: model)
                 .id(node.id)
@@ -259,5 +285,10 @@ struct FollowGraphOverlayView: View {
         .shadow(color: .black.opacity(0.16), radius: 14, y: 5)
         // 用实际卡片尺寸定位，卡片以外的画布保持命中；节点移出视野也不隐藏资料。
         .offset(x: max(20, canvasSize.width - width - 20), y: max(toolbarHeight + 40, canvasSize.height - height - 20))
+    }
+
+    /// 窄窗口把提示放在卡片上方，复用实际滚动高度，避免底部 Toast 覆盖加载按钮。
+    private var cardHeight: CGFloat {
+        min(cardContentHeight, max(1, canvasSize.height - toolbarHeight - 60))
     }
 }

@@ -24,7 +24,7 @@ import Combine
 
 struct SidebarHeaderView: View {
     /// 图谱由主窗口承载，统计卡不自行创建窗口或持有网络任务。
-    var onOpenFollowGraph: () -> Void = {}
+    var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var viewModel
@@ -496,9 +496,10 @@ struct SidebarHeaderView: View {
 
     // MARK: - 三栏统计
 
-    /// 三栏主数字独立居中；今日 Star 标记与下方标签同行。
+    /// 三栏主数字独立居中；今日 Star 标记与下方标签同行，两类关注打开各自方向图谱。
     /// - Starred → https://github.com/{username}?tab=stars
-    /// - Followers / Following → 主窗口关系图谱遮盖层
+    /// - Followers → 主窗口 followers 关系图谱遮盖层
+    /// - Following → 主窗口 following 关系图谱遮盖层
     private func statsRow(user: GitHubUserDTO) -> some View {
         HStack(spacing: 0) {
             StatCell(
@@ -514,7 +515,7 @@ struct SidebarHeaderView: View {
                 label: "sidebar.stats.followers",
                 helpText: String.l10n("sidebar.stats.openFollowGraph"),
                 url: nil,
-                action: onOpenFollowGraph
+                action: { onOpenFollowGraph(.followers) }
             )
             Divider().frame(height: 26)
             StatCell(
@@ -522,7 +523,7 @@ struct SidebarHeaderView: View {
                 label: "sidebar.stats.following",
                 helpText: String.l10n("sidebar.stats.openFollowGraph"),
                 url: nil,
-                action: onOpenFollowGraph
+                action: { onOpenFollowGraph(.following) }
             )
         }
         .padding(.top, 4)
