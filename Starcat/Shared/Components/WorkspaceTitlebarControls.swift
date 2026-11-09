@@ -19,6 +19,8 @@ import SwiftUI
 @MainActor
 @Observable
 final class WorkspaceChromeState {
+    /// 原生分栏的短暂动画状态不参与用户偏好持久化。
+    let columnTransition = WorkspaceColumnTransition()
     /// 两栏导航外壳只使用 `.all` / `.detailOnly`：前者显示原生 Sidebar，后者折叠它。
     var leftColumnVisibility: NavigationSplitViewVisibility = .all
     var isRightColumnCollapsed: Bool = false
@@ -42,6 +44,7 @@ final class WorkspaceChromeState {
 /// 按钮必须作为单个系统 `ControlGroup` 交给 toolbar，不能再使用 titlebar accessory
 /// 或自绘 glass。这样 Agent 的两个按钮与 RAG 的三个按钮会生成相同的原生 item 结构。
 struct WorkspaceToolbarContent: ToolbarContent {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Bindable var chromeState: WorkspaceChromeState
     let onPinnedChange: (Bool) -> Void
@@ -59,7 +62,7 @@ struct WorkspaceToolbarContent: ToolbarContent {
         ToolbarItem(placement: .automatic) {
             ControlGroup {
                 Button {
-                    WorkspaceColumnVisibility.toggleRight(in: chromeState)
+                    WorkspaceColumnVisibility.toggleRight(in: chromeState, reduceMotion: reduceMotion)
                 } label: {
                     Image(systemName: "inset.filled.rightthird.rectangle")
                 }

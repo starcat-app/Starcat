@@ -164,6 +164,8 @@ struct StarcatApp: App {
         // 任何窗口。显式使用 `.presented`，保证这种情况下仍创建主窗口，避免只剩
         // Dock 运行点而没有可见界面。
         .defaultLaunchBehavior(.presented)
+        // 窗口入口集中放在「显示」菜单；保留 Scene 和恢复能力，仅移除自动生成的重复命令。
+        .commandsRemoved()
         .commands {
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
             CommandGroup(replacing: .appInfo) {
@@ -190,7 +192,7 @@ struct StarcatApp: App {
 
         // 两个 AI 工作台继续由 SwiftUI Window Scene 承载，但隐藏重复标题栏，让业务 Header
         // 直接贴到窗口顶部；交通灯由 hiddenTitleBar 保留，分栏控制统一放回内容 Header。
-        Window("rag.workspace.window.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
+        Window("workspace.rag.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
             KnowledgeRAGWorkspaceSceneHost(coordinator: AIWorkspaceSceneCoordinator.shared)
         }
         .defaultSize(
@@ -198,6 +200,7 @@ struct StarcatApp: App {
             height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
         )
         .defaultLaunchBehavior(.suppressed)
+        .commandsRemoved()
 
         Window("localai.logs.title", id: LocalAILogWindowSelection.sceneID) {
             LocalAILogWindowView()
@@ -208,6 +211,7 @@ struct StarcatApp: App {
         .defaultSize(width: 960, height: 620)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
+        .commandsRemoved()
 
         Window("agent.workspace.window.title", id: AgentWorkspaceWindowController.sceneID) {
             if let dependencies {
@@ -225,6 +229,7 @@ struct StarcatApp: App {
             height: AgentWorkspaceWindowMetrics.defaultContentSize.height
         )
         .defaultLaunchBehavior(.suppressed)
+        .commandsRemoved()
 
         // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window：保留标准
         // 交通灯与原生 Sidebar/Toolbar。固定尺寸由 SettingsView 内部的 AppKit 探针
@@ -236,6 +241,7 @@ struct StarcatApp: App {
         .defaultSize(width: 720, height: 720)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
+        .commandsRemoved()
         .commands {
             SettingsWindowCommands(dependencies: dependencies)
         }
@@ -574,6 +580,7 @@ private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
     let commandRouter: StarcatCommandRouter
     let settings: AppSettings
+    @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.starcatRefreshAction) private var focusedRefreshAction
     @FocusedValue(\.starcatRepositoryAIAction) private var focusedRepositoryAIAction
     @FocusedValue(\.starcatReadmeFindAction) private var focusedReadmeFindAction
@@ -615,7 +622,7 @@ private struct StarcatAppCommands: Commands {
             )
             .disabled(!commandRouter.canOpenGlobalSearch)
 
-            Button("commands.actions.openKnowledgeRAGWorkspace") {
+            Button("workspace.rag.title") {
                 commandRouter.openKnowledgeRAGWorkspace()
             }
             .keyboardShortcut(
@@ -633,6 +640,11 @@ private struct StarcatAppCommands: Commands {
                 }
                 .disabled(dependencies == nil)
             }
+
+            Button("localai.logs.title") {
+                openWindow(id: LocalAILogWindowSelection.sceneID)
+            }
+            .disabled(dependencies == nil)
 
             Button("commands.actions.openSelectedRepoAI") {
                 commandRouter.openCurrentRepositoryAI(preferred: focusedRepositoryAIAction)

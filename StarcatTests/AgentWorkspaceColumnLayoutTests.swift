@@ -67,7 +67,7 @@ struct AgentWorkspaceColumnLayoutTests {
                 WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
                     leftCollapsed ? .detailOnly : .all
                 WorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = !rightCollapsed
-                for sample in 0..<13 {
+                for sample in 0..<26 {
                     if sample > 0 { try await Task.sleep(for: .milliseconds(16)) }
                     controller.view.layoutSubtreeIfNeeded()
                     #expect(window.frame == initialFrame,
@@ -84,7 +84,7 @@ struct AgentWorkspaceColumnLayoutTests {
                                     "\(name) 越出窗口：\(frame)")
                         }
                     }
-                    if sample == 12 {
+                    if sample == 25 {
                         #expect((frames["rail"] == nil) == leftCollapsed)
                         #expect((frames["inspector"] == nil) == rightCollapsed)
                         #expect(window.contentMinSize == AgentWorkspaceWindowMetrics.minimumContentSize)
@@ -196,7 +196,7 @@ struct AgentWorkspaceColumnLayoutTests {
                         WorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = !rightCollapsed
                     }
                 }
-                for sample in 0..<13 {
+                for sample in 0..<26 {
                     if sample > 0 {
                         try await Task.sleep(for: .milliseconds(16))
                     }
@@ -225,7 +225,7 @@ struct AgentWorkspaceColumnLayoutTests {
                                 "第 \(sample) 帧对侧 \(otherPanel) 被带动：\(expected) → \(actual)")
                         #expect(abs(actual.width - expected.width) < 1)
                     }
-                    if sample == 12 {
+                    if sample == 25 {
                         // 必须真的完成了显隐，不能让“状态变了但原生分栏没更新”假通过。
                         #expect((frames["rail"] == nil) == leftCollapsed)
                         #expect((frames["inspector"] == nil) == rightCollapsed)
@@ -280,7 +280,7 @@ struct AgentWorkspaceColumnLayoutTests {
             for leftCollapsed in [true, false] {
                 WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
                     leftCollapsed ? .detailOnly : .all
-                try await Task.sleep(for: .milliseconds(32))
+                try await Task.sleep(for: .milliseconds(400))
                 host.layoutSubtreeIfNeeded()
                 let frames = measuredFrames(in: host)
                 #expect(abs(try #require(frames["inspector"]).width - 480) < 1)
@@ -290,7 +290,7 @@ struct AgentWorkspaceColumnLayoutTests {
             }
             for rightPresented in [false, true] {
                 WorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = rightPresented
-                try await Task.sleep(for: .milliseconds(32))
+                try await Task.sleep(for: .milliseconds(400))
                 host.layoutSubtreeIfNeeded()
                 let frames = measuredFrames(in: host)
                 #expect(abs(try #require(frames["rail"]).width - 360) < 1)
@@ -328,7 +328,7 @@ struct AgentWorkspaceColumnLayoutTests {
         host.frame = CGRect(x: 0, y: 0, width: 1440, height: 820)
         host.layoutSubtreeIfNeeded()
         WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue = .detailOnly
-        try await Task.sleep(for: .milliseconds(32))
+        try await Task.sleep(for: .milliseconds(400))
         host.layoutSubtreeIfNeeded()
 
         animatedUpdates.removeAll()

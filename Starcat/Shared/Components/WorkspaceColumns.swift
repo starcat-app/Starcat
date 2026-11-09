@@ -6,14 +6,16 @@
 //
 
 import AppKit
+import QuartzCore
 import SwiftUI
 
 /// 侧栏宽度由原生分栏管理，保存结果不反向参与当前窗口的尺寸协商。
 ///
 /// 内容视图只能使用原生分栏已分配的尺寸，不能将长文本的固有宽度带回外壳。
-/// 显隐变化单独禁用布局动画，避免 Sidebar、Inspector 与中栏同时插值而相互裁切；
-/// 该限制只作用于显隐变化的更新，时间线和任务内容仍可使用自己的动画。
+/// 尺寸一次提交，呈现层执行淡入淡出；不让窗口、分栏与正文同时插值尺寸。
+/// 无动画事务只作用于本次 SwiftUI 状态提交，时间线和任务内容仍可使用自己的动画。
 struct WorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     let chromeState: WorkspaceChromeState
     let columnWidths: WorkspaceColumnWidthPersistence
     @ViewBuilder var rail: () -> Rail
@@ -21,7 +23,9 @@ struct WorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
     @ViewBuilder var inspector: () -> Inspector
 
     var body: some View {
-        NavigationSplitView(columnVisibility: WorkspaceColumnVisibility.leftBinding(for: chromeState)) {
+        NavigationSplitView(columnVisibility: WorkspaceColumnVisibility.leftBinding(
+            for: chromeState, reduceMotion: reduceMotion
+        )) {
             rail()
                 .navigationSplitViewColumnWidth(
                     min: columnWidths.layout.left.minimum,
@@ -43,10 +47,12 @@ struct WorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
                 runSurface()
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                     .clipped()
-                    .background(WorkspaceSplitCollapsePolicy())
+                    .background(WorkspaceSplitCollapsePolicy(transition: chromeState.columnTransition))
             }
         }
-        .inspector(isPresented: WorkspaceColumnVisibility.rightBinding(for: chromeState)) {
+        .inspector(isPresented: WorkspaceColumnVisibility.rightBinding(
+            for: chromeState, reduceMotion: reduceMotion
+        )) {
             GeometryReader { proxy in
                 inspector()
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
@@ -86,7 +92,13 @@ struct WorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
 /// SwiftUI 没有暴露 NSSplitViewItem.collapseBehavior。探针只沿自己的祖先链配置
 /// Sidebar / Inspector，不替换系统 delegate、不接管窗口，也不扫描其他工作台。
 private struct WorkspaceSplitCollapsePolicy: NSViewRepresentable {
-    func makeNSView(context: Context) -> ProbeView { ProbeView() }
+    let transition: WorkspaceColumnTransition
+
+    func makeNSView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        transition.register(view)
+        return view
+    }
 
     func updateNSView(_ nsView: ProbeView, context: Context) {
         nsView.configureAncestorSplitItems()
@@ -125,49 +137,88 @@ private struct WorkspaceSplitCollapsePolicy: NSViewRepresentable {
     }
 }
 
-/// 在状态写入源头统一系统侧栏、Inspector 与工具栏按钮的显隐事务。
-///
-/// 原生分栏分别承载列内容，子树可能在外层 `.transaction(value:)` 执行前就响应
-/// Observation 更新；因此不能依靠根视图事后清除动画。Binding 的事务必须在写入时
-/// 生效，工具栏的直接写入也必须使用同一事务。任务内容自身的动画不受全局禁用影响。
+/// SwiftUI 只提交最终可见性，原生合成层过渡画面，避免显隐时重复插值几何尺寸。
 @MainActor
 enum WorkspaceColumnVisibility {
-    private static var transaction: Transaction {
+    static let duration: TimeInterval = 0.2
+
+    /// 子树不继承按钮调用方的布局动画，正常内容更新仍使用自己的事务。
+    static func withoutContentAnimation(_ update: () -> Void) {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
-        return transaction
+        withTransaction(transaction, update)
     }
 
-    /// 系统 Sidebar 按钮通过此 Binding 更新可见性，不继承调用方的布局动画。
-    static func leftBinding(for chromeState: WorkspaceChromeState) -> Binding<NavigationSplitViewVisibility> {
-        // 只给 Binding 附加 transaction 仍可能在首次更新时合入外层动画。
-        // 显式包住 Observation 的写入，保证独立承载的列内容首先收到正确事务。
+    static func leftBinding(
+        for chromeState: WorkspaceChromeState, reduceMotion: Bool = false
+    ) -> Binding<NavigationSplitViewVisibility> {
         Binding(
             get: { chromeState.leftColumnVisibility },
             set: { visibility in
-                withTransaction(transaction) {
+                guard visibility != chromeState.leftColumnVisibility else { return }
+                withoutContentAnimation {
+                    chromeState.columnTransition.begin(reduceMotion: reduceMotion)
                     chromeState.leftColumnVisibility = visibility
                 }
             }
         )
     }
 
-    /// Inspector 自身发起的显隐变化也走相同事务，避免只覆盖工具栏入口。
-    static func rightBinding(for chromeState: WorkspaceChromeState) -> Binding<Bool> {
+    /// Inspector 与 Sidebar 使用同一过渡入口；状态不延迟写入，连续反向操作不会排队。
+    static func rightBinding(
+        for chromeState: WorkspaceChromeState, reduceMotion: Bool = false
+    ) -> Binding<Bool> {
         Binding(
             get: { chromeState.isRightColumnPresented },
             set: { isPresented in
-                withTransaction(transaction) {
+                guard isPresented != chromeState.isRightColumnPresented else { return }
+                withoutContentAnimation {
+                    chromeState.columnTransition.begin(reduceMotion: reduceMotion)
                     chromeState.isRightColumnPresented = isPresented
                 }
             }
         )
     }
 
-    /// 工作台工具栏直接修改共享状态时，必须在 Observation 发布更新前确定事务。
-    static func toggleRight(in chromeState: WorkspaceChromeState) {
-        withTransaction(transaction) {
-            chromeState.isRightColumnCollapsed.toggle()
+    static func toggleRight(in chromeState: WorkspaceChromeState, reduceMotion: Bool = false) {
+        rightBinding(for: chromeState, reduceMotion: reduceMotion).wrappedValue =
+            chromeState.isRightColumnCollapsed
+    }
+}
+
+/// 通过本工作台最外层分栏的合成层淡入淡出，窗口与栏宽约束始终使用稳定的最终值。
+/// 不能再次对 NSSplitViewItem 或 SwiftUI 尺寸做动画：两层分栏会独立插值并带动对侧。
+/// 同一个动画 key 会替换尚未完成的过渡，快速点击无需积累任务或延迟可见性状态。
+@MainActor
+final class WorkspaceColumnTransition {
+    static let animationKey = "StarcatWorkspaceColumnTransition"
+    private weak var contentProbe: NSView?
+
+    /// 保存稳定的内容探针；Inspector 会重建外层分栏，不能缓存它的合成层。
+    func register(_ contentProbe: NSView) {
+        self.contentProbe = contentProbe
+    }
+
+    /// 在提交可见性之前开始合成层过渡；减少动态效果时同时撤销在途过渡。
+    func begin(reduceMotion: Bool) {
+        // 每次操作沿当前祖先链重新定位，避免把过渡添加到已经脱离窗口的旧分栏。
+        var ancestor = contentProbe?.superview
+        var splitView: NSSplitView?
+        while let view = ancestor {
+            if let candidate = view as? NSSplitView,
+               candidate.delegate is NSSplitViewController {
+                splitView = candidate
+            }
+            ancestor = view.superview
         }
+        splitView?.wantsLayer = true
+        guard let layer = splitView?.layer else { return }
+        layer.removeAnimation(forKey: Self.animationKey)
+        guard !reduceMotion else { return }
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = WorkspaceColumnVisibility.duration
+        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        layer.add(transition, forKey: Self.animationKey)
     }
 }

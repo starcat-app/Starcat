@@ -7,6 +7,7 @@
 //
 
 import AppKit
+import QuartzCore
 import SwiftUI
 import Testing
 @testable import Starcat
@@ -82,7 +83,7 @@ struct RAGWorkspaceColumnLayoutTests {
                             WorkspaceColumnVisibility.rightBinding(for: state).wrappedValue = !target.1
                         }
                     }
-                    for sample in 0..<13 {
+                    for sample in 0..<26 {
                         if sample > 0 { try await Task.sleep(for: .milliseconds(16)) }
                         controller.view.layoutSubtreeIfNeeded()
                         try #require(window.frame == initialFrame,
@@ -95,15 +96,15 @@ struct RAGWorkspaceColumnLayoutTests {
                             #expect(abs(frame.width - answer.width) < 1)
                             #expect(frame.minY >= answer.minY - 1 && frame.maxY <= answer.maxY + 1)
                         }
-                        for frame in current.values {
-                            #expect(frame.minX >= -1 && frame.maxX <= width + 1)
+                        for (name, frame) in current {
+                            #expect(frame.minX >= -1 && frame.maxX <= width + 1, "step=\(step), sample=\(sample), \(name)=\(frame), target=\(target)")
                         }
                         if let oppositeBefore {
                             let frame = try #require(current[opposite])
-                            #expect(abs(frame.minX - oppositeBefore.minX) < 1)
+                            #expect(abs(frame.minX - oppositeBefore.minX) < 1, "step=\(step), sample=\(sample), opposite=\(opposite): \(oppositeBefore) → \(frame)")
                             #expect(abs(frame.width - oppositeBefore.width) < 1)
                         }
-                        if sample == 12 {
+                        if sample == 25 {
                             #expect((current["rail"] == nil) == target.0)
                             #expect((current["inspector"] == nil) == target.1)
                             #expect(window.contentMinSize == KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize)
@@ -112,6 +113,91 @@ struct RAGWorkspaceColumnLayoutTests {
                     #expect(!animatedUpdates.isEmpty)
                     #expect(!animatedUpdates.contains(true), "面板显隐不应注入内容布局动画")
                 }
+            }
+        }
+    }
+
+    @Test("过渡中反向与快速交替切换仍保持窗口和对侧稳定", arguments: [false, true])
+    func reversalsPreserveColumns(reduceMotion: Bool) async throws {
+        let suite = "WorkspaceReversals.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let widths = WorkspaceColumnWidthPersistence(
+            layout: RAGWorkspaceLayoutMetrics.columnLayout, defaults: defaults
+        )
+        defer {
+            widths.cancelPendingPersistence()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let state = WorkspaceChromeState()
+        let controller = NSHostingController(rootView: RAGColumnLayoutFixture(
+            state: state, widths: widths, hasContent: true
+        ).modifier(WorkspaceWindowSizing(
+            reference: WorkspaceSceneWindowReference(),
+            minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
+        )))
+        let window = NSWindow(contentViewController: controller)
+        window.isReleasedWhenClosed = false
+        window.styleMask = [.titled, .closable, .resizable]
+        defer { window.close() }
+        window.setContentSize(NSSize(width: 1440, height: 820))
+        controller.view.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(48))
+        controller.view.layoutSubtreeIfNeeded()
+        window.setFrameOrigin(NSPoint(x: 100, y: 100))
+        let initialFrame = window.frame
+
+        // 每次只等 16ms 就反向，确保覆盖 200ms 过渡未完成时再次点击的路径。
+        // 交替操作左右两侧，同一个合成层只保留最新过渡，最终显隐不能落后于点击。
+        for _ in 0..<3 {
+            for side in ["rail", "inspector"] {
+                let opposite = side == "rail" ? "inspector" : "rail"
+                let expected = try #require(frames(in: controller.view)[opposite])
+                for collapsed in [true, false, true, false, true, false] {
+                    let recorder = try transitionRecorder(in: controller.view)
+                    let previousAddCount = recorder.addCount
+                    if side == "rail" {
+                        WorkspaceColumnVisibility.leftBinding(
+                            for: state, reduceMotion: reduceMotion
+                        ).wrappedValue = collapsed ? .detailOnly : .all
+                    } else {
+                        WorkspaceColumnVisibility.rightBinding(
+                            for: state, reduceMotion: reduceMotion
+                        ).wrappedValue = !collapsed
+                    }
+                    if reduceMotion {
+                        #expect(recorder.lastTransition == nil)
+                        #expect(recorder.addCount == previousAddCount)
+                    } else {
+                        let animation = try #require(
+                            recorder.lastTransition, "side=\(side), collapsed=\(collapsed)"
+                        )
+                        #expect(recorder.addCount == previousAddCount + 1)
+                        #expect(recorder.lastKey == WorkspaceColumnTransition.animationKey,
+                                "快速反向必须替换同一个动画 key，不能积累过渡")
+                        #expect(animation.type == .fade)
+                        #expect(animation.duration == WorkspaceColumnVisibility.duration)
+                    }
+                    try await Task.sleep(for: .milliseconds(16))
+                    controller.view.layoutSubtreeIfNeeded()
+                    #expect(window.frame == initialFrame)
+                    let actual = try #require(frames(in: controller.view)[opposite])
+                    #expect(abs(actual.minX - expected.minX) < 1)
+                    #expect(abs(actual.width - expected.width) < 1)
+                }
+                // 持续检查最后一次反向后的完整尾程，而不是只等结束后读取一次。
+                for _ in 0..<26 {
+                    try await Task.sleep(for: .milliseconds(16))
+                    controller.view.layoutSubtreeIfNeeded()
+                    #expect(window.frame == initialFrame)
+                    let current = frames(in: controller.view)
+                    let actual = try #require(current[opposite])
+                    #expect(abs(actual.minX - expected.minX) < 1)
+                    #expect(abs(actual.width - expected.width) < 1)
+                    let answer = try #require(current["answer"])
+                    #expect(answer.minX >= -1 && answer.maxX <= initialFrame.width + 1)
+                }
+                #expect(frames(in: controller.view)["rail"] != nil)
+                #expect(frames(in: controller.view)["inspector"] != nil)
             }
         }
     }
@@ -149,13 +235,13 @@ struct RAGWorkspaceColumnLayoutTests {
             for collapsed in [true, false] {
                 WorkspaceColumnVisibility.leftBinding(for: state).wrappedValue =
                     collapsed ? .detailOnly : .all
-                try await Task.sleep(for: .milliseconds(32))
+                try await Task.sleep(for: .milliseconds(400))
                 host.layoutSubtreeIfNeeded()
                 #expect(abs(try #require(frames(in: host)["inspector"]).width - 480) < 1)
             }
             for presented in [false, true] {
                 WorkspaceColumnVisibility.rightBinding(for: state).wrappedValue = presented
-                try await Task.sleep(for: .milliseconds(32))
+                try await Task.sleep(for: .milliseconds(400))
                 host.layoutSubtreeIfNeeded()
                 #expect(abs(try #require(frames(in: host)["rail"]).width - 360) < 1)
                 if presented {
@@ -171,6 +257,25 @@ struct RAGWorkspaceColumnLayoutTests {
         #expect(abs(reopened.initialRightColumnWidth - 480) < 1)
         #expect(defaults.object(forKey: AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey) == nil)
         #expect(defaults.object(forKey: AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey) == nil)
+    }
+
+    /// 未显示窗口的 Core Animation 会立即丢弃过渡；用记录层观测实际 add 调用。
+    /// 只替换本夹具自己的合成层，不显示窗口、不读取屏幕，也不修改生产动画入口。
+    private func transitionRecorder(in host: NSView) throws -> RAGTransitionRecordingLayer {
+        let (nearest, _) = try splitView(containing: "answer", in: host)
+        var outermost = nearest
+        var ancestor = nearest.superview
+        while let view = ancestor {
+            if let split = view as? NSSplitView, split.delegate is NSSplitViewController {
+                outermost = split
+            }
+            ancestor = view.superview
+        }
+        if let recorder = outermost.layer as? RAGTransitionRecordingLayer { return recorder }
+        let recorder = RAGTransitionRecordingLayer()
+        outermost.wantsLayer = true
+        outermost.layer = recorder
+        return recorder
     }
 
     /// 只读取夹具自己的原生视图坐标，不访问屏幕或辅助功能树。
@@ -285,4 +390,26 @@ private struct RAGLayoutMarker: NSViewRepresentable {
 /// 分隔条必须存在；缺失时不能静默跳过拖动恢复检查。
 private enum RAGLayoutFixtureError: Error {
     case missingSplitView
+}
+
+/// 记录合成层收到的真实过渡请求；仍调用系统实现，不模拟窗口或分栏布局。
+/// CALayer 在未显示窗口中会跳过过渡，因而不能用 animation(forKey:) 判断是否发起过渡。
+private final class RAGTransitionRecordingLayer: CALayer {
+    private(set) var lastTransition: CATransition?
+    private(set) var lastKey: String?
+    private(set) var addCount = 0
+
+    override func add(_ animation: CAAnimation, forKey key: String?) {
+        if let transition = animation as? CATransition {
+            lastTransition = transition
+            lastKey = key
+            addCount += 1
+        }
+        super.add(animation, forKey: key)
+    }
+
+    override func removeAnimation(forKey key: String) {
+        lastTransition = nil
+        super.removeAnimation(forKey: key)
+    }
 }
