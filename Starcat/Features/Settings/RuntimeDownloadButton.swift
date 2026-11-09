@@ -36,9 +36,28 @@ struct RuntimeDownloadButton: View {
                             .textSelection(.enabled)
                     }
                     Spacer(minLength: 8)
-                    Text(verbatim: runtime.version)
+                    if runtime == .codebaseMemory {
+                        // 胶囊标识待下载版本，与上方当前安装版本的检测结果区分
+                        HStack(spacing: 4) {
+                            Image(systemName: "tag")
+                                .accessibilityHidden(true)
+                            Text(verbatim: runtime.version)
+                        }
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                        }
+                        .fixedSize()
+                    } else {
+                        Text(verbatim: runtime.version)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
                     Button("settings.integration.runtimeDownload.action", action: install)
                         .buttonStyle(.bordered)
                         .controlSize(.regular)
@@ -48,11 +67,6 @@ struct RuntimeDownloadButton: View {
                             .buttonStyle(.bordered)
                             .controlSize(.regular)
                     }
-                }
-                if runtime == .codebaseMemory {
-                    Text("settings.integration.runtimeDownload.reindex")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
             .onDisappear { task?.cancel() }
