@@ -17,6 +17,8 @@ const reveal = new ProgressiveReveal(), placed = new Set();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let selectionRevision = 0, visibleLinkCount = 0;
 const renderedRelations = new Map();
+const incidentLinks = new Map(), visibleNodeIDs = new Set(), visibleEdgeKeys = new Set();
+let visibleNodes = [], visibleLinks = [], visibleTopologyDirty = true;
 let hasAppearance = false, rootPainted = false, presented = false;
 let adjacentNodes = new Set();
 let directionLinks = [], hoveredLink = null;
@@ -482,17 +484,14 @@ function drawFlow(ctx, scale, path, opacity) {
 
 function updateAdjacency() {
   adjacentNodes = new Set();
-  const adjacent = [];
-  for (const link of links.values()) {
-    if (isAdjacent(link)) {
-      adjacent.push(link);
-      adjacentNodes.add(endpoint(link.source));
-      adjacentNodes.add(endpoint(link.target));
-    }
+  const adjacent = incidentLinks.get(selected) || [];
+  for (const link of adjacent) {
+    adjacentNodes.add(endpoint(link.source));
+    adjacentNodes.add(endpoint(link.target));
   }
   // Hubs should not acquire a crown of arrows. Keep the full selected path,
   // and reveal a dense hub's other directions only on the hovered relationship.
-  directionLinks = [...links.values()].filter(isPath);
+  directionLinks = [...pathEdges].map(key => links.get(key)).filter(Boolean);
   if (adjacent.length <= 12) directionLinks.push(...adjacent.filter(link => !isPath(link)));
 }
 
@@ -608,7 +607,8 @@ function applyVisibleGraph() {
   for (const id of reveal.pending.slice(0, 16)) {
     if (nodes.has(id)) avatar(nodes.get(id));
   }
-  for (const id of reveal.visible) {
+  const added = reveal.takeAdded();
+  for (const id of added) {
     if (placed.has(id)) continue;
     const node = nodes.get(id), parent = nodes.get(reveal.parents.get(id));
     if (!node) continue;
@@ -619,24 +619,45 @@ function applyVisibleGraph() {
     }
     placed.add(id);
   }
-  const visibleLinks = [];
-  renderedRelations.clear();
-  // Count actual admitted relationships in the existing visibility pass. Selection
-  // changes reuse this map instead of scanning the graph or sending every visible ID.
-  for (const link of links.values()) {
-    const source = endpoint(link.source), target = endpoint(link.target);
-    if (!reveal.visible.has(source) || !reveal.visible.has(target)) continue;
-    visibleLinks.push(link);
-    const owner = relation === 'followers' ? target : source;
-    renderedRelations.set(owner, (renderedRelations.get(owner) || 0) + 1);
+  if (visibleTopologyDirty) {
+    // Reconcile deletions/changed edges once per actual topology revision.
+    visibleNodes = [...nodes.values()].filter(node => reveal.visible.has(node.id));
+    visibleLinks = [];
+    visibleNodeIDs.clear();
+    visibleEdgeKeys.clear();
+    renderedRelations.clear();
+    for (const node of visibleNodes) visibleNodeIDs.add(node.id);
+    for (const link of links.values()) admitVisibleLink(link);
+    visibleTopologyDirty = false;
+  } else {
+    for (const id of added) {
+      if (!visibleNodeIDs.has(id) && nodes.has(id)) {
+        visibleNodes.push(nodes.get(id));
+        visibleNodeIDs.add(id);
+      }
+    }
+    // Both endpoints are now registered. A cross-edge or self-loop is counted
+    // once, regardless of which endpoint appeared first or exploration direction.
+    for (const id of added) {
+      for (const link of incidentLinks.get(id) || []) admitVisibleLink(link);
+    }
   }
   visibleLinkCount = visibleLinks.length;
   // Retain an already queued explicit focus/restore command over this neutral preservation.
   if (!pendingView) pendingView = preserveView();
   graph.graphData({
-    nodes: [...nodes.values()].filter(node => reveal.visible.has(node.id)), links: visibleLinks
+    nodes: [...visibleNodes], links: [...visibleLinks]
   });
   reportProgress();
+}
+
+function admitVisibleLink(link) {
+  const source = endpoint(link.source), target = endpoint(link.target), key = edgeKey(source, target);
+  if (visibleEdgeKeys.has(key) || !visibleNodeIDs.has(source) || !visibleNodeIDs.has(target)) return;
+  visibleEdgeKeys.add(key);
+  visibleLinks.push(link);
+  const owner = relation === 'followers' ? target : source;
+  renderedRelations.set(owner, (renderedRelations.get(owner) || 0) + 1);
 }
 
 /** Bridge only real reveal changes (at most 30/sec) and selection acknowledgements.
@@ -723,9 +744,12 @@ function update(payload) {
     links.clear(); for (const [key, link] of newLinks) links.set(key, link);
     if (topologyChanged) {
       const degrees = new Map();
+      incidentLinks.clear();
       for (const link of links.values()) {
         for (const id of new Set([endpoint(link.source), endpoint(link.target)])) {
           degrees.set(id, (degrees.get(id) || 0) + 1);
+          if (!incidentLinks.has(id)) incidentLinks.set(id, []);
+          incidentLinks.get(id).push(link);
         }
       }
       for (const node of nodes.values()) {
@@ -734,6 +758,7 @@ function update(payload) {
       // D3 caches collision radii. Profiles and pagination do not alter geometry.
       collision.radius(node => radius(node) + 6);
       reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
+      visibleTopologyDirty = true;
     }
     graphRevision = payload.revision;
     if (!overviewStarted) {
@@ -798,6 +823,12 @@ window.followGraph = {
     destroyed = true;
     reveal.clear();
     placed.clear();
+    incidentLinks.clear();
+    visibleNodeIDs.clear();
+    visibleEdgeKeys.clear();
+    renderedRelations.clear();
+    visibleNodes = [];
+    visibleLinks = [];
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
     animationFrame = null;
     pendingView = null;

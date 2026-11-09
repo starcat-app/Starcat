@@ -189,6 +189,36 @@ test('selected relationship count follows admitted nodes, never the incoming pag
   }
 });
 
+test('incremental visible indexes preserve cross-edges, cycles, self-loops and topology deletion in both directions', () => {
+  for (const relation of ['following', 'followers']) {
+    const r = renderer({ reduced: false }), data = r.data(20);
+    data.links.push({ source: '2', target: '4' }, { source: '4', target: '2' },
+      { source: '3', target: '4' }, { source: '4', target: '4' });
+    if (relation === 'followers') {
+      data.links = data.links.map(({ source, target }) => ({ source: target, target: source }));
+    }
+    r.update(1, { ...data, relation, selected: '4', selectionRevision: 1 });
+    const check = () => {
+      const visible = r.props.get('graphData'), ids = new Set(visible.nodes.map(node => node.id));
+      const edges = data.links.filter(link => ids.has(link.source) && ids.has(link.target));
+      const keys = values => Array.from(values, link => `${link.source}:${link.target}`).sort();
+      assert.equal(ids.size, visible.nodes.length);
+      assert.deepEqual(keys(visible.links), keys(edges));
+      const expected = edges.filter(link => link[relation === 'followers' ? 'target' : 'source'] === '4').length;
+      assert.equal(r.messages.findLast(message => message.type === 'progress').selectedCount, expected);
+    };
+    for (let i = 0; i < 20; i++) { r.frame(); check(); }
+    data.nodes = data.nodes.filter(node => node.id !== '2');
+    data.links = data.links.filter(link => link.source !== '2' && link.target !== '2');
+    r.update(2, data);
+    check();
+    r.update(3, { reduceMotion: true });
+    check();
+    assert.equal(r.props.get('graphData').nodes.length, 19);
+    r.window.followGraph.destroy();
+  }
+});
+
 test('selection acknowledgement reports the right direction without rebuilding the graph', () => {
   for (const relation of ['following', 'followers']) {
     const r = renderer();

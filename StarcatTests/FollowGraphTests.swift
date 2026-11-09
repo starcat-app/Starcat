@@ -761,6 +761,30 @@ struct FollowGraphAPITests {
         }
         model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
         try await settle()
+        // Cached indexes must match the graph contract before and after edge replacement,
+        // in both exploration directions, even while per-frame counts keep changing.
+        func checkPresentationIndexes() {
+            guard let shown = model.displayedSnapshot else {
+                Issue.record("Missing presentation")
+                return
+            }
+            for id in shown.nodes.keys {
+                model.select(id, expand: false)
+                #expect(model.path == shown.path(to: id))
+                let count = shown.relationCount(for: id)
+                for visible in 0...count {
+                    model.reportRenderedCounts(nodes: shown.nodes.count, edges: shown.edges.count,
+                                               revision: model.revision, renderer: model.rendererRevision,
+                                               selectedID: id, selectionRevision: model.selectionRevision,
+                                               selectedCount: visible)
+                    #expect(model.renderedRelationCount(for: id) == visible)
+                    #expect(model.isRevealingRelations(for: id) == (visible < count))
+                }
+            }
+            model.select(nil, expand: false)
+            #expect(model.path.isEmpty)
+        }
+        checkPresentationIndexes()
         URLProtocolStub.requestHandler = { request in
             let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             let login = (json["variables"] as! [String: Any])["login"] as! String
@@ -782,6 +806,7 @@ struct FollowGraphAPITests {
         }
         model.refresh()
         try await settle()
+        checkPresentationIndexes()
         if scenario == "failure" {
             #expect(model.toastMessage == "followGraph.toast.loadFailed" && model.toastIsError)
         } else {

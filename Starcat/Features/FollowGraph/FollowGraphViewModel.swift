@@ -12,7 +12,13 @@ import Observation
 /// 每个主窗口持有自己的模型；不与推荐、每日热点或 Pro 权益共享状态。
 @MainActor @Observable
 final class FollowGraphViewModel {
-    private(set) var snapshot: FollowGraphSnapshot?
+    private(set) var snapshot: FollowGraphSnapshot? {
+        didSet {
+            if oldValue?.relation != snapshot?.relation || oldValue?.edges != snapshot?.edges {
+                cachedRelationCounts = relationCounts(in: snapshot)
+            }
+        }
+    }
     private(set) var displayedSnapshot: FollowGraphSnapshot?
     private var expandedSources: [String: Int] = [:]
     private(set) var renderedCounts: (nodes: Int, edges: Int)?
@@ -35,6 +41,7 @@ final class FollowGraphViewModel {
                 avatarUpdate = nil
                 renderedSelectedCount = nil
                 selectionRevision += 1
+                rebuildSelectedPath()
             }
         }
     }
@@ -59,6 +66,12 @@ final class FollowGraphViewModel {
     // 串行衔接范围写入；关闭后立即重开也必须先等最后一次预算保存完成。
     private var rangeSaveTask: Task<Void, Never>?
     private var generation = UUID()
+    // Index lifetimes follow graph topology, not 30Hz rendered-count observations.
+    // Published path content remains observable; index internals need not invalidate views.
+    @ObservationIgnored private var cachedRelationCounts: [String: Int] = [:]
+    @ObservationIgnored private var displayedRelationCounts: [String: Int] = [:]
+    @ObservationIgnored private var pathParents: [String: String] = [:]
+    private var selectedPath: [String] = []
 
     /// 测试可注入独立目录，不接触真实登录账户的图谱缓存。
     init(cache: FollowGraphDiskCache = .shared) {
@@ -66,7 +79,7 @@ final class FollowGraphViewModel {
     }
 
     var selected: FollowGraphNode? { selectedID.flatMap { displayedSnapshot?.nodes[$0] } }
-    var path: [String] { selectedID.flatMap { displayedSnapshot?.path(to: $0) } ?? [] }
+    var path: [String] { selectedPath }
     var results: [FollowGraphNode] {
         guard !search.isEmpty, let snapshot = displayedSnapshot else { return [] }
         return Array(snapshot.nodes.values.filter {
@@ -264,15 +277,15 @@ final class FollowGraphViewModel {
     /// 不把根据交叉边或资料人数得出的结论写成“分页完整”。
     func canLoadMore(_ id: String, fallbackTotal: Int? = nil) -> Bool {
         guard let snapshot, let displayedSnapshot, displayedSnapshot.nodes[id] != nil else { return false }
-        let visible = displayedSnapshot.relationCount(for: id)
-        if snapshot.relationCount(for: id) > visible { return true }
+        let visible = displayedRelationCounts[id] ?? 0
+        if (cachedRelationCounts[id] ?? 0) > visible { return true }
         if let total = snapshot.progress[id]?.totalCount ?? fallbackTotal, visible >= total { return false }
         return snapshot.progress[id]?.complete != true
     }
 
     /// 本批正在逐个入场时不叠加下一批，避免连续点击一次排入数百个头像。
     func isRevealingRelations(for id: String) -> Bool {
-        selectedID == id && renderedRelationCount(for: id) < (displayedSnapshot?.relationCount(for: id) ?? 0)
+        selectedID == id && renderedRelationCount(for: id) < (displayedRelationCounts[id] ?? 0)
     }
 
     /// 单页手动加载不会继续递归；优先展示缓存，完成或无效动作不再重复读取第一页。
@@ -491,17 +504,47 @@ final class FollowGraphViewModel {
         let graphChanged = previous?.rootID != next?.rootID || previous?.relation != next?.relation ||
             previous?.nodes != next?.nodes || previous?.edges != next?.edges
         displayedSnapshot = next
+        if previous?.rootID != next?.rootID || previous?.relation != next?.relation || previous?.edges != next?.edges {
+            displayedRelationCounts = relationCounts(in: next)
+            pathParents = next?.paths() ?? [:]
+        }
         if let selectedID, displayedSnapshot?.nodes[selectedID] == nil { self.selectedID = nil }
+        rebuildSelectedPath()
         if graphChanged {
             revision += 1
             renderedCounts = nil
         }
     }
 
+    /// Build one direction-aware index rather than filtering all edges for every card label.
+    private func relationCounts(in graph: FollowGraphSnapshot?) -> [String: Int] {
+        guard let graph else { return [:] }
+        return graph.edges.reduce(into: [:]) { counts, edge in
+            counts[edge[keyPath: graph.relation.ownerKey], default: 0] += 1
+        }
+    }
+
+    /// The BFS tree changes only with topology. Selection reconstruction is O(path length),
+    /// and reading `path` during count animations does no graph traversal or sorting.
+    private func rebuildSelectedPath() {
+        guard let id = selectedID, let graph = displayedSnapshot, graph.nodes[id] != nil else {
+            selectedPath = []
+            return
+        }
+        guard id == graph.rootID || pathParents[id] != nil else {
+            selectedPath = []
+            return
+        }
+        var path = [id]
+        while let parent = pathParents[path.last!] { path.append(parent) }
+        let next = graph.relation == .following ? Array(path.reversed()) : path
+        if selectedPath != next { selectedPath = next }
+    }
+
     /// 新分页尚在逐个入场时继续保留已绘制人数，不提前跳到整页数量。
     func renderedRelationCount(for id: String) -> Int {
         guard selectedID == id else { return 0 }
-        return min(renderedSelectedCount ?? 0, displayedSnapshot?.relationCount(for: id) ?? 0)
+        return min(renderedSelectedCount ?? 0, displayedRelationCounts[id] ?? 0)
     }
 
     /// 图版本、画布身份与选择版本各自校验；仅比较用户 ID 无法拒绝 A → B → A 的旧消息。
@@ -515,7 +558,7 @@ final class FollowGraphViewModel {
             renderedCounts = (nodes, edges)
         }
         guard selectedID == self.selectedID, selectionRevision == self.selectionRevision,
-              let selectedID, (0...min(edges, displayedSnapshot.relationCount(for: selectedID))).contains(selectedCount)
+              let selectedID, (0...min(edges, displayedRelationCounts[selectedID] ?? 0)).contains(selectedCount)
         else { return }
         if renderedSelectedCount != selectedCount { renderedSelectedCount = selectedCount }
     }
