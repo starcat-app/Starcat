@@ -79,6 +79,9 @@ enum ExternalAgentProtocolEvent: Equatable, Sendable {
     /// DeepSeek Harness 已结算的单步消息。保留原始 block 顺序，避免把 reasoning 与正文
     /// 压平成两个跨 Run 的全局字符串，也让历史恢复使用同一份持久化事实。
     case assistantStepMessage(ExternalAgentAssistantStepMessage, usage: AgentUsage?)
+    /// 仅用于 Harness 已公开的内容块。独立于跨 Runtime 的全局字符串增量，避免多步串联。
+    case assistantStepDelta(turn: Int, step: Int, index: Int, part: AgentMessagePart, replacing: Bool)
+    case assistantStepReset(turn: Int, step: Int)
     case toolCall(id: String, name: String, input: AgentJSONValue, rawInput: String?)
     case toolResult(id: String, name: String, output: AgentJSONValue, isError: Bool)
     case artifactMarkdown(String, toolCallID: String)

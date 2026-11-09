@@ -50,10 +50,16 @@ final class AgentWorkspaceViewModel {
     /// 复用 RAG 已验证的展示节流器：完整文本仍保留在 buffer，UI 只接收有界、低频快照。
     private var assistantReasoningPresentationBuffer = AgentWorkspaceViewModel.makeStreamingPresentationBuffer()
     private var assistantPresentationBuffer = AgentWorkspaceViewModel.makeStreamingPresentationBuffer()
+    /// Harness 快照已在 Runtime actor 节流；只有当前步骤的叶子行观察它。
+    private(set) var assistantStream: AgentAssistantStreamSnapshot?
     /// 流式正文会频繁触发 SwiftUI 求值，但持久化消息、审批和产物通常没有变化。
     /// 投影缓存按独立 revision 失效，避免每个展示快照都重新扫描整条历史消息链。
     @ObservationIgnored private var cachedTimelinePresentation: (revision: Int, value: AgentRunPresentation)?
     @ObservationIgnored private var cachedTraceTimelineSnapshot: (revision: Int, value: AgentTraceTimelineSnapshot)?
+    @ObservationIgnored private var cachedHarnessProcess: (timeline: Int, trace: Int, locale: String, rows: [AgentHarnessProcessRow])?
+    @ObservationIgnored private var cachedHarnessAuditRows: (revision: Int, locale: String, rows: [AgentHarnessProcessRow])?
+    private(set) var runStartedAt: Date?
+    private(set) var runFinishedAt: Date?
     @ObservationIgnored private var traceEventIndexesByID: [String: Int] = [:]
     @ObservationIgnored private var traceEventIndexIsCurrent = false
     @ObservationIgnored private var isApplyingInternalTraceMutation = false
@@ -196,6 +202,37 @@ final class AgentWorkspaceViewModel {
         cachedTraceTimelineSnapshot = (revision, value)
         traceProjectionBuildCountForTesting &+= 1
         return value
+    }
+
+    /// 流式快照由过程 View 的叶子行消费，不使已结算内容重新排序或解析工具 payload。
+    func harnessProcessRows(localeIdentifier: String) -> [AgentHarnessProcessRow] {
+        if let cachedHarnessProcess,
+           cachedHarnessProcess.timeline == timelinePresentationRevision,
+           cachedHarnessProcess.trace == traceTimelineRevision,
+           cachedHarnessProcess.locale == localeIdentifier {
+            return cachedHarnessProcess.rows
+        }
+        let rows = AgentHarnessProcessPresentation.rows(
+            presentation: timelinePresentation(),
+            traces: traceTimelineSnapshot().orderedEvents
+        )
+        cachedHarnessProcess = (timelinePresentationRevision, traceTimelineRevision, localeIdentifier, rows)
+        return rows
+    }
+
+    func harnessAuditRows(localeIdentifier: String) -> [AgentHarnessProcessRow] {
+        if let cachedHarnessAuditRows,
+           cachedHarnessAuditRows.revision == traceTimelineRevision,
+           cachedHarnessAuditRows.locale == localeIdentifier {
+            return cachedHarnessAuditRows.rows
+        }
+        let rows = traceTimelineSnapshot().orderedEvents.map {
+            AgentHarnessProcessRow(
+                id: "trace-\($0.id)", sequence: $0.sequence, order: 0, content: .trace($0)
+            )
+        }
+        cachedHarnessAuditRows = (traceTimelineRevision, localeIdentifier, rows)
+        return rows
     }
 
     private func invalidateTimelinePresentation() {
@@ -899,6 +936,8 @@ final class AgentWorkspaceViewModel {
         switch event {
         case .runStarted(let title):
             runTitle = title
+            runStartedAt = Date()
+            runFinishedAt = nil
             status = .running
         case .traceUpdated(let trace):
             upsert(trace)
@@ -934,6 +973,9 @@ final class AgentWorkspaceViewModel {
                 assistantOutput = snapshot
                 streamingPresentationUpdateCountForTesting += 1
             }
+        case .assistantStreamUpdated(let snapshot):
+            assistantStream = snapshot
+            streamingPresentationUpdateCountForTesting += 1
         case .artifactCreated(let artifact):
             artifacts.append(artifact)
             if selectedArtifactID == nil {
@@ -941,17 +983,20 @@ final class AgentWorkspaceViewModel {
             }
         case .runCompleted:
             flushStreamingPresentation()
+            runFinishedAt = Date()
             status = .completed
             recordExternalUsageIfNeeded(status: .succeeded)
             runTask = nil
         case .runFailed(let message):
             flushStreamingPresentation()
+            runFinishedAt = Date()
             status = .failed
             errorMessage = message
             recordExternalUsageIfNeeded(status: .failed)
             runTask = nil
         case .runCancelled:
             flushStreamingPresentation()
+            runFinishedAt = Date()
             status = .cancelled
             recordExternalUsageIfNeeded(status: .cancelled)
             runTask = nil
@@ -1037,6 +1082,7 @@ final class AgentWorkspaceViewModel {
         assistantPresentationBuffer = Self.makeStreamingPresentationBuffer()
         assistantReasoningOutput = ""
         assistantOutput = ""
+        assistantStream = nil
         if resetUpdateCount {
             streamingPresentationUpdateCountForTesting = 0
         }
@@ -1093,6 +1139,8 @@ final class AgentWorkspaceViewModel {
         // 历史附件正文按隐私契约不可恢复，不能重新塞回可发送 Composer。
         attachments = []
         status = AgentRunStatus(rawValue: snapshot.run.status) ?? .idle
+        runStartedAt = ISO8601DateFormatter.shared.date(from: snapshot.run.createdAt)
+        runFinishedAt = snapshot.run.finishedAt.flatMap { ISO8601DateFormatter.shared.date(from: $0) }
         messages = snapshot.messages
         traceEvents = snapshot.traceEvents
         usage = snapshot.messages.compactMap(\.usage).reduce(.zero) { partial, next in

@@ -228,9 +228,9 @@ struct AgentTraceTimelineRow: Identifiable, Equatable, Sendable {
     var hasChildren: Bool { childCount > 0 }
 }
 
-/// 同一批持久化事件同时生成两种视图：过程模式按真实父子关系编排，审计模式按首次
-/// sequence 平铺。任何事件都不能因为“噪声”被过滤；高频 delta 应由 Adapter 合并到
-/// 稳定事件，而不是由 UI 丢弃，这样数量、历史恢复与原始顺序才有同一事实来源。
+/// 完整审计快照同时保留真实父子关系与首次 sequence 顺序，本层不筛掉任何持久化事件。
+/// Harness 主对话由 AgentHarnessProcessPresentation 独立筛选可读活动；“保留审计”
+/// 不等于“所有协议事件都成为聊天行”。高频内容增量由 Runtime 组装，不生成 token Trace。
 enum AgentTraceTimelinePresentation {
     /// 保留给只需要平铺事件的调用方；语义已经从“可见关键步骤”改为“全部持久化事件”。
     static func visibleEvents(_ events: [AgentTraceEvent]) -> [AgentTraceEvent] {

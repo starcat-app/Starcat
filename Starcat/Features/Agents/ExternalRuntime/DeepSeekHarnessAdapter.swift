@@ -422,10 +422,19 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
             }
             switch deltaType {
             case "text-delta", "reasoning-delta":
-                // DeepSeek 的 `assistant/message` 会携带按 block index 装配完成的权威内容。
-                // 若把每个 token 同时推给 Observable，SwiftUI 会持续重解析 Markdown、测量
-                // 整条时间线并修正滚动位置；这里只等待结算事件，步骤 running 状态仍会反馈进度。
-                return ExternalAgentProtocolOutput()
+                guard let text = chunk?[external: "text"]?.stringValue,
+                      let index = chunk?[external: "index"]?.integerValue else {
+                    return ExternalAgentProtocolOutput()
+                }
+                // 不生成 Trace，也不直接刷新 Observable。Projector 按 block index 组装并
+                // 节流发布，assistant/message 仍是最后的权威结算内容。
+                return ExternalAgentProtocolOutput(events: [.assistantStepDelta(
+                    turn: data[external: "turn"]?.integerValue ?? currentTurn ?? 0,
+                    step: data[external: "step"]?.integerValue ?? currentStep ?? 0,
+                    index: index,
+                    part: deltaType == "text-delta" ? .text(text) : .reasoning(text),
+                    replacing: false
+                )])
             case "usage":
                 guard var usage = Self.usage(from: chunk?[external: "usage"] ?? chunk) else {
                     return ExternalAgentProtocolOutput()
@@ -448,7 +457,22 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                     )))
                 }
                 return ExternalAgentProtocolOutput(events: events)
-            case "block-start", "block-end", "tool-call-delta", "finish":
+            case "block-end":
+                guard let index = chunk?[external: "index"]?.integerValue,
+                      let block = chunk?[external: "block"],
+                      let text = block[external: "text"]?.stringValue,
+                      let type = block[external: "type"]?.stringValue,
+                      ["text", "reasoning"].contains(type) else {
+                    return ExternalAgentProtocolOutput()
+                }
+                return ExternalAgentProtocolOutput(events: [.assistantStepDelta(
+                    turn: data[external: "turn"]?.integerValue ?? currentTurn ?? 0,
+                    step: data[external: "step"]?.integerValue ?? currentStep ?? 0,
+                    index: index,
+                    part: type == "text" ? .text(text) : .reasoning(text),
+                    replacing: true
+                )])
+            case "block-start", "tool-call-delta", "finish":
                 // 这些是 assistant/message、tool/call 与终态的原始组装帧。逐帧生成 UI 行
                 // 会制造噪声和数百个空 disclosure；最终装配事件才是可恢复的产品事实。
                 return ExternalAgentProtocolOutput()
@@ -659,7 +683,10 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
                 ?? data[external: "error"]?[external: "message"]?.stringValue
                 ?? type
             let attempt = data[external: "attempt"]?.integerValue
-            return ExternalAgentProtocolOutput(events: [.trace(ExternalAgentTraceEvent(
+            return ExternalAgentProtocolOutput(events: [.assistantStepReset(
+                turn: data[external: "turn"]?.integerValue ?? currentTurn ?? 0,
+                step: data[external: "step"]?.integerValue ?? currentStep ?? 0
+            ), .trace(ExternalAgentTraceEvent(
                 id: data[external: "id"]?.stringValue ?? "retry:\(UUID().uuidString)",
                 kind: .retry,
                 status: .running,

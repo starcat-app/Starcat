@@ -469,6 +469,7 @@ private actor ExternalAgentEventProjector {
     private var finalAssistantText: String?
     private var pendingAssistantStepMessage: ExternalAgentAssistantStepMessage?
     private var pendingAssistantStepUsage: AgentUsage?
+    private var assistantStream: AgentAssistantStreamBuffer?
     private var consumedAssistantStepMessageIDs: Set<String> = []
     private var latestAssistantMessageID: UUID?
     private var latestAssistantText: String?
@@ -550,6 +551,26 @@ private actor ExternalAgentEventProjector {
             // raw reasoning 只服务当前 Run 的瞬时反馈；历史恢复依赖 Adapter 明确投影的
             // reasoning summary trace，不能把隐藏思维链混入 assistant message 落库。
             continuation.yield(.assistantReasoningDelta(delta))
+        case .assistantStepDelta(let turn, let step, let index, let part, let replacing):
+            if assistantStream?.turn != turn || assistantStream?.step != step {
+                await flushPendingAssistantStepMessage()
+                await flushInterruptedAssistantStream()
+                assistantStream = AgentAssistantStreamBuffer(sequence: sequence, turn: turn, step: step)
+                sequence += 1
+            }
+            if let snapshot = assistantStream?.append(
+                index: index,
+                part: part,
+                replacing: replacing,
+                now: Date.timeIntervalSinceReferenceDate
+            ) {
+                continuation.yield(.assistantStreamUpdated(snapshot))
+            }
+        case .assistantStepReset(let turn, let step):
+            if assistantStream?.turn == turn, assistantStream?.step == step {
+                assistantStream?.reset()
+                continuation.yield(.assistantStreamUpdated(nil))
+            }
         case .assistantMessage(let text, let usage):
             if !text.isEmpty { finalAssistantText = text }
             if let usage {
@@ -669,11 +690,13 @@ private actor ExternalAgentEventProjector {
             await complete()
         case .cancelled:
             await flushPendingAssistantStepMessage()
+            await flushInterruptedAssistantStream()
             isTerminal = true
             await persistTerminal(status: .cancelled, errorMessage: nil)
             continuation.yield(.runCancelled)
         case .failed(let message):
             await flushPendingAssistantStepMessage()
+            await flushInterruptedAssistantStream()
             if !hasTerminalErrorTrace {
                 await projectFailureTrace(message)
             }
@@ -690,6 +713,7 @@ private actor ExternalAgentEventProjector {
     func cancelIfNeeded() async {
         guard !isTerminal else { return }
         await flushPendingAssistantStepMessage()
+        await flushInterruptedAssistantStream()
         isTerminal = true
         await persistTerminal(status: .cancelled, errorMessage: nil)
         continuation.yield(.runCancelled)
@@ -698,6 +722,7 @@ private actor ExternalAgentEventProjector {
     func failIfNeeded(_ message: String) async {
         guard !isTerminal else { return }
         await flushPendingAssistantStepMessage()
+        await flushInterruptedAssistantStream()
         await projectFailureTrace(message)
         isTerminal = true
         await persistTerminal(status: .failed, errorMessage: message)
@@ -730,6 +755,7 @@ private actor ExternalAgentEventProjector {
     private func complete() async {
         guard !isTerminal else { return }
         await flushPendingAssistantStepMessage()
+        await flushInterruptedAssistantStream()
         if !requiredCompletionToolNames.isEmpty,
            (!completionToolSucceeded || artifactCount == 0) {
             let message = completionToolFailure
@@ -777,12 +803,18 @@ private actor ExternalAgentEventProjector {
         let usage = pendingAssistantStepUsage
         self.pendingAssistantStepMessage = nil
         pendingAssistantStepUsage = nil
+        let stream = assistantStream
+        // 权威 message 与流式块使用同一消息身份。其他 Runtime 不使用此分支，
+        // 不会把其全局 assistantText 再追加成第二份 Harness 最终回答。
+        assistantStream = nil
 
         let messageID = await appendMessage(
             role: .assistant,
             turn: pendingAssistantStepMessage.turn,
             parts: parts,
-            usage: usage
+            usage: usage,
+            id: stream?.id ?? UUID(),
+            reservedSequence: stream?.sequence
         )
         let text = parts.compactMap { part -> String? in
             guard case .text(let value) = part else { return nil }
@@ -795,22 +827,43 @@ private actor ExternalAgentEventProjector {
         }
     }
 
+    /// Provider 在完整 message 到达前结束时保存已公开的部分内容。取消/失败的状态
+    /// 由 Run 单独表达，不能为了有历史正文而伪造一个 completed Trace。
+    private func flushInterruptedAssistantStream() async {
+        guard let stream = assistantStream else { return }
+        assistantStream = nil
+        guard !stream.parts.isEmpty else {
+            continuation.yield(.assistantStreamUpdated(nil))
+            return
+        }
+        await appendMessage(
+            role: .assistant,
+            turn: stream.turn,
+            parts: stream.parts,
+            id: stream.id,
+            reservedSequence: stream.sequence
+        )
+    }
+
     @discardableResult
     private func appendMessage(
         role: AgentMessageRole,
         turn: Int = 0,
         parts: [AgentMessagePart],
-        usage: AgentUsage? = nil
+        usage: AgentUsage? = nil,
+        id: UUID = UUID(),
+        reservedSequence: Int? = nil
     ) async -> UUID {
         let message = AgentMessage(
+            id: id,
             runID: runID,
             role: role,
             turn: turn,
-            sequence: sequence,
+            sequence: reservedSequence ?? sequence,
             parts: parts,
             usage: usage
         )
-        sequence += 1
+        if reservedSequence == nil { sequence += 1 }
         if let runRepository {
             do {
                 try await runRepository.appendMessage(message, runStatus: .running)

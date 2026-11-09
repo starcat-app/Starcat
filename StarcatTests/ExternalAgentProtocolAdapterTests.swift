@@ -1428,7 +1428,38 @@ struct ExternalAgentProtocolAdapterTests {
                 ]),
             ])
         ))
-        #expect(tokenDelta.events.isEmpty)
+        #expect(tokenDelta.events == [.assistantStepDelta(
+            turn: 0,
+            step: 0,
+            index: 1,
+            part: .text("不会逐 token 驱动 SwiftUI"),
+            replacing: false
+        )])
+
+        let blockEnd = try driver.receive(deepSeekEvent(
+            sessionID: sessionID,
+            type: "assistant/chunk",
+            seq: 4,
+            data: .object([
+                "turn": .number(0), "step": .number(0),
+                "chunk": .object([
+                    "type": .string("block-end"), "index": .number(0),
+                    "block": .object(["type": .string("reasoning"), "text": .string("公开的思考内容")]),
+                ]),
+            ])
+        ))
+        #expect(blockEnd.events == [.assistantStepDelta(
+            turn: 0, step: 0, index: 0, part: .reasoning("公开的思考内容"), replacing: true
+        )])
+        let retry = try driver.receive(deepSeekEvent(
+            sessionID: sessionID, type: "llm/retry", seq: 5,
+            data: .object(["turn": .number(0), "step": .number(0), "attempt": .number(2)])
+        ))
+        #expect(retry.events.contains(.assistantStepReset(turn: 0, step: 0)))
+        #expect(retry.events.contains {
+            if case .trace(let trace) = $0 { return trace.kind == .retry }
+            return false
+        })
 
         let requestContext = try driver.receive(deepSeekEvent(
             sessionID: sessionID,

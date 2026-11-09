@@ -5,8 +5,7 @@
 //  Agent 工作台的连续任务叙事与最终结果界面。
 //
 //  对话正文继续由 AgentTimelineProjection 负责，执行过程优先消费持久化 Runtime Trace。
-//  未结算的 raw reasoning token 不进入普通界面；Provider 已结算的 reasoning block
-//  与正文按原始顺序展示并可恢复。
+//  Harness 公开内容通过节流快照更新稳定过程行；最终 message 仍是可恢复的权威事实。
 //
 
 import SwiftUI
@@ -87,11 +86,20 @@ struct AgentMessageTimelineView: View {
                         userRow(item)
                     }
 
-                    agentIdentityRow
+                    if viewModel.runtimeBackend == .deepSeekHarness {
+                        AgentHarnessProcessView(viewModel: viewModel)
+                            .id(runIdentity)
+                        // 确认操作放在限高过程区外，不能让审批按钮被内部滚动或折叠遮住。
+                        ForEach(presentation.processSections.filter { $0.kind == .approval }) { section in
+                            processRow(section)
+                        }
+                    } else {
+                        agentIdentityRow
+                    }
 
-                    if !viewModel.traceEvents.isEmpty {
+                    if viewModel.runtimeBackend != .deepSeekHarness, !viewModel.traceEvents.isEmpty {
                         runtimeTraceSection
-                    } else if !presentation.processSections.isEmpty {
+                    } else if viewModel.runtimeBackend != .deepSeekHarness, !presentation.processSections.isEmpty {
                         processSection
                     }
 
@@ -722,7 +730,12 @@ struct AgentMessageTimelineView: View {
 
     private func finalAnswerRow(_ item: AgentTimelineItem) -> some View {
         AgentAssistantMessageContentView(
-            parts: item.messageParts,
+            parts: viewModel.runtimeBackend == .deepSeekHarness
+                ? item.messageParts.filter {
+                    if case .reasoning = $0 { return false }
+                    return true
+                }
+                : item.messageParts,
             fallbackText: item.text
         )
         .equatable()
@@ -731,10 +744,12 @@ struct AgentMessageTimelineView: View {
 
     private func inlineArtifactRow(_ item: AgentTimelineItem) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Divider()
+            if viewModel.runtimeBackend != .deepSeekHarness {
+                Divider()
+            }
 
             if let artifact = item.artifact {
-                if !artifactBeginsWithOwnTitle(artifact) {
+                if viewModel.runtimeBackend != .deepSeekHarness, !artifactBeginsWithOwnTitle(artifact) {
                     Button {
                         viewModel.selectArtifact(artifact.id)
                     } label: {
