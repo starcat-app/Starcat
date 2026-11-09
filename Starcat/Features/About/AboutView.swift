@@ -914,7 +914,7 @@ private struct AboutDependency: Identifiable {
         AboutDependency(
             name: "GRDB.swift",
             license: "MIT",
-            copyright: "Copyright (c) 2015-2026 Gwendal Roué",
+            copyright: "Copyright (C) 2015-2025 Gwendal Roué",
             url: URL(string: "https://github.com/groue/GRDB.swift")
         ),
         AboutDependency(
@@ -970,6 +970,31 @@ private struct AboutDependency: Identifiable {
             license: "MIT",
             copyright: "Copyright (c) 2023 Sumbit Labs Ltd.",
             url: URL(string: "https://github.com/aptabase/aptabase-swift")
+        ),
+        // 本地 AI 配套包的归因取自当前锁定 revision 的 LICENSE。
+        AboutDependency(
+            name: "mlx-swift-lm",
+            license: "MIT",
+            copyright: "Copyright (c) 2024 ml-explore",
+            url: URL(string: "https://github.com/ml-explore/mlx-swift-lm")
+        ),
+        AboutDependency(
+            name: "swift-transformers",
+            license: "Apache-2.0",
+            copyright: "Copyright 2022 Hugging Face SAS.",
+            url: URL(string: "https://github.com/huggingface/swift-transformers")
+        ),
+        AboutDependency(
+            name: "swift-huggingface",
+            license: "Apache-2.0",
+            copyright: "Copyright 2025 Hugging Face SAS.",
+            url: URL(string: "https://github.com/huggingface/swift-huggingface")
+        ),
+        AboutDependency(
+            name: "swift-cmark",
+            license: "BSD-2-Clause / MIT",
+            copyright: "Copyright (c) 2014, John MacFarlane; Copyright (C) 2012 Vicent Martí",
+            url: URL(string: "https://github.com/swiftlang/swift-cmark")
         ),
         AboutDependency(
             name: "BorderBeamKit",

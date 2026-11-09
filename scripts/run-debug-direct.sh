@@ -172,6 +172,8 @@ run_with_failure_log "构建 StarcatDirect Debug" xcodebuild \
   -arch arm64 \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   -derivedDataPath "$DERIVED_DATA" \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM_ID" \
   CODE_SIGN_IDENTITY="Apple Development" \
@@ -179,6 +181,8 @@ run_with_failure_log "构建 StarcatDirect Debug" xcodebuild \
   STARCAT_BUILD_VERSION_OVERRIDE="$BUILD_VERSION" \
   ENABLE_DEBUG_DYLIB=NO \
   build
+
+python3 scripts/sync-swift-package-lock.py check
 
 echo "==> 校验 Direct 构建产物..."
 if [ ! -d "$WIDGET_EXTENSION_PATH" ]; then

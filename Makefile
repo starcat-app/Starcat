@@ -41,7 +41,7 @@ APPSTORE_ARCHIVE := $(CURDIR)/dist/appstore/Starcat-AppStore.xcarchive
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-appstore build-direct run-appstore run-direct test test-build-scripts reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct-debug package-direct-debug-signed package-direct package-direct-notarized release-direct release-direct-development release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
+.PHONY: help build-appstore build-direct run-appstore run-direct test test-build-scripts check-package-lock test-package-lock test-codebase-fetch reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct-debug package-direct-debug-signed package-direct package-direct-notarized release-direct release-direct-development release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -53,6 +53,9 @@ help: ## 列出所有可用命令
 	@echo "  make test                   使用稳定版 Xcode 和 build/DerivedData-Tests 跑全量单测"
 	@echo "  make test TEST_ARGS=\"...\"   向 xcodebuild 追加参数，例如 -only-testing:StarcatTests/Foo"
 	@echo "  make test-build-scripts     验证 Debug 构建缓存的工具链隔离逻辑"
+	@echo "  make check-package-lock     检查生成工程是否使用受控 SwiftPM 版本组合"
+	@echo "  make test-package-lock      验证锁文件恢复与漂移检测"
+	@echo "  make test-codebase-fetch    隔离验证 Codebase 校验与资源替换边界"
 	@echo ""
 	@echo "App Store："
 	@echo "  make package-appstore       生成 App Store archive，不上传"
@@ -102,6 +105,15 @@ run-direct: ## Direct / 非 App Store Debug
 
 test-build-scripts: ## 验证 Debug 构建缓存的工具链隔离逻辑
 	@bash scripts/tests/test-debug-build-environment.sh
+
+check-package-lock: ## 只读检查当前解析版本与受控锁文件一致
+	@python3 scripts/sync-swift-package-lock.py check
+
+test-package-lock: ## 使用隔离目录验证锁文件恢复与版本漂移检测
+	@python3 -m unittest discover -s scripts/tests -p test_swift_package_lock.py
+
+test-codebase-fetch: ## 不联网或修改真实资源，验证归档与二进制身份检查
+	@python3 -m unittest discover -s scripts/tests -p test_codebase_fetch.py
 
 test: ## 使用稳定版 Xcode 和固定测试缓存跑单测（可用 TEST_ARGS 过滤 Suite）
 	@bash scripts/run-tests.sh $(TEST_ARGS)

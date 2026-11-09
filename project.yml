@@ -21,7 +21,8 @@ options:
   # XcodeGen 2.45.4 不能可靠生成嵌套的 SystemCapabilities 字典；
   # App Store 版的 In-App Purchase、双渠道 Associated Domains capability
   # 由后处理脚本写入生成后的 .xcodeproj。
-  postGenCommand: python3 scripts/postprocess-xcodeproj.py
+  # 生成工程不入 Git；每次生成后从受控锁文件恢复完整 SwiftPM 版本组合。
+  postGenCommand: python3 scripts/postprocess-xcodeproj.py && python3 scripts/sync-swift-package-lock.py restore
 
 # 全局 Build Settings：
 # - SWIFT_VERSION = 6.0：使用 Swift 6 语言模式，让数据竞争检查成为编译期约束。
@@ -51,25 +52,26 @@ settings:
 packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
-    from: "7.0.0"
+    from: "7.12.0"
   KeychainAccess:
     url: https://github.com/kishikawakatsumi/KeychainAccess
     from: "4.2.0"
   Kingfisher:
     url: https://github.com/onevcat/Kingfisher
-    from: "7.0.0"
+    from: "8.15.0"
   MarkdownUI:
     url: https://github.com/gonzalezreal/swift-markdown-ui
     from: "2.4.1"
   SwiftMarkdown:
     url: https://github.com/swiftlang/swift-markdown
-    exactVersion: "0.8.0"
+    exactVersion: "0.9.0"
   OpenAI:
     url: https://github.com/MacPaw/OpenAI.git
-    branch: main
+    # 保留当前 Provider 适配基线；完整传递依赖由 Configs/SwiftPackages.resolved 锁定。
+    revision: 35ff1a5a95182c3c809209334d3076eb08134411
   ConfettiSwiftUI:
     url: https://github.com/simibac/ConfettiSwiftUI.git
-    branch: master
+    exactVersion: "3.0.0"
   # 用于 RepoContextPacker（AI 摘要上下文打包）解压 GitHub source ZIP，
   # 沙箱友好 + Swift-native API + 约 200KB 体积，详见 docs/3-设计/详细设计/27-RepoContextPacker设计.md §22.2。
   ZIPFoundation:
@@ -80,17 +82,17 @@ packages:
     from: "0.12.1"
   Aptabase:
     url: https://github.com/aptabase/aptabase-swift
-    from: "0.3.0"
+    from: "0.4.0"
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.9.4"
+    from: "2.10.1"
   # MLXSwiftLM：内置本地 AI（MLX）运行时，提供 MLXLMCommon / MLXLLM / MLXEmbedders /
-  # MLXRerankers 四个产品。上游处于活跃演进期且尚未提供稳定版本 tag，与 OpenAI、
-  # ConfettiSwiftUI 同策略锁 branch。设计见
+  # MLXRerankers 四个产品。先冻结当前已集成的生成 / 向量 / 重排组合，
+  # 不随上游 main 自动改变模型缓存与索引语义。设计见
   # docs/2-产品/需求讨论/starcat-local-ai-framework-and-model-plan.md（v1.1）。
   MLXSwiftLM:
     url: https://github.com/ml-explore/mlx-swift-lm
-    branch: main
+    revision: 604fae710a4e3324346fc59e3845952350acd4b7
   # mlx-swift-lm 3.x 不再内置 HuggingFace 下载器 / 分词器，按官方文档引入配套实现：
   # MLXHuggingFace 宏（#huggingFaceTokenizerLoader）依赖这两个包的 HuggingFace / Tokenizers 产品。
   swift-transformers:

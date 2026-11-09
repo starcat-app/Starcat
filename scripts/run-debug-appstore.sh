@@ -62,11 +62,15 @@ xcodebuild \
   -arch arm64 \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   -derivedDataPath "$DERIVED_DATA" \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM_ID" \
   CODE_SIGN_IDENTITY="Apple Development" \
   ENABLE_DEBUG_DYLIB=NO \
   build
+
+python3 scripts/sync-swift-package-lock.py check
 
 echo "==> 校验沙箱 entitlements..."
 ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"

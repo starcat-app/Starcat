@@ -163,6 +163,8 @@ xcodebuild \
     -arch arm64 \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+    -disableAutomaticPackageResolution \
+    -onlyUsePackageVersionsFromResolvedFile \
     -derivedDataPath "$DERIVED_DIR" \
     MARKETING_VERSION="$MARKETING_VERSION" \
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
@@ -178,6 +180,8 @@ if [ $BUILD_EXIT -ne 0 ]; then
     log_dim "── 完整日志: $BUILD_LOG ──"
     exit 1
 fi
+
+python3 scripts/sync-swift-package-lock.py check
 
 APP_PATH="$DERIVED_DIR/Build/Products/Release/Starcat.app"
 if [ ! -d "$APP_PATH" ]; then

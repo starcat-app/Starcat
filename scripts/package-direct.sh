@@ -152,6 +152,8 @@ xcodebuild \
   -arch arm64 \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   -derivedDataPath "$DERIVED_DIR" \
   "${BUILD_SETTINGS[@]}" \
   clean build \
@@ -163,6 +165,8 @@ if [ "$BUILD_EXIT" -ne 0 ]; then
   tail -80 "$BUILD_LOG" >&2
   fail "Direct build 失败，完整日志: $BUILD_LOG"
 fi
+
+python3 scripts/sync-swift-package-lock.py check
 
 [ -d "$APP_PATH" ] || fail "未找到 Direct app: $APP_PATH"
 [ -d "$SPARKLE_FRAMEWORK_PATH" ] || fail "Direct 包缺少 Sparkle.framework"

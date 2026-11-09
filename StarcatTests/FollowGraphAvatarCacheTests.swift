@@ -132,10 +132,13 @@ struct FollowGraphAvatarCacheTests {
         )
         #expect(try await graph.image(for: Self.local).data == Self.gif)
         let key = try #require(FollowGraphAvatarURL.request(Self.local)?.remote.absoluteString)
-        #expect(try native.diskStorage.value(forKey: key) == Self.gif)
+        // 此测试用两个独立缓存实例模拟磁盘复用；Kingfisher 的实例内命中索引
+        // 不会感知另一实例新增文件，直接核验落盘字节，生产仍共用 ImageCache.default。
+        let nodeFile = native.diskStorage.cacheFileURL(forKey: key)
+        #expect(try Data(contentsOf: nodeFile) == Self.gif)
         try native.diskStorage.remove(forKey: key)
         #expect(try await graph.promoteCardImage(from: cardURL))
-        #expect(try native.diskStorage.value(forKey: key) == Self.gif)
+        #expect(try Data(contentsOf: nodeFile) == Self.gif)
         #expect(await downloads.count == 0)
         // 不把其他版本或其他用户的头像误当成同一张缓存。
         for raw in [Self.remote.replacingOccurrences(of: "v=4", with: "v=5"),
