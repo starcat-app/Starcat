@@ -739,6 +739,68 @@ struct FollowGraphStoreTests {
 @Suite("FollowGraph GraphQL mapping", .serialized)
 struct FollowGraphAPITests {
     @MainActor
+    @Test("两种图谱选中节点不展开，只有加载更多才读取缓存或网络",
+          arguments: FollowGraphRelation.allCases, [false, true])
+    func selectionRequiresExplicitLoad(relation: FollowGraphRelation, cached: Bool) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, [3]))
+        // 第四层既可能尚未请求，也可能已有缓存；选中都不能扩大当前展示范围。
+        if cached { graph.merge(page(3, [4])) }
+        try await cache.save(graph)
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            #expect((json["variables"] as? [String: Any])?["login"] as? String == "user3")
+            let body = """
+            {"data":{"user":{"databaseId":3,"login":"user3",
+            "\(relation.rawValue)":{"totalCount":1,"pageInfo":{"endCursor":null,"hasNextPage":false},
+            "nodes":[{"databaseId":4,"login":"user4"}]}},
+            "rateLimit":{"remaining":4000,"resetAt":"2099-11-05T12:00:00Z"}}}
+            """
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+                                    headerFields: nil)!, Data(body.utf8))
+        }
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        defer { model.stop() }
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+            #expect(model.errorText == nil)
+        }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil),
+                   client: client, relation: relation)
+        try await settle()
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
+        #expect(model.displayedSnapshot?.nodes.count == 3)
+        let revision = model.revision
+
+        model.select("3")
+        #expect(model.selectedID == "3")
+        #expect(model.path == (relation == .following ? ["1", "2", "3"] : ["3", "2", "1"]))
+        #expect(!model.isLoading)
+        #expect(model.revision == revision)
+        #expect(model.displayedSnapshot?.nodes["4"] == nil)
+        model.select(nil)
+        model.select("3")
+        #expect(!model.isLoading)
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
+
+        model.loadMore("3")
+        try await settle()
+        #expect(model.displayedSnapshot?.nodes["4"] != nil)
+        #expect(model.snapshot?.progress["3"]?.complete == true)
+        #expect(URLProtocolStub.receivedRequests.count == (cached ? 0 : 1))
+    }
+
+    @MainActor
     @Test("刷新结果区分用户与关系净变化，失败或停止不显示成功", arguments: FollowGraphRelation.allCases, ["users", "edges", "failure"])
     func refreshResultFeedback(relation: FollowGraphRelation, scenario: String) async throws {
         URLProtocolStub.reset()
@@ -769,7 +831,7 @@ struct FollowGraphAPITests {
                 return
             }
             for id in shown.nodes.keys {
-                model.select(id, expand: false)
+                model.select(id)
                 #expect(model.path == shown.path(to: id))
                 let count = shown.relationCount(for: id)
                 for visible in 0...count {
@@ -781,7 +843,7 @@ struct FollowGraphAPITests {
                     #expect(model.isRevealingRelations(for: id) == (visible < count))
                 }
             }
-            model.select(nil, expand: false)
+            model.select(nil)
             #expect(model.path.isEmpty)
         }
         checkPresentationIndexes()
@@ -866,7 +928,7 @@ struct FollowGraphAPITests {
         }
         model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
         try await settle()
-        model.select("2", expand: false)
+        model.select("2")
         model.reportRenderedCounts(nodes: 2, edges: 1, revision: model.revision, renderer: model.rendererRevision,
                                    selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 0)
         model.viewport = FollowGraphViewport(values: [123, -45, 2])
@@ -1076,7 +1138,7 @@ struct FollowGraphAPITests {
         #expect(!model.isLoading)
         #expect(model.canLoadMore("2"))
         #expect(!model.canLoadMore("3", fallbackTotal: 100))
-        model.select("2", expand: false)
+        model.select("2")
         #expect(model.isRevealingRelations(for: "2"))
         model.loadMore("2")
         #expect(!model.isLoading)
@@ -1090,7 +1152,7 @@ struct FollowGraphAPITests {
                                    selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 50)
         #expect(!model.isRevealingRelations(for: "2"))
         #expect(model.renderedRelationCount(for: "2") == 50)
-        model.select("4", expand: false)
+        model.select("4")
         #expect(!model.canLoadMore("4", fallbackTotal: 0))
         #expect(model.canLoadMore("4"))
         model.resetCanvas()
@@ -1121,7 +1183,7 @@ struct FollowGraphAPITests {
         }
         model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client)
         try await settle()
-        model.select("2", expand: false)
+        model.select("2")
         for (cursor, hasNext, expected) in [
             ("second", true, "followGraph.toast.relationshipsAdded"),
             ("third", true, "followGraph.toast.alreadyVisible"),
@@ -1143,7 +1205,7 @@ struct FollowGraphAPITests {
             #expect(model.displayedSnapshot?.nodes.count == 4)
         }
         URLProtocolStub.requestHandler = { _ in throw URLError(.notConnectedToInternet) }
-        model.select("3", expand: false)
+        model.select("3")
         model.loadMore("3")
         try await settle()
         #expect(model.toastMessage == "followGraph.toast.loadFailed")
@@ -1185,7 +1247,7 @@ struct FollowGraphAPITests {
         let deadline = Date().addingTimeInterval(5)
         while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
         #expect(!model.isLoading)
-        model.select("2", expand: false)
+        model.select("2")
         let selection = model.selectionRevision, revision = model.revision, renderer = model.rendererRevision
         #expect(model.renderedRelationCount(for: "2") == 0)
         func report(_ count: Int, version: Int? = nil, frame: Int? = nil, graph: Int? = nil) {
@@ -1202,15 +1264,15 @@ struct FollowGraphAPITests {
         report(-1)
         report(99)
         #expect(model.renderedRelationCount(for: "2") == 4)
-        model.select("1", expand: false)
-        model.select("2", expand: false)
+        model.select("1")
+        model.select("2")
         report(9)
         #expect(model.renderedRelationCount(for: "2") == 0)
         report(3, version: model.selectionRevision)
         #expect(model.renderedRelationCount(for: "2") == 3)
         #expect(model.revision == revision)
         model.resetCanvas()
-        model.select("2", expand: false)
+        model.select("2")
         report(9, version: model.selectionRevision, graph: model.revision)
         #expect(model.renderedRelationCount(for: "2") == 0)
     }
@@ -1342,11 +1404,11 @@ struct FollowGraphAPITests {
         try await settle()
         #expect(model.snapshot?.nodes.count == 3)
         #expect(model.snapshot?.progress.count == 2)
-        model.select("2", expand: true)
+        model.select("2")
         #expect(!model.isLoading)
         #expect(model.path == ["2", "1"])
         #expect(model.displayedSnapshot?.nodes["3"] != nil)
-        model.select("3", expand: true)
+        model.select("3")
         #expect(model.path == ["3", "2", "1"])
         #expect(!model.isLoading)
         model.loadMore("3")

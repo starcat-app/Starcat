@@ -189,7 +189,7 @@ struct FollowGraphOverlayView: View {
             .frame(minWidth: 120, idealWidth: 210, maxWidth: 280)
             .onSubmit {
                 if let first = model.results.first {
-                    model.select(first.id, expand: false)
+                    model.select(first.id)
                     model.focus(first.id)
                     model.search = ""
                     focusedControl = nil
@@ -240,7 +240,7 @@ struct FollowGraphOverlayView: View {
                 }
                 ForEach(model.results) { node in
                     Button {
-                        model.select(node.id, expand: false)
+                        model.select(node.id)
                         model.focus(node.id)
                         model.search = ""
                         focusedControl = nil

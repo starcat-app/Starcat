@@ -42,7 +42,7 @@ struct FollowGraphUserCard: View {
                     (model.followState.values[node.id] == nil && model.followState.errors[node.id] == nil),
                 isFollowActionEnabled: model.followState.values[node.id] != nil,
                 onOpenGitHub: { open(GitHubURLs.userProfile(login: node.login)) },
-                onClose: { model.select(nil, expand: false) },
+                onClose: { model.select(nil) },
                 onOpenExternalLink: open,
                 onComposeEmail: composeEmail,
                 onOpenFollowers: { open(GitHubURLs.userFollowersTab(login: node.login)) },

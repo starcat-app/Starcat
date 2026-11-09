@@ -104,8 +104,8 @@ struct FollowGraphWebView: NSViewRepresentable {
                 model.rendererPresented = true
             case "select":
                 if let id = body["id"] as? String, id.count < 64, model.snapshot?.nodes[id] != nil {
-                    model.select(id, expand: true)
-                } else if body["id"] is NSNull { model.select(nil, expand: false) }
+                    model.select(id)
+                } else if body["id"] is NSNull { model.select(nil) }
                 // 文本卡片与 WebView 必须同批更新完整路径，不依赖宿主下一次重算。
                 flush()
             case "viewport":

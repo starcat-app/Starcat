@@ -410,7 +410,7 @@ struct HomeView: View {
             .background {
                 FollowGraphWindowOverlay(isPresented: showsFollowGraph, onEscape: {
                     if !followGraphModel.search.isEmpty { followGraphModel.search = "" }
-                    else if followGraphModel.selectedID != nil { followGraphModel.select(nil, expand: false) }
+                    else if followGraphModel.selectedID != nil { followGraphModel.select(nil) }
                     else { showsFollowGraph = false }
                 }) {
                     if let user = authSession.state.user,

@@ -260,10 +260,10 @@ final class FollowGraphViewModel {
         }
     }
 
-    func select(_ id: String?, expand: Bool) {
+    /// 两种方向的节点选择都只更新资料卡和路径；展开预算只能由“加载更多”修改。
+    func select(_ id: String?) {
         guard id == nil || snapshot?.nodes[id!] != nil else { return }
         selectedID = id
-        if expand, snapshot?.relation == .following, let id, snapshot?.progress[id] == nil, !isLoading { loadMore(id) }
     }
 
     func focus(_ id: String?) {
