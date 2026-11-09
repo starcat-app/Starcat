@@ -1,8 +1,8 @@
 //
-//  AgentWorkspaceColumnWidthPersistence.swift
+//  WorkspaceColumnWidthPersistence.swift
 //  Starcat
 //
-//  Agent 工作台栏宽测量的非响应式持久化缓存。
+//  Agent / RAG 工作台栏宽测量的非响应式持久化缓存。
 //
 
 import Foundation
@@ -12,8 +12,9 @@ import Foundation
 /// 恢复值只在创建时读取一次，测量结果只写 UserDefaults，不通过 `@AppStorage`
 /// 回传给当前分栏的 idealWidth。否则显隐期间会形成“测量 → 保存 → 重布局”的回路。
 @MainActor
-final class AgentWorkspaceColumnWidthPersistence {
+final class WorkspaceColumnWidthPersistence {
 
+    let layout: WorkspaceColumnLayout
     let initialLeftColumnWidth: CGFloat
     let initialRightColumnWidth: CGFloat
     private let defaults: UserDefaults
@@ -29,15 +30,16 @@ final class AgentWorkspaceColumnWidthPersistence {
     }
 
     /// 一个缓存实例对应一个窗口生命周期，下一次打开窗口才读取本次保存的宽度。
-    init(defaults: UserDefaults = .standard) {
+    init(layout: WorkspaceColumnLayout, defaults: UserDefaults = .standard) {
+        self.layout = layout
         self.defaults = defaults
-        initialLeftColumnWidth = AgentWorkspaceLayoutMetrics.clampedLeftWidth(
-            (defaults.object(forKey: AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey) as? NSNumber)?
-                .doubleValue ?? Double(AgentWorkspaceLayoutMetrics.leftIdealWidth)
+        initialLeftColumnWidth = layout.left.clampedWidth(
+            (defaults.object(forKey: layout.left.defaultsKey) as? NSNumber)?
+                .doubleValue ?? Double(layout.left.ideal)
         )
-        initialRightColumnWidth = AgentWorkspaceLayoutMetrics.clampedRightWidth(
-            (defaults.object(forKey: AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey) as? NSNumber)?
-                .doubleValue ?? Double(AgentWorkspaceLayoutMetrics.rightDefaultWidth)
+        initialRightColumnWidth = layout.right.clampedWidth(
+            (defaults.object(forKey: layout.right.defaultsKey) as? NSNumber)?
+                .doubleValue ?? Double(layout.right.ideal)
         )
     }
 
@@ -49,11 +51,11 @@ final class AgentWorkspaceColumnWidthPersistence {
         // 包括隐藏和回到已保存宽度的情况，都要撤销之前尚未落盘的旧测量。
         leftWidthPersistenceTask?.cancel()
         guard !isCollapsed,
-              measuredWidth >= AgentWorkspaceLayoutMetrics.leftMinimumWidth else { return }
+              measuredWidth >= layout.left.minimum else { return }
 
-        let width = AgentWorkspaceLayoutMetrics.clampedLeftWidth(Double(measuredWidth))
+        let width = layout.left.clampedWidth(Double(measuredWidth))
         lastMeasuredLeftColumnWidth = width
-        guard abs(defaults.double(forKey: AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey) - Double(width)) > 0.5 else { return }
+        guard abs(defaults.double(forKey: layout.left.defaultsKey) - Double(width)) > 0.5 else { return }
 
         leftWidthPersistenceTask = Task { @MainActor in
             do {
@@ -61,7 +63,7 @@ final class AgentWorkspaceColumnWidthPersistence {
             } catch {
                 return
             }
-            defaults.set(Double(width), forKey: AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
+            defaults.set(Double(width), forKey: layout.left.defaultsKey)
         }
     }
 
@@ -72,11 +74,11 @@ final class AgentWorkspaceColumnWidthPersistence {
     ) {
         rightWidthPersistenceTask?.cancel()
         guard !isCollapsed,
-              measuredWidth >= AgentWorkspaceLayoutMetrics.rightMinimumWidth else { return }
+              measuredWidth >= layout.right.minimum else { return }
 
-        let width = AgentWorkspaceLayoutMetrics.clampedRightWidth(Double(measuredWidth))
+        let width = layout.right.clampedWidth(Double(measuredWidth))
         lastMeasuredRightColumnWidth = width
-        guard abs(defaults.double(forKey: AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey) - Double(width)) > 0.5 else { return }
+        guard abs(defaults.double(forKey: layout.right.defaultsKey) - Double(width)) > 0.5 else { return }
 
         rightWidthPersistenceTask = Task { @MainActor in
             do {
@@ -84,17 +86,17 @@ final class AgentWorkspaceColumnWidthPersistence {
             } catch {
                 return
             }
-            defaults.set(Double(width), forKey: AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
+            defaults.set(Double(width), forKey: layout.right.defaultsKey)
         }
     }
 
     /// 窗口关闭前同步提交最后一次有效测量，避免 debounce 任务尚未执行就被销毁。
     func persistLastMeasuredWidths() {
         if let width = lastMeasuredLeftColumnWidth {
-            defaults.set(Double(width), forKey: AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
+            defaults.set(Double(width), forKey: layout.left.defaultsKey)
         }
         if let width = lastMeasuredRightColumnWidth {
-            defaults.set(Double(width), forKey: AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
+            defaults.set(Double(width), forKey: layout.right.defaultsKey)
         }
     }
 

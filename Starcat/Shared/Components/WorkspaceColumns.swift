@@ -1,8 +1,8 @@
 //
-//  AgentWorkspaceColumns.swift
+//  WorkspaceColumns.swift
 //  Starcat
 //
-//  Agent 工作台的原生分栏外壳；生产页面与无窗口布局回归共用同一套显隐事务。
+//  Agent / RAG 共用的原生分栏外壳与显隐事务。
 //
 
 import AppKit
@@ -13,20 +13,20 @@ import SwiftUI
 /// 内容视图只能使用原生分栏已分配的尺寸，不能将长文本的固有宽度带回外壳。
 /// 显隐变化单独禁用布局动画，避免 Sidebar、Inspector 与中栏同时插值而相互裁切；
 /// 该限制只作用于显隐变化的更新，时间线和任务内容仍可使用自己的动画。
-struct AgentWorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
+struct WorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
     let chromeState: WorkspaceChromeState
-    let columnWidths: AgentWorkspaceColumnWidthPersistence
+    let columnWidths: WorkspaceColumnWidthPersistence
     @ViewBuilder var rail: () -> Rail
     @ViewBuilder var runSurface: () -> RunSurface
     @ViewBuilder var inspector: () -> Inspector
 
     var body: some View {
-        NavigationSplitView(columnVisibility: AgentWorkspaceColumnVisibility.leftBinding(for: chromeState)) {
+        NavigationSplitView(columnVisibility: WorkspaceColumnVisibility.leftBinding(for: chromeState)) {
             rail()
                 .navigationSplitViewColumnWidth(
-                    min: AgentWorkspaceLayoutMetrics.leftMinimumWidth,
+                    min: columnWidths.layout.left.minimum,
                     ideal: columnWidths.initialLeftColumnWidth,
-                    max: AgentWorkspaceLayoutMetrics.leftMaximumWidth
+                    max: columnWidths.layout.left.maximum
                 )
                 .background {
                     GeometryReader { proxy in
@@ -43,19 +43,19 @@ struct AgentWorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: Vie
                 runSurface()
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                     .clipped()
-                    .background(AgentWorkspaceSplitCollapsePolicy())
+                    .background(WorkspaceSplitCollapsePolicy())
             }
         }
-        .inspector(isPresented: AgentWorkspaceColumnVisibility.rightBinding(for: chromeState)) {
+        .inspector(isPresented: WorkspaceColumnVisibility.rightBinding(for: chromeState)) {
             GeometryReader { proxy in
                 inspector()
                     .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
                     .clipped()
             }
             .inspectorColumnWidth(
-                min: AgentWorkspaceLayoutMetrics.rightMinimumWidth,
+                min: columnWidths.layout.right.minimum,
                 ideal: columnWidths.rightColumnWidthForPresentation,
-                max: AgentWorkspaceLayoutMetrics.rightMaximumWidth
+                max: columnWidths.layout.right.maximum
             )
             .background {
                 GeometryReader { proxy in
@@ -85,7 +85,7 @@ struct AgentWorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: Vie
 ///
 /// SwiftUI 没有暴露 NSSplitViewItem.collapseBehavior。探针只沿自己的祖先链配置
 /// Sidebar / Inspector，不替换系统 delegate、不接管窗口，也不扫描其他工作台。
-private struct AgentWorkspaceSplitCollapsePolicy: NSViewRepresentable {
+private struct WorkspaceSplitCollapsePolicy: NSViewRepresentable {
     func makeNSView(context: Context) -> ProbeView { ProbeView() }
 
     func updateNSView(_ nsView: ProbeView, context: Context) {
@@ -131,7 +131,7 @@ private struct AgentWorkspaceSplitCollapsePolicy: NSViewRepresentable {
 /// Observation 更新；因此不能依靠根视图事后清除动画。Binding 的事务必须在写入时
 /// 生效，工具栏的直接写入也必须使用同一事务。任务内容自身的动画不受全局禁用影响。
 @MainActor
-enum AgentWorkspaceColumnVisibility {
+enum WorkspaceColumnVisibility {
     private static var transaction: Transaction {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
@@ -164,7 +164,7 @@ enum AgentWorkspaceColumnVisibility {
         )
     }
 
-    /// Agent 工具栏直接修改共享状态时，必须在 Observation 发布更新前确定事务。
+    /// 工作台工具栏直接修改共享状态时，必须在 Observation 发布更新前确定事务。
     static func toggleRight(in chromeState: WorkspaceChromeState) {
         withTransaction(transaction) {
             chromeState.isRightColumnCollapsed.toggle()

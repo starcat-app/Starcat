@@ -20,7 +20,7 @@ struct AgentWorkspaceColumnLayoutTests {
     func panelTogglesPreserveWindowFrame(hasResult: Bool, initiallyCollapsed: Bool) async throws {
         let suite = "AgentWindowFrame.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        let columnWidths = AgentWorkspaceColumnWidthPersistence(defaults: defaults)
+        let columnWidths = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout, defaults: defaults)
         let chromeState = WorkspaceChromeState()
         chromeState.isLeftColumnCollapsed = initiallyCollapsed
         chromeState.isRightColumnCollapsed = initiallyCollapsed
@@ -29,7 +29,9 @@ struct AgentWorkspaceColumnLayoutTests {
             viewModel: makeViewModel(hasResult: hasResult),
             chromeState: chromeState,
             columnWidths: columnWidths
-        ).modifier(AgentWorkspaceWindowSizing(reference: reference)))
+        ).modifier(WorkspaceWindowSizing(
+            reference: reference, minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
+        )))
         // 保留 HostingController 默认尺寸协商，不能固定 host.frame 或清空 sizingOptions，
         // 否则原生分栏扩大 NSWindow 的回归会被测试夹具遮住。窗口从不 orderFront。
         let window = NSWindow(contentViewController: controller)
@@ -62,9 +64,9 @@ struct AgentWorkspaceColumnLayoutTests {
                 let rightChanged = chromeState.isRightColumnCollapsed != rightCollapsed
                 let otherPanel = leftChanged ? "inspector" : "rail"
                 let otherFrame = leftChanged != rightChanged ? before[otherPanel] : nil
-                AgentWorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
+                WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
                     leftCollapsed ? .detailOnly : .all
-                AgentWorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = !rightCollapsed
+                WorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = !rightCollapsed
                 for sample in 0..<13 {
                     if sample > 0 { try await Task.sleep(for: .milliseconds(16)) }
                     controller.view.layoutSubtreeIfNeeded()
@@ -98,7 +100,7 @@ struct AgentWorkspaceColumnLayoutTests {
         for hasResult in [false, true] {
             let suite = "AgentColumnLayoutTests.\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
-            let columnWidths = AgentWorkspaceColumnWidthPersistence(defaults: defaults)
+            let columnWidths = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout, defaults: defaults)
             defer {
                 columnWidths.cancelPendingPersistence()
                 defaults.removePersistentDomain(forName: suite)
@@ -139,7 +141,7 @@ struct AgentWorkspaceColumnLayoutTests {
             let defaults = try #require(UserDefaults(suiteName: suite))
             defaults.set(expandedWidths.0, forKey: AgentWorkspaceLayoutMetrics.leftWidthDefaultsKey)
             defaults.set(expandedWidths.1, forKey: AgentWorkspaceLayoutMetrics.rightWidthDefaultsKey)
-            let columnWidths = AgentWorkspaceColumnWidthPersistence(defaults: defaults)
+            let columnWidths = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout, defaults: defaults)
             defer {
                 columnWidths.cancelPendingPersistence()
                 defaults.removePersistentDomain(forName: suite)
@@ -186,12 +188,12 @@ struct AgentWorkspaceColumnLayoutTests {
                 // 模拟系统按钮或调用方带入动画事务；生产外壳应只在显隐更新中屏蔽它。
                 withAnimation(.easeInOut(duration: 0.16)) {
                     if leftChanged {
-                        AgentWorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
+                        WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
                             leftCollapsed ? .detailOnly : .all
                     } else if step.isMultiple(of: 2) {
-                        AgentWorkspaceColumnVisibility.toggleRight(in: chromeState)
+                        WorkspaceColumnVisibility.toggleRight(in: chromeState)
                     } else {
-                        AgentWorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = !rightCollapsed
+                        WorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = !rightCollapsed
                     }
                 }
                 for sample in 0..<13 {
@@ -240,7 +242,7 @@ struct AgentWorkspaceColumnLayoutTests {
     func resizedColumnsKeepWidthsAfterToggling() async throws {
         let suite = "AgentColumnResize.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        let columnWidths = AgentWorkspaceColumnWidthPersistence(defaults: defaults)
+        let columnWidths = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout, defaults: defaults)
         defer {
             columnWidths.cancelPendingPersistence()
             defaults.removePersistentDomain(forName: suite)
@@ -276,7 +278,7 @@ struct AgentWorkspaceColumnLayoutTests {
 
         for _ in 0..<2 {
             for leftCollapsed in [true, false] {
-                AgentWorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
+                WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue =
                     leftCollapsed ? .detailOnly : .all
                 try await Task.sleep(for: .milliseconds(32))
                 host.layoutSubtreeIfNeeded()
@@ -287,7 +289,7 @@ struct AgentWorkspaceColumnLayoutTests {
                 }
             }
             for rightPresented in [false, true] {
-                AgentWorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = rightPresented
+                WorkspaceColumnVisibility.rightBinding(for: chromeState).wrappedValue = rightPresented
                 try await Task.sleep(for: .milliseconds(32))
                 host.layoutSubtreeIfNeeded()
                 let frames = measuredFrames(in: host)
@@ -298,7 +300,7 @@ struct AgentWorkspaceColumnLayoutTests {
             }
         }
         columnWidths.persistLastMeasuredWidths()
-        let reopened = AgentWorkspaceColumnWidthPersistence(defaults: defaults)
+        let reopened = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout, defaults: defaults)
         #expect(abs(reopened.initialLeftColumnWidth - 360) < 1)
         #expect(abs(reopened.initialRightColumnWidth - 480) < 1)
     }
@@ -307,7 +309,7 @@ struct AgentWorkspaceColumnLayoutTests {
     func contentUpdatesKeepTheirOwnAnimation() async throws {
         let suite = "AgentColumnAnimation.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        let columnWidths = AgentWorkspaceColumnWidthPersistence(defaults: defaults)
+        let columnWidths = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout, defaults: defaults)
         defer {
             columnWidths.cancelPendingPersistence()
             defaults.removePersistentDomain(forName: suite)
@@ -325,7 +327,7 @@ struct AgentWorkspaceColumnLayoutTests {
         host.sizingOptions = []
         host.frame = CGRect(x: 0, y: 0, width: 1440, height: 820)
         host.layoutSubtreeIfNeeded()
-        AgentWorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue = .detailOnly
+        WorkspaceColumnVisibility.leftBinding(for: chromeState).wrappedValue = .detailOnly
         try await Task.sleep(for: .milliseconds(32))
         host.layoutSubtreeIfNeeded()
 
@@ -420,7 +422,7 @@ struct AgentWorkspaceColumnLayoutTests {
 private struct AgentColumnLayoutFixture: View {
     let viewModel: AgentWorkspaceViewModel
     @Bindable var chromeState: WorkspaceChromeState
-    let columnWidths: AgentWorkspaceColumnWidthPersistence
+    let columnWidths: WorkspaceColumnWidthPersistence
     var onTransaction: (Transaction) -> Void = { _ in }
     var contentState = AgentColumnContentState()
 
@@ -430,7 +432,7 @@ private struct AgentColumnLayoutFixture: View {
     }
 
     var body: some View {
-        AgentWorkspaceColumns(chromeState: chromeState, columnWidths: columnWidths) {
+        WorkspaceColumns(chromeState: chromeState, columnWidths: columnWidths) {
             Text("Agent rail")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(AgentColumnLayoutMarker(name: "rail"))

@@ -189,16 +189,10 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
             // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
             .navigationTitle(windowTitle)
             .toolbar(removing: .title)
-            .frame(
-                minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
-                minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
-            )
-            .background {
-                WorkspaceSceneWindowReader(
-                    reference: windowReference,
-                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
-                )
-            }
+            .modifier(WorkspaceWindowSizing(
+                reference: windowReference,
+                minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
+            ))
             .toolbar {
                 WorkspaceToolbarContent(
                     chromeState: chromeState,

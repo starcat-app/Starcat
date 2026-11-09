@@ -37,6 +37,14 @@ enum AgentWorkspaceLayoutMetrics {
     // v2 的 HSplitView 测量没有稳定落盘；v3 由原生 Inspector 在栏内直接写回真实宽度。
     static let rightWidthDefaultsKey = "AgentWorkspace.SceneV3.RightColumnWidth"
 
+    /// 共享布局只接收本工作台的尺寸与偏好键，避免两个窗口互相覆盖栏宽。
+    static let columnLayout = WorkspaceColumnLayout(
+        left: .init(minimum: leftMinimumWidth, ideal: leftIdealWidth,
+                    maximum: leftMaximumWidth, defaultsKey: leftWidthDefaultsKey),
+        right: .init(minimum: rightMinimumWidth, ideal: rightDefaultWidth,
+                     maximum: rightMaximumWidth, defaultsKey: rightWidthDefaultsKey)
+    )
+
     static func clampedLeftWidth(_ width: Double) -> CGFloat {
         min(max(CGFloat(width), leftMinimumWidth), leftMaximumWidth)
     }
@@ -54,11 +62,11 @@ struct AgentWorkspaceView: View {
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var isHistoryExpanded = false
     /// 栏宽测量属于持久化缓存而不是渲染状态；引用对象内部变化不能让整棵工作台重新求值。
-    @State private var columnWidthPersistence = AgentWorkspaceColumnWidthPersistence()
+    @State private var columnWidthPersistence = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout)
     @Bindable var chromeState: WorkspaceChromeState
 
     var body: some View {
-        AgentWorkspaceColumns(chromeState: chromeState, columnWidths: columnWidthPersistence) {
+        WorkspaceColumns(chromeState: chromeState, columnWidths: columnWidthPersistence) {
             agentRail
         } runSurface: {
             AgentWorkspaceRunSurface(viewModel: viewModel)
