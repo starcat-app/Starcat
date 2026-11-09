@@ -136,10 +136,13 @@ struct LocalAIGatingTests {
     func unverifiedLocalProfileRejected() {
         let chatModel = LocalAIModelCatalog.llm
         let local = localProfile(models: [], verified: false)
-        #expect(!local.isVerifiedConfiguration)
-        #expect(throws: AIChatSelectionError.self) {
-            _ = try AppSettings.shared.resolveChatSelection(
-                for: taskConfig(providerID: local.id, model: chatModel.displayName))
+        // 解析器读取共享设置，必须注入未验证配置，避免命中测试宿主已有的本地 profile。
+        withProfiles([local]) {
+            #expect(!local.isVerifiedConfiguration)
+            #expect(throws: AIChatSelectionError.self) {
+                _ = try AppSettings.shared.resolveChatSelection(
+                    for: taskConfig(providerID: local.id, model: chatModel.displayName))
+            }
         }
     }
 

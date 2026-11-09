@@ -517,7 +517,11 @@ struct SearchCenterViewModelTests {
 
         let searchTask = Task { await viewModel.submit() }
         await semanticGate.waitUntilBlocked()
-        try await waitUntil { viewModel.hasSettledSearchProvider }
+        // 两个来源独立完成；语义搜索保持阻塞时，等待本次要断言的两个空结果均已返回。
+        try await waitUntil {
+            viewModel.processChips.contains { $0.source == .localKeyword && $0.phase == .loaded(0) }
+                && viewModel.processChips.contains { $0.source == .github && $0.phase == .loaded(0) }
+        }
 
         #expect(!viewModel.shouldShowSearchSkeleton)
         #expect(viewModel.hasSettledSearchProvider)
