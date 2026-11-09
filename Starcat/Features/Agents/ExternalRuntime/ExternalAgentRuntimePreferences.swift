@@ -221,7 +221,7 @@ enum ExternalAgentRuntimePreferences {
             )
         case .deepSeekHarness:
             let executable = try resolver.resolve(
-                executableName: "dsh-jsonrpc-agent-pkg-macos-arm64",
+                executableName: DeepSeekHarnessRuntime.executableName,
                 explicitPath: defaults.string(forKey: deepSeekExecutablePathKey)
             )
             guard let configPath = defaults.string(forKey: deepSeekCordisConfigPathKey),

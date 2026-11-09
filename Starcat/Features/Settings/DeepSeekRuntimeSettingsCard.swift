@@ -23,6 +23,8 @@ struct DeepSeekRuntimeSettingsCard: View {
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedExecutablePath = ""
     @State private var isExpanded = false
+    @State private var isInstalling = false
+    @State private var actualVersion = ""
 
     private let resolver: ExternalAgentExecutableResolver
 
@@ -38,7 +40,7 @@ struct DeepSeekRuntimeSettingsCard: View {
             ) {
                 AgentRuntimePathTrailingActions(
                     path: displayedExecutablePath,
-                    isDisabled: status.isChecking,
+                    isDisabled: status.isChecking || isInstalling,
                     onChoose: chooseExecutable
                 )
             }
@@ -49,7 +51,7 @@ struct DeepSeekRuntimeSettingsCard: View {
             ) {
                 AgentRuntimePathTrailingActions(
                     path: cordisConfigPath,
-                    isDisabled: status.isChecking,
+                    isDisabled: status.isChecking || isInstalling,
                     onChoose: chooseCordisConfig
                 )
             }
@@ -60,13 +62,23 @@ struct DeepSeekRuntimeSettingsCard: View {
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
+            if !actualVersion.isEmpty {
+                Text(verbatim: actualVersion)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            RuntimeDownloadButton(runtime: .deepSeek, isInstalling: $isInstalling) { installation in
+                executablePath = installation.executable.path
+                cordisConfigPath = installation.configuration?.path ?? ""
+                refresh()
+            }
             HStack(spacing: 8) {
                 Spacer()
                 AgentRuntimeInfoButton(kind: .deepSeek)
                 Button("settings.integration.agentRuntime.detectAgain", action: refresh)
                     .buttonStyle(.bordered)
                     .controlSize(.regular)
-                    .disabled(status.isChecking)
+                    .disabled(status.isChecking || isInstalling)
             }
         } label: {
             HStack(spacing: 8) {
@@ -77,6 +89,13 @@ struct DeepSeekRuntimeSettingsCard: View {
         }
         .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "DeepSeek Harness")))
         .task { refresh() }
+        .task(id: executablePath) {
+            actualVersion = ""
+            guard !executablePath.isEmpty else { return }
+            actualVersion = (try? await RuntimeDownloadInstaller.run(
+                URL(fileURLWithPath: executablePath), ["--version"]
+            ))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
     }
 
     /// 解析成功用 resolver 给出的绝对路径；失败时仍展示用户刚选的路径，方便对照 Finder。
@@ -92,7 +111,7 @@ struct DeepSeekRuntimeSettingsCard: View {
         status = .checking
         do {
             let executable = try resolver.resolve(
-                executableName: "dsh-jsonrpc-agent-pkg-macos-arm64",
+                executableName: DeepSeekHarnessRuntime.executableName,
                 explicitPath: executablePath
             )
             _ = try ExternalAgentRuntimePreferences.makeAdapter(

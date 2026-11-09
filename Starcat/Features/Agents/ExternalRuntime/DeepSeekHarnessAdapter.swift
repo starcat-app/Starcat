@@ -2,7 +2,7 @@
 //  DeepSeekHarnessAdapter.swift
 //  Starcat
 //
-//  DeepSeek Harness 0.1.1rc1 Runtime JSON-RPC adapter。
+//  DeepSeek Harness 0.2.1rc2 Runtime JSON-RPC adapter。
 //
 //  当前协议只有 initialize、session/prompt、shutdown 三个 client request；停止当前 run
 //  只能回收“一 run 一 Sidecar”的进程。该限制由 capability 明确表达，不能伪装成
@@ -11,16 +11,6 @@
 
 import Foundation
 
-/// Starcat 已验证的 DeepSeek Harness Runtime 契约。
-///
-/// Runtime 仍由用户通过外部路径安装；默认 Provider/Model 只保留给旧配置和显式
-/// integration smoke。产品 UI 的真实目录来自 Starcat 已验证 AI Provider。
-enum DeepSeekHarnessRuntime {
-    static let packageVersion = "0.1.1rc1"
-    static let defaultProvider = "deepseek-official"
-    static let supportedModels = ["deepseek-v4-flash", "deepseek-v4-pro"]
-    static let defaultModel = supportedModels[0]
-}
 
 struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
     let backend = AgentRuntimeBackend.deepSeekHarness
@@ -43,6 +33,12 @@ struct DeepSeekHarnessAdapter: ExternalAgentProtocolAdapter {
     ) throws {
         #if arch(arm64)
         let fileManager = FileManager.default
+        guard !executableURL.lastPathComponent.hasPrefix("dsh-jsonrpc-agent-pkg-") else {
+            // 旧 carrier 不理解新版 profile/patch 参数；提前提示升级，不能误报就绪。
+            throw ExternalAgentRuntimeError.protocolError(
+                String.l10n("settings.integration.runtimeDownload.upgradeRequired")
+            )
+        }
         for path in [executableURL.path, executableURL.path + "-rg", executableURL.path + "-spawn-helper"] {
             guard fileManager.isExecutableFile(atPath: path) else {
                 throw ExternalAgentRuntimeError.executableNotRunnable(path)
@@ -158,7 +154,12 @@ enum DeepSeekHarnessCordisRunConfiguration {
             failOnStartupError: true
         """
         }
-        try Data((base + additions + "\n").utf8).write(to: runConfigURL, options: .atomic)
+        // 新版 CLI 接受有序 patch，而不是旧 carrier 的完整 Cordis tree。
+        // 新插件必须通过 insert 加入；只有 id/config 的行只会修改已有插件。
+        let insertion = additions.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { "    \($0)" }.joined(separator: "\n")
+        try Data((base + "\n- insert:\n" + insertion + "\n").utf8)
+            .write(to: runConfigURL, options: .atomic)
         return runConfigURL
     }
 
@@ -259,6 +260,9 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         sessionID = request.runID.uuidString.lowercased()
         var additionalEnvironment = [
             "DSH_CORDIS_CONFIG": cordisConfigURL.path,
+            "DSH_HOME": request.workingDirectory.appendingPathComponent("harness-home").path,
+            // 禁止可选资源缓存被隐式选中；本集成只需要 SDK 与 Starcat MCP。
+            "DSH_PRIMARY_RUNTIME": "",
             "DSH_CWD": request.workingDirectory.path,
             "DSH_SESSION_ROOT": request.workingDirectory.appendingPathComponent("sessions").path,
         ]
@@ -268,7 +272,7 @@ private final class DeepSeekHarnessDriver: ExternalAgentProtocolDriver, @uncheck
         }
         processConfiguration = ExternalAgentProcessConfiguration(
             executableURL: executableURL,
-            arguments: [],
+            arguments: ["--profile", "sdk-minimal", "--patch", cordisConfigURL.path],
             environment: ExternalAgentProcessEnvironment.filtered(
                 source: environment,
                 allowedCredentialKeys: [

@@ -115,6 +115,10 @@ test-package-lock: ## 使用隔离目录验证锁文件恢复与版本漂移检�
 test-codebase-fetch: ## 不联网或修改真实资源，验证归档与二进制身份检查
 	@python3 -m unittest discover -s scripts/tests -p test_codebase_fetch.py
 
+.PHONY: test-runtime-downloads
+test-runtime-downloads: ## 使用 STARCAT_RUNTIME_FIXTURE_ROOT 的真实归档验证 Direct 安装器
+	@bash scripts/test-runtime-downloads.sh
+
 test: ## 使用稳定版 Xcode 和固定测试缓存跑单测（可用 TEST_ARGS 过滤 Suite）
 	@bash scripts/run-tests.sh $(TEST_ARGS)
 

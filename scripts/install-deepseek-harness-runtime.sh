@@ -3,12 +3,14 @@
 # 为 Starcat Direct 安装固定版本的 DeepSeek Harness 外部 Runtime。
 #
 # Runtime 安装在用户的 Application Support 中，不复制进 Starcat.app 或 DMG。
-# 脚本同时安装 Starcat 专用的无 Shell Cordis 配置，避免未授权的 bash/PTY 工具
+# 脚本同时安装 Starcat 专用的 sdk-minimal 无 Shell Cordis patch，避免未授权的 bash/PTY 工具
 # 以及首次运行时由 pty.node 触发的 Gatekeeper 拦截。
 
 set -euo pipefail
 
-readonly runtime_version="0.1.1rc1"
+readonly runtime_version="0.2.1rc2"
+readonly wheel_url="https://files.pythonhosted.org/packages/10/99/723905c63929056e05494e8a659bc8eb9adf671ee6712fb4316930b97ac8/deepseek_harness_runtime_bin-0.2.1rc2-py3-none-macosx_14_0_arm64.whl"
+readonly wheel_sha256="96a173abd14141d5328a78791b69729cbfe22fa3e9daf1dc2600d0daa4d6bb28"
 readonly script_dir="$(cd "$(dirname "$0")" && pwd)"
 readonly source_config="${script_dir}/../resources/deepseek-harness/starcat.cordis.yml"
 readonly install_root="${STARCAT_DEEPSEEK_RUNTIME_ROOT:-${HOME}/Library/Application Support/Starcat/Runtimes/deepseek-harness-${runtime_version}}"
@@ -60,7 +62,7 @@ fi
   --only-binary=:all: \
   --pre \
   --upgrade \
-  "deepseek-harness-runtime-bin==${runtime_version}"
+  "deepseek-harness-runtime-bin @ ${wheel_url}#sha256=${wheel_sha256}"
 
 runtime_path="$("${venv_dir}/bin/python" -c 'from deepseek_harness_runtime import bundled_runtime_path; print(bundled_runtime_path())')"
 if [[ -f "${source_config}" ]]; then
@@ -69,35 +71,30 @@ else
   # Release 用户通常只下载这一份脚本，因此必须自带与仓库资源一致的安全配置。
   # 这里故意不启用 bash/subprocess，所有业务工具仍由 Starcat 的临时 MCP Bridge 授权。
   cat > "${installed_config}" <<'CORDIS_CONFIG'
-# Starcat Direct 的 DeepSeek Harness 最小配置。
-#
-# 基础配置不预加载任何 Provider；Starcat 会按工作台当前选择，为每个 Run 临时追加
-# 唯一一条 dsh-llm-pi-ai Provider route 与 MCP Bridge，不把 API Key 写入本文件。
-# 故意不加载 dsh-bash-local / dsh-subprocess-local：Starcat 尚未向 DeepSeek
-# adapter 授予 Shell 工具权限，同时也避免 wheel 首次运行时动态解压 pty.node。
-
-- id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
-
-- id: agent-core
-  name: '@deepseek-ai/dsh-agent-spine-demo'
+# Starcat Direct: sdk-minimal 的无本地工具补丁
+- id: llm-deepseek
+  disabled: true
+- id: subprocess
+  disabled: true
+- id: pty
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: system-prompt
   config:
-    workspaceContext:
-      maxBytes: 65536
-
-- id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
-  config:
-    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
-
-- id: session-checkpoints
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
-
-# 只用于加载空工作目录中的说明文件，不向模型暴露文件读写工具。
-- id: fs-local
-  name: '@deepseek-ai/dsh-fs-local'
-  config:
-    cwd: !!js process.env.DSH_CWD ?? process.cwd()
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: You are a helpful assistant using only the tools supplied by Starcat.
 CORDIS_CONFIG
   chmod 0644 "${installed_config}"
 fi
@@ -113,9 +110,15 @@ for executable in "${runtime_path}" "${runtime_path}-rg" "${runtime_path}-spawn-
   fi
 done
 
+# PyPI 版本遵循 PEP 440，CLI 遵循 SemVer；两者不能直接逐字比较。
+reported_version="$("${runtime_path}" --version)"
+if [[ "${reported_version}" != "0.2.1-rc.2" ]]; then
+  echo "error: Unexpected DeepSeek Harness version: ${reported_version}" >&2
+  exit 1
+fi
+
 # 正式版和 Debug 版共用产品配置键，只通过 bundle ID 区分 UserDefaults domain。
 # 这样从 DMG 安装的 Starcat Direct 无需再手工复制脚本输出中的路径。
-defaults write "${bundle_id}" AgentRuntimeBackend -string deepSeekHarness
 defaults write "${bundle_id}" AgentRuntimeDeepSeekHarnessExecutablePath -string "${runtime_path}"
 defaults write "${bundle_id}" AgentRuntimeDeepSeekHarnessCordisConfigPath -string "${installed_config}"
 

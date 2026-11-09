@@ -2,7 +2,7 @@
 //  ExternalAgentProtocolAdapterTests.swift
 //  StarcatTests
 //
-//  Codex App Server 与 DeepSeek Harness 0.1.1rc1 JSON-RPC fixture 测试。
+//  Codex App Server 与 DeepSeek Harness 0.2.1rc2 JSON-RPC fixture 测试。
 //
 //  常规测试只驱动协议状态机，不依赖用户登录态和网络；显式设置
 //  `STARCAT_RUN_CODEX_INTEGRATION=1` / `STARCAT_RUN_DEEPSEEK_INTEGRATION=1`
@@ -519,19 +519,20 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(config.contains("thinkingFormat: deepseek"))
         #expect(!config.contains("fixture-secret"))
         let lines = config.components(separatedBy: .newlines)
-        #expect(lines.contains("      starcat-provider:"))
-        #expect(lines.contains("        displayName: 'Team''s Gateway'"))
-        #expect(lines.contains("        reasoning: high"))
-        #expect(lines.contains("        compat:"))
-        #expect(lines.contains("          thinkingFormat: deepseek"))
-        #expect(lines.contains("        models:"))
-        #expect(lines.contains("          - id: 'deepseek-reasoner'"))
-        #expect(lines.contains("            contextWindow: 1000000"))
-        #expect(lines.contains("            maxTokens: 8000"))
-        #expect(lines.contains("            reasoningEfforts:"))
-        #expect(lines.contains("              off:"))
-        #expect(lines.contains("              high: high"))
-        #expect(!config.contains("                compat:"))
+        #expect(lines.contains("- insert:"))
+        #expect(lines.contains("          starcat-provider:"))
+        #expect(lines.contains("            displayName: 'Team''s Gateway'"))
+        #expect(lines.contains("            reasoning: high"))
+        #expect(lines.contains("            compat:"))
+        #expect(lines.contains("              thinkingFormat: deepseek"))
+        #expect(lines.contains("            models:"))
+        #expect(lines.contains("              - id: 'deepseek-reasoner'"))
+        #expect(lines.contains("                contextWindow: 1000000"))
+        #expect(lines.contains("                maxTokens: 8000"))
+        #expect(lines.contains("                reasoningEfforts:"))
+        #expect(lines.contains("                  off:"))
+        #expect(lines.contains("                  high: high"))
+        #expect(!lines.contains("                    compat:"))
     }
 
     @Test("External Runtime 失败重试创建全新只读 Run")
@@ -787,7 +788,7 @@ struct ExternalAgentProtocolAdapterTests {
     }
 
     @Test(
-        "本机 DeepSeek Harness 0.1.1rc1 通过 MCP 读取 Starcat 数据",
+        "本机 DeepSeek Harness 0.2.1rc2 通过 MCP 读取 Starcat 数据",
         .enabled(if: shouldRunDeepSeekIntegration)
     )
     @MainActor
@@ -858,7 +859,7 @@ struct ExternalAgentProtocolAdapterTests {
         )
         let adapter = try DeepSeekHarnessAdapter(
             executableURL: URL(fileURLWithPath: executablePath),
-            provider: DeepSeekHarnessRuntime.defaultProvider,
+            provider: DeepSeekRuntimeSelection.providerRoute,
             modelOverride: request.modelName,
             cordisConfigURL: URL(fileURLWithPath: configPath),
             environment: ExternalAgentProcessEnvironment.filtered(
@@ -1354,9 +1355,9 @@ struct ExternalAgentProtocolAdapterTests {
         #expect(idle.events == [.completed])
         #expect(idle.isTerminal)
         #else
-        // 官方 0.1.1rc1 Runtime wheel 没有 Intel 产物；universal 构建仍需明确验证该 slice 拒绝运行。
+        // Starcat 的 Intel adapter 尚未验证开放，不能仅凭上游提供 wheel 就启用。
         #expect(throws: ExternalAgentRuntimeError.unsupportedArchitecture(
-            "DeepSeek Harness 0.1.1rc1 Runtime is arm64-only on macOS"
+            "DeepSeek Harness \(DeepSeekHarnessRuntime.packageVersion) Runtime is arm64-only on macOS"
         )) {
             _ = try DeepSeekHarnessAdapter(
                 executableURL: URL(fileURLWithPath: "/usr/bin/true"),
@@ -1697,6 +1698,26 @@ struct ExternalAgentProtocolAdapterTests {
         #endif
     }
 
+    @Test("DeepSeek 旧 carrier 提示下载升级而非误报新版就绪")
+    func deepSeekLegacyCarrierRequiresUpgrade() throws {
+        #if arch(arm64)
+        let fixture = try DeepSeekCarrierFixture()
+        defer { fixture.cleanup() }
+        let legacy = fixture.directoryURL.appendingPathComponent("dsh-jsonrpc-agent-pkg-macos-arm64")
+        #expect(throws: ExternalAgentRuntimeError.protocolError(
+            String.l10n("settings.integration.runtimeDownload.upgradeRequired")
+        )) {
+            _ = try DeepSeekHarnessAdapter(
+                executableURL: legacy,
+                provider: DeepSeekHarnessRuntime.defaultProvider,
+                modelOverride: nil,
+                cordisConfigURL: fixture.configURL,
+                environment: [:]
+            )
+        }
+        #endif
+    }
+
     @Test("DeepSeek Runtime 从 Starcat Provider 配置读取加密凭据")
     @MainActor
     func deepSeekRuntimeUsesConfiguredProviderCredential() throws {
@@ -1965,7 +1986,7 @@ private struct DeepSeekCarrierFixture {
     init() throws {
         directoryURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-dsh-fixture-\(UUID().uuidString)", isDirectory: true)
-        executableURL = directoryURL.appendingPathComponent("dsh-jsonrpc-agent-pkg-macos-arm64")
+        executableURL = directoryURL.appendingPathComponent(DeepSeekHarnessRuntime.executableName)
         configURL = directoryURL.appendingPathComponent("starcat.cordis.yml")
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         for url in [

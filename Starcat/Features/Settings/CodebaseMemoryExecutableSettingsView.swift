@@ -22,6 +22,7 @@ struct CodebaseMemoryExecutableSettingsView: View {
 
     @State private var resolutionState: ResolutionState = .idle
     @State private var hasUserSelection = false
+    @State private var isInstalling = false
 
     private let channel: DistributionChannel
     private let resolver: CodebaseMemoryBinaryResolver
@@ -64,33 +65,31 @@ struct CodebaseMemoryExecutableSettingsView: View {
                 ) {
                     AgentRuntimePathTrailingActions(
                         path: displayedExecutablePath,
-                        isDisabled: isResolving,
+                        isDisabled: isResolving || isInstalling,
                         onChoose: chooseExecutable
                     ) {
                         ResetIconButton(help: Text("settings.integration.codebaseMemory.executable.restoreAutomatic")) {
                             Task { await restoreAutomaticDetection() }
                         }
-                        .disabled(!hasUserSelection || isResolving)
+                        .disabled(!hasUserSelection || isResolving || isInstalling)
                     }
                 }
             }
 
+            if channel.isDirect {
+                RuntimeDownloadButton(runtime: .codebaseMemory, isInstalling: $isInstalling) { installation in
+                    resolutionState = .available(try await resolver.selectExecutable(installation.executable))
+                    hasUserSelection = true
+                }
+            }
             HStack(spacing: 8) {
                 Spacer()
-                if channel.isDirect {
-                    Link(
-                        "settings.integration.codebaseMemory.executable.install",
-                        destination: CodebaseMemoryBinaryResolver.installationURL
-                    )
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                }
                 Button("settings.integration.codebaseMemory.executable.detectAgain") {
                     Task { await refresh() }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
-                .disabled(isResolving)
+                .disabled(isResolving || isInstalling)
             }
         }
         .task { await refresh() }

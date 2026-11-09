@@ -194,12 +194,13 @@ enum AgentRuntimeInfoKind: Sendable {
     var components: [String] {
         switch self {
         case .codex:
-            ["codex-app-server (or codex)", "codex-code-mode-host"]
+            ["codex-app-server (or codex)", "codex-code-mode-host", "codex-exec-server", "codex-path/rg"]
         case .deepSeek:
             [
-                "dsh-jsonrpc-agent-pkg-macos-arm64",
-                "dsh-jsonrpc-agent-pkg-macos-arm64-rg",
-                "dsh-jsonrpc-agent-pkg-macos-arm64-spawn-helper",
+                DeepSeekHarnessRuntime.executableName,
+                DeepSeekHarnessRuntime.executableName + "-rg",
+                DeepSeekHarnessRuntime.executableName + "-spawn-helper",
+                "macos-arm64/downloads.json",
                 "starcat.cordis.yml",
             ]
         }

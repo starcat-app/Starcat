@@ -1256,6 +1256,19 @@ private struct AboutDependency: Identifiable {
             copyright: "Copyright (c) 2025 DeusData",
             url: URL(string: "https://github.com/DeusData/codebase-memory-mcp")
         ),
+        // Direct 可选安装的外部 Runtime；许可证来自固定发布版本的 LICENSE。
+        AboutDependency(
+            name: "Codex App Server",
+            license: "Apache-2.0",
+            copyright: "Copyright 2025 OpenAI",
+            url: URL(string: "https://github.com/openai/codex")
+        ),
+        AboutDependency(
+            name: "DeepSeek Harness",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 DeepSeek",
+            url: URL(string: "https://github.com/deepseek-ai/deepseek-harness")
+        ),
         AboutDependency(
             name: "Repomix",
             license: "MIT",

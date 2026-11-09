@@ -56,7 +56,7 @@ struct AgentRuntimeCapabilities: Equatable, Sendable {
         supportsReliableCancellation: true
     )
 
-    /// 当前 `0.1.1rc1` Runtime 的 stdio JSON-RPC adapter 尚未开放 cancel、
+    /// 当前 `0.2.1rc2` Runtime 的 stdio JSON-RPC adapter 尚未开放 cancel、
     /// session close 和双向 approval；能力矩阵描述 Starcat 已接入能力，不跟包版本命名。
     static let deepSeekHarness = AgentRuntimeCapabilities(
         supportsResume: false,
