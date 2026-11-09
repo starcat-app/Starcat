@@ -31,13 +31,32 @@ def gh(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
 
 
 def get_release(tag: str) -> dict | None:
-    """仅把明确的 404 当作缺失；鉴权、网络错误不能触发创建流程。"""
+    """Tag 关联 Release 或明确的 404 视为缺失；鉴权、网络错误不能触发创建流程。
+
+    GitHub 对草稿 Release 不暴露 by-tag 端点，即使其 tag_name 指向已有
+    Git tag；因此创建后必须回读 Release 列表，并精确匹配 tag_name。
+    """
     result = gh("api", f"repos/{REPOSITORY}/releases/tags/{tag}", check=False)
     if result.returncode:
         if "HTTP 404" in result.stderr:
             return None
         raise RuntimeError(result.stderr.strip() or "无法读取 GitHub Release")
     return json.loads(result.stdout)
+
+
+def get_release_or_draft(tag: str) -> dict | None:
+    """按 tag 查找已发布 Release 或草稿，兼容 GitHub 的草稿查询行为。"""
+    release = get_release(tag)
+    if release is not None:
+        return release
+    result = gh("api", f"repos/{REPOSITORY}/releases?per_page=100")
+    releases = json.loads(result.stdout)
+    matches = [item for item in releases if item.get("tag_name") == tag]
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise RuntimeError(f"GitHub 存在多个 tag 为 {tag} 的 Release，需人工清理")
+    return matches[0]
 
 
 def file_sha256(path: Path) -> str:
@@ -109,7 +128,7 @@ def publish(
             if prerelease:
                 create_args.append("--prerelease")
             gh(*create_args)
-            release = get_release(tag)
+            release = get_release_or_draft(tag)
             if release is None:
                 raise RuntimeError("创建草稿后无法回读 Release")
 
