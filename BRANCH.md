@@ -44,6 +44,8 @@
 各独立仓的 `dev` 上开发；专项分支和 worktree 保留，不再承载后续开发。
 2026-11-09 dong4j 确认功能完成，内容与 API 仓库以 `v1.0.0` 标记发布输入，
 `origin/dev` 与 `origin/main` 同步；旧专项分支、远端分支和旧 worktree 删除。
+两仓远端默认分支均为 `dev`；内容仓后续 CI 修复单独同步到 `dev/main`，
+不改写已推送的 `v1.0.0`。Starcat 主仓仍在 `dev` 开发，本次不提升其 `main`。
 
 | 仓库 | 当前开发目录（主工作区下） | 已整合功能提交 | 当前分支与归宿 |
 |---|---|---|---|
@@ -57,10 +59,11 @@
 `supports/starcat-ai-events/skills/starcat-weekly-events`，使用该仓 `dev` 中的版本。
 新两仓的本地配置和内容图片缓存一并衔接；不迁移或覆盖后端数据库。
 
-原专项 worktree 下的七个 sibling detached worktree 继续保留，仅作为固定构建输入；
-主工作区的这些依赖仍保持各自现有分支。部署固定 SHA 见
-`supports/starcat-api/dependencies.json`。本次仅本地合并，不推送 dev、不重新部署，
-不修改远端默认分支、不公开 Private 仓，也不删除分支或 worktree。
+2026-11-09 已清理原专项 worktree 及其支持仓 worktree 登记；主工作区的依赖仓库
+保持各自现有分支。内容与 AI Events API 仓库已在主工作区恢复为独立 clone，
+Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布状态保留。
+部署固定 SHA 仍见 `supports/starcat-api/dependencies.json`；本次分支收尾不重新部署，
+不修改内容与 API 仓库的 Private 状态。
 
 ## 推荐数据链路跨仓分支
 
@@ -71,9 +74,11 @@
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
 | `codex/followers-graph` | 已合并；本地分支与 worktree 保留 | 2026-11-09 dong4j 确认功能完成，授权将 `d4ffce59` 以 merge commit 合入本地 `dev`（合并前 `2de36506`）。包含双方向图谱、范围恢复、交互与三批性能优化；原基线 `11d3a8bd`，worktree 为 `../Starcat-followers-graph`。后续在主工作区 `dev` 继续，未推送、未发布，删除待单独授权。 |
-| 主仓 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认每周 AI 大事完成，授权删除旧 worktree `../Starcat-weekly-ai-events-mvp` 及本地/远端同名分支；功能已在主仓 `dev` 与 `main`。 |
+| 主仓 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认每周 AI 大事完成，授权删除旧 worktree `../Starcat-weekly-ai-events-mvp` 及本地/远端同名分支；功能已合入主仓 `dev`，主仓 `main` 未在本次同步。 |
 | 内容 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`737aff73` 已是内容仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events` worktree 干净并已删除。 |
 | AI Events API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`ddf410b1` 已是该仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events-api` worktree 干净并已删除。 |
+| Weekly API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 清理同一专项遗留；`ed1402cb` 与 `dev` 相同，独有提交为 0，旧 worktree 登记及本地/远端同名分支已删除。 |
+| 聚合 API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 清理同一专项遗留；`0c069881` 已是 `dev` 的祖先，独有提交为 0，旧 worktree 登记及本地/远端同名分支已删除。 |
 | `codex/follow-graph-mvp` | 已合并；本地分支与 worktree 保留 | 2026-11-06 dong4j 验收后授权将 `e0021690` 以 merge commit 合入本地 `dev`；基线 `016ec930`，worktree 为 `../Starcat-follow-graph-mvp`。未推送、未发布，删除待单独授权。 |
 | `codex/performance-optimization` | 已删除 | 截至 2026-10-11，本地与远端均已不存在该分支，且没有对应 worktree；性能专项改动已在 `dev`。 |
 | `feature/anthropic-cc-switch-import` | 已删除 | 2026-09-14 dong4j 确认删除。已以 merge commit（`1341600a`）合入 `dev`，删除前 `merge-base --is-ancestor` 成立、独有提交 0、`git cherry` 为空、diff 为空；`../Starcat-anthropic-cc-switch` worktree 干净后 `git worktree remove`，再 `git branch -d`（HEAD `2ab786f2`）。从未存在远端分支。 |
