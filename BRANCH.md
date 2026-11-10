@@ -32,7 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/background-task-integration` | 本地 worktree：`../Starcat-background-task-integration`；无远端分支 | 基于 `dev`（`0204d594`）实施状态面板后台任务接入方案前三批：模型下载、屏保预取、对话迁移、Runtime 安装及项目与通知同步 | `开发中`；按批次与功能独立提交，完成全量测试及双渠道构建后等待人工验收 | 验收后合回 `dev`；不自动合并、不推送、不发布 |
+| `codex/background-task-integration` | 本地 worktree：`../Starcat-background-task-integration`；无远端分支 | 基于 `dev`（`0204d594`）实施状态面板后台任务接入方案前三批：模型下载、屏保预取、对话迁移、Runtime 安装及项目与通知同步 | `开发中`；三批六个功能已独立提交，定向及全量测试、双渠道构建与 17 语言编译资源核对通过；条件跳过与 fixture 已知项见方案，待人工验收 | 验收后合回 `dev`；不自动合并、不推送、不发布 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev`（`016ec930`）实现每日推荐抽卡 MVP：透明整窗覆盖、多种子真实推荐、每日缓存与本地反馈。 | `开发中`；2026-11-09 审计确认分支无已提交独有提交，但 worktree 保留约 3,600 行未提交 MVP 实现，等待恢复、测试与验收。 | 不清理、不合并、不推送；先确认实现是否继续，再按功能分批提交。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
