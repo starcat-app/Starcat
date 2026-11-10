@@ -248,7 +248,7 @@ sign_main_app() {
   [ -f "$DIRECT_DISTRIBUTION_ENTITLEMENTS" ] \
     || fail "缺少 Direct distribution entitlements: $DIRECT_DISTRIBUTION_ENTITLEMENTS"
 
-  # 主 App 需要共享模型 App Group；仍使用一份发布专用最小 entitlement，不能从
+  # 主 App 需要 Widget 与共享模型 App Group；仍使用发布专用最小 entitlement，不能从
   # Apple Development 签名继承 get-task-allow 或其它开发期能力。
   if [ "$SIGN_IDENTITY" = "-" ]; then
     codesign --force --sign "$SIGN_IDENTITY" --timestamp=none \

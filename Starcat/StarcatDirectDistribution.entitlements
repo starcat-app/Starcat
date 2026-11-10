@@ -3,11 +3,14 @@
 <plist version="1.0">
 <dict>
     <!--
-      Direct 最终 Developer ID 重签只保留主 App 必需的共享模型容器。
+      Direct 最终 Developer ID 重签只保留主 App 必需的 Widget 与模型共享组。
       不复用开发期 entitlement，避免把 get-task-allow 或 App Sandbox 带进公证包。
+      必须包含 Widget App Group：主 App 发布快照时会写入该容器，缺少成员资格
+      会在 macOS 15+ 触发“访问其他 App 的数据”弹窗。
     -->
     <key>com.apple.security.application-groups</key>
     <array>
+        <string>8WCUMGCWMB.com.starcat.app.direct.widgets</string>
         <string>8WCUMGCWMB.com.starcat.app.localai</string>
     </array>
 </dict>

@@ -78,7 +78,7 @@
 	<key>STARCAT_PRODUCTION_API_KEY_WIKI</key>
 	<string>$(STARCAT_PRODUCTION_API_KEY_WIKI)</string>
 	<key>STARCAT_WIDGET_APP_GROUP</key>
-	<string>group.com.starcat.app.direct.widgets</string>
+	<string>8WCUMGCWMB.com.starcat.app.direct.widgets</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>

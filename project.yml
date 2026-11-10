@@ -342,7 +342,9 @@ targets:
         STARCAT_APTABASE_APP_KEY: $(STARCAT_APTABASE_APP_KEY)
         STARCAT_DISTRIBUTION: $(STARCAT_DISTRIBUTION)
         # Direct 渠道使用独立 App Group，防止两个版本同时安装时互相读取快照。
-        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
+        # Direct 使用无需 provisioning profile 授权的 Team ID 前缀，避免 macOS 15+
+        # 将未获组授权的访问视为外部容器访问，并在每次启动时询问用户。
+        STARCAT_WIDGET_APP_GROUP: 8WCUMGCWMB.com.starcat.app.direct.widgets
         LSApplicationCategoryType: public.app-category.developer-tools
         # Direct 包同样只使用系统 TLS/Keychain 等标准加密能力，保持双渠道合规声明一致。
         ITSAppUsesNonExemptEncryption: false
@@ -494,7 +496,8 @@ targets:
     info:
       path: Starcat/Generated/WidgetInfo.direct.generated.plist
       properties:
-        STARCAT_WIDGET_APP_GROUP: group.com.starcat.app.direct.widgets
+        # 与 Direct Host 注入值保持一致；同样使用 Team ID 前缀。
+        STARCAT_WIDGET_APP_GROUP: 8WCUMGCWMB.com.starcat.app.direct.widgets
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     postBuildScripts:

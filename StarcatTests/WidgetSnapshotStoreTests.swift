@@ -244,13 +244,42 @@ struct WidgetSnapshotStoreTests {
         let direct = try WidgetSharedConfiguration.appGroupIdentifier(
             infoDictionary: [
                 WidgetSharedConfiguration.appGroupInfoKey:
-                    "group.com.starcat.app.direct.widgets"
+                    "8WCUMGCWMB.com.starcat.app.direct.widgets"
             ]
         )
 
         #expect(store == "group.com.starcat.app.store.widgets")
-        #expect(direct == "group.com.starcat.app.direct.widgets")
+        #expect(direct == "8WCUMGCWMB.com.starcat.app.direct.widgets")
         #expect(store != direct)
+    }
+
+    @Test("Direct 发布重签保留 Widget 共享组，Host 与 Extension 配置一致")
+    func directDistributionRetainsWidgetAppGroup() throws {
+        // 只检查仓库配置，不请求真实容器；发布重签曾漏掉共享组，普通快照读写测试
+        // 无法发现这种错误，必须把发布 entitlement 与运行时注入值一起校验。
+        let groupKey = "com.apple.security.application-groups"
+        let expectedGroup = "8WCUMGCWMB.com.starcat.app.direct.widgets"
+        let development = try repositoryPlist("Starcat/StarcatDirect.entitlements")
+        let distribution = try repositoryPlist("Starcat/StarcatDirectDistribution.entitlements")
+        let widget = try repositoryPlist("Starcat/Resources/Widget/StarcatDirectWidgets.entitlements")
+        let widgetGroups = try #require(widget[groupKey] as? [String])
+        #expect(widgetGroups == [expectedGroup])
+        for host in [development, distribution] {
+            let groups = try #require(host[groupKey] as? [String])
+            #expect(Set(groups) == Set([expectedGroup, "8WCUMGCWMB.com.starcat.app.localai"]))
+        }
+        #expect(widget["com.apple.security.app-sandbox"] as? Bool == true)
+        #expect(distribution["com.apple.security.app-sandbox"] == nil)
+        #expect(distribution["com.apple.security.get-task-allow"] == nil)
+
+        for path in [
+            "Starcat/Generated/Info.direct.generated.plist",
+            "Starcat/Generated/WidgetInfo.direct.generated.plist",
+        ] {
+            let info = try repositoryPlist(path)
+            #expect(try WidgetSharedConfiguration.appGroupIdentifier(infoDictionary: info) == expectedGroup)
+        }
+        #expect(AppStoreToDirectImportIdentity.directWidgetGroupID == expectedGroup)
     }
 
     @Test("App Group 缺失或不属于 Starcat Widget 命名空间时拒绝")
@@ -269,6 +298,27 @@ struct WidgetSnapshotStoreTests {
                 ]
             )
         }
+        #expect(
+            throws: WidgetSharedConfigurationError.invalidAppGroupIdentifier(
+                "1234567890.com.starcat.app.direct.widgets"
+            )
+        ) {
+            try WidgetSharedConfiguration.appGroupIdentifier(
+                infoDictionary: [
+                    WidgetSharedConfiguration.appGroupInfoKey:
+                        "1234567890.com.starcat.app.direct.widgets"
+                ]
+            )
+        }
+    }
+
+    /// 从源码位置定位配置文件，避免测试进程工作目录随 Xcode / CLI 入口变化。
+    private func repositoryPlist(_ path: String) throws -> [String: Any] {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent(path))
+        return try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
     }
 
     private func withTemporaryDirectory(

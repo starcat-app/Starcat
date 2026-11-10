@@ -25,7 +25,7 @@ enum AppStoreToDirectImportIdentity {
     static let officialDirectBundleID = "com.starcat.app.direct"
     static let debugDirectBundleID = "com.starcat.app.direct.debug"
     static let storeWidgetGroupID = "group.com.starcat.app.store.widgets"
-    static let directWidgetGroupID = "group.com.starcat.app.direct.widgets"
+    static let directWidgetGroupID = "8WCUMGCWMB.com.starcat.app.direct.widgets"
     static let kingfisherCacheFolderName = "com.onevcat.Kingfisher.ImageCache.default"
     static let storePreferencesFileName = "com.starcat.app.store.plist"
     static let productSupportFolderName = "Starcat"
