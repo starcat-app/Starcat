@@ -74,7 +74,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| `codex/skills-ui-preview` | 已合并；2026-11-11 dong4j 授权合回 `dev`，merge commit `6faa19fa`。 | 分支已成为 `dev` ancestor；`../Starcat-skills-ui-preview` 与本地分支暂保留，等待单独授权清理；从未存在远端分支，本次未推送。 |
+| `codex/skills-ui-preview` | 已合并；worktree 已删除，本地分支保留。 | 2026-11-11 dong4j 授权删除 worktree；分支头 `3c32d0c7` 已通过 merge commit `6faa19fa` 合入 `dev`，独有提交为 0，`git cherry` 与内容 diff 为空，worktree 干净。已通过 `git worktree remove` 删除 `../Starcat-skills-ui-preview`，本次未推送。 |
 | `codex/diagnostics-overhaul` | 已删除 | 2026-11-10 dong4j 授权合回并删除；`3e69373c` 已以 merge commit `8813bf46` 合入 `dev`，`git cherry` 与内容 diff 为空，worktree 干净，已删除 `../Starcat-diagnostics-overhaul` 与本地分支，解析 Skill 链接改指向主仓。从未存在远端分支。 |
 | `codex/background-task-integration` | 已删除 | 2026-11-10 dong4j 授权删除；`c56a9a48` 已合入 `dev`（merge `1ce18786`），`git cherry` 为空、diff 为空，worktree 干净，已删除 `../Starcat-background-task-integration` 与本地分支。从未存在远端分支。 |
 | `codex/followers-graph` | 已删除 | 2026-11-09 dong4j 授权清理；`d4ffce59` 已合入 `dev`，worktree 干净，已删除 `../Starcat-followers-graph` 与本地分支。 |
