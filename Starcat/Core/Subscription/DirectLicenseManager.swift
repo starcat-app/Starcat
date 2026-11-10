@@ -151,32 +151,41 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     private func validateStoredLicense(force: Bool, isSilent: Bool) async -> Bool {
-        guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
-        if !force, !shouldValidateStoredLicense() {
-            return entitlement.isActive
-        }
-
-        isValidating = true
-        defer { isValidating = false }
-
-        updateValidationRecord { record in
-            record.lastAttemptAt = nowProvider()
-            record.lastErrorCode = nil
-        }
-
-        do {
-            let snapshot = try await api.validate(DirectLicenseValidationRequest(
-                licenseKey: credential.licenseKey,
-                instanceID: credential.instanceID,
-                deviceID: deviceIDProvider(),
-                appVersion: appVersionProvider()
-            ))
-            applyValidatedSnapshot(snapshot, credential: credential)
-            lastErrorMessage = nil
-            return entitlement.isActive
-        } catch {
-            applyValidationFailure(error, isSilent: isSilent)
-            return entitlement.isActive
+        let diagnostic = DiagnosticOperation(category: "license", name: "validation")
+        return await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish() }
+            guard let credential = storedCredential ?? (try? store.loadCredential()) else {
+                diagnostic.finish(.skipped, fields: ["credentialAvailable": .boolean(false)])
+                return false
+            }
+            if !force, !shouldValidateStoredLicense() {
+                diagnostic.finish(.skipped)
+                return entitlement.isActive
+            }
+    
+            isValidating = true
+            defer { isValidating = false }
+    
+            updateValidationRecord { record in
+                record.lastAttemptAt = nowProvider()
+                record.lastErrorCode = nil
+            }
+    
+            do {
+                let snapshot = try await api.validate(DirectLicenseValidationRequest(
+                    licenseKey: credential.licenseKey,
+                    instanceID: credential.instanceID,
+                    deviceID: deviceIDProvider(),
+                    appVersion: appVersionProvider()
+                ))
+                applyValidatedSnapshot(snapshot, credential: credential)
+                lastErrorMessage = nil
+                return entitlement.isActive
+            } catch {
+                applyValidationFailure(error, isSilent: isSilent)
+                diagnostic.finish(.failed, error: error)
+                return entitlement.isActive
+            }
         }
     }
 

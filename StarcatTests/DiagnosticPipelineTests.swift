@@ -24,7 +24,8 @@ struct DiagnosticPipelineTests {
         let event = DiagnosticContext.$current.withValue(span) {
             DiagnosticEvent(level: .info, category: "test", operation: "nested", message: "safe",
                             fields: ["count": .integer(87), "available": .boolean(false),
-                                     "prompt": .string("forbidden"), "stage": .string("ready")])
+                                     "prompt": .string("forbidden"), "stage": .string("ready"),
+                                     "arbitraryPrivateField": .integer(7), "cacheAgeSeconds": .decimal(.infinity)])
         }
         let decoded = try JSONDecoder().decode(DiagnosticEvent.self, from: JSONEncoder().encode(event))
         #expect(decoded.schemaVersion == 2)
@@ -33,6 +34,8 @@ struct DiagnosticPipelineTests {
         #expect(decoded.fields["count"] == .integer(87))
         #expect(decoded.fields["available"] == .boolean(false))
         #expect(decoded.fields["prompt"] == nil)
+        #expect(decoded.fields["arbitraryPrivateField"] == nil)
+        #expect(decoded.fields["cacheAgeSeconds"] == nil)
         span.finish()
         _ = await store.snapshot()
     }
@@ -188,6 +191,23 @@ struct DiagnosticPipelineTests {
         #expect(!snapshot.text.contains("\"phase\":\"repeated\""))
     }
 
+    @Test("忽略提醒后同一故障再次发生仍产生新提醒")
+    func repeatedFailureAfterAcknowledgement() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory)
+        let initial = Date().addingTimeInterval(-10)
+        for offset in 0..<3 {
+            store.enqueue(DiagnosticEvent(timestamp: initial.addingTimeInterval(Double(offset)),
+                level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure"))
+        }
+        await store.markIssuesAcknowledged()
+        #expect(await store.issueSummary().issueCount == 0)
+        store.enqueue(DiagnosticEvent(timestamp: Date().addingTimeInterval(1),
+            level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure"))
+        #expect(await store.issueSummary().issueCount == 1)
+    }
+
     @Test("日志风暴保持队列上限，所有未保留事件均计入丢弃数")
     func stormBudget() async throws {
         let directory = root()
@@ -207,8 +227,25 @@ struct DiagnosticPipelineTests {
         let snapshot = await store.snapshot()
         let count = snapshot.text.split(separator: "\n").count
         #expect((snapshot.health["peakQueue"] ?? 9999) <= 16)
+        #expect((snapshot.health["peakQueueBytes"] ?? Int.max) <= (snapshot.health["queueBudgetBytes"] ?? 0))
         #expect(count + (snapshot.health["droppedEvents"] ?? 0) == 5000)
         #expect(snapshot.health["writeFailures"] == 0)
         print("DIAGNOSTIC_STORM input=5000 retained=\(count) health=\(snapshot.health) duration=\(started.duration(to: .now))")
+    }
+
+    @Test("队列载荷预算和读取损坏分别计数，不能静默报为空日志")
+    func byteBudgetAndReadFailure() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let constrained = DiagnosticLogStore(directoryURL: directory, queueByteLimit: 1024)
+        constrained.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "oversized", message: "safe"))
+        let dropped = await constrained.snapshot()
+        #expect(dropped.health["droppedEvents"] == 1)
+        #expect(dropped.text.isEmpty)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data([0xff, 0xfe, 0xff]).write(to: directory.appendingPathComponent("diagnostic-log.jsonl"))
+        let unreadable = await DiagnosticLogStore(directoryURL: directory).snapshot()
+        #expect(unreadable.health["readFailures"] == 1)
+        #expect(unreadable.text.isEmpty)
     }
 }

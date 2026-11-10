@@ -27,7 +27,10 @@ struct DiagnosticSnapshot: Sendable {
 /// @unchecked Sendable 的约束：pending/sequence/dropped 只在锁内访问；其余可变状态只在 writer 队列访问。
 /// 不能在锁内 await，也不能向 writer.sync，避免 UI 与文件操作互相等待。
 final class DiagnosticLogStore: @unchecked Sendable {
-    static let shared = DiagnosticLogStore()
+    // 测试中的业务链路也会自动取证，统一隔离，避免污染本机 Debug App 的真实诊断目录。
+    static let shared = DiagnosticLogStore(directoryURL: TestEnvironment.isRunning
+        ? FileManager.default.temporaryDirectory.appendingPathComponent("StarcatTests-diagnostics-\(DiagnosticContext.sessionID)")
+        : nil)
     private let writer = DispatchQueue(label: "ink.starcat.diagnostics.writer", qos: .utility)
     private let lock = NSLock()
     private var pending: [DiagnosticEvent] = []
@@ -36,7 +39,10 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private var sequence: UInt64 = 0
     private var dropped = 0
     private var peakQueue = 0
+    private var pendingBytes = 0
+    private var peakQueueBytes = 0
     private let queueLimit: Int
+    private let queueByteLimit: Int
     private let segmentBytes: Int
     private let segmentCount: Int
     private let retention: TimeInterval
@@ -47,6 +53,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private var rotationFailures = 0
     private var lastCleanup = Date.distantPast
     private var repeats: [String: DiagnosticEvent] = [:]
+    private var repeatFlushScheduled = false
     private var fingerprints: [String: Date] = [:]
     private var sessionRecords: [DiagnosticSessionRecord]?
     private var sessionLastSaved = Date.distantPast
@@ -59,11 +66,12 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private var acknowledgedURL: URL { directoryURL.appendingPathComponent("diagnostic-log-acknowledged-at.txt") }
 
     init(fileManager: FileManager = .default, directoryURL: URL? = nil,
-         queueLimit: Int = 2048, segmentBytes: Int = 2 * 1024 * 1024,
+         queueLimit: Int = 2048, queueByteLimit: Int = 4 * 1024 * 1024, segmentBytes: Int = 2 * 1024 * 1024,
          segmentCount: Int = 20, retention: TimeInterval = 14 * 86400) {
         self.fileManager = fileManager
         self.directoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
         self.queueLimit = max(1, queueLimit)
+        self.queueByteLimit = max(1024, queueByteLimit)
         self.segmentBytes = max(1024, segmentBytes)
         self.segmentCount = max(1, segmentCount)
         self.retention = retention
@@ -79,13 +87,16 @@ final class DiagnosticLogStore: @unchecked Sendable {
     /// 同步入队分配顺序，不为每条事件创建 Task。队列满时记录丢弃数，绝不无限增长。
     func enqueue(_ event: DiagnosticEvent) {
         guard event.level != .debug || DiagnosticRecording.shared.expiresAt != nil else { return }
+        let estimatedBytes = event.estimatedQueuedBytes
         lock.lock()
         defer { lock.unlock() }
         sequence += 1
-        guard pending.count < queueLimit else { dropped += 1; return }
+        guard pending.count < queueLimit, pendingBytes + estimatedBytes <= queueByteLimit else { dropped += 1; return }
         var event = event
         event.sequence = sequence
         pending.append(event)
+        pendingBytes += estimatedBytes
+        peakQueueBytes = max(peakQueueBytes, pendingBytes)
         peakQueue = max(peakQueue, pending.count)
         if !scheduled {
             scheduled = true
@@ -95,6 +106,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
                 guard generation == drainGeneration else { lock.unlock(); return }
                 let batch = pending
                 pending.removeAll(keepingCapacity: true)
+                pendingBytes = 0
                 scheduled = false
                 lock.unlock()
                 batch.forEach(write)
@@ -112,24 +124,27 @@ final class DiagnosticLogStore: @unchecked Sendable {
             lock.lock()
             let batch = pending
             pending.removeAll(keepingCapacity: true)
+            pendingBytes = 0
             // 使尚未开始的 drain 失效，后续入队安排在快照之后，避免跨越截点。
             drainGeneration += 1
             scheduled = false
             let cutoff = sequence
             let lost = dropped
             let peak = peakQueue
+            let peakBytes = peakQueueBytes
             writer.async { [self] in
                 batch.forEach(write)
                 flushRepeats()
                 let text = files().compactMap { url -> String? in
                     do { return try String(contentsOf: url, encoding: .utf8) }
                     catch { readFailures += 1; return nil }
-                }.joined()
+                }.joined(separator: "\n")
                 continuation.resume(returning: DiagnosticSnapshot(
                     text: text, cutoffSequence: cutoff,
                     capturedAt: ISO8601DateFormatter.shared.string(from: Date()),
                     health: ["droppedEvents": lost, "writeFailures": writeFailures, "readFailures": readFailures,
                              "rotationFailures": rotationFailures, "peakQueue": peak,
+                             "peakQueueBytes": peakBytes, "queueBudgetBytes": queueByteLimit,
                              "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)],
                     sessions: try? encoder.encode(sessionRecords ?? [])))
             }
@@ -148,6 +163,8 @@ final class DiagnosticLogStore: @unchecked Sendable {
     }
 
     func markIssuesAcknowledged(upTo date: Date = Date()) async {
+        // 先截断重复批次，确认之后的新故障不能被并回已经忽略的旧摘要。
+        _ = await snapshot()
         await withCheckedContinuation { continuation in
             writer.async { [self] in
                 do {
@@ -192,9 +209,17 @@ final class DiagnosticLogStore: @unchecked Sendable {
             aggregate.phase = "repeated"
             aggregate.firstSeen = aggregate.firstSeen ?? event.timestamp
             aggregate.lastSeen = event.timestamp
+            aggregate.timestamp = event.timestamp
             aggregate.occurrenceCount = (repeats[key]?.occurrenceCount ?? 0) + 1
             aggregate.sequence = event.sequence
             repeats[key] = aggregate
+            if !repeatFlushScheduled {
+                repeatFlushScheduled = true
+                writer.asyncAfter(deadline: .now() + 1) { [self] in
+                    repeatFlushScheduled = false
+                    flushRepeats()
+                }
+            }
         } else {
             if let repeated = repeats.removeValue(forKey: key) { append(repeated) }
             fingerprints[key] = event.date
@@ -287,6 +312,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
         lock.lock()
         let batch = pending
         pending.removeAll(keepingCapacity: true)
+        pendingBytes = 0
         drainGeneration += 1
         scheduled = false
         writer.async { [self] in

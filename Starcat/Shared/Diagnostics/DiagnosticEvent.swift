@@ -110,6 +110,17 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     var sourceLine: Int?
     var errorChain: [DiagnosticErrorCause] = []
 
+    /// 入队预算用保守的标量体积估计，避免为测量大小在 UI 线程编码整条 JSON。
+    var estimatedQueuedBytes: Int {
+        let metadata = [timestamp, category, operation, message, service, errorCode, underlying,
+                        eventID, sessionID, environmentID, operationID, parentOperationID, requestID,
+                        serverTraceID, phase, sourceFile, sourceFunction].compactMap { $0 }
+        let strings = metadata.reduce(0) { $0 + $1.utf8.count }
+        let contexts = context.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 64 }
+        let values = fields.reduce(0) { $0 + $1.key.utf8.count + $1.value.reportValue.utf8.count + 64 }
+        return 1024 + (strings + contexts + values) * 2 + errorChain.count * 384
+    }
+
     enum Outcome: String, Codable, Sendable {
         case succeeded, failed, cancelled, partial, skipped
     }
@@ -159,8 +170,11 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             guard Self.isSafeKey(pair.key) else { return }
             let sensitive = ["repo", "login", "user", "path", "url", "endpoint", "account"]
                 .contains { pair.key.localizedCaseInsensitiveContains($0) }
-            partial[String(pair.key.prefix(80))] = sensitive
-                ? Self.anonymousReference(pair.value) : Self.sanitize(pair.value, maxLength: 256)
+            // 旧字符串上下文没有类型契约；只保留计数/布尔，其余匿名化。新接入使用 fields。
+            let scalar = ["true", "false"].contains(pair.value) ||
+                (pair.value.count <= 24 && pair.value.range(of: #"^-?[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil)
+            partial[String(pair.key.prefix(80))] = !sensitive && scalar
+                ? pair.value : Self.anonymousReference(pair.value)
         }
         self.operationID = operationID ?? DiagnosticContext.current?.id
         self.parentOperationID = parentOperationID ?? DiagnosticContext.current?.parentID
@@ -173,11 +187,12 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         self.errorChain = errorChain.prefix(4).map {
             DiagnosticErrorCause(type: Self.sanitize($0.type, maxLength: 160), code: $0.code)
         }
-        self.sourceFile = String(Self.redact(sourceFile).suffix(160))
-        self.sourceFunction = String(Self.redact(sourceFunction).prefix(160))
+        self.sourceFile = String(Self.redact(sourceFile, includeURLs: true).suffix(160))
+        self.sourceFunction = String(Self.redact(sourceFunction, includeURLs: true).prefix(160))
         self.sourceLine = sourceLine
         self.fields = fields.sorted { $0.key < $1.key }.prefix(48).reduce(into: [:]) { result, item in
-            guard Self.isSafeKey(item.key) else { return }
+            guard Self.safeFieldKeys.contains(item.key) else { return }
+            if case .decimal(let number) = item.value, !number.isFinite { return }
             if case .string(let text) = item.value {
                 // 只接收代码控制的短枚举值；正文、路径和 URL 不属于安全字段。
                 guard text.range(of: #"^[A-Za-z0-9_.:<>\-]{0,128}$"#, options: .regularExpression) != nil else { return }
@@ -261,6 +276,26 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             .contains { key.localizedCaseInsensitiveContains($0) }
     }
 
+    /// 明确字段契约，避免以后把任意业务对象的字段默认为可导出数据。
+    /// hasCachedBody / credentialAvailable 仅表示布尔状态，永远不接受相应正文或凭据值。
+    private static let safeFieldKeys: Set<String> = Set("""
+        allowPartial anonymous approvalPending attempt authenticated available budget bundleCount bytes
+        cacheBytes cacheFallback cachedCount canLoadMore candidateCount complete count credentialAvailable
+        credentialRetained displayedCount documentID edgeCount edgeLimit elementCount entitlementActive
+        errorCount executable exists exitCode feature fetchedCount force hasCachedBody hasCursor hasNextPage
+        hasProgress headerCount height hideArchived hideForks hitCount htmlCharacters incremental itemCount
+        iteration keywordFailed keywordHitCount latencyMs mergedCount method migrationCount migrationRevision
+        nodeCount nodeLimit notModified outputAvailable page port preservesPreviousOnFailure
+        preservesLocalEntitlement processedCount provider reason receivedBytes refresh relation renderedCount
+        rendererVersion requestCount route running runtimeState scopeMatches scopeRequired scopeStarted
+        selectionVersion snapshotVersion source stage status succeeded systemCode timeoutMs toolCount
+        totalCount uniquePageCount uploadBytes vectorFailed vectorHitCount cacheAgeSeconds lastSuccessAgeSeconds
+        durationMs version statusCode modelLoaded firstOutputMs readyCount rejectedCount
+        budgetBytes completedItems dimensions durationSeconds finishReason inputTokenLimit inputTokens items
+        loadedBytes maxOutputTokens mlxActiveBytes mlxCacheBytes outputTokens queued temperature
+        timeoutSeconds topP totalItems errorType errorCode
+        """.split(whereSeparator: \.isWhitespace).map(String.init))
+
     /// 旧调用可能传 localizedDescription 或调试交换；只允许错误类型、结果码和结构化解码路径。
     private static func safeUnderlying(_ text: String) -> String {
         let safe = sanitize(text, maxLength: 1024)
@@ -279,7 +314,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     ///
     /// 这里故意不做复杂 NLP 识别，避免误删正常诊断信息；高风险原始 payload 本身就不应
     /// 传入 DiagnosticEvent。调用方必须只传短消息、状态码、服务名、repo fullName 等。
-    static func redact(_ value: String) -> String {
+    static func redact(_ value: String, includeURLs: Bool = false) -> String {
         var output = value
         output = output.replacingOccurrences(
             of: #"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+"#,
@@ -306,8 +341,11 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             with: "/Users/<redacted>",
             options: .regularExpression
         )
-        output = output.replacingOccurrences(of: #"https?://[^\s<>"]+"#, with: "<url>", options: .regularExpression)
-        output = output.replacingOccurrences(of: #"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"#, with: "<email>", options: .regularExpression)
+        // 既有 AI 错误面板使用本函数展示请求域名；只有持久化诊断和导出边界隐藏地址。
+        if includeURLs {
+            output = output.replacingOccurrences(of: #"https?://[^\s<>"]+"#, with: "<url>", options: .regularExpression)
+            output = output.replacingOccurrences(of: #"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"#, with: "<email>", options: .regularExpression)
+        }
         return output
     }
 
@@ -356,7 +394,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     }
 
     private static func sanitize(_ value: String, maxLength: Int) -> String {
-        let redacted = redact(value)
+        let redacted = redact(value, includeURLs: true)
         guard redacted.count > maxLength else { return redacted }
         return String(redacted.prefix(maxLength)) + "…<truncated>"
     }
