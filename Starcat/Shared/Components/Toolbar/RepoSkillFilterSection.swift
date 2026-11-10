@@ -19,12 +19,14 @@ struct RepoSkillFilterSection: View {
                 .foregroundStyle(.secondary)
             Picker("repo.skills.filter.title", selection: $selection) {
                 ForEach(RepoSkillFilter.allCases, id: \.self) { filter in
-                    Text(LocalizedStringKey("repo.skills.filter.\(filter.rawValue)")).tag(filter)
+                    // 先构造 String，避免 LocalizedStringKey 将插值解释成带 %@ 的格式模板。
+                    let key = "repo.skills.filter.\(filter.rawValue)"
+                    Text(LocalizedStringKey(key)).tag(filter)
                 }
             }
             .labelsHidden()
             if selection != .any {
-                Text("repo.skills.scan.notice")
+                Text("repo.skills.scan.resultsHint")
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
