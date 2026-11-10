@@ -567307,6 +567307,113 @@
         }
       }
     },
+    "settings.pro.direct.error.credentialSaveFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not save the license on this Mac. Contact support with diagnostic logs before activating again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在此 Mac 上保存授权，请联系支持并提供诊断日志，暂勿重复激活"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法在此 Mac 上儲存授權，請聯絡支援並提供診斷記錄，暫勿重複啟用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "この Mac にライセンスを保存できませんでした。再度アクティベートする前に、診断ログを添えてサポートにお問い合わせください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 Mac에 라이선스를 저장하지 못했습니다. 다시 활성화하기 전에 진단 로그와 함께 지원팀에 문의해 주세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Lizenz konnte auf diesem Mac nicht gespeichert werden. Kontaktiere den Support mit den Diagnoseprotokollen, bevor du sie erneut aktivierst."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible d’enregistrer la licence sur ce Mac. Contactez l’assistance avec les journaux de diagnostic avant de réessayer l’activation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo guardar la licencia en este Mac. Contacta con soporte y envía los registros de diagnóstico antes de volver a activarla."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível salvar a licença neste Mac. Entre em contato com o suporte e envie os logs de diagnóstico antes de ativar novamente."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile salvare la licenza su questo Mac. Contatta l’assistenza con i log diagnostici prima di tentare di nuovo l’attivazione."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось сохранить лицензию на этом Mac. Перед повторной активацией обратитесь в поддержку и приложите диагностические журналы."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De licentie kon niet op deze Mac worden opgeslagen. Neem contact op met de ondersteuning en stuur de diagnostische logboeken mee voordat je opnieuw activeert."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się zapisać licencji na tym Macu. Przed ponowną aktywacją skontaktuj się z pomocą techniczną i prześlij dzienniki diagnostyczne."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося зберегти ліцензію на цьому Mac. Перш ніж активувати знову, зверніться до служби підтримки та додайте діагностичні журнали."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lisans bu Mac’e kaydedilemedi. Yeniden etkinleştirmeden önce tanılama günlükleriyle birlikte destek ekibine başvurun."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể lưu giấy phép trên máy Mac này. Hãy liên hệ bộ phận hỗ trợ và gửi nhật ký chẩn đoán trước khi kích hoạt lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lisensi tidak dapat disimpan di Mac ini. Hubungi dukungan dengan menyertakan log diagnostik sebelum mengaktifkan kembali."
+          }
+        }
+      }
+    },
     "settings.pro.direct.error.invalidResponse" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -567624,6 +567731,220 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此授权已失效，请检查订阅状态或联系支持。"
+          }
+        }
+      }
+    },
+    "settings.pro.direct.error.rateLimitedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many requests. Retry in %d s."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操作过于频繁，请 %d 秒后重试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "操作過於頻繁，請 %d 秒後重試"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "操作が多すぎます。%d 秒後に再試行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "요청이 너무 많습니다. %d초 후 다시 시도해 주세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zu viele Anfragen. Bitte in %d Sek. erneut versuchen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Trop de requêtes. Réessayez dans %d s."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Demasiadas solicitudes. Inténtalo de nuevo en %d s."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Muitas solicitações. Tente novamente em %d s."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Troppe richieste. Riprova tra %d s."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Слишком много запросов. Повторите через %d с."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Te veel verzoeken. Probeer het over %d sec. opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zbyt wiele żądań. Spróbuj ponownie za %d s."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Забагато запитів. Повторіть через %d с."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Çok fazla istek. %d sn. sonra tekrar deneyin."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quá nhiều yêu cầu. Vui lòng thử lại sau %d giây."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Terlalu banyak permintaan. Coba lagi dalam %d detik."
+          }
+        }
+      }
+    },
+    "settings.pro.direct.error.responseDecodingFailed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not read the license service response. Contact support with diagnostic logs before activating again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取授权服务响应，请联系支持并提供诊断日志，暂勿重复激活"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法讀取授權服務回應，請聯絡支援並提供診斷記錄，暫勿重複啟用"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライセンスサービスの応答を読み取れませんでした。再度アクティベートする前に、診断ログを添えてサポートにお問い合わせください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "라이선스 서비스 응답을 읽지 못했습니다. 다시 활성화하기 전에 진단 로그와 함께 지원팀에 문의해 주세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Antwort des Lizenzdienstes konnte nicht gelesen werden. Kontaktiere den Support mit den Diagnoseprotokollen, bevor du erneut aktivierst."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de lire la réponse du service de licence. Contactez l’assistance avec les journaux de diagnostic avant de réessayer l’activation."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo leer la respuesta del servicio de licencias. Contacta con soporte y envía los registros de diagnóstico antes de volver a activar."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível ler a resposta do serviço de licenças. Entre em contato com o suporte e envie os logs de diagnóstico antes de ativar novamente."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile leggere la risposta del servizio licenze. Contatta l’assistenza con i log diagnostici prima di tentare di nuovo l’attivazione."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось прочитать ответ сервиса лицензий. Перед повторной активацией обратитесь в поддержку и приложите диагностические журналы."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Het antwoord van de licentieservice kon niet worden gelezen. Neem contact op met de ondersteuning en stuur de diagnostische logboeken mee voordat je opnieuw activeert."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie udało się odczytać odpowiedzi usługi licencyjnej. Przed ponowną aktywacją skontaktuj się z pomocą techniczną i prześlij dzienniki diagnostyczne."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося прочитати відповідь служби ліцензування. Перш ніж активувати знову, зверніться до служби підтримки та додайте діагностичні журнали."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lisans hizmetinin yanıtı okunamadı. Yeniden etkinleştirmeden önce tanılama günlükleriyle birlikte destek ekibine başvurun."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể đọc phản hồi từ dịch vụ giấy phép. Hãy liên hệ bộ phận hỗ trợ và gửi nhật ký chẩn đoán trước khi kích hoạt lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Respons layanan lisensi tidak dapat dibaca. Hubungi dukungan dengan menyertakan log diagnostik sebelum mengaktifkan kembali."
           }
         }
       }

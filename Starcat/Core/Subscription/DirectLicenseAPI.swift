@@ -84,7 +84,48 @@ struct DirectLicenseAPI: Sendable {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw mapHTTPError(response: response, data: data, path: path)
         }
-        return try decoder.decode(Response.self, from: data)
+        do {
+            return try decoder.decode(Response.self, from: data)
+        } catch {
+            // 2xx 可能已经占用远端席位；只记解码类别和协议字段，不记录响应值或 debugDescription。
+            let diagnostic = Self.decodingDiagnostic(error)
+            AppLog.general.error(
+                "[direct-license-api] path=\(path, privacy: .public) stage=response_decode http_status=\(http.statusCode) code=response_decoding_failed \(diagnostic, privacy: .public)"
+            )
+            throw DirectLicenseAPIError.responseDecodingFailed
+        }
+    }
+
+    /// CodingKey 也可能来自动态 JSON 字典；只允许已知 DTO 字段进入公开日志。
+    static func decodingDiagnostic(_ error: Error) -> String {
+        let reason: String
+        let path: [any CodingKey]
+        switch error {
+        case let DecodingError.keyNotFound(key, context):
+            reason = "key_not_found"
+            path = context.codingPath + [key]
+        case let DecodingError.valueNotFound(_, context):
+            reason = "value_not_found"
+            path = context.codingPath
+        case let DecodingError.typeMismatch(_, context):
+            reason = "type_mismatch"
+            path = context.codingPath
+        case let DecodingError.dataCorrupted(context):
+            reason = "data_corrupted"
+            path = context.codingPath
+        default:
+            return "reason=other field_path=$"
+        }
+        let fields: Set<String> = [
+            "status", "provider", "plan", "productID", "instanceID", "activationUsed",
+            "activationLimit", "licenseKeySuffix", "expiresAt", "validatedAt", "devices",
+            "name", "deviceKind", "createdAt", "isCurrentDevice", "url", "id",
+            "subscriptionID", "currentPeriodEnd", "canceledAt"
+        ]
+        let safePath = path.map { key in
+            key.intValue != nil ? "[]" : (fields.contains(key.stringValue) ? key.stringValue : "<field>")
+        }.joined(separator: ".")
+        return "reason=\(reason) field_path=$\(safePath.isEmpty ? "" : "." + safePath)"
     }
 
     private func mapHTTPError(response: URLResponse, data: Data, path: String) -> DirectLicenseAPIError {
@@ -95,10 +136,14 @@ struct DirectLicenseAPI: Sendable {
         let code = body.normalizedCode
         // 只记录编译期路径、固定错误码与 UUID trace；原始 message 可能包含授权码或上游密钥。
         let traceID = DirectLicenseAPIError.safeTraceID(body.traceID) ?? "-"
-        let diagnosticCode = code ?? "http_\(http.statusCode)"
+        let isRateLimited = http.statusCode == 429 || code == "rate_limit_reached"
+        let diagnosticCode = isRateLimited ? "rate_limit_reached" : (code ?? "http_\(http.statusCode)")
         AppLog.general.error(
             "[direct-license-api] path=\(path, privacy: .public) http_status=\(http.statusCode) code=\(diagnosticCode, privacy: .public) trace_id=\(traceID, privacy: .public)"
         )
+        if isRateLimited {
+            return .rateLimited(retryAfter: Self.retryAfterSeconds(http.value(forHTTPHeaderField: "Retry-After")))
+        }
         // 业务错误码优先于 HTTP status：后端可能用 403/409/502 承载同一 code，
         // 若先按 403→unauthorizedClient 会把「座位已满」误判成客户端鉴权失败。
         if code == "billing_not_ready" {
@@ -119,11 +164,31 @@ struct DirectLicenseAPI: Sendable {
         case 404:
             // 路由 404 / 非 JSON 响应不能作为撤销本地 Pro 的证据，只认明确的业务 code。
             return .invalidResponse
-        case 408, 429, 500...599:
+        case 408, 500...599:
             return .temporaryServerFailure(statusCode: http.statusCode, code: code)
         default:
             return .invalidResponse
         }
+    }
+
+    /// Retry-After 属于 HTTP 协议数据，使用固定英文/GMT 解析，不跟随 App 显示语言。
+    /// 网关可能只返回 429 而没有有效 header；保留一分钟手动冷却，避免连续请求。
+    static func retryAfterSeconds(_ raw: String?, now: Date = Date()) -> Int {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return 60 }
+        if raw.allSatisfy({ $0.isASCII && $0.isNumber }), let seconds = Int(raw) {
+            return seconds
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        // HTTP-date 的标准形式与两种历史形式；均只用于协议交换，不是用户文案。
+        for format in ["EEE, dd MMM yyyy HH:mm:ss 'GMT'", "EEEE, dd-MMM-yy HH:mm:ss 'GMT'", "EEE MMM d HH:mm:ss yyyy"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: raw) {
+                return max(0, Int(date.timeIntervalSince(now).rounded(.up)))
+            }
+        }
+        return 60
     }
 
     /// 当前构建选择的 License API 环境。
@@ -167,11 +232,14 @@ struct DirectLicenseAPI: Sendable {
 
 enum DirectLicenseAPIError: Error, Equatable {
     case invalidResponse
+    case responseDecodingFailed
     case transport(code: Int?)
     case temporaryServerFailure(statusCode: Int, code: String?)
     case unauthorizedClient
     case licenseNotFound
     case billingNotReady
+    /// 限流是临时状态；携带服务端建议等待秒数，不触发自动重试或撤销本地权益。
+    case rateLimited(retryAfter: Int)
     /// 授权码激活席位已满（Creem activation_limit）。后端约定 code=`ACTIVATION_LIMIT_REACHED`。
     /// 客户端只认自家 code；Creem 响应语义的识别留在服务端。
     case activationLimitReached
@@ -180,7 +248,7 @@ enum DirectLicenseAPIError: Error, Equatable {
     /// 是否属于不能撤销本地 Pro 的临时失败。
     var preservesLocalEntitlement: Bool {
         switch self {
-        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse, .billingNotReady, .activationLimitReached:
+        case .transport, .temporaryServerFailure, .unauthorizedClient, .invalidResponse, .responseDecodingFailed, .billingNotReady, .activationLimitReached, .rateLimited:
             return true
         case .licenseNotFound, .licenseRejected:
             return false
@@ -191,6 +259,8 @@ enum DirectLicenseAPIError: Error, Equatable {
         switch self {
         case .invalidResponse:
             return "invalid_response"
+        case .responseDecodingFailed:
+            return "response_decoding_failed"
         case let .transport(code):
             return code.map { "transport_\($0)" } ?? "transport_error"
         case let .temporaryServerFailure(statusCode, code):
@@ -201,6 +271,8 @@ enum DirectLicenseAPIError: Error, Equatable {
             return "license_not_found"
         case .billingNotReady:
             return "billing_not_ready"
+        case .rateLimited:
+            return "rate_limit_reached"
         case .activationLimitReached:
             return "activation_limit_reached"
         case let .licenseRejected(code):
@@ -212,11 +284,13 @@ enum DirectLicenseAPIError: Error, Equatable {
     static func safeServerCode(_ raw: String?) -> String? {
         guard let code = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return nil }
         switch code {
+        case "rate_limited":
+            return "rate_limit_reached"
         case "billing_not_ready", "activation_limit_reached", "license_not_found",
              "license_revoked", "license_expired", "invalid_license", "provider_error",
              "provider_not_configured", "provider_unavailable", "license_provider_error",
              "payment_provider_error", "bad_request", "bad_json", "unauthorized_client",
-             "rate_limit_exceeded":
+             "rate_limit_exceeded", "rate_limit_reached":
             return code
         default:
             return nil
@@ -234,6 +308,8 @@ extension DirectLicenseAPIError: LocalizedError {
         switch self {
         case .invalidResponse:
             return String.l10n("settings.pro.direct.error.invalidResponse")
+        case .responseDecodingFailed:
+            return String.l10n("settings.pro.direct.error.responseDecodingFailed")
         case .transport:
             return String.l10n("settings.pro.direct.error.transport")
         case let .temporaryServerFailure(statusCode, _):
@@ -244,6 +320,8 @@ extension DirectLicenseAPIError: LocalizedError {
             return String.l10n("settings.pro.direct.error.licenseNotFound")
         case .billingNotReady:
             return String.l10n("settings.pro.direct.portal.syncing")
+        case let .rateLimited(retryAfter):
+            return String(format: String.l10n("settings.pro.direct.error.rateLimitedFormat"), retryAfter)
         case .activationLimitReached:
             return String.l10n("settings.pro.direct.error.activationLimitReached")
         case .licenseRejected:

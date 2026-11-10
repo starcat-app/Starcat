@@ -35,6 +35,8 @@ final class DirectLicenseManager: ProEntitlementProviding {
     private(set) var lastSubscriptionSnapshot: DirectSubscriptionSnapshot?
     private(set) var licenseDevices: [DirectLicenseDevice] = []
     private(set) var lastErrorMessage: String?
+    /// 使用绝对截止时间，关闭设置页不会重置冷却，也不依赖后台计时任务存活。
+    private(set) var activationRetryAfter: Date?
 
     // 各操作独立 in-flight：UI loading 只绑自己的标志，避免门户请求把设备区/解绑一起转圈。
     private(set) var isActivating = false
@@ -95,6 +97,14 @@ final class DirectLicenseManager: ProEntitlementProviding {
     ) async -> Bool {
         let trimmed = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        // MainActor 上在首次 await 前检查；按钮、深链与直接调用共用同一道入口。
+        guard !isActivating else { return false }
+        let retrySeconds = activationRetrySeconds()
+        guard retrySeconds == 0 else {
+            lastErrorMessage = DirectLicenseAPIError.rateLimited(retryAfter: retrySeconds).localizedDescription
+            return false
+        }
+        activationRetryAfter = nil
 
         return await perform { [store] in
             let snapshot = try await api.activate(DirectLicenseActivationRequest(
@@ -111,11 +121,25 @@ final class DirectLicenseManager: ProEntitlementProviding {
                     productID: snapshot.productID,
                     plan: snapshot.plan
                 )
-                try store.storeCredential(credential)
+                do {
+                    try store.storeCredential(credential)
+                } catch {
+                    // 远端已成功；本机保存失败不能冒充激活完成，也不能把底层描述中的路径/凭据显示给用户。
+                    let diagnostic = DirectLicenseActivationError.storageDiagnostic(error)
+                    AppLog.general.error("[direct-license] stage=credential_save code=credential_save_failed \(diagnostic, privacy: .public)")
+                    throw DirectLicenseActivationError.credentialSaveFailed
+                }
                 storedCredential = credential
             }
             return snapshot
         }
+    }
+
+    /// 向上取整使按钮只在整个等待期结束后恢复；注入时钟便于无等待测试边界。
+    func activationRetrySeconds(at date: Date? = nil) -> Int {
+        guard let activationRetryAfter else { return 0 }
+        let remaining = max(0, activationRetryAfter.timeIntervalSince(date ?? nowProvider()).rounded(.up))
+        return Int(exactly: remaining) ?? Int.max
     }
 
     /// 处理支付成功页 deep link 带回的授权信息。
@@ -357,9 +381,17 @@ final class DirectLicenseManager: ProEntitlementProviding {
             lastErrorMessage = nil
             return entitlement.isActive
         } catch {
-            lastErrorMessage = error.localizedDescription
+            // UI 只接收受控文案；未知错误也不能直接暴露请求内容或文件路径。
+            lastErrorMessage = (error as? DirectLicenseAPIError)?.errorDescription
+                ?? (error as? DirectLicenseActivationError)?.errorDescription
+                ?? DirectLicenseAPIError.invalidResponse.localizedDescription
+            if case let .rateLimited(retryAfter) = error as? DirectLicenseAPIError {
+                activationRetryAfter = nowProvider().addingTimeInterval(TimeInterval(retryAfter))
+            }
             // 用户提示与诊断分离；未知 Error 的描述也可能带请求内容，只记录固定错误码。
-            let diagnosticCode = (error as? DirectLicenseAPIError)?.diagnosticCode ?? "unknown_request_error"
+            let diagnosticCode = (error as? DirectLicenseAPIError)?.diagnosticCode
+                ?? (error as? DirectLicenseActivationError)?.diagnosticCode
+                ?? "unknown_request_error"
             AppLog.general.error("[direct-license] request failed: \(diagnosticCode, privacy: .public)")
             return false
         }
@@ -471,6 +503,41 @@ final class DirectLicenseManager: ProEntitlementProviding {
         let deviceKind = DirectLicenseDeviceKind.currentMac()
         let installID = (try? store.loadOrCreateInstallID()) ?? UUID().uuidString
         return "\(deviceKind.instanceNamePrefix) · Starcat \(installID.prefix(4).uppercased())"
+    }
+}
+
+/// 激活已到本机保存阶段时单独报错，避免用户将存储失败误认为授权码无效。
+enum DirectLicenseActivationError: Error, LocalizedError {
+    case credentialSaveFailed
+
+    var diagnosticCode: String { "credential_save_failed" }
+
+    var errorDescription: String? {
+        String.l10n("settings.pro.direct.error.credentialSaveFailed")
+    }
+
+    /// 只展开一层已知存储包装，保留定位所需的系统码；禁止输出 userInfo 或任意错误域。
+    static func storageDiagnostic(_ error: Error) -> String {
+        let category: String
+        let underlying: Error
+        switch error {
+        case let KeychainError.writeFailed(cause):
+            category = "write_failed"
+            underlying = cause
+        case let KeychainError.encryptionFailed(cause):
+            category = "encryption_failed"
+            underlying = cause
+        case let KeychainError.deleteFailed(cause):
+            category = "delete_failed"
+            underlying = cause
+        default:
+            category = "other"
+            underlying = error
+        }
+        let systemError = underlying as NSError
+        let knownDomains = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSOSStatusErrorDomain]
+        let domain = knownDomains.contains(systemError.domain) ? systemError.domain : "other"
+        return "reason=\(category) error_domain=\(domain) error_code=\(systemError.code)"
     }
 }
 

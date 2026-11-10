@@ -232,6 +232,167 @@ struct DirectLicenseAPITests {
         #expect(snapshot.activationLimit == nil)
     }
 
+    @Test("限流业务码和无 JSON 的 429 均使用固定诊断码且只请求一次", arguments: [
+        (429, #"{"code":"RATE_LIMITED","message":"SENSITIVE-LICENSE-KEY"}"#),
+        (429, "<html>Too many requests</html>"),
+        (429, #"{"code":"SENSITIVE-LICENSE-KEY"}"#),
+        (503, #"{"code":"RATE_LIMITED"}"#)
+    ])
+    func recognizesRateLimit(status: Int, body: String) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: status, httpVersion: nil,
+                headerFields: ["Retry-After": "7"]
+            )!
+            return (response, Data(body.utf8))
+        }
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: nil,
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+        do {
+            _ = try await api.activate(DirectLicenseActivationRequest(licenseKey: "KEY", deviceID: "Mac", appVersion: "1.9.4"))
+            Issue.record("Expected rate limit")
+        } catch let error as DirectLicenseAPIError {
+            #expect(error == .rateLimited(retryAfter: 7))
+            #expect(error.diagnosticCode == "rate_limit_reached")
+            #expect(error.preservesLocalEntitlement)
+            #expect(error.errorDescription == String(format: String.l10n("settings.pro.direct.error.rateLimitedFormat"), 7))
+        }
+        #expect(DirectLicenseAPIError.safeServerCode(" RATE_LIMITED ") == "rate_limit_reached")
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("Retry-After 秒数与缺失/无效值", arguments: [
+        (nil, 60), ("", 60), (" 7 ", 7), ("0", 0), ("-1", 60),
+        ("1.5", 60), ("not-a-date", 60), ("99999999999999999999", 60)
+    ] as [(String?, Int)])
+    func parsesRetryDelay(header: String?, expected: Int) {
+        #expect(DirectLicenseAPI.retryAfterSeconds(header) == expected)
+    }
+
+    @Test("Retry-After HTTP 日期向上取整，过期日期不再等待", arguments: [
+        "Wed, 21 Oct 2015 07:28:00 GMT",
+        "Wednesday, 21-Oct-15 07:28:00 GMT",
+        "Wed Oct 21 07:28:00 2015"
+    ])
+    func parsesRetryDate(header: String) throws {
+        let deadline = try #require(ISO8601DateFormatter().date(from: "2015-10-21T07:28:00Z"))
+        #expect(DirectLicenseAPI.retryAfterSeconds(header, now: deadline.addingTimeInterval(-7.2)) == 8)
+        #expect(DirectLicenseAPI.retryAfterSeconds(header, now: deadline) == 0)
+        #expect(DirectLicenseAPI.retryAfterSeconds(header, now: deadline.addingTimeInterval(1)) == 0)
+    }
+
+    @Test("限流提示直接存在于全部支持语言的编译资源中")
+    @MainActor
+    func rateLimitMessageCoversSupportedLocales() throws {
+        let key = "settings.pro.direct.error.rateLimitedFormat"
+        for locale in AppLocale.allCases where locale != .system {
+            let path = try #require(Bundle.main.path(forResource: locale.rawValue, ofType: "lproj"))
+            let bundle = try #require(Bundle(path: path))
+            let format = bundle.localizedString(forKey: key, value: "__MISSING__", table: nil)
+            #expect(format != "__MISSING__", "Missing \(locale.rawValue)")
+            #expect(format.components(separatedBy: "%d").count == 2)
+            let message = String(format: format, 60)
+            #expect(message.contains("60"))
+            #expect(!message.contains("%"))
+        }
+    }
+
+    @Test("2xx 解码失败转换为受控错误，不重试已可能生效的激活", arguments: [
+        #"{"status":"active","provider":"creem","validatedAt":"SENSITIVE-LICENSE-KEY"}"#,
+        #"{"status":"active","provider":"creem"}"#,
+        #"{"status":"SENSITIVE-LICENSE-KEY","provider":"creem","validatedAt":"2026-11-10T00:00:00Z"}"#,
+        #"{"status":"active","provider":"creem","validatedAt":null}"#,
+        #"{"status":"active","provider":"creem","validatedAt":"2026-11-10T00:00:00Z","activationUsed":"SENSITIVE-LICENSE-KEY"}"#,
+        "<html>SENSITIVE-LICENSE-KEY</html>"
+    ])
+    func decodingFailuresUseSafeError(body: String) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: body)
+        }
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: nil,
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+        await #expect(throws: DirectLicenseAPIError.responseDecodingFailed) {
+            _ = try await api.activate(DirectLicenseActivationRequest(
+                licenseKey: "SENSITIVE-LICENSE-KEY", deviceID: "Mac", appVersion: "1.9.4"
+            ))
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+        let error = DirectLicenseAPIError.responseDecodingFailed
+        #expect(error.diagnosticCode == "response_decoding_failed")
+        #expect(error.preservesLocalEntitlement)
+        #expect(error.errorDescription == String.l10n("settings.pro.direct.error.responseDecodingFailed"))
+        #expect(!error.localizedDescription.contains("SENSITIVE-LICENSE-KEY"))
+    }
+
+    @Test("解码诊断保留错误类别与安全字段，不输出值、动态键或底层描述")
+    func decodingDiagnosticsRedactPayload() {
+        let dateKey = DiagnosticKey(stringValue: "validatedAt")!
+        let sensitiveKey = DiagnosticKey(stringValue: "SENSITIVE-LICENSE-KEY\nFORGED-LOG")!
+        let context = DecodingError.Context(
+            codingPath: [dateKey],
+            debugDescription: "SENSITIVE-LICENSE-KEY",
+            underlyingError: NSError(domain: "SENSITIVE-LICENSE-KEY", code: 1)
+        )
+        #expect(DirectLicenseAPI.decodingDiagnostic(DecodingError.dataCorrupted(context))
+            == "reason=data_corrupted field_path=$.validatedAt")
+        #expect(DirectLicenseAPI.decodingDiagnostic(DecodingError.typeMismatch(Int.self, context))
+            == "reason=type_mismatch field_path=$.validatedAt")
+        #expect(DirectLicenseAPI.decodingDiagnostic(DecodingError.valueNotFound(Date.self, context))
+            == "reason=value_not_found field_path=$.validatedAt")
+        #expect(DirectLicenseAPI.decodingDiagnostic(DecodingError.keyNotFound(sensitiveKey, context))
+            == "reason=key_not_found field_path=$.validatedAt.<field>")
+        let deviceContext = DecodingError.Context(
+            codingPath: [DiagnosticKey(stringValue: "devices")!, DiagnosticKey(intValue: 2)!, sensitiveKey],
+            debugDescription: "SENSITIVE-LICENSE-KEY"
+        )
+        #expect(DirectLicenseAPI.decodingDiagnostic(DecodingError.dataCorrupted(deviceContext))
+            == "reason=data_corrupted field_path=$.devices.[].<field>")
+        #expect(DirectLicenseAPI.decodingDiagnostic(NSError(domain: "SENSITIVE-LICENSE-KEY", code: 1))
+            == "reason=other field_path=$")
+    }
+
+    @Test("激活阶段失败提示存在于全部支持语言的编译资源中")
+    @MainActor
+    func activationFailureMessagesCoverSupportedLocales() throws {
+        for locale in AppLocale.allCases where locale != .system {
+            let path = try #require(Bundle.main.path(forResource: locale.rawValue, ofType: "lproj"))
+            let bundle = try #require(Bundle(path: path))
+            for suffix in ["responseDecodingFailed", "credentialSaveFailed"] {
+                let key = "settings.pro.direct.error.\(suffix)"
+                let message = bundle.localizedString(forKey: key, value: "__MISSING__", table: nil)
+                #expect(message != "__MISSING__", "Missing \(locale.rawValue): \(key)")
+                #expect(!message.isEmpty)
+                #expect(!message.contains("%"))
+            }
+        }
+    }
+
+    /// 模拟 JSON 动态键；诊断不能假设所有 CodingKey 都是编译期字段。
+    private struct DiagnosticKey: CodingKey {
+        let stringValue: String
+        let intValue: Int?
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+
+        init?(intValue: Int) {
+            self.stringValue = "Index \(intValue)"
+            self.intValue = intValue
+        }
+    }
+
     private static func jsonResponse(for request: URLRequest, body: String) -> (HTTPURLResponse, Data) {
         let response = HTTPURLResponse(
             url: request.url!,

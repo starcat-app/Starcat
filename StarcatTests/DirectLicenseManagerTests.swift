@@ -289,6 +289,74 @@ struct DirectLicenseManagerTests {
         #expect(URLProtocolStub.receivedRequests.count == 1)
     }
 
+    @Test("激活限流禁止重复及深链请求，期满仅恢复手动激活")
+    func activationCooldownBlocksRequestsUntilDeadline() async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 429, httpVersion: nil,
+                headerFields: ["Retry-After": "60"]
+            )!
+            return (response, Data(#"{"code":"RATE_LIMITED"}"#.utf8))
+        }
+        var now = Date(timeIntervalSince1970: 1_000)
+        let store = try Self.seededStore(plan: .monthly)
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store, nowProvider: { now })
+
+        #expect(await manager.activate(licenseKey: "NEW-KEY") == false)
+        #expect(manager.activationRetrySeconds() == 60)
+        #expect(manager.entitlement.isActive)
+        #expect(try store.loadCredential()?.licenseKey == "STARCAT-TEST-KEY")
+        #expect(await manager.activate(licenseKey: "ANOTHER-KEY") == false)
+        let url = try #require(URL(string: "starcat://license/activate?license_key=NEW-KEY"))
+        #expect(await manager.activateFromPaymentSuccessURL(url) == false)
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+
+        now = now.addingTimeInterval(59.5)
+        #expect(manager.activationRetrySeconds() == 1)
+        #expect(await manager.activate(licenseKey: "NEW-KEY") == false)
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+        now = now.addingTimeInterval(0.5)
+        #expect(manager.activationRetrySeconds() == 0)
+        // 经过截止时间不会产生自动重试；下一次明确的手动激活才允许出站。
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status": "active", "provider": "creem", "plan": "monthly",
+              "productID": "prod_monthly", "instanceID": "inst_new",
+              "validatedAt": "2026-11-10T00:00:00Z"
+            }
+            """)
+        }
+        #expect(await manager.activate(licenseKey: "NEW-KEY"))
+        #expect(URLProtocolStub.receivedRequests.count == 2)
+        #expect(manager.activationRetryAfter == nil)
+        #expect(manager.lastErrorMessage == nil)
+        #expect(try store.loadCredential()?.licenseKey == "NEW-KEY")
+    }
+
+    @Test("后台校验限流保留凭据与 Pro，记录统一诊断码")
+    func validationRateLimitPreservesStoredPro() async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil
+            )!
+            return (response, Data(#"{"code":"RATE_LIMITED"}"#.utf8))
+        }
+        let store = try Self.seededStore(plan: .monthly)
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store)
+        #expect(await manager.validateStoredLicense())
+        #expect(manager.entitlement.isActive)
+        #expect(try store.loadCredential() != nil)
+        #expect(manager.validationRecord.lastErrorCode == "rate_limit_reached")
+        #expect(manager.activationRetryAfter == nil)
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
     @Test("未知上游故障与路由 404 不撤销已保存的 Pro", arguments: [502, 403, 404])
     func unknownUpstreamFailuresPreserveStoredPro(status: Int) async throws {
         URLProtocolStub.reset()
@@ -351,6 +419,115 @@ struct DirectLicenseManagerTests {
         #expect(DirectLicenseAPIError.safeTraceID("SENSITIVE-LICENSE-KEY\nFORGED-LOG") == nil)
         #expect(DirectLicenseAPIError.safeTraceID("customer@example.com") == nil)
         #expect(DirectLicenseAPIError.safeTraceID("550E8400-E29B-41D4-A716-446655440000") == "550e8400-e29b-41d4-a716-446655440000")
+    }
+
+    @Test("正常激活保存完整凭据，恢复 Pro 并清除之前的失败提示")
+    func successfulActivationPersistsCredentialAndClearsError() async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: #"{"status":"active","provider":"creem"}"#)
+        }
+        let store = DirectLicenseStore(keychain: InMemoryKeychain())
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store, deviceIDProvider: { "Mac" })
+        #expect(await manager.activate(licenseKey: "TEST-KEY") == false)
+        #expect(manager.lastErrorMessage != nil)
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status":"active", "provider":"creem", "plan":"lifetime",
+              "productID":"prod_lifetime", "instanceID":"inst_new",
+              "activationUsed":1, "activationLimit":3,
+              "validatedAt":"2026-11-10T00:00:00.123456789Z"
+            }
+            """)
+        }
+        #expect(await manager.activate(licenseKey: " TEST-KEY ", subscriptionID: "sub_new"))
+        let saved = try #require(try store.loadCredential())
+        #expect(saved.licenseKey == "TEST-KEY")
+        #expect(saved.instanceID == "inst_new")
+        #expect(saved.productID == "prod_lifetime")
+        #expect(saved.plan == .lifetime)
+        #expect(saved.subscriptionID == "sub_new")
+        #expect(manager.storedCredential == saved)
+        #expect(manager.entitlement.isActive)
+        #expect(manager.runtimeState == .verifiedActive)
+        #expect(manager.lastSnapshot?.instanceID == "inst_new")
+        #expect(manager.lastErrorMessage == nil)
+        #expect(!manager.isActivating)
+        #expect(URLProtocolStub.receivedRequests.count == 2)
+    }
+
+    @Test("激活解码失败显示安全提示，保留已有权益且不保存新授权", arguments: [false, true])
+    func activationDecodingFailureKeepsPreviousState(hasCredential: Bool) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {"status":"active","provider":"creem","instanceID":"inst_new","validatedAt":"SENSITIVE-LICENSE-KEY"}
+            """)
+        }
+        let store = try hasCredential ? Self.seededStore(plan: .monthly) : DirectLicenseStore(keychain: InMemoryKeychain())
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store, deviceIDProvider: { "Mac" })
+        let previous = manager.storedCredential
+        let previousEntitlement = manager.entitlement
+        let previousState = manager.runtimeState
+
+        #expect(await manager.activate(licenseKey: "SENSITIVE-LICENSE-KEY") == false)
+        #expect(manager.lastErrorMessage == String.l10n("settings.pro.direct.error.responseDecodingFailed"))
+        #expect(manager.lastErrorMessage?.contains("SENSITIVE-LICENSE-KEY") == false)
+        #expect(manager.storedCredential == previous)
+        #expect(try store.loadCredential() == previous)
+        #expect(manager.entitlement == previousEntitlement)
+        #expect(manager.runtimeState == previousState)
+        #expect(manager.lastSnapshot == nil)
+        #expect(!manager.isActivating)
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("远端成功但本机写入失败时提示保存失败，不授予未保存的 Pro")
+    func activationSaveFailureIsReportedSafely() async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status":"active", "provider":"creem", "plan":"lifetime",
+              "instanceID":"inst_new", "validatedAt":"2026-11-10T00:00:00Z"
+            }
+            """)
+        }
+        let store = DirectLicenseStore(keychain: InMemoryKeychain(rejectsServiceKeyWrites: true))
+        // 固定设备名称，确保失败发生在远端成功后的凭据保存，而非安装 ID 初始化。
+        let manager = DirectLicenseManager(api: Self.testAPI(), store: store, deviceIDProvider: { "Mac" })
+        #expect(await manager.activate(licenseKey: "SENSITIVE-LICENSE-KEY") == false)
+        #expect(manager.lastErrorMessage == String.l10n("settings.pro.direct.error.credentialSaveFailed"))
+        #expect(manager.lastErrorMessage?.contains("SENSITIVE-LICENSE-KEY") == false)
+        #expect(manager.storedCredential == nil)
+        #expect(try store.loadCredential() == nil)
+        #expect(manager.entitlement == .inactive)
+        #expect(manager.runtimeState == .none)
+        #expect(manager.lastSnapshot == nil)
+        #expect(!manager.isActivating)
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("保存诊断只记录固定类别和系统域及码，不输出凭据或文件路径")
+    func credentialSaveDiagnosticRedactsErrorDetails() {
+        let underlying = NSError(
+            domain: NSCocoaErrorDomain, code: CocoaError.fileWriteNoPermission.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "SENSITIVE-LICENSE-KEY", NSFilePathErrorKey: "/private/customer"]
+        )
+        #expect(DirectLicenseActivationError.storageDiagnostic(KeychainError.writeFailed(underlying: underlying))
+            == "reason=write_failed error_domain=NSCocoaErrorDomain error_code=513")
+        #expect(DirectLicenseActivationError.storageDiagnostic(KeychainError.encryptionFailed(underlying: underlying))
+            == "reason=encryption_failed error_domain=NSCocoaErrorDomain error_code=513")
+        #expect(DirectLicenseActivationError.storageDiagnostic(KeychainError.deleteFailed(underlying: underlying))
+            == "reason=delete_failed error_domain=NSCocoaErrorDomain error_code=513")
+        let custom = NSError(domain: "SENSITIVE-LICENSE-KEY\nFORGED-LOG", code: 42, userInfo: underlying.userInfo)
+        #expect(DirectLicenseActivationError.storageDiagnostic(custom)
+            == "reason=other error_domain=other error_code=42")
+        #expect(DirectLicenseActivationError.credentialSaveFailed.diagnosticCode == "credential_save_failed")
     }
 
     private nonisolated static func seededStore(
