@@ -159,6 +159,8 @@ struct HomeView: View {
     @State private var showsDailyRadarPreview = false
     /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
     @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
+    /// 新功能圆点由主窗口持有一份，让顶部统计入口和 Explore 侧栏共享同一次“首次点击”记录。
+    @State private var newFeatureBadgeStore = NewFeatureBadgeStore()
     /// 图谱模型跨关闭保留；原页面选择不随遮盖层变化。
     @State private var showsFollowGraph = false
     @State private var followGraphModel = FollowGraphViewModel()
@@ -1380,6 +1382,7 @@ struct HomeView: View {
             currentActivityTintColor: derivedActivityTintColor,
             dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
             dailyRadarModel: dailyRadarModel,
+            newFeatureBadgeStore: newFeatureBadgeStore,
             onOpenFollowGraph: { relation in
                 followGraphRelation = relation
                 showsDailyRadarPreview = false

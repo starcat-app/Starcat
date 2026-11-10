@@ -25,6 +25,8 @@ import Combine
 struct SidebarHeaderView: View {
     /// 图谱由主窗口承载，统计卡不自行创建窗口或持有网络任务。
     var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
+    /// 与 Explore 侧栏共享的新功能标识状态，保证同一功能在任一入口点击后不再提示。
+    var newFeatureBadgeStore: NewFeatureBadgeStore
 
     @Environment(AuthSession.self) private var authSession
     @Environment(HomeViewModel.self) private var viewModel
@@ -515,7 +517,11 @@ struct SidebarHeaderView: View {
                 label: "sidebar.stats.followers",
                 helpText: String.l10n("sidebar.stats.openFollowGraph"),
                 url: nil,
-                action: { onOpenFollowGraph(.followers) }
+                action: {
+                    newFeatureBadgeStore.markVisited(.followersGraph)
+                    onOpenFollowGraph(.followers)
+                },
+                showsNewFeatureBadge: newFeatureBadgeStore.shouldShowBadge(for: .followersGraph)
             )
             Divider().frame(height: 26)
             StatCell(
@@ -523,7 +529,11 @@ struct SidebarHeaderView: View {
                 label: "sidebar.stats.following",
                 helpText: String.l10n("sidebar.stats.openFollowGraph"),
                 url: nil,
-                action: { onOpenFollowGraph(.following) }
+                action: {
+                    newFeatureBadgeStore.markVisited(.followingGraph)
+                    onOpenFollowGraph(.following)
+                },
+                showsNewFeatureBadge: newFeatureBadgeStore.shouldShowBadge(for: .followingGraph)
             )
         }
         .padding(.top, 4)
@@ -587,6 +597,7 @@ private struct StatCell: View {
     let url: URL?
     var action: (() -> Void)? = nil
     var todayCount: Int = 0
+    var showsNewFeatureBadge = false
 
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -631,6 +642,7 @@ private struct StatCell: View {
                     .minimumScaleFactor(0.7)
                 todayBadge
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: todayCount)
+                NewFeatureBadge(isVisible: showsNewFeatureBadge)
             }
             // 三列共用同样的标签行高度，今日标记出现或消失时主数字仍然对齐。
             .frame(height: 16)

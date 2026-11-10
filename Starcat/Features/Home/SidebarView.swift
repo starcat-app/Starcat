@@ -133,6 +133,8 @@ struct SidebarView: View {
 
     /// 与右侧覆盖层共享的每日热点目录/分类状态；左栏不创建第二套请求。
     @Bindable var dailyRadarModel: DailyRadarWorkspaceViewModel
+    /// 新功能标识状态由主窗口持有；侧栏只读展示，并在系统 List 选中时写入首次点击记录。
+    var newFeatureBadgeStore: NewFeatureBadgeStore
     var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
 
     /// HOM-73：控制登录 sheet 的显示。
@@ -858,6 +860,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             SidebarHeaderView(
                 onOpenFollowGraph: onOpenFollowGraph,
+                newFeatureBadgeStore: newFeatureBadgeStore,
                 trendingRepo: currentTrendingRepo,
                 activityTintColor: currentActivityTintColor
             )
@@ -956,6 +959,7 @@ struct SidebarView: View {
 
     private func applyExploreSelection(_ selection: ExploreSidebarSelection) {
         if selection == .dailyRadarPreview {
+            newFeatureBadgeStore.markVisited(.dailyRadar)
             dailyRadarPreviewPresentation = true
             dailyRadarModel.selectCategory(nil)
             return
@@ -1002,6 +1006,7 @@ struct SidebarView: View {
             selectedExploreMode = .awesome
             dependencies.awesomeStore.selectSource(sourceID)
         case .linuxDo:
+            newFeatureBadgeStore.markVisited(.linuxDo)
             // Linux.do 是 Discover 下的独立来源；先切来源再切模式，保证 Sidebar、
             // 中栏内容和标题在同一轮观察更新中都能识别为 Linux.do。
             dependencies.linuxDoStore.selectedSource = .linuxDo
@@ -1257,7 +1262,10 @@ struct SidebarView: View {
                     // 每日热点与 Weekly 拆分图形：雷达 vs 报纸（2026-11-04 图标体系样板决议）。
                     exploreSidebarBusinessIcon(.dailyRadar, color: .indigo)
                 } title: {
-                    Text("dailyRadar.title")
+                    HStack(spacing: 4) {
+                        Text("dailyRadar.title")
+                        NewFeatureBadge(isVisible: newFeatureBadgeStore.shouldShowBadge(for: .dailyRadar))
+                    }
                 }
             }
             ForEach(settings.exploreCatalogPreferences.visibleGroupIDs, id: \.self) { id in
@@ -1268,7 +1276,12 @@ struct SidebarView: View {
                     ) {
                         // 社区来源使用单气泡，复用分类字号与字重，避免独立缩放造成笔画不一致。
                         exploreSidebarBusinessIcon(.linuxDo, color: .indigo)
-                    } title: { Text(verbatim: "Linux.do") }
+                    } title: {
+                        HStack(spacing: 4) {
+                            Text(verbatim: "Linux.do")
+                            NewFeatureBadge(isVisible: newFeatureBadgeStore.shouldShowBadge(for: .linuxDo))
+                        }
+                    }
                 } else if let mode = ExploreMode(rawValue: id) {
                     exploreModeRow(mode)
                 }
