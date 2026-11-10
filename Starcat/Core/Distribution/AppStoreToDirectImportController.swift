@@ -51,24 +51,22 @@ final class AppStoreToDirectImportController {
             channel: channel
         )
         let hasRecordedDecision = decisionStore.decision != nil
-        let storeHasImportableData = AppStoreToDirectImportEvaluator.storeHasImportableData(
-            layout: layout,
-            fileManager: fileManager
-        )
-        let destinationIsEmpty = AppStoreToDirectImportEvaluator.destinationIsEmpty(
-            layout: layout,
-            fileManager: fileManager
-        )
-        let shouldPrompt = AppStoreToDirectImportEvaluator.shouldPrompt(
+        // 只有确实可能需要弹导入确认时才探测商店容器；探测本身可能触发 macOS 15+
+        // 的「访问其他 App 的数据」授权框，已选过或 Direct 有数据时都不能再碰。
+        let decision = AppStoreToDirectImportEvaluator.decidePrompt(
             isEligibleDirectBuild: isEligible,
             hasRecordedDecision: hasRecordedDecision,
-            storeHasImportableData: storeHasImportableData,
-            destinationIsEmpty: destinationIsEmpty
+            destinationIsEmpty: {
+                AppStoreToDirectImportEvaluator.destinationIsEmpty(layout: layout, fileManager: fileManager)
+            },
+            storeHasImportableData: {
+                AppStoreToDirectImportEvaluator.storeHasImportableData(layout: layout, fileManager: fileManager)
+            }
         )
         AppLog.general.info(
-            "Direct import prompt eligible=\(isEligible, privacy: .public) decision=\(hasRecordedDecision, privacy: .public) store=\(storeHasImportableData, privacy: .public) empty=\(destinationIsEmpty, privacy: .public) show=\(shouldPrompt, privacy: .public) bundle=\(self.bundleIdentifier ?? "nil", privacy: .public) channel=\(self.channel.rawValue, privacy: .public)"
+            "Direct import prompt eligible=\(isEligible, privacy: .public) decision=\(hasRecordedDecision, privacy: .public) store=\(decision.storeProbed ? String(decision.storeHasImportableData) : "not_checked", privacy: .public) empty=\(decision.destinationProbed ? String(decision.destinationEmpty) : "not_checked", privacy: .public) show=\(decision.shouldPrompt, privacy: .public) bundle=\(self.bundleIdentifier ?? "nil", privacy: .public) channel=\(self.channel.rawValue, privacy: .public)"
         )
-        return shouldPrompt
+        return decision.shouldPrompt
     }
 
     func skipImport() {

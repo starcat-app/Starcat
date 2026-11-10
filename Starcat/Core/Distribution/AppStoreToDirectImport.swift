@@ -148,6 +148,45 @@ enum AppStoreToDirectImportEvaluator {
             && destinationIsEmpty
     }
 
+    /// 按「廉价判断优先」的顺序决定是否探测商店容器。
+    ///
+    /// 商店容器属于另一个 App 的受保护数据：macOS 15+ 对未授权探测可能弹出
+    /// 「访问其他 App 的数据」授权框，而且授权未必跨启动保留。因此只有渠道合格、
+    /// 从未做过导入决策且 Direct 尚无用户数据时才允许探测，避免用户选过
+    /// 「跳过 / 已导入」之后每次冷启动都重复弹窗。
+    static func decidePrompt(
+        isEligibleDirectBuild: Bool,
+        hasRecordedDecision: Bool,
+        destinationIsEmpty: () -> Bool,
+        storeHasImportableData: () -> Bool
+    ) -> PromptDecision {
+        let mayPrompt = isEligibleDirectBuild && !hasRecordedDecision
+        let destinationEmpty = mayPrompt ? destinationIsEmpty() : false
+        let shouldProbeStore = mayPrompt && destinationEmpty
+        let storeHasData = shouldProbeStore ? storeHasImportableData() : false
+        return PromptDecision(
+            shouldPrompt: shouldPrompt(
+                isEligibleDirectBuild: isEligibleDirectBuild,
+                hasRecordedDecision: hasRecordedDecision,
+                storeHasImportableData: storeHasData,
+                destinationIsEmpty: destinationEmpty
+            ),
+            destinationProbed: mayPrompt,
+            destinationEmpty: destinationEmpty,
+            storeProbed: shouldProbeStore,
+            storeHasImportableData: storeHasData
+        )
+    }
+
+    /// `decidePrompt` 的探测执行结果：控制器用来记日志，测试用来断言没有越级探测。
+    struct PromptDecision: Equatable, Sendable {
+        var shouldPrompt: Bool
+        var destinationProbed: Bool
+        var destinationEmpty: Bool
+        var storeProbed: Bool
+        var storeHasImportableData: Bool
+    }
+
     /// Direct 正式包和 Debug 包都可以问；App Store 渠道一律不问。
     static func isEligibleDirectBuild(
         bundleIdentifier: String?,
