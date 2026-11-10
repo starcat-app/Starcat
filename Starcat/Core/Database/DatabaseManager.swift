@@ -120,6 +120,10 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
     ///   - userId: GitHub User ID；`nil` 走 `users/_anonymous` 占位 DB。
     ///   - basePathOverride: 测试用。默认 nil 走沙盒 Application Support。
     init(userId: Int64?, basePathOverride: URL? = nil) throws {
+        let diagnostic = DiagnosticOperation(category: "database", name: "open",
+                                             fields: ["anonymous": .boolean(userId == nil)])
+        var outcome: DiagnosticEvent.Outcome = .failed
+        defer { diagnostic.finish(outcome) }
         self.basePathOverride = basePathOverride
 
         let fileURL = try Self.databaseFileURL(userId: userId, basePathOverride: basePathOverride)
@@ -135,6 +139,7 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         do {
             pool = try DatabasePool(path: path, configuration: config)
         } catch {
+            diagnostic.finish(.failed, error: error)
             throw DatabaseError.openFailed(underlying: error)
         }
         self.currentPool = pool
@@ -142,6 +147,7 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         self.currentUserId = userId
 
         try Self.runMigrations(on: pool)
+        outcome = .succeeded
         Self.writeUserMeta(userId: userId, basePathOverride: basePathOverride)
         AppLog.database.info("Database initialized at \(path, privacy: .public) (userId=\(userId.map(String.init) ?? "anonymous", privacy: .public))")
     }
@@ -166,6 +172,10 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
             return
         }
 
+        let diagnostic = DiagnosticOperation(category: "database", name: "switch",
+            fields: ["anonymous": .boolean(userId == nil), "preservesPreviousOnFailure": .boolean(true)])
+        var outcome: DiagnosticEvent.Outcome = .failed
+        defer { diagnostic.finish(outcome) }
         let fileURL = try Self.databaseFileURL(userId: userId, basePathOverride: basePathOverride)
         let path = fileURL.path
 
@@ -189,6 +199,7 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
         self.currentPool = newPool
         self.databasePath = path
         self.currentUserId = userId
+        outcome = .succeeded
 
         Self.writeUserMeta(userId: userId, basePathOverride: basePathOverride)
 
@@ -202,6 +213,7 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
     /// 在指定 writer 上执行所有注册的迁移。
     /// 失败时抛 `DatabaseError.migrationFailed`。
     static func runMigrations(on writer: any DatabaseWriter) throws {
+        let diagnostic = DiagnosticOperation(category: "database", name: "migrate")
         var migrator = DatabaseMigrator()
         DatabaseMigrations.registerAll(into: &migrator)
 
@@ -211,8 +223,11 @@ final class DatabaseManager: DatabaseManaging, @unchecked Sendable {
             let applied = try writer.read { db in
                 try migrator.appliedMigrations(db)
             }
+            diagnostic.finish(fields: ["migrationCount": .integer(applied.count),
+                                      "migrationRevision": .string(applied.last ?? "none")])
             AppLog.database.info("Migrations applied: \(applied.joined(separator: ", "), privacy: .public)")
         } catch {
+            diagnostic.finish(.failed, error: error)
             AppLog.database.error("Migration failed: \(error.localizedDescription, privacy: .public)")
             throw DatabaseError.migrationFailed(underlying: error)
         }

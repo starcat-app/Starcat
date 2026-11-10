@@ -11,6 +11,46 @@
 //
 
 import Foundation
+import CryptoKit
+
+/// 错误链仅保存类型和系统码，不序列化 NSError.userInfo 中的响应、URL 或正文。
+struct DiagnosticErrorCause: Codable, Sendable, Equatable {
+    let type: String
+    let code: Int
+}
+
+/// 诊断安全字段只接受标量，不允许把响应、设置或业务对象整体序列化。
+enum DiagnosticValue: Codable, Sendable, Equatable {
+    case string(String), integer(Int), decimal(Double), boolean(Bool)
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let bool = try? value.decode(Bool.self) { self = .boolean(bool) }
+        else if let int = try? value.decode(Int.self) { self = .integer(int) }
+        else if let double = try? value.decode(Double.self) { self = .decimal(double) }
+        else { self = .string(try value.decode(String.self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .string(let string): try value.encode(string)
+        case .integer(let int): try value.encode(int)
+        case .decimal(let double): try value.encode(double.isFinite ? double : 0)
+        case .boolean(let bool): try value.encode(bool)
+        }
+    }
+
+    /// 报告显示实际标量，避免把 Swift enum 的调试格式交给开发者阅读。
+    var reportValue: String {
+        switch self {
+        case .string(let value): return value
+        case .integer(let value): return String(value)
+        case .decimal(let value): return value.isFinite ? String(value) : "unknown"
+        case .boolean(let value): return String(value)
+        }
+    }
+}
 
 /// 诊断事件。
 ///
@@ -28,8 +68,8 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
 
     /// 事件在诊断体系中的用途。
     ///
-    /// `context` 只作为导出包上下文，不点亮全局故障；`issue` 仅用于用户无法通过
-    /// 设置、重试、重新登录等方式自行恢复的程序或本地数据故障。
+    /// `context` 保留可恢复故障和取消证据，不点亮全局故障；
+    /// `issue` 仅表达需要开发者协助的提醒，与证据采集范围独立。
     enum Visibility: String, Codable, Sendable {
         case context
         case issue
@@ -47,6 +87,47 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     var errorCode: String?
     var underlying: String?
     var context: [String: String]
+    var schemaVersion: Int = 2
+    var eventID: String = UUID().uuidString
+    var sequence: UInt64?
+    var sessionID: String? = DiagnosticContext.sessionID
+    var environmentID: String? = DiagnosticContext.sessionID
+    var operationID: String?
+    var parentOperationID: String?
+    var requestID: String?
+    var serverTraceID: String?
+    var phase: String?
+    var outcome: Outcome?
+    var durationMs: Double?
+    var impact: Impact = .none
+    /// 聚合行表示本条新增次数，不能把累计次数再次相加。
+    var occurrenceCount: Int = 1
+    var firstSeen: String?
+    var lastSeen: String?
+    var fields: [String: DiagnosticValue] = [:]
+    var sourceFile: String?
+    var sourceFunction: String?
+    var sourceLine: Int?
+    var errorChain: [DiagnosticErrorCause] = []
+
+    /// 入队预算用保守的标量体积估计，避免为测量大小在 UI 线程编码整条 JSON。
+    var estimatedQueuedBytes: Int {
+        let metadata = [timestamp, category, operation, message, service, errorCode, underlying,
+                        eventID, sessionID, environmentID, operationID, parentOperationID, requestID,
+                        serverTraceID, phase, sourceFile, sourceFunction].compactMap { $0 }
+        let strings = metadata.reduce(0) { $0 + $1.utf8.count }
+        let contexts = context.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 64 }
+        let values = fields.reduce(0) { $0 + $1.key.utf8.count + $1.value.reportValue.utf8.count + 64 }
+        return 1024 + (strings + contexts + values) * 2 + errorChain.count * 384
+    }
+
+    enum Outcome: String, Codable, Sendable {
+        case succeeded, failed, cancelled, partial, skipped
+    }
+
+    enum Impact: String, Codable, Sendable {
+        case none, degraded, blocked, dataRisk
+    }
 
     init(
         timestamp: Date = Date(),
@@ -54,25 +135,71 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         visibility: Visibility = .context,
         category: String,
         operation: String,
-        message: String,
+        message: StaticString,
         service: String? = nil,
         statusCode: Int? = nil,
         errorCode: String? = nil,
         underlying: String? = nil,
-        context: [String: String] = [:]
+        context: [String: String] = [:],
+        operationID: String? = nil,
+        parentOperationID: String? = nil,
+        requestID: String? = nil,
+        serverTraceID: String? = nil,
+        phase: String? = nil,
+        outcome: Outcome? = nil,
+        durationMs: Double? = nil,
+        impact: Impact = .none,
+        fields: [String: DiagnosticValue] = [:],
+        errorChain: [DiagnosticErrorCause] = [],
+        sourceFile: String = #fileID,
+        sourceFunction: String = #function,
+        sourceLine: Int = #line
     ) {
         self.timestamp = ISO8601DateFormatter.shared.string(from: timestamp)
         self.level = level
         self.visibility = visibility
-        self.category = category
-        self.operation = operation
-        self.message = Self.sanitize(message, maxLength: 1_024)
-        self.service = service
+        self.category = Self.sanitize(category, maxLength: 80)
+        self.operation = Self.sanitize(operation, maxLength: 160)
+        // 编译期消息避免调用方误把响应或用户正文拼进日志；变量只能进入受控标量字段。
+        self.message = Self.sanitize(String(describing: message), maxLength: 1_024)
+        self.service = service.map { Self.sanitize($0, maxLength: 80) }
         self.statusCode = statusCode
-        self.errorCode = errorCode
-        self.underlying = underlying.map { Self.sanitize($0, maxLength: 4_096) }
-        self.context = context.reduce(into: [:]) { partial, pair in
-            partial[pair.key] = Self.sanitize(pair.value, maxLength: 512)
+        self.errorCode = errorCode.map { Self.sanitize($0, maxLength: 128) }
+        self.underlying = underlying.map(Self.safeUnderlying)
+        self.context = context.sorted { $0.key < $1.key }.prefix(32).reduce(into: [:]) { partial, pair in
+            guard Self.isSafeKey(pair.key) else { return }
+            let sensitive = ["repo", "login", "user", "path", "url", "endpoint", "account"]
+                .contains { pair.key.localizedCaseInsensitiveContains($0) }
+            // 旧字符串上下文没有类型契约；只保留计数/布尔，其余匿名化。新接入使用 fields。
+            let scalar = ["true", "false"].contains(pair.value) ||
+                (pair.value.count <= 24 && pair.value.range(of: #"^-?[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil)
+            partial[String(pair.key.prefix(80))] = !sensitive && scalar
+                ? pair.value : Self.anonymousReference(pair.value)
+        }
+        self.operationID = operationID ?? DiagnosticContext.current?.id
+        self.parentOperationID = parentOperationID ?? DiagnosticContext.current?.parentID
+        self.requestID = requestID
+        self.serverTraceID = serverTraceID.flatMap(Self.safeTrace)
+        self.phase = phase
+        self.outcome = outcome
+        self.durationMs = durationMs
+        self.impact = impact
+        self.errorChain = errorChain.prefix(4).map {
+            DiagnosticErrorCause(type: Self.sanitize($0.type, maxLength: 160), code: $0.code)
+        }
+        self.sourceFile = String(Self.redact(sourceFile, includeURLs: true).suffix(160))
+        self.sourceFunction = String(Self.redact(sourceFunction, includeURLs: true).prefix(160))
+        self.sourceLine = sourceLine
+        self.fields = fields.sorted { $0.key < $1.key }.prefix(48).reduce(into: [:]) { result, item in
+            guard Self.safeFieldKeys.contains(item.key) else { return }
+            if case .decimal(let number) = item.value, !number.isFinite { return }
+            if case .string(let text) = item.value {
+                // 只接收代码控制的短枚举值；正文、路径和 URL 不属于安全字段。
+                guard text.range(of: #"^[A-Za-z0-9_.:<>\-]{0,128}$"#, options: .regularExpression) != nil else { return }
+                result[item.key] = .string(Self.redact(text))
+            } else {
+                result[item.key] = item.value
+            }
         }
     }
 
@@ -88,6 +215,10 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         case errorCode
         case underlying
         case context
+        case schemaVersion, eventID, sequence, sessionID, environmentID
+        case operationID, parentOperationID, requestID, serverTraceID
+        case phase, outcome, durationMs, impact, occurrenceCount, firstSeen, lastSeen, fields
+        case sourceFile, sourceFunction, sourceLine, errorChain
     }
 
     /// 老版本 JSONL 没有 `visibility`。升级后默认把这些历史记录当作上下文，
@@ -105,13 +236,85 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
         underlying = try container.decodeIfPresent(String.self, forKey: .underlying)
         context = try container.decodeIfPresent([String: String].self, forKey: .context) ?? [:]
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        eventID = try container.decodeIfPresent(String.self, forKey: .eventID) ?? ""
+        sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
+        sessionID = try container.decodeIfPresent(String.self, forKey: .sessionID)
+        environmentID = try container.decodeIfPresent(String.self, forKey: .environmentID)
+        operationID = try container.decodeIfPresent(String.self, forKey: .operationID)
+        parentOperationID = try container.decodeIfPresent(String.self, forKey: .parentOperationID)
+        requestID = try container.decodeIfPresent(String.self, forKey: .requestID)
+        serverTraceID = try container.decodeIfPresent(String.self, forKey: .serverTraceID)
+        phase = try container.decodeIfPresent(String.self, forKey: .phase)
+        outcome = try container.decodeIfPresent(Outcome.self, forKey: .outcome)
+        durationMs = try container.decodeIfPresent(Double.self, forKey: .durationMs)
+        impact = try container.decodeIfPresent(Impact.self, forKey: .impact) ?? .none
+        occurrenceCount = try container.decodeIfPresent(Int.self, forKey: .occurrenceCount) ?? 1
+        firstSeen = try container.decodeIfPresent(String.self, forKey: .firstSeen)
+        lastSeen = try container.decodeIfPresent(String.self, forKey: .lastSeen)
+        fields = try container.decodeIfPresent([String: DiagnosticValue].self, forKey: .fields) ?? [:]
+        sourceFile = try container.decodeIfPresent(String.self, forKey: .sourceFile)
+        sourceFunction = try container.decodeIfPresent(String.self, forKey: .sourceFunction)
+        sourceLine = try container.decodeIfPresent(Int.self, forKey: .sourceLine)
+        errorChain = try container.decodeIfPresent([DiagnosticErrorCause].self, forKey: .errorChain) ?? []
+    }
+
+    /// 同一会话内可关联，不输出身份，也不提供跨用户稳定跟踪标识。
+    static func anonymousReference(_ text: String) -> String {
+        let digest = SHA256.hash(data: Data((DiagnosticContext.sessionID + text).utf8))
+        return "ref:" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func safeTrace(_ text: String) -> String? {
+        text.range(of: #"^[A-Za-z0-9_.:\-]{1,128}$"#, options: .regularExpression) != nil ? text : nil
+    }
+
+    private static func isSafeKey(_ key: String) -> Bool {
+        guard key.count <= 80 else { return false }
+        return !["token", "secret", "password", "cookie", "authorization", "prompt", "content",
+                 "body", "response", "apikey", "api_key", "licensekey", "note", "query"]
+            .contains { key.localizedCaseInsensitiveContains($0) }
+    }
+
+    /// 明确字段契约，避免以后把任意业务对象的字段默认为可导出数据。
+    /// hasCachedBody / credentialAvailable 仅表示布尔状态，永远不接受相应正文或凭据值。
+    private static let safeFieldKeys: Set<String> = Set("""
+        allowPartial anonymous approvalPending attempt authenticated available budget bundleCount bytes
+        cacheBytes cacheFallback cachedCount canLoadMore candidateCount complete count credentialAvailable
+        credentialRetained displayedCount documentID edgeCount edgeLimit elementCount entitlementActive
+        errorCount executable exists exitCode feature fetchedCount force hasCachedBody hasCursor hasNextPage
+        hasProgress headerCount height hideArchived hideForks hitCount htmlCharacters incremental itemCount
+        iteration keywordFailed keywordHitCount latencyMs mergedCount method migrationCount migrationRevision
+        nodeCount nodeLimit notModified outputAvailable page port preservesPreviousOnFailure
+        preservesLocalEntitlement processedCount provider reason receivedBytes refresh relation renderedCount
+        rendererVersion requestCount route running runtimeState scopeMatches scopeRequired scopeStarted
+        selectionVersion snapshotVersion source stage status succeeded systemCode timeoutMs toolCount
+        totalCount uniquePageCount uploadBytes vectorFailed vectorHitCount cacheAgeSeconds lastSuccessAgeSeconds
+        durationMs version statusCode modelLoaded firstOutputMs readyCount rejectedCount
+        budgetBytes completedItems dimensions durationSeconds finishReason inputTokenLimit inputTokens items
+        loadedBytes maxOutputTokens mlxActiveBytes mlxCacheBytes outputTokens queued temperature
+        timeoutSeconds topP totalItems errorType errorCode
+        """.split(whereSeparator: \.isWhitespace).map(String.init))
+
+    /// 旧调用可能传 localizedDescription 或调试交换；只允许错误类型、结果码和结构化解码路径。
+    private static func safeUnderlying(_ text: String) -> String {
+        let safe = sanitize(text, maxLength: 1024)
+        if safe.hasPrefix("Swift.DecodingError."),
+           !safe.contains("debugDescription"), !safe.contains("\n") { return safe }
+        guard let range = safe.range(of: #"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+"#,
+                                     options: .regularExpression) else { return "<unstructured-error-omitted>" }
+        var result = String(safe[range])
+        if let code = safe.range(of: #"\bcode=-?[0-9]+\b"#, options: .regularExpression) {
+            result += " " + safe[code]
+        }
+        return result
     }
 
     /// 最小脱敏：API Key / Bearer token / GitHub token / Authorization 这类常见形态。
     ///
     /// 这里故意不做复杂 NLP 识别，避免误删正常诊断信息；高风险原始 payload 本身就不应
     /// 传入 DiagnosticEvent。调用方必须只传短消息、状态码、服务名、repo fullName 等。
-    static func redact(_ value: String) -> String {
+    static func redact(_ value: String, includeURLs: Bool = false) -> String {
         var output = value
         output = output.replacingOccurrences(
             of: #"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+"#,
@@ -119,7 +322,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             options: .regularExpression
         )
         output = output.replacingOccurrences(
-            of: #"(?i)(api[_-]?key|token)\s*[:=]\s*[A-Za-z0-9._~+/=-]+"#,
+            of: #"(?i)(api[_-]?key|token|license[_-]?key|cookie|password)\s*[:=]\s*[^\s,;]+"#,
             with: "$1=<redacted>",
             options: .regularExpression
         )
@@ -134,19 +337,24 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             options: .regularExpression
         )
         output = output.replacingOccurrences(
-            of: #"(?:file://)?/Users/[^/\s]+"#,
+            of: #"(?:file://)?/Users/[^\n\"<>]+"#,
             with: "/Users/<redacted>",
             options: .regularExpression
         )
+        // 既有 AI 错误面板使用本函数展示请求域名；只有持久化诊断和导出边界隐藏地址。
+        if includeURLs {
+            output = output.replacingOccurrences(of: #"https?://[^\s<>"]+"#, with: "<url>", options: .regularExpression)
+            output = output.replacingOccurrences(of: #"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"#, with: "<email>", options: .regularExpression)
+        }
         return output
     }
 
     /// 把任意错误收敛成可导出的最小摘要。GRDB 错误可能在描述中附带 SQL 参数，
-    /// 因此只保留类型、domain 与 code；其它错误统一脱敏并截断。
+    /// 因此只保留类型、domain 与 code，不导出任意 localizedDescription。
     ///
     /// `DecodingError` 的 `localizedDescription` 在中文系统上会收成「未能读取数据，
-    /// 因为它的格式不正确」，丢掉 codingPath。诊断必须留下 path + debugDescription，
-    /// 才能区分「未知 provider」和真正的坏 JSON。
+    /// 因为它的格式不正确」，丢掉 codingPath。诊断保留错误类别与路径；
+    /// debugDescription 可能含响应正文，因此不能写入。
     static func summarize(_ error: Error) -> String {
         let typeName = String(reflecting: type(of: error))
         if typeName.contains("GRDB.DatabaseError") {
@@ -156,19 +364,20 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         if let decoding = error as? DecodingError {
             return sanitize(summarizeDecodingError(decoding), maxLength: 4_096)
         }
-        return sanitize("\(typeName): \(error.localizedDescription)", maxLength: 4_096)
+        let nsError = error as NSError
+        return sanitize("\(typeName) domain=\(nsError.domain) code=\(nsError.code)", maxLength: 512)
     }
 
     private static func summarizeDecodingError(_ error: DecodingError) -> String {
         switch error {
         case .typeMismatch(let type, let context):
-            return "Swift.DecodingError.typeMismatch(\(type), path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.typeMismatch(\(type), path=\(codingPath(context)))"
         case .valueNotFound(let type, let context):
-            return "Swift.DecodingError.valueNotFound(\(type), path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.valueNotFound(\(type), path=\(codingPath(context)))"
         case .keyNotFound(let key, let context):
-            return "Swift.DecodingError.keyNotFound(\(key.stringValue), path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.keyNotFound(\(key.stringValue), path=\(codingPath(context)))"
         case .dataCorrupted(let context):
-            return "Swift.DecodingError.dataCorrupted(path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.dataCorrupted(path=\(codingPath(context)))"
         @unknown default:
             return "Swift.DecodingError: \(error)"
         }
@@ -185,7 +394,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     }
 
     private static func sanitize(_ value: String, maxLength: Int) -> String {
-        let redacted = redact(value)
+        let redacted = redact(value, includeURLs: true)
         guard redacted.count > maxLength else { return redacted }
         return String(redacted.prefix(maxLength)) + "…<truncated>"
     }

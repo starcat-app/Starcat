@@ -31,13 +31,22 @@ actor ExternalAgentRuntimeHost {
         toolCallHandler: ToolCallHandler? = nil,
         onEvent: @escaping EventSink
     ) async throws {
+        let diagnostic = DiagnosticOperation(category: "runtime", name: "externalAgent")
         let session = ExternalAgentProcessSession(
             driver: driver,
             firstOutputTimeout: firstOutputTimeout
         )
         sessions[runID] = session
         defer { sessions.removeValue(forKey: runID) }
-        try await session.run(toolCallHandler: toolCallHandler, onEvent: onEvent)
+        do {
+            try await DiagnosticContext.$current.withValue(diagnostic) {
+                try await session.run(toolCallHandler: toolCallHandler, onEvent: onEvent)
+            }
+            diagnostic.finish()
+        } catch {
+            diagnostic.finish(.failed, error: error)
+            throw error
+        }
     }
 
     /// 为 DeepSeek 的临时 MCP client 提供有界冷启动重试。
@@ -131,6 +140,7 @@ private actor ExternalAgentProcessSession {
         }
         let processStartedAt = Date()
         try process.run()
+        DiagnosticContext.current?.event(phase: "processStarted")
         self.processStartedAt = processStartedAt
         // spawn 完成后父进程必须立即关闭三条 pipe 的 child-side endpoint。否则父进程
         // 自己仍持有 stdin read / stdout write / stderr write，Provider 退出后 EOF、EPIPE
@@ -211,6 +221,8 @@ private actor ExternalAgentProcessSession {
                     // 先交付实测指标，再交付首个产品事件；Projector 会把它并入随后到达的
                     // Provider usage，并最终随 assistant message 持久化。
                     await onEvent(.firstOutputLatency(latency))
+                    DiagnosticContext.current?.event(phase: "firstOutput",
+                        fields: ["latencyMs": .integer(latency)])
                 }
                 for frame in output.outboundFrames {
                     try write(frame)
@@ -232,6 +244,8 @@ private actor ExternalAgentProcessSession {
                         )
                     }
                     let result = await toolCallHandler(request)
+                    DiagnosticContext.current?.event(phase: "toolFinished",
+                        fields: ["succeeded": .boolean(!result.isError)])
                     await onEvent(.toolResult(
                         id: request.callID,
                         name: request.name,
@@ -268,6 +282,9 @@ private actor ExternalAgentProcessSession {
                 // stdout EOF 可能早于 Foundation 更新 Process 的退出状态。短暂等待 reaping，
                 // 才能把真实 status/signal 交给 UI，而不是一律报“提前关闭”。
                 await waitForProcessExit(process, timeout: .milliseconds(400))
+                var exitFields: [String: DiagnosticValue] = ["running": .boolean(process.isRunning)]
+                if !process.isRunning { exitFields["exitCode"] = .integer(Int(process.terminationStatus)) }
+                DiagnosticContext.current?.event(phase: "processExitObserved", fields: exitFields)
                 let diagnostic = await processDiagnostic(process)
                 if !process.isRunning, process.terminationStatus != 0 {
                     if driver.backend == .deepSeekHarness,

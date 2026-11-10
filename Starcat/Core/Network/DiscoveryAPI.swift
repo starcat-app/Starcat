@@ -251,7 +251,7 @@ actor DiscoveryAPI {
         }
         StarcatGatewayRouting.applyServiceHeader(to: &request, service: .discovery)
         do {
-            return try await session.data(for: request)
+            return try await DiagnosticHTTP.data(for: request, using: session, service: "discovery")
         } catch {
             throw StarcatEnvelopeNetworkError.transport(error)
         }

@@ -115,8 +115,13 @@ struct KnowledgeRAGRetriever: Sendable {
         repoLimitOverride: Int? = nil,
         progress: @Sendable (RAGRetrievalProgress) -> Void = { _ in }
     ) async throws -> RAGRetrievalResult {
+        let diagnostic = DiagnosticOperation(category: "rag", name: "retrieve",
+                                             fields: ["candidateCount": .integer(candidates.count)])
+        var diagnosticOutcome: DiagnosticEvent.Outcome = .failed
+        defer { diagnostic.finish(Task.isCancelled ? .cancelled : diagnosticOutcome) }
         let query = semanticQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !candidates.isEmpty else {
+            diagnosticOutcome = .skipped
             return RAGRetrievalResult(
                 candidates: candidates,
                 bundles: [],
@@ -126,6 +131,7 @@ struct KnowledgeRAGRetriever: Sendable {
             )
         }
         guard !enabledSources.isEmpty else {
+            diagnosticOutcome = .skipped
             return RAGRetrievalResult(
                 candidates: candidates,
                 bundles: [],
@@ -274,6 +280,12 @@ struct KnowledgeRAGRetriever: Sendable {
             outcome: bundles.isEmpty ? .noEvidence : .completed
         )
         progress(.evidencePacked(hitCount: hits.count, bundleCount: bundles.count))
+        diagnostic.event(phase: "evidencePacked", fields: [
+            "keywordHitCount": .integer(keyword.hits.count), "vectorHitCount": .integer(vector.hits.count),
+            "keywordFailed": .boolean(keyword.error != nil), "vectorFailed": .boolean(vector.error != nil),
+            "hitCount": .integer(hits.count), "bundleCount": .integer(bundles.count)
+        ])
+        diagnosticOutcome = keyword.error != nil || vector.error != nil ? .partial : .succeeded
         return RAGRetrievalResult(
             candidates: candidates,
             bundles: bundles,

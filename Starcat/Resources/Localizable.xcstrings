@@ -487640,6 +487640,195 @@
         }
       }
     },
+    "settings.diagnostics.capture.description" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Problem (optional; no private content or keys)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "问题现象（选填，请勿包含正文或密钥）" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "問題現象（選填，請勿包含正文或金鑰）" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "問題の概要（任意・本文やキーを含めないでください）" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "문제 설명 (선택, 본문이나 키 제외)" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Problem (optional, keine privaten Inhalte oder Schlüssel)" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Problème (facultatif, sans contenu privé ni clés)" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Problema (opcional, sin contenido privado ni claves)" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Problema (opcional, sem conteúdo privado ou chaves)" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Problema (facoltativo, senza contenuti privati o chiavi)" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Проблема (необязательно, без личных данных и ключей)" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Probleem (optioneel, geen privé-inhoud of sleutels)" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Problem (opcjonalnie, bez prywatnych treści i kluczy)" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Проблема (необов’язково, без приватних даних і ключів)" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Sorun (isteğe bağlı, özel içerik veya anahtar eklemeyin)" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Sự cố (không bắt buộc, không chứa nội dung riêng tư hoặc khóa)" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Masalah (opsional, tanpa konten pribadi atau kunci)" } }
+      }
+    },
+    "settings.diagnostics.capture.module" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Affected feature (optional)" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "受影响的功能（选填）" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "受影響的功能（選填）" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "影響を受けた機能（任意）" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "영향을 받은 기능 (선택)" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Betroffene Funktion (optional)" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Fonction concernée (facultatif)" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Función afectada (opcional)" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Recurso afetado (opcional)" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Funzione interessata (facoltativo)" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Затронутая функция (необязательно)" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Betrokken functie (optioneel)" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Funkcja, której dotyczy problem (opcjonalnie)" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Функція, якої стосується проблема (необов’язково)" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Etkilenen özellik (isteğe bağlı)" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Tính năng bị ảnh hưởng (không bắt buộc)" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Fitur yang terdampak (opsional)" } }
+      }
+    },
+    "settings.diagnostics.capture.includeTime" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Include the time of the problem" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "补充问题发生时间" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "補充問題發生時間" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "問題の発生日時を含める" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "문제 발생 시간 포함" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Zeitpunkt des Problems hinzufügen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Indiquer la date du problème" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Incluir la hora del problema" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Incluir o horário do problema" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Includi la data del problema" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Указать время проблемы" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Tijdstip van het probleem toevoegen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Dodaj czas wystąpienia problemu" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Додати час виникнення проблеми" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Sorunun zamanını ekle" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Thêm thời điểm xảy ra sự cố" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Sertakan waktu terjadinya masalah" } }
+      }
+    },
+    "settings.diagnostics.capture.time" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Problem time" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "发生时间" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "發生時間" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "発生日時" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "발생 시간" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Zeitpunkt" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Date du problème" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Fecha y hora" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Data e hora" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Data e ora" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Время проблемы" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Tijdstip" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Czas wystąpienia" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Час виникнення" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Sorun zamanı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Thời điểm xảy ra" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Waktu masalah" } }
+      }
+    },
+    "settings.diagnostics.capture.start" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Record a reproduction" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "记录一次问题复现" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "記錄一次問題重現" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "問題の再現を記録" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "문제 재현 기록" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Reproduktion aufzeichnen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Enregistrer une reproduction" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Grabar una reproducción" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Registrar uma reprodução" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Registra una riproduzione" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Записать воспроизведение" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Reproductie opnemen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Zarejestruj odtworzenie" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Записати відтворення" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Sorunu yeniden oluşturmayı kaydet" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Ghi lại lần tái hiện" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Rekam reproduksi masalah" } }
+      }
+    },
+    "settings.diagnostics.capture.stopExport" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Stop and export" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "结束并导出" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "結束並匯出" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "終了して書き出す" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "중지 후 내보내기" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Beenden und exportieren" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Arrêter et exporter" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Detener y exportar" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Parar e exportar" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Termina ed esporta" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Завершить и экспортировать" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Stoppen en exporteren" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Zakończ i eksportuj" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Завершити й експортувати" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Durdur ve dışa aktar" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Dừng và xuất" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Hentikan dan ekspor" } }
+      }
+    },
+    "settings.diagnostics.capture.enhancedHelp" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Record extra safe technical stages for up to 15 minutes, then export. Private content and keys are excluded." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "额外记录安全技术阶段，最多持续 15 分钟，结束后导出；不记录正文与密钥" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "額外記錄安全技術階段，最多持續 15 分鐘，結束後匯出；不記錄正文與金鑰" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "安全な技術情報を最大15分間追加記録してから書き出します。本文やキーは記録しません。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "최대 15분 동안 안전한 기술 단계를 추가 기록한 후 내보냅니다. 본문과 키는 기록하지 않습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Zusätzliche sichere technische Schritte bis zu 15 Minuten aufzeichnen und danach exportieren. Private Inhalte und Schlüssel werden ausgeschlossen." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Enregistrez des étapes techniques sûres pendant 15 minutes maximum, puis exportez. Le contenu privé et les clés sont exclus." } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Registra etapas técnicas seguras durante un máximo de 15 minutos y luego exporta. Se excluyen el contenido privado y las claves." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Registre etapas técnicas seguras por até 15 minutos e depois exporte. Conteúdo privado e chaves são excluídos." } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Registra ulteriori fasi tecniche sicure per un massimo di 15 minuti, poi esporta. Contenuti privati e chiavi sono esclusi." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Запись дополнительных безопасных технических этапов до 15 минут с последующим экспортом. Личные данные и ключи исключены." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Neem maximaal 15 minuten extra veilige technische stappen op en exporteer ze daarna. Privé-inhoud en sleutels worden uitgesloten." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Rejestruj dodatkowe bezpieczne etapy techniczne przez maksymalnie 15 minut, a następnie eksportuj. Prywatne treści i klucze są wykluczone." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Записуйте додаткові безпечні технічні етапи до 15 хвилин, потім експортуйте. Приватні дані та ключі виключено." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "En fazla 15 dakika boyunca ek güvenli teknik aşamaları kaydedip dışa aktarın. Özel içerik ve anahtarlar kaydedilmez." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Ghi thêm các giai đoạn kỹ thuật an toàn trong tối đa 15 phút rồi xuất. Không ghi nội dung riêng tư và khóa." } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Rekam tahap teknis tambahan yang aman hingga 15 menit, lalu ekspor. Konten pribadi dan kunci tidak disertakan." } }
+      }
+    },
+    "settings.diagnostics.capture.acknowledge" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Dismiss current diagnostic alerts" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "忽略当前诊断提醒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "忽略目前的診斷提醒" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "現在の診断通知を閉じる" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "현재 진단 알림 닫기" } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Aktuelle Diagnosehinweise ausblenden" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Ignorer les alertes de diagnostic actuelles" } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Descartar las alertas de diagnóstico actuales" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Dispensar alertas de diagnóstico atuais" } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "Ignora gli avvisi diagnostici attuali" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Скрыть текущие уведомления диагностики" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Huidige diagnosemeldingen negeren" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Odrzuć bieżące alerty diagnostyczne" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Приховати поточні діагностичні сповіщення" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Geçerli tanılama uyarılarını kapat" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Bỏ qua cảnh báo chẩn đoán hiện tại" } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Abaikan peringatan diagnostik saat ini" } }
+      }
+    },
+    "settings.diagnostics.capture.saved" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated" , "value" : "Diagnostic files saved to %@. Alerts are unchanged; nothing was uploaded." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated" , "value" : "诊断资料已保存到 %@，提醒仍保留，文件未上传" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review" , "value" : "診斷資料已儲存至 %@，提醒仍保留，檔案未上傳" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review" , "value" : "診断ファイルを %@ に保存しました。通知は変更されず、アップロードも行われていません。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review" , "value" : "진단 파일을 %@에 저장했습니다. 알림은 유지되며 업로드되지 않았습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review" , "value" : "Diagnosedateien unter %@ gespeichert. Hinweise bleiben bestehen; es wurde nichts hochgeladen." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Fichiers de diagnostic enregistrés dans %@. Les alertes sont conservées ; aucun envoi effectué." } },
+        "es" : { "stringUnit" : { "state" : "needs_review" , "value" : "Archivos de diagnóstico guardados en %@. Las alertas se conservan; no se ha subido nada." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review" , "value" : "Arquivos de diagnóstico salvos em %@. Os alertas foram mantidos; nada foi enviado." } },
+        "it" : { "stringUnit" : { "state" : "needs_review" , "value" : "File diagnostici salvati in %@. Gli avvisi restano attivi; nulla è stato caricato." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review" , "value" : "Файлы диагностики сохранены в %@. Уведомления сохранены; ничего не отправлено." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Diagnosebestanden opgeslagen in %@. Meldingen blijven staan; er is niets geüpload." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review" , "value" : "Pliki diagnostyczne zapisano w %@. Alerty pozostają; niczego nie przesłano." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review" , "value" : "Файли діагностики збережено в %@. Сповіщення залишено; нічого не завантажено на сервер." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review" , "value" : "Tanılama dosyaları %@ konumuna kaydedildi. Uyarılar korunur; hiçbir şey yüklenmedi." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review" , "value" : "Đã lưu tệp chẩn đoán vào %@. Cảnh báo vẫn giữ nguyên; không có dữ liệu nào được tải lên." } },
+        "id" : { "stringUnit" : { "state" : "needs_review" , "value" : "Berkas diagnostik disimpan ke %@. Peringatan tetap ada; tidak ada yang diunggah." } }
+      }
+    },
     "settings.diagnostics.export.successMessage" : {
       "extractionState" : "manual",
       "localizations" : {

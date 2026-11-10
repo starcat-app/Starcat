@@ -253,6 +253,7 @@ actor AgentRunSession {
 
     /// 返回本轮从 0 开始的 index；超过预算时不增加计数。
     func beginIteration() throws -> Int {
+        recordDiagnostic(phase: "iteration")
         try ensureRunnable()
         try ensureDuration()
         guard iteration < limits.maxIterations else {
@@ -270,6 +271,7 @@ actor AgentRunSession {
             throw AgentRunSessionError.toolCallLimit(limits.maxToolCalls)
         }
         toolCallCount = nextCount
+        recordDiagnostic(phase: "toolsRegistered")
     }
 
     /// 为 message 之外的持久化事实保留一个全局 sequence。
@@ -299,6 +301,7 @@ actor AgentRunSession {
         }
         pendingApproval = approval
         state = .waitingForConfirmation
+        recordDiagnostic(phase: "approvalPending")
     }
 
     func clearResolvedApproval() {
@@ -310,6 +313,7 @@ actor AgentRunSession {
     func finish(_ terminalState: AgentRunSessionState) -> Bool {
         guard terminalState.isTerminal, !state.isTerminal else { return false }
         state = terminalState
+        recordDiagnostic(phase: "finished")
         return true
     }
 
@@ -319,6 +323,7 @@ actor AgentRunSession {
         switch command {
         case .cancel:
             state = .cancelled
+            recordDiagnostic(phase: "finished")
             return true
         case .decideApproval(_, let approvalID, let toolCallID, let decision):
             guard state == .waitingForConfirmation,
@@ -331,6 +336,7 @@ actor AgentRunSession {
             approval.decidedAt = now()
             pendingApproval = approval
             state = .running
+            recordDiagnostic(phase: decision == .approved ? "approvalGranted" : "approvalDenied")
             return true
         }
     }
@@ -364,6 +370,24 @@ actor AgentRunSession {
         if state == .waitingForConfirmation {
             throw AgentRunSessionError.waitingForConfirmation
         }
+    }
+
+    /// 只保留运行状态、计数和权限结果，不复制消息、工具参数或 Runtime 原始输出。
+    private func recordDiagnostic(phase: String) {
+        let outcome: DiagnosticEvent.Outcome?
+        switch state {
+        case .completed: outcome = .succeeded
+        case .failed: outcome = .failed
+        case .cancelled: outcome = .cancelled
+        case .running, .waitingForConfirmation: outcome = nil
+        }
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: outcome == .failed ? .error : .info,
+            category: "agent", operation: "run", message: "Agent execution state",
+            operationID: runID.uuidString, phase: phase, outcome: outcome,
+            fields: ["iteration": .integer(iteration), "toolCount": .integer(toolCallCount),
+                     "approvalPending": .boolean(pendingApproval?.status == .pending)]
+        ))
     }
 
     private func ensureDuration() throws {

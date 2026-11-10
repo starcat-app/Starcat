@@ -1297,6 +1297,26 @@ final class KnowledgeRAGIndexBuilder {
 
     private func assignStatus(_ newStatus: RAGIndexingStatus) {
         guard isCurrentWorkGeneration else { return }
+        // 只投影索引阶段与数量；failed(String) 可能含正文，不能放进诊断字段。
+        let projection: (String, [String: DiagnosticValue])
+        switch newStatus {
+        case .idle: projection = ("idle", [:])
+        case .fetchingReadmes(let processed, let total):
+            projection = ("fetchingReadmes", ["processedCount": .integer(processed), "totalCount": .integer(total)])
+        case .building(let processed, let total):
+            projection = ("building", ["processedCount": .integer(processed), "totalCount": .integer(total)])
+        case .embedding(let processed, let total):
+            projection = ("embedding", ["processedCount": .integer(processed), "totalCount": .integer(total)])
+        case .completed: projection = ("completed", [:])
+        case .failed: projection = ("failed", [:])
+        }
+        if newStatus != status {
+            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                level: projection.0 == "failed" ? .error : .info,
+                category: "rag", operation: "index", message: "Index state changed",
+                phase: projection.0, outcome: projection.0 == "failed" ? .failed : projection.0 == "completed" ? .succeeded : nil,
+                fields: projection.1))
+        }
         status = newStatus
     }
 

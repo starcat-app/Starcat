@@ -62,6 +62,29 @@ struct DirectLicenseAPI: Sendable {
         path: String,
         body: Request
     ) async throws -> Response {
+        let diagnostic = DiagnosticOperation(category: "license", name: "request",
+            fields: ["route": .string(DiagnosticHTTPRequest.route(URL(string: path)))])
+        return try await DiagnosticContext.$current.withValue(diagnostic) {
+            do {
+                let result: Response = try await performSend(path: path, body: body)
+                diagnostic.finish()
+                return result
+            } catch {
+                var fields: [String: DiagnosticValue] = [:]
+                if let license = error as? DirectLicenseAPIError {
+                    fields["preservesLocalEntitlement"] = .boolean(license.preservesLocalEntitlement)
+                    fields["businessCode"] = .string(license.diagnosticCode)
+                }
+                diagnostic.finish(.failed, error: error, fields: fields)
+                throw error
+            }
+        }
+    }
+
+    /// 诊断包装不改变鉴权、解码或错误映射，不添加激活与验证重试。
+    private func performSend<Request: Encodable, Response: Decodable>(
+        path: String, body: Request
+    ) async throws -> Response {
         let url = AppEndpoints.appendPath(path, to: baseURL)
 
         var request = URLRequest(url: url)
@@ -75,7 +98,7 @@ struct DirectLicenseAPI: Sendable {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await urlSession.data(for: request)
+            (data, response) = try await DiagnosticHTTP.data(for: request, using: urlSession, service: "license")
         } catch let error as URLError {
             throw DirectLicenseAPIError.transport(code: error.code.rawValue)
         } catch {
@@ -138,6 +161,14 @@ struct DirectLicenseAPI: Sendable {
         let traceID = DirectLicenseAPIError.safeTraceID(body.traceID) ?? "-"
         let isRateLimited = http.statusCode == 429 || code == "rate_limit_reached"
         let diagnosticCode = isRateLimited ? "rate_limit_reached" : (code ?? "http_\(http.statusCode)")
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .warning, category: "license", operation: "businessResult",
+            message: "License service rejected request", service: "license",
+            statusCode: http.statusCode, errorCode: diagnosticCode,
+            serverTraceID: DirectLicenseAPIError.safeTraceID(body.traceID),
+            phase: "business", outcome: .failed,
+            fields: ["route": .string(DiagnosticHTTPRequest.route(URL(string: path)))]
+        ))
         AppLog.general.error(
             "[direct-license-api] path=\(path, privacy: .public) http_status=\(http.statusCode) code=\(diagnosticCode, privacy: .public) trace_id=\(traceID, privacy: .public)"
         )

@@ -292,6 +292,12 @@ actor GitHubAPIClient {
            !errs.isEmpty {
             let combined = errs.map(\.message).joined(separator: "; ")
             AppLog.network.error("GraphQL errors: \(combined, privacy: .public)")
+            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                level: .warning, category: "network", operation: "github.graphql",
+                message: "GraphQL returned business errors", statusCode: 200,
+                errorCode: "graphql.errors", phase: "business",
+                outcome: allowPartialData ? .partial : .failed,
+                fields: ["errorCount": .integer(errs.count), "allowPartial": .boolean(allowPartialData)]))
             // fork compare 允许带着 warning 继续解 data；mutation 仍把 errors 当失败。
             if !allowPartialData {
                 throw NetworkError.clientError(statusCode: 400, message: combined)
@@ -440,7 +446,7 @@ actor GitHubAPIClient {
         transportContext: String
     ) async throws -> (Data, URLResponse) {
         do {
-            return try await session.data(for: request)
+            return try await DiagnosticHTTP.data(for: request, using: session, service: "github")
         } catch is CancellationError {
             throw NetworkError.cancelled
         } catch {
@@ -484,6 +490,11 @@ actor GitHubAPIClient {
                 return APIResponse(value: decoded, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode, etag: etag)
             } catch {
                 AppLog.network.error("Decoding failed for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)")
+                DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                    level: .error, category: "network", operation: "github.decode",
+                    message: "GitHub decoding failed", statusCode: http.statusCode,
+                    errorCode: "response.decoding", underlying: DiagnosticEvent.summarize(error),
+                    phase: "decoding", outcome: .failed))
                 throw NetworkError.decodingError(underlying: error)
             }
 

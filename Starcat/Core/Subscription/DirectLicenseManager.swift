@@ -167,37 +167,49 @@ final class DirectLicenseManager: ProEntitlementProviding {
 
     @discardableResult
     func validateStoredLicenseIfNeeded() async -> Bool {
-        guard shouldValidateStoredLicense() else { return entitlement.isActive }
+        guard shouldValidateStoredLicense() else {
+            recordDiagnosticState(phase: "validationNotDue")
+            return entitlement.isActive
+        }
         return await validateStoredLicense(force: true, isSilent: true)
     }
 
     private func validateStoredLicense(force: Bool, isSilent: Bool) async -> Bool {
-        guard let credential = storedCredential ?? (try? store.loadCredential()) else { return false }
-        if !force, !shouldValidateStoredLicense() {
-            return entitlement.isActive
-        }
+        let diagnostic = DiagnosticOperation(category: "license", name: "validation")
+        return await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish() }
+            guard let credential = storedCredential ?? (try? store.loadCredential()) else {
+                diagnostic.finish(.skipped, fields: ["credentialAvailable": .boolean(false)])
+                return false
+            }
+            if !force, !shouldValidateStoredLicense() {
+                diagnostic.finish(.skipped)
+                return entitlement.isActive
+            }
 
-        isValidating = true
-        defer { isValidating = false }
+            isValidating = true
+            defer { isValidating = false }
 
-        updateValidationRecord { record in
-            record.lastAttemptAt = nowProvider()
-            record.lastErrorCode = nil
-        }
+            updateValidationRecord { record in
+                record.lastAttemptAt = nowProvider()
+                record.lastErrorCode = nil
+            }
 
-        do {
-            let snapshot = try await api.validate(DirectLicenseValidationRequest(
-                licenseKey: credential.licenseKey,
-                instanceID: credential.instanceID,
-                deviceID: deviceIDProvider(),
-                appVersion: appVersionProvider()
-            ))
-            applyValidatedSnapshot(snapshot, credential: credential)
-            lastErrorMessage = nil
-            return entitlement.isActive
-        } catch {
-            applyValidationFailure(error, isSilent: isSilent)
-            return entitlement.isActive
+            do {
+                let snapshot = try await api.validate(DirectLicenseValidationRequest(
+                    licenseKey: credential.licenseKey,
+                    instanceID: credential.instanceID,
+                    deviceID: deviceIDProvider(),
+                    appVersion: appVersionProvider()
+                ))
+                applyValidatedSnapshot(snapshot, credential: credential)
+                lastErrorMessage = nil
+                return entitlement.isActive
+            } catch {
+                applyValidationFailure(error, isSilent: isSilent)
+                diagnostic.finish(.failed, error: error)
+                return entitlement.isActive
+            }
         }
     }
 
@@ -413,6 +425,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     private func applyValidatedSnapshot(_ snapshot: DirectLicenseSnapshot, credential: DirectLicenseCredential) {
+        defer { recordDiagnosticState(phase: "validatedSnapshotApplied") }
         lastSnapshot = snapshot
         licenseDevices = snapshot.devices ?? licenseDevices
         updateValidationRecord { record in
@@ -447,6 +460,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
     }
 
     private func applyValidationFailure(_ error: Error, isSilent: Bool) {
+        defer { recordDiagnosticState(phase: "validationFailureApplied") }
         let apiError = error as? DirectLicenseAPIError
         let shouldPreserveEntitlement = apiError?.preservesLocalEntitlement ?? true
         let diagnosticCode = apiError?.diagnosticCode ?? "unknown_validation_error"
@@ -478,6 +492,21 @@ final class DirectLicenseManager: ProEntitlementProviding {
             lastErrorMessage = error.localizedDescription
         }
         AppLog.general.error("[direct-license] validation revoked local entitlement: \(diagnosticCode, privacy: .public)")
+    }
+
+    /// 使用已存在的权益状态，明确区别“错误允许保留”与“当前确实有效”，不读取或导出授权凭据。
+    private func recordDiagnosticState(phase: String) {
+        var fields: [String: DiagnosticValue] = [
+            "entitlementActive": .boolean(entitlement.isActive),
+            "credentialAvailable": .boolean(storedCredential != nil),
+            "runtimeState": .string(runtimeState.rawValue)
+        ]
+        if let success = validationRecord.lastSuccessAt {
+            fields["lastSuccessAgeSeconds"] = .decimal(max(0, nowProvider().timeIntervalSince(success)))
+        }
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .info, category: "license", operation: "entitlement", message: "Local entitlement observed",
+            phase: phase, fields: fields))
     }
 
     private func updateValidationRecord(_ mutate: (inout DirectLicenseValidationRecord) -> Void) {

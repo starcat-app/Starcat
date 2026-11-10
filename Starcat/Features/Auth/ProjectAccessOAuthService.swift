@@ -244,7 +244,7 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
         )
 
         do {
-            let (_, response) = try await session.data(for: request)
+            let (_, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "githubProjectAuth")
             guard let http = response as? HTTPURLResponse else {
                 throw ProjectAccessOAuthError.invalidResponse
             }
@@ -277,7 +277,7 @@ actor ProjectAccessOAuthService: ProjectAccessOAuthServiceProtocol {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "githubProjectAuth")
             guard let http = response as? HTTPURLResponse else {
                 throw ProjectAccessOAuthError.invalidResponse
             }

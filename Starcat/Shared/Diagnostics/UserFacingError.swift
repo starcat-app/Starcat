@@ -25,21 +25,25 @@ struct UserFacingError: Equatable, Sendable {
     var diagnosticSummary: String
     var statusCode: Int?
     var errorCode: String?
-    /// 只有用户无法自行恢复、需要开发者定位的故障才允许写入诊断问题。
+    /// 是否需要提醒开发者协助；不再作为证据采集开关，保留字段名避免影响调用方。
     var shouldRecordDiagnostic: Bool
+    var diagnosticOutcome: DiagnosticEvent.Outcome = .failed
+    var operationID: String? = DiagnosticContext.current?.id
 
     static func map(
         _ error: Error,
         operation: String,
         service: String? = nil
     ) -> UserFacingError {
-        if error is CancellationError || error is EntitlementGateError {
-            return make(
+        if DiagnosticFailure.isCancellation(error) || error is EntitlementGateError {
+            var mapped = make(
                 kind: .recoverable,
                 operation: operation,
                 service: service,
                 diagnostic: error.localizedDescription
             )
+            mapped.diagnosticOutcome = DiagnosticFailure.isCancellation(error) ? .cancelled : .skipped
+            return mapped
         }
         if let network = error as? NetworkError {
             return mapNetwork(network, operation: operation, service: service)
@@ -119,18 +123,20 @@ struct UserFacingError: Equatable, Sendable {
     }
 
     func record(level: DiagnosticEvent.Level = .error, category: String, operation: String, service: String? = nil) {
-        guard shouldRecordDiagnostic else { return }
-        DiagnosticLogStore.record(
-            level: level,
-            visibility: .issue,
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: diagnosticOutcome == .cancelled || diagnosticOutcome == .skipped ? .info : level,
+            visibility: shouldRecordDiagnostic ? .issue : .context,
             category: category,
             operation: operation,
-            message: message,
+            message: "User operation result",
             service: service,
             statusCode: statusCode,
-            errorCode: errorCode,
-            underlying: diagnosticSummary
-        )
+            errorCode: errorCode ?? "userOperation.\(diagnosticOutcome.rawValue)",
+            operationID: operationID,
+            phase: "finished",
+            outcome: diagnosticOutcome,
+            impact: diagnosticOutcome == .failed ? .blocked : .none
+        ))
     }
 
     private enum Kind {

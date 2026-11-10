@@ -97,7 +97,7 @@ actor DailyRadarAPI {
         StarcatGatewayRouting.applyServiceHeader(to: &request, service: events ? .aiEvents : .weekly)
         if let key, !key.isEmpty { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         if let etag { request.setValue(etag, forHTTPHeaderField: "If-None-Match") }
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "dailyRadar")
         try Task.checkCancellation()
         guard generation == configuration.generation else { throw DailyRadarError.staleConfiguration }
         guard let http = response as? HTTPURLResponse else { throw DailyRadarError.invalidResponse }

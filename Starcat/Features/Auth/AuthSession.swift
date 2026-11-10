@@ -214,15 +214,18 @@ final class AuthSession {
             return
         }
 
+        let diagnostic = DiagnosticOperation(category: "auth", name: "restore")
         let tokenOpt: String?
         do {
             tokenOpt = try keychain.loadGithubToken()
         } catch {
+            diagnostic.finish(.failed, error: error, fields: ["stage": .string("keychain")])
             AppLog.auth.error("restore: keychain read error: \(error.localizedDescription, privacy: .public)")
             return
         }
 
         guard let token = tokenOpt, !token.isEmpty else {
+            diagnostic.finish(.skipped, fields: ["reason": .string("noCredential")])
             AppLog.auth.info("restore: keychain miss (no token); starting unauthenticated")
             return
         }
@@ -249,7 +252,10 @@ final class AuthSession {
             contributionService?.load(login: user.login)
             developerLanguageService?.load(login: user.login)
             AppLog.auth.info("restore: success login=\(user.login, privacy: .public)")
+            diagnostic.finish(fields: ["authenticated": .boolean(true)])
         } catch NetworkError.unauthorized {
+            diagnostic.finish(.failed, error: NetworkError.unauthorized,
+                              fields: ["credentialRetained": .boolean(false)])
             AppLog.auth.warning("restore: token invalid (401); clearing")
             try? keychain.deleteGithubToken()
             // 401 时清掉 cached profile，避免下次启动 prime 出错误账号的数据
@@ -264,6 +270,7 @@ final class AuthSession {
             await onUserSessionChanged?(nil)
             self.state = .unauthenticated
         } catch {
+            diagnostic.finish(.failed, error: error, fields: ["credentialRetained": .boolean(true)])
             // 网络错误：token 保留 + cached state 也保留（避免离线时把刚 prime 的快照擦掉）
             AppLog.auth.error("restore: network error (token retained): \(error.localizedDescription, privacy: .public)")
         }

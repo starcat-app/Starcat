@@ -448,9 +448,12 @@ struct StarcatApp: App {
     // MARK: - Bootstrap
 
     private static func bootstrap() {
+        DiagnosticSessionLifecycle.start()
+        let diagnostic = DiagnosticOperation(category: "startup", name: "bootstrap")
         PerformanceTracer.shared.trace(.appBootstrap) {
             bootstrapBody()
         }
+        diagnostic.finish()
     }
 
     private static func bootstrapBody() {
@@ -486,6 +489,9 @@ struct StarcatApp: App {
             do {
                 try KeychainManager.shared.ping()
             } catch {
+                DiagnosticLogStore.record(level: .error, visibility: .issue, category: "keychain",
+                    operation: "startup.ping", message: "Keychain self-check failed",
+                    underlying: DiagnosticEvent.summarize(error))
                 AppLog.keychain.error("Keychain self-check failed: \(error.localizedDescription, privacy: .public)")
             }
         }

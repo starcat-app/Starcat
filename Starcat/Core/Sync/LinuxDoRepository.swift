@@ -57,6 +57,10 @@ actor LinuxDoRepository {
     }
 
     private func fetchAndSave(_ resource: LinuxDoResource, providerID: String, previous: LinuxDoCachedSnapshot?, key: String) async throws -> LinuxDoCachedSnapshot {
+        let diagnostic = DiagnosticOperation(category: "linuxdo", name: "refresh",
+            fields: ["hasCachedBody": .boolean(previous != nil)])
+        var outcome: DiagnosticEvent.Outcome = .failed
+        defer { diagnostic.finish(Task.isCancelled ? .cancelled : outcome) }
         let response = try await api.fetchLinuxDo(resource, providerID: providerID, ifNoneMatch: previous?.etag)
         guard await api.linuxDoProviderIdentity() == providerID else { throw CancellationError() }
         guard let payload = response.payload ?? previous?.payload else { throw LinuxDoCacheError.missingCachedBody }
@@ -69,6 +73,9 @@ actor LinuxDoRepository {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try data.write(to: directory.appendingPathComponent(key + ".json"), options: .atomic)
         remember(value, key: key, bytes: data.count)
+        diagnostic.event(phase: "cacheSaved", fields: ["notModified": .boolean(response.payload == nil),
+                                                     "cacheBytes": .integer(data.count)])
+        outcome = .succeeded
         pruneDisk()
         return value
     }

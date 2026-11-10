@@ -125,7 +125,7 @@ actor RecommendAPI {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "recommend")
         } catch {
             throw StarcatEnvelopeNetworkError.transport(error)
         }

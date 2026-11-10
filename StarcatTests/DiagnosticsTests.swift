@@ -45,7 +45,7 @@ struct DiagnosticsTests {
 
         #expect(event.message.contains("Bearer <redacted>"))
         #expect(event.message.contains("api_key=<redacted>"))
-        #expect(event.underlying?.contains("token=<redacted>") == true)
+        #expect(event.underlying == "<unstructured-error-omitted>")
         #expect(!event.message.contains("sk-secret"))
         #expect(event.underlying?.contains("ghp_secret") == false)
     }
@@ -63,7 +63,7 @@ struct DiagnosticsTests {
         #expect(!event.message.contains("sk-proj-"))
         #expect(event.message.contains("<redacted>"))
         #expect(!event.underlying!.contains("/Users/dong4j"))
-        #expect(event.underlying!.contains("/Users/<redacted>"))
+        #expect(event.underlying == "<unstructured-error-omitted>")
     }
 
     @Test("网络错误映射为用户友好文案并保留诊断状态码")
@@ -200,7 +200,7 @@ struct DiagnosticsTests {
         #expect(!text.contains("secret"))
     }
 
-    @Test("诊断日志在阈值内只记录第一条重复事件")
+    @Test("诊断日志在阈值内保留重复发生次数")
     func diagnosticLogStoreSuppressesDuplicateEventsInsideWindow() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
@@ -212,7 +212,10 @@ struct DiagnosticsTests {
         await store.record(securityAdvisoryEvent(timestamp: base.addingTimeInterval(30)))
 
         let lines = await diagnosticLogLines(in: store)
-        #expect(lines.count == 1)
+        #expect(lines.count == 2)
+        let events = lines.compactMap { try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8)) }
+        #expect(events.reduce(0) { $0 + $1.occurrenceCount } == 2)
+        #expect(events.last?.phase == "repeated")
     }
 
     @Test("诊断日志超过阈值后允许再次记录相同事件")
@@ -249,7 +252,7 @@ struct DiagnosticsTests {
         #expect(lines.count == 3)
     }
 
-    @Test("底层系统描述变化不会绕过重复事件抑制")
+    @Test("底层系统描述变化仍归入同一故障并保留次数")
     func diagnosticLogStoreIgnoresUnderlyingWhenDeduplicating() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
@@ -277,7 +280,8 @@ struct DiagnosticsTests {
         ))
 
         let lines = await diagnosticLogLines(in: store)
-        #expect(lines.count == 1)
+        #expect(lines.count == 2)
+        #expect(lines.last?.contains("\"phase\":\"repeated\"") == true)
     }
 
     @Test("确认诊断问题后状态摘要只统计新问题")

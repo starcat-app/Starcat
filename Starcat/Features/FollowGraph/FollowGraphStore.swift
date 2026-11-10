@@ -96,6 +96,19 @@ actor FollowGraphStore {
             refreshedTargets.formUnion(page.nodes.map(\.id))
             refreshedCount += page.nodes.count
             value.merge(page, replacing: refresh && !page.hasNextPage ? refreshedTargets : nil)
+            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                level: .info, category: "followGraph", operation: "pageMerge",
+                message: "Relation page merged", context: ["user": userID], phase: "merged",
+                fields: ["totalCount": .integer(page.totalCount),
+                         "fetchedCount": .integer(page.nodes.count),
+                         "uniquePageCount": .integer(Set(page.nodes.map(\.id)).count),
+                         "cachedCount": .integer(value.relationCount(for: userID)),
+                         "hasNextPage": .boolean(page.hasNextPage),
+                         "hasCursor": .boolean(page.cursor != nil),
+                         "refresh": .boolean(refresh),
+                         "requestCount": .integer(requests),
+                         "nodeLimit": .integer(10_000), "edgeLimit": .integer(30_000)]
+            ))
             // 刷新可能跨多页。整轮开始后确认的关注写入不能被末页的旧目标集合恢复。
             for change in followChanges.values.sorted(by: { $0.revision < $1.revision })
                 where change.revision > revisionAtStart {

@@ -204,7 +204,7 @@ final class GoogleTranslationClient: @unchecked Sendable {
     }
 
     private func loadOnce(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "translation")
         guard let httpResponse = response as? HTTPURLResponse else {
             throw GoogleTranslationError.invalidResponse
         }
