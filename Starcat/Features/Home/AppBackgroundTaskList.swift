@@ -24,7 +24,13 @@ struct AppBackgroundTaskList: View {
             }
         }
         .frame(height: CGFloat(min(tasks.count, 4)) * interfaceScale.scaled(52) + CGFloat(max(0, min(tasks.count, 4) - 1)))
-        .background(StarcatSurface.panel(colorScheme: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+        .background(
+            AppStatusPanelSurface.card(
+                colorScheme: colorScheme,
+                lightColor: StarcatSurface.panel(colorScheme: colorScheme)
+            ),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
     }
 
     @Environment(\.colorScheme) private var colorScheme
