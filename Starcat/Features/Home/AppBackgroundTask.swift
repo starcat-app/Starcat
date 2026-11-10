@@ -14,6 +14,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case localModel, layaModel
         case screensaverAvatars
         case chatHistoryMigration
+        case runtimeInstall
 
         var titleKey: String {
             switch self {
@@ -28,6 +29,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .localModel, .layaModel: "toolbar.localai.title"
             case .screensaverAvatars: "settings.general.screensaver.title"
             case .chatHistoryMigration: "settings.storage.refinement.migrating"
+            case .runtimeInstall: "settings.integration.runtimeDownload.installing"
             }
         }
 
@@ -43,6 +45,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .localModel, .layaModel: .models
             case .screensaverAvatars: .general
             case .chatHistoryMigration: .storage
+            case .runtimeInstall: .localTools
             }
         }
     }
@@ -62,6 +65,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case pending(Int)
         case failed(Int)
         case bytes(completed: Int64, total: Int64)
+        case fraction(Double)
 
         func text(locale: Locale) -> String? {
             switch self {
@@ -76,6 +80,8 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case let .bytes(completed, total):
                 guard total > 0 else { return nil }
                 return "\(min(total, max(0, completed)).formatted(.byteCount(style: .file).locale(locale))) / \(total.formatted(.byteCount(style: .file).locale(locale)))"
+            case .fraction(let value):
+                return max(0, min(1, value)).formatted(.percent.precision(.fractionLength(0)).locale(locale))
             }
         }
     }
@@ -98,6 +104,20 @@ struct AppBackgroundTask: Identifiable, Equatable {
     var title: String { name ?? String.l10n(kind.titleKey) }
     var cancelTitleKey: String {
         kind == .localModel || kind == .layaModel ? "settings.localai.model.action.pause" : "toolbar.backgroundTasks.stop"
+    }
+
+    /// 定位复用已有设置路由；模型名与 Runtime 显示名称不参与路由解析。
+    var settingsTarget: String? {
+        switch kind {
+        case .repositoryIndexing: "ai.index"
+        case .localModel: "ai"
+        case .layaModel: "labs"
+        case .screensaverAvatars: "general"
+        case .chatHistoryMigration: "storage"
+        case .runtimeInstall: instanceID == DownloadableRuntime.codebaseMemory.rawValue
+            ? "integrations.codebaseMemory" : "integrations.agentRuntime"
+        default: nil
+        }
     }
 
     init(id: Kind, phase: Phase, detail: Detail = .none, canCancel: Bool = false,
@@ -142,6 +162,27 @@ struct AppBackgroundTask: Identifiable, Equatable {
     /// 存储交换只有迁移标记，没有可信数量进度或任意取消能力，面板只提供定位。
     static func chatHistoryMigration(isMigrating: Bool) -> Self? {
         isMigrating ? Self(id: .chatHistoryMigration, phase: .applying, opensWindow: true) : nil
+    }
+
+    /// 下载与配置是同一安装实例；只有下载/校验阶段可取消，等待取消不冒充已完成。
+    static func runtimeInstall(_ runtime: DownloadableRuntime, state: RuntimeDownloadState) -> Self? {
+        let phase: Phase
+        let detail: Detail
+        let canCancel: Bool
+        switch state {
+        case .installing(let progress):
+            phase = .running; detail = progress.map(Detail.fraction) ?? .none; canCancel = true
+        case .configuring:
+            phase = .applying; detail = .none; canCancel = false
+        case .cancelling:
+            phase = .waiting; detail = .none; canCancel = false
+        case .failed:
+            phase = .failed; detail = .none; canCancel = false
+        case .idle, .completed:
+            return nil
+        }
+        return Self(id: .runtimeInstall, phase: phase, detail: detail, canCancel: canCancel,
+                    opensWindow: true, instanceID: runtime.rawValue, name: runtime.displayName)
     }
 
     /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。

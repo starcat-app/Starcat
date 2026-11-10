@@ -23,7 +23,7 @@ struct DeepSeekRuntimeSettingsCard: View {
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedExecutablePath = ""
     @State private var isExpanded = false
-    @State private var isInstalling = false
+    private var isInstalling: Bool { RuntimeDownloadManager.shared.state(for: .deepSeek).isInstalling }
     @State private var actualVersion: String?
     @State private var isCheckingVersion = true
     @State private var versionProbeID = 0
@@ -60,12 +60,8 @@ struct DeepSeekRuntimeSettingsCard: View {
 
             RuntimeDownloadButton(
                 runtime: .deepSeek, installedVersion: actualVersion,
-                isCheckingVersion: isCheckingVersion, isInstalling: $isInstalling
-            ) { installation in
-                executablePath = installation.executable.path
-                cordisConfigPath = installation.configuration?.path ?? ""
-                refresh()
-            }
+                isCheckingVersion: isCheckingVersion
+            )
             HStack(spacing: 8) {
                 RuntimeDetectionFeedback(
                     runtime: .deepSeek, status: status, installedVersion: actualVersion,
@@ -88,6 +84,9 @@ struct DeepSeekRuntimeSettingsCard: View {
         .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "DeepSeek Harness")))
         .task { refresh() }
         .task(id: versionProbeID) { await detectVersion() }
+        .onChange(of: RuntimeDownloadManager.shared.state(for: .deepSeek)) { _, state in
+            if case .completed = state { refresh() }
+        }
     }
 
     /// 自动检测和手动选择共用真实版本；重新检测同一路径也能发现原位升级

@@ -21,7 +21,7 @@ struct CodebaseMemoryExecutableSettingsView: View {
 
     @State private var resolutionState: ResolutionState = .idle
     @State private var hasUserSelection = false
-    @State private var isInstalling = false
+    private var isInstalling: Bool { RuntimeDownloadManager.shared.state(for: .codebaseMemory).isInstalling }
     // 忙碌状态与上次结果分开，重新检测不会清空版本、副标题和路径
     @State private var isResolving = false
 
@@ -73,11 +73,8 @@ struct CodebaseMemoryExecutableSettingsView: View {
             if channel.isDirect {
                 RuntimeDownloadButton(
                     runtime: .codebaseMemory, installedVersion: installedVersion,
-                    isCheckingVersion: isResolving, isInstalling: $isInstalling
-                ) { installation in
-                    resolutionState = .available(try await resolver.selectExecutable(installation.executable))
-                    hasUserSelection = true
-                }
+                    isCheckingVersion: isResolving
+                )
             }
             HStack(spacing: 8) {
                 RuntimeDetectionFeedback(
@@ -94,6 +91,9 @@ struct CodebaseMemoryExecutableSettingsView: View {
             }
         }
         .task { await refresh() }
+        .onChange(of: RuntimeDownloadManager.shared.state(for: .codebaseMemory)) { _, state in
+            if case .completed = state { Task { await refresh() } }
+        }
     }
 
     /// 状态、版本和来源来自 resolver 的同一次结果，不把示例版本或路径带入设置页。

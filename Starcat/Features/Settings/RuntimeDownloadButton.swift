@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-/// 视图拥有按钮任务的生命周期；离开页面时取消安装，取消后不得提交配置。
+/// 视图只负责确认与展示；共享管理器持有安装，离开设置后继续执行。
 struct RuntimeDownloadButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -15,13 +15,26 @@ struct RuntimeDownloadButton: View {
     /// nil 表示未找到可用程序；空字符串表示程序存在但无法读取版本，仍须确认
     let installedVersion: String?
     let isCheckingVersion: Bool
-    @Binding var isInstalling: Bool
-    let configure: @MainActor (RuntimeDownloadInstallation) async throws -> Void
-
-    @State private var task: Task<Void, Never>?
-    @State private var progress: Double?
-    @State private var message = ""
+    @State private var manager = RuntimeDownloadManager.shared
     @State private var isConfirmingInstallation = false
+
+    private var state: RuntimeDownloadState { manager.state(for: runtime) }
+    private var isInstalling: Bool { state.isInstalling }
+    private var progress: Double? {
+        if case .installing(let value) = state { return value }
+        return nil
+    }
+    private var canCancel: Bool {
+        if case .installing = state { return true }
+        return false
+    }
+    private var message: String {
+        switch state {
+        case .completed(let version): "\(String.l10n("settings.integration.runtimeDownload.configured")) · \(version)"
+        case .failed(let message): message
+        default: ""
+        }
+    }
 
     var body: some View {
         if DistributionChannel.current.isDirect, runtime.isSupported {
@@ -68,8 +81,8 @@ struct RuntimeDownloadButton: View {
                         .controlSize(.regular)
                         .disabled(isInstalling || isCheckingVersion)
                         .help(Text(verbatim: runtime.downloadURLs.map(\.absoluteString).joined(separator: "\n")))
-                    if isInstalling {
-                        Button("common.cancel") { task?.cancel() }
+                    if canCancel {
+                        Button("common.cancel") { manager.cancel(runtime) }
                             .buttonStyle(.bordered)
                             .controlSize(.regular)
                     }
@@ -91,7 +104,6 @@ struct RuntimeDownloadButton: View {
             }
             .onDisappear {
                 isConfirmingInstallation = false
-                task?.cancel()
             }
         }
     }
@@ -149,30 +161,9 @@ struct RuntimeDownloadButton: View {
         }
     }
 
-    /// configure 闭包仅在校验和取消检查通过之后执行；失败时维持已有配置。
+    /// 只发起已经确认的请求，不捕获视图 Binding 或拥有后台任务。
     private func install() {
         guard !isInstalling, !isCheckingVersion else { return }
-        isInstalling = true
-        message = ""
-        progress = nil
-        task = Task { @MainActor in
-            defer {
-                isInstalling = false
-                task = nil
-            }
-            do {
-                let installation = try await RuntimeDownloadInstaller.shared.install(runtime) { value in
-                    Task { @MainActor in progress = value }
-                }
-                try Task.checkCancellation()
-                try await configure(installation)
-                message = "\(String.l10n("settings.integration.runtimeDownload.configured")) · \(installation.reportedVersion)"
-            } catch is CancellationError {
-                message = ""
-            } catch {
-                // URLSession 取消可能表现为 URLError.cancelled，同样属于主动停止。
-                message = Task.isCancelled ? "" : error.localizedDescription
-            }
-        }
+        manager.start(runtime)
     }
 }

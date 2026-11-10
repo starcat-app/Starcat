@@ -153,16 +153,16 @@ struct AppStatusToolbarButton: View {
     /// 延迟到浮层消失后再复核任务，不能误开已结束任务的新开始页或抢占自动分组。
     private func openTaskWindow(_ id: AppBackgroundTask.ID) {
         guard let task = backgroundTasks.task(id), task.opensWindow else { return }
+        if let target = task.settingsTarget {
+            openSettings(tab: target)
+            return
+        }
         switch task.kind {
         case .grouping: onShowGitHubGrouping?()
         case .tags: onShowBatchAIPanel?()
         case .indexing: onShowKnowledgeWorkspace?()
-        case .repositoryIndexing: openSettings(tab: "ai.index")
-        case .localModel: openSettings(tab: "ai")
-        case .layaModel: openSettings(tab: "labs")
-        case .screensaverAvatars: openSettings(tab: "general")
-        case .chatHistoryMigration: openSettings(tab: "storage")
-        case .warmup, .readme, .openSSF, .health: break
+        case .warmup, .readme, .openSSF, .health, .repositoryIndexing,
+             .localModel, .layaModel, .screensaverAvatars, .chatHistoryMigration, .runtimeInstall: break
         }
     }
 
@@ -181,6 +181,10 @@ struct AppStatusToolbarButton: View {
         case .localModel:
             if let entryID = task.instanceID { LocalAIModelManager.shared.pause(entryID: entryID) }
         case .layaModel: LayaDecisionModelManager.shared.pause()
+        case .runtimeInstall:
+            if let value = task.instanceID, let runtime = DownloadableRuntime(rawValue: value) {
+                RuntimeDownloadManager.shared.cancel(runtime)
+            }
         case .screensaverAvatars, .chatHistoryMigration: break
         }
     }

@@ -139,6 +139,13 @@ struct AppBackgroundTaskSnapshot: Equatable {
         if let task = AppBackgroundTask.chatHistoryMigration(isMigrating: dependencies.diskChatHistoryStore.isMigrating) {
             tasks.append(task)
         }
+        if DistributionChannel.current.isDirect {
+            for runtime in DownloadableRuntime.allCases {
+                if let task = AppBackgroundTask.runtimeInstall(runtime, state: RuntimeDownloadManager.shared.state(for: runtime)) {
+                    tasks.append(task)
+                }
+            }
+        }
         return Self(tasks: tasks, warmupOwnsReadme: warmupOwnsReadme)
     }
 }

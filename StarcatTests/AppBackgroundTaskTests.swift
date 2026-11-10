@@ -151,6 +151,27 @@ struct AppBackgroundTaskTests {
         #expect(AppBackgroundTask.chatHistoryMigration(isMigrating: false) == nil)
     }
 
+    @Test("三种 Runtime 独立计数，提交配置与等待取消时不能再次停止")
+    func runtimeInstallationProjection() throws {
+        let tasks = try DownloadableRuntime.allCases.map {
+            try #require(AppBackgroundTask.runtimeInstall($0, state: .installing(progress: 0.25)))
+        }
+        #expect(Set(tasks.map(\.id)).count == 3)
+        #expect(AppBackgroundTaskSnapshot(tasks: tasks).count == 3)
+        for (runtime, task) in zip(DownloadableRuntime.allCases, tasks) {
+            #expect(task.canCancel && task.opensWindow)
+            #expect(task.detail == .fraction(0.25))
+            #expect(task.settingsTarget == (runtime == .codebaseMemory ? "integrations.codebaseMemory" : "integrations.agentRuntime"))
+            for state in [RuntimeDownloadState.configuring, .cancelling, .failed(message: "private")] {
+                let next = try #require(AppBackgroundTask.runtimeInstall(runtime, state: state))
+                #expect(next.id == task.id)
+                #expect(!next.canCancel)
+            }
+            #expect(AppBackgroundTask.runtimeInstall(runtime, state: .idle) == nil)
+            #expect(AppBackgroundTask.runtimeInstall(runtime, state: .completed(version: "1")) == nil)
+        }
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)
