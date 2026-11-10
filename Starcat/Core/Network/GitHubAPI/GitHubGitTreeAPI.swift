@@ -13,6 +13,14 @@ import Foundation
 
 extension GitHubAPIClient {
 
+    /// GitHub 明确要求省略 recursive 参数才会返回单层树；不能传 recursive=0。
+    func repositoryGitTreeLevel(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO {
+        let response: APIResponse<GitHubGitTreeDTO> = try await get(
+            path: AppEndpoints.GitHubREST.Paths.repoGitTree(owner: owner, repo: repo, ref: ref)
+        )
+        return response.value
+    }
+
     /// 递归拉取指定 ref 的 git tree。
     func repositoryGitTree(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO {
         let response: APIResponse<GitHubGitTreeDTO> = try await get(

@@ -933,6 +933,21 @@ final class AppSettings {
 
     var licenseFilter: RepoLicenseFilter { RepoLicenseFilter(globalFilterLicenses) }
 
+    var skillFilter: RepoSkillFilter {
+        didSet { persist(key: Keys.skillFilter, value: skillFilter.rawValue) }
+    }
+
+    /// 远端来源按同一组全局条件重建补查范围；翻页和识别结果刷新不重置单批预算。
+    var skillScanFilterIdentity: String {
+        [
+            skillFilter.rawValue, String(hideArchived), String(hideForks),
+            starFilter.rawValue, libraryFilter.rawValue,
+            globalFilterLanguages.sorted().joined(separator: ","), licenseFilter.cacheKey,
+            wikiAvailabilityFilter.rawValue, healthAvailabilityFilter.rawValue,
+            openSSFAvailabilityFilter.rawValue
+        ].joined(separator: "|")
+    }
+
     /// toolbar 全局 Wiki 状态筛选。
     var wikiAvailabilityFilter: RepoSignalAvailabilityFilter {
         didSet { persist(key: Keys.wikiAvailabilityFilter, value: wikiAvailabilityFilter.rawValue) }
@@ -1959,6 +1974,7 @@ final class AppSettings {
         ) ?? []).persistedValues
         self.wikiAvailabilityFilter = defaults.string(forKey: Keys.wikiAvailabilityFilter)
             .flatMap(RepoSignalAvailabilityFilter.init(rawValue:)) ?? .unknown
+        self.skillFilter = defaults.string(forKey: Keys.skillFilter).flatMap(RepoSkillFilter.init(rawValue:)) ?? .any
         self.healthAvailabilityFilter = defaults.string(forKey: Keys.healthAvailabilityFilter)
             .flatMap(RepoSignalAvailabilityFilter.init(rawValue:)) ?? .unknown
         self.openSSFAvailabilityFilter = defaults.string(forKey: Keys.openSSFAvailabilityFilter)
@@ -2454,6 +2470,7 @@ final class AppSettings {
         exploreCatalogPreferences = ExploreCatalogPreferences()
         globalFilterLanguages = []
         globalFilterLicenses = []
+        skillFilter = .any
         wikiAvailabilityFilter = .unknown
         healthAvailabilityFilter = .unknown
         openSSFAvailabilityFilter = .unknown
@@ -2601,6 +2618,7 @@ final class AppSettings {
         repoLanguageFilter = .all
         globalFilterLanguages = []
         globalFilterLicenses = []
+        skillFilter = .any
         wikiAvailabilityFilter = .unknown
         healthAvailabilityFilter = .unknown
         openSSFAvailabilityFilter = .unknown
@@ -3091,6 +3109,7 @@ final class AppSettings {
         static let exploreCatalogPreferences = "settings.explore.catalogPreferences.v1"
         static let globalFilterLanguages = "settings.filters.global.languages.v1"
         static let globalFilterLicenses = "settings.filters.global.licenses.v1"
+        static let skillFilter = "settings.filters.global.skills.v1"
         static let wikiAvailabilityFilter = "settings.filters.global.wikiAvailability.v1"
         static let healthAvailabilityFilter = "settings.filters.global.healthAvailability.v1"
         static let openSSFAvailabilityFilter = "settings.filters.global.openSSFAvailability.v1"
@@ -3218,6 +3237,7 @@ final class AppSettings {
             exploreCatalogPreferences,
             globalFilterLanguages,
             globalFilterLicenses,
+            skillFilter,
             wikiAvailabilityFilter,
             healthAvailabilityFilter,
             openSSFAvailabilityFilter,

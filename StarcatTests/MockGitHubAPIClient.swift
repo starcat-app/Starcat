@@ -71,6 +71,7 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     var repositoryFileHTMLHandler: ((_ owner: String, _ repo: String, _ path: String, _ ref: String, _ ifNoneMatch: String?) async throws -> BytesResponse)?
     /// 详情页按文件勾选下载用的 recursive git tree mock。
     var repositoryGitTreeHandler: ((_ owner: String, _ repo: String, _ ref: String) async throws -> GitHubGitTreeDTO)?
+    var repositoryGitTreeLevelHandler: ((_ owner: String, _ repo: String, _ ref: String) async throws -> GitHubGitTreeDTO)?
     var repositoryBranchesHandler: ((_ owner: String, _ repo: String) async throws -> [GitHubRepoBranchDTO])?
     var repositoryLatestCommitHandler: ((_ owner: String, _ repo: String, _ path: String, _ ref: String) async throws -> GitHubCommitSummaryDTO?)?
     /// HOM-47：Releases API mock handler。
@@ -306,6 +307,11 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
         guard let handler = repositoryGitTreeHandler else {
             fatalError("MockGitHubAPIClient.repositoryGitTreeHandler 未设置")
         }
+        return try await handler(owner, repo, ref)
+    }
+
+    func repositoryGitTreeLevel(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO {
+        guard let handler = repositoryGitTreeLevelHandler else { throw RepoSkillError.incomplete }
         return try await handler(owner, repo, ref)
     }
 

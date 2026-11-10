@@ -14,6 +14,8 @@
 
 import Foundation
 import AppKit
+import Synchronization
+import CryptoKit
 
 enum RepoFileDownloadError: LocalizedError, Equatable {
     case invalidURL
@@ -51,6 +53,8 @@ enum RepoFilePreview: Equatable, Sendable {
 }
 
 protocol RepoFileDownloading: Sendable {
+    /// 普通文件校验 Git blob SHA，LFS 实物还需对应原 pointer 的 SHA256 与大小。
+    func verifyDownloadedFile(owner: String, repo: String, sha: String, fileURL: URL) async throws -> Bool
     func download(
         owner: String,
         repo: String,
@@ -70,6 +74,10 @@ protocol RepoFileDownloading: Sendable {
 }
 
 extension RepoFileDownloading {
+    func verifyDownloadedFile(owner: String, repo: String, sha: String, fileURL: URL) async throws -> Bool {
+        let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        return RepoFileDownloader.gitBlobSHA(data) == sha
+    }
     func download(
         owner: String,
         repo: String,
@@ -112,6 +120,24 @@ actor RepoFileDownloader: RepoFileDownloading {
         self.tokenProvider = tokenProvider
     }
 
+    /// 已有下载器会把 LFS pointer 展开为实物；不能拿 pointer 的 Git SHA 与实物直接比较。
+    func verifyDownloadedFile(owner: String, repo: String, sha: String, fileURL: URL) async throws -> Bool {
+        let bytes = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        if Self.gitBlobSHA(bytes) == sha { return true }
+        let blob = try await fetchBlobBytes(owner: owner, repo: repo, sha: sha)
+        guard Self.gitBlobSHA(blob) == sha, let pointer = GitLFSPointer.parse(blob), pointer.size == bytes.count else { return false }
+        let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        return digest == pointer.oid
+    }
+
+    nonisolated static func gitBlobSHA(_ data: Data) -> String {
+        // 分段输入避免为了 Git header 额外复制整个大文件。
+        var hash = Insecure.SHA1()
+        hash.update(data: Data("blob \(data.count)\0".utf8))
+        hash.update(data: data)
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
     func download(
         owner: String,
         repo: String,
@@ -137,6 +163,8 @@ actor RepoFileDownloader: RepoFileDownloading {
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = await tokenProvider.currentToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if tokenProvider.requiresAuthentication {
+            throw NetworkError.unauthorized
         }
 
         let tempURL: URL
@@ -160,7 +188,9 @@ actor RepoFileDownloader: RepoFileDownloading {
             throw RepoFileDownloadError.httpStatus(http.statusCode)
         }
 
+        try Task.checkCancellation()
         let sourceURL = try await resolveLFSIfNeeded(tempURL: tempURL, owner: owner, repo: repo)
+        try Task.checkCancellation()
         if sourceURL != tempURL {
             defer { try? FileManager.default.removeItem(at: sourceURL) }
             try moveDownloadedFile(from: sourceURL, to: destination)
@@ -231,7 +261,10 @@ actor RepoFileDownloader: RepoFileDownloading {
         for request: URLRequest,
         onProgress: (@Sendable (Double) -> Void)?
     ) async throws -> (URL, URLResponse) {
-        try await withCheckedThrowingContinuation { continuation in
+        // 取消必须传到 URLSession，且在 task 注册前取消时也不能漏掉。
+        let taskSlot = Mutex<URLSessionDownloadTask?>(nil)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
             final class ObservationBox: @unchecked Sendable {
                 var observation: NSKeyValueObservation?
             }
@@ -266,7 +299,12 @@ actor RepoFileDownloader: RepoFileDownloading {
                 }
             }
 
-            task.resume()
+                taskSlot.withLock { $0 = task }
+                if Task.isCancelled { task.cancel() }
+                task.resume()
+            }
+        } onCancel: {
+            taskSlot.withLock { $0?.cancel() }
         }
     }
 
@@ -305,6 +343,8 @@ actor RepoFileDownloader: RepoFileDownloading {
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = await tokenProvider.currentToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if tokenProvider.requiresAuthentication {
+            throw NetworkError.unauthorized
         }
         return try await data(for: request)
     }
@@ -356,6 +396,8 @@ actor RepoFileDownloader: RepoFileDownloading {
         request.setValue("application/vnd.git-lfs+json", forHTTPHeaderField: "Content-Type")
         if let token = await tokenProvider.currentToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if tokenProvider.requiresAuthentication {
+            throw NetworkError.unauthorized
         }
         let body = GitLFSBatch.Request(objects: [
             GitLFSBatch.Request.Object(oid: pointer.oid, size: pointer.size)

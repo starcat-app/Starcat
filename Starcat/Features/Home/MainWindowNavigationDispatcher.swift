@@ -29,6 +29,7 @@ struct GlobalRepoFilterState: Equatable {
     var ragIndexStateFilter: RepoRAGIndexStateFilter
     var insightsRiskFilter: RepoInsightsRiskFilter
     var licenseFilter: RepoLicenseFilter = .all
+    var skillFilter: RepoSkillFilter = .any
 
     static let neutral = GlobalRepoFilterState(
         hideArchived: false,
@@ -71,6 +72,7 @@ struct GlobalRepoFilterState: Equatable {
             language: repoLanguageFilter,
             selectedLanguages: Set(globalFilterLanguages),
             license: licenseFilter,
+            skill: skillFilter,
             wikiAvailability: wikiAvailabilityFilter,
             healthAvailability: healthAvailabilityFilter,
             openSSFAvailability: openSSFAvailabilityFilter,

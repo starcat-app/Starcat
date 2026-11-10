@@ -270,6 +270,28 @@ struct UserProjectRepositoryTests {
         #expect(result.first?.project.ownerLogin == "Acme")
     }
 
+    @Test("我的项目叠加 Skill 筛选时保持 JOIN 参数顺序和账号隔离")
+    func skillFilterWithProjectScope() async throws {
+        let (projects, repos, database) = try makeSUT()
+        try await projects.upsertPage(
+            [remote(id: 71, name: "review"), remote(id: 72, name: "ordinary")],
+            userID: 7, authorizationSource: .githubApp, generation: "skills", seenAt: .now
+        )
+        try await database.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repo_skill_scans
+                (repo_id, commit_sha, branch, rules_version, expires_at, presence, payload)
+                VALUES (71, 'fixed', 'main', 1, 4000000000, 'contains', X'00')
+                """)
+        }
+        let filters = RepoListFilters(
+            hideArchived: false, hideForks: false, status: nil, skill: .contains, selectedTagIDs: []
+        )
+        let ids = try await repos.fetchListIDs(scope: .myProjects(userID: 7), filters: filters, sort: .nameAsc)
+        #expect(ids == [71])
+        #expect(try await repos.fetchListCount(scope: .myProjects(userID: 8), filters: filters) == 0)
+    }
+
     @Test("项目筛选可单独展示外部协作仓库")
     func collaboratorFilter() async throws {
         let (projects, _, _) = try makeSUT()

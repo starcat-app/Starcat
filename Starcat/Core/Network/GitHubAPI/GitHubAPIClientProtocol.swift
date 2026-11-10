@@ -26,6 +26,8 @@
 import Foundation
 
 protocol GitHubAPIClientProtocol: Sendable {
+    /// 进程缓存按凭据客户端隔离；切账号还会清空缓存代际，不缓存 token 本身。
+    var fileTreeCacheScope: String { get }
 
     // MARK: - Stars
 
@@ -106,6 +108,9 @@ protocol GitHubAPIClientProtocol: Sendable {
     ///
     /// `ref` 用默认分支或 `HEAD`。截断由 DTO 的 `truncated` 表达，不在这里抛错。
     func repositoryGitTree(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO
+
+    /// 截断递归树时逐级补查；调用方负责预算和完整性，禁止将 tree SHA 当作 commit SHA。
+    func repositoryGitTreeLevel(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO
 
     /// 拉取仓库分支名（文件浏览器切树）。分页由实现方消化，调用方拿到完整列表。
     func repositoryBranches(owner: String, repo: String) async throws -> [GitHubRepoBranchDTO]
@@ -288,6 +293,11 @@ protocol GitHubAPIClientProtocol: Sendable {
 }
 
 extension GitHubAPIClientProtocol {
+    var fileTreeCacheScope: String { String(reflecting: Self.self) }
+    func repositoryGitTreeLevel(owner: String, repo: String, ref: String) async throws -> GitHubGitTreeDTO {
+        throw NetworkError.clientError(statusCode: 501, message: "Non-recursive git tree is not implemented")
+    }
+
     /// 旧的窄用途 Mock 不需要社交账号；实际调用时明确失败，避免伪造“没有链接”。
     func getUserSocialAccounts(login: String) async throws -> [GitHubSocialAccountDTO] {
         throw NetworkError.clientError(

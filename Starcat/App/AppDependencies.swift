@@ -60,6 +60,8 @@ final class AppDependencies {
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
+    /// Skill 扫描证据、后台补查与详情读取共用同一份本机索引。
+    let repoSkillStore: RepoSkillStore
     /// 公开 Star 数据贡献旁路；失败不得改变同步和 UI 状态。
     let dataContributionCoordinator: DataContributionCoordinator
     /// Settings 只读取开关真值，不暴露 Outbox 或网络状态。
@@ -1097,6 +1099,10 @@ final class AppDependencies {
             tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
         )
         self.projectGitHubAPIClient = projectAPIClient
+        self.repoSkillStore = RepoSkillStore(
+            database: db, publicAPI: api, privateAPI: projectAPIClient,
+            privateDownloader: RepoFileDownloader(tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession))
+        )
         self.projectReadmeAPI = ReadmeAPI(
             client: projectAPIClient,
             repository: readmeRepo,
@@ -1960,6 +1966,8 @@ final class AppDependencies {
     func switchUserDatabase(to userId: Int64?) async throws {
         let previousUserId = database.currentUserId
         if previousUserId != userId {
+            await repoSkillStore.resetForAccountChange()
+            await RepoFileTreeSessionCache.shared.reset()
             // 先阻断旧账号计数回写，再 await 数据库切换；新账号恢复不依赖活动页是否打开。
             activityCategoryCountService.prepareForAccountChange()
             await syncManager.cancelAndWait()
@@ -1977,6 +1985,7 @@ final class AppDependencies {
         do {
             try await database.reopen(userId: userId)
         } catch {
+            repoSkillStore.finishAccountChange()
             if previousUserId != userId {
                 await repositoryMetricsClient.endDatabaseScopeChange()
                 activityCategoryCountService.cancelAccountChange()
@@ -1984,6 +1993,7 @@ final class AppDependencies {
             throw error
         }
         if previousUserId != userId {
+            repoSkillStore.finishAccountChange()
             await repositoryMetricsClient.endDatabaseScopeChange()
         }
         guard database.currentUserId != previousUserId else { return }

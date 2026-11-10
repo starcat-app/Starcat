@@ -96,6 +96,7 @@ actor GitHubAPIClient {
     // MARK: - 依赖
 
     private let baseURL: URL
+    nonisolated let fileTreeCacheScope = UUID().uuidString
     private let session: URLSession
     private let tokenProvider: any GitHubTokenProviding
     private let decoder: JSONDecoder
