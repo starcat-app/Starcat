@@ -140,6 +140,17 @@ struct AppBackgroundTaskTests {
         #expect(AppBackgroundTask.screensaverAvatars(progress: nil, channel: .direct) == nil)
     }
 
+    @Test("对话迁移只有阶段与入口，不虚构进度或取消能力")
+    func chatMigrationIsReadOnly() throws {
+        let task = try #require(AppBackgroundTask.chatHistoryMigration(isMigrating: true))
+        #expect(task.phase == .applying)
+        #expect(task.detail == .none)
+        #expect(task.opensWindow)
+        #expect(!task.canCancel)
+        #expect(AppBackgroundTaskSnapshot(tasks: [task]).isRunning)
+        #expect(AppBackgroundTask.chatHistoryMigration(isMigrating: false) == nil)
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)

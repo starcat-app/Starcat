@@ -136,6 +136,9 @@ struct AppBackgroundTaskSnapshot: Equatable {
         ) {
             tasks.append(task)
         }
+        if let task = AppBackgroundTask.chatHistoryMigration(isMigrating: dependencies.diskChatHistoryStore.isMigrating) {
+            tasks.append(task)
+        }
         return Self(tasks: tasks, warmupOwnsReadme: warmupOwnsReadme)
     }
 }

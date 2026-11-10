@@ -13,6 +13,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case grouping, tags, warmup, readme, openSSF, health, indexing, repositoryIndexing
         case localModel, layaModel
         case screensaverAvatars
+        case chatHistoryMigration
 
         var titleKey: String {
             switch self {
@@ -26,6 +27,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .repositoryIndexing: "settings.searchIndex.repository.title"
             case .localModel, .layaModel: "toolbar.localai.title"
             case .screensaverAvatars: "settings.general.screensaver.title"
+            case .chatHistoryMigration: "settings.storage.refinement.migrating"
             }
         }
 
@@ -40,6 +42,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .indexing, .repositoryIndexing: .aiIndex
             case .localModel, .layaModel: .models
             case .screensaverAvatars: .general
+            case .chatHistoryMigration: .storage
             }
         }
     }
@@ -134,6 +137,11 @@ struct AppBackgroundTask: Identifiable, Equatable {
         guard channel.isDirect, let progress else { return nil }
         return Self(id: .screensaverAvatars, phase: .running,
                     detail: .progress(processed: progress.completed, total: progress.total), opensWindow: true)
+    }
+
+    /// 存储交换只有迁移标记，没有可信数量进度或任意取消能力，面板只提供定位。
+    static func chatHistoryMigration(isMigrating: Bool) -> Self? {
+        isMigrating ? Self(id: .chatHistoryMigration, phase: .applying, opensWindow: true) : nil
     }
 
     /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。

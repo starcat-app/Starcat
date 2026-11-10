@@ -161,6 +161,7 @@ struct AppStatusToolbarButton: View {
         case .localModel: openSettings(tab: "ai")
         case .layaModel: openSettings(tab: "labs")
         case .screensaverAvatars: openSettings(tab: "general")
+        case .chatHistoryMigration: openSettings(tab: "storage")
         case .warmup, .readme, .openSSF, .health: break
         }
     }
@@ -180,7 +181,7 @@ struct AppStatusToolbarButton: View {
         case .localModel:
             if let entryID = task.instanceID { LocalAIModelManager.shared.pause(entryID: entryID) }
         case .layaModel: LayaDecisionModelManager.shared.pause()
-        case .screensaverAvatars: break
+        case .screensaverAvatars, .chatHistoryMigration: break
         }
     }
 
