@@ -222,6 +222,19 @@ struct FollowGraphEngineTests {
         #expect(nested.path(to: "40000") == ["1", "200", "20000", "40000"])
     }
 
+    @Test("手动展开可超过一万节点，默认采样仍停在五千软停")
+    func expandedBeyondLegacyCap() {
+        var graph = FollowGraphSnapshot(root: node(1))
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, Array(3...20_003)))
+        let automatic = graph.presentation()
+        #expect(automatic.nodes.count == 22)
+        #expect(automatic.relationCount(for: "2") == 20)
+        let expanded = graph.presentation(expanded: ["2": 20_001])
+        #expect(expanded.nodes.count == 20_003)
+        #expect(expanded.relationCount(for: "2") == 20_001)
+    }
+
     @Test("二维视口保留平移缩放，拒绝三维相机、非有限值与越界缩放")
     func viewportValidation() throws {
         let viewport = try #require(FollowGraphViewport(values: [120, -80, 1.5]))
@@ -310,6 +323,18 @@ private actor ScriptedFollowGraphProvider: FollowGraphProviding {
     }
 }
 
+/// 第一次请求返回正常分页，后续请求模拟 GitHub 真实 429 限流响应。
+private actor RateLimitedFollowGraphProvider: FollowGraphProviding {
+    private let first: FollowGraphPage
+    private(set) var calls = 0
+    init(first: FollowGraphPage) { self.first = first }
+    func page(login: String, cursor: String?, count: Int) async throws -> FollowGraphPage {
+        calls += 1
+        if calls == 1 { return first }
+        throw NetworkError.rateLimited(retryAfter: 3_600)
+    }
+}
+
 /// 故意忽略 Task 取消的网络替身，验证返回点的 generation 校验才是最终写入屏障。
 private actor SuspendedFollowGraphProvider: FollowGraphProviding {
     private var response: CheckedContinuation<FollowGraphPage, Never>?
@@ -350,7 +375,10 @@ struct FollowGraphStoreTests {
         #expect(await cache.loadRange(account: "1", relation: opposite) == nil)
         #expect(await cache.loadRange(account: "3", relation: relation) == nil)
         #expect(await cache.loadRange(account: "../1", relation: relation) == nil)
-        #expect(!FollowGraphSavedRange(expandedSources: ["2": 10_001]).isValid)
+        // 单源预算不再有旧的一万上限，仍要拒绝明显异常的巨大数值。
+        #expect(FollowGraphSavedRange(expandedSources: ["2": 10_001]).isValid)
+        #expect(!FollowGraphSavedRange(expandedSources: ["2": 1_000_001]).isValid)
+        #expect(!FollowGraphSavedRange(expandedSources: ["2": -1]).isValid)
         #expect(!FollowGraphSavedRange(expandedSources: ["../2": 70]).isValid)
         #expect(!FollowGraphSavedRange(formatVersion: 2, expandedSources: [:]).isValid)
         let url = root.appendingPathComponent("1/\(relation.rawValue)-range.json")
@@ -379,18 +407,33 @@ struct FollowGraphStoreTests {
         #expect(refreshed.edges == [.init(source: "1", target: "3")])
     }
 
-    @Test("配额冷却期间仍能读取已经完整的缓存")
+    @Test("真实限流进入冷却后，已完整缓存仍可离线读取")
     func completedCacheDuringQuotaCooldown() async throws {
         let (folder, cache) = try temporaryCache()
         defer { try? FileManager.default.removeItem(at: folder) }
-        let provider = ScriptedFollowGraphProvider([page(1, [2], remaining: 100)])
+        let provider = RateLimitedFollowGraphProvider(first: page(1, [2]))
         let store = FollowGraphStore(provider: provider, cache: cache)
         let session = UUID()
         await store.begin(.init(root: node(1)), session: session)
-        await #expect(throws: FollowGraphStoreError.self) { try await store.load(userID: "1", session: session) }
+        let completed = try await store.load(userID: "1", session: session)
+        #expect(completed.progress["1"]?.complete == true)
+        // 第二次刷新请求触发真实 429，进入冷却。
+        do {
+            _ = try await store.load(userID: "1", session: session, refresh: true)
+            Issue.record("expected quota error")
+        } catch let error as FollowGraphStoreError {
+            guard case .quota = error else {
+                Issue.record("expected quota case, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+        #expect(await provider.calls == 2)
+        // 已完成的缓存不经过网络，也不受冷却影响。
         let cached = try await store.load(userID: "1", session: session)
         #expect(cached.progress["1"]?.complete == true)
-        #expect(await provider.calls == 1)
+        #expect(await provider.calls == 2)
     }
 
     private func temporaryCache() throws -> (URL, FollowGraphDiskCache) {
@@ -660,23 +703,60 @@ struct FollowGraphStoreTests {
         #expect(value?.progress["1"]?.complete == true)
     }
 
-    @Test("低配额停止新请求，已经取得的结果仍被保存")
-    func quotaProtection() async throws {
+    @Test("低 GraphQL 配额不再提前停止，整页照常合并保存")
+    func lowQuotaDoesNotStop() async throws {
         let (root, cache) = try temporaryCache()
         defer { try? FileManager.default.removeItem(at: root) }
-        let provider = ScriptedFollowGraphProvider([page(1, [2], next: "more", remaining: 199)])
+        let provider = ScriptedFollowGraphProvider([page(1, [2], next: "more", remaining: 0)])
         let store = FollowGraphStore(provider: provider, cache: cache)
         let session = UUID()
         await store.begin(.init(root: node(1)), session: session)
-        for _ in 0..<2 {
-            await #expect(throws: (any Error).self) { _ = try await store.load(userID: "1", session: session) }
-        }
+        let value = try await store.load(userID: "1", session: session)
+        #expect(value.nodes["2"] != nil)
         #expect(await provider.calls == 1)
         #expect(await cache.load(account: "1")?.nodes["2"] != nil)
     }
 
-    @Test("硬节点上限拒绝整页，不能保存无端点的边")
-    func hardLimit() async throws {
+    @Test("真实 429 才进入冷却并暴露恢复时间，冷却期不再发请求")
+    func quotaAfterRealRateLimit() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let provider = RateLimitedFollowGraphProvider(first: page(1, [2], next: "more"))
+        let store = FollowGraphStore(provider: provider, cache: cache)
+        let session = UUID()
+        await store.begin(.init(root: node(1)), session: session)
+        do {
+            _ = try await store.load(userID: "1", session: session, refresh: true)
+            Issue.record("expected quota error")
+        } catch let error as FollowGraphStoreError {
+            guard case .quota(let resetAt) = error else {
+                Issue.record("expected quota case, got \(error)")
+                return
+            }
+            #expect(ISO8601DateFormatter().date(from: resetAt) != nil)
+            #expect(await store.quotaResetAt != nil)
+        } catch {
+            Issue.record("unexpected error: \(error)")
+        }
+        #expect(await provider.calls == 2)
+        // 429 之前的第一页已经合并并落盘。
+        #expect(await cache.load(account: "1")?.nodes["2"] != nil)
+        do {
+            _ = try await store.load(userID: "1", session: session)
+            Issue.record("expected cooldown quota error")
+        } catch let error as FollowGraphStoreError {
+            guard case .quota = error else {
+                Issue.record("expected cooldown quota case, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("unexpected cooldown error: \(error)")
+        }
+        #expect(await provider.calls == 2)
+    }
+
+    @Test("超过一万节点的分页照常合并并落盘，不再被人为上限拒绝")
+    func noHardNodeLimit() async throws {
         let (root, cache) = try temporaryCache()
         defer { try? FileManager.default.removeItem(at: root) }
         let provider = ScriptedFollowGraphProvider([page(1, [10_001])])
@@ -685,8 +765,27 @@ struct FollowGraphStoreTests {
         for id in 2...10_000 { graph.nodes[String(id)] = node(id) }
         let session = UUID()
         await store.begin(graph, session: session)
-        await #expect(throws: (any Error).self) { _ = try await store.load(userID: "1", session: session) }
-        #expect(await provider.calls == 0)
+        let value = try await store.load(userID: "1", session: session)
+        #expect(value.nodes["10001"] != nil)
+        #expect(value.edges.contains(.init(source: "1", target: "10001")))
+        // 超过旧一万节点门槛的快照仍能保存并恢复。
+        #expect(await cache.load(account: "1")?.nodes["10001"] != nil)
+    }
+
+    @Test("超过三百次分页请求不再被人为预算拒绝")
+    func manyRequestsAllowed() async throws {
+        let (root, cache) = try temporaryCache()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pages = (1...301).map { index in
+            page(1, [1_000 + index], next: index < 301 ? "cursor\(index)" : nil)
+        }
+        let provider = ScriptedFollowGraphProvider(pages)
+        let store = FollowGraphStore(provider: provider, cache: cache)
+        let session = UUID()
+        await store.begin(.init(root: node(1)), session: session)
+        let value = try await store.load(userID: "1", session: session, refresh: true)
+        #expect(await provider.calls == 301)
+        #expect(value.relationCount(for: "1") == 301)
     }
 
     @Test("切换会话后拒绝旧调用")
@@ -1314,19 +1413,24 @@ struct FollowGraphAPITests {
         #expect(model.toastIsError)
         #expect(model.canLoadMore("3"))
         URLProtocolStub.requestHandler = { request in
-            let body = """
-            {"data":{"user":{"databaseId":3,"login":"user3","name":null,"avatarUrl":null,
-            "following":{"totalCount":10,"pageInfo":{"endCursor":"more","hasNextPage":true},
-            "nodes":[{"databaseId":4,"login":"user4","name":null,"avatarUrl":null}]}},
-            "rateLimit":{"remaining":199,"resetAt":"2099-11-05T12:00:00Z"}}}
-            """
-            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+            let headers = [
+                "X-RateLimit-Limit": "5000",
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": String(Int(Date().addingTimeInterval(3_600).timeIntervalSince1970))
+            ]
+            let body = Data("{\"message\":\"API rate limit exceeded\"}".utf8)
+            return (HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil, headerFields: headers)!, body)
         }
         model.loadMore("3")
         try await settle()
-        #expect(model.toastMessage == "followGraph.status.quota")
+        #expect(model.statusKey == "followGraph.status.quota")
         #expect(model.toastIsError)
-        #expect(model.snapshot?.edges.contains(.init(source: "3", target: "4")) == true)
+        // 提示必须带本地化恢复时间，而不是原始 ISO 字符串或状态 key。
+        let year = String(Calendar.current.component(.year, from: Date()))
+        #expect(model.toastMessage?.contains(year) == true)
+        #expect(model.toastMessage?.contains("T12:00:00Z") != true)
+        // 真实 429 不会合并任何关系。
+        #expect(model.snapshot?.edges.contains(.init(source: "3", target: "4")) == false)
         model.stop()
         #expect(model.toastMessage == nil)
     }

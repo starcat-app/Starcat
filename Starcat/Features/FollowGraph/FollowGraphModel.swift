@@ -134,7 +134,8 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
     }
 
     /// 磁盘是关系缓存，不代表每次打开都绘制全部缓存。两方向默认三层节点，
-    /// 手动展开只增加对应源的预算，不删除磁盘中已取得的关系。
+    /// 自动采样保留 5,000 软停，手动展开不受全局容量上限约束，只受该源
+    /// 实际已取得关系数限制，不删除磁盘中已取得的关系。
     func presentation(expanded: [String: Int] = [:], selectedID: String? = nil) -> FollowGraphSnapshot {
         let outgoing = Dictionary(grouping: edges, by: { $0[keyPath: relation.ownerKey] })
         func targets(_ source: String) -> [String] {
@@ -149,10 +150,9 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         // 取消直接关注后，仍可达的选中用户和新路径不能被二层样本预算隐藏。
         if let selectedID { visible.formUnion(path(to: selectedID)) }
         let defaultLimit = max(5_000, visible.count)
-        let limit = min(10_000, defaultLimit + expanded.values.reduce(0, +))
         for source in firstLevel {
             let count = min(budgets[source] ?? 0, expanded[source] ?? budgets[source] ?? 0)
-            for id in targets(source).prefix(count) where visible.count < min(10_000, defaultLimit) {
+            for id in targets(source).prefix(count) where visible.count < defaultLimit {
                 visible.insert(id)
             }
         }
@@ -162,9 +162,7 @@ struct FollowGraphSnapshot: Codable, Equatable, Sendable {
         var pending = Set(expanded.keys).subtracting([rootID])
         while let source = pending.sorted().first(where: { visible.contains($0) }) {
             pending.remove(source)
-            for id in targets(source).prefix(expanded[source] ?? 0) where visible.count < limit {
-                visible.insert(id)
-            }
+            for id in targets(source).prefix(expanded[source] ?? 0) { visible.insert(id) }
         }
         var result = self
         result.nodes = nodes.filter { visible.contains($0.key) }

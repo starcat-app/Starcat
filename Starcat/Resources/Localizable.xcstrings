@@ -2384,103 +2384,103 @@
         "en" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Loading limit reached; some relationships remain unloaded"
+            "value" : "Auto exploration paused here; use \"More...\" to keep expanding"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已达加载上限，部分关系尚未加载"
+            "value" : "默认自动探索到此，点击「更多」可继续展开"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "已達載入上限，部分關係尚未載入"
+            "value" : "預設自動探索到此，點擊「更多」可繼續展開"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "読み込み上限に達しました。一部の関係は未読み込みです"
+            "value" : "自動探索はここで停止しました。「もっと見る...」で展開を続けられます"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "불러오기 한도에 도달했습니다. 일부 관계는 불러오지 않았습니다"
+            "value" : "자동 탐색이 여기서 멈췄습니다. '더 보기...'로 계속 펼칠 수 있습니다"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Ladelimit erreicht; einige Beziehungen sind noch nicht geladen"
+            "value" : "Automatische Erkundung hier beendet. Mit „Mehr...“ weiter ausbauen"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Limite de chargement atteinte ; certaines relations restent à charger"
+            "value" : "Exploration automatique interrompue ici. Utilisez « Plus... » pour continuer"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Se alcanzó el límite de carga; quedan relaciones sin cargar"
+            "value" : "La exploración automática se detiene aquí. Usa «Más...» para seguir ampliando"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Limite de carregamento atingido; algumas relações ainda não foram carregadas"
+            "value" : "A exploração automática parou aqui. Use \"Mais...\" para continuar expandindo"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Limite di caricamento raggiunto; alcune relazioni non sono state caricate"
+            "value" : "Esplorazione automatica fermata qui. Usa «Altro...» per continuare"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Достигнут предел загрузки; часть связей ещё не загружена"
+            "value" : "Автоматическое исследование остановлено. Нажмите «Ещё...», чтобы продолжить"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Laadlimiet bereikt; sommige relaties zijn nog niet geladen"
+            "value" : "Automatisch verkennen is hier gestopt. Gebruik 'Meer...' om verder uit te breiden"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Osiągnięto limit ładowania; część relacji nie została wczytana"
+            "value" : "Automatyczne eksplorowanie zatrzymane. Użyj „Więcej...”, aby kontynuować"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Досягнуто межі завантаження; деякі зв’язки ще не завантажено"
+            "value" : "Автоматичне дослідження зупинено. Натисніть «Більше...», щоб продовжити"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Yükleme sınırına ulaşıldı; bazı ilişkiler henüz yüklenmedi"
+            "value" : "Otomatik keşif burada durdu. Genişletmeye devam etmek için 'Daha fazla...' kullanın"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Đã đạt giới hạn tải; một số quan hệ chưa được tải"
+            "value" : "Tự động khám phá dừng tại đây. Dùng \"Thêm...\" để tiếp tục mở rộng"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "Batas pemuatan tercapai; beberapa relasi belum dimuat"
+            "value" : "Eksplorasi otomatis berhenti di sini. Gunakan \"Lainnya...\" untuk melanjutkan"
           }
         }
       }
@@ -2697,6 +2697,114 @@
           "stringUnit" : {
             "state" : "needs_review",
             "value" : "Semua hubungan telah dimuat"
+          }
+        }
+      }
+    },
+    "followGraph.toast.quotaReset" : {
+      "comment" : "AI translation draft; pending maintainer review. Auto-dismissed quota feedback with local reset time.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API rate limit reached; it resets around %@ (local time)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API 配额已用完，预计 %@（本地时间）恢复"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API 配額已用完，預計 %@（本地時間）恢復"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API のレート制限に達しました。%@（ローカル時間）頃に回復します"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API 요청 한도를 모두 사용했습니다. %@(현지 시간)경 복구됩니다"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub-API-Kontingent aufgebraucht; Reset ca. %@ (lokale Zeit)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quota GitHub API atteint ; remise à zéro vers %@ (heure locale)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cuota de la API de GitHub agotada; se restablecerá hacia %@ (hora local)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cota da API do GitHub esgotada; reinicia por volta de %@ (horário local)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quota API GitHub esaurita; si ripristina intorno alle %@ (ora locale)"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Лимит запросов GitHub API исчерпан; восстановление примерно в %@ (по местному времени)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API-limiet bereikt; wordt rond %@ (lokale tijd) hersteld"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyczerpano limit GitHub API; reset około %@ (czas lokalny)"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Квоту GitHub API вичерпано; відновлення приблизно о %@ (місцевий час)"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "GitHub API kotası doldu; %@ civarında sıfırlanır (yerel saat)"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã hết hạn mức GitHub API; sẽ đặt lại vào khoảng %@ (giờ địa phương)"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kuota GitHub API habis; akan pulih sekitar %@ (waktu setempat)"
           }
         }
       }

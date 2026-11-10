@@ -314,7 +314,8 @@ final class FollowGraphViewModel {
         let before = displayedSnapshot
         let visibleCount = displayedSnapshot?.relationCount(for: id) ?? 0
         let cachedCount = snapshot.relationCount(for: id)
-        expandedSources[id] = min(10_000, max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0, visibleCount) + 50)
+        // 每次点击只加一页预算；不再有全局容量上限，最终受 API 配额与本机性能约束。
+        expandedSources[id] = max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0, visibleCount) + 50
         saveRange()
         if cachedCount > visibleCount {
             rebuildPresentation()
@@ -338,8 +339,8 @@ final class FollowGraphViewModel {
         guard !isLoading, needsRelationReload(id), let snapshot,
               displayedSnapshot?.nodes[id] != nil else { return }
         let before = displayedSnapshot
-        let budget = min(10_000, max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0,
-                                     displayedRelationCounts[id] ?? 0) + 50)
+        let budget = max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0,
+                         displayedRelationCounts[id] ?? 0) + 50
         expandedSources[id] = budget
         saveRange()
         run { session, store in
@@ -366,9 +367,6 @@ final class FollowGraphViewModel {
             showToast("followGraph.toast.relationshipsAdded")
         } else if !canLoadMore(id) {
             showToast("followGraph.toast.complete")
-        } else if (snapshot?.relationCount(for: id) ?? 0) > displayedSnapshot.relationCount(for: id) {
-            // 预算已增加但画布容量不允许新端点进入，不能无反馈地吞掉这次点击。
-            showToast("followGraph.status.limit", isError: true)
         } else {
             showToast("followGraph.toast.alreadyVisible")
         }
@@ -496,7 +494,8 @@ final class FollowGraphViewModel {
                 try Task.checkCancellation()
                 if (snapshot?.nodes.count ?? 0) >= 5_000 {
                     statusKey = "followGraph.status.limit"
-                    showToast(statusKey, isError: true)
+                    // 自动探索软停是正常设计，不是错误；用户仍可通过选中节点继续展开。
+                    showToast(statusKey)
                     return
                 }
                 let batch = Array(firstLevel[start..<min(start + 4, firstLevel.count)])
@@ -506,7 +505,6 @@ final class FollowGraphViewModel {
                         group.addTask {
                             do { _ = try await store.load(userID: id, session: session, count: count); return nil }
                             catch is CancellationError { return nil }
-                            catch FollowGraphStoreError.budget { return "followGraph.status.limit" }
                             catch FollowGraphStoreError.quota { return "followGraph.status.quota" }
                             catch FollowGraphStoreError.authentication { return "network.error.unauthorized" }
                             catch { return "followGraph.status.partial" }
@@ -519,8 +517,12 @@ final class FollowGraphViewModel {
                 guard generation == session, !Task.isCancelled else { return }
                 if let value = await store.read(session: session) { publish(value, session: session) }
                 if let reason = errors.first(where: { $0 != "followGraph.status.partial" }) {
-                    statusKey = reason
-                    showToast(reason, isError: true)
+                    if reason == "followGraph.status.quota" {
+                        await showQuotaToast(store: store)
+                    } else {
+                        statusKey = reason
+                        showToast(reason, isError: true)
+                    }
                     return
                 }
                 if !errors.isEmpty {
@@ -644,12 +646,8 @@ final class FollowGraphViewModel {
         // actor 读取期间可能关闭或切换图谱，旧错误也不能在新窗口弹出 Toast。
         guard generation == session, !Task.isCancelled else { return }
         switch error {
-        case FollowGraphStoreError.budget:
-            statusKey = "followGraph.status.limit"
-            showToast(statusKey, isError: true)
-        case FollowGraphStoreError.quota:
-            statusKey = "followGraph.status.quota"
-            showToast(statusKey, isError: true)
+        case FollowGraphStoreError.quota(let resetAt):
+            showQuotaToast(resetAt: resetAt)
         case FollowGraphStoreError.authentication:
             statusKey = "network.error.unauthorized"
             showToast(statusKey, isError: true)
@@ -659,5 +657,30 @@ final class FollowGraphViewModel {
             errorText = error.localizedDescription
             showToast("followGraph.toast.loadFailed", isError: true)
         }
+    }
+
+    /// 探索路径的批量错误把配额错误折叠成状态键，这里再补一次真实恢复时间。
+    private func showQuotaToast(store: FollowGraphStore) async {
+        let resetAt = await store.quotaResetAt
+        showQuotaToast(resetAt: resetAt?.ISO8601Format() ?? "")
+    }
+
+    /// 配额停止必须展示真实恢复时间；解析失败时保留原文，不能伪造时间误导用户。
+    private func showQuotaToast(resetAt: String) {
+        statusKey = "followGraph.status.quota"
+        let locale = LocaleStore.shared.selection.effectiveLocale
+        let date = ISO8601DateFormatter().date(from: resetAt)
+        let time: String
+        if let date {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            // medium 在所有支持语言里都带完整年份，用户能直接看懂恢复时间。
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            time = formatter.string(from: date)
+        } else {
+            time = resetAt
+        }
+        showToast(String(format: String.l10n("followGraph.toast.quotaReset"), locale: locale, time), isError: true)
     }
 }

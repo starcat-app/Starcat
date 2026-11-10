@@ -9,13 +9,13 @@
 import Foundation
 
 enum FollowGraphStoreError: Error {
-    case budget
     case staleSession
     case quota(String)
     case authentication
 }
 
-/// ViewModel 负责公平排队，Store 负责最后一道容量、配额与账户写入保护。
+/// ViewModel 负责公平排队，Store 负责最后一道账户会话与配额保护。
+/// 产品已明确不设人为节点/边/请求数上限，最终规模由 GitHub API 配额与本机性能决定。
 actor FollowGraphStore {
     private let provider: any FollowGraphProviding
     private let cache: FollowGraphDiskCache
@@ -49,6 +49,7 @@ actor FollowGraphStore {
     }
 
     /// 手动加载逐页追加；完整刷新先收集新目标，只有末页成功才做删除。
+    /// requests 只做诊断计数，不再作为请求数闸门；真实限流由 GitHub 429 触发。
     func load(userID: String, session: UUID, count: Int = 50, refresh: Bool = false,
               refreshLimit: Int? = nil) async throws -> FollowGraphSnapshot {
         guard self.session == session, let current = snapshot, let user = current.nodes[userID] else {
@@ -66,10 +67,7 @@ actor FollowGraphStore {
         var refreshedCount = 0
         repeat {
             try Task.checkCancellation()
-            guard requests < 300, let value = snapshot,
-                  value.nodes.count < 10_000, value.edges.count < 30_000 else {
-                throw FollowGraphStoreError.budget
-            }
+            guard snapshot != nil else { throw FollowGraphStoreError.staleSession }
             requests += 1
             let page: FollowGraphPage
             do {
@@ -83,13 +81,6 @@ actor FollowGraphStore {
             }
             try Task.checkCancellation()
             guard self.session == session, var value = snapshot else { throw FollowGraphStoreError.staleSession }
-            let nodeIDs = Set(page.nodes.map(\.id)).union(value.nodes.keys)
-            let newEdges = Set(page.nodes.filter { $0.id != userID }.map {
-                value.relation.edge(owner: userID, neighbor: $0.id)
-            })
-            guard nodeIDs.count <= 10_000, value.edges.union(newEdges).count <= 30_000 else {
-                throw FollowGraphStoreError.budget
-            }
             guard page.source.id == userID, !page.hasNextPage || page.cursor != cursor else {
                 throw NetworkError.clientError(statusCode: 502, message: String.l10n("followGraph.status.unavailable"))
             }
@@ -107,7 +98,8 @@ actor FollowGraphStore {
                          "hasCursor": .boolean(page.cursor != nil),
                          "refresh": .boolean(refresh),
                          "requestCount": .integer(requests),
-                         "nodeLimit": .integer(10_000), "edgeLimit": .integer(30_000)]
+                         "rateRemaining": .integer(page.remaining),
+                         "rateResetAt": .string(page.resetAt)]
             ))
             // 刷新可能跨多页。整轮开始后确认的关注写入不能被末页的旧目标集合恢复。
             for change in followChanges.values.sorted(by: { $0.revision < $1.revision })
@@ -124,15 +116,14 @@ actor FollowGraphStore {
             // 每页保存：即使遮盖层被关闭或后续分页失败，已经取得的关系仍可离线恢复。
             try await cache.save(value)
             guard self.session == session else { throw FollowGraphStoreError.staleSession }
-            if page.remaining < 200 {
-                blockedUntil = ISO8601DateFormatter().date(from: page.resetAt) ?? Date().addingTimeInterval(60)
-                throw FollowGraphStoreError.quota(page.resetAt)
-            }
             cursor = page.cursor
             if !refresh || !page.hasNextPage || refreshedCount >= (refreshLimit ?? Int.max) { break }
         } while true
         return snapshot!
     }
+
+    /// 真实 429 之后暴露恢复时间，供 UI 展示本地时间；没有限流时为 nil。
+    var quotaResetAt: Date? { blockedUntil }
 
     func read(session: UUID) -> FollowGraphSnapshot? {
         self.session == session ? snapshot : nil

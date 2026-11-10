@@ -13,11 +13,11 @@ struct FollowGraphSavedRange: Codable, Equatable, Sendable {
     var formatVersion = 1
     let expandedSources: [String: Int]
 
-    /// 拒绝损坏或无界的展示预算，避免恢复时绕过图谱容量保护。
+    /// 只拒绝损坏或明显异常的文件；1,000,000 是防损坏边界，不代表产品容量上限。
     var isValid: Bool {
-        formatVersion == 1 && expandedSources.count <= 10_000 &&
+        formatVersion == 1 && expandedSources.count <= 1_000_000 &&
             expandedSources.allSatisfy { id, count in
-                Int64(id).map { $0 > 0 && String($0) == id } == true && (0...10_000).contains(count)
+                Int64(id).map { $0 > 0 && String($0) == id } == true && (0...1_000_000).contains(count)
             }
     }
 }
@@ -26,7 +26,8 @@ struct FollowGraphSavedRange: Codable, Equatable, Sendable {
 actor FollowGraphDiskCache {
     static let shared = FollowGraphDiskCache()
     private let root: URL
-    private let maximumBytes = 20 * 1024 * 1024
+    /// 只防御异常膨胀的文件，不再表达产品节点上限；真实规模由 API 配额决定。
+    private let maximumBytes = 512 * 1024 * 1024
 
     init(root: URL? = nil) {
         self.root = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -45,7 +46,6 @@ actor FollowGraphDiskCache {
               let data = try? Data(contentsOf: url),
               let snapshot = try? JSONDecoder().decode(FollowGraphSnapshot.self, from: data),
               snapshot.formatVersion == 1, snapshot.relation == relation, snapshot.accountID == account, snapshot.rootID == account,
-              snapshot.nodes.count <= 10_000, snapshot.edges.count <= 30_000,
               snapshot.nodes[account] != nil,
               snapshot.edges.allSatisfy({ snapshot.nodes[$0.source] != nil && snapshot.nodes[$0.target] != nil })
         else { return nil }
@@ -75,7 +75,8 @@ actor FollowGraphDiskCache {
     func loadRange(account: String, relation: FollowGraphRelation) -> FollowGraphSavedRange? {
         guard let url = rangeFile(account, relation: relation),
               let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= 1024 * 1024, let data = try? Data(contentsOf: url),
+              // 手动展开大量节点时 sidecar 也可能超过 1MB，只防明显损坏。
+              size <= 16 * 1024 * 1024, let data = try? Data(contentsOf: url),
               let range = try? JSONDecoder().decode(FollowGraphSavedRange.self, from: data),
               range.isValid else { return nil }
         return range
