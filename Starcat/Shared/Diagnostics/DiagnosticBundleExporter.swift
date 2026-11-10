@@ -126,23 +126,26 @@ enum DiagnosticBundleExporter {
                         }) throws -> URL {
         let manager = FileManager.default
         let identifier = UUID().uuidString
-        let temporary = destination.deletingLastPathComponent()
-            .appendingPathComponent(".starcat-diagnostics-" + identifier, isDirectory: true)
+        // 保存面板授权所选文件，不代表可在其父目录任意创建文件夹。
+        // Foundation 分配同卷替换目录，同时满足沙盒访问与最终替换的同卷约束。
+        let temporary = try manager.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                                        appropriateFor: destination, create: true)
+        defer { try? manager.removeItem(at: temporary) }
         let root = temporary.appendingPathComponent("starcat-diagnostics", isDirectory: true)
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? manager.removeItem(at: temporary) }
         _ = try DiagnosticArchiveBuilder.writePayload(input: input, to: root, exportID: identifier)
         let stagedZIP = temporary.appendingPathComponent("bundle.zip")
         do {
             try compress(root, stagedZIP)
         } catch {
-            // 压缩失败仍保留可读报告和其余文件，文件夹名称明确区分 ZIP。
+            // 未授权目标的相邻目录也不能作为降级路径；移出待清理的替换目录，
+            // 在应用临时目录保留报告，并向用户返回真实位置。
             let fallbackInput = DiagnosticArchiveBuilder.Input(snapshot: input.snapshot, settings: input.settings,
                 options: input.options, sessions: input.sessions, localAI: input.localAI,
                 collectors: input.collectors + [.init(name: "compression", status: .failed,
                     detail: "ZIP creation failed; exported a directory")], system: input.system)
             _ = try DiagnosticArchiveBuilder.writePayload(input: fallbackInput, to: root, exportID: identifier)
-            let fallback = destination.deletingLastPathComponent()
+            let fallback = manager.temporaryDirectory
                 .appendingPathComponent("starcat-diagnostics-" + identifier, isDirectory: true)
             try manager.moveItem(at: root, to: fallback)
             return fallback

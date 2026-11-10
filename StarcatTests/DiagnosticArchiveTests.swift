@@ -169,7 +169,7 @@ struct DiagnosticArchiveTests {
         #expect(empty.collectors.contains { $0.name == "eventWindow" && $0.status == .truncated })
     }
 
-    @Test("压缩失败导出可用目录，不删除已有目标")
+    @Test("临时生成及压缩降级不写未授权的相邻目录，不删除已有目标")
     func compressionFallback() throws {
         let parent = directory()
         defer { try? FileManager.default.removeItem(at: parent) }
@@ -179,10 +179,18 @@ struct DiagnosticArchiveTests {
         let input = DiagnosticArchiveBuilder.Input(snapshot: .init(text: "", cutoffSequence: 0,
             capturedAt: Date().ISO8601Format(), health: [:]), settings: [:], options: .init(),
             sessions: nil, localAI: [], collectors: [], system: nil)
-        let fallback = try DiagnosticBundleExporter.archive(input: input, destination: destination) { _, _ in
+        let fallback = try DiagnosticBundleExporter.archive(input: input, destination: destination) { root, staged in
+            // 原生保存面板只授予目标文件；测试不能因父目录恰好可写而掩盖沙盒回归。
+            let destinationParent = parent.standardizedFileURL.path + "/"
+            #expect(!root.standardizedFileURL.path.hasPrefix(destinationParent))
+            #expect(!staged.standardizedFileURL.path.hasPrefix(destinationParent))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: parent.path) == ["existing.zip"])
             throw CocoaError(.fileWriteUnknown)
         }
+        defer { try? FileManager.default.removeItem(at: fallback) }
         #expect(fallback != destination)
+        #expect(fallback.deletingLastPathComponent().standardizedFileURL ==
+                FileManager.default.temporaryDirectory.standardizedFileURL)
         #expect(try String(contentsOf: destination, encoding: .utf8) == "keep previous bundle")
         let manifest = try JSONDecoder().decode(DiagnosticManifest.self,
             from: Data(contentsOf: fallback.appendingPathComponent("manifest.json")))
