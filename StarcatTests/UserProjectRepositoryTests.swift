@@ -281,7 +281,7 @@ struct UserProjectRepositoryTests {
             try db.execute(sql: """
                 INSERT INTO repo_skill_scans
                 (repo_id, commit_sha, branch, rules_version, expires_at, presence, payload)
-                VALUES (71, 'fixed', 'main', 1, 4000000000, 'contains', X'00')
+                VALUES (71, 'fixed', 'main', \(RepoSkillScan.rulesVersion), 4000000000, 'contains', X'00')
                 """)
         }
         let filters = RepoListFilters(

@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-10
+> 最后核对：2026-11-11
 
 ## 登记说明
 
@@ -32,7 +32,6 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/skills-ui-preview` | 本地 worktree：`../Starcat-skills-ui-preview`；无远端分支 | 基于 `dev`（已同步至 `0204d594`）完整实现仓库 Skill 识别、四态筛选、三栏预览与 Codex / Claude Code 目录安装；复用文件树及下载器。 | `开发中`；2026-11-10 dong4j 已授权完整实施，正在接通真实扫描、持久化和安装，不再限于 UI 样板。 | 在此 worktree 完成测试和 Direct 验收；验收后再决定合回 `dev`，不推送、不发布。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev`（`016ec930`）实现每日推荐抽卡 MVP：透明整窗覆盖、多种子真实推荐、每日缓存与本地反馈。 | `开发中`；2026-11-09 审计确认分支无已提交独有提交，但 worktree 保留约 3,600 行未提交 MVP 实现，等待恢复、测试与验收。 | 不清理、不合并、不推送；先确认实现是否继续，再按功能分批提交。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
@@ -75,6 +74,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/skills-ui-preview` | 已合并；2026-11-11 dong4j 授权合回 `dev`，merge commit `6faa19fa`。 | 分支已成为 `dev` ancestor；`../Starcat-skills-ui-preview` 与本地分支暂保留，等待单独授权清理；从未存在远端分支，本次未推送。 |
 | `codex/diagnostics-overhaul` | 已删除 | 2026-11-10 dong4j 授权合回并删除；`3e69373c` 已以 merge commit `8813bf46` 合入 `dev`，`git cherry` 与内容 diff 为空，worktree 干净，已删除 `../Starcat-diagnostics-overhaul` 与本地分支，解析 Skill 链接改指向主仓。从未存在远端分支。 |
 | `codex/background-task-integration` | 已删除 | 2026-11-10 dong4j 授权删除；`c56a9a48` 已合入 `dev`（merge `1ce18786`），`git cherry` 为空、diff 为空，worktree 干净，已删除 `../Starcat-background-task-integration` 与本地分支。从未存在远端分支。 |
 | `codex/followers-graph` | 已删除 | 2026-11-09 dong4j 授权清理；`d4ffce59` 已合入 `dev`，worktree 干净，已删除 `../Starcat-followers-graph` 与本地分支。 |
