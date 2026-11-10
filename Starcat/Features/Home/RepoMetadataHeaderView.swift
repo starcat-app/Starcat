@@ -216,32 +216,46 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        HStack(spacing: 10) {
-            if repo.isArchived {
-                RepoBadgeChip(text: "repo.archived", systemImage: "archivebox", tint: .orange)
+        // 窄面板放不下时 Skill 胶囊折到第二行，License 胶囊始终保持完整文案。
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                primaryBadges
+                RepoSkillBadge(repo: repo)
             }
-            if repo.isPrivate {
-                RepoBadgeChip(text: "repo.private", systemImage: "lock.fill", tint: .purple)
-            }
-            // License 胶囊（2026-11-01 改版）：带义务类别配色，点击展开说明卡，
-            // 原"整颗直跳 GitHub license 页"的入口移入卡底部"查看项目 LICENSE"。
-            // 解析 / 配色 / 兜底（N/A、NOASSERTION、多重许可）统一在组件内处理；
-            // 无 license 的仓库也显示灰色"待确认"胶囊（原 N/A 纯文本已删除）。
-            LicenseKnowledgeCapsule(
-                rawLicense: repo.license,
-                owner: repo.owner,
-                repoName: repo.name
-            )
-            // fork 来源不再单独占第三行，也不再用灰色 Fork 胶囊占位。
-            // 有 parent 时接到 license 后面，点名字打开上游。
-            if repo.isFork {
-                ForkedFromCaption(repo: repo)
-                    .layoutPriority(-1)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) { primaryBadges }
+                RepoSkillBadge(repo: repo)
             }
         }
         .lineLimit(1)
-        // License 胶囊固定 24pt（设计稿 24-26pt），行高随之从 18 放宽到 24。
-        .frame(minHeight: 24, maxHeight: 24, alignment: .center)
+        // License 胶囊固定 24pt（设计稿 24-26pt），折行时第二行也算入行高。
+        .frame(minHeight: 24, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var primaryBadges: some View {
+        if repo.isArchived {
+            RepoBadgeChip(text: "repo.archived", systemImage: "archivebox", tint: .orange)
+        }
+        if repo.isPrivate {
+            RepoBadgeChip(text: "repo.private", systemImage: "lock.fill", tint: .purple)
+        }
+        // License 胶囊（2026-11-01 改版）：带义务类别配色，点击展开说明卡，
+        // 原"整颗直跳 GitHub license 页"的入口移入卡底部"查看项目 LICENSE"。
+        // 解析 / 配色 / 兜底（N/A、NOASSERTION、多重许可）统一在组件内处理；
+        // 无 license 的仓库也显示灰色"待确认"胶囊（原 N/A 纯文本已删除）。
+        LicenseKnowledgeCapsule(
+            rawLicense: repo.license,
+            owner: repo.owner,
+            repoName: repo.name
+        )
+        .layoutPriority(1)
+        // fork 来源不再单独占第三行，也不再用灰色 Fork 胶囊占位。
+        // 有 parent 时接到 license 后面，点名字打开上游。
+        if repo.isFork {
+            ForkedFromCaption(repo: repo)
+                .layoutPriority(-1)
+        }
     }
 
     @ViewBuilder

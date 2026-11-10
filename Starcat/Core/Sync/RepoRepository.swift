@@ -877,6 +877,26 @@ struct GRDBRepoRepository {
                 """)
         }
 
+        if filters.skill != .any {
+            // 必须在 scope 的 JOIN 参数之后追加，避免“我的项目”把 Skill 值绑定到 user_id。
+            // 摘要在分页、COUNT、全选 ID 查询前匹配；未知和过期证据都不等于“不包含”。
+            let valid = """
+                sk.repo_id = r.id
+                AND sk.rules_version = \(RepoSkillScan.rulesVersion)
+                AND sk.expires_at > \(Date.now.timeIntervalSince1970)
+                AND (r.pushed_at IS NULL OR sk.pushed_at = r.pushed_at)
+                AND (r.default_branch IS NULL OR sk.branch = r.default_branch)
+                """
+            let known = "EXISTS (SELECT 1 FROM repo_skill_scans sk WHERE \(valid) AND sk.presence IN ('contains', 'absent'))"
+            switch filters.skill {
+            case .any: break
+            case .unknown: whereClauses.append("NOT (\(known))")
+            case .contains, .absent:
+                whereClauses.append("EXISTS (SELECT 1 FROM repo_skill_scans sk WHERE \(valid) AND sk.presence = ?)")
+                args.append(filters.skill.rawValue)
+            }
+        }
+
         switch filters.star {
         case .all:
             break

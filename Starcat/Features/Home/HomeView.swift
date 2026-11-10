@@ -683,7 +683,28 @@ struct HomeView: View {
         // `_anonymous` → 用户库切换。数据库 revision 是切库完成后的确定边沿；在这里
         // 失效 Repo Pin 快照并重载，避免匿名库的空结果屏蔽用户库中的持久化 Pin。
         .task(id: dependencies.databaseScopeRevision) {
+            viewModel.repoSkillStore = dependencies.repoSkillStore
+            await dependencies.repoSkillStore.prepare()
             await handleDatabaseScopeChange(dependencies.databaseScopeRevision)
+        }
+        .onChange(of: dependencies.repoSkillStore.revision) { _, _ in viewModel.skillEvidenceDidChange() }
+        .onChange(of: viewModel.effectiveGlobalFilterState.skillFilter) { _, filter in
+            if filter == .any { dependencies.repoSkillStore.stopBackgroundScan() }
+        }
+        .task(id: "\(dependencies.databaseScopeRevision)-\(selectedSidebarPage)-\(viewModel.selection)-\(viewModel.effectiveGlobalFilterState)-\(viewModel.searchSubmissionID)-\(viewModel.itemsRevision)") {
+            guard selectedSidebarPage == .manage, viewModel.effectiveGlobalFilterState.skillFilter != .any else { return }
+            do {
+                let candidates = try await viewModel.skillScanCandidates()
+                try Task.checkCancellation()
+                dependencies.repoSkillStore.enqueue(
+                    candidates,
+                    scope: "manage-\(viewModel.selection)-\(viewModel.effectiveGlobalFilterState)-\(viewModel.searchSubmissionID)"
+                )
+            } catch {
+                if !Task.isCancelled {
+                    AppLog.network.warning("Skill candidate query failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
         }
         // 知识库入库/移出事件必须挂在 HomeView：空库时空态没有 List，原先挂在
         // RepoListView.List 上会导致 Sidebar「知识库」计数与列表都不能实时刷新。
@@ -2145,6 +2166,7 @@ struct HomeView: View {
         if viewModel.licenseFilter != settings.licenseFilter {
             viewModel.licenseFilter = settings.licenseFilter
         }
+        if viewModel.skillFilter != settings.skillFilter { viewModel.skillFilter = settings.skillFilter }
         if viewModel.interestedLanguages != settings.interestedLanguages {
             viewModel.interestedLanguages = settings.interestedLanguages
         }

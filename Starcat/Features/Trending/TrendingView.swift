@@ -153,6 +153,13 @@ struct TrendingView: View {
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.filterCandidateRepos)
         }
+        .task(id: "\(skillCandidates.map(\.id)):\(viewModel.selectedPeriod.rawValue):\(selectedLanguage):\(settings.skillScanFilterIdentity):\(quickSearchQuery)") {
+            guard settings.skillFilter != .any else { return }
+            dependencies.repoSkillStore.enqueue(
+                skillCandidates,
+                scope: "trending:\(viewModel.selectedPeriod.rawValue):\(selectedLanguage):\(settings.skillScanFilterIdentity):\(quickSearchQuery)"
+            )
+        }
         .onChange(of: homeViewModel.languageStats) { _, stats in
             Task {
                 await viewModel.updateLanguagePreferences(from: stats)
@@ -221,6 +228,12 @@ struct TrendingView: View {
         onRepoCountChange(viewModel.totalCount)
     }
 
+    private var skillCandidates: [Repo] {
+        var filters = trendingFilterSnapshot
+        filters.skillFilter = .any
+        return viewModel.filterCandidateRepos.filter { filters.matches($0) }.map { $0.makeEphemeralRepo() }
+    }
+
     /// 把 MainActor-only 的 Observable store 投影成可 Sendable 的值快照。
     ///
     /// 关闭某个筛选时不复制对应 store 的集合，避免 badge 缓存补载导致无意义的整榜重算；
@@ -262,7 +275,11 @@ struct TrendingView: View {
                 : Set(dependencies.repoHealthStore.snapshots.keys),
             openSSFAvailableRepoIDs: openSSFAvailableRepoIDs,
             searchQuery: quickSearchQuery,
-            licenseFilter: settings.licenseFilter
+            licenseFilter: settings.licenseFilter,
+            skillFilter: settings.skillFilter,
+            skillPresence: settings.skillFilter == .any ? [:] : dependencies.repoSkillStore.scans.mapValues {
+                dependencies.repoSkillStore.presence(repositoryID: $0.repositoryID)
+            }
         )
     }
 

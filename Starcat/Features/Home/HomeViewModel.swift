@@ -408,6 +408,7 @@ final class HomeViewModel {
         let language: String
         let selectedLanguages: Set<String>
         let license: RepoLicenseFilter
+        let skill: RepoSkillFilter
         let excludedLanguages: Set<String>
         let healthAvailability: String
         let openSSFAvailability: String
@@ -982,6 +983,15 @@ final class HomeViewModel {
         }
     }
 
+    var skillFilter: RepoSkillFilter = .any {
+        didSet {
+            guard oldValue != skillFilter, !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+    /// 由主窗口注入共享索引，搜索与非 SQL 集合也消费相同识别事实。
+    @ObservationIgnored var repoSkillStore: RepoSkillStore?
+
     /// 设置页「感兴趣的语言」镜像。左侧语言分类与 `.other` 过滤都依赖它；
     /// 由 HomeView 从 AppSettings 单向同步（启动 + onChange），ViewModel 本身不持有 settings。
     /// 变化时只有左侧语言筛选是 `.other` 才 refilter——排除集合变了，列表结果才可能变。
@@ -1264,7 +1274,8 @@ final class HomeViewModel {
             indexableSourceAvailabilityFilter: .unknown,
             ragIndexStateFilter: .unknown,
             insightsRiskFilter: .unknown,
-            licenseFilter: licenseFilter
+            licenseFilter: licenseFilter,
+            skillFilter: skillFilter
         )
     }
 
@@ -1285,6 +1296,7 @@ final class HomeViewModel {
             || filters.repoLanguageFilter != .all
             || !filters.globalFilterLanguages.isEmpty
             || filters.licenseFilter.isActive
+            || filters.skillFilter != .any
             || filters.wikiAvailabilityFilter != .unknown
             || filters.healthAvailabilityFilter != .unknown
             || filters.openSSFAvailabilityFilter != .unknown
@@ -1499,6 +1511,7 @@ final class HomeViewModel {
         repoLanguageFilter = filters.repoLanguageFilter
         globalFilterLanguages = filters.globalFilterLanguages
         licenseFilter = filters.licenseFilter
+        skillFilter = filters.skillFilter
         wikiAvailabilityFilter = filters.wikiAvailabilityFilter
         healthAvailabilityFilter = filters.healthAvailabilityFilter
         openSSFAvailabilityFilter = filters.openSSFAvailabilityFilter
@@ -2448,6 +2461,7 @@ final class HomeViewModel {
             language: filters.language.persistedRawValue,
             selectedLanguages: filters.selectedLanguages,
             license: filters.license,
+            skill: filters.skill,
             excludedLanguages: filters.excludedLanguages,
             healthAvailability: filters.healthAvailability.rawValue,
             openSSFAvailability: filters.openSSFAvailability.rawValue,
@@ -3697,6 +3711,7 @@ final class HomeViewModel {
     private func computeFilteredSorted(
         ignoringSidebarLanguage: Bool = false,
         ignoringSelectedTags: Bool = false,
+        ignoringSkill: Bool = false,
         sortResults: Bool = true
     ) -> [Repo] {
         var view = rawItems
@@ -3742,7 +3757,7 @@ final class HomeViewModel {
             let excluded = Set(interestedLanguages)
             view.removeAll { !filters.repoLanguageFilter.matches($0.language, excluding: excluded) }
         }
-        applyGlobalRepoFilters(to: &view)
+        applyGlobalRepoFilters(to: &view, ignoringSkill: ignoringSkill)
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。
         //
         // 仅 isSemanticSearching 时启用：FTS / 普通分类列表的 semanticHitMap 始终为空，
@@ -3807,8 +3822,11 @@ final class HomeViewModel {
         }
     }
 
-    private func applyGlobalRepoFilters(to repos: inout [Repo]) {
+    private func applyGlobalRepoFilters(to repos: inout [Repo], ignoringSkill: Bool = false) {
         let filters = effectiveGlobalFilterState
+        if !ignoringSkill, filters.skillFilter != .any {
+            repos.removeAll { !filters.skillFilter.matches(repoSkillStore?.presence(for: $0) ?? .unknown) }
+        }
         if filters.licenseFilter.isActive {
             repos.removeAll { !filters.licenseFilter.matches($0.license) }
         }
@@ -3825,6 +3843,28 @@ final class HomeViewModel {
             }
         }
         applySignalAvailabilityFilters(to: &repos)
+    }
+
+    /// 后台扫描更新时淘汰依赖证据的旧分页与计数，再用同一 SQL 查询恢复当前列表。
+    func skillEvidenceDidChange() {
+        removeDatabaseSnapshots { $0.skill != .any }
+        guard effectiveGlobalFilterState.skillFilter != .any else { return }
+        listCache.removeAll()
+        reloadOrApplyCurrentManageView()
+    }
+
+    /// 补查候选取其余条件之后的全集，不能从已被 Skill 条件筛空的当前页生成。
+    func skillScanCandidates() async throws -> [Repo] {
+        if let scope = currentRepoListScopeForDatabasePaging() {
+            var filters = currentRepoListFiltersForDatabasePaging()
+            filters.skill = .any
+            let page = try await repository.fetchListPage(
+                scope: scope, filters: filters, sort: sortOption, limit: Int.max, offset: 0
+            )
+            return page
+        }
+        // 搜索 / 智能集合已经在 rawItems 完成其范围查询；这里只补查该范围，不修改用户条件。
+        return computeFilteredSorted(ignoringSkill: true, sortResults: false)
     }
 
     private func applySignalAvailabilityFilters(to repos: inout [Repo]) {

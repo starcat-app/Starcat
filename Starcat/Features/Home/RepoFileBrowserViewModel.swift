@@ -249,15 +249,6 @@ final class RepoFileBrowserViewModel {
     }
 
     private func fetchTree(force: Bool) async {
-        if !force, let cached = await treeCache.tree(
-            owner: target.owner,
-            repo: target.name,
-            ref: currentRef
-        ) {
-            apply(cached)
-            return
-        }
-
         let showFullLoading = nodes.isEmpty
         if showFullLoading {
             phase = .loading
@@ -266,12 +257,15 @@ final class RepoFileBrowserViewModel {
         }
 
         do {
-            let dto = try await apiClient.repositoryGitTree(
-                owner: target.owner,
-                repo: target.name,
-                ref: currentRef
+            let cacheGeneration = await treeCache.currentGeneration()
+            let commit = try await apiClient.repositoryLatestCommit(
+                owner: target.owner, repo: target.name, path: "", ref: currentRef
             )
-            await treeCache.store(dto, owner: target.owner, repo: target.name, ref: currentRef)
+            let dto = try await treeCache.load(
+                owner: target.owner, repo: target.name, ref: commit?.sha ?? currentRef,
+                scope: apiClient.fileTreeCacheScope, api: apiClient, force: force,
+                expectedGeneration: cacheGeneration
+            )
             apply(dto)
             pruneSelectionAndPreview()
         } catch is CancellationError {

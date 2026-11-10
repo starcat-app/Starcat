@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import CryptoKit
 import Foundation
 import Testing
 @testable import Starcat
@@ -299,6 +300,37 @@ struct RepoFileDownloaderTests {
         #expect(try Data(contentsOf: saved) == payload)
     }
 
+    @Test("校验普通 blob 和 LFS 实物；内容变化后必须失败")
+    func verifiesDownloadedContent() async throws {
+        URLProtocolStub.reset()
+        let payload = Data("verified content".utf8)
+        let digest = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+        let pointer = Data("version https://git-lfs.github.com/spec/v1\noid sha256:\(digest)\nsize \(payload.count)\n".utf8)
+        let sha = RepoFileDownloader.gitBlobSHA(pointer)
+        URLProtocolStub.requestHandler = { request in
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, pointer)
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("skill-verification-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try payload.write(to: file)
+        let downloader = RepoFileDownloader(session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        #expect(try await downloader.verifyDownloadedFile(owner: "o", repo: "r", sha: RepoFileDownloader.gitBlobSHA(payload), fileURL: file))
+        #expect(try await downloader.verifyDownloadedFile(owner: "o", repo: "r", sha: sha, fileURL: file))
+        try Data("modified content".utf8).write(to: file)
+        #expect(try await !downloader.verifyDownloadedFile(owner: "o", repo: "r", sha: sha, fileURL: file))
+    }
+
+    @Test("私仓凭据缺失时不匿名降级")
+    func refusesMissingPrivateCredentials() async throws {
+        URLProtocolStub.reset()
+        let downloader = RepoFileDownloader(session: URLProtocolStub.ephemeralSession(), tokenProvider: RequiredFileToken())
+        await #expect(throws: (any Error).self) {
+            try await downloader.preview(owner: "o", repo: "private", sha: "blob", relativePath: "SKILL.md", hintedSize: nil)
+        }
+        #expect(URLProtocolStub.receivedRequests.isEmpty)
+    }
+
     @Test("超过预览上限的文件不发起网络请求")
     func skipsLargePreview() async throws {
         URLProtocolStub.reset()
@@ -355,6 +387,12 @@ struct RepoFileDownloaderTests {
         }
         return png
     }
+}
+
+/// 验证私仓下载器不会因为授权丢失而切换到匿名链路。
+private struct RequiredFileToken: GitHubTokenProviding {
+    var requiresAuthentication: Bool { true }
+    func currentToken() async -> String? { nil }
 }
 
 @Suite("RepoFileBrowserViewModel")

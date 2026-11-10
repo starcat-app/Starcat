@@ -60,12 +60,14 @@ struct PressableOpacityHover: ViewModifier {
 
     @State private var isHovered = false
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
 
     func body(content: Content) -> some View {
         content
             .scaleEffect(isHovered ? hoveredScale : 1.0)
             .opacity(isHovered ? hoveredOpacity : 1.0)
             .onHover { hovering in
+                guard isEnabled else { return }
                 withAnimation(.easeOut(duration: reduceMotion ? 0 : duration)) {
                     isHovered = hovering
                 }
