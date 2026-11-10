@@ -63,6 +63,56 @@ struct AppBackgroundTaskTests {
         #expect(AppBackgroundTaskSnapshot(tasks: [readme], warmupOwnsReadme: true).tasks == [readme])
     }
 
+    @Test("仓库搜索索引与知识库索引独立计数，暂停保留入口", arguments: [
+        SemanticIndexBuilderStatus.running, .paused
+    ])
+    func repositoryIndexIsAnIndependentTask(status: SemanticIndexBuilderStatus) throws {
+        let repository = try #require(AppBackgroundTask.repositoryIndex(
+            status: status, processed: 576, total: 2_077, failures: 0
+        ))
+        let knowledge = AppBackgroundTask(id: .indexing, phase: .running)
+        let snapshot = AppBackgroundTaskSnapshot(tasks: [repository, knowledge])
+        #expect(snapshot.count == 2)
+        #expect(snapshot.task(.repositoryIndexing) == repository)
+        #expect(snapshot.task(.indexing) == knowledge)
+        #expect(repository.phase == (status == .running ? .running : .paused))
+        #expect(repository.detail == .progress(processed: 576, total: 2_077))
+        #expect(repository.canCancel)
+        #expect(repository.opensWindow)
+        #expect(AppBackgroundTaskSnapshot(tasks: [repository]).isRunning == (status == .running))
+    }
+
+    @Test("仓库搜索索引正常完成或取消后不残留任务", arguments: [
+        SemanticIndexBuilderStatus.idle, .completed(processed: 2_077, total: 2_077),
+        .alreadyUpToDate(total: 2_077)
+    ])
+    func finishedRepositoryIndexDisappears(status: SemanticIndexBuilderStatus) {
+        #expect(AppBackgroundTask.repositoryIndex(
+            status: status, processed: 2_077, total: 2_077, failures: 0
+        ) == nil)
+    }
+
+    @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
+        SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
+        .completed(processed: 2_077, total: 2_077)
+    ])
+    func repositoryIndexFailuresRemainVisible(status: SemanticIndexBuilderStatus) throws {
+        let task = try #require(AppBackgroundTask.repositoryIndex(
+            status: status, processed: 2_077, total: 2_077, failures: 7
+        ))
+        #expect(task.phase == .failed)
+        #expect(task.detail == .failed(7))
+        #expect(!task.canCancel)
+        #expect(task.opensWindow)
+        #expect(AppBackgroundTaskSnapshot(tasks: [task]).needsAttention)
+        // 总体错误可能发生在候选查询前，没有失败仓库计数，仍需保留设置入口。
+        let earlyFailure = try #require(AppBackgroundTask.repositoryIndex(
+            status: .failed(message: "private diagnostic"), processed: 0, total: 0, failures: 0
+        ))
+        #expect(earlyFailure.detail == .none)
+        #expect(earlyFailure.opensWindow)
+    }
+
     @Test("具体任务的操作能力互不串用，已结束任务不可再从旧行打开")
     func operationsStayTaskSpecific() {
         let grouping = AppBackgroundTask(id: .grouping, phase: .running, canCancel: true, opensWindow: true)
@@ -131,7 +181,7 @@ struct AppBackgroundTaskTests {
         try withLanguage(locale) {
             for scale in InterfaceScale.allCases {
                 for phase in AppBackgroundTask.Phase.allCases {
-                    let task = AppBackgroundTask(id: .tags, phase: phase,
+                    let task = AppBackgroundTask(id: .repositoryIndexing, phase: phase,
                                                  detail: .progress(processed: 1_234_567, total: 2_000_000_000),
                                                  canCancel: true, opensWindow: true)
                     let view = AppBackgroundTaskRow(task: task, onOpen: {}, onCancel: {})
@@ -147,7 +197,7 @@ struct AppBackgroundTaskTests {
 
     @Test("任务超过四行后列表高度不再增长", arguments: [ColorScheme.light, .dark])
     func taskListHeightIsBounded(colorScheme: ColorScheme) throws {
-        for count in [1, 4, 7] {
+        for count in [1, 4, AppBackgroundTask.Kind.allCases.count] {
             let tasks = AppBackgroundTask.Kind.allCases.prefix(count).map { AppBackgroundTask(id: $0, phase: .running) }
             let size = try measuredSize(AppBackgroundTaskList(tasks: tasks, onOpen: { _ in }, onCancel: { _ in })
                 .environment(\.colorScheme, colorScheme).environment(\.starcatInterfaceScale, InterfaceScale.standard), width: 384)

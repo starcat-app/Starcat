@@ -157,6 +157,7 @@ struct AppStatusToolbarButton: View {
         case .grouping: onShowGitHubGrouping?()
         case .tags: onShowBatchAIPanel?()
         case .indexing: onShowKnowledgeWorkspace?()
+        case .repositoryIndexing: openSettings(tab: "ai.index")
         case .warmup, .readme, .openSSF, .health: break
         }
     }
@@ -172,6 +173,7 @@ struct AppStatusToolbarButton: View {
         case .openSSF: dependencies.openSSFScorePoller.cancelCurrentRefresh()
         case .health: dependencies.repoHealthPoller.cancelCurrentRefresh()
         case .indexing: dependencies.knowledgeRAGIndexBuilder.cancel()
+        case .repositoryIndexing: dependencies.semanticIndexBuilder.cancel()
         }
     }
 

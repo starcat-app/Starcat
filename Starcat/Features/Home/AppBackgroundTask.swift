@@ -10,7 +10,7 @@ import Foundation
 /// 每类服务的一轮工作只算一个任务；仓库/分片数量只在行内说明中展示。
 struct AppBackgroundTask: Identifiable, Equatable {
     enum Kind: String, CaseIterable {
-        case grouping, tags, warmup, readme, openSSF, health, indexing
+        case grouping, tags, warmup, readme, openSSF, health, indexing, repositoryIndexing
 
         var titleKey: String {
             switch self {
@@ -21,6 +21,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .openSSF: "toolbar.backgroundTasks.openSSF"
             case .health: "toolbar.backgroundTasks.health"
             case .indexing: "toolbar.backgroundTasks.indexing"
+            case .repositoryIndexing: "settings.searchIndex.repository.title"
             }
         }
 
@@ -32,7 +33,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .readme: .readme
             case .openSSF: .security
             case .health: .repositoryHealth
-            case .indexing: .aiIndex
+            case .indexing, .repositoryIndexing: .aiIndex
             }
         }
     }
@@ -71,6 +72,29 @@ struct AppBackgroundTask: Identifiable, Equatable {
     var detail: Detail = .none
     var canCancel = false
     var opensWindow = false
+
+    /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。
+    static func repositoryIndex(
+        status: SemanticIndexBuilderStatus, processed: Int, total: Int, failures: Int
+    ) -> Self? {
+        let phase: Phase
+        let detail: Detail
+        switch status {
+        case .running, .paused:
+            phase = status == .running ? .running : .paused
+            detail = .progress(processed: processed, total: total)
+        case .failed:
+            phase = .failed
+            detail = failures > 0 ? .failed(failures) : .none
+        case .completed where failures > 0:
+            phase = .failed
+            detail = .failed(failures)
+        case .idle, .completed, .alreadyUpToDate:
+            return nil
+        }
+        return Self(id: .repositoryIndexing, phase: phase, detail: detail,
+                    canCancel: phase == .running || phase == .paused, opensWindow: true)
+    }
 
     /// 横幅与任务列表沿用同一套 AI 会话语义，尤其不能把分析完成误当成应用完成。
     static func organization(_ state: AIOrganizationBannerState, kind: Kind,

@@ -94,6 +94,14 @@ struct AppBackgroundTaskSnapshot: Equatable {
             tasks.append(.init(id: .health, phase: .running,
                                detail: .progress(processed: health.refreshProcessed, total: health.refreshTotal), canCancel: true))
         }
+        // 读取设置页使用的同一个索引器，不维护第二份进度或启动额外任务。
+        let repositoryIndex = dependencies.semanticIndexBuilder
+        if let task = AppBackgroundTask.repositoryIndex(
+            status: repositoryIndex.status, processed: repositoryIndex.processed,
+            total: repositoryIndex.total, failures: repositoryIndex.failures
+        ) {
+            tasks.append(task)
+        }
         switch dependencies.knowledgeRAGIndexBuilder.status {
         case let .fetchingReadmes(processed, total), let .building(processed, total), let .embedding(processed, total):
             tasks.append(.init(id: .indexing, phase: .running,
