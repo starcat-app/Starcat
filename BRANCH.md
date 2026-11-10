@@ -76,7 +76,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| `codex/background-task-integration` | 已合并，保留分支及 worktree | 2026-11-10 dong4j 授权合入 `dev`；专项头 `c56a9a48` 与各功能独立提交一并保留，原基线 `0204d594`。保留 `../Starcat-background-task-integration`，不推送、不发布、不删除。 |
+| `codex/background-task-integration` | 已删除 | 2026-11-10 dong4j 授权删除；`c56a9a48` 已合入 `dev`（merge `1ce18786`），`git cherry` 为空、diff 为空，worktree 干净，已删除 `../Starcat-background-task-integration` 与本地分支。从未存在远端分支。 |
 | `codex/followers-graph` | 已删除 | 2026-11-09 dong4j 授权清理；`d4ffce59` 已合入 `dev`，worktree 干净，已删除 `../Starcat-followers-graph` 与本地分支。 |
 | 主仓 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认每周 AI 大事完成，授权删除旧 worktree `../Starcat-weekly-ai-events-mvp` 及本地/远端同名分支；功能已合入主仓 `dev`，主仓 `main` 未在本次同步。 |
 | 内容 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`737aff73` 已是内容仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events` worktree 干净并已删除。 |
