@@ -65,6 +65,35 @@ actor RecommendAPI {
         return page
     }
 
+    /// 每日推荐只发送公开种子，不上传完整 Stars 或“不感兴趣”反馈。
+    /// 一次取最多 100 个候选交给本地完整过滤；无 cursor 时不伪造后续分页。
+    func fetchDailyCandidates(seedIDs: [Int64]) async throws -> DailyRecommendationResponse {
+        guard !seedIDs.isEmpty, seedIDs.count <= 20, seedIDs.allSatisfy({ $0 > 0 }) else {
+            throw StarcatEnvelopeNetworkError.invalidURL
+        }
+        let endpoint = AppEndpoints.appendPath("/api/v2/recommendations/query", to: baseURL)
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let apiKey, !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .recommend)
+        request.httpBody = try JSONEncoder().encode(DailyRecommendationQuery(positiveRepoIDs: seedIDs))
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw StarcatEnvelopeNetworkError.transport(error)
+        }
+        return try StarcatEnvelopeDecoder.decode(
+            DailyRecommendationResponse.self, data: data, response: response, decoder: decoder
+        )
+    }
+
     /// 用缓存快照里的模型版本重验证自研推荐第一页。
     ///
     /// ETag 由实际 Bundle / 源内容版本和分页参数组成；服务端固定快照后返回 304，

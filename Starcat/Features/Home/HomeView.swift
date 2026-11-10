@@ -157,6 +157,8 @@ struct HomeView: View {
 
     /// 每日热点独立于仓库 ExploreMode，避免把仓库筛选应用到文章目录。
     @State private var showsDailyRadarPreview = false
+    /// 抽卡以独立透明子窗口覆盖整窗，关闭后保留批次与翻牌进度。
+    @State private var showsDailyRecommendations = false
     /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
     @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
 
@@ -316,6 +318,13 @@ struct HomeView: View {
 
     var body: some View {
         navigationWithLifecycle
+            .modifier(DailyRecommendationHost(
+                isPresented: $showsDailyRecommendations,
+                onOpen: { repo in
+                    showsDailyRecommendations = false
+                    openCompanionRepository(repo, pinInList: false)
+                }
+            ))
             .background {
                 WorkspaceSceneWindowReader(reference: batchAIParentWindow, minimumContentSize: nil)
                     .frame(width: 0, height: 0)
@@ -1355,6 +1364,7 @@ struct HomeView: View {
             // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
             // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
             currentActivityTintColor: derivedActivityTintColor,
+            onShowDailyRecommendations: { showsDailyRecommendations = true },
             dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
             dailyRadarModel: dailyRadarModel
         )

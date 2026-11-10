@@ -126,6 +126,8 @@ struct SidebarView: View {
     ///
     /// 只传最终颜色而不传 `ActivityItem`，避免 Sidebar 需要理解 Activity 的详情模型。
     var currentActivityTintColor: Color?
+    /// 单一固定入口重看今日卡片，沿用主窗口的已翻进度。
+    var onShowDailyRecommendations: (() -> Void)?
 
     /// 每日热点独立内容区的展示状态由主窗口持有。
     @Binding var dailyRadarPreviewPresentation: Bool
@@ -1236,6 +1238,17 @@ struct SidebarView: View {
     @ViewBuilder
     private var exploreModeSidebarContent: some View {
         Section("nav.trending") {
+            Button {
+                onShowDailyRecommendations?()
+            } label: {
+                Label {
+                    Text("recommendations.daily.title")
+                } icon: {
+                    BusinessIcon(.recommendations, pointSize: 14)
+                }
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             if settings.exploreCatalogPreferences.isGroupEnabled("dailyRadar") {
                 exploreSelectableRow(selection: .dailyRadarPreview, count: dailyRadarModel.totalCount) {
                     // 每日热点与 Weekly 拆分图形：雷达 vs 报纸（2026-11-04 图标体系样板决议）。

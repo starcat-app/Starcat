@@ -36,6 +36,8 @@ final class AppDependencies {
     /// 不能直接使用 `AuthSession.state.user.id`：冷启动会先从磁盘 profile 提前恢复登录 UI，
     /// 此时数据库仍可能指向 `_anonymous`，必须等 `database.reopen` 完成后再刷新账号级缓存。
     private(set) var databaseScopeRevision: UInt64 = 0
+    /// 多个主窗口共用每日批次和一次性展示资格；反馈由账户文件独立保存。
+    let dailyRecommendationStore = DailyRecommendationStore()
     /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
     let aiUsageRepository: any AIUsageRepositoryProtocol
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
@@ -1980,6 +1982,7 @@ final class AppDependencies {
         }
         guard database.currentUserId != previousUserId else { return }
         databaseScopeRevision &+= 1
+        dailyRecommendationStore.activate(accountID: database.currentUserId, scopeRevision: databaseScopeRevision)
         githubIssueSummaryStore.reset(scopeRevision: databaseScopeRevision)
         repositoryInsightsContextScopeState.update(
             userID: database.currentUserId,

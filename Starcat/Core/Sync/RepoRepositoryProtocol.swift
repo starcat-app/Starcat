@@ -56,7 +56,8 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 用于 Trending / Weekly / Activity 等已经构造出 `Repo` 的详情页直接入库。
     /// 即便传入 repo 的 `isStarred` 为 true，本方法也以数据库已有 star 事实为准，
     /// 避免“加入知识库”路径误写 GitHub Star 语义。
-    func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo
+    /// 推荐预览传入精简快照时，preservingExisting 必须为 true，避免清空已有完整元数据。
+    func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date, preservingExisting: Bool) async throws -> Repo
 
     /// 更新 repo 的远程访问状态。该状态只服务 UI 标记和后台降级，不改变 Star 或知识库归属。
     func updateAccessState(repoId: Int64, state: RepoAccessState, reason: String?, checkedAt: Date) async throws
@@ -246,6 +247,11 @@ protocol RepoRepositoryProtocol: Sendable {
 }
 
 extension RepoRepositoryProtocol {
+    /// 既有入库入口继续刷新元数据；精简推荐快照须显式选择保留已有行。
+    func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo {
+        try await upsertRepoMetadataForLibrary(repo: repo, syncedAt: syncedAt, preservingExisting: false)
+    }
+
     /// 测试替身和轻量实现可复用的兼容实现；生产 GRDB 会用 SQL 下推时间过滤。
     func fetchStarred(since: Date, limit: Int) async throws -> [Repo] {
         let formatter = ISO8601DateFormatter()

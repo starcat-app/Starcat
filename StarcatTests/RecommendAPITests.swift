@@ -14,6 +14,42 @@ import Testing
 struct RecommendAPITests {
     private let baseURL = URL(string: "https://recommend.test.invalid")!
 
+    @Test("每日推荐只上传公开种子，不上传 Stars 或反馈列表")
+    func dailyMultiSeedContract() async throws {
+        let api = makeAPI()
+        URLProtocolStub.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/api/v2/recommendations/query")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-key")
+            #expect(request.value(forHTTPHeaderField: "X-SC-Svc") == "recommend")
+            let data: Data
+            if let body = request.httpBody {
+                data = body
+            } else if let stream = request.httpBodyStream {
+                stream.open()
+                defer { stream.close() }
+                var bytes = [UInt8](repeating: 0, count: 1024)
+                var buffer = Data()
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&bytes, maxLength: bytes.count)
+                    guard count > 0 else { break }
+                    buffer.append(contentsOf: bytes.prefix(count))
+                }
+                data = buffer
+            } else {
+                data = Data()
+            }
+            let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            #expect(body?["positive_repo_ids"] as? [Int] == [42, 84])
+            #expect(body?["limit"] as? Int == 100)
+            #expect(Set(body?.keys.map { $0 } ?? []) == ["positive_repo_ids", "limit"])
+            return Self.response(for: request, body: Self.v2Body)
+        }
+        let response = try await api.fetchDailyCandidates(seedIDs: [42, 84])
+        #expect(response.modelVersion == "costar-real-v1")
+        #expect(response.items.first?.repoID == 84)
+    }
+
     @Test("默认客户端只访问 v2，内容推荐没有校准分数时保持原分数")
     func defaultClientUsesV2ForContentFallback() async throws {
         let api = makeAPI()

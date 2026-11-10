@@ -259,11 +259,18 @@ struct GRDBRepoRepository {
         }
     }
 
-    func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo {
+    /// 预览使用同一事务完成查找与补行，避免精简快照覆盖并发同步刚写入的完整资料。
+    /// 此处只保证 README 等子表的外键父行存在，不创建 Star 或知识库归属。
+    func upsertRepoMetadataForLibrary(
+        repo: Repo,
+        syncedAt: Date,
+        preservingExisting: Bool = false
+    ) async throws -> Repo {
         let cachedAtISO = ISO8601DateFormatter.shared.string(from: syncedAt)
 
         return try await database.writer.write { db in
             let existing = try Repo.fetchOne(db, key: repo.id)
+            if preservingExisting, let existing { return existing }
             var saved = repo
             // “加入知识库”只能保证本地 metadata 存在，不能把 repo 写成 GitHub starred。
             // 已有 starred 事实必须保留；没有历史行时一律按未 star 入库。
