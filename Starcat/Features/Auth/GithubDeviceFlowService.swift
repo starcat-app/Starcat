@@ -78,7 +78,7 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "githubAuth")
         } catch {
             throw GithubOAuthError.network(underlying: error)
         }
@@ -204,7 +204,7 @@ actor GithubDeviceFlowService: GithubOAuthServiceProtocol {
 
         let data: Data
         do {
-            (data, _) = try await session.data(for: request)
+            (data, _) = try await DiagnosticHTTP.data(for: request, using: session, service: "githubAuth")
         } catch is CancellationError {
             throw NetworkError.cancelled
         } catch {

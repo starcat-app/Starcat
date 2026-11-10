@@ -46,6 +46,8 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private var lastCleanup = Date.distantPast
     private var repeats: [String: DiagnosticEvent] = [:]
     private var fingerprints: [String: Date] = [:]
+    private var sessionRecords: [DiagnosticSessionRecord]?
+    private var sessionLastSaved = Date.distantPast
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -74,6 +76,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
 
     /// 同步入队分配顺序，不为每条事件创建 Task。队列满时记录丢弃数，绝不无限增长。
     func enqueue(_ event: DiagnosticEvent) {
+        guard event.level != .debug || DiagnosticRecording.shared.expiresAt != nil else { return }
         lock.lock()
         defer { lock.unlock() }
         sequence += 1
@@ -212,6 +215,8 @@ final class DiagnosticLogStore: @unchecked Sendable {
             }
             var data = try encoder.encode(event)
             data.append(10)
+            if event.level == .debug, !DiagnosticRecording.shared.consume(data.count) { return }
+            try updateSession(event)
             let currentSize = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? 0
             if currentSize + data.count > segmentBytes {
                 do {
@@ -239,6 +244,46 @@ final class DiagnosticLogStore: @unchecked Sendable {
 
     private func notify() {
         DispatchQueue.main.async { NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil) }
+    }
+
+    /// 最多保留二十个会话的安全环境与最后阶段。普通事件每秒最多写一次旁路状态文件。
+    private func updateSession(_ event: DiagnosticEvent, ending: Bool = false) throws {
+        let url = directoryURL.appendingPathComponent("sessions.json")
+        if sessionRecords == nil {
+            sessionRecords = (try? Data(contentsOf: url)).flatMap {
+                try? JSONDecoder().decode([DiagnosticSessionRecord].self, from: $0)
+            } ?? []
+            sessionRecords?.append(DiagnosticSessionRecord(
+                sessionID: DiagnosticContext.sessionID, startedAt: event.timestamp,
+                lastUpdatedAt: event.timestamp, lastCategory: event.category, lastOperation: event.operation,
+                lastPhase: event.phase, endedNormally: false, environment: .current()))
+            sessionRecords = Array((sessionRecords ?? []).suffix(20))
+        }
+        guard var record = sessionRecords?.last else { return }
+        record.lastUpdatedAt = event.timestamp
+        record.lastCategory = event.category
+        record.lastOperation = event.operation
+        record.lastPhase = event.phase
+        record.endedNormally = ending
+        if let index = sessionRecords?.indices.last { sessionRecords?[index] = record }
+        if ending || sessionLastSaved == .distantPast || event.category == "startup" ||
+            Date().timeIntervalSince(sessionLastSaved) >= 1 {
+            try encoder.encode(sessionRecords).write(to: url, options: .atomic)
+            sessionLastSaved = Date()
+        }
+    }
+
+    /// 正常退出时给写入者一个短暂完成窗口；超时仍是未知结束，不伪称崩溃。
+    func endSession() {
+        let completion = DispatchGroup()
+        completion.enter()
+        writer.async { [self] in
+            flushRepeats()
+            try? updateSession(DiagnosticEvent(level: .info, category: "startup", operation: "session",
+                                               message: "Normal termination", phase: "ended"), ending: true)
+            completion.leave()
+        }
+        _ = completion.wait(timeout: .now() + .milliseconds(200))
     }
 }
 

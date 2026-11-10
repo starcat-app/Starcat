@@ -114,7 +114,7 @@ struct URLSessionCodeFlowGitHubClient: CodeFlowArchiveDownloading, CodeFlowGitHu
         if let token = await tokenProvider.currentToken(), !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "codeGraph")
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }

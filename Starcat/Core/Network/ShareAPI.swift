@@ -120,7 +120,7 @@ actor ShareAPI {
 
         let (data, response): (Data, URLResponse)
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await DiagnosticHTTP.data(for: urlRequest, using: session, service: "sharing")
         } catch {
             throw StarcatEnvelopeNetworkError.transport(error)
         }

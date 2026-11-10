@@ -264,6 +264,7 @@ final class FollowGraphViewModel {
     func select(_ id: String?) {
         guard id == nil || snapshot?.nodes[id!] != nil else { return }
         selectedID = id
+        if let id { recordDiagnosticState(id, stage: "selection") }
     }
 
     func focus(_ id: String?) {
@@ -291,6 +292,7 @@ final class FollowGraphViewModel {
     /// 单页手动加载不会继续递归；优先展示缓存，完成或无效动作不再重复读取第一页。
     func loadMore(_ id: String, fallbackTotal: Int? = nil) {
         guard !isLoading, let snapshot, displayedSnapshot?.nodes[id] != nil else { return }
+        recordDiagnosticState(id, stage: "loadRequested", fallbackTotal: fallbackTotal)
         toastMessage = nil
         guard canLoadMore(id, fallbackTotal: fallbackTotal) else {
             showToast("followGraph.toast.complete")
@@ -320,6 +322,7 @@ final class FollowGraphViewModel {
     /// 正常新增由节点与动态数字表达；仅无新增头像时解释结果，避免每页成功都弹提示。
     private func reportLoadResult(_ id: String, before: FollowGraphSnapshot?) {
         guard let displayedSnapshot else { return }
+        recordDiagnosticState(id, stage: "pageMerged")
         if displayedSnapshot.nodes.keys.contains(where: { before?.nodes[$0] == nil }) { return }
         if displayedSnapshot.relationCount(for: id) > (before?.relationCount(for: id) ?? 0) {
             showToast("followGraph.toast.relationshipsAdded")
@@ -418,10 +421,14 @@ final class FollowGraphViewModel {
         errorText = nil
         statusKey = "followGraph.status.loading"
         task = Task {
+            let diagnostic = DiagnosticOperation(category: "followGraph", name: "expandOrRefresh")
+            defer {
+                diagnostic.finish(Task.isCancelled ? .cancelled : errorText != nil ? .partial : .succeeded)
+            }
             let current = await store.begin(snapshot, session: session)
             guard !Task.isCancelled, generation == session else { return }
             publish(current, session: session)
-            await operation(session, store)
+            await DiagnosticContext.$current.withValue(diagnostic) { await operation(session, store) }
             guard generation == session else { return }
             isLoading = false
             if errorText == nil && statusKey == "followGraph.status.loading" {
@@ -561,6 +568,36 @@ final class FollowGraphViewModel {
               let selectedID, (0...min(edges, displayedRelationCounts[selectedID] ?? 0)).contains(selectedCount)
         else { return }
         if renderedSelectedCount != selectedCount { renderedSelectedCount = selectedCount }
+        if selectedCount == (displayedRelationCounts[selectedID] ?? 0) {
+            recordDiagnosticState(selectedID, stage: "renderConfirmed")
+        }
+    }
+
+    /// 人数差异只保留观测值及按钮判定；账号、用户节点以会话内匿名引用关联。
+    private func recordDiagnosticState(_ id: String, stage: String, fallbackTotal: Int? = nil) {
+        guard let snapshot else { return }
+        let progress = snapshot.progress[id]
+        var fields: [String: DiagnosticValue] = [
+            "stage": .string(stage),
+            "relation": .string(snapshot.relation.rawValue),
+            "cachedCount": .integer(cachedRelationCounts[id] ?? 0),
+            "displayedCount": .integer(displayedRelationCounts[id] ?? 0),
+            "renderedCount": .integer(renderedRelationCount(for: id)),
+            "hasProgress": .boolean(progress != nil),
+            "complete": .boolean(progress?.complete == true),
+            "canLoadMore": .boolean(canLoadMore(id, fallbackTotal: fallbackTotal)),
+            "budget": .integer(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0),
+            "snapshotVersion": .integer(revision),
+            "rendererVersion": .integer(rendererRevision),
+            "selectionVersion": .integer(selectionRevision),
+            "nodeCount": .integer(displayedSnapshot?.nodes.count ?? 0),
+            "edgeCount": .integer(displayedSnapshot?.edges.count ?? 0)
+        ]
+        if let total = progress?.totalCount ?? fallbackTotal { fields["totalCount"] = .integer(total) }
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .info, category: "followGraph", operation: "presentation",
+            message: "Graph relation evidence", context: ["user": id], phase: stage, fields: fields
+        ))
     }
 
     private func handle(_ error: Error, session: UUID, store: FollowGraphStore) async {

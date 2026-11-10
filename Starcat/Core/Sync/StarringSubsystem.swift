@@ -609,11 +609,17 @@ final class StarredRegistryBootstrapper {
     /// SQL: `SELECT id FROM repos WHERE is_starred = 1`
     /// 1.8K 行规模 ~5ms 完成；详见文件头 Snapshot 扩展点占位说明。
     func reload() async {
+        let diagnostic = DiagnosticOperation(category: "database", name: "starredRegistry.reload")
         do {
             let snapshot = try await repoRepository.fetchStarredRepoIDs()
             registry._replace(with: Set(snapshot))
             AppLog.sync.info("StarredRegistry reloaded: \(snapshot.count, privacy: .public) ids")
+            diagnostic.finish(fields: ["count": .integer(snapshot.count)])
+        } catch where DiagnosticFailure.isCancellation(error) {
+            // 页面替换导致的取消不代表数据库损坏，也不能清空仍有效的旧 registry。
+            diagnostic.finish(.cancelled, error: error)
         } catch {
+            diagnostic.finish(.failed, error: error)
             // 失败不清空 registry，避免「正在用着用着突然全变未 star」的体验崩塌
             AppLog.sync.error("StarredRegistryBootstrapper.reload failed: \(error.localizedDescription, privacy: .public)")
             DiagnosticLogStore.record(

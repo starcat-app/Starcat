@@ -167,6 +167,9 @@ struct OpenAIClient: AIClientProtocol {
     func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                let diagnostic = DiagnosticOperation(category: "ai", name: "chatStream")
+                var diagnosticOutcome: DiagnosticEvent.Outcome = .failed
+                defer { diagnostic.finish(Task.isCancelled ? .cancelled : diagnosticOutcome) }
                 var startedAt = Date().timeIntervalSince1970
                 let resolvedModel = request.model.nilIfBlank ?? configuration.chatModel
                 var diagnosticQuery: ChatQuery?
@@ -196,6 +199,7 @@ struct OpenAIClient: AIClientProtocol {
                     var receivedChunk = false
 
                     func consume(_ chunk: ChatStreamResult) {
+                        if !receivedChunk { diagnostic.event(phase: "firstChunk") }
                         receivedChunk = true
                         responseModel = chunk.model
                         if let usage = chunk.usage {
@@ -261,6 +265,7 @@ struct OpenAIClient: AIClientProtocol {
                             error: compatibilityError
                         )
                         startedAt = Date().timeIntervalSince1970
+                        diagnostic.event(phase: "compatibilityRetry")
                         query = try Self.makeChatQuery(
                             request: request,
                             resolvedModel: resolvedModel,
@@ -308,7 +313,9 @@ struct OpenAIClient: AIClientProtocol {
                         finishReason: finishReason
                     )))
                     continuation.finish()
+                    diagnosticOutcome = .succeeded
                 } catch is CancellationError {
+                    diagnosticOutcome = .cancelled
                     await recordChatUsage(
                         startedAt: startedAt,
                         model: resolvedModel,
@@ -319,6 +326,7 @@ struct OpenAIClient: AIClientProtocol {
                     )
                     continuation.finish(throwing: CancellationError())
                 } catch let error where Self.isCancellation(error) || Task.isCancelled {
+                    diagnosticOutcome = .cancelled
                     await recordChatUsage(
                         startedAt: startedAt,
                         model: resolvedModel,
