@@ -13,17 +13,18 @@ import stat
 import sys
 import zipfile
 
-MAX_FILES, MAX_FILE, MAX_TOTAL, MAX_EVENTS = 2048, 16 << 20, 64 << 20, 100_000
+MAX_FILES, MAX_FILE, MAX_TOTAL, MAX_EVENTS = 2048, 48 << 20, 64 << 20, 100_000
 PUBLIC_KEYS = set(("schemaVersion eventID sequence sessionID environmentID operationID "
                    "parentOperationID requestID serverTraceID timestamp firstSeen lastSeen "
                    "occurrenceCount level visibility category operation phase outcome "
-                   "durationMs statusCode errorCode").split())
+                   "durationMs statusCode errorCode service sourceFile sourceFunction sourceLine").split())
 SAFE_FIELDS = set(("count available complete totalCount fetchedCount uniquePageCount cachedCount "
                    "displayedCount renderedCount canLoadMore hasProgress budget snapshotVersion "
                    "rendererVersion selectionVersion nodeCount edgeCount hasNextPage hasCursor "
                    "refresh requestCount nodeLimit edgeLimit preservesLocalEntitlement mergedCount "
                    "page incremental force receivedBytes itemCount outputAvailable authenticated "
                    "credentialRetained errorCount allowPartial").split())
+SAFE_ENUM_FIELDS = set(("reason source stage method route runtimeState provider relation feature").split())
 
 
 def redact(text):
@@ -188,6 +189,17 @@ def public_event(event):
         result["fields"] = {key: value for key, value in fields.items()
                             if key in SAFE_FIELDS and isinstance(value, (int, float, bool))
                             and (not isinstance(value, float) or math.isfinite(value))}
+        result["fields"].update({key: redact(value) for key, value in fields.items()
+                                 if key in SAFE_ENUM_FIELDS and isinstance(value, str)
+                                 and re.fullmatch(r"[A-Za-z0-9_.:<>-]{1,128}", value)})
+    chain = event.get("errorChain")
+    if isinstance(chain, list):
+        result["errorChain"] = [
+            {"type": redact(cause["type"]), "code": cause["code"]} for cause in chain[:4]
+            if isinstance(cause, dict) and isinstance(cause.get("type"), str)
+            and re.fullmatch(r"[A-Za-z0-9_.<>-]{1,160}", cause["type"])
+            and isinstance(cause.get("code"), int)
+        ]
     return result
 
 
@@ -230,9 +242,13 @@ def analyze(source, args):
     for key, group in groups.items():
         operation_ids = {e["operationID"] for e in group if isinstance(e.get("operationID"), str)}
         last = timestamp(group[-1].get("lastSeen", group[-1].get("timestamp")))
+        identities = {(e.get("sessionID"), e["operationID"]) for e in group
+                      if isinstance(e.get("operationID"), str)
+                      and isinstance(e.get("sessionID"), (str, type(None)))}
         recovered = last is not None and any(
             e.get("outcome") == "succeeded" and isinstance(e.get("operationID"), str)
-            and e["operationID"] in operation_ids
+            and isinstance(e.get("sessionID"), (str, type(None)))
+            and (e.get("sessionID"), e["operationID"]) in identities
             and (timestamp(e.get("timestamp")) or minimum) > last for e in events)
         count = sum(c if isinstance(c := e.get("occurrenceCount", 1), int) and not isinstance(c, bool) and c > 0
                     else 1 for e in group)
@@ -251,6 +267,27 @@ def analyze(source, args):
     if any(timestamp(e.get("timestamp")) is None for e in selected):
         gaps.append("部分事件时间无效或缺少时区")
     observations = [public_event(e) for e in selected if e.get("category") == "followGraph" and e.get("fields")]
+    latest, starts, ended = {}, {}, set()
+    for event in selected:
+        if not isinstance(event.get("operationID"), str) or not isinstance(event.get("sessionID"), (str, type(None))):
+            continue
+        key = (event.get("sessionID"), event["operationID"])
+        latest[key] = event
+        if event.get("phase") == "started":
+            starts.setdefault(key, timestamp(event.get("timestamp")))
+        if event.get("outcome") in ("succeeded", "failed", "cancelled", "partial", "skipped"):
+            ended.add(key)
+    now = dt.datetime.now(dt.timezone.utc)
+    opened = []
+    for key, event in latest.items():
+        if key in ended:
+            continue
+        last = timestamp(event.get("timestamp"))
+        opened.append(dict(event=public_event(event),
+                           elapsedMs=max(0, int((now - starts[key]).total_seconds() * 1000))
+                           if starts.get(key) else None,
+                           idleMs=max(0, int((now - last).total_seconds() * 1000)) if last else None,
+                           endReason="unknown"))
     return dict(reportID=redact(manifest.get("exportID", "unknown")),
                 availableEvents=len(events), selectedEvents=len(selected),
                 actualRange=dict(first=redact(selected[0]["timestamp"]) if selected else None,
@@ -258,7 +295,8 @@ def analyze(source, args):
                 modules=dict(Counter(redact(e["category"]) for e in selected)),
                 cancelledEvents=cancelled, incidents=sorted(incidents, key=lambda i: -i["count"])[:50],
                 evidenceGaps=list(dict.fromkeys(gaps)), timeline=[public_event(e) for e in selected[-args.limit:]],
-                observations=observations[-20:], timelineTruncated=len(selected) > args.limit)
+                observations=observations[-20:], openOperations=opened[-64:],
+                timelineTruncated=len(selected) > args.limit)
 
 
 def markdown(report):
@@ -280,6 +318,9 @@ def markdown(report):
     if report["observations"]:
         lines += ["", "## 图谱观测值", ""]
         lines += ["- " + json.dumps(e.get("fields", {}), ensure_ascii=False) for e in report["observations"]]
+    if report["openOperations"]:
+        lines += ["", "## 未闭合操作（结束原因未知）", ""]
+        lines += ["- " + json.dumps(item, ensure_ascii=False) for item in report["openOperations"]]
     lines += ["", "## 时间线", "", "```json"]
     lines += [json.dumps(e, ensure_ascii=False, sort_keys=True) for e in report["timeline"]]
     return "\n".join(lines + ["```", "", f"时间线截断：{report['timelineTruncated']}", ""])

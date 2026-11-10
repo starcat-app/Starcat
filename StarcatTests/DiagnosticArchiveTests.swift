@@ -147,6 +147,28 @@ struct DiagnosticArchiveTests {
         #expect(decoded.errorChain.count == 1)
     }
 
+    @Test("导出事件窗口超限保留最近事件并明确报告截断")
+    func boundedExportWindow() throws {
+        let root = directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let events = (0..<3).map { n in
+            DiagnosticEvent(timestamp: Date().addingTimeInterval(Double(n)), level: .info,
+                category: "test", operation: "window", message: "safe", fields: ["count": .integer(n)])
+        }
+        let text = try events.map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }.joined(separator: "\n")
+        let input = DiagnosticArchiveBuilder.Input(snapshot: .init(text: text, cutoffSequence: 3,
+            capturedAt: Date().ISO8601Format(), health: [:]), settings: [:], options: .init(since: nil),
+            sessions: nil, localAI: [], collectors: [], system: nil)
+        let manifest = try DiagnosticArchiveBuilder.writePayload(input: input, to: root, exportID: "bounded", eventCountLimit: 1)
+        let exported = try String(contentsOf: root.appendingPathComponent("events.jsonl"), encoding: .utf8)
+        let last = try JSONDecoder().decode(DiagnosticEvent.self, from: Data(exported.utf8))
+        #expect(last.fields["count"] == .integer(2))
+        #expect(manifest.collectors.contains { $0.name == "eventWindow" && $0.status == .truncated })
+        let empty = try DiagnosticArchiveBuilder.writePayload(input: input, to: root, exportID: "bytes", eventByteLimit: 1)
+        #expect(empty.actualFirstEvent == nil)
+        #expect(empty.collectors.contains { $0.name == "eventWindow" && $0.status == .truncated })
+    }
+
     @Test("压缩失败导出可用目录，不删除已有目标")
     func compressionFallback() throws {
         let parent = directory()
@@ -223,10 +245,8 @@ struct DiagnosticArchiveTests {
         let target = root.appendingPathComponent("fixture.zip")
         _ = try DiagnosticBundleExporter.archive(input: input, destination: target)
         #expect(try Data(contentsOf: target).starts(with: [0x50, 0x4b]))
-        // 此合成产物特意留在系统临时目录，供独立 Python Skill 做跨语言端到端校验。
-        let artifact = FileManager.default.temporaryDirectory
-            .appendingPathComponent("starcat-diagnostics-validation-\(UUID()).zip")
-        try FileManager.default.copyItem(at: target, to: artifact)
-        print("DIAGNOSTIC_FIXTURE \(artifact.path)")
+        // App Store 测试容器受系统保护；通过 Test Runner 附件交付合成产物，
+        // 而不是让外部脚本绕过容器权限。附件可由 xcresulttool 正常导出。
+        Attachment.record(Array(try Data(contentsOf: target)), named: "starcat-diagnostics-validation.zip")
     }
 }

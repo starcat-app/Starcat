@@ -248,4 +248,27 @@ struct DiagnosticPipelineTests {
         #expect(unreadable.health["readFailures"] == 1)
         #expect(unreadable.text.isEmpty)
     }
+
+    @Test("持续写入的旧文件按事件年龄清理，保留近期故障与损坏行")
+    func retentionAcrossLongLivedFile() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let oldDate = Date().addingTimeInterval(-30 * 86400)
+        let old = DiagnosticEvent(timestamp: oldDate, level: .info, category: "test", operation: "expired", message: "safe")
+        let recent = DiagnosticEvent(level: .error, category: "test", operation: "recent", message: "safe")
+        let text = try [old, recent].map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }.joined(separator: "\n")
+        let file = directory.appendingPathComponent("diagnostic-log.jsonl")
+        try (text + "\ndamaged-line\n").write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.creationDate: oldDate, .modificationDate: Date()], ofItemAtPath: file.path)
+        let store = DiagnosticLogStore(directoryURL: directory)
+        store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "next", message: "safe"))
+        let snapshot = await store.snapshot()
+        #expect(!snapshot.text.contains("\"operation\":\"expired\""))
+        #expect(snapshot.text.contains("\"operation\":\"recent\""))
+        #expect(snapshot.text.contains("damaged-line"))
+        #expect(snapshot.health["expiredEvents"] == 1)
+        let data = try String(contentsOf: file, encoding: .utf8)
+        #expect(!data.contains("\"operation\":\"expired\""))
+    }
 }

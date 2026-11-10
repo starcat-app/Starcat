@@ -154,6 +154,23 @@ class DiagnosticAnalyzerTests(unittest.TestCase):
         self.assertEqual(result["fields"], {"totalCount": 0})
         json.dumps(result, allow_nan=False)
 
+    def test_open_operations_and_cross_session_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "events.jsonl"
+            source.write_text("\n".join(map(json.dumps, [
+                self.event(schemaVersion=2, sessionID="first", operationID="same"),
+                dict(self.event(schemaVersion=2, sessionID="second", operationID="same"),
+                     timestamp="2026-11-10T02:00:00Z", outcome="succeeded", level="info"),
+                dict(self.event(schemaVersion=2, sessionID="first", operationID="runtime"),
+                     category="runtime", level="info", phase="versionProbe")
+            ])))
+            report = self.analyze(source)
+            self.assertEqual(report["incidents"][0]["recovery"], "未找到关联恢复证据")
+            runtime = next(x for x in report["openOperations"] if x["event"]["operationID"] == "runtime")
+            self.assertIsNone(runtime["elapsedMs"])
+            self.assertEqual(runtime["endReason"], "unknown")
+            self.assertIsInstance(runtime["idleMs"], int)
+
 
 if __name__ == "__main__":
     unittest.main()

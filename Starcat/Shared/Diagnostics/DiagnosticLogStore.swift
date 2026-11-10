@@ -51,6 +51,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private var writeFailures = 0
     private var readFailures = 0
     private var rotationFailures = 0
+    private var expiredEvents = 0
     private var lastCleanup = Date.distantPast
     private var repeats: [String: DiagnosticEvent] = [:]
     private var repeatFlushScheduled = false
@@ -144,6 +145,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
                     capturedAt: ISO8601DateFormatter.shared.string(from: Date()),
                     health: ["droppedEvents": lost, "writeFailures": writeFailures, "readFailures": readFailures,
                              "rotationFailures": rotationFailures, "peakQueue": peak,
+                             "expiredEvents": expiredEvents,
                              "peakQueueBytes": peakBytes, "queueBudgetBytes": queueByteLimit,
                              "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)],
                     sessions: try? encoder.encode(sessionRecords ?? [])))
@@ -236,12 +238,32 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private func append(_ event: DiagnosticEvent) {
         do {
             try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            if event.date < Date().addingTimeInterval(-retention) { expiredEvents += event.occurrenceCount; return }
             if Date().timeIntervalSince(lastCleanup) > 3600 {
                 lastCleanup = Date()
                 for file in files() {
                     let attributes = try fileManager.attributesOfItem(atPath: file.path)
                     if let modified = attributes[.modificationDate] as? Date,
                        modified < Date().addingTimeInterval(-retention) { try fileManager.removeItem(at: file) }
+                    else if let created = attributes[.creationDate] as? Date,
+                            created < Date().addingTimeInterval(-retention) {
+                        // 低频日志可能始终不轮转，mtime 会一直更新。旧文件逐行收口，
+                        // 保留近期记录与损坏行证据，避免整个文件删除时丢掉新故障。
+                        let text = try String(contentsOf: file, encoding: .utf8)
+                        let lines = text.split(separator: "\n")
+                        let kept = lines.filter { line in
+                            guard let value = try? JSONDecoder().decode(DiagnosticEvent.self, from: Data(line.utf8)),
+                                  value.date != .distantPast else { return true }
+                            if value.date < Date().addingTimeInterval(-retention) {
+                                expiredEvents += max(1, value.occurrenceCount)
+                                return false
+                            }
+                            return true
+                        }
+                        if kept.count != lines.count {
+                            try (kept.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+                        }
+                    }
                 }
             }
             var data = try encoder.encode(event)

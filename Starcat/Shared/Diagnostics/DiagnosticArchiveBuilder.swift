@@ -62,7 +62,8 @@ enum DiagnosticArchiveBuilder {
     }
 
     /// 返回的目录由调用方负责清理，便于压缩失败时仍保留基础文本。
-    static func writePayload(input: Input, to root: URL, exportID: String) throws -> DiagnosticManifest {
+    static func writePayload(input: Input, to root: URL, exportID: String,
+                             eventByteLimit: Int = 48 * 1024 * 1024, eventCountLimit: Int = 50_000) throws -> DiagnosticManifest {
         let manager = FileManager.default
         try manager.createDirectory(at: root.appendingPathComponent("state"), withIntermediateDirectories: true)
         var damaged = 0
@@ -78,7 +79,7 @@ enum DiagnosticArchiveBuilder {
             related.formUnion(children)
             if related.count == previous { break }
         }
-        let events = all.filter { event in
+        let candidates = all.filter { event in
             if !related.isEmpty { return event.operationID.map(related.contains) ?? false }
             return input.options.since.map { event.date >= $0 } ?? true
         }.sorted {
@@ -87,16 +88,30 @@ enum DiagnosticArchiveBuilder {
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let text = try events.map { String(decoding: try encoder.encode($0), as: UTF8.self) }.joined(separator: "\n")
+        // 与解析 Skill 的 48MB 单文件 / 64MB 总量预算一致，超限保留最近证据并明确标记。
+        var selected: [(DiagnosticEvent, String)] = []
+        var eventBytes = 0
+        for event in candidates.reversed() {
+            let data = try encoder.encode(event)
+            guard selected.count < eventCountLimit, eventBytes + data.count + 1 <= eventByteLimit else { break }
+            selected.append((event, String(decoding: data, as: UTF8.self)))
+            eventBytes += data.count + 1
+        }
+        let events = selected.reversed().map { $0.0 }
+        let text = selected.reversed().map { $0.1 }.joined(separator: "\n")
         var payloads: [String: Data] = ["events.jsonl": Data((text.isEmpty ? "" : text + "\n").utf8)]
         payloads["environment.json"] = try json(DiagnosticEnvironment.current())
         payloads["sessions.json"] = input.sessions ?? Data("[]".utf8)
         payloads["state/settings.json"] = try json(input.settings)
 
-        let modules = ["startup", "database", "auth", "keychain", "license", "network", "sync", "followGraph",
+        let modules = ["startup", "database", "auth", "keychain", "license", "subscription", "network", "sync", "followGraph",
                        "readme", "ai", "localAI", "dailyRadar", "linuxdo", "recommend", "weekly", "rag",
                        "agent", "mcp", "cli", "extension", "codeGraph", "runtime", "fileAccess"]
         var collectors = input.collectors
+        if events.count < candidates.count {
+            collectors.append(.init(name: "eventWindow", status: .truncated,
+                detail: "Recent events retained within export byte and event budgets"))
+        }
         // 模块状态取已有证据；没有活动时明确标记未采集，绝不主动探测网络或数据库。
         for module in modules {
             let evidence = all.filter { $0.category == module || $0.service == module || $0.operation == module }
