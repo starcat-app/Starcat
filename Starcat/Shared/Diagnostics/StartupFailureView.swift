@@ -89,7 +89,7 @@ struct StartupFailureView: View {
         isExporting = true
         defer { isExporting = false }
 
-        switch await DiagnosticBundleExporter.exportFromPanel(settings: nil) {
+        switch await DiagnosticBundleExporter.exportFromPanel(settings: nil, options: .init(operationID: error.operationID)) {
         case .exported(let url):
             exportMessage = String(format: String.l10n("diagnostics.export.successFormat"), url.path)
         case .cancelled:

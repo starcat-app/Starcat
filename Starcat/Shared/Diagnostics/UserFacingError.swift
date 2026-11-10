@@ -28,6 +28,7 @@ struct UserFacingError: Equatable, Sendable {
     /// 是否需要提醒开发者协助；不再作为证据采集开关，保留字段名避免影响调用方。
     var shouldRecordDiagnostic: Bool
     var diagnosticOutcome: DiagnosticEvent.Outcome = .failed
+    var operationID: String? = DiagnosticContext.current?.id
 
     static func map(
         _ error: Error,
@@ -131,6 +132,7 @@ struct UserFacingError: Equatable, Sendable {
             service: service,
             statusCode: statusCode,
             errorCode: errorCode ?? "userOperation.\(diagnosticOutcome.rawValue)",
+            operationID: operationID,
             phase: "finished",
             outcome: diagnosticOutcome,
             impact: diagnosticOutcome == .failed ? .blocked : .none
