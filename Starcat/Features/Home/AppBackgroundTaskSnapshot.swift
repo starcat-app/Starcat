@@ -131,6 +131,11 @@ struct AppBackgroundTaskSnapshot: Equatable {
         ) {
             tasks.append(task)
         }
+        if let task = AppBackgroundTask.screensaverAvatars(
+            progress: dependencies.screensaverRefreshCoordinator.avatarProgress, channel: .current
+        ) {
+            tasks.append(task)
+        }
         return Self(tasks: tasks, warmupOwnsReadme: warmupOwnsReadme)
     }
 }

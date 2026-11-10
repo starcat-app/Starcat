@@ -129,6 +129,17 @@ struct AppBackgroundTaskTests {
         #expect(AppBackgroundTask.Detail.bytes(completed: 12, total: 0).text(locale: Locale(identifier: "en")) == nil)
     }
 
+    @Test("屏保预取只在 Direct 展示，查看不能变成清理或取消")
+    func screensaverProjectionRespectsChannel() throws {
+        let progress = ScreensaverAvatarProgress(completed: 17, total: 90)
+        let task = try #require(AppBackgroundTask.screensaverAvatars(progress: progress, channel: .direct))
+        #expect(task.detail == .progress(processed: 17, total: 90))
+        #expect(task.opensWindow)
+        #expect(!task.canCancel)
+        #expect(AppBackgroundTask.screensaverAvatars(progress: progress, channel: .appStore) == nil)
+        #expect(AppBackgroundTask.screensaverAvatars(progress: nil, channel: .direct) == nil)
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)

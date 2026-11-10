@@ -12,6 +12,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
     enum Kind: String, CaseIterable, Sendable {
         case grouping, tags, warmup, readme, openSSF, health, indexing, repositoryIndexing
         case localModel, layaModel
+        case screensaverAvatars
 
         var titleKey: String {
             switch self {
@@ -24,6 +25,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .indexing: "toolbar.backgroundTasks.indexing"
             case .repositoryIndexing: "settings.searchIndex.repository.title"
             case .localModel, .layaModel: "toolbar.localai.title"
+            case .screensaverAvatars: "settings.general.screensaver.title"
             }
         }
 
@@ -37,6 +39,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .health: .repositoryHealth
             case .indexing, .repositoryIndexing: .aiIndex
             case .localModel, .layaModel: .models
+            case .screensaverAvatars: .general
             }
         }
     }
@@ -124,6 +127,13 @@ struct AppBackgroundTask: Identifiable, Equatable {
         }
         return Self(id: isLaya ? .layaModel : .localModel, phase: phase, detail: detail,
                     canCancel: canPause, opensWindow: true, instanceID: id, name: name)
+    }
+
+    /// 屏保只在 Direct 发布；clear() 会删除快照，不是停止本轮预取的入口。
+    static func screensaverAvatars(progress: ScreensaverAvatarProgress?, channel: DistributionChannel) -> Self? {
+        guard channel.isDirect, let progress else { return nil }
+        return Self(id: .screensaverAvatars, phase: .running,
+                    detail: .progress(processed: progress.completed, total: progress.total), opensWindow: true)
     }
 
     /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。
