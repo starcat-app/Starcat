@@ -17,9 +17,22 @@ enum AppStatusPanelMetrics {
     static let gridSpacing: CGFloat = 8
 }
 
+/// 状态浮层的中性卡片底色，避免深色下实心黑卡与透明概览卡割裂。
+enum AppStatusPanelSurface {
+    /// 深色用较厚的原生材质遮住背景细节；低透明色层只能提亮，无法增强磨砂。
+    static func card(
+        colorScheme: ColorScheme,
+        lightColor: Color = Color(nsColor: .textBackgroundColor)
+    ) -> AnyShapeStyle {
+        colorScheme == .dark ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(lightColor)
+    }
+}
+
 /// 浅 tint 对角渐变底 + 同色描边，和洞察摘要卡同一套，避免 popover 另起一种营销渐变。
 struct AppStatusTintedSurface: ViewModifier {
     let tint: Color
+
+    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         content
@@ -32,6 +45,11 @@ struct AppStatusTintedSurface: ViewModifier {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 ),
+                in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
+            )
+            .background(
+                // 概览卡也使用同一层磨砂，再叠加原有状态色，避免大小卡片通透程度不一致。
+                AppStatusPanelSurface.card(colorScheme: colorScheme, lightColor: .clear),
                 in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
             )
             .overlay {
@@ -167,6 +185,7 @@ struct AppStatusActionRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let content = HStack(spacing: 10) {
@@ -195,7 +214,7 @@ struct AppStatusActionRow<Trailing: View>: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            Color(nsColor: .textBackgroundColor),
+            AppStatusPanelSurface.card(colorScheme: colorScheme),
             in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
         )
         .overlay {
@@ -214,16 +233,18 @@ struct AppStatusActionRow<Trailing: View>: View {
     }
 }
 
-/// 本地 AI / 今日用量这类分组白底卡。
+/// 本地 AI / 今日用量这类分组卡，与整宽操作行共用主题底色。
 struct AppStatusGroupCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         content()
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                Color(nsColor: .textBackgroundColor),
+                AppStatusPanelSurface.card(colorScheme: colorScheme),
                 in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
             )
             .overlay {

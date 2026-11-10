@@ -13,8 +13,8 @@ struct AppBackgroundTaskSnapshot: Equatable {
 
     /// 只在父任务确实拥有 README 阶段时合并；独立预取与其它预热阶段仍是不同工作。
     init(tasks: [AppBackgroundTask], warmupOwnsReadme: Bool = false) {
-        let hasWarmup = tasks.contains { $0.id == .warmup }
-        self.tasks = tasks.filter { !(warmupOwnsReadme && hasWarmup && $0.id == .readme) }
+        let hasWarmup = tasks.contains { $0.kind == .warmup }
+        self.tasks = tasks.filter { !(warmupOwnsReadme && hasWarmup && $0.kind == .readme) }
     }
 
     var count: Int { tasks.count }
@@ -31,7 +31,12 @@ struct AppBackgroundTaskSnapshot: Equatable {
     }
 
     /// 在真正执行打开或取消前再检查实时投影，避免旧行回调误开空的整理开始页。
-    func task(_ kind: AppBackgroundTask.Kind) -> AppBackgroundTask? { tasks.first { $0.id == kind } }
+    func task(_ id: AppBackgroundTask.ID) -> AppBackgroundTask? { tasks.first { $0.id == id } }
+
+    /// 单例任务沿用按类型查询；多实例操作必须传入完整 ID，避免误选另一个下载。
+    func task(_ kind: AppBackgroundTask.Kind) -> AppBackgroundTask? {
+        task(.init(kind: kind))
+    }
 
     @MainActor
     static func current(_ dependencies: AppDependencies) -> Self {
@@ -110,6 +115,42 @@ struct AppBackgroundTaskSnapshot: Equatable {
             // 不把内部错误字符串放进状态浮层；详情与重试继续由知识库窗口负责。
             tasks.append(.init(id: .indexing, phase: .failed, opensWindow: true))
         case .idle, .completed: break
+        }
+        for entry in LocalAIModelCatalog.entries {
+            if let task = AppBackgroundTask.modelInstall(
+                state: LocalAIModelManager.shared.installState(for: entry.id),
+                id: entry.id, name: entry.displayName
+            ) {
+                tasks.append(task)
+            }
+        }
+        let laya = LayaDecisionModelCatalog.multilingual
+        if let task = AppBackgroundTask.modelInstall(
+            state: LayaDecisionModelManager.shared.installState,
+            id: laya.id, name: laya.displayName, isLaya: true
+        ) {
+            tasks.append(task)
+        }
+        if let task = AppBackgroundTask.screensaverAvatars(
+            progress: dependencies.screensaverRefreshCoordinator.avatarProgress, channel: .current
+        ) {
+            tasks.append(task)
+        }
+        if let task = AppBackgroundTask.chatHistoryMigration(isMigrating: dependencies.diskChatHistoryStore.isMigrating) {
+            tasks.append(task)
+        }
+        if DistributionChannel.current.isDirect {
+            for runtime in DownloadableRuntime.allCases {
+                if let task = AppBackgroundTask.runtimeInstall(runtime, state: RuntimeDownloadManager.shared.state(for: runtime)) {
+                    tasks.append(task)
+                }
+            }
+        }
+        if let task = AppBackgroundTask.projectSync(state: dependencies.userProjectSyncService.state) {
+            tasks.append(task)
+        }
+        if let task = AppBackgroundTask.notificationSync(isSyncing: dependencies.githubNotificationInboxService.isSyncing) {
+            tasks.append(task)
         }
         return Self(tasks: tasks, warmupOwnsReadme: warmupOwnsReadme)
     }

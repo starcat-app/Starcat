@@ -92,6 +92,110 @@ struct AppBackgroundTaskTests {
         ) == nil)
     }
 
+    @Test("并行模型下载按 catalog 实例独立计数和定位")
+    func modelDownloadsHaveStableIdentity() throws {
+        let state = LocalAIInstallState.downloading(
+            progress: 0.25, completedBytes: 256, totalBytes: 1_024, speedBytesPerSecond: 128
+        )
+        let first = try #require(AppBackgroundTask.modelInstall(state: state, id: "first", name: "Model A"))
+        let second = try #require(AppBackgroundTask.modelInstall(state: state, id: "second", name: "Model B"))
+        let laya = try #require(AppBackgroundTask.modelInstall(state: state, id: "first", name: "Laya", isLaya: true))
+        let snapshot = AppBackgroundTaskSnapshot(tasks: [first, second, laya])
+        #expect(Set(snapshot.tasks.map(\.id)).count == 3)
+        #expect(snapshot.task(second.id)?.title == "Model B")
+        #expect(snapshot.task(.localModel) == nil)
+        #expect(first.detail == .bytes(completed: 256, total: 1_024))
+        #expect(first.canCancel && laya.canCancel)
+        #expect(first.cancelTitleKey == "settings.localai.model.action.pause")
+        #expect(snapshot.count == 3)
+        let paused = AppBackgroundTaskSnapshot(tasks: [second, laya])
+        #expect(paused.task(first.id) == nil)
+        #expect(paused.task(second.id) == second)
+        #expect(paused.task(laya.id) == laya)
+    }
+
+    @Test("模型加载与失败保留入口，暂停和安装结束不残留任务")
+    func modelInstallLifecycle() throws {
+        for state in [LocalAIInstallState.idle, .installed, .deleting, .deleteFailed(message: "private")] {
+            #expect(AppBackgroundTask.modelInstall(state: state, id: "model", name: "Model") == nil)
+        }
+        for state in [LocalAIInstallState.loading, .failed(message: "private"), .loadFailed(message: "private")] {
+            let task = try #require(AppBackgroundTask.modelInstall(state: state, id: "model", name: "Model"))
+            #expect(task.opensWindow)
+            #expect(!task.canCancel)
+            #expect(task.detail == .none)
+            #expect(task.phase == (state == .loading ? .applying : .failed))
+        }
+        #expect(AppBackgroundTask.Detail.bytes(completed: 12, total: 0).text(locale: Locale(identifier: "en")) == nil)
+    }
+
+    @Test("屏保预取只在 Direct 展示，查看不能变成清理或取消")
+    func screensaverProjectionRespectsChannel() throws {
+        let progress = ScreensaverAvatarProgress(completed: 17, total: 90)
+        let task = try #require(AppBackgroundTask.screensaverAvatars(progress: progress, channel: .direct))
+        #expect(task.detail == .progress(processed: 17, total: 90))
+        #expect(task.opensWindow)
+        #expect(!task.canCancel)
+        #expect(AppBackgroundTask.screensaverAvatars(progress: progress, channel: .appStore) == nil)
+        #expect(AppBackgroundTask.screensaverAvatars(progress: nil, channel: .direct) == nil)
+    }
+
+    @Test("对话迁移只有阶段与入口，不虚构进度或取消能力")
+    func chatMigrationIsReadOnly() throws {
+        let task = try #require(AppBackgroundTask.chatHistoryMigration(isMigrating: true))
+        #expect(task.phase == .applying)
+        #expect(task.detail == .none)
+        #expect(task.opensWindow)
+        #expect(!task.canCancel)
+        #expect(AppBackgroundTaskSnapshot(tasks: [task]).isRunning)
+        #expect(AppBackgroundTask.chatHistoryMigration(isMigrating: false) == nil)
+    }
+
+    @Test("三种 Runtime 独立计数，提交配置与等待取消时不能再次停止")
+    func runtimeInstallationProjection() throws {
+        let tasks = try DownloadableRuntime.allCases.map {
+            try #require(AppBackgroundTask.runtimeInstall($0, state: .installing(progress: 0.25)))
+        }
+        #expect(Set(tasks.map(\.id)).count == 3)
+        #expect(AppBackgroundTaskSnapshot(tasks: tasks).count == 3)
+        for (runtime, task) in zip(DownloadableRuntime.allCases, tasks) {
+            #expect(task.canCancel && task.opensWindow)
+            #expect(task.detail == .fraction(0.25))
+            #expect(task.settingsTarget == (runtime == .codebaseMemory ? "integrations.codebaseMemory" : "integrations.agentRuntime"))
+            for state in [RuntimeDownloadState.configuring, .cancelling, .failed(message: "private")] {
+                let next = try #require(AppBackgroundTask.runtimeInstall(runtime, state: state))
+                #expect(next.id == task.id)
+                #expect(!next.canCancel)
+            }
+            #expect(AppBackgroundTask.runtimeInstall(runtime, state: .idle) == nil)
+            #expect(AppBackgroundTask.runtimeInstall(runtime, state: .completed(version: "1")) == nil)
+        }
+    }
+
+    @Test("项目同步只显示本轮阶段与失败，完成数不伪装成实时进度")
+    func projectSyncProjection() throws {
+        for state in [UserProjectSyncServiceState.syncing, .failed(.network)] {
+            let task = try #require(AppBackgroundTask.projectSync(state: state))
+            #expect(task.detail == .none)
+            #expect(!task.canCancel)
+            #expect(task.opensWindow)
+            #expect(task.kind == .projectSync)
+            #expect(task.phase == (state == .syncing ? .running : .failed))
+        }
+        #expect(AppBackgroundTask.projectSync(state: .idle) == nil)
+        #expect(AppBackgroundTask.projectSync(state: .completed(at: Date(), receivedCount: 100)) == nil)
+    }
+
+    @Test("通知同步只在真实请求期间展示，结束后不挂历史错误或轮询开关")
+    func notificationSyncProjection() throws {
+        let task = try #require(AppBackgroundTask.notificationSync(isSyncing: true))
+        #expect(task.kind == .notificationSync)
+        #expect(task.phase == .running)
+        #expect(task.detail == .none)
+        #expect(task.opensWindow && !task.canCancel)
+        #expect(AppBackgroundTask.notificationSync(isSyncing: false) == nil)
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)

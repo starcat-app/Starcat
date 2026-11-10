@@ -31,7 +31,7 @@ struct AppStatusToolbarButton: View {
 
     @State private var isPresented = false
     /// 先结束 popover 的展示生命周期，再交给主窗口挂载模态 sheet。
-    @State private var pendingTaskWindow: (kind: AppBackgroundTask.Kind, accountID: Int64?)?
+    @State private var pendingTaskWindow: (id: AppBackgroundTask.ID, accountID: Int64?)?
     @State private var diagnosticSummary: DiagnosticLogSummary = .empty
     /// Toolbar 与设置页必须观察同一个配置实例，端口冲突才能即时反映到全局状态。
     @State private var pluginConfiguration = CompanionConfiguration.shared
@@ -119,7 +119,7 @@ struct AppStatusToolbarButton: View {
                 DispatchQueue.main.async {
                     // 浮层关闭期间若切换了账号，旧点击不能打开新账号的同类任务。
                     guard request.accountID == dependencies.authSession.state.user?.id else { return }
-                    openTaskWindow(request.kind)
+                    openTaskWindow(request.id)
                 }
             }
             .task {
@@ -151,21 +151,27 @@ struct AppStatusToolbarButton: View {
     private var backgroundTasks: AppBackgroundTaskSnapshot { .current(dependencies) }
 
     /// 延迟到浮层消失后再复核任务，不能误开已结束任务的新开始页或抢占自动分组。
-    private func openTaskWindow(_ kind: AppBackgroundTask.Kind) {
-        guard backgroundTasks.task(kind)?.opensWindow == true else { return }
-        switch kind {
+    private func openTaskWindow(_ id: AppBackgroundTask.ID) {
+        guard let task = backgroundTasks.task(id), task.opensWindow else { return }
+        if let target = task.settingsTarget {
+            openSettings(tab: target)
+            return
+        }
+        switch task.kind {
         case .grouping: onShowGitHubGrouping?()
         case .tags: onShowBatchAIPanel?()
         case .indexing: onShowKnowledgeWorkspace?()
-        case .repositoryIndexing: openSettings(tab: "ai.index")
-        case .warmup, .readme, .openSSF, .health: break
+        case .projectSync: dependencies.mainWindowNavigationDispatcher.navigate(to: .manage(.myProjects))
+        case .notificationSync: dependencies.mainWindowNavigationDispatcher.navigate(to: .githubNotifications)
+        case .warmup, .readme, .openSSF, .health, .repositoryIndexing,
+             .localModel, .layaModel, .screensaverAvatars, .chatHistoryMigration, .runtimeInstall: break
         }
     }
 
     /// 只停止被点击的这一轮，沿用服务取消语义，不关闭周期调度或回滚结果。
-    private func cancelBackgroundTask(_ kind: AppBackgroundTask.Kind) {
-        guard backgroundTasks.task(kind)?.canCancel == true else { return }
-        switch kind {
+    private func cancelBackgroundTask(_ id: AppBackgroundTask.ID) {
+        guard let task = backgroundTasks.task(id), task.canCancel else { return }
+        switch task.kind {
         case .grouping: dependencies.githubStarListAIGroupingSession.stopAnalysis()
         case .tags: dependencies.batchAIQueueService.cancel()
         case .warmup: dependencies.initialWarmupCoordinator.cancel()
@@ -174,6 +180,14 @@ struct AppStatusToolbarButton: View {
         case .health: dependencies.repoHealthPoller.cancelCurrentRefresh()
         case .indexing: dependencies.knowledgeRAGIndexBuilder.cancel()
         case .repositoryIndexing: dependencies.semanticIndexBuilder.cancel()
+        case .localModel:
+            if let entryID = task.instanceID { LocalAIModelManager.shared.pause(entryID: entryID) }
+        case .layaModel: LayaDecisionModelManager.shared.pause()
+        case .runtimeInstall:
+            if let value = task.instanceID, let runtime = DownloadableRuntime(rawValue: value) {
+                RuntimeDownloadManager.shared.cancel(runtime)
+            }
+        case .screensaverAvatars, .chatHistoryMigration, .projectSync, .notificationSync: break
         }
     }
 
@@ -263,8 +277,8 @@ private struct AppStatusPanel: View {
     let onOpenMCP: () -> Void
     let onOpenBrowserPlugin: () -> Void
     let onOpenAIUsage: () -> Void
-    let onOpenTask: (AppBackgroundTask.Kind) -> Void
-    let onCancelTask: (AppBackgroundTask.Kind) -> Void
+    let onOpenTask: (AppBackgroundTask.ID) -> Void
+    let onCancelTask: (AppBackgroundTask.ID) -> Void
     let onOpenGeneralSettings: () -> Void
     let onOpenAbout: () -> Void
     let onOpenStorage: () -> Void

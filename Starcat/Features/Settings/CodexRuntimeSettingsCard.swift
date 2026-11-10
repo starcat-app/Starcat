@@ -18,7 +18,7 @@ struct CodexRuntimeSettingsCard: View {
     @State private var status: AgentRuntimeSettingsStatus = .idle
     @State private var resolvedRuntimeDirectoryPath = ""
     @State private var isExpanded = false
-    @State private var isInstalling = false
+    private var isInstalling: Bool { RuntimeDownloadManager.shared.state(for: .codex).isInstalling }
     @State private var actualVersion: String?
     @State private var isCheckingVersion = true
     @State private var versionProbeID = 0
@@ -50,11 +50,8 @@ struct CodexRuntimeSettingsCard: View {
 
             RuntimeDownloadButton(
                 runtime: .codex, installedVersion: actualVersion,
-                isCheckingVersion: isCheckingVersion, isInstalling: $isInstalling
-            ) { installation in
-                customExecutablePath = installation.directory.path
-                refresh()
-            }
+                isCheckingVersion: isCheckingVersion
+            )
             HStack(spacing: 8) {
                 RuntimeDetectionFeedback(
                     runtime: .codex, status: status, installedVersion: actualVersion,
@@ -77,6 +74,9 @@ struct CodexRuntimeSettingsCard: View {
         .disclosureGroupStyle(SettingsDisclosureGroupStyle(accessibilityLabel: Text(verbatim: "Codex App Server")))
         .task { refresh() }
         .task(id: versionProbeID) { await detectVersion() }
+        .onChange(of: RuntimeDownloadManager.shared.state(for: .codex)) { _, state in
+            if case .completed = state { refresh() }
+        }
     }
 
     /// 每次重新检测都探测真实版本；取消的旧路径结果不得覆盖新选择

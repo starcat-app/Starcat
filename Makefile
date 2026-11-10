@@ -52,7 +52,7 @@ help: ## 列出所有可用命令
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   使用稳定版 Xcode 和 build/DerivedData-Tests 跑全量单测"
 	@echo "  make test TEST_ARGS=\"...\"   向 xcodebuild 追加参数，例如 -only-testing:StarcatTests/Foo"
-	@echo "  make test-build-scripts     验证 Debug 构建缓存的工具链隔离逻辑"
+	@echo "  make test-build-scripts     验证 Debug 构建缓存隔离与最终产物版本"
 	@echo "  make check-package-lock     检查生成工程是否使用受控 SwiftPM 版本组合"
 	@echo "  make test-package-lock      验证锁文件恢复与漂移检测"
 	@echo "  make test-codebase-fetch    隔离验证 Codebase 校验与资源替换边界"
@@ -103,8 +103,9 @@ run-appstore: ## App Store / 沙盒 Debug
 run-direct: ## Direct / 非 App Store Debug
 	@bash scripts/run-debug-direct.sh
 
-test-build-scripts: ## 验证 Debug 构建缓存的工具链隔离逻辑
+test-build-scripts: ## 验证 Debug 构建缓存隔离与最终产物版本
 	@bash scripts/tests/test-debug-build-environment.sh
+	@python3 -m unittest discover -s scripts/tests -p test_bump_version.py
 
 check-package-lock: ## 只读检查当前解析版本与受控锁文件一致
 	@python3 scripts/sync-swift-package-lock.py check
