@@ -612,7 +612,7 @@ private struct StarcatAppCommands: Commands {
         // 「显示」菜单承接窗口 / 工作台类入口：全局搜索与各 AI 工作台都是
         // "打开某个界面"的性质，和纯动作（查找 / 刷新）分开，降低操作菜单长度。
         CommandGroup(after: .toolbar) {
-            Button("commands.actions.openGlobalSearch") {
+            Button("toolbar.globalSearch") {
                 commandRouter.openGlobalSearch()
             }
             .keyboardShortcut(
@@ -633,7 +633,7 @@ private struct StarcatAppCommands: Commands {
             .disabled(!commandRouter.canOpenKnowledgeRAGWorkspace)
 
             if dependencies?.distributionGate.isAvailable(.externalAgentRuntime) == true {
-                Button("toolbar.agentWorkspace.help") {
+                Button("agent.workspace.window.title") {
                     if let dependencies {
                         AgentWorkspaceWindowController.show(dependencies: dependencies)
                     }
