@@ -107,9 +107,34 @@ final class ReadmeViewModel {
             case .idle, .empty, .requiresLogin, .error:
                 activeDocumentID = nil
             }
+            recordDiagnosticState()
         }
     }
     private(set) var isRefreshing: Bool = false
+
+    /// 来源与内容规模进入证据，HTML 和错误展示文案不进入诊断。
+    private func recordDiagnosticState() {
+        let phase: String
+        var fields: [String: DiagnosticValue] = [:]
+        let outcome: DiagnosticEvent.Outcome?
+        switch state {
+        case .loaded(let html, let cachedAt):
+            phase = "contentAvailable"
+            outcome = .succeeded
+            fields["htmlBytes"] = .integer(html.utf8.count)
+            fields["cacheAgeSeconds"] = .decimal(max(0, Date().timeIntervalSince(cachedAt)))
+            fields["documentID"] = .string(DiagnosticEvent.anonymousReference(activeDocumentID ?? "unknown"))
+        case .loading: phase = "loading"; outcome = nil
+        case .error: phase = "contentUnavailable"; outcome = .failed
+        case .empty: phase = "empty"; outcome = .skipped
+        case .requiresLogin: phase = "requiresLogin"; outcome = .skipped
+        case .idle: return
+        }
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: outcome == .failed ? .warning : .info,
+            category: "readme", operation: "content", message: "README content state",
+            phase: phase, outcome: outcome, fields: fields))
+    }
 
     /// 当前已发布 HTML 的进程内轻量身份，仅供视图更新判定，不持久化也不跨进程比较。
     private(set) var activeDocumentID: String?

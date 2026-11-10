@@ -1506,6 +1506,7 @@ final class WeeklyContentViewModel {
             bumpRevision: bumpRevision,
             showSkeletonOnMiss: false
         )
+        recordDiagnosticSnapshot(phase: "bulkCacheApplied", cachedCount: snapshot.items.count)
     }
 
     private func applyPagedCacheSnapshot(
@@ -1532,6 +1533,22 @@ final class WeeklyContentViewModel {
             itemsRevision += 1
         }
         selectionService?.applyTotal(snapshot.catalogTotal)
+        recordDiagnosticSnapshot(phase: "pagedCacheApplied", cachedCount: snapshot.catalogTotal)
+    }
+
+    /// 导出筛选前后数量与缓存年龄，不保存来源名称、查询词或仓库正文。
+    private func recordDiagnosticSnapshot(phase: String, cachedCount: Int) {
+        var fields: [String: DiagnosticValue] = [
+            "cachedCount": .integer(cachedCount), "totalCount": .integer(total),
+            "displayedCount": .integer(items.count), "hasNextPage": .boolean(hasMore),
+            "hideArchived": .boolean(hideArchivedRepos), "hideForks": .boolean(hideForkRepos)
+        ]
+        if let lastBulkFetchedAt {
+            fields["cacheAgeSeconds"] = .decimal(max(0, Date().timeIntervalSince(lastBulkFetchedAt)))
+        }
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .info, category: "weekly", operation: "presentation", message: "Weekly list state",
+            phase: phase, fields: fields))
     }
 
     private func reloadCachedPage(bumpRevision: Bool) async {

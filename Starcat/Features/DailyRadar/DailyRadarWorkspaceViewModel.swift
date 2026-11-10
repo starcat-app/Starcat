@@ -237,6 +237,14 @@ final class DailyRadarWorkspaceViewModel {
     /// CATALOG_CHANGED 只有限重试一次。
     func reload(force: Bool = false) async {
         guard let repository else { return }
+        let diagnostic = DiagnosticOperation(category: "dailyRadar", name: "reload",
+                                             fields: ["force": .boolean(force)])
+        var diagnosticOutcome: DiagnosticEvent.Outcome = .cancelled
+        defer {
+            diagnostic.finish(Task.isCancelled ? .cancelled : diagnosticOutcome,
+                fields: ["displayedCount": .integer(items.count), "totalCount": .integer(total),
+                         "hasCursor": .boolean(nextCursor != nil), "cacheFallback": .boolean(isShowingCachedContent)])
+        }
         generation &+= 1
         let token = generation
         let expectedIdentity = identity
@@ -251,6 +259,7 @@ final class DailyRadarWorkspaceViewModel {
         // 跳过快照避免无意义的重复解码。
         if !force || isStaleContent {
             if let home = await repository.restoreHome(query: snapshotQuery) {
+                diagnostic.event(phase: "cachedSnapshot")
                 guard generation == token, identity == expectedIdentity else { return }
                 publish(catalog: home.catalog, dates: home.dates, page: home.page, edition: home.edition)
             } else if let cached = await repository.cached(DailyRadarCatalog.self, path: "\(Self.root)/catalog", parameters: catalogParameters) {
@@ -298,8 +307,11 @@ final class DailyRadarWorkspaceViewModel {
                                           catalogRevision: loadedCatalog.value.catalogRevision, edition: request.dateTo)
                 guard generation == token, identity == expectedIdentity else { return }
                 publish(catalog: loadedCatalog.value, dates: loadedDates.value, page: page.value, edition: request.dateTo)
+                diagnosticOutcome = .succeeded
                 return
             } catch {
+                diagnostic.event(phase: "fetchFailed", fields: ["attempt": .integer(attempt + 1)])
+                diagnosticOutcome = DiagnosticFailure.isCancellation(error) ? .cancelled : .failed
                 guard generation == token else { return }
                 if (error as? DailyRadarError)?.catalogChanged == true, attempt == 0 { continue }
                 if !(error is CancellationError) { failed = true }

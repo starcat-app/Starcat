@@ -543,6 +543,12 @@ final class CodeFlowStorage {
         _ operation: (URL) throws -> T
     ) throws -> T {
         let didStart = resolved.securityScopeURL?.startAccessingSecurityScopedResource() ?? false
+        // 只记录真实访问时的授权结果，既不重新请求权限，也不保存目录路径。
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: resolved.securityScopeURL != nil && !didStart ? .warning : .info,
+            category: "fileAccess", operation: "codeFlow", message: "Directory access observed",
+            fields: ["scopeRequired": .boolean(resolved.securityScopeURL != nil),
+                     "scopeStarted": .boolean(didStart)]))
         if resolved.securityScopeURL != nil && !didStart {
             throw CodeFlowStorageError.outputDirectoryUnavailable
         }
