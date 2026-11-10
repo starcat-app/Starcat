@@ -20,20 +20,38 @@ struct DiagnosticOperation: Sendable {
     let category: String
     let name: String
     private let started: ContinuousClock.Instant
+    private let store: DiagnosticLogStore
+    private let state = CompletionState()
+
+    /// 回调可能在导航失败、任务取消和 teardown 中重复收尾；同一操作只允许一个终态。
+    private final class CompletionState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var finished = false
+        var isFinished: Bool { lock.withLock { finished } }
+        func finishOnce() -> Bool {
+            lock.withLock {
+                guard !finished else { return false }
+                finished = true
+                return true
+            }
+        }
+    }
 
     /// 在真实操作开始处创建；不得为诊断目的启动额外业务请求。
-    init(category: String, name: String, fields: [String: DiagnosticValue] = [:]) {
+    init(category: String, name: String, fields: [String: DiagnosticValue] = [:], store: DiagnosticLogStore = .shared) {
         self.id = UUID().uuidString
         self.parentID = DiagnosticContext.current?.id
         self.category = category
         self.name = name
         self.started = .now
+        self.store = store
         event(phase: "started", fields: fields)
     }
 
     /// 固定阶段名和标量字段支持卡住任务的最后进度定位。
     func event(phase: String, fields: [String: DiagnosticValue] = [:]) {
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        guard !state.isFinished else { return }
+        store.enqueue(DiagnosticEvent(
             level: .info, category: category, operation: name, message: "Operation stage",
             operationID: id, parentOperationID: parentID, phase: phase, fields: fields
         ))
@@ -42,23 +60,38 @@ struct DiagnosticOperation: Sendable {
     /// 取消单独记录，错误摘要只保留类型和系统结果码，避免错误对象夹带正文。
     func finish(_ outcome: DiagnosticEvent.Outcome = .succeeded, error: Error? = nil,
                 fields: [String: DiagnosticValue] = [:]) {
+        guard state.finishOnce() else { return }
         let elapsed = started.duration(to: .now).components
         let cancelled = error.map(DiagnosticFailure.isCancellation) ?? false
         let result: DiagnosticEvent.Outcome = cancelled ? .cancelled : outcome
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        store.enqueue(DiagnosticEvent(
             level: result == .failed ? .error : .info,
             category: category, operation: name, message: "Operation finished",
             errorCode: error.map { DiagnosticFailure.code($0) },
             underlying: error.map(DiagnosticEvent.summarize),
             operationID: id, parentOperationID: parentID, phase: "finished", outcome: result,
             durationMs: Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15,
-            impact: result == .failed ? .blocked : .none, fields: fields
+            impact: result == .failed ? .blocked : .none, fields: fields,
+            errorChain: error.map(DiagnosticFailure.causes) ?? []
         ))
     }
 }
 
 /// 稳定错误身份不依赖系统语言；取消判定同时覆盖 URLSession 的取消。
 enum DiagnosticFailure {
+    /// 有界遍历系统底层错误；即使 userInfo 意外构成循环，也最多保留四层。
+    static func causes(_ error: Error) -> [DiagnosticErrorCause] {
+        var current: Error? = error
+        var result: [DiagnosticErrorCause] = []
+        for _ in 0..<4 {
+            guard let value = current else { break }
+            let ns = value as NSError
+            result.append(.init(type: String(reflecting: type(of: value)), code: ns.code))
+            current = ns.userInfo[NSUnderlyingErrorKey] as? Error
+        }
+        return result
+    }
+
     static func isCancellation(_ error: Error) -> Bool {
         if error is CancellationError { return true }
         if let url = error as? URLError, url.code == .cancelled { return true }

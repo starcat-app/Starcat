@@ -21,6 +21,7 @@ struct DiagnosticSnapshot: Sendable {
     let cutoffSequence: UInt64
     let capturedAt: String
     let health: [String: Int]
+    var sessions: Data? = nil
 }
 
 /// @unchecked Sendable 的约束：pending/sequence/dropped 只在锁内访问；其余可变状态只在 writer 队列访问。
@@ -42,6 +43,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private let fileManager: FileManager
     let directoryURL: URL
     private var writeFailures = 0
+    private var readFailures = 0
     private var rotationFailures = 0
     private var lastCleanup = Date.distantPast
     private var repeats: [String: DiagnosticEvent] = [:]
@@ -119,13 +121,17 @@ final class DiagnosticLogStore: @unchecked Sendable {
             writer.async { [self] in
                 batch.forEach(write)
                 flushRepeats()
-                let text = files().compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined()
+                let text = files().compactMap { url -> String? in
+                    do { return try String(contentsOf: url, encoding: .utf8) }
+                    catch { readFailures += 1; return nil }
+                }.joined()
                 continuation.resume(returning: DiagnosticSnapshot(
                     text: text, cutoffSequence: cutoff,
                     capturedAt: ISO8601DateFormatter.shared.string(from: Date()),
-                    health: ["droppedEvents": lost, "writeFailures": writeFailures,
+                    health: ["droppedEvents": lost, "writeFailures": writeFailures, "readFailures": readFailures,
                              "rotationFailures": rotationFailures, "peakQueue": peak,
-                             "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)]))
+                             "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)],
+                    sessions: try? encoder.encode(sessionRecords ?? [])))
             }
             lock.unlock()
         }
@@ -180,7 +186,7 @@ final class DiagnosticLogStore: @unchecked Sendable {
     /// 操作开始/结束及请求结果不合并，确保每次实际尝试仍能独立关联。
     private func write(_ event: DiagnosticEvent) {
         guard event.operationID == nil, event.requestID == nil, event.phase == nil else { append(event); return }
-        let key = "\(event.level)|\(event.visibility)|\(event.category)|\(event.operation)|\(event.statusCode ?? 0)|\(event.errorCode ?? "")|\(event.context.sorted { $0.key < $1.key })|\(event.fields.sorted { $0.key < $1.key })"
+        let key = "\(event.level)|\(event.visibility)|\(event.category)|\(event.operation)|\(event.message)|\(event.underlying ?? "")|\(event.statusCode ?? 0)|\(event.errorCode ?? "")|\(event.context.sorted { $0.key < $1.key })|\(event.fields.sorted { $0.key < $1.key })"
         if let previous = fingerprints[key], event.date.timeIntervalSince(previous) < 300 {
             var aggregate = repeats[key] ?? event
             aggregate.phase = "repeated"
@@ -277,12 +283,20 @@ final class DiagnosticLogStore: @unchecked Sendable {
     func endSession() {
         let completion = DispatchGroup()
         completion.enter()
+        // 与 snapshot 使用同一入队屏障，防止尚未开始的 drain 在正常结束之后回写未结束状态。
+        lock.lock()
+        let batch = pending
+        pending.removeAll(keepingCapacity: true)
+        drainGeneration += 1
+        scheduled = false
         writer.async { [self] in
+            batch.forEach(write)
             flushRepeats()
             try? updateSession(DiagnosticEvent(level: .info, category: "startup", operation: "session",
                                                message: "Normal termination", phase: "ended"), ending: true)
             completion.leave()
         }
+        lock.unlock()
         _ = completion.wait(timeout: .now() + .milliseconds(200))
     }
 }
@@ -299,12 +313,15 @@ extension DiagnosticLogStore {
         visibility: DiagnosticEvent.Visibility = .context,
         category: String,
         operation: String,
-        message: String,
+        message: StaticString,
         service: String? = nil,
         statusCode: Int? = nil,
         errorCode: String? = nil,
         underlying: String? = nil,
-        context: [String: String] = [:]
+        context: [String: String] = [:],
+        sourceFile: String = #fileID,
+        sourceFunction: String = #function,
+        sourceLine: Int = #line
     ) {
         let event = DiagnosticEvent(
             level: level,
@@ -316,7 +333,7 @@ extension DiagnosticLogStore {
             statusCode: statusCode,
             errorCode: errorCode,
             underlying: underlying,
-            context: context
+            context: context, sourceFile: sourceFile, sourceFunction: sourceFunction, sourceLine: sourceLine
         )
         DiagnosticLogStore.shared.enqueue(event)
     }

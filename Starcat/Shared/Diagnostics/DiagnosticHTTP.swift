@@ -34,7 +34,7 @@ struct DiagnosticHTTPRequest: Sendable {
     }
 
     /// HTTP 成功仅代表传输成功，解码或业务 envelope 必须由调用方再记录。
-    func finish(response: URLResponse?, error: Error? = nil) {
+    func finish(response: URLResponse?, receivedBytes: Int? = nil, error: Error? = nil) {
         let http = response as? HTTPURLResponse
         let status = http?.statusCode
         let cancelled = error.map(DiagnosticFailure.isCancellation) ?? false
@@ -51,7 +51,7 @@ struct DiagnosticHTTPRequest: Sendable {
             operationID: operation.id, parentOperationID: operation.parentID,
             requestID: id, serverTraceID: trace, phase: "http",
             outcome: cancelled ? .cancelled : failed ? .failed : .succeeded,
-            fields: ["receivedBytes": .integer(Int(response?.expectedContentLength ?? -1))]
+            fields: receivedBytes.map { ["receivedBytes": .integer($0)] } ?? [:]
         ))
         operation.finish(cancelled ? .cancelled : failed ? .failed : .succeeded, error: error)
     }
@@ -63,9 +63,17 @@ enum DiagnosticHTTP {
                      service: String) async throws -> (Data, URLResponse) {
         let attempt = DiagnosticHTTPRequest(service: service, method: request.httpMethod ?? "GET",
                                             route: DiagnosticHTTPRequest.route(request.url))
+        if DiagnosticRecording.shared.expiresAt != nil {
+            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                level: .debug, category: "network", operation: service, message: "Enhanced request shape",
+                operationID: attempt.operation.id, parentOperationID: attempt.operation.parentID,
+                requestID: attempt.id, phase: "requestShape",
+                fields: ["headerCount": .integer(request.allHTTPHeaderFields?.count ?? 0),
+                         "uploadBytes": .integer(request.httpBody?.count ?? 0)]))
+        }
         do {
             let result = try await session.data(for: request)
-            attempt.finish(response: result.1)
+            attempt.finish(response: result.1, receivedBytes: result.0.count)
             return result
         } catch {
             attempt.finish(response: nil, error: error)

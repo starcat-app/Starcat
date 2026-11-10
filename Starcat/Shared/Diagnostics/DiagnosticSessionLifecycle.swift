@@ -24,7 +24,7 @@ struct DiagnosticEnvironment: Codable, Sendable {
         Self(sessionID: DiagnosticContext.sessionID,
              version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
              build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
-             bundleIdentifier: AppConstants.bundleIdentifier,
+             bundleIdentifier: Bundle.main.bundleIdentifier ?? AppConstants.bundleIdentifier,
              osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
              processorCount: ProcessInfo.processInfo.processorCount,
              physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory,
@@ -68,6 +68,14 @@ final class DiagnosticRecording: @unchecked Sendable {
     private var deadline: Date?
     private var generation = UUID()
     private var bytes = 0
+    private let byteLimit: Int
+    private let lifecycleEvents: Bool
+
+    /// 小预算和静默生命周期只用于隔离测试；生产上限始终不超过 20MB。
+    init(byteLimit: Int = 20 * 1024 * 1024, lifecycleEvents: Bool = true) {
+        self.byteLimit = min(20 * 1024 * 1024, max(1, byteLimit))
+        self.lifecycleEvents = lifecycleEvents
+    }
 
     var expiresAt: Date? {
         lock.lock()
@@ -85,8 +93,11 @@ final class DiagnosticRecording: @unchecked Sendable {
         generation = token
         bytes = 0
         lock.unlock()
-        DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "reproduction.start",
-                                  message: "Enhanced safe recording started")
+        if lifecycleEvents {
+            DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "reproduction.start",
+                                      message: "Enhanced safe recording started")
+            notify()
+        }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + duration) { [self] in
             stop(ifGeneration: token)
         }
@@ -100,8 +111,11 @@ final class DiagnosticRecording: @unchecked Sendable {
         guard deadline != nil, token == nil || token == generation else { lock.unlock(); return }
         deadline = nil
         lock.unlock()
-        DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "reproduction.end",
-                                  message: "Enhanced safe recording ended")
+        if lifecycleEvents {
+            DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "reproduction.end",
+                                      message: "Enhanced safe recording ended")
+            notify()
+        }
     }
 
     /// 在写入者编码后计量，达到预算立即关闭，不改变业务日志原有留存策略。
@@ -109,10 +123,20 @@ final class DiagnosticRecording: @unchecked Sendable {
         lock.lock()
         let active = deadline.map { $0 > Date() } ?? false
         if active { bytes += count }
-        let allowed = active && bytes <= 20 * 1024 * 1024
+        let allowed = active && bytes <= byteLimit
         let exceeded = active && !allowed
         lock.unlock()
         if exceeded { stop() }
         return allowed
     }
+
+    private func notify() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .diagnosticRecordingDidChange, object: nil)
+        }
+    }
+}
+
+extension Notification.Name {
+    static let diagnosticRecordingDidChange = Notification.Name("StarcatDiagnosticRecordingDidChange")
 }

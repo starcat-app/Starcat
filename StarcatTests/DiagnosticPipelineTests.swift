@@ -17,7 +17,10 @@ struct DiagnosticPipelineTests {
 
     @Test("新事件保留身份、类型字段和任务关联")
     func identity() async throws {
-        let span = DiagnosticOperation(category: "test", name: "identity")
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory)
+        let span = DiagnosticOperation(category: "test", name: "identity", store: store)
         let event = DiagnosticContext.$current.withValue(span) {
             DiagnosticEvent(level: .info, category: "test", operation: "nested", message: "safe",
                             fields: ["count": .integer(87), "available": .boolean(false),
@@ -31,6 +34,7 @@ struct DiagnosticPipelineTests {
         #expect(decoded.fields["available"] == .boolean(false))
         #expect(decoded.fields["prompt"] == nil)
         span.finish()
+        _ = await store.snapshot()
     }
 
     @Test("快照包含截点前的并发事件，后续事件继续写入")
@@ -98,5 +102,113 @@ struct DiagnosticPipelineTests {
         #expect(!cancelled.shouldRecordDiagnostic)
         #expect(DiagnosticFailure.isCancellation(URLError(.cancelled)))
         #expect(!DiagnosticFailure.isCancellation(URLError(.timedOut)))
+    }
+
+    @Test("操作终态幂等、底层错误链有界且不包含 userInfo 正文")
+    func terminalAndCauses() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory)
+        let root = DiagnosticOperation(category: "test", name: "root", store: store)
+        let child = DiagnosticContext.$current.withValue(root) {
+            DiagnosticOperation(category: "test", name: "child", store: store)
+        }
+        let error = NSError(domain: "fixture", code: 1, userInfo: [
+            NSUnderlyingErrorKey: URLError(.timedOut), NSLocalizedDescriptionKey: "customer-private-body"
+        ])
+        child.finish(.failed, error: error)
+        child.finish()
+        root.finish(.partial)
+        let snapshot = await store.snapshot()
+        let events = try snapshot.text.split(separator: "\n").map {
+            try JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8))
+        }
+        let terminal = try #require(events.first { $0.operationID == child.id && $0.outcome != nil })
+        #expect(terminal.parentOperationID == root.id)
+        #expect(terminal.errorChain.count == 2)
+        #expect(events.filter { $0.operationID == child.id && $0.outcome != nil }.count == 1)
+        #expect(!snapshot.text.contains("customer-private-body"))
+    }
+
+    @Test("正常退出先写完已入队事件并保留未知结束的上一会话")
+    func sessionBarrier() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let previous = DiagnosticSessionRecord(sessionID: "previous",
+            startedAt: "2026-11-09T00:00:00Z", lastUpdatedAt: "2026-11-09T00:01:00Z",
+            lastCategory: "startup", lastOperation: "bootstrap", lastPhase: "database",
+            endedNormally: false, environment: .current())
+        try JSONEncoder().encode([previous]).write(to: directory.appendingPathComponent("sessions.json"))
+        let store = DiagnosticLogStore(directoryURL: directory)
+        for n in 0..<40 {
+            store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "end",
+                message: "safe", phase: "progress", fields: ["count": .integer(n)]))
+        }
+        store.endSession()
+        let snapshot = await store.snapshot()
+        let sessions = try JSONDecoder().decode([DiagnosticSessionRecord].self, from: #require(snapshot.sessions))
+        #expect(snapshot.text.split(separator: "\n").count == 40)
+        #expect(sessions.last?.endedNormally == true)
+        #expect(sessions.first?.endedNormally == false)
+        #expect(sessions.first?.lastPhase == "database")
+    }
+
+    @Test("增强复现容量、自动到期及新录制代次互不干扰")
+    func reproductionLimits() async throws {
+        let recording = DiagnosticRecording(byteLimit: 10, lifecycleEvents: false)
+        recording.start(duration: 1)
+        #expect(recording.consume(10))
+        #expect(!recording.consume(1))
+        #expect(recording.expiresAt == nil)
+        recording.start(duration: 1)
+        recording.start(duration: 3)
+        try await Task.sleep(for: .milliseconds(1100))
+        #expect(recording.expiresAt != nil)
+        recording.stop()
+        #expect(recording.expiresAt == nil)
+        let expiry = DiagnosticRecording(lifecycleEvents: false)
+        expiry.start(duration: 1)
+        try await Task.sleep(for: .milliseconds(1100))
+        #expect(expiry.expiresAt == nil)
+        #expect(!expiry.consume(1))
+    }
+
+    @Test("不同固定原因和错误类型不会合并为同一故障")
+    func aggregationReasons() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory)
+        store.enqueue(DiagnosticEvent(level: .error, category: "test", operation: "same",
+            message: "Failure A", underlying: "Swift.CancellationError code=1"))
+        store.enqueue(DiagnosticEvent(level: .error, category: "test", operation: "same",
+            message: "Failure B", underlying: "Foundation.URLError code=-1001"))
+        let snapshot = await store.snapshot()
+        #expect(snapshot.text.split(separator: "\n").count == 2)
+        #expect(!snapshot.text.contains("\"phase\":\"repeated\""))
+    }
+
+    @Test("日志风暴保持队列上限，所有未保留事件均计入丢弃数")
+    func stormBudget() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory, queueLimit: 16, segmentBytes: 8 * 1024 * 1024)
+        let started = ContinuousClock.now
+        await withTaskGroup(of: Void.self) { group in
+            for worker in 0..<8 {
+                group.addTask {
+                    for n in 0..<625 {
+                        store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "storm",
+                            message: "safe", phase: "progress", fields: ["count": .integer(worker * 625 + n)]))
+                    }
+                }
+            }
+        }
+        let snapshot = await store.snapshot()
+        let count = snapshot.text.split(separator: "\n").count
+        #expect((snapshot.health["peakQueue"] ?? 9999) <= 16)
+        #expect(count + (snapshot.health["droppedEvents"] ?? 0) == 5000)
+        #expect(snapshot.health["writeFailures"] == 0)
+        print("DIAGNOSTIC_STORM input=5000 retained=\(count) health=\(snapshot.health) duration=\(started.duration(to: .now))")
     }
 }

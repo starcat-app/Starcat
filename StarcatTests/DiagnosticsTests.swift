@@ -45,7 +45,7 @@ struct DiagnosticsTests {
 
         #expect(event.message.contains("Bearer <redacted>"))
         #expect(event.message.contains("api_key=<redacted>"))
-        #expect(event.underlying?.contains("token=<redacted>") == true)
+        #expect(event.underlying == "<unstructured-error-omitted>")
         #expect(!event.message.contains("sk-secret"))
         #expect(event.underlying?.contains("ghp_secret") == false)
     }
@@ -63,7 +63,7 @@ struct DiagnosticsTests {
         #expect(!event.message.contains("sk-proj-"))
         #expect(event.message.contains("<redacted>"))
         #expect(!event.underlying!.contains("/Users/dong4j"))
-        #expect(event.underlying!.contains("/Users/<redacted>"))
+        #expect(event.underlying == "<unstructured-error-omitted>")
     }
 
     @Test("网络错误映射为用户友好文案并保留诊断状态码")

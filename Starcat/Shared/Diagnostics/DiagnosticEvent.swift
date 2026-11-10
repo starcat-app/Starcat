@@ -13,6 +13,12 @@
 import Foundation
 import CryptoKit
 
+/// 错误链仅保存类型和系统码，不序列化 NSError.userInfo 中的响应、URL 或正文。
+struct DiagnosticErrorCause: Codable, Sendable, Equatable {
+    let type: String
+    let code: Int
+}
+
 /// 诊断安全字段只接受标量，不允许把响应、设置或业务对象整体序列化。
 enum DiagnosticValue: Codable, Sendable, Equatable {
     case string(String), integer(Int), decimal(Double), boolean(Bool)
@@ -32,6 +38,16 @@ enum DiagnosticValue: Codable, Sendable, Equatable {
         case .integer(let int): try value.encode(int)
         case .decimal(let double): try value.encode(double.isFinite ? double : 0)
         case .boolean(let bool): try value.encode(bool)
+        }
+    }
+
+    /// 报告显示实际标量，避免把 Swift enum 的调试格式交给开发者阅读。
+    var reportValue: String {
+        switch self {
+        case .string(let value): return value
+        case .integer(let value): return String(value)
+        case .decimal(let value): return value.isFinite ? String(value) : "unknown"
+        case .boolean(let value): return String(value)
         }
     }
 }
@@ -89,6 +105,10 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     var firstSeen: String?
     var lastSeen: String?
     var fields: [String: DiagnosticValue] = [:]
+    var sourceFile: String?
+    var sourceFunction: String?
+    var sourceLine: Int?
+    var errorChain: [DiagnosticErrorCause] = []
 
     enum Outcome: String, Codable, Sendable {
         case succeeded, failed, cancelled, partial, skipped
@@ -104,7 +124,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         visibility: Visibility = .context,
         category: String,
         operation: String,
-        message: String,
+        message: StaticString,
         service: String? = nil,
         statusCode: Int? = nil,
         errorCode: String? = nil,
@@ -118,18 +138,23 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         outcome: Outcome? = nil,
         durationMs: Double? = nil,
         impact: Impact = .none,
-        fields: [String: DiagnosticValue] = [:]
+        fields: [String: DiagnosticValue] = [:],
+        errorChain: [DiagnosticErrorCause] = [],
+        sourceFile: String = #fileID,
+        sourceFunction: String = #function,
+        sourceLine: Int = #line
     ) {
         self.timestamp = ISO8601DateFormatter.shared.string(from: timestamp)
         self.level = level
         self.visibility = visibility
         self.category = Self.sanitize(category, maxLength: 80)
         self.operation = Self.sanitize(operation, maxLength: 160)
-        self.message = Self.sanitize(message, maxLength: 1_024)
+        // 编译期消息避免调用方误把响应或用户正文拼进日志；变量只能进入受控标量字段。
+        self.message = Self.sanitize(String(describing: message), maxLength: 1_024)
         self.service = service.map { Self.sanitize($0, maxLength: 80) }
         self.statusCode = statusCode
         self.errorCode = errorCode.map { Self.sanitize($0, maxLength: 128) }
-        self.underlying = underlying.map { Self.sanitize($0, maxLength: 4_096) }
+        self.underlying = underlying.map(Self.safeUnderlying)
         self.context = context.sorted { $0.key < $1.key }.prefix(32).reduce(into: [:]) { partial, pair in
             guard Self.isSafeKey(pair.key) else { return }
             let sensitive = ["repo", "login", "user", "path", "url", "endpoint", "account"]
@@ -145,6 +170,12 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         self.outcome = outcome
         self.durationMs = durationMs
         self.impact = impact
+        self.errorChain = errorChain.prefix(4).map {
+            DiagnosticErrorCause(type: Self.sanitize($0.type, maxLength: 160), code: $0.code)
+        }
+        self.sourceFile = String(Self.redact(sourceFile).suffix(160))
+        self.sourceFunction = String(Self.redact(sourceFunction).prefix(160))
+        self.sourceLine = sourceLine
         self.fields = fields.sorted { $0.key < $1.key }.prefix(48).reduce(into: [:]) { result, item in
             guard Self.isSafeKey(item.key) else { return }
             if case .string(let text) = item.value {
@@ -172,6 +203,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         case schemaVersion, eventID, sequence, sessionID, environmentID
         case operationID, parentOperationID, requestID, serverTraceID
         case phase, outcome, durationMs, impact, occurrenceCount, firstSeen, lastSeen, fields
+        case sourceFile, sourceFunction, sourceLine, errorChain
     }
 
     /// 老版本 JSONL 没有 `visibility`。升级后默认把这些历史记录当作上下文，
@@ -206,6 +238,10 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         firstSeen = try container.decodeIfPresent(String.self, forKey: .firstSeen)
         lastSeen = try container.decodeIfPresent(String.self, forKey: .lastSeen)
         fields = try container.decodeIfPresent([String: DiagnosticValue].self, forKey: .fields) ?? [:]
+        sourceFile = try container.decodeIfPresent(String.self, forKey: .sourceFile)
+        sourceFunction = try container.decodeIfPresent(String.self, forKey: .sourceFunction)
+        sourceLine = try container.decodeIfPresent(Int.self, forKey: .sourceLine)
+        errorChain = try container.decodeIfPresent([DiagnosticErrorCause].self, forKey: .errorChain) ?? []
     }
 
     /// 同一会话内可关联，不输出身份，也不提供跨用户稳定跟踪标识。
@@ -223,6 +259,20 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         return !["token", "secret", "password", "cookie", "authorization", "prompt", "content",
                  "body", "response", "apikey", "api_key", "licensekey", "note", "query"]
             .contains { key.localizedCaseInsensitiveContains($0) }
+    }
+
+    /// 旧调用可能传 localizedDescription 或调试交换；只允许错误类型、结果码和结构化解码路径。
+    private static func safeUnderlying(_ text: String) -> String {
+        let safe = sanitize(text, maxLength: 1024)
+        if safe.hasPrefix("Swift.DecodingError."),
+           !safe.contains("debugDescription"), !safe.contains("\n") { return safe }
+        guard let range = safe.range(of: #"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+"#,
+                                     options: .regularExpression) else { return "<unstructured-error-omitted>" }
+        var result = String(safe[range])
+        if let code = safe.range(of: #"\bcode=-?[0-9]+\b"#, options: .regularExpression) {
+            result += " " + safe[code]
+        }
+        return result
     }
 
     /// 最小脱敏：API Key / Bearer token / GitHub token / Authorization 这类常见形态。
@@ -262,11 +312,11 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     }
 
     /// 把任意错误收敛成可导出的最小摘要。GRDB 错误可能在描述中附带 SQL 参数，
-    /// 因此只保留类型、domain 与 code；其它错误统一脱敏并截断。
+    /// 因此只保留类型、domain 与 code，不导出任意 localizedDescription。
     ///
     /// `DecodingError` 的 `localizedDescription` 在中文系统上会收成「未能读取数据，
-    /// 因为它的格式不正确」，丢掉 codingPath。诊断必须留下 path + debugDescription，
-    /// 才能区分「未知 provider」和真正的坏 JSON。
+    /// 因为它的格式不正确」，丢掉 codingPath。诊断保留错误类别与路径；
+    /// debugDescription 可能含响应正文，因此不能写入。
     static func summarize(_ error: Error) -> String {
         let typeName = String(reflecting: type(of: error))
         if typeName.contains("GRDB.DatabaseError") {
@@ -283,13 +333,13 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     private static func summarizeDecodingError(_ error: DecodingError) -> String {
         switch error {
         case .typeMismatch(let type, let context):
-            return "Swift.DecodingError.typeMismatch(\(type), path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.typeMismatch(\(type), path=\(codingPath(context)))"
         case .valueNotFound(let type, let context):
-            return "Swift.DecodingError.valueNotFound(\(type), path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.valueNotFound(\(type), path=\(codingPath(context)))"
         case .keyNotFound(let key, let context):
-            return "Swift.DecodingError.keyNotFound(\(key.stringValue), path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.keyNotFound(\(key.stringValue), path=\(codingPath(context)))"
         case .dataCorrupted(let context):
-            return "Swift.DecodingError.dataCorrupted(path=\(codingPath(context)) \(context.debugDescription))"
+            return "Swift.DecodingError.dataCorrupted(path=\(codingPath(context)))"
         @unknown default:
             return "Swift.DecodingError: \(error)"
         }
