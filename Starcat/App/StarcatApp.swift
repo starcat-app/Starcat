@@ -164,9 +164,11 @@ struct StarcatApp: App {
         // 任何窗口。显式使用 `.presented`，保证这种情况下仍创建主窗口，避免只剩
         // Dock 运行点而没有可见界面。
         .defaultLaunchBehavior(.presented)
-        // 窗口入口集中放在「显示」菜单；保留 Scene 和恢复能力，仅移除自动生成的重复命令。
-        .commandsRemoved()
         .commands {
+            // 只移除「窗口」菜单自动生成的单例窗口入口，业务入口统一放在「显示」菜单。
+            // 不能对 Scene 使用 commandsRemoved()，否则服务、隐藏、退出等系统命令也会消失。
+            CommandGroup(replacing: .singleWindowList) {}
+
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
             CommandGroup(replacing: .appInfo) {
                 Button("app.about") {
@@ -200,7 +202,6 @@ struct StarcatApp: App {
             height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
         )
         .defaultLaunchBehavior(.suppressed)
-        .commandsRemoved()
 
         Window("localai.logs.title", id: LocalAILogWindowSelection.sceneID) {
             LocalAILogWindowView()
@@ -211,7 +212,6 @@ struct StarcatApp: App {
         .defaultSize(width: 960, height: 620)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
-        .commandsRemoved()
 
         Window("agent.workspace.window.title", id: AgentWorkspaceWindowController.sceneID) {
             if let dependencies {
@@ -229,7 +229,6 @@ struct StarcatApp: App {
             height: AgentWorkspaceWindowMetrics.defaultContentSize.height
         )
         .defaultLaunchBehavior(.suppressed)
-        .commandsRemoved()
 
         // 使用普通单例 Window，而不是 SwiftUI `Settings` preference window：保留标准
         // 交通灯与原生 Sidebar/Toolbar。固定尺寸由 SettingsView 内部的 AppKit 探针
@@ -241,7 +240,6 @@ struct StarcatApp: App {
         .defaultSize(width: 720, height: 720)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
-        .commandsRemoved()
         .commands {
             SettingsWindowCommands(dependencies: dependencies)
         }
