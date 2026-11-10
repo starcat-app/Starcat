@@ -7,10 +7,11 @@
 
 import Foundation
 
-/// 每类服务的一轮工作只算一个任务；仓库/分片数量只在行内说明中展示。
+/// 每个执行实例只算一个任务；仓库/分片数量只在行内说明中展示。
 struct AppBackgroundTask: Identifiable, Equatable {
-    enum Kind: String, CaseIterable {
+    enum Kind: String, CaseIterable, Sendable {
         case grouping, tags, warmup, readme, openSSF, health, indexing, repositoryIndexing
+        case localModel, layaModel
 
         var titleKey: String {
             switch self {
@@ -22,6 +23,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .health: "toolbar.backgroundTasks.health"
             case .indexing: "toolbar.backgroundTasks.indexing"
             case .repositoryIndexing: "settings.searchIndex.repository.title"
+            case .localModel, .layaModel: "toolbar.localai.title"
             }
         }
 
@@ -34,6 +36,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .openSSF: .security
             case .health: .repositoryHealth
             case .indexing, .repositoryIndexing: .aiIndex
+            case .localModel, .layaModel: .models
             }
         }
     }
@@ -52,6 +55,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case progress(processed: Int, total: Int)
         case pending(Int)
         case failed(Int)
+        case bytes(completed: Int64, total: Int64)
 
         func text(locale: Locale) -> String? {
             switch self {
@@ -63,15 +67,64 @@ struct AppBackgroundTask: Identifiable, Equatable {
                 return String(format: String.l10n("aiOrganization.banner.pendingFormat"), count.formatted(.number.locale(locale)))
             case .failed(let count):
                 return String(format: String.l10n("aiOrganization.banner.failedFormat"), count.formatted(.number.locale(locale)))
+            case let .bytes(completed, total):
+                guard total > 0 else { return nil }
+                return "\(min(total, max(0, completed)).formatted(.byteCount(style: .file).locale(locale))) / \(total.formatted(.byteCount(style: .file).locale(locale)))"
             }
         }
     }
 
-    let id: Kind
+    /// 同类模型可以并行下载；身份使用稳定 catalog ID，不能用数组下标或显示名称。
+    struct ID: Hashable, Sendable {
+        let kind: Kind
+        var instance: String?
+    }
+
+    let kind: Kind
+    var instanceID: String?
+    var id: ID { ID(kind: kind, instance: instanceID) }
     let phase: Phase
     var detail: Detail = .none
     var canCancel = false
     var opensWindow = false
+    var name: String?
+
+    var title: String { name ?? String.l10n(kind.titleKey) }
+    var cancelTitleKey: String {
+        kind == .localModel || kind == .layaModel ? "settings.localai.model.action.pause" : "toolbar.backgroundTasks.stop"
+    }
+
+    init(id: Kind, phase: Phase, detail: Detail = .none, canCancel: Bool = false,
+         opensWindow: Bool = false, instanceID: String? = nil, name: String? = nil) {
+        self.kind = id
+        self.phase = phase
+        self.detail = detail
+        self.canCancel = canCancel
+        self.opensWindow = opensWindow
+        self.instanceID = instanceID
+        self.name = name
+    }
+
+    /// 安装状态由原管理器持有；暂停恢复 idle 后不伪造持久记录，加载阶段不可暂停下载。
+    static func modelInstall(state: LocalAIInstallState, id: String, name: String, isLaya: Bool = false) -> Self? {
+        let phase: Phase
+        let detail: Detail
+        let canPause: Bool
+        switch state {
+        case .preparing:
+            phase = .preparing; detail = .none; canPause = true
+        case let .downloading(_, completed, total, _):
+            phase = .running; detail = .bytes(completed: completed, total: total); canPause = true
+        case .loading:
+            phase = .applying; detail = .none; canPause = false
+        case .failed, .loadFailed:
+            phase = .failed; detail = .none; canPause = false
+        case .idle, .installed, .deleting, .deleteFailed:
+            return nil
+        }
+        return Self(id: isLaya ? .layaModel : .localModel, phase: phase, detail: detail,
+                    canCancel: canPause, opensWindow: true, instanceID: id, name: name)
+    }
 
     /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。
     static func repositoryIndex(

@@ -92,6 +92,43 @@ struct AppBackgroundTaskTests {
         ) == nil)
     }
 
+    @Test("并行模型下载按 catalog 实例独立计数和定位")
+    func modelDownloadsHaveStableIdentity() throws {
+        let state = LocalAIInstallState.downloading(
+            progress: 0.25, completedBytes: 256, totalBytes: 1_024, speedBytesPerSecond: 128
+        )
+        let first = try #require(AppBackgroundTask.modelInstall(state: state, id: "first", name: "Model A"))
+        let second = try #require(AppBackgroundTask.modelInstall(state: state, id: "second", name: "Model B"))
+        let laya = try #require(AppBackgroundTask.modelInstall(state: state, id: "first", name: "Laya", isLaya: true))
+        let snapshot = AppBackgroundTaskSnapshot(tasks: [first, second, laya])
+        #expect(Set(snapshot.tasks.map(\.id)).count == 3)
+        #expect(snapshot.task(second.id)?.title == "Model B")
+        #expect(snapshot.task(.localModel) == nil)
+        #expect(first.detail == .bytes(completed: 256, total: 1_024))
+        #expect(first.canCancel && laya.canCancel)
+        #expect(first.cancelTitleKey == "settings.localai.model.action.pause")
+        #expect(snapshot.count == 3)
+        let paused = AppBackgroundTaskSnapshot(tasks: [second, laya])
+        #expect(paused.task(first.id) == nil)
+        #expect(paused.task(second.id) == second)
+        #expect(paused.task(laya.id) == laya)
+    }
+
+    @Test("模型加载与失败保留入口，暂停和安装结束不残留任务")
+    func modelInstallLifecycle() throws {
+        for state in [LocalAIInstallState.idle, .installed, .deleting, .deleteFailed(message: "private")] {
+            #expect(AppBackgroundTask.modelInstall(state: state, id: "model", name: "Model") == nil)
+        }
+        for state in [LocalAIInstallState.loading, .failed(message: "private"), .loadFailed(message: "private")] {
+            let task = try #require(AppBackgroundTask.modelInstall(state: state, id: "model", name: "Model"))
+            #expect(task.opensWindow)
+            #expect(!task.canCancel)
+            #expect(task.detail == .none)
+            #expect(task.phase == (state == .loading ? .applying : .failed))
+        }
+        #expect(AppBackgroundTask.Detail.bytes(completed: 12, total: 0).text(locale: Locale(identifier: "en")) == nil)
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)

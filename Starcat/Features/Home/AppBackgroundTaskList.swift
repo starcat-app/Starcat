@@ -10,8 +10,8 @@ import SwiftUI
 /// 最多显示四行后滚动，避免任务数变化撑出状态面板；所有语言都保持两行固定结构。
 struct AppBackgroundTaskList: View {
     let tasks: [AppBackgroundTask]
-    let onOpen: (AppBackgroundTask.Kind) -> Void
-    let onCancel: (AppBackgroundTask.Kind) -> Void
+    let onOpen: (AppBackgroundTask.ID) -> Void
+    let onCancel: (AppBackgroundTask.ID) -> Void
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
