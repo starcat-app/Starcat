@@ -194,12 +194,13 @@ enum AgentRuntimeInfoKind: Sendable {
     var components: [String] {
         switch self {
         case .codex:
-            ["codex-app-server (or codex)", "codex-code-mode-host"]
+            ["codex-app-server (or codex)", "codex-code-mode-host", "codex-exec-server", "codex-path/rg"]
         case .deepSeek:
             [
-                "dsh-jsonrpc-agent-pkg-macos-arm64",
-                "dsh-jsonrpc-agent-pkg-macos-arm64-rg",
-                "dsh-jsonrpc-agent-pkg-macos-arm64-spawn-helper",
+                DeepSeekHarnessRuntime.executableName,
+                DeepSeekHarnessRuntime.executableName + "-rg",
+                DeepSeekHarnessRuntime.executableName + "-spawn-helper",
+                "macos-arm64/downloads.json",
                 "starcat.cordis.yml",
             ]
         }
@@ -275,15 +276,6 @@ private struct AgentRuntimeInfoPopover: View {
         }
         .padding(14)
         .frame(width: 360, alignment: .leading)
-    }
-}
-
-extension AgentRuntimeSettingsStatus {
-    /// 检测失败时才展示完整错误。选择文件或恢复自动检测后会立刻再跑一次校验，
-    /// 不再单独放刷新按钮。
-    var failureMessage: String? {
-        if case .failed(let message) = self { return message }
-        return nil
     }
 }
 

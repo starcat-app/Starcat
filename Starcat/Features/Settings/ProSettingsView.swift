@@ -78,6 +78,8 @@ struct ProSettingsTab: View {
     @State private var validateFeedbackTask: Task<Void, Never>?
     /// 手动校验失败只展示短分类，不把后端错误码或网络内部细节暴露给用户。
     @State private var directValidationFailure: DirectValidationFailure?
+    /// 激活反馈独立于门户/校验错误，避免其它操作的消息出现在授权码输入框下。
+    @State private var directActivationFailureMessage: String?
 
     private var isDirectBuild: Bool { DistributionChannel.current.isDirect }
 
@@ -347,17 +349,37 @@ struct ProSettingsTab: View {
 
     /// 首次激活与换码复用同一行，输入值、提交条件和激活动作仍由原流程负责。
     private var directLicenseInputRow: some View {
-        HStack(spacing: 10) {
-            Text("settings.pro.direct.license.placeholder")
-                .lineLimit(1)
-                .help(Text("settings.pro.direct.license.placeholder"))
+        // 只在本行展示期间刷新倒计时；截止时间由 manager 持有，切换页面不解除冷却。
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let retrySeconds = directLicenseManager.activationRetrySeconds(at: context.date)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Text("settings.pro.direct.license.placeholder")
+                        .lineLimit(1)
+                        .help(Text("settings.pro.direct.license.placeholder"))
 
-            SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: .infinity)
+                    SecureField("settings.pro.direct.license.placeholder", text: $directLicenseKey)
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity)
+                        .onChange(of: directLicenseKey) {
+                            directActivationFailureMessage = nil
+                        }
 
-            directActivateButton
+                    directActivateButton(retrySeconds: retrySeconds)
+                }
+                if retrySeconds > 0 {
+                    Text(verbatim: String(format: String.l10n("settings.pro.direct.error.rateLimitedFormat"), retrySeconds))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let directActivationFailureMessage {
+                    Text(verbatim: directActivationFailureMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 
@@ -379,7 +401,7 @@ struct ProSettingsTab: View {
     }
 
     /// 授权操作使用文字；校验进度和结果留在按钮外的状态区。
-    private var directActivateButton: some View {
+    private func directActivateButton(retrySeconds: Int) -> some View {
         Button {
             Task { await activateDirectLicense() }
         } label: {
@@ -387,7 +409,7 @@ struct ProSettingsTab: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.regular)
-        .disabled(directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .disabled(retrySeconds > 0 || directLicenseManager.isRequestInFlight || directLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var directValidateButton: some View {
@@ -678,8 +700,15 @@ struct ProSettingsTab: View {
 
     private func activateDirectLicense() async {
         directValidationFailure = nil
+        directActivationFailureMessage = nil
         let didActivate = await directLicenseManager.activate(licenseKey: directLicenseKey)
-        guard didActivate else { return }
+        guard didActivate else {
+            // 限流使用动态倒计时，不能在倒计时结束后继续显示旧的“等待 N 秒”。
+            if directLicenseManager.activationRetrySeconds() == 0 {
+                directActivationFailureMessage = directLicenseManager.lastErrorMessage
+            }
+            return
+        }
         directLicenseKey = ""
         isReplacingLicense = false
         showActivationSuccess()

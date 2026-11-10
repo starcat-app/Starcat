@@ -24,6 +24,8 @@ struct GitHubNotificationDetailView: View {
     /// 顶部语言色光晕开关：活动-Issues 详情页保留；RepoIssues 工作台复用本组件时关闭
     /// （渐变属于活动详情页的设计语言，工作台详情页不携带，2026-11-01 dong4j 决策）。
     var showsHeroTint: Bool = true
+    /// README Issues 工作台可对齐窗口底色；默认保留活动通知原有的系统背景样式。
+    var commentComposerBackground: AnyShapeStyle = AnyShapeStyle(.background)
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
     @State private var isDoneHelpPresented = false
@@ -159,7 +161,8 @@ struct GitHubNotificationDetailView: View {
             issueTitle: item.title,
             repo: item.repo,
             isExpanded: $isComposerExpanded,
-            onAIFailure: presentAIFailure
+            onAIFailure: presentAIFailure,
+            background: commentComposerBackground
         )
         .frame(maxHeight: isComposerExpanded ? .infinity : nil)
     }
@@ -1942,6 +1945,8 @@ private struct GitHubNotificationCommentComposer: View {
     @Binding var isExpanded: Bool
     /// `(用户可读文案, 是否应显示「前往设置」)`。配置类错误与 README 翻译同一套判断。
     let onAIFailure: (String, Bool) -> Void
+    /// 只由宿主选择输入区底色，评论、草稿和编辑器行为继续共用。
+    let background: AnyShapeStyle
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -2031,7 +2036,7 @@ private struct GitHubNotificationCommentComposer: View {
         .animation(composerAnimation, value: showsFullComposer)
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(.background)
+        .background(background)
         .frame(maxHeight: isExpanded ? .infinity : nil)
         .sheet(item: $paywallContext) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)

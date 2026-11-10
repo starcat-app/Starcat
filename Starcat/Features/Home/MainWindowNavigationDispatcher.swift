@@ -29,6 +29,7 @@ struct GlobalRepoFilterState: Equatable {
     var ragIndexStateFilter: RepoRAGIndexStateFilter
     var insightsRiskFilter: RepoInsightsRiskFilter
     var licenseFilter: RepoLicenseFilter = .all
+    var skillFilter: RepoSkillFilter = .any
 
     static let neutral = GlobalRepoFilterState(
         hideArchived: false,
@@ -71,6 +72,7 @@ struct GlobalRepoFilterState: Equatable {
             language: repoLanguageFilter,
             selectedLanguages: Set(globalFilterLanguages),
             license: licenseFilter,
+            skill: skillFilter,
             wikiAvailability: wikiAvailabilityFilter,
             healthAvailability: healthAvailabilityFilter,
             openSSFAvailability: openSSFAvailabilityFilter,
@@ -98,6 +100,8 @@ final class MainWindowNavigationDispatcher {
         case releaseTimeline
         /// 收藏趋势 Widget 打开“我的洞察”根页面，不覆盖 Manage 的用户筛选。
         case insights
+        /// 状态面板查看同步只定位通知列表，不要求已有具体 thread。
+        case githubNotifications
         /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
         case repository(RepositoryDeepLink)
         /// Spotlight 只按稳定 ID 打开当前数据库实体，允许用户已授权索引的 private repository。

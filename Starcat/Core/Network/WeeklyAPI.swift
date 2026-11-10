@@ -318,7 +318,7 @@ actor WeeklyAPI {
         StarcatGatewayRouting.applyServiceHeader(to: &request, service: .weekly)
 
         do {
-            return try await session.data(for: request)
+            return try await DiagnosticHTTP.data(for: request, using: session, service: "weekly")
         } catch {
             throw WeeklyAPIError.transport(underlying: error)
         }

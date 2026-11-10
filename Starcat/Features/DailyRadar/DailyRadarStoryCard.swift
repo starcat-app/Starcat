@@ -22,7 +22,7 @@ struct DailyRadarStoryCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
                     GeometryReader { geometry in
-                        // featured 大卡左侧叠标题/摘要：程序化封面主体右移避让文字区；
+                        // featured 大卡左侧叠标题/摘要：程序化封面通过渐变保护文字区；
                         // 普通卡/阅读页 hero 文字不压封面，保持居中。
                         DailyRadarCoverView(cover: story.cover, category: story.category,
                                             seed: story.id,

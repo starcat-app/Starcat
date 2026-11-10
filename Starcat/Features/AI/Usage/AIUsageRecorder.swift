@@ -29,6 +29,16 @@ final class AIUsageRecorder: AIUsageRecording, @unchecked Sendable {
     }
 
     func record(_ event: AIUsageEvent) async {
+        // Provider、功能和统计字段来自内部枚举；不导出模型名、提问、回答或用量库全文。
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: event.status == "failed" ? .warning : .info,
+            category: "ai", operation: "usageResult", message: "AI operation result",
+            errorCode: event.errorCategory,
+            phase: "finished", outcome: DiagnosticEvent.Outcome(rawValue: event.status),
+            durationMs: Double(event.durationMs),
+            fields: ["provider": .string(event.providerKind), "feature": .string(event.feature),
+                     "itemCount": .integer(event.itemCount), "outputAvailable": .boolean(event.outputTokens != nil)]
+        ))
         let database = lock.withLock { self.database }
         guard let database else { return }
         do {

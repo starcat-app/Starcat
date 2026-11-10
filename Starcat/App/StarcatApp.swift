@@ -165,6 +165,10 @@ struct StarcatApp: App {
         // Dock 运行点而没有可见界面。
         .defaultLaunchBehavior(.presented)
         .commands {
+            // 只移除「窗口」菜单自动生成的单例窗口入口，业务入口统一放在「显示」菜单。
+            // 不能对主窗口 Scene 使用 commandsRemoved()，否则服务、隐藏、退出等系统命令会消失。
+            CommandGroup(replacing: .singleWindowList) {}
+
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
             CommandGroup(replacing: .appInfo) {
                 Button("app.about") {
@@ -190,9 +194,12 @@ struct StarcatApp: App {
 
         // 两个 AI 工作台继续由 SwiftUI Window Scene 承载，但隐藏重复标题栏，让业务 Header
         // 直接贴到窗口顶部；交通灯由 hiddenTitleBar 保留，分栏控制统一放回内容 Header。
-        Window("rag.workspace.window.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
+        Window("workspace.rag.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
             KnowledgeRAGWorkspaceSceneHost(coordinator: AIWorkspaceSceneCoordinator.shared)
         }
+        // 辅助窗口只保留业务入口（「显示」菜单），不向「窗口」菜单注入单例标题。
+        // 系统 Services / Hide / Quit 由主窗口 Scene 继续提供。
+        .commandsRemoved()
         .defaultSize(
             width: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.width,
             height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
@@ -205,6 +212,7 @@ struct StarcatApp: App {
                 .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
                 .appLocaleEnvironment()
         }
+        .commandsRemoved()
         .defaultSize(width: 960, height: 620)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
@@ -220,6 +228,7 @@ struct StarcatApp: App {
                 ))
             }
         }
+        .commandsRemoved()
         .defaultSize(
             width: AgentWorkspaceWindowMetrics.defaultContentSize.width,
             height: AgentWorkspaceWindowMetrics.defaultContentSize.height
@@ -233,12 +242,10 @@ struct StarcatApp: App {
         Window("Starcat", id: "settings") {
             settingsSceneRoot
         }
+        .commandsRemoved()
         .defaultSize(width: 720, height: 720)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
-        .commands {
-            SettingsWindowCommands(dependencies: dependencies)
-        }
     }
 
     // MARK: - 内容根视图
@@ -444,9 +451,12 @@ struct StarcatApp: App {
     // MARK: - Bootstrap
 
     private static func bootstrap() {
+        DiagnosticSessionLifecycle.start()
+        let diagnostic = DiagnosticOperation(category: "startup", name: "bootstrap")
         PerformanceTracer.shared.trace(.appBootstrap) {
             bootstrapBody()
         }
+        diagnostic.finish()
     }
 
     private static func bootstrapBody() {
@@ -482,6 +492,9 @@ struct StarcatApp: App {
             do {
                 try KeychainManager.shared.ping()
             } catch {
+                DiagnosticLogStore.record(level: .error, visibility: .issue, category: "keychain",
+                    operation: "startup.ping", message: "Keychain self-check failed",
+                    underlying: DiagnosticEvent.summarize(error))
                 AppLog.keychain.error("Keychain self-check failed: \(error.localizedDescription, privacy: .public)")
             }
         }
@@ -574,6 +587,7 @@ private struct StarcatAppCommands: Commands {
     let dependencies: AppDependencies?
     let commandRouter: StarcatCommandRouter
     let settings: AppSettings
+    @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.starcatRefreshAction) private var focusedRefreshAction
     @FocusedValue(\.starcatRepositoryAIAction) private var focusedRepositoryAIAction
     @FocusedValue(\.starcatReadmeFindAction) private var focusedReadmeFindAction
@@ -605,7 +619,7 @@ private struct StarcatAppCommands: Commands {
         // 「显示」菜单承接窗口 / 工作台类入口：全局搜索与各 AI 工作台都是
         // "打开某个界面"的性质，和纯动作（查找 / 刷新）分开，降低操作菜单长度。
         CommandGroup(after: .toolbar) {
-            Button("commands.actions.openGlobalSearch") {
+            Button("toolbar.globalSearch") {
                 commandRouter.openGlobalSearch()
             }
             .keyboardShortcut(
@@ -615,7 +629,7 @@ private struct StarcatAppCommands: Commands {
             )
             .disabled(!commandRouter.canOpenGlobalSearch)
 
-            Button("commands.actions.openKnowledgeRAGWorkspace") {
+            Button("workspace.rag.title") {
                 commandRouter.openKnowledgeRAGWorkspace()
             }
             .keyboardShortcut(
@@ -626,13 +640,18 @@ private struct StarcatAppCommands: Commands {
             .disabled(!commandRouter.canOpenKnowledgeRAGWorkspace)
 
             if dependencies?.distributionGate.isAvailable(.externalAgentRuntime) == true {
-                Button("toolbar.agentWorkspace.help") {
+                Button("agent.workspace.window.title") {
                     if let dependencies {
                         AgentWorkspaceWindowController.show(dependencies: dependencies)
                     }
                 }
                 .disabled(dependencies == nil)
             }
+
+            Button("localai.logs.title") {
+                openWindow(id: LocalAILogWindowSelection.sceneID)
+            }
+            .disabled(dependencies == nil)
 
             Button("commands.actions.openSelectedRepoAI") {
                 commandRouter.openCurrentRepositoryAI(preferred: focusedRepositoryAIAction)

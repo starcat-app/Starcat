@@ -12,7 +12,7 @@
 #
 # 前置依赖:
 #   - go (>= 1.26.10, 与各项目 go.mod 的安全基线对齐)
-#   - 端口 5001 / 5002 / 5003 / 5004 / 5005 / 5006 / 5011 未被占用
+#   - 端口 5001 / 5002 / 5003 / 5004 / 5005 / 5006 / 5011 / 5013 未被占用
 #
 # 流程:
 #   1. 定位脚本所在目录 = supports/ 根, 校验各项目目录都在
@@ -67,6 +67,7 @@ SERVICES=(
   "starcat-recommend-api|recommend|5005|SIMREPO_ENDPOINT CACHE_TTL_SUCCESS_SECONDS CACHE_TTL_EMPTY_SECONDS CACHE_TTL_ERROR_SECONDS"
   "starcat-discovery-api|discovery|5006|STORE_FILE SYNC_ENABLED"
   "starcat-collection-api|collection|5011|STORE_FILE"
+  "starcat-ai-events-api|ai-events|5013|STORE_FILE"
 )
 
 # /healthz 健康检查超时 (秒): 启动到第一次 200 OK 之间等待

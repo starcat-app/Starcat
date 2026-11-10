@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-10-23
+> 最后核对：2026-11-11
 
 ## 登记说明
 
@@ -32,11 +32,39 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev`（`016ec930`）实现每日推荐抽卡 MVP：透明整窗覆盖、真实多种子推荐、每日缓存与本地反馈。 | `开发中`；2026-11-04 创建，保留主工作区并行任务。 | 完成测试、双渠道构建及人工验收后合回 `dev`；不自动合并或 push。 |
+| `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 从 `dev@016ec930` 开发每日推荐抽卡，MVP 已提交 `348a18f4`；后续包含调试入口、设置开关、账号历史去重及跨天候选分页。 | `开发中`；2026-11-11 合入 `dev@8af2bbf1`，保留后续未提交增量；推荐 API 分页在独立仓库开发，尚未部署。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-10-23 以 fast-forward 提升到 `main` 并发布 Direct `v1.9.1`，两分支同步；后续 2.0.0 功能继续在此集成。 | 继续承载后续开发；Direct Beta 版通过 `scripts/release-direct-development.sh` 从本分支发布 `1.9.3-beta.N`；新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-10-23 从 `dev` fast-forward 到 `9d4cc2c2` 并打出 Direct `v1.9.1`（仅 Direct 渠道，App Store 未发布）。 | 保持稳定；下一版本验收后再从 `dev` 提升，打包、上传和发布须另行授权。 |
+| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-09 已从 `dev` fast-forward 到 `13d4ce17`，与 `dev` 同步。 | 保持稳定；下一版本验收后再从 `dev` 提升，打包、上传和发布须另行授权。 |
+
+## 每周 AI 大事跨仓工作区
+
+主仓分支 `codex/weekly-ai-events-mvp` 原基线 `dev@34b4554c`，正式化期间合入
+`dev@8be24cc8`。2026-11-06 dong4j 明确授权合回 `dev`，后续直接在主工作区及
+各独立仓的 `dev` 上开发；专项分支和 worktree 保留，不再承载后续开发。
+2026-11-09 dong4j 确认功能完成，内容与 API 仓库以 `v1.0.0` 标记发布输入，
+`origin/dev` 与 `origin/main` 同步；旧专项分支、远端分支和旧 worktree 删除。
+两仓远端默认分支均为 `dev`；内容仓后续 CI 修复单独同步到 `dev/main`，
+不改写已推送的 `v1.0.0`。Starcat 主仓已于 2026-11-09 将 `dev` 与 `main` 同步。
+
+| 仓库 | 当前开发目录（主工作区下） | 已整合功能提交 | 当前分支与归宿 |
+|---|---|---|---|
+| Starcat | `.` | `f5e3895c`，合并前 dev 为 `d166608a` | `dev`；保留已合入的关注图谱等开发 |
+| Weekly API | `supports/starcat-weekly-api` | `ed1402cb`，原 dev 为 `622a708` | `dev`；fast-forward，保留原日报 |
+| 聚合 API | `supports/starcat-api` | `0c069881`，原 dev 为 `d2fcf37` | `dev`；fast-forward，沿用既有聚合部署 |
+| 内容与 Skill | `supports/starcat-ai-events` | `737aff73`，包含业务操作手册 | `dev`；2026-11-09 发布输入固定 `v1.0.0`，不再使用专项分支 |
+| AI Events API | `supports/starcat-ai-events-api` | `ddf410b1` | `dev`；2026-11-09 发布输入固定 `v1.0.0`，仍装配进聚合，不建独立 Fly App |
+
+全局 `starcat-weekly-events` Skill 链接改指向主工作区
+`supports/starcat-ai-events/skills/starcat-weekly-events`，使用该仓 `dev` 中的版本。
+新两仓的本地配置和内容图片缓存一并衔接；不迁移或覆盖后端数据库。
+
+2026-11-09 已清理原专项 worktree 及其支持仓 worktree 登记；主工作区的依赖仓库
+保持各自现有分支。内容与 AI Events API 仓库已在主工作区恢复为独立 clone，
+Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布状态保留。
+部署固定 SHA 仍见 `supports/starcat-api/dependencies.json`；本次分支收尾不重新部署，
+不修改内容与 API 仓库的 Private 状态。
 
 ## 推荐数据链路跨仓分支
 
@@ -46,6 +74,16 @@
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/skills-ui-preview` | 已合并；worktree 已删除，本地分支保留。 | 2026-11-11 dong4j 授权删除 worktree；分支头 `3c32d0c7` 已通过 merge commit `6faa19fa` 合入 `dev`，独有提交为 0，`git cherry` 与内容 diff 为空，worktree 干净。已通过 `git worktree remove` 删除 `../Starcat-skills-ui-preview`，本次未推送。 |
+| `codex/diagnostics-overhaul` | 已删除 | 2026-11-10 dong4j 授权合回并删除；`3e69373c` 已以 merge commit `8813bf46` 合入 `dev`，`git cherry` 与内容 diff 为空，worktree 干净，已删除 `../Starcat-diagnostics-overhaul` 与本地分支，解析 Skill 链接改指向主仓。从未存在远端分支。 |
+| `codex/background-task-integration` | 已删除 | 2026-11-10 dong4j 授权删除；`c56a9a48` 已合入 `dev`（merge `1ce18786`），`git cherry` 为空、diff 为空，worktree 干净，已删除 `../Starcat-background-task-integration` 与本地分支。从未存在远端分支。 |
+| `codex/followers-graph` | 已删除 | 2026-11-09 dong4j 授权清理；`d4ffce59` 已合入 `dev`，worktree 干净，已删除 `../Starcat-followers-graph` 与本地分支。 |
+| 主仓 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认每周 AI 大事完成，授权删除旧 worktree `../Starcat-weekly-ai-events-mvp` 及本地/远端同名分支；功能已合入主仓 `dev`，主仓 `main` 未在本次同步。 |
+| 内容 `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`737aff73` 已是内容仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events` worktree 干净并已删除。 |
+| AI Events API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 dong4j 确认功能完成后授权删除；`ddf410b1` 已是该仓库 `dev`（`v1.0.0`）的祖先，旧 `../Starcat-weekly-ai-events-mvp/supports/starcat-ai-events-api` worktree 干净并已删除。 |
+| Weekly API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 清理同一专项遗留；`ed1402cb` 与 `dev` 相同，独有提交为 0，旧 worktree 登记及本地/远端同名分支已删除。 |
+| 聚合 API `codex/weekly-ai-events-mvp` | 已删除 | 2026-11-09 清理同一专项遗留；`0c069881` 已是 `dev` 的祖先，独有提交为 0，旧 worktree 登记及本地/远端同名分支已删除。 |
+| `codex/follow-graph-mvp` | 已删除 | 2026-11-09 dong4j 授权清理；`e0021690` 已合入 `dev`，worktree 干净，已删除 `../Starcat-follow-graph-mvp` 与本地分支。 |
 | `codex/performance-optimization` | 已删除 | 截至 2026-10-11，本地与远端均已不存在该分支，且没有对应 worktree；性能专项改动已在 `dev`。 |
 | `feature/anthropic-cc-switch-import` | 已删除 | 2026-09-14 dong4j 确认删除。已以 merge commit（`1341600a`）合入 `dev`，删除前 `merge-base --is-ancestor` 成立、独有提交 0、`git cherry` 为空、diff 为空；`../Starcat-anthropic-cc-switch` worktree 干净后 `git worktree remove`，再 `git branch -d`（HEAD `2ab786f2`）。从未存在远端分支。 |
 | `feature/settings-ui-unify` | 已删除 | 2026-09-14 dong4j 确认删除。已以 merge commit（`a7a4c5c7`）合入 `dev`，删除前 `merge-base --is-ancestor` 成立、独有提交 0、`git cherry` 为空、`../Starcat-settings-ui-unify` worktree 干净后 `git worktree remove`，再 `git branch -d`（HEAD `bb013ab1`）。从未存在远端分支。 |
@@ -64,3 +102,8 @@
 | `feature/rag` | 已删除 | Git 历史未直接合并，但 17 个独有提交的功能已被当前 RAG 实现完整覆盖或升级替代。 |
 | `codex/search` | 已删除 | dong4j 已删除远端 `origin/codex/search`；本地无该分支、无 worktree。公开前不再保留这条改写前的旧历史。 |
 | `codex/chrome-companion` | 已删除 | 旧提交 `901efc38` 已被项目明确废弃；当前 Companion App 端和独立 Chrome 插件仓库采用重写后的正式方案。 |
+
+2026-11-06 交付核对：内容 `12bf3159`、独立 API `ddf410b1`、Weekly 迁出 `ed1402cb`、
+聚合 `0c069881` 均已推送同名功能分支。聚合 release 39 在现有单 Machine 部署，
+八服务健康与业务只读抽样通过；内容及新后端仍为 Private。人工验收与
+`AI_EVENTS_READ_TOKEN` 配置尚待完成，验收清单见正式链路设计文档。

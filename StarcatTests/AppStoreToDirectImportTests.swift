@@ -76,6 +76,97 @@ struct AppStoreToDirectImportTests {
         )
     }
 
+    @Test("已有导入决策时不探测商店容器，避免每次启动重复弹授权框", arguments: [
+        AppStoreToDirectImportDecision.skipped, .imported
+    ])
+    func skipsStoreProbeWhenDecisionAlreadyRecorded(recordedDecision: AppStoreToDirectImportDecision) throws {
+        let suite = "starcat.direct-import.probe.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        AppStoreToDirectImportDecisionStore(defaults: defaults).record(recordedDecision)
+        // 重建决策存储，模拟后续冷启动读取之前的“跳过 / 已导入”选择。
+        let restored = AppStoreToDirectImportDecisionStore(defaults: defaults)
+        #expect(restored.decision == recordedDecision)
+        var destinationProbes = 0
+        var storeProbes = 0
+
+        let decision = AppStoreToDirectImportEvaluator.decidePrompt(
+            isEligibleDirectBuild: true,
+            hasRecordedDecision: restored.decision != nil,
+            destinationIsEmpty: { destinationProbes += 1; return true },
+            storeHasImportableData: { storeProbes += 1; return true }
+        )
+
+        #expect(decision.shouldPrompt == false)
+        #expect(decision.destinationProbed == false)
+        #expect(decision.storeProbed == false)
+        #expect(destinationProbes == 0)
+        #expect(storeProbes == 0)
+    }
+
+    @Test("非 Direct 渠道启动时不探测商店容器")
+    func skipsStoreProbeForNonDirectChannel() {
+        var destinationProbes = 0
+        var storeProbes = 0
+
+        let decision = AppStoreToDirectImportEvaluator.decidePrompt(
+            isEligibleDirectBuild: false,
+            hasRecordedDecision: false,
+            destinationIsEmpty: { destinationProbes += 1; return true },
+            storeHasImportableData: { storeProbes += 1; return true }
+        )
+
+        #expect(decision.shouldPrompt == false)
+        #expect(destinationProbes == 0)
+        #expect(storeProbes == 0)
+    }
+
+    @Test("Direct 已有用户数据时不探测商店容器")
+    func skipsStoreProbeWhenDestinationNotEmpty() {
+        var destinationProbes = 0
+        var storeProbes = 0
+
+        let decision = AppStoreToDirectImportEvaluator.decidePrompt(
+            isEligibleDirectBuild: true,
+            hasRecordedDecision: false,
+            destinationIsEmpty: { destinationProbes += 1; return false },
+            storeHasImportableData: { storeProbes += 1; return true }
+        )
+
+        #expect(decision.shouldPrompt == false)
+        #expect(decision.destinationProbed)
+        #expect(decision.storeProbed == false)
+        #expect(destinationProbes == 1)
+        #expect(storeProbes == 0)
+    }
+
+    @Test("确有需要时才探测商店容器，弹出条件不变")
+    func probesStoreOnlyWhenPromptPossible() {
+        var probes: [String] = []
+
+        let prompts = AppStoreToDirectImportEvaluator.decidePrompt(
+            isEligibleDirectBuild: true,
+            hasRecordedDecision: false,
+            destinationIsEmpty: { probes.append("destination"); return true },
+            storeHasImportableData: { probes.append("store"); return true }
+        )
+        #expect(prompts.shouldPrompt)
+        #expect(prompts.storeProbed)
+        #expect(prompts.storeHasImportableData)
+        #expect(probes == ["destination", "store"])
+
+        probes.removeAll()
+        let staysSilent = AppStoreToDirectImportEvaluator.decidePrompt(
+            isEligibleDirectBuild: true,
+            hasRecordedDecision: false,
+            destinationIsEmpty: { probes.append("destination"); return true },
+            storeHasImportableData: { probes.append("store"); return false }
+        )
+        #expect(staysSilent.shouldPrompt == false)
+        #expect(staysSilent.storeProbed)
+        #expect(probes == ["destination", "store"])
+    }
+
     @Test("Debug 商店容器不参与检测，正式商店库才算可导入")
     func ignoresDebugStoreContainer() throws {
         try withImportHome { home, layout, fileManager in

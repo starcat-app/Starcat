@@ -1777,6 +1777,8 @@ private struct StorageSettingsTab: View {
             }
 
             // 总览独立常驻，保留四类占比、颜色及原有汇总口径，折叠明细不会隐藏统计。
+            FollowGraphCacheStatisticsView()
+
             Section {
                 StorageCacheUsageOverviewCard(snapshot: cacheUsageOverviewSnapshot)
                 HStack(spacing: 8) {

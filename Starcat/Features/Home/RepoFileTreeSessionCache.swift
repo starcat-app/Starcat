@@ -15,6 +15,33 @@ actor RepoFileTreeSessionCache {
     static let shared = RepoFileTreeSessionCache()
 
     private var trees: [String: GitHubGitTreeDTO] = [:]
+    private var generation: UInt64 = 0
+
+    /// 在解析分支前捕获身份；切账号后才进入 load 的旧调用也必须失效。
+    func currentGeneration() -> UInt64 { generation }
+
+    /// 下载文件与 Skill 扫描共用这个入口；只缓存固定提交，并将凭据客户端纳入 key。
+    func load(
+        owner: String, repo: String, ref: String, scope: String,
+        api: any GitHubAPIClientProtocol, force: Bool = false, expectedGeneration: UInt64? = nil
+    ) async throws -> GitHubGitTreeDTO {
+        if let expectedGeneration, expectedGeneration != generation { throw CancellationError() }
+        let scopedKey = scope + ":" + Self.key(owner: owner, repo: repo, ref: ref)
+        if !force, let tree = trees[scopedKey] { return tree }
+        let expected = generation
+        let tree = try await api.repositoryGitTree(owner: owner, repo: repo, ref: ref)
+        try Task.checkCancellation()
+        guard generation == expected else { throw CancellationError() }
+        if trees.count >= 24 { trees.removeAll() }
+        trees[scopedKey] = tree
+        return tree
+    }
+
+    /// 切账号先推进代际，旧请求即使迟到也不能重新填充私有缓存。
+    func reset() {
+        generation &+= 1
+        trees.removeAll()
+    }
 
     func tree(owner: String, repo: String, ref: String) -> GitHubGitTreeDTO? {
         trees[Self.key(owner: owner, repo: repo, ref: ref)]

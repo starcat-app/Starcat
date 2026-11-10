@@ -179,6 +179,7 @@ struct ExploreView: View {
 }
 
 private struct ExploreDiscoveryListView: View {
+    @State private var skillPageBudget = RepoSkillPageBudget()
 
     let viewModel: ExploreDiscoveryViewModel
     let mode: ExploreMode
@@ -251,6 +252,15 @@ private struct ExploreDiscoveryListView: View {
         }
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.repos)
+        }
+        .task(id: "\(skillScanScope):\(viewModel.reposRevision):\(skillCandidates.map(\.id)):\(dependencies.repoSkillStore.paginationRevision)") {
+            guard settings.skillFilter != .any else { return }
+            dependencies.repoSkillStore.enqueue(skillCandidates, scope: skillScanScope)
+            await fillSkillResults()
+        }
+        .onChange(of: dependencies.repoSkillStore.revision) { _, _ in
+            reportRepoCount()
+            if settings.skillFilter != .any { applySelectionPolicy() }
         }
         .onChange(of: viewModel.reposRevision) { _, _ in
             guard hasPublishedCurrentQuery else { return }
@@ -661,8 +671,10 @@ private struct ExploreDiscoveryListView: View {
         repoId: Int64,
         language: String?,
         isArchived: Bool,
-        isFork: Bool
+        isFork: Bool,
+        includingSkill: Bool = true
     ) -> Bool {
+        if includingSkill, !settings.skillFilter.matches(dependencies.repoSkillStore.presence(repositoryID: repoId)) { return false }
         guard settings.starFilter.matches(
             isStarred: dependencies.starredRegistry.contains(ghRepoId: repoId)
         ) else { return false }
@@ -767,13 +779,14 @@ private struct ExploreDiscoveryListView: View {
     }
 
     private func applySelectionPolicy() {
-        guard !viewModel.repos.isEmpty else {
+        let repos = settings.skillFilter == .any ? viewModel.repos : globalFilteredRepos(viewModel.repos)
+        guard !repos.isEmpty else {
             selectedRepoID = nil
             selectedRepo = nil
             return
         }
         if let id = selectedRepoID,
-           let repo = viewModel.repos.first(where: { $0.repoID == id }) {
+           let repo = repos.first(where: { $0.repoID == id }) {
             selectedRepo = repo
             return
         }
@@ -781,13 +794,42 @@ private struct ExploreDiscoveryListView: View {
             selectedRepo = nil
             return
         }
-        guard let first = viewModel.repos.first else { return }
+        guard let first = repos.first else { return }
         selectedRepoID = first.repoID
         selectedRepo = first
     }
 
     private func reportRepoCount() {
-        onRepoCountChange(viewModel.total)
+        onRepoCountChange(settings.skillFilter == .any ? viewModel.total : globalFilteredRepos(viewModel.repos).count)
+    }
+
+    private var skillScanScope: String {
+        "explore:\(queryIdentity):\(settings.skillScanFilterIdentity)"
+    }
+
+    private var skillCandidates: [Repo] {
+        viewModel.repos.filter {
+            matchesGlobalFilters(repoId: $0.repoID, language: $0.language,
+                                 isArchived: $0.isArchived, isFork: $0.isFork, includingSkill: false)
+        }.map { $0.toEphemeralRepo(isStarred: dependencies.starredRegistry.contains(ghRepoId: $0.repoID)) }
+    }
+
+    /// 来源页没有命中时仍向后消费；每次最多补 20 页，并始终显示已核实数量。
+    private func fillSkillResults() async {
+        for _ in 0..<20 {
+            guard !Task.isCancelled, settings.skillFilter != .any,
+                  indexedRepos.count < 40, viewModel.nextPage != nil, !viewModel.isLoading else { return }
+            guard skillPageBudget.claim(scope: "\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") else { return }
+            let count = viewModel.repos.count
+            await viewModel.loadMoreIfNeeded(
+                repository: dependencies.discoveryRepository, currentRepo: nil,
+                mode: mode, language: mode == .discover ? nil : selectedLanguage,
+                topic: mode == .discover ? selectedTopic : nil,
+                platform: mode == .discover ? selectedPlatform : nil, sort: currentSort,
+                searchQuery: quickSearchQuery, licenseFilter: settings.licenseFilter
+            )
+            if viewModel.repos.count == count { return }
+        }
     }
 
     /// bulk 与 Sidebar 必须发布同一份 summary，避免应用长时间运行后根分类计数停在启动值。

@@ -230,7 +230,7 @@ actor TrendingAPI {
         StarcatGatewayRouting.applyServiceHeader(to: &request, service: .trending)
 
         do {
-            return try await session.data(for: request)
+            return try await DiagnosticHTTP.data(for: request, using: session, service: "trending")
         } catch {
             throw TrendingAPIError.transport(underlying: error)
         }

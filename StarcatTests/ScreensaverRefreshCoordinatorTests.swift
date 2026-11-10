@@ -71,6 +71,9 @@ struct ScreensaverRefreshCoordinatorTests {
 
             #expect(await downloader.count == 1)
             #expect(try store.load().cards.first?.imageFileName != nil)
+            // 等待排队的进度回调后仍须空闲，状态面板不能在完成后留下任务。
+            for _ in 0..<10 { await Task.yield() }
+            #expect(coordinator.avatarProgress == nil)
         }
     }
 

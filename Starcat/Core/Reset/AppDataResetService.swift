@@ -45,19 +45,22 @@ final class AppDataResetService {
     private let fileManager: FileManager
     private let databaseBasePathOverride: URL?
     private let standardDefaults: UserDefaults
+    private let followGraphCache: FollowGraphDiskCache
 
     init(
         database: any DatabaseManaging,
         settings: AppSettings,
         fileManager: FileManager = .default,
         databaseBasePathOverride: URL? = nil,
-        standardDefaults: UserDefaults = .standard
+        standardDefaults: UserDefaults = .standard,
+        followGraphCache: FollowGraphDiskCache = .shared
     ) {
         self.database = database
         self.settings = settings
         self.fileManager = fileManager
         self.databaseBasePathOverride = databaseBasePathOverride
         self.standardDefaults = standardDefaults
+        self.followGraphCache = followGraphCache
     }
 
     /// 执行本机恢复出厂。
@@ -80,6 +83,7 @@ final class AppDataResetService {
         await releaseCurrentSession()
         try await database.reopen(userId: nil)
         await clearGeneratedCaches()
+        try await followGraphCache.remove(account: String(target.userID))
         try removeUserDatabaseDirectory(userID: target.userID)
         try settings.resetToDefaults()
         resetNonSettingsDefaults()

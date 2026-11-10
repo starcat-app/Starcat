@@ -142,6 +142,8 @@ set +e
   -archivePath "$ARCHIVE_PATH" \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   "${BUILD_SETTINGS[@]}" \
   clean archive \
   >"$BUILD_LOG" 2>&1
@@ -152,6 +154,8 @@ if [ "$BUILD_EXIT" -ne 0 ]; then
   tail -80 "$BUILD_LOG" >&2
   fail "archive 失败，完整日志: $BUILD_LOG"
 fi
+
+python3 scripts/sync-swift-package-lock.py check
 
 APP_PATH="${ARCHIVE_PATH}/Products/Applications/Starcat.app"
 [ -d "$APP_PATH" ] || fail "archive 中未找到 Starcat.app"

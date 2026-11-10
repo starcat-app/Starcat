@@ -121,6 +121,13 @@ final class ScreensaverRefreshCoordinator {
         publishGeneration &+= 1
         let generation = publishGeneration
         avatarProgress = ScreensaverAvatarProgress(completed: 0, total: 0)
+        defer {
+            if generation == publishGeneration {
+                // 发布回调通过 MainActor Task 排队；结束后使其失效，避免最后一条进度重建幽灵任务。
+                publishGeneration &+= 1
+                avatarProgress = nil
+            }
+        }
         do {
             let publisher = try makePublisher()
             try await publisher.publish(userID: userID) { [weak self] completed, total in
@@ -132,12 +139,7 @@ final class ScreensaverRefreshCoordinator {
                     )
                 }
             }
-            guard generation == publishGeneration else { return }
-            avatarProgress = nil
         } catch {
-            if generation == publishGeneration {
-                avatarProgress = nil
-            }
             AppLog.general.error(
                 "Screensaver snapshot publish failed: \(error.localizedDescription, privacy: .public)"
             )
@@ -148,6 +150,7 @@ final class ScreensaverRefreshCoordinator {
         guard isEnabled else { return }
         guard bypassTestHostGate || !TestEnvironment.isRunning else { return }
         publishGeneration &+= 1
+        avatarProgress = nil
         pendingRefreshTask?.cancel()
         publishTask?.cancel()
         publishTask = nil

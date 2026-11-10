@@ -242,6 +242,24 @@ final class SyncManager {
     // MARK: - 实现
 
     private func runSync(userID: Int64, force: Bool, trigger: Trigger, generation: UInt64) async {
+        let diagnostic = DiagnosticOperation(category: "sync", name: "stars",
+                                             fields: ["force": .boolean(force)])
+        await DiagnosticContext.$current.withValue(diagnostic) {
+            await runSyncBody(userID: userID, force: force, trigger: trigger, generation: generation)
+        }
+        let outcome: DiagnosticEvent.Outcome
+        switch state {
+        case .completed: outcome = .succeeded
+        case .failed, .rateLimited: outcome = .failed
+        case .idle: outcome = .cancelled
+        case .syncing: outcome = .partial
+        }
+        diagnostic.finish(outcome, fields: ["mergedCount": .integer(progress?.current ?? 0),
+                                            "page": .integer(progress?.currentPage ?? 0)])
+    }
+
+    /// 仅增加操作上下文，保留原重试、账号切换和同步收尾语义。
+    private func runSyncBody(userID: Int64, force: Bool, trigger: Trigger, generation: UInt64) async {
         lastRunWroteRepos = false
         state = .syncing
         progress = SyncProgress(current: 0, total: nil, currentPage: 1)
@@ -288,6 +306,10 @@ final class SyncManager {
                 let response: APIResponse<[StarredRepoDTO]>
                 do {
                     response = try await apiClient.starredRepos(page: page, perPage: perPage, ifNoneMatch: ifNoneMatch)
+                    DiagnosticContext.current?.event(phase: "pageFetched", fields: [
+                        "page": .integer(page), "fetchedCount": .integer(response.value.count),
+                        "mergedCount": .integer(totalSynced), "incremental": .boolean(incrementalMode)
+                    ])
                 } catch NetworkError.rateLimited(let retryAfter) where !rateLimitRetried {
                     rateLimitRetried = true
                     try await waitForRateLimit(retryAfter: retryAfter)

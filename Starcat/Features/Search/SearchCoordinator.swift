@@ -22,7 +22,14 @@ final class SearchCoordinator {
     private(set) var references: [ReferenceCandidate] = []
 
     private let providers: [any SearchProvider]
-    private var activeTask: Task<Void, Never>?
+    /// 每个来源独立持有任务，翻页只影响该来源；否则 GitHub 翻页会取消仍在计算的语义结果
+    private var activeTasks: [SearchSource: (request: SearchRequest, task: Task<Bool, Never>)] = [:]
+    /// 成功快照与加载/失败状态分离，分页失败和范围切换都不能丢掉已成功返回的页
+    private var loadedPages: [SearchSource: SearchProviderPage] = [:]
+    /// 保存来源自己的查询身份，不能拿最后展示的范围请求冒充隐藏来源的缓存参数
+    private var providerRequests: [SearchSource: SearchRequest] = [:]
+    /// 用户已落库的操作覆盖会话快照，也覆盖操作之前发出、操作之后才返回的响应
+    private var libraryUpdates: [LibraryUpdate] = []
     private var generation: UInt64 = 0
     /// 最近一次有效请求。切换 scope 时用来判断哪些来源还能直接展示。
     private var currentRequest: SearchRequest?
@@ -32,9 +39,13 @@ final class SearchCoordinator {
     }
 
     func reset() {
-        activeTask?.cancel()
+        activeTasks.values.forEach { $0.task.cancel() }
+        activeTasks = [:]
         generation &+= 1
         currentRequest = nil
+        loadedPages = [:]
+        providerRequests = [:]
+        libraryUpdates = []
         statuses = [:]
         repositories = []
         references = []
@@ -44,34 +55,24 @@ final class SearchCoordinator {
     ///
     /// ViewModel 可以选择 await 以驱动测试，也可以包在自己的 Task 中调用。
     func search(_ request: SearchRequest) async {
-        activeTask?.cancel()
-        generation &+= 1
+        reset()
         currentRequest = request
-        let requestGeneration = generation
         let selectedProviders = providers.filter { Self.shouldRun($0.source, for: request) }
 
-        if request.query.isEmpty {
-            reset()
-            return
-        }
-
-        repositories = []
-        references = []
-        statuses = Dictionary(uniqueKeysWithValues: selectedProviders.map { ($0.source, .loading) })
-
-        await runProviders(selectedProviders, request: request, generation: requestGeneration)
+        guard !request.query.isEmpty else { return }
+        await runProviders(selectedProviders, request: request)
     }
 
     /// 切换 scope：同一句 query 下保留已加载来源，只补跑当前 scope 还没有的 Provider。
     ///
-    /// 不取消正在进行的任务、不递增 generation，避免「全部 → 本地」把还在飞的语义结果丢掉。
-    /// query 变了或从未搜过，则退回完整 `search`。
-    func updateScope(_ request: SearchRequest) async {
+    /// 参数兼容时不取消在途任务、不递增 generation，避免「全部 → 本地」丢掉语义结果
+    /// 显式应用筛选只刷新对应来源；query 变了或从未搜过则退回完整 `search`
+    func updateScope(_ request: SearchRequest, refreshing refreshedSource: SearchSource? = nil) async {
         if request.query.isEmpty {
             reset()
             return
         }
-        guard let previousRequest = currentRequest, previousRequest.query == request.query else {
+        guard currentRequest?.query == request.query else {
             await search(request)
             return
         }
@@ -79,25 +80,27 @@ final class SearchCoordinator {
         self.currentRequest = request
         let needed = providers.filter { Self.shouldRun($0.source, for: request) }
         let missing = needed.filter { provider in
-            !Self.canReuse(
-                source: provider.source,
-                status: statuses[provider.source],
-                from: previousRequest,
-                to: request
-            )
+            provider.source == refreshedSource || !canReuse(source: provider.source, for: request)
         }
 
         rebuildLoadedResults()
         guard !missing.isEmpty else { return }
 
-        for provider in missing {
-            statuses[provider.source] = .loading
-        }
-        await runProviders(missing, request: request, generation: generation)
+        await runProviders(missing, request: request)
     }
 
     func status(for source: SearchSource) -> SearchProviderStatus {
         statuses[source] ?? .idle
+    }
+
+    /// 失败时仍可从最后成功页重试；提交新查询会清空快照，自然回到第一页
+    func loadedPage(for source: SearchSource) -> SearchProviderPage? {
+        loadedPages[source]
+    }
+
+    var currentGitHubPage: Int {
+        guard loadedPages[.github] != nil else { return 1 }
+        return providerRequests[.github]?.page ?? 1
     }
 
     /// 用户在 Search Center 里直接修改知识库状态后，原地刷新已加载候选。
@@ -111,56 +114,26 @@ final class SearchCoordinator {
         state: LibraryState,
         persistedRepo: Repo?
     ) {
-        repositories = repositories.map { candidate in
-            guard Self.isSameRepository(candidate.identity, identity) else { return candidate }
-            var updated = candidate
-            updated.card = candidate.card.withLibraryState(state)
-            if let persistedRepo {
-                updated.localRepo = persistedRepo
-                if updated.remoteRepo == nil {
-                    updated.remoteRepo = persistedRepo
-                }
-            }
-            return updated
-        }
+        // 远端预览持有打开时的候选；连续加入再移出时第二次回调可能仍没有 localRepo
+        // 仓库元数据已经落库，移出知识库不能把此前确认的本地身份一并抹掉
+        let knownRepo = persistedRepo ?? libraryUpdates.first {
+            Self.isSameRepository($0.identity, identity)
+        }?.persistedRepo
+        libraryUpdates.removeAll { Self.isSameRepository($0.identity, identity) }
+        libraryUpdates.append(LibraryUpdate(identity: identity, state: state, persistedRepo: knownRepo))
+        rebuildLoadedResults()
     }
 
-    /// 只追加单一来源的下一页。分页不能复用 `search`，因为后者会清空已有本地与远端
-    /// 结果；这里仍递增 generation，保证快速连续点击时旧页不会迟到写回。
-    func loadMore(_ request: SearchRequest, source: SearchSource) async {
-        guard let provider = providers.first(where: { $0.source == source }) else { return }
-        activeTask?.cancel()
-        generation &+= 1
+    /// 只追加单一来源的下一页。成功后才提交页码，失败时保留上一页和重试入口
+    /// generation 属于整次查询，分页不能递增它，否则其他来源的在途结果会被误判为过期
+    @discardableResult
+    func loadMore(_ request: SearchRequest, source: SearchSource) async -> Bool {
+        guard currentRequest?.query == request.query,
+              activeTasks[source] == nil,
+              let provider = providers.first(where: { $0.source == source }) else { return false }
         currentRequest = request
-        let requestGeneration = generation
-        statuses[source] = .loading
-
-        let task = Task {
-            do {
-                let page = try await provider.search(request)
-                guard !Task.isCancelled, requestGeneration == generation else { return }
-                statuses[source] = .loaded(page)
-                repositories = Self.mergeRepositories(existing: repositories, incoming: page.repositories)
-                references = Self.mergeReferences(existing: references, incoming: page.references)
-            } catch {
-                guard !Task.isCancelled, requestGeneration == generation else { return }
-                statuses[source] = .failed(error.localizedDescription)
-            }
-        }
-        activeTask = task
-        await task.value
-    }
-
-    private func consume(_ outcome: ProviderOutcome, generation outcomeGeneration: UInt64) {
-        guard outcomeGeneration == generation else { return }
-
-        switch outcome.result {
-        case .success(let page):
-            statuses[outcome.source] = .loaded(page)
-            rebuildLoadedResults()
-        case .failure(let error):
-            statuses[outcome.source] = .failed(error.localizedDescription)
-        }
+        let task = startProvider(provider, request: request, append: true)
+        return await task.value
     }
 
     /// Provider 并发完成顺序不稳定，不能直接决定最终列表顺序。每次有新页返回时都按
@@ -174,7 +147,7 @@ final class SearchCoordinator {
 
         for source in displayOrder {
             if let request, !Self.shouldRun(source, for: request) { continue }
-            guard case .loaded(let page) = statuses[source] else { continue }
+            guard let page = loadedPages[source] else { continue }
             mergedRepositories = Self.mergeRepositories(
                 existing: mergedRepositories,
                 incoming: page.repositories
@@ -185,56 +158,93 @@ final class SearchCoordinator {
             )
         }
 
-        repositories = mergedRepositories
+        repositories = mergedRepositories.map { candidate in
+            guard let update = libraryUpdates.first(where: {
+                Self.isSameRepository($0.identity, candidate.identity)
+            }) else { return candidate }
+            var updated = candidate
+            updated.card = candidate.card.withLibraryState(update.state)
+            if let repo = update.persistedRepo {
+                updated.localRepo = repo
+                if updated.remoteRepo == nil {
+                    updated.remoteRepo = repo
+                }
+            }
+            return updated
+        }
         references = mergedReferences
     }
 
     private func runProviders(
         _ selectedProviders: [any SearchProvider],
-        request: SearchRequest,
-        generation requestGeneration: UInt64
+        request: SearchRequest
     ) async {
-        let task = Task { [providers = selectedProviders] in
-            await withTaskGroup(of: ProviderOutcome.self) { group in
-                for provider in providers {
-                    group.addTask {
-                        do {
-                            return ProviderOutcome(
-                                source: provider.source,
-                                result: .success(try await provider.search(request))
-                            )
-                        } catch {
-                            return ProviderOutcome(source: provider.source, result: .failure(error))
-                        }
-                    }
-                }
-
-                for await outcome in group {
-                    guard !Task.isCancelled else { return }
-                    self.consume(outcome, generation: requestGeneration)
-                }
-            }
+        // 先创建全部来源任务再等待，因此仍然并发执行；句柄按来源保留以支持独立取消
+        let tasks = selectedProviders.map { startProvider($0, request: request, append: false) }
+        for task in tasks {
+            _ = await task.value
         }
-        activeTask = task
-        await task.value
     }
 
-    /// 已 loaded 且筛选参数没变才能复用；loading 表示同一 generation 还在飞，不要再开一份。
-    /// failed 在切回该来源时重试，避免一次 GitHub 失败把后续「全部」永久卡住。
-    private static func canReuse(
-        source: SearchSource,
-        status: SearchProviderStatus?,
-        from old: SearchRequest,
-        to new: SearchRequest
-    ) -> Bool {
-        switch status {
-        case .loading:
-            return true
-        case .loaded:
-            return isCompatible(source: source, from: old, to: new)
-        case .idle, .failed, nil:
-            return false
+    /// 将来源的请求、快照和状态一起提交，防止旧任务清除替代任务的句柄或覆盖新查询
+    private func startProvider(
+        _ provider: any SearchProvider,
+        request: SearchRequest,
+        append: Bool
+    ) -> Task<Bool, Never> {
+        let source = provider.source
+        activeTasks[source]?.task.cancel()
+        let requestGeneration = generation
+        if !append {
+            loadedPages[source] = nil
+            providerRequests[source] = request
         }
+        statuses[source] = .loading
+        rebuildLoadedResults()
+
+        let task = Task {
+            do {
+                let page = try await provider.search(request)
+                guard !Task.isCancelled, requestGeneration == generation else { return false }
+                let accumulated: SearchProviderPage
+                if append, let previous = loadedPages[source] {
+                    accumulated = SearchProviderPage(
+                        repositories: Self.mergeRepositories(
+                            existing: previous.repositories, incoming: page.repositories
+                        ),
+                        references: Self.mergeReferences(
+                            existing: previous.references, incoming: page.references
+                        ),
+                        totalCount: page.totalCount,
+                        hasNextPage: page.hasNextPage,
+                        webMetadata: page.webMetadata
+                    )
+                } else {
+                    // 首页直接保存，避免本地全量结果在展示合并之外再做一遍去重
+                    accumulated = page
+                }
+                loadedPages[source] = accumulated
+                providerRequests[source] = request
+                statuses[source] = .loaded(accumulated)
+                rebuildLoadedResults()
+                activeTasks[source] = nil
+                return true
+            } catch {
+                guard !Task.isCancelled, requestGeneration == generation else { return false }
+                statuses[source] = .failed(error.localizedDescription)
+                activeTasks[source] = nil
+                return false
+            }
+        }
+        activeTasks[source] = (request, task)
+        return task
+    }
+
+    /// 在途请求同样要校验参数；分页失败仍可展示成功快照，首次失败则在切回时重试
+    private func canReuse(source: SearchSource, for request: SearchRequest) -> Bool {
+        guard let previous = activeTasks[source]?.request ?? providerRequests[source],
+              Self.isCompatible(source: source, from: previous, to: request) else { return false }
+        return activeTasks[source] != nil || loadedPages[source] != nil
     }
 
     private static func isCompatible(source: SearchSource, from old: SearchRequest, to new: SearchRequest) -> Bool {
@@ -246,13 +256,11 @@ final class SearchCoordinator {
             return old.minimumSemanticScore == new.minimumSemanticScore
         case .github:
             return old.githubFilters == new.githubFilters
-                && old.page == new.page
                 && old.perPage == new.perPage
         case .web:
             return old.anySearchFilters == new.anySearchFilters
                 && old.externalSearchFilters == new.externalSearchFilters
                 && old.externalSearchProvider == new.externalSearchProvider
-                && old.includeWebInAll == new.includeWebInAll
         }
     }
 
@@ -298,7 +306,9 @@ final class SearchCoordinator {
     }
 }
 
-private struct ProviderOutcome: Sendable {
-    let source: SearchSource
-    let result: Result<SearchProviderPage, Error>
+/// 当前搜索会话内已成功落库的知识库操作，独立于网络返回的旧快照
+private struct LibraryUpdate {
+    let identity: RepoIdentity
+    let state: LibraryState
+    let persistedRepo: Repo?
 }

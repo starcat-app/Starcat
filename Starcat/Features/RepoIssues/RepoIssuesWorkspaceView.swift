@@ -361,27 +361,34 @@ struct RepoIssuesWorkspaceContent: View {
 
     @ViewBuilder
     private var rightPane: some View {
-        Group {
+        ZStack {
             if viewModel.isCreating {
                 RepoIssueCreatePane(viewModel: viewModel)
                     .transition(.opacity)
-            } else if viewModel.detailItem != nil {
-            // 完整复用活动-issues 详情页（2026-11-01 dong4j 决策）：
-            // 评论时间线 / AI 总结 / AI 写回复 / 翻译 / 关闭重开全部由它自带。
-            GitHubNotificationDetailView(selectedItem: Binding(
-                get: { viewModel.detailItem },
-                set: { viewModel.detailItem = $0 }
-            ), showsHeroTint: false)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .transition(.opacity)
+            } else if let item = viewModel.detailItem {
+                // 淡出期间保留旧帖快照，但立即禁用交互，避免旧评论目标在切帖后仍可操作。
+                // 身份按会话区分；同帖的评论刷新不会重建编辑器或重复触发切换动画。
+                GitHubNotificationDetailView(selectedItem: Binding(
+                    get: { item },
+                    set: {
+                        guard viewModel.detailItem?.id == item.id else { return }
+                        viewModel.detailItem = $0
+                    }
+                ), showsHeroTint: false,
+                   commentComposerBackground: AnyShapeStyle(Color(nsColor: .windowBackgroundColor)))
+                .background(Color(nsColor: .windowBackgroundColor))
+                .disabled(viewModel.isCreating || viewModel.detailItem?.id != item.id)
+                .allowsHitTesting(!viewModel.isCreating && viewModel.detailItem?.id == item.id)
+                .id(item.id)
+                .transition(.opacity)
             } else {
                 emptySelectionPlaceholder
                     .transition(.opacity)
             }
         }
-        // 详情 / 新建切换过渡兜底：创建成功等 VM 内部触发的切换也走动画
-        // （尊重 reduceMotion：时长归零瞬切）。
+        // 既监听模式，也监听异步物化后的会话身份；仅监听 paneMode 不会覆盖 Issue 间切换。
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: viewModel.paneMode)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: viewModel.detailItem?.id)
     }
 
     private var emptySelectionPlaceholder: some View {

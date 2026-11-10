@@ -17,6 +17,7 @@
 #   - homebrew-starcat
 #   - .github / starcat-docs / starcat-site / starcat-admin-console
 #   - extensions/ 下 2 个浏览器插件
+#   - starcat-ai-events / starcat-ai-events-api 为 Private，需组织读取权限
 #
 # 前置条件: git 可用; 私有仓库需要 gh CLI 或 SSH key 已配置
 # =============================================================================
@@ -72,6 +73,8 @@ if $SHOW_HELP; then
   echo "  starcat-localization  本地化资源"
   echo "  homebrew-starcat    Starcat App Homebrew Cask tap"
   echo "  starcat-skill       Starcat AI Agent Skill"
+  echo "  starcat-ai-events 每周 AI 大事内容与 Skill（Private）"
+  echo "  starcat-ai-events-api 独立编辑周报 API（聚合部署）"
   echo "  starcat-cli         跨平台 Starcat CLI"
   echo "  starcat-alfred-workflow  Alfred 仓库搜索 Workflow"
   echo "  starcat-utools-plugin  uTools 仓库搜索插件"
@@ -91,6 +94,9 @@ fi
 # 格式: "目录名|GitHub URL|描述"
 # extensions/ 下的项目目录名带 "extensions/" 前缀
 PROJECTS=(
+  # Private 项目需已授权的组织读取凭据；不会自动变更仓库可见性
+  "starcat-ai-events|https://github.com/starcat-app/starcat-ai-events.git|每周 AI 大事双语内容与 Skill（Private）"
+  "starcat-ai-events-api|https://github.com/starcat-app/starcat-ai-events-api.git|编辑周报 API（Private，聚合部署）"
   "starcat-sharing-api|https://github.com/starcat-app/starcat-sharing-api.git|Go API - 分享服务"
   "starcat-trending-api|https://github.com/starcat-app/starcat-trending-api.git|Go API - 趋势服务"
   "starcat-weekly-api|https://github.com/starcat-app/starcat-weekly-api.git|Go API - 周刊服务"

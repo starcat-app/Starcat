@@ -20,6 +20,16 @@ struct DailyRadarQuery: Hashable, Sendable {
     var cursor: String?
     var limit = 20
 
+    /// 仅独立编辑栏目需要服务身份；其他分类继续共享 Weekly 的完整目录
+    var catalogParameters: [URLQueryItem] {
+        var values = [
+            URLQueryItem(name: "language", value: language),
+            URLQueryItem(name: "fallback", value: fallback ? "true" : "false")
+        ]
+        if category == "ai-weekly-events" { values.append(.init(name: "category", value: category)) }
+        return values
+    }
+
     var parameters: [URLQueryItem] {
         var values = [
             URLQueryItem(name: "period", value: period),
@@ -71,7 +81,9 @@ extension DailyRadarCatalog.Category {
     /// 只有分类 id 的场景（如 `DailyRadarReport.category`）用这个；
     /// id 未收录时回退 fallback，调用方不传则显示 id 原文（与旧行为一致）。
     static func localizedTitle(for id: String, fallback: String? = nil) -> String {
-        String.l10n("dailyRadar.category.\(id)", defaultValue: fallback ?? id)
+        // 栏目改名只切换展示文案，保持服务端分类身份与已有缓存不变。
+        let key = id == "ai-weekly-events" ? "dailyRadar.category.weeklyHighlights" : "dailyRadar.category.\(id)"
+        return String.l10n(key, defaultValue: fallback ?? id)
     }
 }
 
@@ -92,6 +104,8 @@ extension DailyRadarCatalog {
         .init(id: "ai-community", title: "Community", period: "daily"),
         .init(id: "ai-weekly", title: "AI Weekly Archive", period: "weekly"),
         .init(id: "ai-monthly", title: "AI Monthly Archive", period: "monthly"),
+        // 独立编辑栏目，保留历史生态周报的分类身份与归档
+        .init(id: "ai-weekly-events", title: "Weekly AI Highlights", period: "weekly"),
     ]
 }
 

@@ -63,11 +63,17 @@ struct AppDataResetServiceTests {
         try keychain.storeGithubToken("github-token")
         try keychain.storeAIKey("ai-key")
 
+        // 图谱缓存同样注入临时根目录；恢复出厂测试绝不能清理开发机真实账户缓存。
+        let graphCache = FollowGraphDiskCache(root: root.appendingPathComponent("graphs"))
+        for id in [currentUserID, otherUserID] {
+            try await graphCache.save(.init(root: .init(id: String(id), login: "fixture", name: nil, avatarURL: nil)))
+        }
         let service = AppDataResetService(
             database: database,
             settings: settings,
             databaseBasePathOverride: root,
-            standardDefaults: defaults
+            standardDefaults: defaults,
+            followGraphCache: graphCache
         )
         var didReleaseSession = false
         var didClearGeneratedCaches = false
@@ -84,6 +90,8 @@ struct AppDataResetServiceTests {
 
         #expect(didReleaseSession)
         #expect(didClearGeneratedCaches)
+        #expect(await graphCache.load(account: String(currentUserID)) == nil)
+        #expect(await graphCache.load(account: String(otherUserID)) != nil)
         #expect(database.currentUserId == nil)
         #expect(fileManager.fileExists(atPath: currentUserDirectory.path) == false)
         #expect(fileManager.fileExists(atPath: otherUserDirectory.path) == true)

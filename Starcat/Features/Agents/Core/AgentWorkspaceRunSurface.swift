@@ -96,7 +96,8 @@ struct AgentWorkspaceRunSurface: View {
             Divider()
             composer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 明确接受父栏宽度，不能让菜单的最小宽度把整个 VStack 撑大后居中裁切。
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .task {
             viewModel.refreshLocalizedDefinitions(availableAgentDefinitions)
@@ -611,18 +612,22 @@ struct AgentWorkspaceRunSurface: View {
                 .disabled(viewModel.isRunning || !viewModel.selectedAgentSupportsRepositorySelection)
                 .help("agent.workspace.repositoryPicker.title")
 
-                if dependencies.distributionGate.isAvailable(.externalAgentRuntime) {
-                    runtimeBackendMenu
+                // 菜单随可用宽度折行，发送与附件操作仍固定在右侧。
+                // 单行固定尺寸菜单曾把标题、正文和输入框一起挤出中栏。
+                RAGFlowLayout(spacing: 8) {
+                    if dependencies.distributionGate.isAvailable(.externalAgentRuntime) {
+                        runtimeBackendMenu
+                    }
+
+                    agentRuntimeModelControls
+
+                    if !viewModel.selectedRepoContexts.isEmpty,
+                       case .weeklyHotspots = viewModel.selectedAgent?.workflow.repositoryContext {
+                        explicitModeMenu
+                    }
                 }
-
-                agentRuntimeModelControls
-
-                if !viewModel.selectedRepoContexts.isEmpty,
-                   case .weeklyHotspots = viewModel.selectedAgent?.workflow.repositoryContext {
-                    explicitModeMenu
-                }
-
-                Spacer()
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
 
                 Button {
                     viewModel.attachTextFiles()
@@ -1106,7 +1111,7 @@ struct AgentWorkspaceRunSurface: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning || viewModel.availableModels.isEmpty)
         .help("rag.workspace.composer.model")
     }
@@ -1137,7 +1142,7 @@ struct AgentWorkspaceRunSurface: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning)
         .help(String.l10n("agent.workspace.runtime.provider"))
     }
@@ -1163,7 +1168,7 @@ struct AgentWorkspaceRunSurface: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning)
         .help(String.l10n("agent.workspace.runtime.backend"))
     }
@@ -1231,7 +1236,7 @@ struct AgentWorkspaceRunSurface: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning)
         .help(String.l10n("agent.workspace.runtime.codexProviderHelp"))
     }
@@ -1264,7 +1269,7 @@ struct AgentWorkspaceRunSurface: View {
             .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning || deepSeekProviderOptions.isEmpty)
         .help(String.l10n("agent.workspace.runtime.deepSeekProviderHelp.modelsSettings"))
     }
@@ -1289,7 +1294,7 @@ struct AgentWorkspaceRunSurface: View {
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning || selectedDeepSeekSelection == nil)
         .help(String.l10n("rag.workspace.composer.model"))
     }
@@ -1328,7 +1333,7 @@ struct AgentWorkspaceRunSurface: View {
             .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning)
     }
 
@@ -1371,7 +1376,7 @@ struct AgentWorkspaceRunSurface: View {
             .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning)
         .help(codexModelCatalogError ?? String.l10n("rag.workspace.composer.model"))
     }
@@ -1398,7 +1403,7 @@ struct AgentWorkspaceRunSurface: View {
             .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning)
     }
 
@@ -1423,7 +1428,7 @@ struct AgentWorkspaceRunSurface: View {
                 .font(agentFont(.caption, weight: .semibold))
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(viewModel.isRunning || viewModel.selectedRepoContexts.isEmpty)
         .help("rag.workspace.composer.scope")
     }

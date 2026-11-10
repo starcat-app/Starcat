@@ -13,10 +13,14 @@
         <string>applinks:starcat.ink</string>
     </array>
 
-    <!-- Direct Widget 使用独立共享容器，避免与 App Store 版同时安装时串数据。 -->
+    <!--
+      Direct Widget 使用独立共享容器，避免与 App Store 版同时安装时串数据。
+      使用无需 provisioning profile 授权的 Team ID 前缀，并与 Widget / 发布重签
+      配置保持一致，避免 macOS 15+ 将访问视为外部容器访问而反复询问用户。
+    -->
     <key>com.apple.security.application-groups</key>
     <array>
-        <string>group.com.starcat.app.direct.widgets</string>
+        <string>8WCUMGCWMB.com.starcat.app.direct.widgets</string>
         <!-- 两个主 App 共用；Widget / 屏保 / 辅助二进制均不授予。 -->
         <string>8WCUMGCWMB.com.starcat.app.localai</string>
     </array>

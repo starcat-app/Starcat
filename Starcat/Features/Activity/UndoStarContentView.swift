@@ -115,6 +115,9 @@ struct UndoStarContentView: View {
         self.onSelectRepo = onSelectRepo
     }
 
+    /// 取消星标列表读库也可能跨越账号切换，计数只提交给开始加载时的账号代际。
+    @State private var countScopeRevision: UInt64?
+
     var body: some View {
         VStack(spacing: 0) {
             filterBar
@@ -134,13 +137,23 @@ struct UndoStarContentView: View {
             Text("activity.undoStar.clearAll.confirmMessage")
         }
         .task {
+            let revision = dependencies.activityCategoryCountService.scopeRevision
+            countScopeRevision = revision
             await viewModel.load()
             await viewModel.refreshExpiringCount()
-            dependencies.activityCategoryCountService.applyUndoStarCount(viewModel.records.count)
+            if viewModel.loadError == nil {
+                dependencies.activityCategoryCountService.applyUndoStarCount(
+                    viewModel.records.count, scopeRevision: revision
+                )
+            }
             selectFirstRecordIfRequested()
         }
         .onChange(of: viewModel.records.count) { _, newCount in
-            dependencies.activityCategoryCountService.applyUndoStarCount(newCount)
+            if let countScopeRevision, viewModel.loadError == nil {
+                dependencies.activityCategoryCountService.applyUndoStarCount(
+                    newCount, scopeRevision: countScopeRevision
+                )
+            }
             selectFirstRecordIfRequested()
         }
         .onChange(of: autoSelectFirstRecordRequestID) { _, _ in
@@ -185,9 +198,13 @@ struct UndoStarContentView: View {
 
     /// `⌘R` 与首次加载复用同一个本地历史查询，并同步侧栏计数。
     private func refreshCurrentUndoStarList() {
+        guard let countScopeRevision else { return }
         Task {
             await viewModel.reload()
-            dependencies.activityCategoryCountService.applyUndoStarCount(viewModel.records.count)
+            guard viewModel.loadError == nil else { return }
+            dependencies.activityCategoryCountService.applyUndoStarCount(
+                viewModel.records.count, scopeRevision: countScopeRevision
+            )
             selectFirstRecordIfRequested()
         }
     }

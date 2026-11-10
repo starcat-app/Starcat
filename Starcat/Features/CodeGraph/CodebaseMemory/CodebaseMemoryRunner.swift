@@ -272,9 +272,19 @@ final class CodebaseMemoryRunner {
     /// 这是 UI 打开前的硬校验来源：共享 cache 可以包含多个项目，但 Starcat
     /// 的稳定项目名必须存在，而且 root_path 必须仍指向当前 repo 的 source。
     func listProjects(binaryURL: URL) async throws -> [CodebaseMemoryCLIProject] {
+        // 0.12 起 list_projects 默认输出可读树；旧的用户安装不接受 --format。
+        // 只为具备此能力的版本显式请求 JSON，继续支持用户当前可用的外部程序。
+        let versionOutput = try await runCLI(
+            binaryURL: binaryURL, arguments: ["--version"], cacheDir: nil,
+            workingDirectoryURL: nil, timeout: 8, failureContext: "version"
+        )
+        let version = String(decoding: versionOutput.stdout, as: UTF8.self)
+            .split(whereSeparator: \.isWhitespace).last.map(String.init) ?? ""
+        let arguments = ["cli", "list_projects"]
+            + (version.compare("0.12.0", options: .numeric) != .orderedAscending ? ["--format", "json"] : [])
         let output = try await runCLI(
             binaryURL: binaryURL,
-            arguments: ["cli", "list_projects"],
+            arguments: arguments,
             cacheDir: nil,
             workingDirectoryURL: nil,
             timeout: 8,

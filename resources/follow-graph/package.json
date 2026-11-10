@@ -1,0 +1,22 @@
+{
+  "name": "follow-graph",
+  "version": "1.0.0",
+  "description": "Starcat offline following graph renderer",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test renderer.test.mjs",
+    "build": "node build.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "d3-force-3d": "3.0.6",
+    "force-graph": "1.52.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.0"
+  },
+  "private": "true"
+}

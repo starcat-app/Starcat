@@ -84,6 +84,9 @@ struct SyncIconButton: View {
     /// 是否禁用按钮（如 `isRefreshing || isLoading` 期间不接受额外点击）。
     let disabled: Bool
 
+    /// 可取消刷新时由调用方决定何时展示停止；默认关闭，不改变其他页面的刷新行为。
+    let showsStop: Bool
+
     /// 字号（默认 `.caption`，与"全部 Stars"右侧 `SidebarSyncButton` 视觉权重对齐）。
     /// cacheFooter 这种内部都是 `.caption2` 的语境可显式传 `.caption2` 保持局部一致。
     let font: Font
@@ -127,6 +130,7 @@ struct SyncIconButton: View {
     init(
         isRefreshing: Bool,
         disabled: Bool = false,
+        showsStop: Bool = false,
         font: Font = Self.defaultFont,
         frameSize: CGFloat = Self.defaultFrameSize,
         minVisibleDuration: TimeInterval = 1.0,
@@ -135,6 +139,7 @@ struct SyncIconButton: View {
     ) {
         self.isRefreshing = isRefreshing
         self.disabled = disabled
+        self.showsStop = showsStop
         self.font = font
         self.frameSize = frameSize
         self.minVisibleDuration = minVisibleDuration
@@ -146,18 +151,28 @@ struct SyncIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(font)
-                .foregroundStyle(enforcedRefreshing ? Color.accentColor : Color.secondary)
-                .rotationEffect(.degrees(rotation))
-                .frame(width: frameSize, height: frameSize)
-                .contentShape(Rectangle())
+            // 保留同一个 Button，悬停 / 焦点切换图标时不销毁命中区或丢失键盘焦点。
+            ZStack {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(enforcedRefreshing ? Color.accentColor : Color.secondary)
+                    .rotationEffect(.degrees(rotation))
+                    .opacity(showsStop ? 0 : 1)
+                Image(systemName: "stop.fill")
+                    // 用户明确要求红色表示取消正在进行的图谱加载，不用于装饰。
+                    .foregroundStyle(.red)
+                    .opacity(showsStop ? 1 : 0)
+            }
+            .font(font)
+            .frame(width: frameSize, height: frameSize)
+            .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.12), value: showsStop)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover()
         .disabled(disabled)
         .help(tooltip)
+        .accessibilityLabel(Text(verbatim: tooltip))
         .onAppear {
             syncEnforcedState(isRefreshing: isRefreshing)
         }

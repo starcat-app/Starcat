@@ -122,6 +122,10 @@ final class StarcatMCPLoopbackHTTPServer {
     private func handleListenerState(_ state: NWListener.State, diagnosticPort: Int) {
         switch state {
         case .ready:
+            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                level: .info, category: "mcp", operation: "listener",
+                message: "Listener ready", phase: "ready", outcome: .succeeded,
+                fields: ["port": .integer(diagnosticPort)]))
             guard let startupContinuation else { return }
             self.startupContinuation = nil
             guard let boundPort = listener?.port?.rawValue, boundPort != 0 else {
@@ -132,6 +136,11 @@ final class StarcatMCPLoopbackHTTPServer {
             }
             startupContinuation.resume(returning: Int(boundPort))
         case .failed(let error):
+            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                level: .error, category: "mcp", operation: "listener",
+                message: "Listener failed", errorCode: DiagnosticFailure.code(error),
+                underlying: DiagnosticEvent.summarize(error), phase: "finished", outcome: .failed,
+                fields: ["port": .integer(diagnosticPort)]))
             AppLog.network.error("MCP HTTP listener failed: \(error.localizedDescription, privacy: .public)")
             if let startupContinuation {
                 self.startupContinuation = nil
@@ -173,11 +182,15 @@ final class StarcatMCPLoopbackHTTPServer {
     }
 
     private func handle(_ connection: NWConnection) async {
+        let diagnostic = DiagnosticOperation(category: "mcp", name: "request")
+        var outcome: DiagnosticEvent.Outcome = .failed
+        defer { diagnostic.finish(Task.isCancelled ? .cancelled : outcome) }
         do {
             let request = try await readRequest(from: connection)
             // `/pairing/exchange` 在认证前处理：它只接受五分钟有效的一次性 secret，
             // 成功后仍需用户在 App 内确认。其它路径继续走原有 Bearer 校验。
             if let routed = await routeHandler(request) {
+                outcome = routed.statusCode < 400 ? .succeeded : .failed
                 send(Self.httpData(for: routed), on: connection)
                 return
             }
@@ -193,6 +206,8 @@ final class StarcatMCPLoopbackHTTPServer {
                 path: request.path
             )
             let response = await runtime.handle(httpRequest)
+            outcome = response.statusCode < 400 ? .succeeded : .failed
+            diagnostic.event(phase: "responded", fields: ["status": .integer(response.statusCode)])
             send(Self.httpData(for: response), on: connection)
         } catch {
             send(StarcatHTTPServerError.badRequest(error.localizedDescription).httpData, on: connection)

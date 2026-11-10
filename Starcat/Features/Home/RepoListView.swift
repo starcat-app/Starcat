@@ -601,6 +601,9 @@ struct RepoListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if viewModel.effectiveGlobalFilterState.skillFilter != .any { RepoSkillCoverageBanner() }
+        }
         .onPreferenceChange(RepoLicenseOptionsPreferenceKey.self) { keys in
             navigationMetrics.licenseOptions = keys
         }
@@ -1171,7 +1174,9 @@ struct RepoListView: View {
             accessibilityLabel: includesStatusFilter && effectiveFilters.statusFilter != nil
                 ? LocalizedStringKey(effectiveFilters.statusFilter?.localizedDisplayName ?? "list.filter.status")
                 : "list.filter.status",
-            onReset: { viewModel.resetAllFilters() }
+            onReset: {
+                viewModel.resetAllFilters()
+            }
         ) {
             globalFilterMenuContent(includesStatusFilter: includesStatusFilter)
         }
@@ -1206,6 +1211,7 @@ struct RepoListView: View {
         .onChange(of: viewModel.licenseFilter) { _, filter in
             settings.globalFilterLicenses = filter.persistedValues
         }
+        .onChange(of: viewModel.skillFilter) { _, filter in settings.skillFilter = filter }
         .onChange(of: viewModel.wikiAvailabilityFilter) { _, newValue in
             settings.wikiAvailabilityFilter = newValue
         }
@@ -1252,6 +1258,8 @@ struct RepoListView: View {
                 await dependencies.awesomeStore.loadAllRepositoryPages()
             }
         }
+        Divider()
+        RepoSkillFilterSection(selection: globalFilterBinding(\.skillFilter))
         Divider()
         availabilityPicker(
             title: "list.filter.wikiAvailability",

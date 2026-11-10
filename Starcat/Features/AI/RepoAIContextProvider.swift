@@ -259,7 +259,7 @@ struct RepoAIContextProvider: RepoAIContextProviding, @unchecked Sendable {
                     category: "repo-context",
                     operation: "repoContext.pack",
                     message: "Repository code context packing failed",
-                    underlying: debugDump,
+                    underlying: DiagnosticEvent.summarize(error),
                     context: ["repo": repo.fullName]
                 )
             }

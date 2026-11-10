@@ -72,6 +72,7 @@ struct SidebarView: View {
     /// 不在 sidebar 里主动触发任何加载。
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.locale) private var locale
 
     /// 当前打开/收起 Languages 组的状态。
     @State private var languagesExpanded: Bool = true
@@ -134,6 +135,9 @@ struct SidebarView: View {
 
     /// 与右侧覆盖层共享的每日热点目录/分类状态；左栏不创建第二套请求。
     @Bindable var dailyRadarModel: DailyRadarWorkspaceViewModel
+    /// 新功能标识状态由主窗口持有；侧栏只读展示，并在系统 List 选中时写入首次点击记录。
+    var newFeatureBadgeStore: NewFeatureBadgeStore
+    var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
 
     /// HOM-73：控制登录 sheet 的显示。
     @State private var showLoginSheet: Bool = false
@@ -857,6 +861,8 @@ struct SidebarView: View {
     private var sidebarFixedHeader: some View {
         VStack(spacing: 0) {
             SidebarHeaderView(
+                onOpenFollowGraph: onOpenFollowGraph,
+                newFeatureBadgeStore: newFeatureBadgeStore,
                 trendingRepo: currentTrendingRepo,
                 activityTintColor: currentActivityTintColor
             )
@@ -955,6 +961,7 @@ struct SidebarView: View {
 
     private func applyExploreSelection(_ selection: ExploreSidebarSelection) {
         if selection == .dailyRadarPreview {
+            newFeatureBadgeStore.markVisited(.dailyRadar)
             dailyRadarPreviewPresentation = true
             dailyRadarModel.selectCategory(nil)
             return
@@ -1001,6 +1008,7 @@ struct SidebarView: View {
             selectedExploreMode = .awesome
             dependencies.awesomeStore.selectSource(sourceID)
         case .linuxDo:
+            newFeatureBadgeStore.markVisited(.linuxDo)
             // Linux.do 是 Discover 下的独立来源；先切来源再切模式，保证 Sidebar、
             // 中栏内容和标题在同一轮观察更新中都能识别为 Linux.do。
             dependencies.linuxDoStore.selectedSource = .linuxDo
@@ -1037,6 +1045,9 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .task(id: dailyRadarScope) {
+                await prepareDailyRadarSidebar()
+            }
             // 分类行自身挂有折叠/展开 transition；切 Explore mode 时不能复用
             // List(selection:) 的系统选中动画，否则旧筛选 section 退场与新 section
             // 入场会连续触发整窗 layout。手动点 header 的 disclosureSpring 是另一笔
@@ -1056,6 +1067,16 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
         }
+    }
+
+    /// 与阅读工作区使用相同身份，预加载目录后打开文章不会再次清空计数或选中分类
+    private var dailyRadarScope: String {
+        "\(dependencies.databaseScopeRevision)|\(dependencies.dailyRadarConfigurationRevision)|\(locale.identifier)"
+    }
+
+    private func prepareDailyRadarSidebar() async {
+        dailyRadarModel.configure(repository: dependencies.dailyRadarRepository, scope: dailyRadarScope, locale: locale)
+        await dailyRadarModel.reloadSidebarCatalogs()
     }
 
     @ViewBuilder
@@ -1110,13 +1131,13 @@ struct SidebarView: View {
 
     private func dailyRadarCategoryRow(_ category: DailyRadarCatalog.Category?) -> some View {
         let id = category?.id
-        // 计数徽标：具体分类取该分类报告总数；「全部主题」行保持无数字。
+        // 「全部主题」与每日热点入口共用总数，避免侧栏两个入口的统计口径不一致。
         // catalog 未加载或旧后端无计数字段时为 nil，徽标自动隐藏。
         let count: Int?
         if let id {
             count = dailyRadarModel.categoryCounts[id]
         } else {
-            count = nil
+            count = dailyRadarModel.totalCount
         }
         return exploreSelectableRow(selection: .dailyRadarCategory(id), count: count) {
             DailyRadarCategoryIcon(categoryID: id, size: 14, isSidebar: true)
@@ -1254,7 +1275,10 @@ struct SidebarView: View {
                     // 每日热点与 Weekly 拆分图形：雷达 vs 报纸（2026-11-04 图标体系样板决议）。
                     exploreSidebarBusinessIcon(.dailyRadar, color: .indigo)
                 } title: {
-                    Text("dailyRadar.title")
+                    HStack(spacing: 4) {
+                        Text("dailyRadar.title")
+                        NewFeatureBadge(isVisible: newFeatureBadgeStore.shouldShowBadge(for: .dailyRadar))
+                    }
                 }
             }
             ForEach(settings.exploreCatalogPreferences.visibleGroupIDs, id: \.self) { id in
@@ -1265,7 +1289,12 @@ struct SidebarView: View {
                     ) {
                         // 社区来源使用单气泡，复用分类字号与字重，避免独立缩放造成笔画不一致。
                         exploreSidebarBusinessIcon(.linuxDo, color: .indigo)
-                    } title: { Text(verbatim: "Linux.do") }
+                    } title: {
+                        HStack(spacing: 4) {
+                            Text(verbatim: "Linux.do")
+                            NewFeatureBadge(isVisible: newFeatureBadgeStore.shouldShowBadge(for: .linuxDo))
+                        }
+                    }
                 } else if let mode = ExploreMode(rawValue: id) {
                     exploreModeRow(mode)
                 }
@@ -2623,9 +2652,14 @@ struct SidebarView: View {
                     .frame(width: Self.trailingFixedWidth, alignment: .trailing)
                 }
             } icon: {
-                // 与探索「新发布」同语义色；对齐主导航其它行的彩色图标。
-                Image(systemName: "shippingbox.fill")
-                    .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
+                // 线框包裹与时间线标题共用素材，按主导航的 16pt 画布匹配视觉重量。
+                BusinessIcon(
+                    .packageAsset,
+                    pointSize: 16 * interfaceScale.multiplier,
+                    weight: .semibold
+                )
+                .foregroundStyle(SidebarSemanticIconStyle(semanticColor: .cyan))
+                .frame(width: 16, height: 16)
             }
             .contentShape(Rectangle())
         }

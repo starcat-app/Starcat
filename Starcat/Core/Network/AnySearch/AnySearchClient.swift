@@ -105,7 +105,7 @@ actor AnySearchClient: AnySearchClientProtocol {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "search")
         } catch {
             // Y9.3：transport 错误是 timeout / 网络不可达 / DNS 失败 / TLS 握手失败的统称，
             // 单独打 error log 让用户能看到（catch 链上方的 retry 路径不看 transport 异常）。

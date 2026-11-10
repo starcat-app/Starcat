@@ -2,12 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Direct Widget 仍是独立沙箱进程，不继承 Direct Host 的非沙箱权限。 -->
+    <!--
+      Direct Widget 仍是独立沙箱进程，不继承 Direct Host 的非沙箱权限。
+      使用 Team ID 前缀的 App Group，与 Direct Host 的签名保持一致。
+    -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
     <key>com.apple.security.application-groups</key>
     <array>
-        <string>group.com.starcat.app.direct.widgets</string>
+        <string>8WCUMGCWMB.com.starcat.app.direct.widgets</string>
     </array>
 </dict>
 </plist>

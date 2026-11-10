@@ -200,11 +200,19 @@ actor CodebaseMemoryBinaryResolver {
         _ candidate: URL,
         source: CodebaseMemoryExecutable.Source
     ) async throws -> CodebaseMemoryExecutable {
+        let diagnostic = DiagnosticOperation(category: "runtime", name: "codebaseMemory.candidate",
+            fields: ["source": .string(String(describing: source)),
+                     "exists": .boolean(fileManager.fileExists(atPath: candidate.path)),
+                     "executable": .boolean(fileManager.isExecutableFile(atPath: candidate.path))])
+        var outcome: DiagnosticEvent.Outcome = .failed
+        defer { diagnostic.finish(Task.isCancelled ? .cancelled : outcome) }
         let resolvedURL = candidate.standardizedFileURL.resolvingSymlinksInPath()
         let attributes: [FileAttributeKey: Any]
         do {
             attributes = try fileManager.attributesOfItem(atPath: resolvedURL.path)
         } catch {
+            diagnostic.event(phase: "rejected", fields: ["reason": .string("attributesUnavailable"),
+                                                        "systemCode": .integer((error as NSError).code)])
             throw CodebaseMemoryError.executableValidationFailed(
                 path: resolvedURL.path,
                 underlying: error.localizedDescription
@@ -213,13 +221,24 @@ actor CodebaseMemoryBinaryResolver {
 
         guard attributes[.type] as? FileAttributeType == .typeRegular,
               fileManager.isExecutableFile(atPath: resolvedURL.path) else {
+            diagnostic.event(phase: "rejected", fields: ["reason": .string("notRegularExecutable")])
             throw CodebaseMemoryError.executableValidationFailed(
                 path: resolvedURL.path,
                 underlying: String.l10n("codebaseMemory.error.notRegularExecutable")
             )
         }
 
-        let version = try await versionProbe(resolvedURL, probeTimeout)
+        diagnostic.event(phase: "versionProbe")
+        let version: String
+        do {
+            version = try await DiagnosticContext.$current.withValue(diagnostic) {
+                try await versionProbe(resolvedURL, probeTimeout)
+            }
+        } catch {
+            diagnostic.finish(.failed, error: error)
+            throw error
+        }
+        outcome = .succeeded
         AppLog.ui.info("CodebaseMemory executable resolved source=\(String(describing: source), privacy: .public) path=\(resolvedURL.path, privacy: .public) version=\(version, privacy: .public)")
         return CodebaseMemoryExecutable(url: resolvedURL, version: version, source: source)
     }
@@ -240,6 +259,8 @@ actor CodebaseMemoryBinaryResolver {
         do {
             try process.run()
         } catch {
+            DiagnosticContext.current?.event(phase: "launchFailed",
+                fields: ["systemCode": .integer((error as NSError).code)])
             throw CodebaseMemoryError.executableValidationFailed(
                 path: executableURL.path,
                 underlying: error.localizedDescription
@@ -258,6 +279,8 @@ actor CodebaseMemoryBinaryResolver {
         }
 
         if process.isRunning {
+            DiagnosticContext.current?.event(phase: "probeTimedOut",
+                fields: ["timeoutMs": .decimal(timeout * 1000)])
             terminate(process)
             throw CodebaseMemoryError.executableProbeTimedOut(path: executableURL.path)
         }
@@ -265,6 +288,8 @@ actor CodebaseMemoryBinaryResolver {
         let output = outputPipe.fileHandleForReading.readDataToEndOfFile()
         let text = String(decoding: output.prefix(8_192), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        DiagnosticContext.current?.event(phase: "probeExited",
+            fields: ["exitCode": .integer(Int(process.terminationStatus)), "outputAvailable": .boolean(!text.isEmpty)])
         guard process.terminationStatus == 0, text.isEmpty == false else {
             let detail = text.isEmpty
                 ? String(format: String.l10n("codebaseMemory.error.versionExitStatusFormat"), process.terminationStatus)
@@ -294,14 +319,14 @@ actor CodebaseMemoryBinaryResolver {
 
     // MARK: - Diagnostics
 
-    private func recordFailure(_ message: String, context: [String: String] = [:]) {
+    private func recordFailure(_ message: StaticString, context: [String: String] = [:]) {
         DiagnosticLogStore.record(
-            level: .critical,
-            visibility: .issue,
-            category: "codebase-memory",
+            level: channel.isAppStore ? .error : .warning,
+            visibility: channel.isAppStore ? .issue : .context,
+            category: "runtime",
             operation: "codebaseMemory.resolveBinary",
             message: message,
-            context: context
+            context: ["channel": channel.rawValue]
         )
     }
 }

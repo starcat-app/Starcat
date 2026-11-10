@@ -167,7 +167,7 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
     /// 读取 `localeStore.selection` 注册观察：语言切换 → body 重算 → navigationTitle 更新。
     private var windowTitle: String {
         _ = localeStore.selection
-        return String.l10n("rag.workspace.window.title")
+        return String.l10n("workspace.rag.title")
     }
 
     init(context: AIWorkspaceSceneCoordinator.KnowledgeRAGLaunchContext) {
@@ -189,16 +189,10 @@ struct KnowledgeRAGWorkspaceSceneRoot: View {
             // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
             .navigationTitle(windowTitle)
             .toolbar(removing: .title)
-            .frame(
-                minWidth: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.width,
-                minHeight: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize.height
-            )
-            .background {
-                WorkspaceSceneWindowReader(
-                    reference: windowReference,
-                    minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
-                )
-            }
+            .modifier(WorkspaceWindowSizing(
+                reference: windowReference,
+                minimumContentSize: KnowledgeRAGWorkspaceWindowMetrics.minimumContentSize
+            ))
             .toolbar {
                 WorkspaceToolbarContent(
                     chromeState: chromeState,

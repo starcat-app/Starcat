@@ -62,6 +62,8 @@ final class AppDependencies {
     /// Week 3 引入：HomeView 在初始化时需要复用这个 repository 构建 ViewModel。
     /// D-01：注入类型从 struct 改为协议，便于测试替换为 Mock。
     let repoRepository: any RepoRepositoryProtocol
+    /// Skill 扫描证据、后台补查与详情读取共用同一份本机索引。
+    let repoSkillStore: RepoSkillStore
     /// 公开 Star 数据贡献旁路；失败不得改变同步和 UI 状态。
     let dataContributionCoordinator: DataContributionCoordinator
     /// Settings 只读取开关真值，不暴露 Outbox 或网络状态。
@@ -1099,6 +1101,10 @@ final class AppDependencies {
             tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
         )
         self.projectGitHubAPIClient = projectAPIClient
+        self.repoSkillStore = RepoSkillStore(
+            database: db, publicAPI: api, privateAPI: projectAPIClient,
+            privateDownloader: RepoFileDownloader(tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession))
+        )
         self.projectReadmeAPI = ReadmeAPI(
             client: projectAPIClient,
             repository: readmeRepo,
@@ -1488,14 +1494,19 @@ final class AppDependencies {
         self.weeklyAPI = weeklyAPIInstance
         let dailyRadarAPI = DailyRadarAPI(
             baseURL: AppEndpoints.Weekly.baseURL,
-            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly)
+            apiKey: StarcatAPIKeyResolver.resolve(for: .weekly),
+            eventsBaseURL: AppEndpoints.AIEvents.baseURL,
+            eventsAPIKey: StarcatAPIKeyResolver.resolve(for: .aiEvents)
         )
         self.dailyRadarAPI = dailyRadarAPI
         self.dailyRadarRepository = DailyRadarRepository(api: dailyRadarAPI)
 
         // MUL-176 followup：UI 共享状态总线，sidebar 与 HomeView 通过它读 total / 选中项目。
         self.weeklySelectionService = WeeklySelectionService()
-        self.activityCategoryCountService = ActivityCategoryCountService()
+        self.activityCategoryCountService = ActivityCategoryCountService(
+            defaults: .standard,
+            accountID: db.currentUserId
+        )
         self.activityCategoryCountService.configure(undoStarRepository: self.undoStarHistoryRepository)
         self.sidebarAnimationCoordinator = SidebarAnimationCoordinator()
         self.weeklyLanguageStore = WeeklyLanguageStore(api: weeklyAPIInstance)
@@ -1957,6 +1968,10 @@ final class AppDependencies {
     func switchUserDatabase(to userId: Int64?) async throws {
         let previousUserId = database.currentUserId
         if previousUserId != userId {
+            await repoSkillStore.resetForAccountChange()
+            await RepoFileTreeSessionCache.shared.reset()
+            // 先阻断旧账号计数回写，再 await 数据库切换；新账号恢复不依赖活动页是否打开。
+            activityCategoryCountService.prepareForAccountChange()
             await syncManager.cancelAndWait()
             // 先停止服务拥有的子 Task，再等待协调器退出；反向等待会让旧快照迟迟无法取消。
             await githubStarListSyncService.resetForAccountChange()
@@ -1972,15 +1987,19 @@ final class AppDependencies {
         do {
             try await database.reopen(userId: userId)
         } catch {
+            repoSkillStore.finishAccountChange()
             if previousUserId != userId {
                 await repositoryMetricsClient.endDatabaseScopeChange()
+                activityCategoryCountService.cancelAccountChange()
             }
             throw error
         }
         if previousUserId != userId {
+            repoSkillStore.finishAccountChange()
             await repositoryMetricsClient.endDatabaseScopeChange()
         }
         guard database.currentUserId != previousUserId else { return }
+        activityCategoryCountService.activate(accountID: database.currentUserId)
         databaseScopeRevision &+= 1
         dailyRecommendationStore.activate(accountID: database.currentUserId, scopeRevision: databaseScopeRevision)
         githubIssueSummaryStore.reset(scopeRevision: databaseScopeRevision)
@@ -2112,6 +2131,10 @@ final class AppDependencies {
             await dailyRadarAPI.update(baseURL: target)
             await dailyRadarRepository.cancelRequests()
             dailyRadarConfigurationRevision &+= 1
+        case .aiEvents:
+            await dailyRadarAPI.updateEvents(baseURL: target)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateBaseURL(target)
         case .wiki:     await wikiAPI.updateBaseURL(target)
         case .recommend: await recommendAPI.updateBaseURL(target)
@@ -2167,6 +2190,10 @@ final class AppDependencies {
         case .weekly:
             await weeklyAPI.updateAPIKey(resolved)
             await dailyRadarAPI.update(apiKey: resolved, replacesKey: true)
+            await dailyRadarRepository.cancelRequests()
+            dailyRadarConfigurationRevision &+= 1
+        case .aiEvents:
+            await dailyRadarAPI.updateEvents(apiKey: resolved, replacesKey: true)
             await dailyRadarRepository.cancelRequests()
             dailyRadarConfigurationRevision &+= 1
         case .sharing:  await shareAPI.updateAPIKey(resolved)

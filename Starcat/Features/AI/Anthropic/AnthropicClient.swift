@@ -297,7 +297,7 @@ struct AnthropicClient: AIClientProtocol {
 
     private func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "anthropic")
             guard let http = response as? HTTPURLResponse else {
                 throw AIClientError.requestFailed(detail: "missing HTTP response")
             }

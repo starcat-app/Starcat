@@ -453,6 +453,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             // loadHTMLString 替换 DOM 前主动暂停旧文档，避免切换 repo 的短暂异步窗口继续出声。
             context.coordinator.stopMediaPlayback(stopLoading: false)
             context.coordinator.prepareForDocumentReload()
+            context.coordinator.diagnosticOperation?.event(phase: "assembling",
+                fields: ["htmlCharacters": .integer(htmlFragment.count),
+                         "documentID": .string(DiagnosticEvent.anonymousReference(documentID ?? "unknown"))])
 
             // HOM-201 P1-2（2026-06-14）：`htmlFragment` 已是 `ReadmeAPI` rewrite 后的
             // 内容(img src 已是 raw.githubusercontent.com 绝对 URL),这里直接 wrap document,
@@ -610,6 +613,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 用于放行紧接而来的那一次主框架导航；放行后立即置 false。
         /// 之后任何主框架导航（reload / meta refresh / 页内 location）都会被 cancel。
         var expectsInitialLoad: Bool = false
+        var diagnosticOperation: DiagnosticOperation?
 
         /// 构造带 README 阅读增强脚本的 content controller。
         ///
@@ -672,6 +676,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// 内容或主题重载后，旧 DOM 已消失；导航完成时必须把当前翻译状态重新注入。
         /// 同时取消旧文档尚未完成的 Mermaid 任务，避免切换仓库后把图表写进新 DOM。
         func prepareForDocumentReload() {
+            diagnosticOperation?.finish(.cancelled)
+            diagnosticOperation = DiagnosticOperation(category: "readme", name: "webDocument")
             lastAppliedTranslationRevision = nil
             lastAppliedStarHistoryRevision = nil
             didReportApproachingBottom = false
@@ -1738,6 +1744,19 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let diagnostic = diagnosticOperation
+            diagnostic?.event(phase: "navigationFinished")
+            // 只读取布局计数；回调显式携带本次文档操作，不能继承之后新文档的身份。
+            webView.evaluateJavaScript("({elements: document.body ? document.body.children.length : 0, height: document.body ? document.body.scrollHeight : 0})") { value, error in
+                if let error { diagnostic?.finish(.failed, error: error); return }
+                let values = value as? [String: Any]
+                let elements = (values?["elements"] as? NSNumber)?.intValue ?? 0
+                diagnostic?.event(phase: "layoutObserved", fields: [
+                    "elementCount": .integer(elements),
+                    "height": .integer((values?["height"] as? NSNumber)?.intValue ?? 0)
+                ])
+                diagnostic?.finish(elements > 0 ? .succeeded : .partial)
+            }
             PerformanceTracer.shared.mark(.readmeWebViewNavigationFinished)
             // `updateNSView` 可能先于 document-end script 完成；导航结束后再补一次当前状态。
             lastAppliedTranslationRevision = nil
@@ -1831,10 +1850,17 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         // 渲染失败日志，方便后续排查（沙箱、CSS、HTML 片段异常都会落在这里）
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            diagnosticOperation?.finish(.failed, error: error)
             AppLog.ui.error("ReadmeWebView didFail: \(error.localizedDescription, privacy: .public)")
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            diagnosticOperation?.finish(.failed, error: error)
             AppLog.ui.error("ReadmeWebView didFailProvisional: \(error.localizedDescription, privacy: .public)")
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            let diagnostic = DiagnosticOperation(category: "readme", name: "contentProcessTerminated")
+            diagnostic.finish(.failed)
         }
     }
 }

@@ -143,6 +143,87 @@ struct SearchCoordinatorTests {
 
         #expect(coordinator.repositories.first?.card.isInLibrary == true)
         #expect(coordinator.repositories.first?.localRepo?.id == 42)
+        await coordinator.updateScope(SearchRequest(query: "codex", scope: .local))
+        await coordinator.updateScope(SearchRequest(query: "codex", scope: .github))
+        #expect(coordinator.repositories.first?.card.isInLibrary == true)
+        #expect(coordinator.repositories.first?.localRepo?.id == 42)
+    }
+
+    @Test("知识库操作不会被迟到 Provider 的旧快照覆盖", arguments: [LibraryState.inLibrary, .outsideLibrary])
+    func libraryMutationSurvivesLateResponse(state: LibraryState) async {
+        let repo = Self.makeRepo(id: 42, owner: "OpenAI", name: "Codex")
+        let gate = SearchCoordinatorHoldGate()
+        var staleCandidate = Self.makeCandidate(repo: repo, source: .github)
+        staleCandidate.localRepo = nil
+        staleCandidate.remoteRepo = repo
+        staleCandidate.card = staleCandidate.card.withLibraryState(
+            state == .inLibrary ? .outsideLibrary : .inLibrary
+        )
+        let provider = GatedCountingSearchProvider(
+            source: .github,
+            gate: gate,
+            page: SearchProviderPage(
+                repositories: [staleCandidate], references: [], totalCount: 1, hasNextPage: false
+            )
+        )
+        let coordinator = SearchCoordinator(providers: [provider])
+        let task = Task { await coordinator.search(SearchRequest(query: "codex", scope: .github)) }
+        await gate.waitUntilBlocked()
+        coordinator.updateRepositoryLibraryState(
+            identity: staleCandidate.identity, state: state, persistedRepo: repo
+        )
+        await gate.resume()
+        await task.value
+        #expect(coordinator.repositories.first?.card.isInLibrary == (state == .inLibrary))
+        #expect(coordinator.repositories.first?.localRepo?.id == repo.id)
+    }
+
+    @Test("同一远端预览连续加入再移出知识库仍保留已落库身份")
+    func repeatedLibraryMutationRetainsPersistedRepository() async {
+        let repo = Self.makeRepo(id: 42, owner: "OpenAI", name: "Codex")
+        let provider = StubSearchProvider(source: .github) { _ in
+            var candidate = Self.makeCandidate(repo: repo, source: .github)
+            candidate.localRepo = nil
+            candidate.remoteRepo = repo
+            return SearchProviderPage(
+                repositories: [candidate], references: [], totalCount: 1, hasNextPage: false
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [provider])
+        let identity = RepoIdentity(ghRepoID: repo.id, owner: repo.owner, name: repo.name)
+        await coordinator.search(SearchRequest(query: "codex", scope: .github))
+        coordinator.updateRepositoryLibraryState(identity: identity, state: .inLibrary, persistedRepo: repo)
+        coordinator.updateRepositoryLibraryState(identity: identity, state: .outsideLibrary, persistedRepo: nil)
+        await coordinator.updateScope(SearchRequest(query: "codex", scope: .local))
+        await coordinator.updateScope(SearchRequest(query: "codex", scope: .github))
+        #expect(coordinator.repositories.first?.card.isInLibrary == false)
+        #expect(coordinator.repositories.first?.localRepo?.id == repo.id)
+    }
+
+    @Test("隐藏来源的旧筛选结果不会因切换其他范围而被误用")
+    func hiddenProviderKeepsItsOwnRequestIdentity() async {
+        let provider = StubSearchProvider(source: .github) { request in
+            let repo = Self.makeRepo(
+                id: request.githubFilters.language == "Rust" ? 2 : 1,
+                owner: "example",
+                name: request.githubFilters.language ?? "any"
+            )
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: repo, source: .github)],
+                references: [], totalCount: 1, hasNextPage: false
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [provider])
+        await coordinator.search(SearchRequest(
+            query: "language", scope: .github, githubFilters: GitHubSearchFilters(language: "Swift")
+        ))
+        await coordinator.updateScope(SearchRequest(
+            query: "language", scope: .local, githubFilters: GitHubSearchFilters(language: "Rust")
+        ))
+        await coordinator.updateScope(SearchRequest(
+            query: "language", scope: .github, githubFilters: GitHubSearchFilters(language: "Rust")
+        ))
+        #expect(coordinator.repositories.map(\.card.ghRepoId) == [2])
     }
 
     @Test("空 query 清空结果和状态")
@@ -285,6 +366,90 @@ struct SearchCoordinatorTests {
         } else {
             Issue.record("semantic results should still land after scope switch")
         }
+    }
+
+    @Test("GitHub 翻页不取消隐藏范围内仍在执行的语义搜索")
+    func paginationPreservesOtherInFlightProviders() async {
+        let repo = Self.makeRepo(id: 1, owner: "apple", name: "swift")
+        let gate = SearchCoordinatorHoldGate()
+        let semantic = GatedCountingSearchProvider(
+            source: .localSemantic, gate: gate,
+            page: SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: repo, source: .localSemantic)],
+                references: [], totalCount: 1, hasNextPage: false
+            )
+        )
+        let github = StubSearchProvider(source: .github) { request in
+            let repo = Self.makeRepo(id: Int64(request.page + 1), owner: "example", name: "\(request.page)")
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: repo, source: .github)],
+                references: [], totalCount: 3, hasNextPage: request.page < 3
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [semantic, github])
+        let task = Task { await coordinator.search(SearchRequest(query: "swift", scope: .all)) }
+        await gate.waitUntilBlocked()
+        // 两个来源并发，等 GitHub 首页落地后才模拟用户点击下一页
+        for _ in 0..<1_000 {
+            if case .loaded = coordinator.status(for: .github) { break }
+            await Task.yield()
+        }
+        await coordinator.updateScope(SearchRequest(query: "swift", scope: .github))
+        await coordinator.loadMore(SearchRequest(query: "swift", scope: .github, page: 2), source: .github)
+        await gate.resume()
+        await task.value
+        await coordinator.updateScope(SearchRequest(query: "swift", scope: .all))
+
+        #expect(semantic.callCount == 1)
+        #expect(coordinator.repositories.map(\.card.ghRepoId) == [1, 2, 3])
+        #expect(coordinator.currentGitHubPage == 2)
+    }
+
+    @Test("忽略不响应取消的旧查询结果")
+    func latePreviousQueryCannotReplaceCurrentResults() async {
+        let gate = SearchCoordinatorHoldGate()
+        let provider = StubSearchProvider(source: .github) { request in
+            if request.query == "old" { await gate.wait() }
+            let repo = Self.makeRepo(id: request.query == "old" ? 1 : 2, owner: "example", name: request.query)
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: repo, source: .github)],
+                references: [], totalCount: 1, hasNextPage: false
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [provider])
+        let task = Task { await coordinator.search(SearchRequest(query: "old", scope: .github)) }
+        await gate.waitUntilBlocked()
+        await coordinator.search(SearchRequest(query: "new", scope: .github))
+        await gate.resume()
+        await task.value
+        #expect(coordinator.repositories.map(\.card.ghRepoId) == [2])
+    }
+
+    @Test("在途来源筛选变化后丢弃迟到旧结果")
+    func incompatibleInFlightSourceIsReplaced() async {
+        let gate = SearchCoordinatorHoldGate()
+        let provider = StubSearchProvider(source: .github) { request in
+            let isOld = request.githubFilters.language == "Swift"
+            if isOld { await gate.wait() }
+            let repo = Self.makeRepo(id: isOld ? 1 : 2, owner: "example", name: isOld ? "old" : "new")
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: repo, source: .github)],
+                references: [], totalCount: 1, hasNextPage: false
+            )
+        }
+        let coordinator = SearchCoordinator(providers: [provider])
+        let task = Task {
+            await coordinator.search(SearchRequest(
+                query: "language", scope: .github, githubFilters: GitHubSearchFilters(language: "Swift")
+            ))
+        }
+        await gate.waitUntilBlocked()
+        await coordinator.updateScope(SearchRequest(
+            query: "language", scope: .github, githubFilters: GitHubSearchFilters(language: "Rust")
+        ))
+        await gate.resume()
+        await task.value
+        #expect(coordinator.repositories.map(\.card.ghRepoId) == [2])
     }
 
     nonisolated fileprivate static func makeRepo(id: Int64, owner: String, name: String) -> Repo {

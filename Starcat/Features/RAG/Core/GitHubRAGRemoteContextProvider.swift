@@ -41,7 +41,7 @@ struct URLSessionRAGHTTPClient: RAGHTTPClientProtocol {
     }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "ragRemote")
         guard let response = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }

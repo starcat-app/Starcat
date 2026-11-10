@@ -41,6 +41,10 @@ xcodebuild \
   -destination 'platform=macOS,arch=arm64' \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   -derivedDataPath "$TEST_DERIVED_DATA" \
   test \
   "$@"
+
+python3 scripts/sync-swift-package-lock.py check

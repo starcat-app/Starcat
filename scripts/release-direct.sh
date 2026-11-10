@@ -9,7 +9,7 @@
 # 设计约束：
 #   - 构建逻辑仍由 package-direct.sh 负责，本脚本只做发布编排。
 #   - 默认走完整发布流程；重跑某一段时用 STARCAT_RELEASE_SKIP_* 显式跳过。
-#   - 默认要求 main 分支和干净工作区，避免从临时状态打 tag 或发布不可复现产物。
+#   - 新构建要求 main 分支和干净工作区；--resume 只校验并上传原 tag 的最终产物。
 #   - appcast 使用增量合并，历史版本以 supports/starcat-site/direct/appcast.xml 为准，不依赖本地保留旧 DMG。
 #   - appcast item 会注入 CHANGELOG 衍生的 Sparkle 更新说明（description CDATA）。
 #
@@ -21,7 +21,7 @@ show_help() {
 Starcat Direct 一键发布脚本
 
 用法:
-  ./scripts/release-direct.sh <version>
+  ./scripts/release-direct.sh <version> [--resume]
   ./scripts/release-direct.sh --help
 
 示例:
@@ -32,14 +32,11 @@ Starcat Direct 一键发布脚本
   # 演练完整流程，不创建 tag、不推送、不上传、不部署、不做线上校验。
   STARCAT_RELEASE_DRY_RUN=1 ./scripts/release-direct.sh 1.0.0
 
-  # tag 已经存在且已推送，重跑发布；上传失败重试时另加 STARCAT_RELEASE_REUSE_ARTIFACTS=1。
-  STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.0.0
+  # 已有最终产物：只恢复 GitHub 与更新源，保留当前源码工作区。
+  ./scripts/release-direct.sh 1.0.0 --resume
 
-  # 只重跑 Direct 更新文件发布，跳过 tag、nginx 和官网静态页部署。
-  STARCAT_RELEASE_SKIP_TAG=1 \
-  STARCAT_RELEASE_SKIP_NGINX=1 \
-  STARCAT_RELEASE_SKIP_SITE=1 \
-  ./scripts/release-direct.sh 1.0.0
+  # tag 已经存在且已推送，但尚需打包/续跑公证；已有最终产物应使用 --resume。
+  STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh 1.0.0
 
 默认流程:
   1. 确认当前分支是 main
@@ -92,8 +89,8 @@ Starcat Direct 一键发布脚本
       本脚本通过本机 gh 发布 starcat-app/Starcat 的同版本 DMG/SHA256。
 
   STARCAT_RELEASE_REUSE_ARTIFACTS=1
-      上传失败后复用已完成的 DMG、SHA256、appcast-current.xml，不重新打包或 staple。
-      与 STARCAT_RELEASE_SKIP_TAG=1 配合；已有 GitHub 附件必须与本地产物一致。
+      等同 --resume：校验原 tag/最终产物后只恢复 GitHub 和 appcast。
+      不检查当前分支或源码脏状态，不打 tag、不打包、不部署官网静态页。
 
   STARCAT_RELEASE_BRANCH=main
       允许发布的分支名，默认 main。
@@ -105,7 +102,7 @@ Starcat Direct 一键发布脚本
       跳过 git fetch --tags。默认会先同步远端 tag，避免本地不知道远端 tag 已存在。
 
   STARCAT_RELEASE_SKIP_TAG=1
-      跳过创建和推送 tag。用于 tag 已存在时重跑发布。
+      跳过创建和推送 tag，仍会进入打包/公证。已有最终产物请使用 --resume。
 
   STARCAT_RELEASE_SKIP_NGINX=1
       兼容旧变量；由于 starcat-site/direct/deploy.sh 已合并 nginx 与静态资源部署，
@@ -140,6 +137,13 @@ fi
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "版本号必须是 X.Y.Z，例如 1.0.0；当前: $VERSION" >&2
   exit 1
+fi
+if [ "$#" -gt 2 ] || { [ "$#" -eq 2 ] && [ "$2" != "--resume" ]; }; then
+  echo "未知参数；仅支持在版本号后添加 --resume" >&2
+  exit 1
+fi
+if [ "${2:-}" = "--resume" ]; then
+  export STARCAT_RELEASE_REUSE_ARTIFACTS=1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -227,7 +231,7 @@ create_and_push_tag() {
   fi
 
   if git rev-parse -q --verify "refs/tags/${TAG_NAME}" >/dev/null; then
-    fail "本地 tag 已存在: ${TAG_NAME}。如需重跑发布，请设置 STARCAT_RELEASE_SKIP_TAG=1"
+    fail "本地 tag 已存在: ${TAG_NAME}。最终产物已就绪请使用 --resume；尚需打包/公证才设置 STARCAT_RELEASE_SKIP_TAG=1"
   fi
 
   log "创建 tag: ${TAG_NAME}"
@@ -534,9 +538,15 @@ verify_public_url() {
   local url="$2"
   local remote_command
 
-  # 本机网络可能被 TUN / Fake-IP / 代理分流接管，从发布服务器校验可避免本地 TLS 误判。
+  # 从本机验证实际下载链路；本机代理异常时才改从服务器复核。
+  # 两个出口都有限超时，不能因服务器访问 GitHub 的 504 一直卡住已完成的上传。
+  log "本机校验线上 ${label}: $url"
+  if run_or_print curl -fsSLI --connect-timeout 15 --max-time 45 \
+    --retry 2 --retry-max-time 90 "$url" >/dev/null; then
+    return
+  fi
   printf -v remote_command \
-    'curl -fsSLI --connect-timeout 15 --retry 3 --retry-delay 2 --retry-all-errors %q >/dev/null' \
+    'curl -fsSLI --connect-timeout 15 --max-time 45 --retry 2 --retry-max-time 90 %q >/dev/null' \
     "$url"
 
   log "从发布服务器校验线上 ${label}: $url"
@@ -550,20 +560,32 @@ main() {
   require_command python3
   require_command rsync
   require_command ssh
+  require_command curl
 
   cd "$PROJECT_ROOT"
 
   [ -d "$STARCAT_SITE_ROOT/.git" ] \
     || fail "未找到独立官网仓库: ${STARCAT_SITE_ROOT}；请先运行 supports/clone-all.sh"
-  [ -f "$PAGES_DIR/deploy.sh" ] \
-    || fail "未找到 Direct 官网部署脚本: ${PAGES_DIR}/deploy.sh"
-
-  require_branch
-  require_clean_worktree
-  require_notarization_policy
+  if [ "${STARCAT_RELEASE_REUSE_ARTIFACTS:-0}" = "1" ]; then
+    # 产物恢复只校验已推送 tag 与已公证 DMG，不发布当前工作区的官网源码。
+    run_or_print python3 "$SCRIPT_DIR/verify-direct-release-artifacts.py" \
+      --version "$VERSION" --dmg "$DMG_PATH" --sha256 "$SHA_PATH" \
+      --appcast "$CURRENT_APPCAST_PATH" --remote "$RELEASE_REMOTE"
+    export STARCAT_RELEASE_SKIP_SITE=1
+    export STARCAT_RELEASE_SKIP_NGINX=1
+    log "恢复已有产物，仅续传 GitHub 与更新源"
+  else
+    [ -f "$PAGES_DIR/deploy.sh" ] \
+      || fail "未找到 Direct 官网部署脚本: ${PAGES_DIR}/deploy.sh"
+    require_branch
+    require_clean_worktree
+    require_notarization_policy
+  fi
   run_or_print gh auth status
-  create_and_push_tag
-  package_direct
+  if [ "${STARCAT_RELEASE_REUSE_ARTIFACTS:-0}" != "1" ]; then
+    create_and_push_tag
+    package_direct
+  fi
   verify_local_artifacts
   merge_appcast
   publish_github_release

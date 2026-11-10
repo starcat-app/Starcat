@@ -94,6 +94,11 @@ final class RecommendationContextService {
         AppLog.ui.debug(
             "Recommend cache load repo=\(repoID, privacy: .public) hit=\(snapshot != nil, privacy: .public) elapsed=\(String(describing: elapsed), privacy: .public)"
         )
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .info, category: "recommend", operation: "cache", message: "Recommendation cache observed",
+            phase: "loaded", fields: ["available": .boolean(snapshot != nil),
+                "scopeMatches": .boolean(snapshot?.serviceScope == serviceScope),
+                "itemCount": .integer(snapshot?.items.count ?? 0)]))
         guard snapshot?.serviceScope == serviceScope else { return nil }
         return snapshot
     }
@@ -113,21 +118,33 @@ final class RecommendationContextService {
         snapshot: RecommendationCacheSnapshot,
         serviceScope: String
     ) async throws -> RecommendationCacheRevalidationResult {
-        let result = try await fetcher.revalidateRecommendations(
-            repoID: repoID,
-            limit: pageSize,
-            offset: 0,
-            cachedModelVersion: snapshot.modelVersion
-        )
-        switch result {
-        case .unsupported:
-            return .unsupported
-        case .notModified:
-            return .notModified
-        case .modified(let page):
-            let refreshed = makeSnapshot(page: page, repoID: repoID, serviceScope: serviceScope)
-            try await cache.save(snapshot: refreshed)
-            return .modified(refreshed)
+        // 关联缓存、请求及保存阶段，诊断不增加请求或改变原重验证规则。
+        let diagnostic = DiagnosticOperation(category: "recommend", name: "revalidateCachedSnapshot")
+        return try await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish() }
+            do {
+                let result = try await fetcher.revalidateRecommendations(
+                    repoID: repoID,
+                    limit: pageSize,
+                    offset: 0,
+                    cachedModelVersion: snapshot.modelVersion
+                )
+                diagnostic.event(phase: "revalidated")
+                switch result {
+                case .unsupported:
+                    return .unsupported
+                case .notModified:
+                    diagnostic.event(phase: "notModified")
+                    return .notModified
+                case .modified(let page):
+                    let refreshed = makeSnapshot(page: page, repoID: repoID, serviceScope: serviceScope)
+                    try await cache.save(snapshot: refreshed)
+                    return .modified(refreshed)
+                }
+            } catch {
+                diagnostic.finish(.failed, error: error)
+                throw error
+            }
         }
     }
 
@@ -145,17 +162,30 @@ final class RecommendationContextService {
         offset: Int = 0,
         serviceScope: String
     ) async throws -> RecommendationCacheSnapshot {
-        let networkStartedAt = ContinuousClock.now
-        let page = try await fetcher.fetchRecommendations(repoID: repoID, limit: pageSize, offset: offset)
-        let networkElapsed = networkStartedAt.duration(to: .now)
-        let snapshot = makeSnapshot(page: page, repoID: repoID, serviceScope: serviceScope)
-        let saveStartedAt = ContinuousClock.now
-        try await cache.save(snapshot: snapshot)
-        let saveElapsed = saveStartedAt.duration(to: .now)
-        AppLog.ui.debug(
-            "Recommend refresh repo=\(repoID, privacy: .public) offset=\(offset, privacy: .public) items=\(page.items.count, privacy: .public) network=\(String(describing: networkElapsed), privacy: .public) cacheSave=\(String(describing: saveElapsed), privacy: .public) model=\(page.modelVersion ?? "none", privacy: .public)"
-        )
-        return snapshot
+        // 关联缓存、请求及保存阶段，诊断不增加请求或改变原重验证规则。
+        let diagnostic = DiagnosticOperation(category: "recommend", name: "refresh")
+        return try await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish() }
+            do {
+                let networkStartedAt = ContinuousClock.now
+                let page = try await fetcher.fetchRecommendations(repoID: repoID, limit: pageSize, offset: offset)
+                let networkElapsed = networkStartedAt.duration(to: .now)
+                let snapshot = makeSnapshot(page: page, repoID: repoID, serviceScope: serviceScope)
+                let saveStartedAt = ContinuousClock.now
+                diagnostic.event(phase: "response", fields: ["itemCount": .integer(snapshot.items.count),
+                    "hasNextPage": .boolean(snapshot.hasMore)])
+                try await cache.save(snapshot: snapshot)
+                diagnostic.event(phase: "cacheSaved")
+                let saveElapsed = saveStartedAt.duration(to: .now)
+                AppLog.ui.debug(
+                    "Recommend refresh repo=\(repoID, privacy: .public) offset=\(offset, privacy: .public) items=\(page.items.count, privacy: .public) network=\(String(describing: networkElapsed), privacy: .public) cacheSave=\(String(describing: saveElapsed), privacy: .public) model=\(page.modelVersion ?? "none", privacy: .public)"
+                )
+                return snapshot
+            } catch {
+                diagnostic.finish(.failed, error: error)
+                throw error
+            }
+        }
     }
 
     /// 拉下一页（在已有 snapshot 基础上 append），写盘。
@@ -166,45 +196,58 @@ final class RecommendationContextService {
         repoID: Int64,
         currentSnapshot: RecommendationCacheSnapshot
     ) async throws -> RecommendationCacheSnapshot {
-        guard let nextOffset = currentSnapshot.nextOffset, currentSnapshot.hasMore else {
-            return currentSnapshot
+        // 关联缓存、请求及保存阶段，诊断不增加请求或改变原重验证规则。
+        let diagnostic = DiagnosticOperation(category: "recommend", name: "refreshNextPage")
+        return try await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish() }
+            do {
+                guard let nextOffset = currentSnapshot.nextOffset, currentSnapshot.hasMore else {
+                    return currentSnapshot
+                }
+                let serviceScope = await currentServiceScope()
+                guard currentSnapshot.serviceScope == serviceScope else {
+                    // 地址或契约已切换，不能把另一服务的下一页追加进当前快照。
+                    return try await refresh(repoID: repoID, serviceScope: serviceScope)
+                }
+                let networkStartedAt = ContinuousClock.now
+                let newPage = try await fetcher.fetchRecommendations(
+                    repoID: repoID,
+                    limit: pageSize,
+                    offset: nextOffset
+                )
+                let networkElapsed = networkStartedAt.duration(to: .now)
+                if let newVersion = newPage.modelVersion,
+                   currentSnapshot.modelVersion != newVersion {
+                    // 翻页请求跨过模型激活边界时，旧第一页与新第二页不可合并。重新获取新模型
+                    // 第一页，确保一个磁盘快照只属于一个不可变 ServingBundle。
+                    return try await refresh(repoID: repoID, serviceScope: serviceScope)
+                }
+                let merged = currentSnapshot.items + newPage.items
+                let snapshot = RecommendationCacheSnapshot(
+                    repoID: repoID,
+                    serviceScope: serviceScope,
+                    modelVersion: newPage.modelVersion ?? currentSnapshot.modelVersion,
+                    probedAt: Date(),
+                    nextProbeAt: RecommendationCacheSnapshot.computeNextProbeAt(items: merged),
+                    items: merged,
+                    hasMore: newPage.hasMore,
+                    nextOffset: newPage.nextOffset
+                )
+                let saveStartedAt = ContinuousClock.now
+                diagnostic.event(phase: "response", fields: ["itemCount": .integer(snapshot.items.count),
+                    "hasNextPage": .boolean(snapshot.hasMore)])
+                try await cache.save(snapshot: snapshot)
+                diagnostic.event(phase: "cacheSaved")
+                let saveElapsed = saveStartedAt.duration(to: .now)
+                AppLog.ui.debug(
+                    "Recommend load more repo=\(repoID, privacy: .public) offset=\(nextOffset, privacy: .public) items=\(newPage.items.count, privacy: .public) network=\(String(describing: networkElapsed), privacy: .public) cacheSave=\(String(describing: saveElapsed), privacy: .public)"
+                )
+                return snapshot
+            } catch {
+                diagnostic.finish(.failed, error: error)
+                throw error
+            }
         }
-        let serviceScope = await currentServiceScope()
-        guard currentSnapshot.serviceScope == serviceScope else {
-            // 地址或契约已切换，不能把另一服务的下一页追加进当前快照。
-            return try await refresh(repoID: repoID, serviceScope: serviceScope)
-        }
-        let networkStartedAt = ContinuousClock.now
-        let newPage = try await fetcher.fetchRecommendations(
-            repoID: repoID,
-            limit: pageSize,
-            offset: nextOffset
-        )
-        let networkElapsed = networkStartedAt.duration(to: .now)
-        if let newVersion = newPage.modelVersion,
-           currentSnapshot.modelVersion != newVersion {
-            // 翻页请求跨过模型激活边界时，旧第一页与新第二页不可合并。重新获取新模型
-            // 第一页，确保一个磁盘快照只属于一个不可变 ServingBundle。
-            return try await refresh(repoID: repoID, serviceScope: serviceScope)
-        }
-        let merged = currentSnapshot.items + newPage.items
-        let snapshot = RecommendationCacheSnapshot(
-            repoID: repoID,
-            serviceScope: serviceScope,
-            modelVersion: newPage.modelVersion ?? currentSnapshot.modelVersion,
-            probedAt: Date(),
-            nextProbeAt: RecommendationCacheSnapshot.computeNextProbeAt(items: merged),
-            items: merged,
-            hasMore: newPage.hasMore,
-            nextOffset: newPage.nextOffset
-        )
-        let saveStartedAt = ContinuousClock.now
-        try await cache.save(snapshot: snapshot)
-        let saveElapsed = saveStartedAt.duration(to: .now)
-        AppLog.ui.debug(
-            "Recommend load more repo=\(repoID, privacy: .public) offset=\(nextOffset, privacy: .public) items=\(newPage.items.count, privacy: .public) network=\(String(describing: networkElapsed), privacy: .public) cacheSave=\(String(describing: saveElapsed), privacy: .public)"
-        )
-        return snapshot
     }
 
     private func makeSnapshot(

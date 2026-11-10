@@ -1,0 +1,4 @@
+interface:
+  display_name: "Starcat诊断包分析"
+  short_description: "解析Starcat本地诊断包并还原故障时间线、请求关联与证据缺口"
+  default_prompt: "使用 $starcat-diagnostics 分析这个诊断包，区分已证实的问题、推测与仍缺少的证据。"

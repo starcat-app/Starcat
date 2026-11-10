@@ -123,24 +123,29 @@ final class SubscriptionManager: ProEntitlementProviding {
 
     @discardableResult
     private func loadProductsOnce(attempt: Int) async -> Bool {
+        let diagnostic = DiagnosticOperation(category: "subscription", name: "products",
+            fields: ["attempt": .integer(attempt)])
         do {
             let loaded = try await Product.products(for: productIDs)
             products = loaded.sorted {
                 ProProductID.sortOrder(for: $0.id) < ProProductID.sortOrder(for: $1.id)
             }
             if products.isEmpty {
+                diagnostic.finish(.partial, fields: ["itemCount": .integer(0)])
                 lastErrorMessage = SubscriptionError.productsUnavailable.localizedDescription
                 let bundleID = Bundle.main.bundleIdentifier ?? "<missing>"
                 let ids = productIDs.joined(separator: ",")
                 AppLog.general.error("[subscription] StoreKit returned no products. attempt=\(attempt, privacy: .public), bundle=\(bundleID, privacy: .public), distribution=\(DistributionChannel.current.rawValue, privacy: .public), requestedIDs=\(ids, privacy: .public)")
                 return false
             } else {
+                diagnostic.finish(fields: ["itemCount": .integer(products.count)])
                 lastErrorMessage = nil
                 let ids = products.map(\.id).joined(separator: ",")
                 AppLog.general.info("[subscription] loaded StoreKit products. attempt=\(attempt, privacy: .public), ids=\(ids, privacy: .public)")
                 return true
             }
         } catch {
+            diagnostic.finish(.failed, error: error)
             lastErrorMessage = SubscriptionError.unknown(error.localizedDescription).localizedDescription
             let bundleID = Bundle.main.bundleIdentifier ?? "<missing>"
             let ids = productIDs.joined(separator: ",")
@@ -157,6 +162,8 @@ final class SubscriptionManager: ProEntitlementProviding {
             return true
         }
         purchasingProductID = product.id
+        // 不记录交易、收据或账号标识；结果仅反映现有 StoreKit 调用。
+        let diagnostic = DiagnosticOperation(category: "subscription", name: "purchase")
         defer { purchasingProductID = nil }
 
         do {
@@ -165,23 +172,29 @@ final class SubscriptionManager: ProEntitlementProviding {
             case .success(let verification):
                 let transaction = try verifiedTransaction(from: verification)
                 await transaction.finish()
-                await refreshEntitlements()
+                await DiagnosticContext.$current.withValue(diagnostic) { await refreshEntitlements() }
+                diagnostic.finish(fields: ["entitlementActive": .boolean(entitlement.isActive)])
                 lastErrorMessage = nil
                 return entitlement.isActive
             case .pending:
+                diagnostic.finish(.partial, fields: ["reason": .string("pending")])
                 lastErrorMessage = SubscriptionError.purchasePending.localizedDescription
                 return false
             case .userCancelled:
+                diagnostic.finish(.cancelled)
                 lastErrorMessage = SubscriptionError.purchaseCancelled.localizedDescription
                 return false
             @unknown default:
+                diagnostic.finish(.failed, fields: ["reason": .string("unknownResult")])
                 lastErrorMessage = SubscriptionError.unknown("Unknown purchase result").localizedDescription
                 return false
             }
         } catch let error as SubscriptionError {
+            diagnostic.finish(.failed, error: error)
             lastErrorMessage = error.localizedDescription
             return false
         } catch {
+            diagnostic.finish(.failed, error: error)
             lastErrorMessage = SubscriptionError.unknown(error.localizedDescription).localizedDescription
             AppLog.general.error("[subscription] purchase failed: \(error.localizedDescription, privacy: .public)")
             return false
@@ -198,13 +211,17 @@ final class SubscriptionManager: ProEntitlementProviding {
             return
         }
         isRestoring = true
+        let diagnostic = DiagnosticOperation(category: "subscription", name: "restore")
         defer { isRestoring = false }
 
         do {
             try await AppStore.sync()
-            await refreshEntitlements()
+            await DiagnosticContext.$current.withValue(diagnostic) { await refreshEntitlements() }
+            diagnostic.finish(entitlement.isActive ? .succeeded : .partial,
+                fields: ["entitlementActive": .boolean(entitlement.isActive)])
             lastErrorMessage = entitlement.isActive ? nil : SubscriptionError.restoreFailed.localizedDescription
         } catch {
+            diagnostic.finish(.failed, error: error)
             lastErrorMessage = SubscriptionError.restoreFailed.localizedDescription
             AppLog.general.error("[subscription] restore failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -227,12 +244,16 @@ final class SubscriptionManager: ProEntitlementProviding {
         }
         #endif
 
+        let diagnostic = DiagnosticOperation(category: "subscription", name: "entitlements")
+        var observedCount = 0
+        var rejectedCount = 0
         var best: Transaction?
         for await result in Transaction.currentEntitlements {
+            observedCount += 1
             guard let transaction = try? verifiedTransaction(from: result),
                   productIDs.contains(transaction.productID),
                   transaction.revocationDate == nil,
-                  isTransactionActive(transaction) else { continue }
+                  isTransactionActive(transaction) else { rejectedCount += 1; continue }
 
             if let current = best {
                 if (transaction.expirationDate ?? .distantFuture) > (current.expirationDate ?? .distantFuture) {
@@ -254,6 +275,8 @@ final class SubscriptionManager: ProEntitlementProviding {
         } else {
             entitlement = .inactive
         }
+        diagnostic.finish(fields: ["entitlementActive": .boolean(entitlement.isActive),
+            "itemCount": .integer(observedCount), "rejectedCount": .integer(rejectedCount)])
     }
 
     /// 处理 `offerCodeRedemption` sheet 关闭后的结果并刷新 Pro 权益。

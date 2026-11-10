@@ -42,6 +42,7 @@
 import SwiftUI
 
 struct ActivityView: View {
+    @State private var skillPageBudget = RepoSkillPageBudget()
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
@@ -252,8 +253,14 @@ struct ActivityView: View {
         .onAppear {
             reportItemCount(viewModel)
         }
-        .onChange(of: viewModel.filteredItemTotalCount) { _, count in
-            onItemCountChange(count)
+        .onChange(of: viewModel.filteredItemTotalCount) { _, _ in
+            reportItemCount(viewModel)
+        }
+        .onChange(of: dependencies.repoSkillStore.revision) { _, _ in
+            if settings.skillFilter != .any {
+                reportItemCount(viewModel)
+                applySelectionPolicy(from: viewModel.items)
+            }
         }
     }
 
@@ -312,6 +319,21 @@ struct ActivityView: View {
         .task(id: settings.wikiAvailabilityFilter.rawValue) {
             await reloadWikiAvailabilityMap(for: viewModel.items.compactMap(\.repo))
         }
+        .task(id: "\(viewModel.itemsRevision):\(skillCandidates(viewModel.items).map(\.id)):\(selectedCategory):\(settings.skillScanFilterIdentity):\(dependencies.repoSkillStore.paginationRevision)") {
+            guard settings.skillFilter != .any else { return }
+            let scope = "activity:\(selectedCategory):\(viewModel.quickSearchQuery):\(settings.skillScanFilterIdentity)"
+            dependencies.repoSkillStore.enqueue(
+                skillCandidates(viewModel.items),
+                scope: scope
+            )
+            for _ in 0..<20 {
+                guard !Task.isCancelled, globalFilteredItems(viewModel.items).count < 40, viewModel.hasMoreItems else { break }
+                guard skillPageBudget.claim(scope: "\(scope):\(dependencies.repoSkillStore.paginationRevision)") else { break }
+                let count = viewModel.items.count
+                viewModel.loadMoreIfNeeded()
+                if count == viewModel.items.count { break }
+            }
+        }
     }
 
     private func globalFilteredItems(_ items: [ActivityItem]) -> [ActivityItem] {
@@ -321,6 +343,10 @@ struct ActivityView: View {
             }
             return matchesGlobalFilters(repo: repo)
         }
+    }
+
+    private func skillCandidates(_ items: [ActivityItem]) -> [Repo] {
+        items.compactMap(\.repo).filter { matchesGlobalFilters(repo: $0, includingSkill: false) }
     }
 
     private var hasActiveGlobalRepoFilter: Bool {
@@ -334,7 +360,8 @@ struct ActivityView: View {
             || settings.openSSFAvailabilityFilter != .unknown
     }
 
-    private func matchesGlobalFilters(repo: Repo) -> Bool {
+    private func matchesGlobalFilters(repo: Repo, includingSkill: Bool = true) -> Bool {
+        if includingSkill, !settings.skillFilter.matches(dependencies.repoSkillStore.presence(for: repo)) { return false }
         guard settings.starFilter.matches(
             isStarred: dependencies.starredRegistry.contains(ghRepoId: repo.id)
         ) else { return false }
@@ -672,6 +699,7 @@ struct ActivityView: View {
     }
 
     private func applySelectionPolicy(from items: [ActivityItem]) {
+        let items = settings.skillFilter == .any ? items : globalFilteredItems(items)
         // 默认只清掉不属于当前分类的旧详情；用户开启偏好后，才在列表稳定后选第一条。
         guard settings.openFirstDetailOnCategoryChange else {
             clearSelectionIfMissing(from: items)
@@ -695,7 +723,7 @@ struct ActivityView: View {
     }
 
     private func reportItemCount(_ viewModel: ActivityViewModel) {
-        onItemCountChange(viewModel.filteredItemTotalCount)
+        onItemCountChange(settings.skillFilter == .any ? viewModel.filteredItemTotalCount : globalFilteredItems(viewModel.items).count)
     }
 
     /// 通知中栏副标题走 CountService；这里只回写总数，避免把未读数塞进「条活动」格式。

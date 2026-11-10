@@ -539,6 +539,11 @@ final class CompanionLocalServer {
     }
 
     private func response(status: Int, bodyData: Data, origin: String?) -> Data {
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: status >= 400 ? .warning : .info,
+            category: "extension", operation: "localResponse", message: "Extension connection result",
+            statusCode: status, phase: "responded", outcome: status >= 400 ? .failed : .succeeded,
+            fields: ["bytes": .integer(bodyData.count)]))
         let reason: String = switch status {
         case 200: "OK"
         case 204: "No Content"

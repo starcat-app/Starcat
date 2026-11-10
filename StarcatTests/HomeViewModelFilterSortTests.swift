@@ -94,6 +94,79 @@ struct HomeViewModelFilterSortTests {
         )
     }
 
+    @Test("今日 Star 计数独立于筛选，跨天和时区变化后重新计算")
+    func dailyStarCountsFollowCalendarInsteadOfListFilters() async throws {
+        let (vm, db, _) = try makeSUT()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-08T12:00:00+08:00"))
+        try await insertRepo(db, id: 1, fullName: "o/today", stars: 10,
+                             starredAt: "2026-11-07T17:00:00Z", isFork: true)
+        try await insertRepo(db, id: 2, fullName: "o/yesterday", stars: 20,
+                             starredAt: "2026-11-07T15:59:59Z")
+        try await insertRepo(db, id: 3, fullName: "o/tomorrow", stars: 30,
+                             starredAt: "2026-11-08T16:00:00Z")
+        try await insertRepo(db, id: 4, fullName: "o/unstarred", stars: 40,
+                             starredAt: "2026-11-08T01:00:00Z", isStarred: false)
+        try await insertRepo(db, id: 5, fullName: "o/early-morning", stars: 50,
+                             starredAt: "2026-11-07T18:00:00Z")
+        vm.hideForks = true
+        vm.searchQuery = "no-matching-repository"
+        await vm.refreshStarCounts(now: now, calendar: calendar)
+        #expect(vm.totalCount == 4)
+        #expect(vm.todayStarCount == 2, "被筛掉的 Fork 仍应计入账号的今日 Star")
+
+        // 改成 UTC 后，两条本地凌晨记录归到前一天，id=3 则落在 UTC 当天。
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        await vm.refreshStarCounts(now: now, calendar: calendar)
+        #expect(vm.todayStarCount == 1)
+
+        calendar.timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
+        await vm.refreshStarCounts(now: tomorrow, calendar: calendar)
+        #expect(vm.todayStarCount == 1)
+        let dayAfter = try #require(calendar.date(byAdding: .day, value: 2, to: now))
+        await vm.refreshStarCounts(now: dayAfter, calendar: calendar)
+        #expect(vm.todayStarCount == 0)
+    }
+
+    @Test("今日 Star 计数随应用内刷新与同步侧栏刷新变化，重复刷新不累加")
+    func dailyStarCountsRefreshAfterWrites() async throws {
+        let (vm, db, _) = try makeSUT()
+        let now = Date()
+        let timestamp = ISO8601DateFormatter().string(from: now)
+        let repo = GRDBRepoRepository(database: db)
+        await vm.refreshSidebar()
+        #expect(vm.todayStarCount == 0)
+
+        try await insertRepo(db, id: 1, fullName: "o/in-app", stars: 1, starredAt: timestamp)
+        await vm.refreshStarCounts()
+        #expect(vm.totalCount == 1 && vm.todayStarCount == 1)
+
+        try await insertRepo(db, id: 2, fullName: "o/external-sync", stars: 2, starredAt: timestamp)
+        await vm.refreshSidebar()
+        await vm.refreshSidebar()
+        #expect(vm.totalCount == 2 && vm.todayStarCount == 2)
+
+        try await repo.markUnstarred(repoId: 1, userID: 100)
+        await vm.refreshStarCounts()
+        #expect(vm.totalCount == 1 && vm.todayStarCount == 1)
+
+        vm.resetAllStateForUserSwitch()
+        #expect(vm.totalCount == 0 && vm.todayStarCount == 0)
+    }
+
+    @Test("已取消的 Star 统计任务不得把结果发布到新账号")
+    func cancelledStarCountRefreshDoesNotPublish() async throws {
+        let (vm, db, _) = try makeSUT()
+        try await insertRepo(db, id: 1, fullName: "o/old-account", stars: 1,
+                             starredAt: ISO8601DateFormatter().string(from: Date()))
+        let refresh = Task { await vm.refreshStarCounts() }
+        refresh.cancel()
+        await refresh.value
+        #expect(vm.totalCount == 0 && vm.todayStarCount == 0)
+    }
+
     @Test("许可证全局状态在数据库与内存列表回切一致，重置不保留旧缓存")
     func licenseGlobalStateAndReset() async throws {
         let (vm, db, _) = try makeSUT()

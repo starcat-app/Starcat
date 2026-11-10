@@ -27,6 +27,10 @@ struct OwnerCardView: View {
     let contributionPayload: ContributionCalendarPayload?
     let isFollowing: Bool?
 
+    /// 图谱内嵌时由宿主提供外框和尺寸，避免大头像遮挡画布；详情页默认外观不变。
+    var isCompact = false
+    var showsFollowAction = true
+
     /// 关注请求进行中时显示进度并锁定按钮，避免重复提交。
     var isFollowInFlight = false
     /// 未登录时保持可点击以触发登录；仅登录后的关注状态查询期禁用。
@@ -39,32 +43,39 @@ struct OwnerCardView: View {
     var onOpenFollowers: () -> Void = {}
     var onOpenFollowing: () -> Void = {}
     var onToggleFollow: () -> Void = {}
+    /// 图谱可在缓存写盘完成前从内存复用头像；其它入口无需订阅。
+    var onAvatarLoaded: (URL) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// 已关注时默认表达关系状态，只有 hover 才暴露破坏性较强的“取消关注”意图。
     @State private var isFollowButtonHovered = false
 
     var body: some View {
-        Group {
-            if colorScheme == .dark {
-                darkCard
-            } else {
-                lightCard
+        if isCompact {
+            profileContent
+        } else {
+            Group {
+                if colorScheme == .dark {
+                    darkCard
+                } else {
+                    lightCard
+                }
             }
+            .frame(width: 340)
+            .clipShape(cardShape)
+            .overlay {
+                cardShape
+                    .strokeBorder(cardBorderColor, lineWidth: colorScheme == .dark ? 5 : 3)
+            }
+            .shadow(
+                color: .black.opacity(colorScheme == .dark ? 0.34 : 0.14),
+                radius: colorScheme == .dark ? 18 : 12,
+                y: 7
+            )
         }
-        .frame(width: 340)
-        .clipShape(cardShape)
-        .overlay {
-            cardShape
-                .strokeBorder(cardBorderColor, lineWidth: colorScheme == .dark ? 5 : 3)
-        }
-        .shadow(
-            color: .black.opacity(colorScheme == .dark ? 0.34 : 0.14),
-            radius: colorScheme == .dark ? 18 : 12,
-            y: 7
-        )
     }
 
     // MARK: - A：明亮主题
@@ -115,6 +126,12 @@ struct OwnerCardView: View {
     private var profileContent: some View {
         VStack(alignment: .leading, spacing: colorScheme == .light ? 10 : 12) {
             HStack(alignment: .top, spacing: 12) {
+                if isCompact {
+                    avatarImage
+                        .frame(width: 56, height: 56)
+                        .clipShape(Circle())
+                        .accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(verbatim: displayName)
                         .font(.title3.bold())
@@ -131,13 +148,17 @@ struct OwnerCardView: View {
 
                 Spacer(minLength: 4)
                 githubButton
+                if isCompact {
+                    SheetCloseButton(action: onClose)
+                        .accessibilityLabel(Text("common.close"))
+                }
             }
 
             if let normalizedBio {
                 Text(verbatim: normalizedBio)
                     .font(.callout)
                     .foregroundStyle(secondaryContentColor)
-                    .lineLimit(3)
+                    .lineLimit(isCompact ? 2 : 3)
                     .truncationMode(.tail)
                     .help(normalizedBio)
             }
@@ -164,7 +185,7 @@ struct OwnerCardView: View {
 
                 Spacer(minLength: 4)
 
-                followButton
+                if showsFollowAction { followButton }
             }
 
             if contributionPayload != nil {
@@ -347,6 +368,7 @@ struct OwnerCardView: View {
                 )
             )
             .resizable()
+            .onSuccess { _ in onAvatarLoaded(imageURL) }
             .cancelOnDisappear(true)
             .placeholder { avatarPlaceholder }
             .fade(duration: reduceMotion ? 0 : 0.2)
@@ -364,7 +386,7 @@ struct OwnerCardView: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(.secondary)
-                .padding(72)
+                .padding(isCompact ? 10 : 72)
         }
     }
 
@@ -420,7 +442,7 @@ struct OwnerCardView: View {
     }
 
     private var imageURL: URL? {
-        GitHubAvatarURL.imageURL(from: avatarURL, displayDiameter: 700)
+        GitHubAvatarURL.imageURL(from: avatarURL, displayDiameter: isCompact ? 112 : 700)
     }
 
     private var normalizedBio: String? {
@@ -434,11 +456,11 @@ struct OwnerCardView: View {
     }
 
     private var primaryContentColor: Color {
-        colorScheme == .dark ? .white : .primary
+        isCompact ? .primary : (colorScheme == .dark ? .white : .primary)
     }
 
     private var secondaryContentColor: Color {
-        colorScheme == .dark ? .white.opacity(0.74) : .secondary
+        isCompact ? .secondary : (colorScheme == .dark ? .white.opacity(0.74) : .secondary)
     }
 
     private var dividerColor: Color {
@@ -478,6 +500,6 @@ struct OwnerCardView: View {
     }
 
     private func compactCount(_ value: Int) -> String {
-        value.formatted(.number.notation(.compactName))
+        value.formatted(.number.notation(.compactName).locale(locale))
     }
 }

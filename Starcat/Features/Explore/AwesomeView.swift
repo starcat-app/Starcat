@@ -12,6 +12,7 @@ import AppKit
 import SwiftUI
 
 struct AwesomeView: View {
+    @State private var skillPageBudget = RepoSkillPageBudget()
     let store: AwesomeStore
     let onRepoCountChange: (Int) -> Void
 
@@ -57,6 +58,11 @@ struct AwesomeView: View {
             reportCount()
         }
         .task(id: filteredDisplayItemIDs) {
+            await fillVisiblePageIfNeeded()
+        }
+        .task(id: "\(skillCandidates.map(\.id)):\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") {
+            guard settings.skillFilter != .any else { return }
+            dependencies.repoSkillStore.enqueue(skillCandidates, scope: skillScanScope)
             await fillVisiblePageIfNeeded()
         }
         .onChange(of: store.hasMoreRepositories) { _, hasMore in
@@ -316,9 +322,19 @@ struct AwesomeView: View {
     }
 
     private var filteredRepositories: [AwesomeRepositoryItem] {
+        filteredRepositories(includingSkill: true)
+    }
+
+    private var skillCandidates: [Repo] {
+        filteredRepositories(includingSkill: false).map {
+            $0.discoveryDTO.toEphemeralRepo(isStarred: dependencies.starredRegistry.contains(ghRepoId: $0.id))
+        }
+    }
+
+    private func filteredRepositories(includingSkill: Bool) -> [AwesomeRepositoryItem] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let filtered = store.repositories.filter { repo in
-            guard matchesGlobalFilters(repo) else { return false }
+            guard matchesGlobalFilters(repo, includingSkill: includingSkill) else { return false }
             let matchesSection = selectedSection == nil || repo.evidence.contains {
                 $0.sectionPath.joined(separator: " / ") == selectedSection
             }
@@ -416,18 +432,27 @@ struct AwesomeView: View {
 
     /// 全局筛选可能让一页 40 条只剩少量结果。继续读取本地页直到凑满一个可滚动首屏，
     /// 否则空结果页没有行可触发预取，用户会误以为整个来源没有匹配仓库。
+    private var skillScanScope: String {
+        "awesome:\(store.selectedSourceID ?? ""):\(searchText):\(selectedSection ?? ""):\(settings.skillScanFilterIdentity)"
+    }
+
     private func fillVisiblePageIfNeeded() async {
         guard !requiresCompleteRepositorySet else { return }
         while filteredRepositories.count < AwesomeStore.repositoryPageSize,
               store.hasMoreRepositories,
               let lastRepositoryID = store.repositories.last?.id,
               !Task.isCancelled {
+            if settings.skillFilter != .any,
+               !skillPageBudget.claim(scope: "\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") { return }
+            let count = store.repositories.count
             await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: lastRepositoryID)
+            if count == store.repositories.count { return }
         }
     }
 
-    private func matchesGlobalFilters(_ repo: AwesomeRepositoryItem) -> Bool {
-        AwesomeGlobalFilterPolicy.matches(
+    private func matchesGlobalFilters(_ repo: AwesomeRepositoryItem, includingSkill: Bool = true) -> Bool {
+        if includingSkill, !settings.skillFilter.matches(dependencies.repoSkillStore.presence(repositoryID: repo.id)) { return false }
+        return AwesomeGlobalFilterPolicy.matches(
             repo,
             options: AwesomeGlobalFilterOptions(
                 hideArchived: settings.hideArchived,
@@ -485,6 +510,10 @@ struct AwesomeView: View {
     }
 
     private func reportCount() {
+        if settings.skillFilter != .any {
+            onRepoCountChange(filteredDisplayItems.count)
+            return
+        }
         // 许可证需要完整来源，不能把前 40 条中的命中数冒充完整计数。
         guard !settings.licenseFilter.isActive || !store.hasMoreRepositories else { return }
         if store.hasMoreRepositories, !requiresCompleteRepositorySet {

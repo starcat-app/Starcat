@@ -589,8 +589,11 @@ struct LocalAIModelsSection: View {
 }
 
 
-/// 薄荷色往复滑块：加载阶段 MLX 不暴露字节进度，用不确定动画表达「正在进行」。
-private struct IndeterminateCapsuleBar: View {
+/// 设置页共用的 4pt 往复滑块：模型加载及 Runtime 下载未提供总量时表达「正在进行」。
+struct IndeterminateCapsuleBar: View {
+    var tint: Color = .mint
+    var reduceMotion = false
+
     @State private var trailing: Bool = false
 
     var body: some View {
@@ -599,7 +602,7 @@ private struct IndeterminateCapsuleBar: View {
                 Capsule()
                     .fill(.quaternary)
                 Capsule()
-                    .fill(.mint)
+                    .fill(tint)
                     .frame(width: geo.size.width * 0.35)
                     .offset(x: trailing ? geo.size.width * 0.65 : 0)
             }
@@ -607,6 +610,7 @@ private struct IndeterminateCapsuleBar: View {
         .frame(height: 4)
         .accessibilityLabel(Text("settings.localai.model.status.loading"))
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
                 trailing = true
             }

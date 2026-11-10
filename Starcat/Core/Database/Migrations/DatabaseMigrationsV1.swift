@@ -122,6 +122,26 @@ enum DatabaseMigrations {
         registerV22(into: &migrator)
         registerV23(into: &migrator)
         registerV24(into: &migrator)
+        registerV25(into: &migrator)
+    }
+
+    /// Skill 是可重建的仓库证据，独立于 repos，允许探索结果扫描而不改变 Star / 知识库归属。
+    private static func registerV25(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v25-repository-skills") { db in
+            try db.execute(sql: """
+                CREATE TABLE repo_skill_scans (
+                    repo_id INTEGER PRIMARY KEY NOT NULL,
+                    commit_sha TEXT NOT NULL,
+                    pushed_at TEXT,
+                    branch TEXT,
+                    rules_version INTEGER NOT NULL,
+                    expires_at REAL NOT NULL,
+                    presence TEXT NOT NULL,
+                    payload BLOB NOT NULL
+                );
+                CREATE INDEX idx_repo_skill_scans_presence ON repo_skill_scans(presence, expires_at);
+                """)
+        }
     }
 
     // MARK: - v24-github-star-list-local-overrides：组织限制下的本地分组覆盖（2026-09-21）

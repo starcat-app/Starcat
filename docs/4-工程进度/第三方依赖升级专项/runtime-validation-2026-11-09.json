@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-09",
+  "scope": "Direct optional runtimes; App Store bundled CodebaseMemory remains 0.8.1",
+  "versions": {
+    "codex": "0.167.0",
+    "deepseek_pypi": "0.2.1rc2",
+    "deepseek_cli": "0.2.1-rc.2",
+    "codebase_memory": "0.12.1"
+  },
+  "environment": {
+    "architecture": "arm64",
+    "macos": "27.0.1",
+    "xcode": "27.0"
+  },
+  "verification": {
+    "full_tests": {
+      "tests": 3845,
+      "suites": 435,
+      "known_issues": 1,
+      "result": "passed"
+    },
+    "final_targeted_tests": {
+      "tests": 45,
+      "suites": 3,
+      "result": "passed"
+    },
+    "debug_builds": {
+      "direct": "passed",
+      "appstore": "passed"
+    },
+    "real_archive_installation_and_initialize": "passed for all three arm64 runtimes using production installer and local official archive fixtures",
+    "codex_turn": "real runtime with local mock model; passed",
+    "deepseek_mcp_turn": "real runtime with local mock model and MCP; passed",
+    "codebase_index": "disposable repository; 17 nodes, 16 edges, 17 MCP tools, HTTP 200",
+    "localization": {
+      "keys": 10,
+      "languages": 17,
+      "compiled_bundles_verified": 2,
+      "non_english_state": "needs_review"
+    }
+  },
+  "pending": [
+    "Direct GUI and actual URLSession download/cancellation acceptance",
+    "real cloud model and Starcat Swift MCP integration",
+    "macOS 15 and Intel",
+    "existing user index rebuild",
+    "App Store embedded CodebaseMemory upgrade"
+  ],
+  "local_evidence_root": "/tmp/starcat-runtimes-20261109",
+  "local_evidence_sha256": {
+    "full-tests-final.log": "6b9aa475bbd55ec932e5fedfa6052e7ef8875983eb584bba5ced46f99c46093d",
+    "final-tests-serial.log": "8196d4545105efe6dfae4c7f8bf25e035620b4efe7053383bac62c808775acf7",
+    "final-direct.log": "934ee8a5ab81a3bc6ac68c081c8c927593dda5c268e4ae0e09133660368934a6",
+    "final-appstore.log": "e41ec50710062e6b8b1100990e2d72e2add74346046445f09e049a98a284739e",
+    "codex-turn-result.json": "4a4e343bcc9751ba66b79bd4317b68eef6be6d476b73240ce418b078ecee3476",
+    "deepseek-mcp-turn-result.json": "afcbca22cb25fc9d4669cdafd614edf4a80f9b5b51d7b80999d6cffcad6d3f13",
+    "codebase-result.json": "58fb132bf0f08c7d67141023c923736d589981c2b36d57867b13bbd51e1fa09d"
+  }
+}

@@ -497,6 +497,7 @@ enum AgentRunEvent: Sendable {
     case usageUpdated(AgentUsage)
     case assistantReasoningDelta(String)
     case assistantDelta(String)
+    case assistantStreamUpdated(AgentAssistantStreamSnapshot?)
     case artifactCreated(AgentArtifact)
     case runCompleted
     case runFailed(String)

@@ -50,7 +50,8 @@ final class SearchCenterViewModel {
     /// 历史记录（按 `decayedScore` 降序排列；UI 直接遍历即可）。
     /// 持久化由 `historyRepository` 负责；本字段是异步加载后的最新内存快照。
     private(set) var history: [SearchHistory] = []
-    private(set) var currentGitHubPage: Int = 1
+    /// 页码由累计成功快照维护，不能因范围切换或失败请求提前推进
+    var currentGitHubPage: Int { coordinator.currentGitHubPage }
 
     let coordinator: SearchCoordinator
     private let historyRepository: any SearchHistoryRepositoryProtocol
@@ -98,7 +99,7 @@ final class SearchCenterViewModel {
     }
 
     var isSearching: Bool {
-        processChipSources.contains { source in
+        activeSources.contains { source in
             if case .loading = coordinator.status(for: source) { return true }
             return false
         }
@@ -115,6 +116,7 @@ final class SearchCenterViewModel {
     /// 排序与历史 `errorMessages` 一致，保证多来源同时失败时顺序稳定、不抖动。
     var footerErrors: [SearchFooterError] {
         coordinator.statuses.compactMap { source, status -> SearchFooterError? in
+            guard activeSources.contains(source) else { return nil }
             guard case .failed(let message) = status else { return nil }
             // `localSemantic` / 各 provider rawValue 对用户不友好；短标签与完整句
             // 都走产品向本地化名，避免底栏出现调试标识。
@@ -152,8 +154,7 @@ final class SearchCenterViewModel {
     }
 
     var canLoadMoreGitHub: Bool {
-        guard case .loaded(let page) = coordinator.status(for: .github) else { return false }
-        return page.hasNextPage
+        !isLoadingGitHub && coordinator.loadedPage(for: .github)?.hasNextPage == true
     }
 
     var isLoadingGitHub: Bool {
@@ -162,9 +163,9 @@ final class SearchCenterViewModel {
     }
 
     var canLoadMoreWeb: Bool {
-        guard externalSearchFilters.maxResults < 100,
-              case .loaded(let page) = coordinator.status(for: .web) else { return false }
-        return page.hasNextPage
+        externalSearchFilters.maxResults < 100
+            && !isLoadingWeb
+            && coordinator.loadedPage(for: .web)?.hasNextPage == true
     }
 
     var isLoadingWeb: Bool {
@@ -244,10 +245,10 @@ final class SearchCenterViewModel {
         }
     }
 
-    /// 至少有一个过程 chip 来源已经 loaded / failed。
+    /// 至少有一个当前范围内的来源已经 loaded / failed
     /// 关键词先返回 0 时必须为 true，这样结果区不再继续画 8 行假骨架。
     var hasSettledSearchProvider: Bool {
-        processChipSources.contains { source in
+        activeSources.contains { source in
             switch coordinator.status(for: source) {
             case .loaded, .failed:
                 return true
@@ -263,8 +264,8 @@ final class SearchCenterViewModel {
         candidates.isEmpty && isSearching && !hasSettledSearchProvider
     }
 
-    /// 过程 chip 的固定顺序。`.github` / `.web` 不走这里，避免和筛选条 / 用时汇总抢位。
-    private var processChipSources: [SearchSource] {
+    /// 加载态必须覆盖当前范围的全部来源，不能复用为了底栏排版而裁剪过的 chip 集合
+    private var activeSources: [SearchSource] {
         switch scope {
         case .all:
             var sources: [SearchSource] = [.localKeyword, .localSemantic, .github]
@@ -274,9 +275,16 @@ final class SearchCenterViewModel {
             return sources
         case .local:
             return [.localKeyword, .localSemantic]
-        case .github, .web:
-            return []
+        case .github:
+            return [.github]
+        case .web:
+            return [.web]
         }
+    }
+
+    /// 远端独立范围保留原有摘要排版，但仍参与加载态判断
+    private var processChipSources: [SearchSource] {
+        scope == .all || scope == .local ? activeSources : []
     }
 
     func present(scope requestedScope: SearchScope? = nil) {
@@ -324,7 +332,6 @@ final class SearchCenterViewModel {
         try? await historyRepository.record(request.query)
         await reloadHistory()
         selectedIndex = nil
-        currentGitHubPage = 1
         telemetryManager?.track(
             .searchPerformed,
             properties: [.source: .string(request.scope.rawValue)]
@@ -342,7 +349,6 @@ final class SearchCenterViewModel {
         guard !lastSubmittedQuery.isEmpty else { return }
         query = lastSubmittedQuery
         selectedIndex = nil
-        currentGitHubPage = 1
         await coordinator.updateScope(makeRequest(query: lastSubmittedQuery))
         clampSelection()
     }
@@ -376,21 +382,19 @@ final class SearchCenterViewModel {
 
     func applyGitHubFilters() async {
         guard !lastSubmittedQuery.isEmpty else { return }
-        currentGitHubPage = 1
         selectedIndex = nil
-        await coordinator.search(makeRequest(query: lastSubmittedQuery))
+        await coordinator.updateScope(makeRequest(query: lastSubmittedQuery), refreshing: .github)
         clampSelection()
     }
 
     /// 应用 AnySearch 筛选条件。与 `applyGitHubFilters` 对称：触发 coordinator
-    /// 重跑当前 query，ExternalSearchWebProvider 内的 cache key 已把 filters fingerprint
+    /// 重跑当前 query 的网页来源，ExternalSearchWebProvider 的 cache key 已把 filters fingerprint
     /// 纳入，新筛选不会复用旧结果。
     func applyAnySearchFilters() async {
         guard !lastSubmittedQuery.isEmpty else { return }
         guard canRunExplicitWebSearch(makeRequest(query: lastSubmittedQuery)) else { return }
-        currentGitHubPage = 1
         selectedIndex = nil
-        await coordinator.search(makeRequest(query: lastSubmittedQuery))
+        await coordinator.updateScope(makeRequest(query: lastSubmittedQuery), refreshing: .web)
         clampSelection()
     }
 
@@ -398,24 +402,13 @@ final class SearchCenterViewModel {
         webSearchProvider = provider
         guard scope == .web, !lastSubmittedQuery.isEmpty else { return }
         selectedIndex = nil
-        await coordinator.search(makeRequest(query: lastSubmittedQuery))
+        await coordinator.updateScope(makeRequest(query: lastSubmittedQuery))
         clampSelection()
     }
 
     func loadMoreGitHub() async {
         guard canLoadMoreGitHub, !lastSubmittedQuery.isEmpty else { return }
-        currentGitHubPage += 1
-        let request = SearchRequest(
-            query: lastSubmittedQuery,
-            scope: scope,
-            githubFilters: githubFilters,
-            anySearchFilters: anySearchFilters,
-            externalSearchFilters: externalSearchFilters,
-            externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
-            page: currentGitHubPage,
-            perPage: 30,
-            includeWebInAll: includeWebInAll()
-        )
+        let request = makeRequest(query: lastSubmittedQuery, page: currentGitHubPage + 1)
         await coordinator.loadMore(request, source: .github)
         clampSelection()
     }
@@ -464,7 +457,8 @@ final class SearchCenterViewModel {
         }
     }
 
-    private func makeRequest(query: String) -> SearchRequest {
+    /// 新查询、筛选与范围切换始终描述首页；只有显式翻页才传入下一页
+    private func makeRequest(query: String, page: Int = 1) -> SearchRequest {
         SearchRequest(
             query: query,
             scope: scope,
@@ -472,7 +466,7 @@ final class SearchCenterViewModel {
             anySearchFilters: anySearchFilters,
             externalSearchFilters: externalSearchFilters,
             externalSearchProvider: scope == .web ? webSearchProvider : AppSettings.shared.externalSearchDefaultProvider,
-            page: currentGitHubPage,
+            page: page,
             includeWebInAll: includeWebInAll(),
             minimumSemanticScore: AppSettings.shared.aiSemanticSearchScoreThreshold
         )

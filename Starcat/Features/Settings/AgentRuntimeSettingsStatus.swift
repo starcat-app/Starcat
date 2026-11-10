@@ -15,7 +15,19 @@ enum AgentRuntimeSettingsStatus: Equatable {
     case idle
     case checking
     case ready
-    case failed(String)
+    case failed(String, summaryKey: String)
+
+    /// 摘要按错误类型生成，完整诊断另存；避免靠截断英文或路径来拼接面向用户的提示。
+    static func failure(_ error: Error) -> Self {
+        let summaryKey: String
+        switch error {
+        case ExternalAgentRuntimeError.executableNotFound, CodexRuntimeInstallationError.runtimeNotFound:
+            summaryKey = "settings.integration.agentRuntime.status.executableNotFound"
+        default:
+            summaryKey = "settings.integration.agentRuntime.status.failed"
+        }
+        return .failed(error.localizedDescription, summaryKey: summaryKey)
+    }
 
     var isChecking: Bool {
         if case .checking = self { return true }

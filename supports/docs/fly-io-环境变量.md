@@ -528,3 +528,20 @@ make -C supports fly-health-all
 | `supports/starcat-*/.env.example` | 本地开发模板 |
 | `Configs/Secrets.xcconfig.template` | 客户端 baked-in Key 模板 |
 | `docs/6-发版与上架/v1-上架检查清单.md` §2.2 | 上架前 Key 策略检查项 |
+
+## 每周 AI 大事（2026-11-06）
+
+独立源码 `starcat-ai-events-api`，生产仍为 `starcat-api`；无独立 Fly App。
+聚合头 `X-SC-Svc: ai-events`，配置如下：
+
+| 变量 | 用途 |
+|---|---|
+| `AI_EVENTS_STORE_FILE` | `/data/ai-events.db`，同卷分库 |
+| `AI_EVENTS_API_KEYS` | 客户端只读 Key；可沿用聚合只读 Key |
+| `AI_EVENTS_ADMIN_API_KEYS` | 独立发布 Key，禁止进入 App |
+| `AI_EVENTS_GITHUB_TOKENS` | 可选，后台关联项目核验 |
+| `AI_EVENTS_RESPONSE_CACHE_BYTES` | 默认 16777216，最大 128 MiB |
+
+发布端使用 `AI_EVENTS_ADMIN_KEY` 与 `AI_EVENTS_API_KEY`，前者不得与后者相同。
+同期双语事务发布，重试同一批次使用同一 key；生产内容仍需人工审核。
+配置与本地 `.env` 不能进入 Git、镜像、日志。只更新新服务 secrets 时不要同步其他服务。

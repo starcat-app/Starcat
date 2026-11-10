@@ -105,6 +105,9 @@ case "$APP" in
       "SHARING_API_KEYS=$SHARED"
       "TRENDING_API_KEYS=$SHARED"
       "WEEKLY_API_KEYS=$SHARED"
+      "AI_EVENTS_API_KEYS=$SHARED"
+      "AI_EVENTS_STORE_FILE=/data/ai-events.db"
+      "AI_EVENTS_RESPONSE_CACHE_BYTES=16777216"
       "RECOMMEND_API_KEYS=$SHARED"
       "DISCOVERY_API_KEYS=$SHARED"
       "WIKI_STORE_FILE=/data/wiki.db"
@@ -129,7 +132,7 @@ case "$APP" in
       args+=("WEEKLY_ADMIN_API_KEYS=$WEEKLY_ADMIN")
     fi
     # 自研推荐的发布凭据与公开 metadata PAT 分离，不再读取第三方配置。
-    for optional_key in RECOMMEND_MODEL_PUBLISH_KEYS RECOMMEND_GITHUB_TOKENS RECOMMEND_MAX_BUNDLE_BYTES; do
+    for optional_key in AI_EVENTS_ADMIN_API_KEYS AI_EVENTS_GITHUB_TOKENS RECOMMEND_MODEL_PUBLISH_KEYS RECOMMEND_GITHUB_TOKENS RECOMMEND_MAX_BUNDLE_BYTES; do
       if optional_value="$(read_env_val "$optional_key" 2>/dev/null || true)" && [[ -n "$optional_value" ]]; then
         args+=("${optional_key}=${optional_value}")
       fi

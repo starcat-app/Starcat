@@ -43,6 +43,7 @@ final class MetricKitReporter: NSObject, MXMetricManagerSubscriber, @unchecked S
 
     func didReceive(_ payloads: [MXMetricPayload]) {
         for payload in payloads {
+            DiagnosticSystemDiagnostics.shared.record(payload.jsonRepresentation(), kind: "metric")
             record(
                 operation: "metricPayload",
                 payloadType: "metric",
@@ -53,6 +54,7 @@ final class MetricKitReporter: NSObject, MXMetricManagerSubscriber, @unchecked S
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
         for payload in payloads {
+            DiagnosticSystemDiagnostics.shared.record(payload.jsonRepresentation(), kind: "diagnostic")
             record(
                 operation: "diagnosticPayload",
                 payloadType: "diagnostic",

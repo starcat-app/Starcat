@@ -67,6 +67,9 @@ protocol RepoRepositoryProtocol: Sendable {
     /// 当前用户已 star 的 repo 总数。
     func starredCount() async throws -> Int
 
+    /// 在同一快照读取总数及半开时间窗内的数量，避免同步写入时两个计数互相矛盾。
+    func starredCounts(in interval: DateInterval) async throws -> (total: Int, withinInterval: Int)
+
     /// Starcat 私有知识库 repo 总数（`repo_notes.library_state = in_library`）。
     func knowledgeCount() async throws -> Int
 
@@ -250,6 +253,22 @@ extension RepoRepositoryProtocol {
     /// 既有入库入口继续刷新元数据；精简推荐快照须显式选择保留已有行。
     func upsertRepoMetadataForLibrary(repo: Repo, syncedAt: Date) async throws -> Repo {
         try await upsertRepoMetadataForLibrary(repo: repo, syncedAt: syncedAt, preservingExisting: false)
+    }
+
+    /// 轻量实现及测试替身复用相同口径；生产实现用 SQL 聚合，不为角标加载整库。
+    func starredCounts(in interval: DateInterval) async throws -> (total: Int, withinInterval: Int) {
+        let repos = try await fetchAllStarred().filter(\.isStarred)
+        let formatter = ISO8601DateFormatter()
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let count = repos.filter { repo in
+            guard let timestamp = repo.starredAt,
+                  let date = formatter.date(from: timestamp) ?? fractionalFormatter.date(from: timestamp) else {
+                return false
+            }
+            return date >= interval.start && date < interval.end
+        }.count
+        return (repos.count, count)
     }
 
     /// 测试替身和轻量实现可复用的兼容实现；生产 GRDB 会用 SQL 下推时间过滤。

@@ -8,10 +8,12 @@
 |---|---|---|
 | `scripts/package-appstore.sh` | App Store archive 构建入口 | 构建并验证 `Starcat` archive；上传由 Xcode Organizer / Transporter 完成 |
 | `scripts/release-direct.sh` | Direct 公开发布编排入口 | 完整路径：tag、官网/nginx 部署、Direct DMG、Sparkle appcast、上传、线上校验 |
+| `scripts/release-direct-development.sh` | Direct Beta 发布及恢复 | `X.Y.Z-beta.N`；只创建 prerelease 并公布 Beta feed；支持 `--resume` |
 | `scripts/release-store.sh` | 历史 ad-hoc 内测发版入口 | legacy 且默认禁用；需 `STARCAT_ALLOW_LEGACY_RELEASE=1`，不用于正式双渠道发布 |
 | `scripts/package-direct.sh` | Direct 包构建入口 | 构建 `StarcatDirect`，校验 Sparkle 与非沙箱 entitlement，生成 DMG/SHA，可选 notarization/appcast |
 | `scripts/build-dmg.sh` | legacy 内测 DMG 构建入口 | 仅供 `release-store.sh` 历史流程使用，输出到 `build/dmg/` |
 | `scripts/publish-direct-github-release.py` | GitHub 草稿上传、回读 SHA256 校验、公开及安全续跑 | 只上传 DMG/SHA256，不操作官网 appcast |
+| `scripts/verify-direct-release-artifacts.py` | 两种 Direct 恢复入口共用的只读校验 | 检查原 tag、最终 DMG/SHA256、公证票据和当前 appcast；不依赖当前 HEAD |
 | `scripts/merge-appcast.py` | appcast 合并工具 | 把当前版本 appcast item 合并进 `supports/starcat-site/direct/appcast.xml` |
 | `supports/starcat-site/direct/deploy.sh` | 官网/nginx 部署脚本 | 一次完成 nginx 校验/reload 与静态官网同步 |
 | `supports/starcat-site/direct/generate-changelog.py` | 官网 changelog 生成脚本 | 官网部署前生成 `supports/starcat-site/direct/changelog.html` |
@@ -81,8 +83,8 @@ DMG/SHA256 不再通过 rsync 上传阿里云，appcast 更新地址仍为 `http
 | `STARCAT_RELEASE_WEB_DIR` | 远程网站根目录，默认 `/var/www/starcat` |
 | `STARCAT_SITE_ROOT` | 独立官网仓库路径，默认 `supports/starcat-site` |
 | `STARCAT_DOWNLOAD_BASE_URL` | DMG URL 前缀，默认 `https://github.com/starcat-app/Starcat/releases/download/v<version>/` |
-| `STARCAT_RELEASE_REUSE_ARTIFACTS=1` | 上传失败后复用最终 DMG/SHA/appcast-current，不重新打包或 staple；配合 `STARCAT_RELEASE_SKIP_TAG=1` |
-| `STARCAT_RELEASE_SKIP_TAG=1` | tag 已存在时重跑发布 |
+| `STARCAT_RELEASE_REUSE_ARTIFACTS=1` | 等同 `--resume`，只恢复 GitHub 与 appcast；不打 tag、不构建、不部署官网静态页，不要求当前分支或源码干净 |
+| `STARCAT_RELEASE_SKIP_TAG=1` | tag 已存在但尚需打包/续跑公证时使用；不会跳过打包，最终产物已就绪应使用 `--resume` |
 | `STARCAT_RELEASE_SKIP_NGINX=1` | 跳过 nginx 部署 |
 | `STARCAT_RELEASE_SKIP_SITE=1` | 跳过 changelog 和静态官网部署 |
 | `STARCAT_RELEASE_DRY_RUN=1` | 打印副作用命令，并跳过状态写入、部署、构建、上传和线上校验 |
@@ -153,20 +155,55 @@ Direct 正式发布，也不要用它绕过双渠道签名、公证、上传和�
 
 ## 失败恢复
 
+### 最终产物已经就绪
+
+```bash
+./scripts/release-direct.sh X.Y.Z --resume
+./scripts/release-direct-development.sh X.Y.Z-beta.N --resume
+```
+
+两个入口均先校验：
+
+- DMG/SHA256 文件名、真实摘要、appcast 的唯一 item、营销版本、构建号、下载 URL、
+  附件大小、Sparkle 签名字段和更新说明；
+- 本地 tag 对象与远端同名 tag 相同，并回显原 tag 的 commit；不要求当前 HEAD 等于 tag；
+- 已有公证票据和 Gatekeeper 接受状态；只 validate/assess，不重新公证、签名或 staple。
+
+恢复不会触碰源码脏状态，也不会创建或推送 tag。正式恢复只处理 GitHub 及正式/Beta feed；
+官网静态页和 Homebrew 若尚未发布，作为原发布范围内的剩余阶段单独处理，不能报告整版完成。
+
+### Beta 契约与验收
+
+新构建要求 `dev` 和干净工作区，并设置 `STARCAT_NOTARIZE=1`。
+版本号使用 `X.Y.Z-beta.N`（N 为无前导零的正整数），App 营销版本保持 `X.Y.Z`。
+最终产物在 `dist/direct-development/downloads/`：
+`Starcat-X.Y.Z-arm64.dmg`、同名 `.sha256`、`appcast-current.xml`。
+Beta 允许使用 Direct 对应版本的待发布 Changelog。
+
+完成必须同时核实：GitHub `isDraft=false`、`isPrerelease=true`，两份附件下载摘要正确，
+公开下载地址可用，线上 `appcast-development.xml` 与本地发布内容相同；
+正式 `appcast.xml`、正式 latest、Homebrew 和 App Store 保持原状。官网仓库的 feed
+改动按当前任务授权单独提交/推送。
+
+### 故障处理
+
 | 失败点 | 建议处理 |
 |---|---|
-| 工作区不干净 | 停止；展示 `git status --short`；请用户决定 commit、stash 或确认范围 |
+| 新构建工作区不干净 | 展示现状并处理构建范围；若最终产物已就绪，改用 `--resume`，不为上传修改源码 |
 | App Store 检测到 Beta/RC/Preview Xcode | 停止；改用 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`，不复用已生成的待审核包 |
 | App Store archive 生成失败 | 停止；检查 `dist/appstore/xcodebuild-appstore.log`、Apple Distribution identity 与 App Store target 配置 |
 | Direct 分支不对 | 停止；询问是否切到 main，或是否仅为诊断显式跳过分支检查 |
-| 本地 tag 已存在 | Direct 重跑使用 `STARCAT_RELEASE_SKIP_TAG=1`；legacy 流程则判断是否需要删除本地 tag |
+| 本地 tag 已存在 | 最终产物已就绪用 `--resume`；尚需打包/续跑公证才用 `STARCAT_RELEASE_SKIP_TAG=1`；不改写原 tag |
 | 远端 tag 已存在 | 不要自动删除；删除远端 tag 会影响协作者，必须让用户明确决定 |
 | legacy 流程在本地 tag 后构建失败 | 默认保留 tag；如果用户想干净重试，再建议 `git tag -d vX.Y.Z` |
 | Direct 包缺少 Sparkle | 视为构建/渠道配置问题；先检查 `project.yml` 和 target 设置，再重试 |
 | Direct 包带 sandbox entitlement | 停止；Direct 必须非沙箱；检查 target entitlements 和 scheme |
 | notarization 失败 | 检查 notarytool 输出和 Apple 凭证；除非用户明确选择，否则不要上传未 notarize 的公开 DMG |
 | appcast 合并后缺少新 DMG/版本 | 停止；检查 `appcast-current.xml`、`supports/starcat-site/direct/appcast.xml` 和 `merge-appcast.py` |
-| GitHub 上传中断 | 保留本地产物，使用 `STARCAT_RELEASE_SKIP_TAG=1 STARCAT_RELEASE_REUSE_ARTIFACTS=1` 续跑；仅补草稿缺失附件 |
+| GitHub 上传中断 | 先回读实际状态，保留原产物，使用对应脚本 `--resume`；只补草稿缺失附件 |
+| by-tag 查询 404 | 仍需分页读取 Release 列表精确匹配 `tag_name`；不能直接创建草稿 |
+| 多份同 tag 草稿 | 停止写操作，核对 ID/归属/附件；不删除未知草稿，不做“删完再原样重跑” |
+| 相同逻辑错误再次出现 | 停止原命令的写操作，检查入口调用链并补模拟回归；有新证据后再恢复 |
 | GitHub 附件与本地不同 | 停止；不覆盖附件、不公开草稿、不上传 appcast |
 | 线上 URL 校验失败 | 停止；检查上传路径、nginx/site 部署、DNS/TLS 和远程文件权限 |
 | Homebrew Cask 仍是旧版本 | 从正式 DMG/SHA 文件更新 tap；不要只依赖 appcast 的 livecheck |

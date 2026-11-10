@@ -15,13 +15,15 @@ import SwiftUI
 struct CodebaseMemoryExecutableSettingsView: View {
     private enum ResolutionState: Equatable {
         case idle
-        case resolving
         case available(CodebaseMemoryExecutable)
         case unavailable(String)
     }
 
     @State private var resolutionState: ResolutionState = .idle
     @State private var hasUserSelection = false
+    private var isInstalling: Bool { RuntimeDownloadManager.shared.state(for: .codebaseMemory).isInstalling }
+    // 忙碌状态与上次结果分开，重新检测不会清空版本、副标题和路径
+    @State private var isResolving = false
 
     private let channel: DistributionChannel
     private let resolver: CodebaseMemoryBinaryResolver
@@ -49,13 +51,6 @@ struct CodebaseMemoryExecutableSettingsView: View {
                 executableStatus
             }
 
-            if case .unavailable(let message) = resolutionState {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-
             // App Store 始终使用内置程序，不展示外部路径选择或自动检测恢复入口。
             if channel.isDirect {
                 AgentRuntimePathRow(
@@ -64,44 +59,49 @@ struct CodebaseMemoryExecutableSettingsView: View {
                 ) {
                     AgentRuntimePathTrailingActions(
                         path: displayedExecutablePath,
-                        isDisabled: isResolving,
+                        isDisabled: isResolving || isInstalling,
                         onChoose: chooseExecutable
                     ) {
                         ResetIconButton(help: Text("settings.integration.codebaseMemory.executable.restoreAutomatic")) {
                             Task { await restoreAutomaticDetection() }
                         }
-                        .disabled(!hasUserSelection || isResolving)
+                        .disabled(!hasUserSelection || isResolving || isInstalling)
                     }
                 }
             }
 
+            if channel.isDirect {
+                RuntimeDownloadButton(
+                    runtime: .codebaseMemory, installedVersion: installedVersion,
+                    isCheckingVersion: isResolving
+                )
+            }
             HStack(spacing: 8) {
+                RuntimeDetectionFeedback(
+                    runtime: .codebaseMemory, status: detectionStatus, installedVersion: installedVersion,
+                    isChecking: isResolving, comparesDownloadVersion: channel.isDirect
+                )
                 Spacer()
-                if channel.isDirect {
-                    Link(
-                        "settings.integration.codebaseMemory.executable.install",
-                        destination: CodebaseMemoryBinaryResolver.installationURL
-                    )
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                }
                 Button("settings.integration.codebaseMemory.executable.detectAgain") {
                     Task { await refresh() }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
-                .disabled(isResolving)
+                .disabled(isResolving || isInstalling)
             }
         }
         .task { await refresh() }
+        .onChange(of: RuntimeDownloadManager.shared.state(for: .codebaseMemory)) { _, state in
+            if case .completed = state { Task { await refresh() } }
+        }
     }
 
     /// 状态、版本和来源来自 resolver 的同一次结果，不把示例版本或路径带入设置页。
     @ViewBuilder
     private var executableStatus: some View {
         switch resolutionState {
-        case .idle, .resolving:
-            Text("settings.integration.codebaseMemory.executable.detecting")
+        case .idle:
+            Text("settings.integration.agentRuntime.notConfigured")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .available:
@@ -120,9 +120,18 @@ struct CodebaseMemoryExecutableSettingsView: View {
         return ""
     }
 
-    private var isResolving: Bool {
-        if case .resolving = resolutionState { return true }
-        return false
+    private var detectionStatus: AgentRuntimeSettingsStatus {
+        switch resolutionState {
+        case .idle: .idle
+        case .available: .ready
+        case .unavailable(let message):
+            .failed(message, summaryKey: "settings.integration.agentRuntime.status.failed")
+        }
+    }
+
+    private var installedVersion: String? {
+        if case .available(let executable) = resolutionState { return executable.version }
+        return nil
     }
 
     private func executableDescription(_ executable: CodebaseMemoryExecutable) -> String {
@@ -141,7 +150,8 @@ struct CodebaseMemoryExecutableSettingsView: View {
     @MainActor
     private func refresh() async {
         guard !isResolving else { return }
-        resolutionState = .resolving
+        isResolving = true
+        defer { isResolving = false }
         hasUserSelection = await resolver.hasUserSelectedExecutable()
         do {
             resolutionState = .available(try await resolver.resolveExecutableInfo())
@@ -161,8 +171,9 @@ struct CodebaseMemoryExecutableSettingsView: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        resolutionState = .resolving
+        isResolving = true
         Task {
+            defer { isResolving = false }
             do {
                 resolutionState = .available(try await resolver.selectExecutable(url))
                 hasUserSelection = true

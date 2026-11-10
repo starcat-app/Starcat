@@ -45,6 +45,7 @@ import AppKit
 
 /// Explore Weekly 分类的内容视图。
 struct WeeklyContentView: View {
+    @State private var skillPageBudget = RepoSkillPageBudget()
 
     /// Weekly 筛选 popover 固定宽度。
     ///
@@ -141,7 +142,29 @@ struct WeeklyContentView: View {
             applyWeeklyDetailSelectionPolicy(from: viewModel.items)
         }
         .preference(key: RepoLicenseOptionsPreferenceKey.self, value: viewModel.licenseOptions)
-        .onChange(of: viewModel.total, initial: true) { _, total in onRepoCountChange(total) }
+        .onChange(of: viewModel.total, initial: true) { _, total in
+            onRepoCountChange(settings.skillFilter == .any ? total : globalFilteredItems(viewModel.items).count)
+        }
+        .task(id: "\(viewModel.itemsRevision):\(skillCandidates(viewModel.items).map(\.id)):\(settings.skillScanFilterIdentity):\(selectedLanguage ?? ""):\(dependencies.repoSkillStore.paginationRevision)") {
+            guard settings.skillFilter != .any else { return }
+            let candidates = skillCandidates(viewModel.items)
+            let scope = "weekly:\(selectedLanguage ?? ""):\(viewModel.quickSearchQuery):\(settings.skillScanFilterIdentity):\(settings.exploreCatalogPreferences.hiddenWeeklySources)"
+            dependencies.repoSkillStore.enqueue(candidates, scope: scope)
+            for _ in 0..<20 {
+                guard !Task.isCancelled, globalFilteredItems(viewModel.items).count < 40, viewModel.hasMore else { break }
+                guard skillPageBudget.claim(scope: "\(scope):\(dependencies.repoSkillStore.paginationRevision)") else { break }
+                let count = viewModel.items.count
+                await viewModel.loadMoreIfNeeded()
+                if viewModel.items.count == count { break }
+            }
+            onRepoCountChange(globalFilteredItems(viewModel.items).count)
+        }
+        .onChange(of: dependencies.repoSkillStore.revision) { _, _ in
+            if settings.skillFilter != .any {
+                onRepoCountChange(globalFilteredItems(viewModel.items).count)
+                applyWeeklyDetailSelectionPolicy(from: viewModel.items)
+            }
+        }
         .onChange(of: settings.licenseFilter) { _, filter in
             viewModel.changeLicenseFilter(to: filter)
         }
@@ -694,14 +717,24 @@ struct WeeklyContentView: View {
         }
     }
 
+    private func skillCandidates(_ items: [WeeklyFeedItem]) -> [Repo] {
+        items.filter {
+            matchesGlobalFilters(repoId: $0.ghRepoId, owner: $0.owner, name: $0.name,
+                                 language: $0.language, isArchived: $0.card.isArchived,
+                                 isFork: $0.card.isFork, includingSkill: false)
+        }.map { $0.card.toEphemeralRepo() }
+    }
+
     private func matchesGlobalFilters(
         repoId: Int64,
         owner: String,
         name: String,
         language: String?,
         isArchived: Bool,
-        isFork: Bool
+        isFork: Bool,
+        includingSkill: Bool = true
     ) -> Bool {
+        if includingSkill, !settings.skillFilter.matches(dependencies.repoSkillStore.presence(repositoryID: repoId)) { return false }
         guard settings.starFilter.matches(
             isStarred: dependencies.starredRegistry.contains(ghRepoId: repoId)
         ) else { return false }
@@ -774,6 +807,7 @@ struct WeeklyContentView: View {
     }
 
     private func applyWeeklyDetailSelectionPolicy(from items: [WeeklyFeedItem]) {
+        let items = settings.skillFilter == .any ? items : globalFilteredItems(items)
         let selection = dependencies.weeklySelectionService
         guard !items.isEmpty else {
             selection.clearSelection()
@@ -1506,6 +1540,7 @@ final class WeeklyContentViewModel {
             bumpRevision: bumpRevision,
             showSkeletonOnMiss: false
         )
+        recordDiagnosticSnapshot(phase: "bulkCacheApplied", cachedCount: snapshot.items.count)
     }
 
     private func applyPagedCacheSnapshot(
@@ -1532,6 +1567,22 @@ final class WeeklyContentViewModel {
             itemsRevision += 1
         }
         selectionService?.applyTotal(snapshot.catalogTotal)
+        recordDiagnosticSnapshot(phase: "pagedCacheApplied", cachedCount: snapshot.catalogTotal)
+    }
+
+    /// 导出筛选前后数量与缓存年龄，不保存来源名称、查询词或仓库正文。
+    private func recordDiagnosticSnapshot(phase: String, cachedCount: Int) {
+        var fields: [String: DiagnosticValue] = [
+            "cachedCount": .integer(cachedCount), "totalCount": .integer(total),
+            "displayedCount": .integer(items.count), "hasNextPage": .boolean(hasMore),
+            "hideArchived": .boolean(hideArchivedRepos), "hideForks": .boolean(hideForkRepos)
+        ]
+        if let lastBulkFetchedAt {
+            fields["cacheAgeSeconds"] = .decimal(max(0, Date().timeIntervalSince(lastBulkFetchedAt)))
+        }
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .info, category: "weekly", operation: "presentation", message: "Weekly list state",
+            phase: phase, fields: fields))
     }
 
     private func reloadCachedPage(bumpRevision: Bool) async {

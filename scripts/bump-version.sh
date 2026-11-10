@@ -15,8 +15,9 @@
 #     hash 走自定义 key（App Review 不审 plist 自定义字段），UI 层拼接展示完整信息。
 #
 # 关键约束：
-#   - 必须放在 postBuildScripts（target 所有 phase 之后、codesign 之前），
-#     否则改完 Info.plist 后 codesign 会失败 / 拿到旧版本号。
+#   - 放在 postBuildScripts，并将最终 Info.plist 声明为 inputFiles：
+#     phase 位置不能约束 ProcessInfoPlistFile；缺少显式依赖时，版本可能被随后生成的 plist 覆盖。
+#     读取依赖保证先生成 plist，再改版本，最后签名，不在签名后修补产物。
 #   - 脚本只改 Xcode 已生成的产物 Info.plist (${TARGET_BUILD_DIR}/${INFOPLIST_PATH})，
 #     不修改源码 / 不修改 project.yml。每次 clean build 后由 Xcode 重新生成 plist，再被本脚本改写。
 #   - 在非 git 仓库 / git 工具缺失 / shallow clone 等异常情况下静默退化，不让 build 失败。
@@ -26,6 +27,7 @@
 # 入口约定：
 #   - 由 xcodegen 在 project.yml 的 postBuildScripts 中调用。
 #   - 命令行手动跑也支持（用于本地排查），脚本会用相同逻辑。
+#   - --verify <plist>... 只读核对最终产物，供 Debug 启动入口阻断版本回退。
 #
 # 输出：写入产物 Info.plist + 打印版本日志到 Xcode build log。
 #
@@ -47,6 +49,8 @@ fi
 GIT_BIN="$(command -v git || true)"
 if [ -z "$GIT_BIN" ]; then
     echo "warning: git not found in PATH, skip auto-version"
+    # 校验入口不能把无法计算期望值当成校验通过。
+    if [ "${1:-}" = "--verify" ]; then exit 1; fi
     exit 0
 fi
 
@@ -91,6 +95,39 @@ else
     echo "    -> CFBundleShortVersionString   = (keep existing, no git tag yet)"
 fi
 
+PLISTBUDDY="/usr/libexec/PlistBuddy"
+
+# 只读比较最终产物；既检查展示版本，也检查关于页使用的 hash 和宿主/扩展构建号。
+verify_value() {
+    local plist="$1" key="$2" expected="$3" actual
+    actual="$("$PLISTBUDDY" -c "Print :$key" "$plist" 2>/dev/null || true)"
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: ${plist} 的 ${key} 应为 ${expected}，实际为 ${actual:-<missing>}" >&2
+        return 1
+    fi
+}
+
+if [ "${1:-}" = "--verify" ]; then
+    shift
+    if [ "$#" -eq 0 ]; then
+        echo "ERROR: --verify 至少需要一个产物 Info.plist 路径" >&2
+        exit 1
+    fi
+    for product_plist in "$@"; do
+        verify_value "$product_plist" CFBundleVersion "$COUNT"
+        verify_value "$product_plist" GitCommitHash "$HASH"
+        # 无 tag 时保留工程原值，不凭空为校验发明一个版本号。
+        if [ -n "$MARKETING" ]; then
+            verify_value "$product_plist" CFBundleShortVersionString "$MARKETING"
+        fi
+    done
+    echo "==> 最终产物版本校验通过"
+    exit 0
+elif [ "$#" -gt 0 ]; then
+    echo "用法：$0 [--verify <Info.plist>...]" >&2
+    exit 2
+fi
+
 # ---- 写入产物 Info.plist ----
 if [ -z "$PLIST" ]; then
     echo "info: not in Xcode build phase (TARGET_BUILD_DIR/INFOPLIST_PATH unset), exit without writing plist"
@@ -101,8 +138,6 @@ if [ ! -f "$PLIST" ]; then
     echo "warning: Info.plist not found at $PLIST, skip auto-version"
     exit 0
 fi
-
-PLISTBUDDY="/usr/libexec/PlistBuddy"
 
 # CFBundleVersion 写纯 commit count（App Store 规范：period-separated 非负整数）。
 "$PLISTBUDDY" -c "Set :CFBundleVersion $COUNT" "$PLIST"

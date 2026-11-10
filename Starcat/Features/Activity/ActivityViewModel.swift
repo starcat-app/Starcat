@@ -197,6 +197,18 @@ final class ActivityViewModel {
         var releases: [ReleaseTimelineEntry]
         var events: [ActivityEventRecord]
         var announcements: [ActivityAnnouncementRecord]
+        /// 空数组可能是尚未读取或读取失败；只有明确读成功的数据源才有权更新计数。
+        var countedCategories: Set<ActivityCategory> = []
+
+        mutating func recordLoaded(_ categories: Set<ActivityCategory>) {
+            countedCategories.formUnion(categories)
+            let localCategories: Set<ActivityCategory> = [
+                .announcement, .release, .star, .repository, .following, .suggestion,
+            ]
+            if localCategories.isSubset(of: countedCategories) {
+                countedCategories.insert(.all)
+            }
+        }
     }
 
     /// Security 扫描任务输入。只保留请求和日志需要的字符串，确保 TaskGroup 捕获值可 Sendable。
@@ -247,6 +259,8 @@ final class ActivityViewModel {
     /// Sidebar 分类计数共享状态。它只接收本 ViewModel 已经发布的 `allItems` 统计结果，
     /// 不参与加载决策，避免侧边栏徽章触发额外 DB / 网络工作。
     private let categoryCountService: ActivityCategoryCountService?
+    /// 模型生命周期属于创建时的数据库；旧模型不能把异步聚合写入换号后的计数缓存。
+    private let countScopeRevision: UInt64
 
     /// 当前 in-flight 的 reload 任务（切分类 / 重复刷新时取消老任务）。
     private var currentReloadTask: Task<Void, Never>?
@@ -275,6 +289,7 @@ final class ActivityViewModel {
         self.blogRSSClient = blogRSSClient
         self.currentLoginProvider = currentLoginProvider
         self.categoryCountService = categoryCountService
+        self.countScopeRevision = categoryCountService?.scopeRevision ?? 0
     }
 
     // MARK: - Public Actions
@@ -370,12 +385,13 @@ final class ActivityViewModel {
 
         if var snapshot = aggregateSnapshot {
             snapshot.events = []
+            snapshot.recordLoaded([.following])
             let items = await buildItems(from: snapshot, reason: "clearFollowing")
             publishItems(from: items, snapshot: snapshot)
         } else {
             allItems.removeAll { $0.kind == .following }
             filteredItemsCache.removeAll()
-            publishCategoryCounts(from: allItems)
+            categoryCountService?.applyLocalCounts([.following: 0], scopeRevision: countScopeRevision)
             applyCategoryFilter(currentCategory, bumpRevision: true)
         }
         loadError = nil
@@ -396,12 +412,13 @@ final class ActivityViewModel {
 
         if var snapshot = aggregateSnapshot {
             snapshot.announcements = []
+            snapshot.recordLoaded([.announcement])
             let items = await buildItems(from: snapshot, reason: "clearAnnouncement")
             publishItems(from: items, snapshot: snapshot)
         } else {
             allItems.removeAll { $0.kind == .announcement }
             filteredItemsCache.removeAll()
-            publishCategoryCounts(from: allItems)
+            categoryCountService?.applyLocalCounts([.announcement: 0], scopeRevision: countScopeRevision)
             applyCategoryFilter(currentCategory, bumpRevision: true)
         }
         loadError = nil
@@ -442,7 +459,7 @@ final class ActivityViewModel {
     /// 时间线 / Undo Star 进页时不再走 `ensureLoaded(.all)`，侧栏其它分类会一直没数字。
     /// 只读本地四路缓存并发布计数，不打网络、不改中栏时间线。
     func primeSidebarCategoryCountsIfNeeded() async {
-        if isAggregateLoaded {
+        if aggregateSnapshot?.countedCategories.contains(.all) == true {
             publishCategoryCounts(from: allItems)
             return
         }
@@ -508,10 +525,14 @@ final class ActivityViewModel {
             async let cachedReleasesTask = self.releaseRepository.fetchTimeline(limit: 120)
             async let cachedEventsTask = self.activityEventRepository.fetchAll(limit: 200)
             async let cachedAnnouncementsTask = self.activityAnnouncementRepository.fetchAll(limit: 100)
-            let cachedRepos = (try? await cachedReposTask) ?? []
-            let cachedReleases = (try? await cachedReleasesTask) ?? []
-            let cachedEvents = (try? await cachedEventsTask) ?? []
-            let cachedAnnouncements = (try? await cachedAnnouncementsTask) ?? []
+            let reposResult = try? await cachedReposTask
+            let releasesResult = try? await cachedReleasesTask
+            let eventsResult = try? await cachedEventsTask
+            let announcementsResult = try? await cachedAnnouncementsTask
+            let cachedRepos = reposResult ?? []
+            let cachedReleases = releasesResult ?? []
+            let cachedEvents = eventsResult ?? []
+            let cachedAnnouncements = announcementsResult ?? []
             guard !Task.isCancelled else { return }
 
             let hasUsableCache = !(cachedRepos.isEmpty && cachedReleases.isEmpty
@@ -523,6 +544,10 @@ final class ActivityViewModel {
                 events: cachedEvents,
                 announcements: cachedAnnouncements
             )
+            if reposResult != nil { snapshot.recordLoaded([.star, .repository, .suggestion]) }
+            if releasesResult != nil { snapshot.recordLoaded([.release]) }
+            if eventsResult != nil { snapshot.recordLoaded([.following]) }
+            if announcementsResult != nil { snapshot.recordLoaded([.announcement]) }
             let cachedItems = await self.buildItems(from: snapshot, reason: "reload.cached")
             self.publishItemsIfChanged(from: cachedItems, snapshot: snapshot)
             self.loadError = nil
@@ -566,7 +591,10 @@ final class ActivityViewModel {
                 switch result {
                 case .updated:
                     self.lastRefreshedAt = Date()
-                    snapshot.events = (try? await self.activityEventRepository.fetchAll(limit: 200)) ?? snapshot.events
+                    if let events = try? await self.activityEventRepository.fetchAll(limit: 200) {
+                        snapshot.events = events
+                        snapshot.recordLoaded([.following])
+                    }
                     didMutateAggregate = true
                 case .notModified:
                     self.lastRefreshedAt = Date()
@@ -580,8 +608,10 @@ final class ActivityViewModel {
                 guard !Task.isCancelled else { return }
                 switch result {
                 case .updated, .notModified:
-                    snapshot.announcements = (try? await self.activityAnnouncementRepository.fetchAll(limit: 100))
-                        ?? snapshot.announcements
+                    if let announcements = try? await self.activityAnnouncementRepository.fetchAll(limit: 100) {
+                        snapshot.announcements = announcements
+                        snapshot.recordLoaded([.announcement])
+                    }
                     didMutateAggregate = true
                 case .failed(let error):
                     AppLog.network.warning(
@@ -602,8 +632,10 @@ final class ActivityViewModel {
 
             // ⑥ 前台路径有数据变化 → 重组装；Release 巡检也可能写入新 release
             if didMutateAggregate || shouldPollReleases {
-                if shouldPollReleases {
-                    snapshot.releases = (try? await self.releaseRepository.fetchTimeline(limit: 120)) ?? snapshot.releases
+                if shouldPollReleases,
+                   let releases = try? await self.releaseRepository.fetchTimeline(limit: 120) {
+                    snapshot.releases = releases
+                    snapshot.recordLoaded([.release])
                 }
                 guard !Task.isCancelled else { return }
                 let refreshedItems = await self.buildItems(from: snapshot, reason: "reload.refreshed")
@@ -630,41 +662,47 @@ final class ActivityViewModel {
         case .following:
             await primeFollowingCacheIfAvailable()
         case .release:
-            let releases = (try? await releaseRepository.fetchTimeline(limit: 120)) ?? []
-            guard !releases.isEmpty else { return }
-            await publishPrimeSnapshot(AggregateSnapshot(
+            guard let releases = try? await releaseRepository.fetchTimeline(limit: 120) else { return }
+            var snapshot = AggregateSnapshot(
                 repos: aggregateSnapshot?.repos ?? [],
                 releases: releases,
                 events: aggregateSnapshot?.events ?? [],
-                announcements: aggregateSnapshot?.announcements ?? []
-            ))
+                announcements: aggregateSnapshot?.announcements ?? [],
+                countedCategories: aggregateSnapshot?.countedCategories ?? []
+            )
+            snapshot.recordLoaded([.release])
+            await publishPrimeSnapshot(snapshot)
         case .star, .repository, .suggestion, .undoStar:
-            let repos = (try? await repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)) ?? []
-            guard !repos.isEmpty else { return }
-            await publishPrimeSnapshot(AggregateSnapshot(
+            guard let repos = try? await repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit) else { return }
+            var snapshot = AggregateSnapshot(
                 repos: repos,
                 releases: aggregateSnapshot?.releases ?? [],
                 events: aggregateSnapshot?.events ?? [],
-                announcements: aggregateSnapshot?.announcements ?? []
-            ))
+                announcements: aggregateSnapshot?.announcements ?? [],
+                countedCategories: aggregateSnapshot?.countedCategories ?? []
+            )
+            snapshot.recordLoaded([.star, .repository, .suggestion])
+            await publishPrimeSnapshot(snapshot)
         case .all:
             async let reposTask = repoRepository.fetchRecentStarred(limit: Self.primeStarredLimit)
             async let releasesTask = releaseRepository.fetchTimeline(limit: 120)
             async let eventsTask = activityEventRepository.fetchAll(limit: 200)
             async let announcementsTask = activityAnnouncementRepository.fetchAll(limit: 100)
-            let repos = (try? await reposTask) ?? []
-            let releases = (try? await releasesTask) ?? []
-            let events = (try? await eventsTask) ?? []
-            let announcements = (try? await announcementsTask) ?? []
-            guard !(repos.isEmpty && releases.isEmpty && events.isEmpty && announcements.isEmpty) else {
-                return
-            }
-            await publishPrimeSnapshot(AggregateSnapshot(
-                repos: repos,
-                releases: releases,
-                events: events,
-                announcements: announcements
-            ))
+            let repos = try? await reposTask
+            let releases = try? await releasesTask
+            let events = try? await eventsTask
+            let announcements = try? await announcementsTask
+            var snapshot = AggregateSnapshot(
+                repos: repos ?? [],
+                releases: releases ?? [],
+                events: events ?? [],
+                announcements: announcements ?? []
+            )
+            if repos != nil { snapshot.recordLoaded([.star, .repository, .suggestion]) }
+            if releases != nil { snapshot.recordLoaded([.release]) }
+            if events != nil { snapshot.recordLoaded([.following]) }
+            if announcements != nil { snapshot.recordLoaded([.announcement]) }
+            await publishPrimeSnapshot(snapshot)
         case .notification:
             // 时间线有自己的 SQLite 数据路径，不进 Activity 旧聚合 allItems。
             return
@@ -680,15 +718,16 @@ final class ActivityViewModel {
 
     /// 公告分类首屏快路径：只读 `activity_announcements`，不等 starred repos 全表扫描。
     private func primeAnnouncementCacheIfAvailable() async {
-        let cachedAnnouncements = (try? await activityAnnouncementRepository.fetchAll(limit: 100)) ?? []
-        guard !cachedAnnouncements.isEmpty else { return }
+        guard let cachedAnnouncements = try? await activityAnnouncementRepository.fetchAll(limit: 100) else { return }
 
-        let snapshot = AggregateSnapshot(
+        var snapshot = AggregateSnapshot(
             repos: aggregateSnapshot?.repos ?? [],
             releases: aggregateSnapshot?.releases ?? [],
             events: aggregateSnapshot?.events ?? [],
-            announcements: cachedAnnouncements
+            announcements: cachedAnnouncements,
+            countedCategories: aggregateSnapshot?.countedCategories ?? []
         )
+        snapshot.recordLoaded([.announcement])
         let items = await buildItems(from: snapshot, reason: "prime.announcement")
         publishItems(from: items, snapshot: snapshot)
         isLoading = false
@@ -696,15 +735,16 @@ final class ActivityViewModel {
 
     /// 关注分类首屏快路径：只读 `activity_events`，不等 starred repos 全表扫描。
     private func primeFollowingCacheIfAvailable() async {
-        let cachedEvents = (try? await activityEventRepository.fetchAll(limit: 200)) ?? []
-        guard !cachedEvents.isEmpty else { return }
+        guard let cachedEvents = try? await activityEventRepository.fetchAll(limit: 200) else { return }
 
-        let snapshot = AggregateSnapshot(
+        var snapshot = AggregateSnapshot(
             repos: aggregateSnapshot?.repos ?? [],
             releases: aggregateSnapshot?.releases ?? [],
             events: cachedEvents,
-            announcements: aggregateSnapshot?.announcements ?? []
+            announcements: aggregateSnapshot?.announcements ?? [],
+            countedCategories: aggregateSnapshot?.countedCategories ?? []
         )
+        snapshot.recordLoaded([.following])
         let items = await buildItems(from: snapshot, reason: "prime.following")
         publishItems(from: items, snapshot: snapshot)
         isLoading = false
@@ -741,7 +781,10 @@ final class ActivityViewModel {
             switch result {
             case .updated:
                 lastRefreshedAt = Date()
-                snapshot.events = (try? await activityEventRepository.fetchAll(limit: 200)) ?? snapshot.events
+                if let events = try? await activityEventRepository.fetchAll(limit: 200) {
+                    snapshot.events = events
+                    snapshot.recordLoaded([.following])
+                }
                 didMutateAggregate = true
             case .notModified:
                 lastRefreshedAt = Date()
@@ -754,8 +797,10 @@ final class ActivityViewModel {
             let result = await fetchAndPersistBlogRSS(etag: syncState?.blogRssEtag)
             switch result {
             case .updated, .notModified:
-                snapshot.announcements = (try? await activityAnnouncementRepository.fetchAll(limit: 100))
-                    ?? snapshot.announcements
+                if let announcements = try? await activityAnnouncementRepository.fetchAll(limit: 100) {
+                    snapshot.announcements = announcements
+                    snapshot.recordLoaded([.announcement])
+                }
                 didMutateAggregate = true
             case .failed(let error):
                 AppLog.network.warning(
@@ -955,6 +1000,8 @@ final class ActivityViewModel {
         let newFingerprint = source.map(Self.publishFingerprint)
         guard oldFingerprint != newFingerprint else {
             isAggregateLoaded = true
+            // 即使列表内容不变，成功读取的空表也必须发布真实的 0，不能永久沿用旧缓存。
+            publishCategoryCounts(from: source)
             return
         }
         publishItems(from: source, snapshot: snapshot)
@@ -977,7 +1024,11 @@ final class ActivityViewModel {
     }
 
     private func publishCategoryCounts(from source: [ActivityItem]) {
-        categoryCountService?.applyLocalCounts(Self.categoryCounts(from: source))
+        guard let snapshot = aggregateSnapshot else { return }
+        let counts = Self.categoryCounts(from: source).filter {
+            snapshot.countedCategories.contains($0.key)
+        }
+        categoryCountService?.applyLocalCounts(counts, scopeRevision: countScopeRevision)
     }
 
     private nonisolated static func publishFingerprint(for item: ActivityItem) -> String {
@@ -1070,8 +1121,10 @@ final class ActivityViewModel {
         switch result {
         case .updated, .notModified:
             guard var snapshot = aggregateSnapshot else { return }
-            snapshot.announcements = (try? await activityAnnouncementRepository.fetchAll(limit: 100))
-                ?? snapshot.announcements
+            if let announcements = try? await activityAnnouncementRepository.fetchAll(limit: 100) {
+                snapshot.announcements = announcements
+                snapshot.recordLoaded([.announcement])
+            }
             let items = await buildItems(from: snapshot, reason: "security.integrate")
             publishItemsIfChanged(from: items, snapshot: snapshot)
         case .failed(let error):

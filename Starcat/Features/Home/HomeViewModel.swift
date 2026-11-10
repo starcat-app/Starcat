@@ -408,6 +408,7 @@ final class HomeViewModel {
         let language: String
         let selectedLanguages: Set<String>
         let license: RepoLicenseFilter
+        let skill: RepoSkillFilter
         let excludedLanguages: Set<String>
         let healthAvailability: String
         let openSSFAvailability: String
@@ -532,6 +533,12 @@ final class HomeViewModel {
 
     /// 全部 stars 数（Sidebar "全部 Stars" 行计数）。D-04：`private(set)` 收敛。
     private(set) var totalCount: Int = 0
+
+    /// 当前账号在本机自然日内新增、且仍保留 Star 的仓库数；不跟随中栏筛选。
+    private(set) var todayStarCount: Int = 0
+
+    /// Star 操作、同步与切账号可能交错，只允许最后一次统计发布结果。
+    @ObservationIgnored private var starCountsGeneration: UInt64 = 0
 
     /// 当前登录用户可访问的个人 / 组织项目数量。
     private(set) var myProjectsCount: Int = 0
@@ -976,6 +983,15 @@ final class HomeViewModel {
         }
     }
 
+    var skillFilter: RepoSkillFilter = .any {
+        didSet {
+            guard oldValue != skillFilter, !isHydratingManageFilters, !isApplyingGlobalFilterState else { return }
+            reloadOrApplyCurrentManageView()
+        }
+    }
+    /// 由主窗口注入共享索引，搜索与非 SQL 集合也消费相同识别事实。
+    @ObservationIgnored var repoSkillStore: RepoSkillStore?
+
     /// 设置页「感兴趣的语言」镜像。左侧语言分类与 `.other` 过滤都依赖它；
     /// 由 HomeView 从 AppSettings 单向同步（启动 + onChange），ViewModel 本身不持有 settings。
     /// 变化时只有左侧语言筛选是 `.other` 才 refilter——排除集合变了，列表结果才可能变。
@@ -1258,7 +1274,8 @@ final class HomeViewModel {
             indexableSourceAvailabilityFilter: .unknown,
             ragIndexStateFilter: .unknown,
             insightsRiskFilter: .unknown,
-            licenseFilter: licenseFilter
+            licenseFilter: licenseFilter,
+            skillFilter: skillFilter
         )
     }
 
@@ -1279,6 +1296,7 @@ final class HomeViewModel {
             || filters.repoLanguageFilter != .all
             || !filters.globalFilterLanguages.isEmpty
             || filters.licenseFilter.isActive
+            || filters.skillFilter != .any
             || filters.wikiAvailabilityFilter != .unknown
             || filters.healthAvailabilityFilter != .unknown
             || filters.openSSFAvailabilityFilter != .unknown
@@ -1493,6 +1511,7 @@ final class HomeViewModel {
         repoLanguageFilter = filters.repoLanguageFilter
         globalFilterLanguages = filters.globalFilterLanguages
         licenseFilter = filters.licenseFilter
+        skillFilter = filters.skillFilter
         wikiAvailabilityFilter = filters.wikiAvailabilityFilter
         healthAvailabilityFilter = filters.healthAvailabilityFilter
         openSSFAvailabilityFilter = filters.openSSFAvailabilityFilter
@@ -1783,6 +1802,8 @@ final class HomeViewModel {
         itemsRevision &+= 1
 
         totalCount = 0
+        todayStarCount = 0
+        starCountsGeneration &+= 1
         myProjectsCount = 0
         projectFilterOptions = .empty
         activeUserID = nil
@@ -1881,15 +1902,33 @@ final class HomeViewModel {
         reloadCoordinator.installActionTask(task, generation: actionGeneration)
     }
 
+    /// Star 入库、同步完成和自然日变化共用这条窄查询，不新增网络轮询。
+    ///
+    /// 日界线用 Calendar 而非固定 24 小时，兼容夏令时。异步读库可能在切账号或
+    /// 新一轮刷新后才返回，generation 和取消检查防止旧快照覆盖新账号/新日期。
+    func refreshStarCounts(now: Date = Date(), calendar: Calendar = .current) async {
+        starCountsGeneration &+= 1
+        let generation = starCountsGeneration
+        guard let interval = calendar.dateInterval(of: .day, for: now) else { return }
+        do {
+            let counts = try await repository.starredCounts(in: interval)
+            guard !Task.isCancelled, generation == starCountsGeneration else { return }
+            totalCount = counts.total
+            todayStarCount = counts.withinInterval
+        } catch {
+            AppLog.database.error("refreshStarCounts failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// 刷新 Sidebar 数据（counts + language stats）。
     /// 通常在 onAppear 或 sync 完成后调用。
     func refreshSidebar() async {
         defer { sidebarFacetDataRevision &+= 1 }
+        await refreshStarCounts()
         let previousRepoTagsMap = repoTagsMap
         let previousGitHubListCounts = githubStarListCounts
         let previousUngroupedCount = githubStarListUngroupedCount
         do {
-            async let total = repository.starredCount()
             async let myProjects = fetchMyProjectsCount()
             async let projectOptions = fetchProjectFilterOptions()
             async let untagged = repository.fetchListCount(scope: .untagged, filters: .empty)
@@ -1910,7 +1949,6 @@ final class HomeViewModel {
             // 与 sidebar 其他统计同步刷新，避免新增/删除 tag 后 wall 多选还按旧映射过滤。
             async let tagAssignmentsResult = repoTagRepository.fetchAllTagIDsByRepo()
 
-            self.totalCount = try await total
             self.myProjectsCount = try await myProjects
             self.projectFilterOptions = try await projectOptions
             self.untaggedCount = try await untagged
@@ -2423,6 +2461,7 @@ final class HomeViewModel {
             language: filters.language.persistedRawValue,
             selectedLanguages: filters.selectedLanguages,
             license: filters.license,
+            skill: filters.skill,
             excludedLanguages: filters.excludedLanguages,
             healthAvailability: filters.healthAvailability.rawValue,
             openSSFAvailability: filters.openSSFAvailability.rawValue,
@@ -3672,6 +3711,7 @@ final class HomeViewModel {
     private func computeFilteredSorted(
         ignoringSidebarLanguage: Bool = false,
         ignoringSelectedTags: Bool = false,
+        ignoringSkill: Bool = false,
         sortResults: Bool = true
     ) -> [Repo] {
         var view = rawItems
@@ -3717,7 +3757,7 @@ final class HomeViewModel {
             let excluded = Set(interestedLanguages)
             view.removeAll { !filters.repoLanguageFilter.matches($0.language, excluding: excluded) }
         }
-        applyGlobalRepoFilters(to: &view)
+        applyGlobalRepoFilters(to: &view, ignoringSkill: ignoringSkill)
         // HOM-197（2026-06-13 dong4j）：AI 语义搜索结果按相似度阈值过滤。
         //
         // 仅 isSemanticSearching 时启用：FTS / 普通分类列表的 semanticHitMap 始终为空，
@@ -3782,8 +3822,11 @@ final class HomeViewModel {
         }
     }
 
-    private func applyGlobalRepoFilters(to repos: inout [Repo]) {
+    private func applyGlobalRepoFilters(to repos: inout [Repo], ignoringSkill: Bool = false) {
         let filters = effectiveGlobalFilterState
+        if !ignoringSkill, filters.skillFilter != .any {
+            repos.removeAll { !filters.skillFilter.matches(repoSkillStore?.presence(for: $0) ?? .unknown) }
+        }
         if filters.licenseFilter.isActive {
             repos.removeAll { !filters.licenseFilter.matches($0.license) }
         }
@@ -3800,6 +3843,28 @@ final class HomeViewModel {
             }
         }
         applySignalAvailabilityFilters(to: &repos)
+    }
+
+    /// 后台扫描更新时淘汰依赖证据的旧分页与计数，再用同一 SQL 查询恢复当前列表。
+    func skillEvidenceDidChange() {
+        removeDatabaseSnapshots { $0.skill != .any }
+        guard effectiveGlobalFilterState.skillFilter != .any else { return }
+        listCache.removeAll()
+        reloadOrApplyCurrentManageView()
+    }
+
+    /// 补查候选取其余条件之后的全集，不能从已被 Skill 条件筛空的当前页生成。
+    func skillScanCandidates() async throws -> [Repo] {
+        if let scope = currentRepoListScopeForDatabasePaging() {
+            var filters = currentRepoListFiltersForDatabasePaging()
+            filters.skill = .any
+            let page = try await repository.fetchListPage(
+                scope: scope, filters: filters, sort: sortOption, limit: Int.max, offset: 0
+            )
+            return page
+        }
+        // 搜索 / 智能集合已经在 rawItems 完成其范围查询；这里只补查该范围，不修改用户条件。
+        return computeFilteredSorted(ignoringSkill: true, sortResults: false)
     }
 
     private func applySignalAvailabilityFilters(to repos: inout [Repo]) {

@@ -9,7 +9,7 @@
 //  - 每次绘制从报告身份重建随机流，禁止使用系统随机数或按帧变化的状态
 //  - 几何与纹理分流，尺寸只裁减细节，不改变风格与配色
 //  - 采样与图形数量都有上限，不启用动画、逐像素噪声或全画面模糊
-//  - 主推卡通过绘制区域和末层遮罩保护左侧文字，不能仅将单个焦点右移
+//  - 主推卡图案连续铺满画布，通过末层渐变保护左侧文字，避免留出硬边黑块
 //
 
 import SwiftUI
@@ -26,27 +26,25 @@ struct DailyRadarProgrammaticCover: View {
             guard size.width > 0, size.height > 0 else { return }
             let safe = DailyRadarCoverComposition.safeLeading(textSafeLeading)
             let rect = CGRect(origin: .zero, size: size)
-            let art = CGRect(x: size.width * safe, y: 0,
-                             width: size.width * (1 - safe), height: size.height)
             let detail = DailyRadarCoverComposition.detailLevel(for: size)
             var rng = SeededGenerator(seed: composition.geometrySeed)
             Self.drawBackground(context, rect: rect, composition: composition)
-            // 主体单独裁剪，避免大型轨道和透视面溢回文字区域。
+            // 主体只按整张封面裁剪，左侧保留图案并渐变压暗，避免安全区边缘出现断层
             var subject = context
-            subject.clip(to: Path(art))
+            subject.clip(to: Path(rect))
             switch composition.style {
             case .terrain:
-                Self.drawTerrain(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+                Self.drawTerrain(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             case .network:
-                Self.drawNetwork(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+                Self.drawNetwork(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             case .orbital:
-                Self.drawOrbital(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+                Self.drawOrbital(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             case .architecture:
-                Self.drawArchitecture(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+                Self.drawArchitecture(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             case .strata:
-                Self.drawStrata(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+                Self.drawStrata(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             case .interference:
-                Self.drawInterference(subject, rect: art, composition: composition, rng: &rng, detail: detail)
+                Self.drawInterference(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             }
             Self.drawTexture(context, rect: rect, composition: composition, detail: detail)
             if safe > 0 {
@@ -106,11 +104,11 @@ struct DailyRadarProgrammaticCover: View {
         ctx.stroke(marks, with: .color(.white.opacity(0.16)), lineWidth: 0.6)
     }
 
-    /// 遮罩最后绘制，让纹理也服从安全区；渐变过渡避免主体裁剪边缘成为硬接缝。
+    /// 遮罩最后绘制，左侧仍能辨认图案，渐变到主体时保留标题所需的对比度
     private static func drawTextProtection(_ ctx: GraphicsContext, rect: CGRect, safe: CGFloat) {
         let gradient = Gradient(stops: [
-            .init(color: .black.opacity(0.82), location: 0),
-            .init(color: .black.opacity(0.65), location: safe),
+            .init(color: .black.opacity(0.60), location: 0),
+            .init(color: .black.opacity(0.38), location: safe),
             .init(color: .clear, location: min(safe + 0.25, 1))
         ])
         ctx.fill(Path(rect), with: .linearGradient(

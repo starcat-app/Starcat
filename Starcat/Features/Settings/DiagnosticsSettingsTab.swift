@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  诊断与支持设置：本地诊断导出、连接配置入口和日志说明。
-//  只重组呈现与导航，不主动发起连接测试，也不改变诊断包内容与问题确认流程。
+//  导出、确认提醒与增强复现独立；导出不主动发起连接测试或业务刷新。
 //
 
 import SwiftUI
@@ -18,6 +18,11 @@ struct DiagnosticsSettingsTab: View {
     @State private var exportError: String?
     @State private var isReportContentsExpanded = false
     @State private var isLogGuidePresented = false
+    @State private var problemDescription = ""
+    @State private var problemModule = ""
+    @State private var includeProblemTime = false
+    @State private var problemTime = Date()
+    @State private var recordingEndsAt: Date?
 
     var body: some View {
         Form {
@@ -32,6 +37,19 @@ struct DiagnosticsSettingsTab: View {
             supportSection
         }
         .formStyle(.grouped)
+        .task {
+            recordingEndsAt = DiagnosticRecording.shared.expiresAt
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .diagnosticRecordingDidChange)) { _ in
+            recordingEndsAt = DiagnosticRecording.shared.expiresAt
+        }
+        .task(id: recordingEndsAt) {
+            guard let end = recordingEndsAt else { return }
+            do {
+                try await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow)))
+                recordingEndsAt = DiagnosticRecording.shared.expiresAt
+            } catch { /* 视图离开只取消 UI 等待，后台录制仍按原截止时间停止 */ }
+        }
         .sheet(isPresented: $isLogGuidePresented) {
             DiagnosticLogGuideSheet()
                 .appLocaleEnvironment()
@@ -51,6 +69,19 @@ struct DiagnosticsSettingsTab: View {
 
     private var reportSection: some View {
         Section {
+            TextField("settings.diagnostics.capture.description", text: $problemDescription, axis: .vertical)
+                .lineLimit(1...3)
+                .onChange(of: problemDescription) { _, value in
+                    if value.count > 2000 { problemDescription = String(value.prefix(2000)) }
+                }
+            TextField("settings.diagnostics.capture.module", text: $problemModule)
+                .onChange(of: problemModule) { _, value in
+                    if value.count > 80 { problemModule = String(value.prefix(80)) }
+                }
+            Toggle("settings.diagnostics.capture.includeTime", isOn: $includeProblemTime)
+            if includeProblemTime {
+                DatePicker("settings.diagnostics.capture.time", selection: $problemTime)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 8) {
                     Text("settings.diagnostics.layout.export.description")
@@ -83,6 +114,39 @@ struct DiagnosticsSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("settings.diagnostics.capture.enhancedHelp")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    if let end = recordingEndsAt {
+                        Text(timerInterval: Date()...max(Date(), end), countsDown: true)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if recordingEndsAt != nil {
+                        Button("settings.diagnostics.capture.stopExport") {
+                            DiagnosticRecording.shared.stop()
+                            recordingEndsAt = nil
+                            Task { await exportDiagnostics() }
+                        }
+                        .disabled(isExporting)
+                    } else {
+                        Button("settings.diagnostics.capture.start") {
+                            recordingEndsAt = DiagnosticRecording.shared.start()
+                        }
+                    }
+                }
+                HStack {
+                    Spacer()
+                    Button("settings.diagnostics.capture.acknowledge") {
+                        Task { await DiagnosticLogStore.shared.markIssuesAcknowledged() }
+                    }
                 }
             }
 
@@ -234,10 +298,11 @@ struct DiagnosticsSettingsTab: View {
         isExporting = true
         defer { isExporting = false }
 
-        switch await DiagnosticBundleExporter.exportFromPanel(settings: settings) {
-        case .exported(_):
-            // 导出器成功后已经标记诊断问题为已处理；这里用固定反馈同步告知状态已重置。
-            lastExportMessage = String.l10n("settings.diagnostics.export.successMessage")
+        let options = DiagnosticExportOptions(description: problemDescription, module: problemModule,
+                                             occurredAt: includeProblemTime ? problemTime : nil)
+        switch await DiagnosticBundleExporter.exportFromPanel(settings: settings, options: options) {
+        case .exported(let url):
+            lastExportMessage = String(format: String.l10n("settings.diagnostics.capture.saved"), url.path)
         case .cancelled:
             break
         case .failed(let message):

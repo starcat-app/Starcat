@@ -8,11 +8,13 @@ GitHub 用内存附件模拟；Shell 只提取待测函数并替换外部步骤�
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import re
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -35,19 +37,25 @@ class FakeGitHub:
         self.commands = []
         self.fail_upload = None
         self.api_error = None
+        self.tag = "v9.9.9"
 
     def __call__(self, *args, check=True):
         """仅处理发布器使用的命令；未知命令立即失败，禁止落到真实网络。"""
         if args[0] == "api":
             if self.api_error:
                 return subprocess.CompletedProcess(args, 1, "", self.api_error)
-            if self.draft is None:
-                return subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
             payload = {
+                "tag_name": self.tag,
                 "draft": self.draft, "prerelease": self.prerelease,
                 "assets": [{"name": name} for name in self.assets],
                 "html_url": "https://github.com/starcat-app/Starcat/releases/tag/v9.9.9",
             }
+            if args[1].endswith("/releases?per_page=100"):
+                releases = [] if self.draft is None else [payload]
+                return subprocess.CompletedProcess(args, 0, json.dumps([releases]), "")
+            # 复现本次线上行为：by-tag 查不到草稿，但 Release 列表能返回它。
+            if self.draft is None or self.draft:
+                return subprocess.CompletedProcess(args, 1, "", "gh: Not Found (HTTP 404)")
             return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
         assert "--repo" in args and args[args.index("--repo") + 1] == release.REPOSITORY
         assert "--clobber" not in args
@@ -56,6 +64,8 @@ class FakeGitHub:
         self.events.append(action)
         if action == "create":
             assert "--draft" in args and "--verify-tag" in args
+            assert self.draft is None, "已有草稿时禁止重复创建 Release"
+            self.tag = args[2]
             self.draft = True
             self.prerelease = "--prerelease" in args
         elif action == "upload":
@@ -102,6 +112,74 @@ class DirectReleaseTests(unittest.TestCase):
         self.publish()
         self.assertEqual(self.github.events, ["create", "upload", "download", "upload", "download", "edit"])
         self.assertFalse(self.github.draft)
+
+    def test_existing_draft_is_resumed_when_by_tag_returns_404(self):
+        """首次查询必须复用列表中的草稿，避免每次续跑都创建重复 Release。"""
+        self.github.draft = True
+        self.publish()
+        self.assertEqual(self.github.events, ["upload", "download", "upload", "download", "edit"])
+        self.assertFalse(self.github.draft)
+
+    def test_duplicate_drafts_stop_before_remote_writes(self):
+        """同 tag 出现多份草稿时保留现场，不能任意选一份公开。"""
+        self.github.draft = True
+        original = self.github
+
+        def duplicate_drafts(*args, check=True):
+            result = original(*args, check=check)
+            if args[0] == "api" and args[1].endswith("/releases?per_page=100"):
+                drafts = json.loads(result.stdout)
+                result.stdout = json.dumps(drafts + drafts)
+            return result
+
+        with patch.object(release, "gh", duplicate_drafts):
+            for _ in range(2):
+                with self.assertRaisesRegex(RuntimeError, "多个 tag"):
+                    self.publish()
+        self.assertEqual(self.github.events, [])
+
+    def test_existing_draft_on_later_page_is_resumed_without_creation(self):
+        """较早创建的草稿不在第一页，也必须被找到，避免重复创建。"""
+        self.github.draft = True
+
+        def paginated(*args, check=True):
+            result = self.github(*args, check=check)
+            if args[0] == "api" and args[1].endswith("/releases?per_page=100"):
+                self.assertIn("--paginate", args)
+                self.assertIn("--slurp", args)
+                pages = json.loads(result.stdout)
+                result.stdout = json.dumps([[{"tag_name": "v8.8.8"}]] + pages)
+            return result
+
+        with patch.object(release, "gh", paginated):
+            self.publish()
+        self.assertNotIn("create", self.github.events)
+        self.assertFalse(self.github.draft)
+
+    def test_timeout_after_remote_write_is_recovered_without_repeating_it(self):
+        """模拟服务端成功、客户端丢响应，下一次恢复必须先读真实状态。"""
+        for action in ("create", "upload", "edit"):
+            with self.subTest(action=action):
+                self.github = FakeGitHub()
+                interrupted = False
+
+                def lose_response(*args, check=True):
+                    nonlocal interrupted
+                    result = self.github(*args, check=check)
+                    if args[:2] == ("release", action) and not interrupted:
+                        interrupted = True
+                        raise subprocess.TimeoutExpired(["gh", *args], 900)
+                    return result
+
+                with patch.object(release, "gh", lose_response):
+                    with self.assertRaises(subprocess.TimeoutExpired):
+                        self.publish()
+                    self.assertEqual(self.github.events.count(action), 1)
+                    self.publish()
+                self.assertFalse(self.github.draft)
+                self.assertEqual(self.github.events.count("create"), 1)
+                self.assertEqual(self.github.events.count("upload"), 2)
+                self.assertEqual(self.github.events.count("edit"), 1)
 
     def test_beta_release_is_published_as_prerelease_without_becoming_latest(self):
         self.changelog.write_text(
@@ -313,6 +391,41 @@ verify_local_artifacts
 '''
                 result = subprocess.run(["bash", "-c", probe], text=True, capture_output=True)
                 self.assertEqual(result.returncode == 0, valid, result.stderr)
+
+
+class GitHubCommandTests(unittest.TestCase):
+    """直接验证真实 gh 包装器，外部进程用替身确保不会联网。"""
+
+    def test_write_logs_start_and_finish_without_retrying(self):
+        output = io.StringIO()
+        result = subprocess.CompletedProcess(["gh"], 0, "done", "")
+        with patch.object(release.subprocess, "run", return_value=result) as run:
+            with redirect_stdout(output):
+                release.gh("release", "upload", "v9.9.9", "/fixture/Starcat.dmg")
+        run.assert_called_once()
+        self.assertIn("开始 上传附件: /fixture/Starcat.dmg", output.getvalue())
+        self.assertIn("完成 上传附件，耗时", output.getvalue())
+
+    def test_failure_preserves_exit_code_and_both_output_streams(self):
+        output = io.StringIO()
+        result = subprocess.CompletedProcess(["gh"], 23, "upload stdout", "upload stderr")
+        with patch.object(release.subprocess, "run", return_value=result) as run:
+            with redirect_stdout(output), self.assertRaises(RuntimeError) as raised:
+                release.gh("release", "upload", "v9.9.9", "/fixture/Starcat.dmg")
+        run.assert_called_once()
+        self.assertIn("(23)", str(raised.exception))
+        self.assertIn("upload stdout", str(raised.exception))
+        self.assertIn("upload stderr", str(raised.exception))
+        self.assertIn("失败 exit=23", output.getvalue())
+
+    def test_timeout_stops_once_and_requires_state_readback(self):
+        output = io.StringIO()
+        timeout = subprocess.TimeoutExpired(["gh", "release", "create"], 900)
+        with patch.object(release.subprocess, "run", side_effect=timeout) as run:
+            with redirect_stdout(output), self.assertRaises(subprocess.TimeoutExpired):
+                release.gh("release", "create", "v9.9.9")
+        run.assert_called_once()
+        self.assertIn("先回读草稿/附件状态", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -41,6 +41,7 @@
 
 - 涉及分支/worktree 操作前，先读取根目录 [`BRANCH.md`](BRANCH.md)，再用 Git 命令核对真实 refs、提交关系和 worktree 归属。
 - 创建、切换或恢复长期分支后，必须向 dong4j 说明当前分支、用途、基线、worktree、状态和后续归宿。
+- 创建新 worktree 后，必须先从主仓库复制被 Git 忽略的本地配置（至少 `Configs/Secrets.xcconfig` 和 SPM `Package.resolved`）到相同路径，再构建或测试；不输出、不提交配置内容，详见 [Git-分支与Worktree规范](docs/5-规范/Git-分支与Worktree规范.md)。
 - 创建、合并、停放、废弃或删除长期分支/worktree 时，必须在同一任务中同步更新 `BRANCH.md`。
 - 删除前必须检查独有提交、Git 合并关系、语义覆盖和 worktree 脏状态；未审查分支禁止直接删除。
 - 未经 dong4j 明确授权，不得 push、删除远端分支、强制删除 worktree 或改写共享历史。

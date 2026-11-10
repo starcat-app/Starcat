@@ -62,11 +62,19 @@ xcodebuild \
   -arch arm64 \
   -skipPackagePluginValidation \
   -skipMacroValidation \
+  -disableAutomaticPackageResolution \
+  -onlyUsePackageVersionsFromResolvedFile \
   -derivedDataPath "$DERIVED_DATA" \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM_ID" \
   CODE_SIGN_IDENTITY="Apple Development" \
   ENABLE_DEBUG_DYLIB=NO \
   build
+
+python3 scripts/sync-swift-package-lock.py check
+
+SRCROOT="$PROJECT_ROOT" bash "$SCRIPT_DIR/bump-version.sh" --verify \
+  "$APP_PATH/Contents/Info.plist" \
+  "$WIDGET_PATH/Contents/Info.plist"
 
 echo "==> 校验沙箱 entitlements..."
 ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"

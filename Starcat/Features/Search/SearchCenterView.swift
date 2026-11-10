@@ -162,14 +162,7 @@ struct SearchCenterView: View {
         }
         .onKeyPress(.return) {
             guard !isIMEComposing else { return .ignored }
-            let normalizedDraft = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let candidate = viewModel.selectedCandidate,
-               !viewModel.lastSubmittedQuery.isEmpty,
-               normalizedDraft == viewModel.lastSubmittedQuery {
-                onOpenCandidate(candidate)
-            } else {
-                Task { await viewModel.submit() }
-            }
+            submitOrActivateSelection()
             return .handled
         }
         .onKeyPress(.escape) {
@@ -254,7 +247,7 @@ struct SearchCenterView: View {
                 if submittedQuery.isEmpty {
                     viewModel.clear()
                 } else {
-                    Task { await viewModel.submit() }
+                    submitOrActivateSelection()
                 }
             }
         )
@@ -1432,6 +1425,20 @@ struct SearchCenterView: View {
     }
 
     /// 候选项的"激活"动作（点击 / 回车 / VoiceOver 主操作）。
+    /// 输入框提交与容器 Return 共用同一判断，避免焦点位置改变远端结果的打开方式
+    /// 草稿发生变化时仍应提交新查询；输入法组合期间按键归 IME 所有
+    private func submitOrActivateSelection() {
+        guard !isIMEComposing else { return }
+        let normalizedDraft = viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let candidate = viewModel.selectedCandidate,
+           !viewModel.lastSubmittedQuery.isEmpty,
+           normalizedDraft == viewModel.lastSubmittedQuery {
+            activate(candidate)
+        } else {
+            Task { await viewModel.submit() }
+        }
+    }
+
     /// 远端仓库（仅 GitHub 搜出、未 star、未入本地库）走会话级详情 sheet；
     /// 其余（本地、reference、已 star）由宿主决定打开方式，统一走 onOpenCandidate。
     ///

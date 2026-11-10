@@ -66,16 +66,10 @@ struct AgentWorkspaceSceneRoot: View {
             // 用 navigationTitle 在 SwiftUI 更新周期里按 LocaleStore 选择重新解析。
             .navigationTitle(windowTitle)
             .toolbar(removing: .title)
-            .frame(
-                minWidth: AgentWorkspaceWindowMetrics.minimumContentSize.width,
-                minHeight: AgentWorkspaceWindowMetrics.minimumContentSize.height
-            )
-            .background {
-                WorkspaceSceneWindowReader(
-                    reference: windowReference,
-                    minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
-                )
-            }
+            .modifier(WorkspaceWindowSizing(
+                reference: windowReference,
+                minimumContentSize: AgentWorkspaceWindowMetrics.minimumContentSize
+            ))
             .toolbar {
                 WorkspaceToolbarContent(
                     chromeState: chromeState,

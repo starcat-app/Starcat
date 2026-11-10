@@ -106,9 +106,12 @@ git worktree add ../Starcat-<topic> codex/<topic>
 
 创建完成后必须立即：
 
-1. 用 `git worktree list --porcelain` 验证分支归属。
-2. 在 `BRANCH.md` 登记分支、用途、位置、状态和下一步。
-3. 向 dong4j 报告分支说明，不得只回复“已创建”。
+1. 从主仓库复制被 Git 忽略的本地配置到新 worktree 的相同路径；至少包括 `Configs/Secrets.xcconfig`（构建签名/API 配置）和 `Starcat.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`（锁定依赖解析）。不要输出或提交配置内容；主仓库也没有该文件时明确说明。
+2. 用 `git worktree list --porcelain` 验证分支归属。
+3. 在 `BRANCH.md` 登记分支、用途、位置、状态和下一步。
+4. 向 dong4j 报告分支说明，不得只回复“已创建”。
+
+> 为什么强制：这些文件不进 Git。新 worktree 缺少签名配置会导致 `make test` / 渠道构建失败；依赖解析重新取远端 `main` 分支最新版本，可能与主工作区实际锁定的依赖行为不一致。
 
 ## 6. 强制分支说明
 

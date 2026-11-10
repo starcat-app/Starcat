@@ -8,7 +8,7 @@
 
 ---
 
-## 📦 项目清单（共 26 个）
+## 📦 项目清单（共 28 个）
 
 ### Go 后端项目（10 个）
 
@@ -48,6 +48,13 @@
 | [`extensions/starcat-safari-plugin/`](./extensions/starcat-safari-plugin/) | [`starcat-app/starcat-safari-plugin`](https://github.com/starcat-app/starcat-safari-plugin) | Safari 浏览器插件 |
 
 > 端口规范：5000 段是 macOS 系统服务保留段，自建后端从 5001 起顺序分配。
+
+### 本地 MVP 内容项目
+
+`starcat-ai-events/` 是「每周 AI 大事」独立内容仓，提供 Skill、原文图片留证、
+中英稿和人工审核发布。远端 `starcat-app/starcat-ai-events` 验收期间为 Private。
+`starcat-ai-events-api/` 是独立 Go 后端，以 `ai-events` 装配到 `starcat-api`，
+使用 `/data/ai-events.db`，不创建独立 Fly App。两仓均需组织读取权限。
 
 ---
 
@@ -105,7 +112,7 @@ Starcat App
 ```bash
 cd supports
 
-# 首次 clone 全部 26 个远端目标
+# 首次 clone 全部 28 个远端目标
 ./clone-all.sh
 
 # 后续批量更新
@@ -170,7 +177,7 @@ secrets 需要单独确认。
 
 ### 独立 git 仓库（各自管理）
 
-- 上表除 `ai-file-wall` 外的 25 个独立仓库目录
+- 上表除 `ai-file-wall` 外的 28 个独立仓库目录
 
 ### 跨机器同步（`sync-untracked.sh`）
 

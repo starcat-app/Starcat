@@ -43,7 +43,13 @@ enum WidgetSharedConfiguration {
         }
 
         let identifier = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard identifier.hasPrefix("group.com.starcat.app."),
+        // Store 沿用 group. 前缀（走 provisioning profile）；Direct 使用 Team ID
+        // 前缀，Developer ID 签名下不会触发 macOS 15+ 的容器访问弹窗。
+        let acceptedPrefixes = [
+            "group.com.starcat.app.",
+            "8WCUMGCWMB.com.starcat.app.",
+        ]
+        guard acceptedPrefixes.contains(where: identifier.hasPrefix),
               identifier.hasSuffix(".widgets") else {
             throw WidgetSharedConfigurationError.invalidAppGroupIdentifier(identifier)
         }
