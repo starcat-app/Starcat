@@ -51157,95 +51157,95 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "模型記憶體為實際測得的載入增量；共享 MLX 快取會另行顯示。閒置模型會在 60 秒後卸載，並於需要時重新載入。卸載不會刪除已下載的檔案。"
+            "value" : "閒置 60 秒自動卸載；記憶體為增量占用，共享快取單獨統計"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "モデルメモリは計測された読み込み増加量です。共有MLXキャッシュは別途表示されます。アイドル状態のモデルは60秒後にアンロードされ、必要に応じて再読み込みされます。アンロードしてもダウンロード済みファイルは保持されます。"
+            "value" : "60秒アイドル状態になると自動的にアンロードします。メモリは増分量として計測し、共有キャッシュは別に集計します"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "모델 메모리는 측정된 로딩 증가량이며, 공유 MLX 캐시는 별도로 표시됩니다. 유휴 모델은 60초 후 언로드되고 필요 시 다시 로드됩니다. 언로드해도 다운로드한 파일은 유지됩니다."
+            "value" : "60초 유휴 상태가 되면 자동으로 언로드합니다. 메모리는 증분으로 집계하며 공유 캐시는 별도로 계산합니다"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Der Modellspeicher ist die gemessene Zunahme beim Laden; der gemeinsame MLX-Cache wird separat angezeigt. Inaktive Modelle werden nach 60 Sekunden entladen und bei Bedarf neu geladen. Beim Entladen bleiben heruntergeladene Dateien erhalten."
+            "value" : "Entlädt automatisch nach 60 Sekunden Leerlauf; der Speicher ist inkrementell, der gemeinsame Cache wird separat erfasst"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La mémoire du modèle correspond à l’augmentation mesurée au chargement ; le cache MLX partagé est affiché séparément. Les modèles inactifs sont déchargés après 60 secondes et rechargés à la demande. Le déchargement conserve les fichiers téléchargés."
+            "value" : "Décharge automatiquement après 60 secondes d'inactivité ; la mémoire est incrémentale et le cache partagé est compté séparément"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La memoria del modelo es el aumento de carga medido; la caché MLX compartida se muestra por separado. Los modelos inactivos se descargan tras 60 segundos y se recargan cuando se necesitan. Descargarlos conserva los archivos descargados."
+            "value" : "Se descarga automáticamente tras 60 segundos de inactividad; la memoria es incremental y la caché compartida se contabiliza por separado"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A memória do modelo é o aumento medido no carregamento; o cache MLX compartilhado é mostrado separadamente. Modelos ociosos são descarregados após 60 segundos e recarregados sob demanda. Descarregar mantém os arquivos baixados."
+            "value" : "Descarrega automaticamente após 60 segundos ocioso; a memória é incremental e o cache compartilhado é contabilizado separadamente"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La memoria del modello è l'aumento misurato al caricamento; la cache MLX condivisa è mostrata separatamente. I modelli inattivi si scaricano dopo 60 secondi e si ricaricano su richiesta. Lo scaricamento mantiene i file già scaricati."
+            "value" : "Scarica automaticamente dopo 60 secondi di inattività; la memoria è incrementale e la cache condivisa è calcolata separatamente"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Память модели — это измеренный прирост при загрузке; общий кэш MLX показан отдельно. Простаивающие модели выгружаются через 60 секунд и загружаются по требованию. Выгрузка сохраняет загруженные файлы."
+            "value" : "Автоматическая выгрузка после 60 секунд простоя; память учитывается как прирост, общий кеш — отдельно"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modelgeheugen is de gemeten toename bij het laden; de gedeelde MLX-cache wordt apart weergegeven. Inactieve modellen worden na 60 seconden ontladen en op verzoek opnieuw geladen. Ontladen behoudt gedownloade bestanden."
+            "value" : "Wordt na 60 seconden inactiviteit automatisch ontlast; geheugen is incrementeel en de gedeelde cache wordt apart bijgehouden"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pamięć modelu to zmierzony wzrost podczas wczytywania; współdzielona pamięć podręczna MLX jest pokazywana osobno. Bezczynne modele są usuwane po 60 sekundach i wczytywane na żądanie. Usunięcie zachowuje pobrane pliki."
+            "value" : "Automatyczne wyładowanie po 60 sekundach bezczynności; pamięć jest przyrostowa, a współdzielona pamięć podręczna jest liczona osobno"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Пам’ять моделі — це виміряний приріст під час завантаження; спільний кеш MLX показано окремо. Простоюючі моделі вивантажуються через 60 секунд і завантажуються знову за потреби. Вивантаження зберігає завантажені файли."
+            "value" : "Автоматичне вивантаження після 60 секунд простою; пам’ять — це приріст, а спільний кеш враховується окремо"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Model belleği, ölçülen yükleme artışıdır; paylaşılan MLX önbelleği ayrıca gösterilir. Boştaki modeller 60 saniye sonra boşaltılır ve talep üzerine yeniden yüklenir. Boşaltma, indirilen dosyaları korur."
+            "value" : "60 saniye boşta kalınca otomatik olarak boşaltılır; bellek artımlıdır, paylaşılan önbellek ayrı sayılır"
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bộ nhớ mô hình là mức tăng khi tải được đo thực tế; bộ nhớ đệm MLX dùng chung được hiển thị riêng. Mô hình không dùng sẽ tự gỡ sau 60 giây và tải lại khi cần. Gỡ mô hình vẫn giữ các tệp đã tải."
+            "value" : "Tự gỡ sau 60 giây không dùng; bộ nhớ tính theo mức tăng, bộ nhớ đệm dùng chung được thống kê riêng"
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Memori model adalah kenaikan pemuatan yang terukur; cache MLX bersama ditampilkan terpisah. Model yang menganggur dibongkar setelah 60 detik dan dimuat ulang sesuai permintaan. Membongkar tetap menyimpan file yang telah diunduh."
+            "value" : "Otomatis dibongkar setelah 60 detik tidak aktif; memori dihitung sebagai kenaikan, cache bersama dihitung terpisah"
           }
         },
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Model memory is the measured loading increase; shared MLX cache is shown separately. Idle models unload after 60 seconds and reload on demand. Unloading keeps downloaded files." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "单模型内存为加载增量，共享 MLX 缓存单独统计。空闲 60 秒自动卸载，下次使用时加载。卸载不会删除已下载文件。" } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unloads automatically after 60 seconds idle; memory is incremental, and the shared cache is tracked separately." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "空闲 60 秒自动卸载；内存为增量占用，共享缓存单独统计" } }
       }
     },
     "toolbar.localai.loadedMemory" : {
