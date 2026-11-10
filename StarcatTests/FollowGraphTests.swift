@@ -1112,7 +1112,7 @@ struct FollowGraphAPITests {
     }
 
     @MainActor
-    @Test("缓存先展开，数量已满隐藏按钮但不伪造分页完整", arguments: FollowGraphRelation.allCases, [false, true])
+    @Test("缓存先展开，是否继续分页以接口末页标记为准", arguments: FollowGraphRelation.allCases, [false, true])
     func loadMoreAvailability(relation: FollowGraphRelation, complete: Bool) async throws {
         URLProtocolStub.reset()
         defer { URLProtocolStub.reset() }
@@ -1144,19 +1144,121 @@ struct FollowGraphAPITests {
         #expect(!model.isLoading)
         #expect(model.displayedSnapshot?.relationCount(for: "2") == 50)
         #expect(model.toastMessage == nil)
-        #expect(!model.canLoadMore("2"))
+        #expect(model.canLoadMore("2") == !complete)
+        #expect(model.showsLoadMore("2"))
         #expect(model.snapshot?.progress["2"]?.complete == complete)
-        model.loadMore("2")
-        #expect(model.toastMessage == "followGraph.toast.complete")
+        if complete {
+            model.loadMore("2")
+            #expect(model.toastMessage == "followGraph.toast.complete")
+        }
         model.reportRenderedCounts(nodes: 52, edges: 52, revision: model.revision, renderer: model.rendererRevision,
                                    selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 50)
         #expect(!model.isRevealingRelations(for: "2"))
         #expect(model.renderedRelationCount(for: "2") == 50)
+        #expect(model.showsLoadMore("2") == !complete)
         model.select("4")
         #expect(!model.canLoadMore("4", fallbackTotal: 0))
         #expect(model.canLoadMore("4"))
         model.resetCanvas()
         #expect(model.toastMessage == nil)
+    }
+
+    @MainActor
+    @Test("87 人末页在只绘制 78 人时保留按钮，人数补齐后隐藏", arguments: FollowGraphRelation.allCases)
+    func completedPageStillRevealing(relation: FollowGraphRelation) async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, Array(3...89)))
+        try await cache.save(graph)
+        try await cache.saveRange(.init(expandedSources: ["2": 100]), account: "1", relation: relation)
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        defer { model.stop() }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        let deadline = Date().addingTimeInterval(5)
+        while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!model.isLoading)
+        model.select("2")
+        model.reportRenderedCounts(nodes: 80, edges: 79, revision: model.revision, renderer: model.rendererRevision,
+                                   selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 78)
+        #expect(model.renderedRelationCount(for: "2") == 78)
+        #expect(!model.canLoadMore("2"))
+        #expect(model.showsLoadMore("2"))
+        #expect(model.isRevealingRelations(for: "2"))
+        #expect(!model.needsRelationReload("2"))
+        model.reportRenderedCounts(nodes: 89, edges: 88, revision: model.revision, renderer: model.rendererRevision,
+                                   selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 87)
+        #expect(model.renderedRelationCount(for: "2") == 87)
+        #expect(!model.showsLoadMore("2"))
+        #expect(!model.isRevealingRelations(for: "2"))
+    }
+
+    @MainActor
+    @Test("末页缓存 78 / 87 可从头刷新，仍不足或失败时保留重试", arguments: FollowGraphRelation.allCases, [0, 78, 87])
+    func incompleteLastPageReload(relation: FollowGraphRelation, returned: Int) async throws {
+        URLProtocolStub.reset()
+        defer { URLProtocolStub.reset() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = FollowGraphDiskCache(root: folder)
+        var graph = FollowGraphSnapshot(root: node(1), relation: relation)
+        graph.merge(page(1, [2]))
+        graph.merge(page(2, Array(3...80)))
+        graph.progress["2"]?.totalCount = 87
+        graph.progress["2"]?.cursor = "old-final"
+        try await cache.save(graph)
+        try await cache.saveRange(.init(expandedSources: ["2": 100]), account: "1", relation: relation)
+        let client = GitHubAPIClient(baseURL: URL(string: "https://api.test.invalid")!,
+                                    session: URLProtocolStub.ephemeralSession(), tokenProvider: StubTokenProvider(token: "test"))
+        let model = FollowGraphViewModel(cache: cache)
+        defer { model.stop() }
+        func settle() async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while model.isLoading && Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            #expect(!model.isLoading)
+        }
+        model.open(user: .init(id: 1, login: "user1", name: nil, avatarUrl: nil), client: client, relation: relation)
+        try await settle()
+        model.select("2")
+        model.reportRenderedCounts(nodes: 80, edges: 79, revision: model.revision, renderer: model.rendererRevision,
+                                   selectedID: "2", selectionRevision: model.selectionRevision, selectedCount: 78)
+        #expect(!model.showsLoadMore("2"))
+        #expect(model.needsRelationReload("2"))
+        #expect(model.snapshot?.progress["2"]?.totalCount == 87)
+        // 末页不能再用旧游标续读；失败也必须保留原来的 78 条真实关系。
+        URLProtocolStub.requestHandler = { request in
+            let json = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let variables = json["variables"] as! [String: Any]
+            #expect(variables["login"] as? String == "user2")
+            #expect(variables["after"] == nil)
+            if returned == 0 { throw URLError(.notConnectedToInternet) }
+            let users = (3...(returned + 2)).map { ["databaseId": $0, "login": "user\($0)"] as [String: Any] }
+            let body: [String: Any] = ["data": [
+                "user": ["databaseId": 2, "login": "user2",
+                         relation.rawValue: ["totalCount": 87, "nodes": users,
+                                             "pageInfo": ["hasNextPage": false, "endCursor": NSNull()]]],
+                "rateLimit": ["remaining": 4_000, "resetAt": "2099-11-05T12:00:00Z"]
+            ]]
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                    try JSONSerialization.data(withJSONObject: body))
+        }
+        model.reloadRelations("2")
+        try await settle()
+        #expect(model.snapshot?.relationCount(for: "2") == (returned == 87 ? 87 : 78))
+        #expect(model.needsRelationReload("2") == (returned != 87))
+        if returned == 78 {
+            #expect(model.toastMessage == "followGraph.status.countMismatch")
+            #expect(model.toastIsError)
+        } else if returned == 0 {
+            #expect(model.toastMessage == "followGraph.toast.loadFailed")
+        } else {
+            #expect(model.toastMessage != "followGraph.status.countMismatch")
+            #expect(model.showsLoadMore("2"))
+        }
     }
 
     @MainActor
@@ -1187,7 +1289,7 @@ struct FollowGraphAPITests {
         for (cursor, hasNext, expected) in [
             ("second", true, "followGraph.toast.relationshipsAdded"),
             ("third", true, "followGraph.toast.alreadyVisible"),
-            ("last", false, "followGraph.toast.complete")
+            ("last", false, "followGraph.status.countMismatch")
         ] {
             URLProtocolStub.requestHandler = { request in
                 let body = """
@@ -1201,7 +1303,7 @@ struct FollowGraphAPITests {
             model.loadMore("2")
             try await settle()
             #expect(model.toastMessage == expected)
-            #expect(!model.toastIsError)
+            #expect(model.toastIsError == !hasNext)
             #expect(model.displayedSnapshot?.nodes.count == 4)
         }
         URLProtocolStub.requestHandler = { _ in throw URLError(.notConnectedToInternet) }

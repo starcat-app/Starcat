@@ -273,14 +273,27 @@ final class FollowGraphViewModel {
         viewportRevision += 1
     }
 
-    /// 展示预算与分页完整性分开：缓存尚有隐藏关系时允许展开；人数已满仅隐藏操作，
-    /// 不把根据交叉边或资料人数得出的结论写成“分页完整”。
+    /// 缓存先展开，再以接口的末页标记决定是否继续请求；交叉边和变化中的总数
+    /// 不能代替 hasNextPage，否则人数碰巧达到总数时会提前丢失分页入口。
     func canLoadMore(_ id: String, fallbackTotal: Int? = nil) -> Bool {
         guard let snapshot, let displayedSnapshot, displayedSnapshot.nodes[id] != nil else { return false }
         let visible = displayedRelationCounts[id] ?? 0
         if (cachedRelationCounts[id] ?? 0) > visible { return true }
-        if let total = snapshot.progress[id]?.totalCount ?? fallbackTotal, visible >= total { return false }
-        return snapshot.progress[id]?.complete != true
+        if let progress = snapshot.progress[id] { return !progress.complete }
+        return fallbackTotal.map { visible < $0 } ?? true
+    }
+
+    /// 卡片人数来自 Canvas。末页已到但头像仍在入场时保留禁用入口，
+    /// 避免出现“78 / 87”且按钮已经消失；可请求性仍由 canLoadMore 独立决定。
+    func showsLoadMore(_ id: String, fallbackTotal: Int? = nil) -> Bool {
+        canLoadMore(id, fallbackTotal: fallbackTotal) || isRevealingRelations(for: id)
+    }
+
+    /// 末页仅表示游标用尽，不保证去重后的关系数等于接口总数。
+    /// 保留真实总数并允许显式重读，不能伪造人数或反复请求已结束的游标。
+    func needsRelationReload(_ id: String) -> Bool {
+        guard let progress = snapshot?.progress[id], progress.complete else { return false }
+        return (cachedRelationCounts[id] ?? 0) < progress.totalCount
     }
 
     /// 本批正在逐个入场时不叠加下一批，避免连续点击一次排入数百个头像。
@@ -317,9 +330,34 @@ final class FollowGraphViewModel {
         }
     }
 
+    /// 只重读选中用户的关系，沿用手动展开预算和 Store 的分页、配额及会话保护；
+    /// 不把一次纠错刷新扩大为整个图谱的递归采集。
+    func reloadRelations(_ id: String) {
+        guard !isLoading, needsRelationReload(id), let snapshot,
+              displayedSnapshot?.nodes[id] != nil else { return }
+        let before = displayedSnapshot
+        let budget = min(10_000, max(expandedSources[id] ?? snapshot.defaultExpansionBudgets[id] ?? 0,
+                                     displayedRelationCounts[id] ?? 0) + 50)
+        expandedSources[id] = budget
+        saveRange()
+        run { session, store in
+            do {
+                let result = try await store.load(userID: id, session: session, count: 100,
+                                                  refresh: true, refreshLimit: budget)
+                guard self.generation == session, !Task.isCancelled else { return }
+                self.publish(result, session: session)
+                self.reportLoadResult(id, before: before)
+            } catch { await self.handle(error, session: session, store: store) }
+        }
+    }
+
     /// 正常新增由节点与动态数字表达；仅无新增头像时解释结果，避免每页成功都弹提示。
     private func reportLoadResult(_ id: String, before: FollowGraphSnapshot?) {
         guard let displayedSnapshot else { return }
+        if needsRelationReload(id) {
+            showToast("followGraph.status.countMismatch", isError: true)
+            return
+        }
         if displayedSnapshot.nodes.keys.contains(where: { before?.nodes[$0] == nil }) { return }
         if displayedSnapshot.relationCount(for: id) > (before?.relationCount(for: id) ?? 0) {
             showToast("followGraph.toast.relationshipsAdded")

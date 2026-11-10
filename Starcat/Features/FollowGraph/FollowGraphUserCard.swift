@@ -104,11 +104,21 @@ struct FollowGraphUserCard: View {
                     .truncationMode(.tail)
                     .help(loadCountLabel + "\n" + String.l10n(loadStateKey))
                 Spacer(minLength: 0)
-                if model.canLoadMore(node.id, fallbackTotal: relationTotal) {
-                    Button("followGraph.action.more") { model.loadMore(node.id, fallbackTotal: relationTotal) }
+                if model.showsLoadMore(node.id, fallbackTotal: relationTotal) {
+                    Button("followGraph.action.moreCompact") { model.loadMore(node.id, fallbackTotal: relationTotal) }
                         .fixedSize()
                         .disabled(model.isLoading || model.isRevealingRelations(for: node.id))
+                } else if model.needsRelationReload(node.id) {
+                    Button("followGraph.action.refresh") { model.reloadRelations(node.id) }
+                        .fixedSize()
+                        .disabled(model.isLoading)
                 }
+            }
+            if model.needsRelationReload(node.id) {
+                Text("followGraph.status.countMismatch")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
@@ -158,6 +168,8 @@ struct FollowGraphUserCard: View {
     }
 
     private var loadStateKey: String {
+        if model.needsRelationReload(node.id) { return "followGraph.status.countMismatch" }
+        if model.isRevealingRelations(for: node.id) { return "followGraph.status.loading" }
         guard model.displayedSnapshot?.progress[node.id]?.complete == true else { return "followGraph.status.partial" }
         return model.snapshot?.relation == .followers ? "followGraph.status.followersComplete" : "followGraph.status.complete"
     }
