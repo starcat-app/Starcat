@@ -8,6 +8,16 @@
 > 需求：[需求规格说明书](../2-产品/需求讨论/正式方案/关注关系图谱需求规格说明书.md)\
 > 设计：[技术方案](../3-设计/详细设计/71-关注关系图谱技术方案.md)
 
+## 硬上限解除与真实配额提示（2026-11-10）
+
+- dong4j 确认不设人为节点 / 边 / 请求数上限，接受最终由 GitHub API 配额与本机性能限制；保留 5,000 节点自动探索软停。
+- `9cbab46e`：删除 Store 的 10,000 节点 / 30,000 边与 300 请求闸门、GraphQL 剩余配额 200 的预判停止；只有真实 429 才进入冷却并记录恢复时间。手动展开不再有全局容量约束，只受该源已取得关系数与性能限制。
+- 配额提示改为真实原因加本地恢复时间：新增 `followGraph.toast.quotaReset`（17 语言、`%@` 本地时间），状态条保留 `followGraph.status.quota`；`followGraph.status.limit` 改写为自动探索软停的正常说明，不再按错误展示。解析失败保留原始时间字符串，不伪造数值。
+- 缓存只保留防损坏边界：快照 512MB（原 20MB）、sidecar 16MB（原 1MB）、单源预算与源数 1,000,000（原 10,000）；快照读取不再按 10,000 节点 / 30,000 边拒绝。
+- 原生 **76 项 / 8 suites** 通过，覆盖低 GraphQL 配额不再提前停止、真实 429 冷却与恢复时间、超一万节点合并落盘、301 次分页不被预算拒绝、手动展开超过 10,000 节点且默认采样停在 5,000、预算 sidecar 新边界，以及模型级 403 提示含本地年份。
+- `make build-appstore`、`make build-direct` 通过；`followGraph.toast.quotaReset` 与 `followGraph.status.limit` 的 17 语言编译资源与 Catalog 一致。日志：`/tmp/starcat-followers-nolimit-tests.log`、`/tmp/starcat-followers-nolimit-appstore.log`、`/tmp/starcat-followers-nolimit-direct.log`。
+- 未做 GUI 自动化或真实账号配额验收；未改总览与 Changelog，未推送，专项保持待人工验收。
+
 ## 三批性能优化（2026-11-09，待人工视觉验收）
 
 - 在 `codex/followers-graph` / `../Starcat-followers-graph` 实施，保留两方向现有功能、逐个入场和视觉效果。
