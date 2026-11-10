@@ -166,7 +166,7 @@ struct StarcatApp: App {
         .defaultLaunchBehavior(.presented)
         .commands {
             // 只移除「窗口」菜单自动生成的单例窗口入口，业务入口统一放在「显示」菜单。
-            // 不能对 Scene 使用 commandsRemoved()，否则服务、隐藏、退出等系统命令也会消失。
+            // 不能对主窗口 Scene 使用 commandsRemoved()，否则服务、隐藏、退出等系统命令会消失。
             CommandGroup(replacing: .singleWindowList) {}
 
             // 替换系统默认的"关于 Starcat"菜单项，打开自定义 SwiftUI 关于窗口。
@@ -197,6 +197,9 @@ struct StarcatApp: App {
         Window("workspace.rag.title", id: KnowledgeRAGWorkspaceWindowController.sceneID) {
             KnowledgeRAGWorkspaceSceneHost(coordinator: AIWorkspaceSceneCoordinator.shared)
         }
+        // 辅助窗口只保留业务入口（「显示」菜单），不向「窗口」菜单注入单例标题。
+        // 系统 Services / Hide / Quit 由主窗口 Scene 继续提供。
+        .commandsRemoved()
         .defaultSize(
             width: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.width,
             height: KnowledgeRAGWorkspaceWindowMetrics.defaultContentSize.height
@@ -209,6 +212,7 @@ struct StarcatApp: App {
                 .environment(\.starcatInterfaceScale, dependencies?.settings.interfaceScale ?? .standard)
                 .appLocaleEnvironment()
         }
+        .commandsRemoved()
         .defaultSize(width: 960, height: 620)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
@@ -224,6 +228,7 @@ struct StarcatApp: App {
                 ))
             }
         }
+        .commandsRemoved()
         .defaultSize(
             width: AgentWorkspaceWindowMetrics.defaultContentSize.width,
             height: AgentWorkspaceWindowMetrics.defaultContentSize.height
@@ -237,12 +242,10 @@ struct StarcatApp: App {
         Window("Starcat", id: "settings") {
             settingsSceneRoot
         }
+        .commandsRemoved()
         .defaultSize(width: 720, height: 720)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
-        .commands {
-            SettingsWindowCommands(dependencies: dependencies)
-        }
     }
 
     // MARK: - 内容根视图
