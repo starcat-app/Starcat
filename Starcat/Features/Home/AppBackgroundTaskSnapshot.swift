@@ -146,6 +146,9 @@ struct AppBackgroundTaskSnapshot: Equatable {
                 }
             }
         }
+        if let task = AppBackgroundTask.projectSync(state: dependencies.userProjectSyncService.state) {
+            tasks.append(task)
+        }
         return Self(tasks: tasks, warmupOwnsReadme: warmupOwnsReadme)
     }
 }

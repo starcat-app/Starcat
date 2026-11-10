@@ -15,6 +15,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case screensaverAvatars
         case chatHistoryMigration
         case runtimeInstall
+        case projectSync
 
         var titleKey: String {
             switch self {
@@ -30,6 +31,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .screensaverAvatars: "settings.general.screensaver.title"
             case .chatHistoryMigration: "settings.storage.refinement.migrating"
             case .runtimeInstall: "settings.integration.runtimeDownload.installing"
+            case .projectSync: "sidebar.myProjects"
             }
         }
 
@@ -46,6 +48,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .screensaverAvatars: .general
             case .chatHistoryMigration: .storage
             case .runtimeInstall: .localTools
+            case .projectSync: .myProjects
             }
         }
     }
@@ -183,6 +186,15 @@ struct AppBackgroundTask: Identifiable, Equatable {
         }
         return Self(id: .runtimeInstall, phase: phase, detail: detail, canCancel: canCancel,
                     opensWindow: true, instanceID: runtime.rawValue, name: runtime.displayName)
+    }
+
+    /// 完成数不是实时分母；失败保留查看入口，不把停调度冒充停止本轮。
+    static func projectSync(state: UserProjectSyncServiceState) -> Self? {
+        switch state {
+        case .syncing: Self(id: .projectSync, phase: .running, opensWindow: true)
+        case .failed: Self(id: .projectSync, phase: .failed, opensWindow: true)
+        case .idle, .completed: nil
+        }
     }
 
     /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。

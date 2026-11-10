@@ -172,6 +172,20 @@ struct AppBackgroundTaskTests {
         }
     }
 
+    @Test("项目同步只显示本轮阶段与失败，完成数不伪装成实时进度")
+    func projectSyncProjection() throws {
+        for state in [UserProjectSyncServiceState.syncing, .failed(.network)] {
+            let task = try #require(AppBackgroundTask.projectSync(state: state))
+            #expect(task.detail == .none)
+            #expect(!task.canCancel)
+            #expect(task.opensWindow)
+            #expect(task.kind == .projectSync)
+            #expect(task.phase == (state == .syncing ? .running : .failed))
+        }
+        #expect(AppBackgroundTask.projectSync(state: .idle) == nil)
+        #expect(AppBackgroundTask.projectSync(state: .completed(at: Date(), receivedCount: 100)) == nil)
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)

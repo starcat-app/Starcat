@@ -161,6 +161,7 @@ struct AppStatusToolbarButton: View {
         case .grouping: onShowGitHubGrouping?()
         case .tags: onShowBatchAIPanel?()
         case .indexing: onShowKnowledgeWorkspace?()
+        case .projectSync: dependencies.mainWindowNavigationDispatcher.navigate(to: .manage(.myProjects))
         case .warmup, .readme, .openSSF, .health, .repositoryIndexing,
              .localModel, .layaModel, .screensaverAvatars, .chatHistoryMigration, .runtimeInstall: break
         }
@@ -185,7 +186,7 @@ struct AppStatusToolbarButton: View {
             if let value = task.instanceID, let runtime = DownloadableRuntime(rawValue: value) {
                 RuntimeDownloadManager.shared.cancel(runtime)
             }
-        case .screensaverAvatars, .chatHistoryMigration: break
+        case .screensaverAvatars, .chatHistoryMigration, .projectSync: break
         }
     }
 
