@@ -11,6 +11,30 @@
 //
 
 import Foundation
+import CryptoKit
+
+/// 诊断安全字段只接受标量，不允许把响应、设置或业务对象整体序列化。
+enum DiagnosticValue: Codable, Sendable, Equatable {
+    case string(String), integer(Int), decimal(Double), boolean(Bool)
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let bool = try? value.decode(Bool.self) { self = .boolean(bool) }
+        else if let int = try? value.decode(Int.self) { self = .integer(int) }
+        else if let double = try? value.decode(Double.self) { self = .decimal(double) }
+        else { self = .string(try value.decode(String.self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .string(let string): try value.encode(string)
+        case .integer(let int): try value.encode(int)
+        case .decimal(let double): try value.encode(double.isFinite ? double : 0)
+        case .boolean(let bool): try value.encode(bool)
+        }
+    }
+}
 
 /// 诊断事件。
 ///
@@ -28,8 +52,8 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
 
     /// 事件在诊断体系中的用途。
     ///
-    /// `context` 只作为导出包上下文，不点亮全局故障；`issue` 仅用于用户无法通过
-    /// 设置、重试、重新登录等方式自行恢复的程序或本地数据故障。
+    /// `context` 保留可恢复故障和取消证据，不点亮全局故障；
+    /// `issue` 仅表达需要开发者协助的提醒，与证据采集范围独立。
     enum Visibility: String, Codable, Sendable {
         case context
         case issue
@@ -47,6 +71,32 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     var errorCode: String?
     var underlying: String?
     var context: [String: String]
+    var schemaVersion: Int = 2
+    var eventID: String = UUID().uuidString
+    var sequence: UInt64?
+    var sessionID: String? = DiagnosticContext.sessionID
+    var environmentID: String? = DiagnosticContext.sessionID
+    var operationID: String?
+    var parentOperationID: String?
+    var requestID: String?
+    var serverTraceID: String?
+    var phase: String?
+    var outcome: Outcome?
+    var durationMs: Double?
+    var impact: Impact = .none
+    /// 聚合行表示本条新增次数，不能把累计次数再次相加。
+    var occurrenceCount: Int = 1
+    var firstSeen: String?
+    var lastSeen: String?
+    var fields: [String: DiagnosticValue] = [:]
+
+    enum Outcome: String, Codable, Sendable {
+        case succeeded, failed, cancelled, partial, skipped
+    }
+
+    enum Impact: String, Codable, Sendable {
+        case none, degraded, blocked, dataRisk
+    }
 
     init(
         timestamp: Date = Date(),
@@ -59,20 +109,51 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         statusCode: Int? = nil,
         errorCode: String? = nil,
         underlying: String? = nil,
-        context: [String: String] = [:]
+        context: [String: String] = [:],
+        operationID: String? = nil,
+        parentOperationID: String? = nil,
+        requestID: String? = nil,
+        serverTraceID: String? = nil,
+        phase: String? = nil,
+        outcome: Outcome? = nil,
+        durationMs: Double? = nil,
+        impact: Impact = .none,
+        fields: [String: DiagnosticValue] = [:]
     ) {
         self.timestamp = ISO8601DateFormatter.shared.string(from: timestamp)
         self.level = level
         self.visibility = visibility
-        self.category = category
-        self.operation = operation
+        self.category = Self.sanitize(category, maxLength: 80)
+        self.operation = Self.sanitize(operation, maxLength: 160)
         self.message = Self.sanitize(message, maxLength: 1_024)
-        self.service = service
+        self.service = service.map { Self.sanitize($0, maxLength: 80) }
         self.statusCode = statusCode
-        self.errorCode = errorCode
+        self.errorCode = errorCode.map { Self.sanitize($0, maxLength: 128) }
         self.underlying = underlying.map { Self.sanitize($0, maxLength: 4_096) }
-        self.context = context.reduce(into: [:]) { partial, pair in
-            partial[pair.key] = Self.sanitize(pair.value, maxLength: 512)
+        self.context = context.sorted { $0.key < $1.key }.prefix(32).reduce(into: [:]) { partial, pair in
+            guard Self.isSafeKey(pair.key) else { return }
+            let sensitive = ["repo", "login", "user", "path", "url", "endpoint", "account"]
+                .contains { pair.key.localizedCaseInsensitiveContains($0) }
+            partial[String(pair.key.prefix(80))] = sensitive
+                ? Self.anonymousReference(pair.value) : Self.sanitize(pair.value, maxLength: 256)
+        }
+        self.operationID = operationID ?? DiagnosticContext.current?.id
+        self.parentOperationID = parentOperationID ?? DiagnosticContext.current?.parentID
+        self.requestID = requestID
+        self.serverTraceID = serverTraceID.flatMap(Self.safeTrace)
+        self.phase = phase
+        self.outcome = outcome
+        self.durationMs = durationMs
+        self.impact = impact
+        self.fields = fields.sorted { $0.key < $1.key }.prefix(48).reduce(into: [:]) { result, item in
+            guard Self.isSafeKey(item.key) else { return }
+            if case .string(let text) = item.value {
+                // 只接收代码控制的短枚举值；正文、路径和 URL 不属于安全字段。
+                guard text.range(of: #"^[A-Za-z0-9_.:<>\-]{0,128}$"#, options: .regularExpression) != nil else { return }
+                result[item.key] = .string(Self.redact(text))
+            } else {
+                result[item.key] = item.value
+            }
         }
     }
 
@@ -88,6 +169,9 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         case errorCode
         case underlying
         case context
+        case schemaVersion, eventID, sequence, sessionID, environmentID
+        case operationID, parentOperationID, requestID, serverTraceID
+        case phase, outcome, durationMs, impact, occurrenceCount, firstSeen, lastSeen, fields
     }
 
     /// 老版本 JSONL 没有 `visibility`。升级后默认把这些历史记录当作上下文，
@@ -105,6 +189,40 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
         underlying = try container.decodeIfPresent(String.self, forKey: .underlying)
         context = try container.decodeIfPresent([String: String].self, forKey: .context) ?? [:]
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        eventID = try container.decodeIfPresent(String.self, forKey: .eventID) ?? ""
+        sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
+        sessionID = try container.decodeIfPresent(String.self, forKey: .sessionID)
+        environmentID = try container.decodeIfPresent(String.self, forKey: .environmentID)
+        operationID = try container.decodeIfPresent(String.self, forKey: .operationID)
+        parentOperationID = try container.decodeIfPresent(String.self, forKey: .parentOperationID)
+        requestID = try container.decodeIfPresent(String.self, forKey: .requestID)
+        serverTraceID = try container.decodeIfPresent(String.self, forKey: .serverTraceID)
+        phase = try container.decodeIfPresent(String.self, forKey: .phase)
+        outcome = try container.decodeIfPresent(Outcome.self, forKey: .outcome)
+        durationMs = try container.decodeIfPresent(Double.self, forKey: .durationMs)
+        impact = try container.decodeIfPresent(Impact.self, forKey: .impact) ?? .none
+        occurrenceCount = try container.decodeIfPresent(Int.self, forKey: .occurrenceCount) ?? 1
+        firstSeen = try container.decodeIfPresent(String.self, forKey: .firstSeen)
+        lastSeen = try container.decodeIfPresent(String.self, forKey: .lastSeen)
+        fields = try container.decodeIfPresent([String: DiagnosticValue].self, forKey: .fields) ?? [:]
+    }
+
+    /// 同一会话内可关联，不输出身份，也不提供跨用户稳定跟踪标识。
+    static func anonymousReference(_ text: String) -> String {
+        let digest = SHA256.hash(data: Data((DiagnosticContext.sessionID + text).utf8))
+        return "ref:" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func safeTrace(_ text: String) -> String? {
+        text.range(of: #"^[A-Za-z0-9_.:\-]{1,128}$"#, options: .regularExpression) != nil ? text : nil
+    }
+
+    private static func isSafeKey(_ key: String) -> Bool {
+        guard key.count <= 80 else { return false }
+        return !["token", "secret", "password", "cookie", "authorization", "prompt", "content",
+                 "body", "response", "apikey", "api_key", "licensekey", "note", "query"]
+            .contains { key.localizedCaseInsensitiveContains($0) }
     }
 
     /// 最小脱敏：API Key / Bearer token / GitHub token / Authorization 这类常见形态。
@@ -119,7 +237,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             options: .regularExpression
         )
         output = output.replacingOccurrences(
-            of: #"(?i)(api[_-]?key|token)\s*[:=]\s*[A-Za-z0-9._~+/=-]+"#,
+            of: #"(?i)(api[_-]?key|token|license[_-]?key|cookie|password)\s*[:=]\s*[^\s,;]+"#,
             with: "$1=<redacted>",
             options: .regularExpression
         )
@@ -134,10 +252,12 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             options: .regularExpression
         )
         output = output.replacingOccurrences(
-            of: #"(?:file://)?/Users/[^/\s]+"#,
+            of: #"(?:file://)?/Users/[^\n\"<>]+"#,
             with: "/Users/<redacted>",
             options: .regularExpression
         )
+        output = output.replacingOccurrences(of: #"https?://[^\s<>"]+"#, with: "<url>", options: .regularExpression)
+        output = output.replacingOccurrences(of: #"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"#, with: "<email>", options: .regularExpression)
         return output
     }
 
@@ -156,7 +276,8 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         if let decoding = error as? DecodingError {
             return sanitize(summarizeDecodingError(decoding), maxLength: 4_096)
         }
-        return sanitize("\(typeName): \(error.localizedDescription)", maxLength: 4_096)
+        let nsError = error as NSError
+        return sanitize("\(typeName) domain=\(nsError.domain) code=\(nsError.code)", maxLength: 512)
     }
 
     private static func summarizeDecodingError(_ error: DecodingError) -> String {

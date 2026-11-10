@@ -2,264 +2,248 @@
 //  DiagnosticLogStore.swift
 //  Starcat
 //
-//  用户可导出的本机诊断日志存储。
-//
-//  设计目标：
-//  - 用 app-owned JSONL 保存关键 warning/error，用户主动导出时可直接打包；
-//  - 不替代 OSLog，OSLog 继续承担开发期 Console.app 调试；
-//  - 写入失败只记 OSLog，不影响主流程，避免诊断系统反过来拖垮 App。
+//  有界后台 JSONL 写入者。锁只保护入队与截点，文件操作严格在私有串行队列。
+//  不依赖业务数据库；自身失败只累计健康计数，避免递归诊断。
 //
 
 import Foundation
 
-/// 诊断日志给 UI 展示用的轻量摘要。
-///
-/// 只统计显式标记为 `issue` 的 warning 及以上事件。错误级别描述技术严重度，
-/// `visibility` 才决定是否属于用户无法自行恢复、需要导出给开发者的问题。
+/// 提醒统计与证据留存分离，确认提醒不会删除历史事件。
 struct DiagnosticLogSummary: Equatable, Sendable {
     var issueCount: Int
     var latestIssue: DiagnosticEvent?
-
     static let empty = DiagnosticLogSummary(issueCount: 0, latestIssue: nil)
 }
 
-/// 轻量 JSONL 诊断日志。
-///
-/// actor 串行化文件写入，避免多个 async 任务同时 append 导致行交错。日志按文件大小
-/// 滚动，保留当前文件和一个 `.1` 备份，足够覆盖最近问题，同时不会无限增长。
-actor DiagnosticLogStore {
+/// 快照是值拷贝，导出期间轮转或继续写入不会改变已经取得的证据。
+struct DiagnosticSnapshot: Sendable {
+    let text: String
+    let cutoffSequence: UInt64
+    let capturedAt: String
+    let health: [String: Int]
+}
 
+/// @unchecked Sendable 的约束：pending/sequence/dropped 只在锁内访问；其余可变状态只在 writer 队列访问。
+/// 不能在锁内 await，也不能向 writer.sync，避免 UI 与文件操作互相等待。
+final class DiagnosticLogStore: @unchecked Sendable {
     static let shared = DiagnosticLogStore()
-
-    private static let directoryName = "diagnostics"
-    private static let fileName = "diagnostic-log.jsonl"
-    private static let rotatedFileName = "diagnostic-log.1.jsonl"
-    private static let acknowledgedFileName = "diagnostic-log-acknowledged-at.txt"
-    private static let maxBytes: UInt64 = 2 * 1024 * 1024
-    private static let duplicateSuppressionWindow: TimeInterval = 5 * 60
-
+    private let writer = DispatchQueue(label: "ink.starcat.diagnostics.writer", qos: .utility)
+    private let lock = NSLock()
+    private var pending: [DiagnosticEvent] = []
+    private var scheduled = false
+    private var drainGeneration: UInt64 = 0
+    private var sequence: UInt64 = 0
+    private var dropped = 0
+    private var peakQueue = 0
+    private let queueLimit: Int
+    private let segmentBytes: Int
+    private let segmentCount: Int
+    private let retention: TimeInterval
     private let fileManager: FileManager
-    private let encoder: JSONEncoder
-    private let directoryURL: URL
-    private let fileURL: URL
-    private let rotatedFileURL: URL
-    private let acknowledgedFileURL: URL
-    private var lastRecordedAtByFingerprint: [DiagnosticEventFingerprint: Date] = [:]
+    let directoryURL: URL
+    private var writeFailures = 0
+    private var rotationFailures = 0
+    private var lastCleanup = Date.distantPast
+    private var repeats: [String: DiagnosticEvent] = [:]
+    private var fingerprints: [String: Date] = [:]
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
+    private var fileURL: URL { directoryURL.appendingPathComponent("diagnostic-log.jsonl") }
+    private var acknowledgedURL: URL { directoryURL.appendingPathComponent("diagnostic-log-acknowledged-at.txt") }
 
-    init(
-        fileManager: FileManager = .default,
-        directoryURL: URL? = nil
-    ) {
+    init(fileManager: FileManager = .default, directoryURL: URL? = nil,
+         queueLimit: Int = 2048, segmentBytes: Int = 2 * 1024 * 1024,
+         segmentCount: Int = 20, retention: TimeInterval = 14 * 86400) {
         self.fileManager = fileManager
-        self.encoder = JSONEncoder()
-        self.encoder.outputFormatting = [.sortedKeys]
-
-        let baseURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
-        self.directoryURL = baseURL
-        self.fileURL = baseURL.appendingPathComponent(Self.fileName)
-        self.rotatedFileURL = baseURL.appendingPathComponent(Self.rotatedFileName)
-        self.acknowledgedFileURL = baseURL.appendingPathComponent(Self.acknowledgedFileName)
+        self.directoryURL = directoryURL ?? Self.defaultDirectoryURL(fileManager: fileManager)
+        self.queueLimit = max(1, queueLimit)
+        self.segmentBytes = max(1024, segmentBytes)
+        self.segmentCount = max(1, segmentCount)
+        self.retention = retention
     }
 
-    /// 追加一条诊断事件。
-    func record(_ event: DiagnosticEvent) async {
-        do {
-            guard !shouldSuppress(event) else { return }
-            try ensureDirectory()
-            try rotateIfNeeded()
-            let data = try encoder.encode(event)
-            try append(data)
-            markRecorded(event)
-            if event.visibility == .issue {
-                await postIssuesDidChange()
-            }
-        } catch {
-            AppLog.general.error("Diagnostic log write failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// 返回当前可导出的日志文件，旧文件排前，方便人工按时间阅读。
-    func exportableFiles() async -> [URL] {
-        [rotatedFileURL, fileURL].filter { fileManager.fileExists(atPath: $0.path) }
-    }
-
-    /// 测试和导出器使用：读取所有 JSONL 文本。
-    func readAllText() async -> String {
-        let files = await exportableFiles()
-        return files.compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-            .joined(separator: "")
-    }
-
-    /// 把当前及更早的诊断问题标记为“用户已处理”。
-    ///
-    /// 这里只写一个 marker，而不删除 JSONL 本体：用户导出的诊断包仍然保留完整证据；
-    /// toolbar 状态面板则从 marker 之后重新开始统计，避免旧 warning 一直压着状态栏。
-    func markIssuesAcknowledged(upTo date: Date = Date()) async {
-        do {
-            try ensureDirectory()
-            let text = ISO8601DateFormatter.shared.string(from: date)
-            try text.write(to: acknowledgedFileURL, atomically: true, encoding: .utf8)
-            await postIssuesDidChange()
-        } catch {
-            AppLog.general.error("Diagnostic issue acknowledgement failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// 读取最近诊断问题摘要。
-    ///
-    /// 这是 toolbar 状态面板的只读入口：它不新增日志、不触发外部请求，只解析本机 JSONL。
-    /// 失败行会被跳过，避免半行写入或旧格式日志让状态面板不可用。
-    func issueSummary(since cutoff: Date = Date().addingTimeInterval(-24 * 60 * 60)) async -> DiagnosticLogSummary {
-        let files = await exportableFiles()
-        let decoder = JSONDecoder()
-        let acknowledgedAt = acknowledgedAt()
-        var issues: [DiagnosticEvent] = []
-
-        for file in files {
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
-            for line in text.split(separator: "\n") {
-                guard let data = String(line).data(using: .utf8),
-                      let event = try? decoder.decode(DiagnosticEvent.self, from: data),
-                      event.isUserVisibleIssue,
-                      event.date >= cutoff,
-                      acknowledgedAt.map({ event.date > $0 }) ?? true else {
-                    continue
-                }
-                issues.append(event)
-            }
-        }
-
-        let latest = issues.max { $0.date < $1.date }
-        return DiagnosticLogSummary(issueCount: issues.count, latestIssue: latest)
-    }
-
-    private static func defaultDirectoryURL(fileManager: FileManager) -> URL {
+    static func defaultDirectoryURL(fileManager: FileManager = .default) -> URL {
         let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
-        return support
-            .appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
-            .appendingPathComponent(Self.directoryName, isDirectory: true)
+        return support.appendingPathComponent(AppConstants.bundleIdentifier, isDirectory: true)
+            .appendingPathComponent("diagnostics", isDirectory: true)
     }
 
-    private func ensureDirectory() throws {
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-    }
-
-    private func rotateIfNeeded() throws {
-        guard fileManager.fileExists(atPath: fileURL.path) else { return }
-        let attributes = try fileManager.attributesOfItem(atPath: fileURL.path)
-        let size = attributes[.size] as? UInt64 ?? 0
-        guard size >= Self.maxBytes else { return }
-
-        if fileManager.fileExists(atPath: rotatedFileURL.path) {
-            try fileManager.removeItem(at: rotatedFileURL)
-        }
-        try fileManager.moveItem(at: fileURL, to: rotatedFileURL)
-    }
-
-    private func append(_ data: Data) throws {
-        if !fileManager.fileExists(atPath: fileURL.path) {
-            fileManager.createFile(atPath: fileURL.path, contents: nil)
-        }
-        let handle = try FileHandle(forWritingTo: fileURL)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        try handle.write(contentsOf: data)
-        try handle.write(contentsOf: Data("\n".utf8))
-    }
-
-    /// NotificationCenter 会在发布线程同步投递；切回主线程，避免 SwiftUI 订阅者从 actor executor 收到 UI 更新。
-    private func postIssuesDidChange() async {
-        await MainActor.run {
-            NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil)
-        }
-    }
-
-    private func acknowledgedAt() -> Date? {
-        guard let text = try? String(contentsOf: acknowledgedFileURL, encoding: .utf8) else {
-            return nil
-        }
-        return ISO8601DateFormatter.shared.date(from: text.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    private func shouldSuppress(_ event: DiagnosticEvent) -> Bool {
-        let fingerprint = DiagnosticEventFingerprint(event)
-        let eventDate = event.date
-        pruneDuplicateFingerprints(before: eventDate)
-
-        if let lastRecordedAt = lastRecordedAtByFingerprint[fingerprint],
-           eventDate.timeIntervalSince(lastRecordedAt) < Self.duplicateSuppressionWindow {
-            return true
-        }
-
-        return false
-    }
-
-    private func markRecorded(_ event: DiagnosticEvent) {
-        lastRecordedAtByFingerprint[DiagnosticEventFingerprint(event)] = event.date
-    }
-
-    private func pruneDuplicateFingerprints(before date: Date) {
-        let cutoff = date.addingTimeInterval(-Self.duplicateSuppressionWindow)
-        lastRecordedAtByFingerprint = lastRecordedAtByFingerprint.filter { $0.value >= cutoff }
-    }
-}
-
-private extension DiagnosticEvent {
-    var date: Date {
-        ISO8601DateFormatter.shared.date(from: timestamp) ?? .distantPast
-    }
-
-    var isUserVisibleIssue: Bool {
-        guard visibility == .issue else { return false }
-        switch level {
-        case .warning, .error, .critical:
-            return true
-        case .debug, .info:
-            return false
-        }
-    }
-}
-
-private struct DiagnosticEventFingerprint: Hashable {
-    let level: String
-    let visibility: String
-    let category: String
-    let operation: String
-    let message: String
-    let service: String?
-    let statusCode: Int?
-    let errorCode: String?
-    let context: [ContextPair]
-
-    init(_ event: DiagnosticEvent) {
-        self.level = event.level.rawValue
-        self.visibility = event.visibility.rawValue
-        self.category = event.category
-        self.operation = event.operation
-        self.message = event.message
-        self.service = event.service
-        self.statusCode = event.statusCode
-        self.errorCode = event.errorCode
-        // `underlying` 常含 response 指针、绝对路径或逐次变化的系统描述。它保留在
-        // JSONL 供开发者定位，但不参与指纹，避免同一故障绕过 5 分钟去重造成日志风暴。
-        // `Dictionary` 的枚举顺序不稳定；排序后再做 key，避免相同 context 因顺序不同绕过去重。
-        self.context = event.context
-            .map { ContextPair(key: $0.key, value: $0.value) }
-            .sorted()
-    }
-
-    struct ContextPair: Hashable, Comparable {
-        let key: String
-        let value: String
-
-        static func < (lhs: ContextPair, rhs: ContextPair) -> Bool {
-            if lhs.key == rhs.key {
-                return lhs.value < rhs.value
+    /// 同步入队分配顺序，不为每条事件创建 Task。队列满时记录丢弃数，绝不无限增长。
+    func enqueue(_ event: DiagnosticEvent) {
+        lock.lock()
+        defer { lock.unlock() }
+        sequence += 1
+        guard pending.count < queueLimit else { dropped += 1; return }
+        var event = event
+        event.sequence = sequence
+        pending.append(event)
+        peakQueue = max(peakQueue, pending.count)
+        if !scheduled {
+            scheduled = true
+            let generation = drainGeneration
+            writer.async { [self] in
+                lock.lock()
+                guard generation == drainGeneration else { lock.unlock(); return }
+                let batch = pending
+                pending.removeAll(keepingCapacity: true)
+                scheduled = false
+                lock.unlock()
+                batch.forEach(write)
             }
-            return lhs.key < rhs.key
         }
     }
+
+    /// 保留原 async 实例入口用于测试和显式等待的调用方；截点 API 才提供落盘屏障。
+    func record(_ event: DiagnosticEvent) async { enqueue(event) }
+
+    /// 入队和安排截点在同一锁内完成，保证截点前事件先于快照落盘。
+    /// 截点之后的事件继续正常写入；序号缺口结合 dropped 解释，不伪装完整。
+    func snapshot() async -> DiagnosticSnapshot {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            let batch = pending
+            pending.removeAll(keepingCapacity: true)
+            // 使尚未开始的 drain 失效，后续入队安排在快照之后，避免跨越截点。
+            drainGeneration += 1
+            scheduled = false
+            let cutoff = sequence
+            let lost = dropped
+            let peak = peakQueue
+            writer.async { [self] in
+                batch.forEach(write)
+                flushRepeats()
+                let text = files().compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined()
+                continuation.resume(returning: DiagnosticSnapshot(
+                    text: text, cutoffSequence: cutoff,
+                    capturedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                    health: ["droppedEvents": lost, "writeFailures": writeFailures,
+                             "rotationFailures": rotationFailures, "peakQueue": peak,
+                             "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)]))
+            }
+            lock.unlock()
+        }
+    }
+
+    func readAllText() async -> String { await snapshot().text }
+
+    /// 旧调用仅获取文件名；导出应使用 snapshot，不复制活动中的文件。
+    func exportableFiles() async -> [URL] {
+        _ = await snapshot()
+        return await withCheckedContinuation { continuation in
+            writer.async { continuation.resume(returning: self.files()) }
+        }
+    }
+
+    func markIssuesAcknowledged(upTo date: Date = Date()) async {
+        await withCheckedContinuation { continuation in
+            writer.async { [self] in
+                do {
+                    try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+                    try ISO8601DateFormatter.shared.string(from: date).write(to: acknowledgedURL, atomically: true, encoding: .utf8)
+                    notify()
+                } catch { writeFailures += 1 }
+                continuation.resume()
+            }
+        }
+    }
+
+    func issueSummary(since cutoff: Date = Date().addingTimeInterval(-86400)) async -> DiagnosticLogSummary {
+        let text = await readAllText()
+        let acknowledged: Date? = await withCheckedContinuation { continuation in
+            writer.async { [self] in
+                let value = try? String(contentsOf: acknowledgedURL, encoding: .utf8)
+                continuation.resume(returning: value.flatMap { ISO8601DateFormatter.shared.date(from: $0) })
+            }
+        }
+        let events = text.split(separator: "\n").compactMap { try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8)) }
+            .filter { $0.visibility == .issue && [.warning, .error, .critical].contains($0.level)
+                && $0.date >= cutoff }
+        // marker 为可选值，直接用分支避免把“尚未确认”误解为“没有问题”。
+        let eligible = events.filter { event in acknowledged.map { event.date > $0 } ?? true }
+        return DiagnosticLogSummary(issueCount: eligible.reduce(0) { $0 + $1.occurrenceCount },
+                                    latestIssue: eligible.max { $0.date < $1.date })
+    }
+
+    private func files() -> [URL] {
+        (stride(from: segmentCount, through: 1, by: -1).map {
+            directoryURL.appendingPathComponent("diagnostic-log.\($0).jsonl")
+        } + [fileURL]).filter { fileManager.fileExists(atPath: $0.path) }
+    }
+
+    /// 操作开始/结束及请求结果不合并，确保每次实际尝试仍能独立关联。
+    private func write(_ event: DiagnosticEvent) {
+        guard event.operationID == nil, event.requestID == nil, event.phase == nil else { append(event); return }
+        let key = "\(event.level)|\(event.visibility)|\(event.category)|\(event.operation)|\(event.statusCode ?? 0)|\(event.errorCode ?? "")|\(event.context.sorted { $0.key < $1.key })|\(event.fields.sorted { $0.key < $1.key })"
+        if let previous = fingerprints[key], event.date.timeIntervalSince(previous) < 300 {
+            var aggregate = repeats[key] ?? event
+            aggregate.phase = "repeated"
+            aggregate.firstSeen = aggregate.firstSeen ?? event.timestamp
+            aggregate.lastSeen = event.timestamp
+            aggregate.occurrenceCount = (repeats[key]?.occurrenceCount ?? 0) + 1
+            aggregate.sequence = event.sequence
+            repeats[key] = aggregate
+        } else {
+            if let repeated = repeats.removeValue(forKey: key) { append(repeated) }
+            fingerprints[key] = event.date
+            append(event)
+        }
+        if fingerprints.count > 1024 { flushRepeats(); fingerprints.removeAll(keepingCapacity: true) }
+    }
+
+    private func flushRepeats() {
+        repeats.values.sorted { ($0.sequence ?? 0) < ($1.sequence ?? 0) }.forEach(append)
+        repeats.removeAll(keepingCapacity: true)
+    }
+
+    private func append(_ event: DiagnosticEvent) {
+        do {
+            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            if Date().timeIntervalSince(lastCleanup) > 3600 {
+                lastCleanup = Date()
+                for file in files() {
+                    let attributes = try fileManager.attributesOfItem(atPath: file.path)
+                    if let modified = attributes[.modificationDate] as? Date,
+                       modified < Date().addingTimeInterval(-retention) { try fileManager.removeItem(at: file) }
+                }
+            }
+            var data = try encoder.encode(event)
+            data.append(10)
+            let currentSize = (try? fileManager.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? 0
+            if currentSize + data.count > segmentBytes {
+                do {
+                    let oldest = directoryURL.appendingPathComponent("diagnostic-log.\(segmentCount).jsonl")
+                    if fileManager.fileExists(atPath: oldest.path) { try fileManager.removeItem(at: oldest) }
+                    for index in stride(from: segmentCount - 1, through: 1, by: -1) {
+                        let source = directoryURL.appendingPathComponent("diagnostic-log.\(index).jsonl")
+                        if fileManager.fileExists(atPath: source.path) {
+                            try fileManager.moveItem(at: source, to: directoryURL.appendingPathComponent("diagnostic-log.\(index + 1).jsonl"))
+                        }
+                    }
+                    if fileManager.fileExists(atPath: fileURL.path) {
+                        try fileManager.moveItem(at: fileURL, to: directoryURL.appendingPathComponent("diagnostic-log.1.jsonl"))
+                    }
+                } catch { rotationFailures += 1; throw error }
+            }
+            if !fileManager.fileExists(atPath: fileURL.path) { fileManager.createFile(atPath: fileURL.path, contents: nil) }
+            let handle = try FileHandle(forWritingTo: fileURL)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            if event.visibility == .issue { notify() }
+        } catch { writeFailures += 1 }
+    }
+
+    private func notify() {
+        DispatchQueue.main.async { NotificationCenter.default.post(name: .diagnosticIssuesDidChange, object: nil) }
+    }
+}
+
+extension DiagnosticEvent {
+    var date: Date { ISO8601DateFormatter.shared.date(from: timestamp) ?? .distantPast }
 }
 
 extension DiagnosticLogStore {
@@ -289,9 +273,7 @@ extension DiagnosticLogStore {
             underlying: underlying,
             context: context
         )
-        Task {
-            await DiagnosticLogStore.shared.record(event)
-        }
+        DiagnosticLogStore.shared.enqueue(event)
     }
 }
 
