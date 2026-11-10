@@ -1326,8 +1326,10 @@ struct HomeView: View {
         }
     }
 
-    private func openGitHubNotification(threadId: String) {
-        dependencies.githubNotificationInboxService.pendingOpenThreadId = threadId
+    private func openGitHubNotification(threadId: String? = nil) {
+        if let threadId {
+            dependencies.githubNotificationInboxService.pendingOpenThreadId = threadId
+        }
         savedActivityCategory = .notification
         if selectedSidebarPage == .activity {
             selectedActivityCategory = .notification
@@ -1862,6 +1864,9 @@ struct HomeView: View {
         case .insights:
             viewModel.clearTemporaryGlobalFilters()
             selectSidebarRootPage(.insights)
+
+        case .githubNotifications:
+            openGitHubNotification()
 
         case .repository(let repository):
             // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。

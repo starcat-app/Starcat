@@ -16,6 +16,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case chatHistoryMigration
         case runtimeInstall
         case projectSync
+        case notificationSync
 
         var titleKey: String {
             switch self {
@@ -32,6 +33,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .chatHistoryMigration: "settings.storage.refinement.migrating"
             case .runtimeInstall: "settings.integration.runtimeDownload.installing"
             case .projectSync: "sidebar.myProjects"
+            case .notificationSync: "activity.category.notification"
             }
         }
 
@@ -49,6 +51,7 @@ struct AppBackgroundTask: Identifiable, Equatable {
             case .chatHistoryMigration: .storage
             case .runtimeInstall: .localTools
             case .projectSync: .myProjects
+            case .notificationSync: .notifications
             }
         }
     }
@@ -195,6 +198,11 @@ struct AppBackgroundTask: Identifiable, Equatable {
         case .failed: Self(id: .projectSync, phase: .failed, opensWindow: true)
         case .idle, .completed: nil
         }
+    }
+
+    /// inbox 的真实请求标记才代表活动任务；不读取 poller 开关或上次错误推断新一轮。
+    static func notificationSync(isSyncing: Bool) -> Self? {
+        isSyncing ? Self(id: .notificationSync, phase: .running, opensWindow: true) : nil
     }
 
     /// 仓库搜索与知识库索引独立计数；遍历结束仍有失败项时，保留入口供用户检查。

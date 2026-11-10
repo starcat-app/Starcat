@@ -186,6 +186,16 @@ struct AppBackgroundTaskTests {
         #expect(AppBackgroundTask.projectSync(state: .completed(at: Date(), receivedCount: 100)) == nil)
     }
 
+    @Test("通知同步只在真实请求期间展示，结束后不挂历史错误或轮询开关")
+    func notificationSyncProjection() throws {
+        let task = try #require(AppBackgroundTask.notificationSync(isSyncing: true))
+        #expect(task.kind == .notificationSync)
+        #expect(task.phase == .running)
+        #expect(task.detail == .none)
+        #expect(task.opensWindow && !task.canCancel)
+        #expect(AppBackgroundTask.notificationSync(isSyncing: false) == nil)
+    }
+
     @Test("索引整体失败或处理结束仍有失败项时保留关注入口", arguments: [
         SemanticIndexBuilderStatus.failed(message: "private diagnostic"),
         .completed(processed: 2_077, total: 2_077)
