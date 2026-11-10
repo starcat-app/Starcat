@@ -72,6 +72,10 @@ xcodebuild \
 
 python3 scripts/sync-swift-package-lock.py check
 
+SRCROOT="$PROJECT_ROOT" bash "$SCRIPT_DIR/bump-version.sh" --verify \
+  "$APP_PATH/Contents/Info.plist" \
+  "$WIDGET_PATH/Contents/Info.plist"
+
 echo "==> 校验沙箱 entitlements..."
 ENTITLEMENTS="$(codesign -d --entitlements :- "$APP_PATH" 2>/dev/null || true)"
 if ! grep -q "com.apple.security.app-sandbox" <<<"$ENTITLEMENTS"; then

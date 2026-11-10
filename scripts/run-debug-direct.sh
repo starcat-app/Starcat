@@ -163,8 +163,8 @@ run_with_failure_log "生成 Xcode 工程" xcodegen generate
 
 echo "==> 构建 StarcatDirect Debug（Direct / 非 App Store 模式）..."
 # STARCAT_BUILD_VERSION_OVERRIDE 必须与 CURRENT_PROJECT_VERSION 同值：宿主和 Widget 的
-# postBuildScripts 都会跑 bump-version.sh，该脚本优先用 BUILD_OVERRIDE 改写产物
-# CFBundleVersion，不传就会被改回 git commit count，与下面的产物校验冲突。
+# postBuildScripts 都会跑 bump-version.sh，该脚本显式等待最终 plist 生成后写版本。
+# 不传 BUILD_OVERRIDE 就会被改回 git commit count，与下面的产物校验冲突。
 run_with_failure_log "构建 StarcatDirect Debug" xcodebuild \
   -scheme StarcatDirect \
   -configuration Debug \
@@ -183,6 +183,12 @@ run_with_failure_log "构建 StarcatDirect Debug" xcodebuild \
   build
 
 python3 scripts/sync-swift-package-lock.py check
+
+SRCROOT="$PROJECT_ROOT" STARCAT_BUILD_VERSION_OVERRIDE="$BUILD_VERSION" \
+  bash "$SCRIPT_DIR/bump-version.sh" --verify \
+    "$APP_PATH/Contents/Info.plist" \
+    "$WIDGET_EXTENSION_PATH/Contents/Info.plist" \
+    "$APP_PATH/Contents/Resources/StarcatScreensaver.saver/Contents/Info.plist"
 
 echo "==> 校验 Direct 构建产物..."
 if [ ! -d "$WIDGET_EXTENSION_PATH" ]; then
