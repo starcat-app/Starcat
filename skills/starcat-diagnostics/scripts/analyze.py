@@ -6,8 +6,10 @@ from collections import Counter, defaultdict
 import datetime as dt
 import hashlib
 import json
+import math
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import sys
 import zipfile
 
@@ -16,6 +18,12 @@ PUBLIC_KEYS = set(("schemaVersion eventID sequence sessionID environmentID opera
                    "parentOperationID requestID serverTraceID timestamp firstSeen lastSeen "
                    "occurrenceCount level visibility category operation phase outcome "
                    "durationMs statusCode errorCode").split())
+SAFE_FIELDS = set(("count available complete totalCount fetchedCount uniquePageCount cachedCount "
+                   "displayedCount renderedCount canLoadMore hasProgress budget snapshotVersion "
+                   "rendererVersion selectionVersion nodeCount edgeCount hasNextPage hasCursor "
+                   "refresh requestCount nodeLimit edgeLimit preservesLocalEntitlement mergedCount "
+                   "page incremental force receivedBytes itemCount outputAvailable authenticated "
+                   "credentialRetained errorCount allowPartial").split())
 
 
 def redact(text):
@@ -27,6 +35,7 @@ def redact(text):
         (r"(?i)\b(api[_-]?key|token|license[_-]?key|authorization|cookie)\s*[:=]\s*\S+", r"\1=<redacted>"),
         (r"(?:file://)?/Users/[^\s\"<>]+", "<local-path>"),
         (r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "<email>"),
+        (r"https?://[^\s<>\"']+", "<url>"),
     ]:
         value = re.sub(pattern, replacement, value)
     return value[:1024]
@@ -71,6 +80,8 @@ def load_files(source):
                 raise ValueError("文件数量超限")
             for entry in archive.infolist():
                 safe_path(entry.filename)
+                if stat.S_ISLNK(entry.external_attr >> 16):
+                    raise ValueError("不读取符号链接")
                 if not entry.is_dir():
                     add(entry.filename, entry.file_size, lambda e=entry: archive.read(e))
     elif source.is_file():
@@ -119,6 +130,13 @@ def collect(files):
             elif ("bytes" in item and item["bytes"] != len(data)) or (
                     item.get("sha256") and item["sha256"] != hashlib.sha256(data).hexdigest()):
                 gaps.append("文件校验失败：" + redact(item["path"]))
+        declared = {str(PurePosixPath(name).parent / safe_path(item["path"])) for item in listed
+                    if isinstance(item, dict) and isinstance(item.get("path"), str)}
+        if set(files) - declared - {name}:
+            gaps.append("包含清单未列出的文件，不能确认全部内容完整性")
+        if not listed or any(not isinstance(item, dict) or not item.get("sha256") or
+                             not isinstance(item.get("bytes"), int) for item in listed):
+            gaps.append("文件清单缺少完整摘要，不能确认附件完整性")
     else:
         gaps.append("没有 manifest，可能是历史 JSONL 或部分附件，无法核验完整性")
     bad = 0
@@ -145,6 +163,8 @@ def collect(files):
         gaps.append(f"{bad} 行损坏或缺少必要字段")
     if any(e.get("schemaVersion", 1) == 1 for e in events):
         gaps.append("包含历史事件，缺少的会话、操作和版本信息不能补造")
+    if any(isinstance(e.get("schemaVersion"), int) and e["schemaVersion"] > 2 for e in events):
+        gaps.append("包含更高格式版本，只解析已知字段")
     if not events:
         gaps.append("没有可解析事件，不能认定应用没有问题")
     collectors = manifest.get("collectors", [])
@@ -159,9 +179,16 @@ def collect(files):
 
 def public_event(event):
     """默认时间线不复制自由文本、客户描述和任意上下文。"""
-    return {key: redact(value) if isinstance(value, str) else value
+    result = {key: redact(value) if isinstance(value, str) else value
             for key, value in event.items() if key in PUBLIC_KEYS
-            and isinstance(value, (str, int, float, bool, type(None)))}
+            and isinstance(value, (str, int, float, bool, type(None)))
+            and (not isinstance(value, float) or math.isfinite(value))}
+    fields = event.get("fields")
+    if isinstance(fields, dict):
+        result["fields"] = {key: value for key, value in fields.items()
+                            if key in SAFE_FIELDS and isinstance(value, (int, float, bool))
+                            and (not isinstance(value, float) or math.isfinite(value))}
+    return result
 
 
 def analyze(source, args):
@@ -169,10 +196,21 @@ def analyze(source, args):
     events, manifest, gaps = collect(load_files(source))
     minimum = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     selected = []
+    related_ids = {args.operation_id} if args.operation_id else set()
+    # 最多八层父子关系，不把同一时刻无关的成功误当恢复。
+    for _ in range(8):
+        children = {e["operationID"] for e in events if isinstance(e.get("operationID"), str)
+                    and isinstance(e.get("parentOperationID"), str) and e["parentOperationID"] in related_ids}
+        if children.issubset(related_ids):
+            break
+        related_ids.update(children)
     for event in events:
+        if args.module and args.module not in (event.get("category"), event.get("service"), event.get("operation")):
+            continue
         if any(wanted and event.get(key) != wanted for key, wanted in [
-                ("category", args.module), ("operationID", args.operation_id),
                 ("requestID", args.request_id), ("errorCode", args.error_code)]):
+            continue
+        if related_ids and (not isinstance(event.get("operationID"), str) or event["operationID"] not in related_ids):
             continue
         when = timestamp(event.get("timestamp"))
         if args.since and (not when or when < args.since):
@@ -198,8 +236,10 @@ def analyze(source, args):
             and (timestamp(e.get("timestamp")) or minimum) > last for e in events)
         count = sum(c if isinstance(c := e.get("occurrenceCount", 1), int) and not isinstance(c, bool) and c > 0
                     else 1 for e in group)
+        request_ids = {e["requestID"] for e in group if isinstance(e.get("requestID"), str)}
         incidents.append(dict(module=redact(key[0]), operation=redact(key[1]), errorCode=redact(key[2]),
                               statusCode=redact(key[3]), count=count,
+                              actualAttempts=len(request_ids) if request_ids else None,
                               firstSeen=redact(group[0].get("firstSeen", group[0].get("timestamp"))),
                               lastSeen=redact(group[-1].get("lastSeen", group[-1].get("timestamp"))),
                               operationIDs=sorted(redact(s) for s in operation_ids)[:20],
@@ -210,6 +250,7 @@ def analyze(source, args):
         gaps.append("MetricKit 通知不等于附件已保存，需核对系统采集项")
     if any(timestamp(e.get("timestamp")) is None for e in selected):
         gaps.append("部分事件时间无效或缺少时区")
+    observations = [public_event(e) for e in selected if e.get("category") == "followGraph" and e.get("fields")]
     return dict(reportID=redact(manifest.get("exportID", "unknown")),
                 availableEvents=len(events), selectedEvents=len(selected),
                 actualRange=dict(first=redact(selected[0]["timestamp"]) if selected else None,
@@ -217,7 +258,7 @@ def analyze(source, args):
                 modules=dict(Counter(redact(e["category"]) for e in selected)),
                 cancelledEvents=cancelled, incidents=sorted(incidents, key=lambda i: -i["count"])[:50],
                 evidenceGaps=list(dict.fromkeys(gaps)), timeline=[public_event(e) for e in selected[-args.limit:]],
-                timelineTruncated=len(selected) > args.limit)
+                observations=observations[-20:], timelineTruncated=len(selected) > args.limit)
 
 
 def markdown(report):
@@ -225,14 +266,20 @@ def markdown(report):
     lines = ["# Starcat 诊断分析", "", f"报告：{report['reportID']}",
              f"可用事件：{report['availableEvents']}；筛选事件：{report['selectedEvents']}",
              f"时间范围：{report['actualRange']}", f"取消相关：{report['cancelledEvents']}", "", "## 故障证据", ""]
+    lines.append("次数为各层观察次数；同一故障可能被多层记录，有请求 ID 时另列实际尝试数。")
     for item in report["incidents"]:
         lines.append(f"- {item['module']} / {item['operation']}：{item['count']} 次，"
                      f"HTTP={item['statusCode'] or 'unknown'}，错误码={item['errorCode'] or 'unknown'}；{item['recovery']}")
+        if item["actualAttempts"] is not None:
+            lines.append(f"  独立请求：{item['actualAttempts']}")
         if item["serverTraceIDs"]:
             lines.append("  trace：" + ", ".join(item["serverTraceIDs"]))
     if not report["incidents"]:
         lines.append("选定范围未找到故障记录，请同时核对证据缺口")
     lines += ["", "## 证据缺口", ""] + ["- " + gap for gap in report["evidenceGaps"]]
+    if report["observations"]:
+        lines += ["", "## 图谱观测值", ""]
+        lines += ["- " + json.dumps(e.get("fields", {}), ensure_ascii=False) for e in report["observations"]]
     lines += ["", "## 时间线", "", "```json"]
     lines += [json.dumps(e, ensure_ascii=False, sort_keys=True) for e in report["timeline"]]
     return "\n".join(lines + ["```", "", f"时间线截断：{report['timelineTruncated']}", ""])

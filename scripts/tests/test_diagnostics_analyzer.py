@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 SOURCE = Path(__file__).resolve().parents[2] / "skills/starcat-diagnostics/scripts/analyze.py"
@@ -104,6 +105,54 @@ class DiagnosticAnalyzerTests(unittest.TestCase):
             (source / "link").symlink_to(SOURCE)
             with self.assertRaises(ValueError):
                 ANALYZER.load_files(source)
+
+    def test_related_graph_evidence_and_request_attempts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "events.jsonl"
+            graph = dict(self.event(schemaVersion=2, operationID="child", parentOperationID="root"),
+                         category="followGraph", fields={"totalCount": 87, "renderedCount": 78,
+                                                       "canLoadMore": False, "prompt": "private text"})
+            source.write_text("\n".join(map(json.dumps, [
+                self.event(schemaVersion=2, operationID="root", requestID="request-1"),
+                graph,
+                self.event(schemaVersion=2, operationID="other", requestID="request-2")
+            ])))
+            report = self.analyze(source, operation_id="root")
+            self.assertEqual(report["selectedEvents"], 2)
+            self.assertEqual(report["observations"][0]["fields"],
+                             dict(totalCount=87, renderedCount=78, canLoadMore=False))
+            self.assertEqual(report["incidents"][0]["actualAttempts"], 1)
+            self.assertNotIn("private text", json.dumps(report))
+
+    def test_zip_links_and_oversized_payload_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "sample.zip"
+            link = zipfile.ZipInfo("events.jsonl")
+            link.create_system = 3
+            link.external_attr = 0o120777 << 16
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr(link, "/outside")
+            with self.assertRaises(ValueError):
+                ANALYZER.load_files(source)
+            with zipfile.ZipFile(source, "w") as archive:
+                archive.writestr("events.jsonl", "{}")
+            with patch.object(ANALYZER, "MAX_FILE", 1), self.assertRaises(ValueError):
+                ANALYZER.load_files(source)
+
+    def test_newer_schema_and_unlisted_files_report_gaps(self):
+        _, _, gaps = ANALYZER.collect({
+            "manifest.json": json.dumps(dict(files=[])).encode(),
+            "events.jsonl": json.dumps(self.event(schemaVersion=3)).encode()
+        })
+        self.assertTrue(any("更高格式" in gap for gap in gaps))
+        self.assertTrue(any("未列出" in gap for gap in gaps))
+
+    def test_nonfinite_numbers_are_omitted_without_replacing_with_zero(self):
+        event = self.event(durationMs=float("nan"), fields={"count": float("inf"), "totalCount": 0})
+        result = ANALYZER.public_event(event)
+        self.assertNotIn("durationMs", result)
+        self.assertEqual(result["fields"], {"totalCount": 0})
+        json.dumps(result, allow_nan=False)
 
 
 if __name__ == "__main__":
