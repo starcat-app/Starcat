@@ -76,14 +76,11 @@ struct DailyRecommendationHost: ViewModifier {
             }
         }
         .onChange(of: isOverlayWindowReady) { _, ready in
-            guard ready,
-                  let attempt = automaticPresentationIdentity,
-                  identity == attempt,
-                  isPresented else { return }
-            Task {
-                guard await dependencies.dailyRecommendationStore.claimAutomaticPresentation() else { return }
-                guard !Task.isCancelled, identity == attempt else { return }
-            }
+            if ready { recordPresentation() }
+        }
+        .onChange(of: dependencies.dailyRecommendationStore.state.items.map(\.repoID)) { _, _ in
+            // 手动打开时可能先显示加载态；数据到达且子窗口仍可见时才算实际推荐
+            recordPresentation()
         }
         .task(id: isPresented) {
             guard isPresented else { return }
@@ -103,10 +100,25 @@ struct DailyRecommendationHost: ViewModifier {
         await dependencies.dailyRecommendationStore.load(
             accountID: accountID, scopeRevision: revision, serviceScope: scope,
             fetchStars: { try await dependencies.repoRepository.fetchAllStarred() },
-            fetchCandidates: { try await dependencies.recommendAPI.fetchDailyCandidates(seedIDs: $0) }
+            fetchCandidates: { try await dependencies.recommendAPI.fetchDailyCandidates(seedIDs: $0, cursor: $1) }
         )
         guard accountID == self.accountID else { return }
         await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
+    }
+
+    /// 手动和自动入口共用实际呈现回调；关闭或切换账号后不登记尚未展示的批次
+    private func recordPresentation() {
+        guard isPresented, isOverlayWindowReady, let accountID else { return }
+        let revision = dependencies.databaseScopeRevision
+        Task {
+            guard !Task.isCancelled, isPresented, isOverlayWindowReady,
+                  accountID == self.accountID, revision == dependencies.databaseScopeRevision else { return }
+            await dependencies.dailyRecommendationStore.markPresented()
+            guard !Task.isCancelled, isPresented,
+                  let attempt = automaticPresentationIdentity, identity == attempt,
+                  accountID == self.accountID, revision == dependencies.databaseScopeRevision else { return }
+            _ = await dependencies.dailyRecommendationStore.claimAutomaticPresentation()
+        }
     }
 }
 

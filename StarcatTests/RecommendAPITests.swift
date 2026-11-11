@@ -14,8 +14,8 @@ import Testing
 struct RecommendAPITests {
     private let baseURL = URL(string: "https://recommend.test.invalid")!
 
-    @Test("每日推荐只上传公开种子，不上传 Stars 或反馈列表")
-    func dailyMultiSeedContract() async throws {
+    @Test("每日推荐只上传公开种子和分页位置，不上传 Stars、反馈或推荐历史", arguments: [nil, "page-100"] as [String?])
+    func dailyMultiSeedContract(cursor: String?) async throws {
         let api = makeAPI()
         URLProtocolStub.requestHandler = { request in
             #expect(request.httpMethod == "POST")
@@ -42,12 +42,35 @@ struct RecommendAPITests {
             let body = try JSONSerialization.jsonObject(with: data) as? [String: Any]
             #expect(body?["positive_repo_ids"] as? [Int] == [42, 84])
             #expect(body?["limit"] as? Int == 100)
-            #expect(Set(body?.keys.map { $0 } ?? []) == ["positive_repo_ids", "limit"])
-            return Self.response(for: request, body: Self.v2Body)
+            #expect(body?["cursor"] as? String == cursor)
+            let keys: Set<String> = cursor == nil ? ["positive_repo_ids", "limit"] : ["positive_repo_ids", "limit", "cursor"]
+            #expect(Set(body?.keys.map { $0 } ?? []) == keys)
+            let pagedBody = Self.v2Body.replacingOccurrences(
+                of: "\"has_more\":false", with: "\"has_more\":true,\"next_cursor\":\"page-200\""
+            )
+            return Self.response(for: request, body: pagedBody)
         }
-        let response = try await api.fetchDailyCandidates(seedIDs: [42, 84])
+        let response = try await api.fetchDailyCandidates(seedIDs: [42, 84], cursor: cursor)
         #expect(response.modelVersion == "costar-real-v1")
         #expect(response.items.first?.repoID == 84)
+        #expect(response.hasMore)
+        #expect(response.nextCursor == "page-200")
+    }
+
+    @Test("每日推荐拒绝缺失或没有推进的分页位置", arguments: [false, true])
+    func invalidDailyPagination(repeatsCursor: Bool) async throws {
+        let api = makeAPI()
+        URLProtocolStub.requestHandler = { request in
+            let pagination = repeatsCursor ? "\"has_more\":true,\"next_cursor\":\"page-100\"" : "\"has_more\":true"
+            return Self.response(for: request, body: Self.v2Body.replacingOccurrences(of: "\"has_more\":false", with: pagination))
+        }
+        do {
+            _ = try await api.fetchDailyCandidates(seedIDs: [42], cursor: "page-100")
+            Issue.record("无效分页必须报错，不能循环读取同一页")
+        } catch let error as StarcatEnvelopeNetworkError {
+            guard case .serverError(_, let code, _) = error else { Issue.record("应返回分页契约错误"); return }
+            #expect(code == "INVALID_PAGINATION")
+        }
     }
 
     @Test("默认客户端只访问 v2，内容推荐没有校准分数时保持原分数")

@@ -66,8 +66,8 @@ actor RecommendAPI {
     }
 
     /// 每日推荐只发送公开种子，不上传完整 Stars 或“不感兴趣”反馈。
-    /// 一次取最多 100 个候选交给本地完整过滤；无 cursor 时不伪造后续分页。
-    func fetchDailyCandidates(seedIDs: [Int64]) async throws -> DailyRecommendationResponse {
+    /// 每页最多 100 个候选交给本地完整过滤，后续页只能使用服务端返回的 cursor
+    func fetchDailyCandidates(seedIDs: [Int64], cursor: String? = nil) async throws -> DailyRecommendationResponse {
         guard !seedIDs.isEmpty, seedIDs.count <= 20, seedIDs.allSatisfy({ $0 > 0 }) else {
             throw StarcatEnvelopeNetworkError.invalidURL
         }
@@ -81,7 +81,7 @@ actor RecommendAPI {
             request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         StarcatGatewayRouting.applyServiceHeader(to: &request, service: .recommend)
-        request.httpBody = try JSONEncoder().encode(DailyRecommendationQuery(positiveRepoIDs: seedIDs))
+        request.httpBody = try JSONEncoder().encode(DailyRecommendationQuery(positiveRepoIDs: seedIDs, cursor: cursor))
         let data: Data
         let response: URLResponse
         do {
@@ -89,9 +89,16 @@ actor RecommendAPI {
         } catch {
             throw StarcatEnvelopeNetworkError.transport(error)
         }
-        return try StarcatEnvelopeDecoder.decode(
+        let page = try StarcatEnvelopeDecoder.decode(
             DailyRecommendationResponse.self, data: data, response: response, decoder: decoder
         )
+        // 有后续页却没有新位置时必须失败，不能无限请求同一页或误报候选已耗尽
+        guard !page.modelVersion.isEmpty,
+              page.hasMore == (page.nextCursor?.isEmpty == false),
+              !page.hasMore || page.nextCursor != cursor else {
+            throw StarcatEnvelopeNetworkError.serverError(status: 502, code: "INVALID_PAGINATION", message: "Invalid recommendation pagination")
+        }
+        return page
     }
 
     /// 用缓存快照里的模型版本重验证自研推荐第一页。

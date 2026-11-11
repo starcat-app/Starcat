@@ -12,10 +12,17 @@ import Foundation
 struct DailyRecommendationQuery: Encodable {
     let positiveRepoIDs: [Int64]
     let limit = 100
+    let cursor: String?
+
+    init(positiveRepoIDs: [Int64], cursor: String? = nil) {
+        self.positiveRepoIDs = positiveRepoIDs
+        self.cursor = cursor
+    }
 
     enum CodingKeys: String, CodingKey {
         case positiveRepoIDs = "positive_repo_ids"
         case limit
+        case cursor
     }
 }
 
@@ -23,11 +30,42 @@ struct DailyRecommendationQuery: Encodable {
 struct DailyRecommendationResponse: Decodable, Sendable {
     let modelVersion: String
     let items: [RepoRecommendationItem]
+    let hasMore: Bool
+    let nextCursor: String?
+
+    init(modelVersion: String, items: [RepoRecommendationItem], hasMore: Bool = false, nextCursor: String? = nil) {
+        self.modelVersion = modelVersion
+        self.items = items
+        self.hasMore = hasMore
+        self.nextCursor = nextCursor
+    }
 
     enum CodingKeys: String, CodingKey {
         case modelVersion = "model_version"
         case items
+        case hasMore = "has_more"
+        case nextCursor = "next_cursor"
     }
+
+    /// 分页是接口的增量字段；未提供分页元信息的响应只能作为一个完整候选页使用
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        modelVersion = try values.decode(String.self, forKey: .modelVersion)
+        items = try values.decode([RepoRecommendationItem].self, forKey: .items)
+        hasMore = try values.decodeIfPresent(Bool.self, forKey: .hasMore) ?? false
+        nextCursor = try values.decodeIfPresent(String.self, forKey: .nextCursor)
+    }
+}
+
+/// 可重建的候选池与分页位置；同一查询的未用候选跨天保留，推荐历史独立于此池
+struct DailyRecommendationCandidatePool: Codable, Sendable {
+    var seedIDs: [Int64]
+    var serviceScope: String
+    var modelVersion: String
+    var checkedDay: String
+    var items: [RepoRecommendationItem]
+    var hasMore: Bool
+    var nextCursor: String?
 }
 
 /// 账号级每日快照；不将屏蔽项目视为负向种子上传。
@@ -41,6 +79,35 @@ struct DailyRecommendationState: Codable, Sendable {
     var dismissedIDs: Set<Int64> = []
     var autoPresentedDay = ""
     var showsOnLaunch = true
+    /// key 使用仓库 ID 的十进制字符串，保持账号文件是可直接检查的 JSON 对象
+    var recommendedDays: [String: String] = [:]
+    var candidatePool: DailyRecommendationCandidatePool?
+
+    init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case day, serviceScope, modelVersion, generatedAt, items, revealedIDs, dismissedIDs
+        case autoPresentedDay, showsOnLaunch, recommendedDays, candidatePool
+    }
+
+    /// 旧账号快照只缺新增字段，不能因为增加历史就丢弃既有反馈、偏好与翻牌进度
+    /// 旧字段仍严格解码，损坏文件继续报错，避免静默覆盖用户选择
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        day = try values.decode(String.self, forKey: .day)
+        serviceScope = try values.decode(String.self, forKey: .serviceScope)
+        modelVersion = try values.decode(String.self, forKey: .modelVersion)
+        generatedAt = try values.decodeIfPresent(Date.self, forKey: .generatedAt)
+        items = try values.decode([RepoRecommendationItem].self, forKey: .items)
+        revealedIDs = try values.decode(Set<Int64>.self, forKey: .revealedIDs)
+        dismissedIDs = try values.decode(Set<Int64>.self, forKey: .dismissedIDs)
+        autoPresentedDay = try values.decode(String.self, forKey: .autoPresentedDay)
+        showsOnLaunch = try values.decode(Bool.self, forKey: .showsOnLaunch)
+        recommendedDays = try values.decodeIfPresent([String: String].self, forKey: .recommendedDays) ?? [:]
+        candidatePool = try values.decodeIfPresent(DailyRecommendationCandidatePool.self, forKey: .candidatePool)
+    }
+
+    var recommendedIDs: Set<Int64> { Set(recommendedDays.keys.compactMap(Int64.init)) }
 
     /// 内部日期身份固定 Gregorian，展示日期另用视图 locale 格式化。
     static func dayKey(_ date: Date, timeZone: TimeZone = .current) -> String {
@@ -81,12 +148,14 @@ struct DailyRecommendationState: Codable, Sendable {
     }
 
     /// 完整集合本地过滤，不受服务端 500 个排除 ID 限制；重复或无效候选不占卡槽。
-    static func candidates(_ items: [RepoRecommendationItem], excluding ids: Set<Int64>) -> [RepoRecommendationItem] {
+    static func candidates(
+        _ items: [RepoRecommendationItem], excluding ids: Set<Int64>, limit: Int = 10
+    ) -> [RepoRecommendationItem] {
         var seen = ids
         return Array(items.filter {
             $0.repoID > 0 && !$0.archived && $0.fullName.split(separator: "/").count == 2
                 && seen.insert($0.repoID).inserted
-        }.prefix(10))
+        }.prefix(limit))
     }
 }
 
