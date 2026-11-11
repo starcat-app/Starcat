@@ -3,8 +3,8 @@
 # release-direct-development.sh — 发布 Direct Beta 版并更新独立 Sparkle appcast。
 #
 # Beta 版仍是 Developer ID 签名并经过 Apple 公证的 Release 构建，只是 GitHub Release
-# 标记为 prerelease，且只公布到 appcast-development.xml。它不会修改正式 appcast、
-# 官网最新版、Homebrew 或其它正式发布元数据；成功后只登记源目标节为已发布。
+# 标记为 prerelease，公布到 appcast-development.xml，并用固定快照更新官网双语日志。
+# 正式 appcast、官网默认下载、Homebrew 保持原状；全部核验后登记源目标节为已发布。
 # 脚本名、环境变量和 feed 地址保留既有标识，避免中断已安装客户端与运维入口。
 
 set -euo pipefail
@@ -23,14 +23,15 @@ Starcat Direct Beta 版发布脚本
   STARCAT_DEVELOPMENT_RELEASE_DRY_RUN=1 \
     ./scripts/release-direct-development.sh 1.9.3-beta.1
 
-  # 已有最终产物：只恢复 GitHub 和 Beta 更新源，允许源码工作区有并行改动。
+  # 已有最终产物：恢复 GitHub、Beta 更新源及当次官网日志，允许源码工作区有并行改动。
   ./scripts/release-direct-development.sh 1.9.3-beta.1 --resume
 
 关键约束:
   - 新构建要求 dev 分支和干净工作区；--resume 校验原 tag 和最终产物。
   - 新构建必须设置 STARCAT_NOTARIZE=1；恢复会直接校验已有公证票据。
-  - 只创建 GitHub prerelease 并更新 appcast-development.xml。
-  - 不更新 appcast.xml、官网最新版或 Homebrew；成功后去掉目标 Changelog 的待发布标记。
+  - 创建 GitHub prerelease，更新 appcast-development.xml 和官网双语更新日志。
+  - 官网日志使用当次固定快照，不含未来版本；上传后逐页回读正文核验。
+  - 不更新 appcast.xml、官网默认下载或 Homebrew；成功后去掉目标 Changelog 的待发布标记。
 EOF
 }
 
@@ -226,6 +227,38 @@ verify_development_appcast() {
   log "线上 Beta 更新源核验通过"
 }
 
+publish_development_changelog() {
+  # 官网日志与 App 使用同次固定说明；定向上传两页，避免完整部署覆盖正式下载或 nginx。
+  log "从发布快照生成并上传官网双语更新日志"
+  run_or_print python3 "$PAGES_DIR/generate-changelog.py" \
+    --source-root "$RELEASE_NOTES_DIR"
+  run_or_print rsync -avz --progress -e "$RSYNC_SSH" \
+    "$PAGES_DIR/changelog.html" "$PAGES_DIR/changelog-zh.html" \
+    "$RELEASE_HOST:$REMOTE_WEB_DIR/"
+  run_or_print "${SSH_CMD[@]}" "$RELEASE_HOST" \
+    "chmod 644 '$REMOTE_WEB_DIR/changelog.html' '$REMOTE_WEB_DIR/changelog-zh.html'"
+}
+
+verify_development_changelog() {
+  [ "$DRY_RUN" = "1" ] && return
+  # HTTP 200 也可能仍是旧版页面；两种语言必须与本次生成结果逐字节一致。
+  local page downloaded
+  for page in changelog.html changelog-zh.html; do
+    downloaded="$(mktemp)"
+    if ! curl -fsSL --connect-timeout 15 --max-time 45 --retry 2 \
+      --retry-max-time 90 "https://starcat.ink/$page" > "$downloaded"; then
+      rm -f "$downloaded"
+      fail "无法回读官网更新日志 $page；需补发并核验两种语言的页面"
+    fi
+    if ! cmp -s "$downloaded" "$PAGES_DIR/$page"; then
+      rm -f "$downloaded"
+      fail "线上更新日志 $page 与本次发布内容不同；检查缓存或上传结果"
+    fi
+    rm -f "$downloaded"
+    log "线上更新日志正文核验通过: $page"
+  done
+}
+
 main() {
   require_command git
   require_command gh
@@ -242,13 +275,15 @@ main() {
     create_and_push_tag
     package_development
   else
-    log "恢复已有产物，仅续传 GitHub 和 Beta 更新源"
+    log "恢复已有产物，续传 GitHub、Beta 更新源和当次官网日志"
   fi
   verify_local_artifacts
   publish_github_prerelease
   merge_development_appcast
   publish_development_appcast
   verify_development_appcast
+  publish_development_changelog
+  verify_development_changelog
   run_or_print python3 "$SCRIPT_DIR/release_changelog.py" finalize \
     --source-root "$PAGES_DIR" --output-root "$RELEASE_NOTES_DIR" \
     --version "$DEVELOPMENT_VERSION"

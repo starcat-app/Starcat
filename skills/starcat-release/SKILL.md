@@ -25,8 +25,8 @@ description: Starcat macOS App 的 App Store、Direct 正式版和 Beta 发布�
 |---|---|---|
 | App Store 发布准备、archive、Validate、上传 App Store Connect | `scripts/package-appstore.sh` / `make package-appstore` | 构建并校验 `Starcat` archive；上传继续由 Xcode Organizer / Transporter 完成 |
 | Direct 公开发布、Sparkle 更新、starcat.ink 部署、上传 DMG/appcast | `scripts/release-direct.sh <X.Y.Z>` | Direct 渠道完整编排入口；发布后还要同步 Homebrew Cask |
-| Direct Beta / 预发布 | `scripts/release-direct-development.sh <X.Y.Z-beta.N>` | `dev` 分支新构建；GitHub prerelease，只更新 Beta feed |
-| 已有最终 DMG，上传或更新源中断 | 对应 Direct 脚本追加 `--resume` | 不构建、不改 tag；校验原产物后补 GitHub 附件和更新源 |
+| Direct Beta / 预发布 | `scripts/release-direct-development.sh <X.Y.Z-beta.N>` | `dev` 分支新构建；GitHub prerelease、Beta feed 和官网双语更新日志 |
+| 已有最终 DMG，上传或更新源中断 | 对应 Direct 脚本追加 `--resume` | 不构建、不改 tag；校验原产物后补 GitHub 附件和更新源，Beta 同时补发当次官网日志 |
 | 只在本地构建 Direct 包 | `scripts/package-direct.sh <X.Y.Z>` | 构建 `StarcatDirect` DMG，可选 notarization/appcast |
 | 历史 ad-hoc 内测 tag + DMG 流程 | `scripts/release-store.sh vX.Y.Z` | legacy 入口；默认禁用，必须显式设置 `STARCAT_ALLOW_LEGACY_RELEASE=1` |
 
@@ -50,6 +50,7 @@ Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App S
    - App Store 没有发布 dry-run；先完成只读门禁，获授权后运行
      `make package-appstore`，该命令只生成 archive、不上传
 6. 执行已确认的命令后，验证产物和 URL，并报告精确路径。
+7. 发布收尾覆盖主仓库及 `supports/` 全部独立 Git 项目：同步、推送 `dev/main` 并回读远端 refs 验证一致；无远端项目核对本地两分支并明确报告。保留未发布的独立功能分支，按仓库分支规范登记结果。
 
 ## 先判断状态，再选择恢复阶段
 
@@ -59,7 +60,7 @@ Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App S
 | 最终产物完整且已公证 | 对应脚本使用 `--resume`，不重打包或 staple |
 | 草稿存在且缺附件 | 复用草稿，只上传缺失附件；已有附件下载核验 |
 | Release 已公开且附件一致 | 只验证 GitHub，继续更新源；不重建 Release |
-| GitHub 已公开、更新源已核验 | 提交发布元数据并按原授权推送，结束该阶段 |
+| GitHub 已公开、更新源已核验 | 核对官网双语日志正文；补齐原发布范围内的网页与渠道收尾后，提交元数据并同步各仓分支 |
 
 GitHub 按 tag 查询返回 404 不能证明草稿不存在。上传器会分页查询草稿列表，
 在首次判断和创建后回读都使用同一规则。出现重复草稿时，先核对 ID、归属和附件；
@@ -153,14 +154,20 @@ STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh X.Y.Z
 # 新构建；真实发布需已获授权。
 STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh X.Y.Z-beta.N
 
-# 最终 DMG 已有，只恢复 GitHub prerelease 和 Beta 更新源。
+# 最终 DMG 已有，恢复 GitHub prerelease、Beta 更新源和当次官网双语日志。
 ./scripts/release-direct-development.sh X.Y.Z-beta.N --resume
 ```
 
 App 营销版本与附件名使用 `X.Y.Z`，tag 使用 `vX.Y.Z-beta.N`。
-产物位于 `dist/direct-development/downloads/`；只公布 `appcast-development.xml`，
-不修改正式 feed、官网最新版、Homebrew 或 App Store。Beta 可复用对应版本待发布 Changelog。
+产物位于 `dist/direct-development/downloads/`；公布 `appcast-development.xml`，
+并从 `release-notes-X.Y.Z-beta.N/` 固定快照生成、定向部署官网中英文更新日志。
+两页均须显示本次 `X.Y.Z Beta N`，回读正文与本地逐字节一致，不含未来版本或待发布内容；
+Release/feed 成功或网页 HTTP 200 不能代替此校验。正式 feed、官网默认稳定版下载、
+Homebrew 和 App Store 保持原状。Beta 可复用对应版本待发布 Changelog。
 原 `STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS=1` 同样进入产物恢复模式。
+
+仅遗漏官网日志时，复用原说明快照，按 `starcat-public-site-and-promo` 的
+`references/site-promo-map.md` 定向补发两页；无需重打包、重传 DMG 或全站部署。
 
 ## 同步正式版 Homebrew Cask
 

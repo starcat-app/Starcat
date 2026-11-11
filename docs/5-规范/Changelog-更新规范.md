@@ -58,7 +58,7 @@
 
 - 新条目一律写入两渠道各自的 `## 2.0.0-待发布` 区段；Direct 侧 1.9.1、1.9.2-待发布 及后续 Beta 区段记录过的用户可见变化，也必须聚合进两渠道 2.0.0，不得只留在 Beta 区段。
 - 准备 Beta 发布时，经授权提取 Direct `## X.Y.Z-待发布` 目标节；构建前生成固定的中英文发布说明，标题为 `X.Y.Z Beta N`。未来的 `2.0.0-待发布` 等区段继续留在工作稿中，不进入当前发布资源，也不在正文中写内部准备状态。
-- Beta 也属于发布。GitHub prerelease 与 Beta 更新源全部核验成功后，去掉源目标版本标题的“待发布”；未来版本的标记保持原样。中断或失败时不提前改标记。
+- Beta 也属于发布。GitHub prerelease、Beta 更新源与官网双语更新日志全部核验成功后，去掉源目标版本标题的“待发布”；未来版本的标记保持原样。中断或失败时不提前改标记。
 - 本次 Beta 的 App 资源、GitHub 正文和 Sparkle 说明共用 `dist/direct-development/downloads/release-notes-X.Y.Z-beta.N/` 快照；续跑只读该次快照，不从当前工作稿重建或改写历史 appcast 说明。
 - 两渠道 2.0.0 区段保持同一大集，涵盖自 1.9.0 以来的全部用户可见变化；唯一允许的差异是渠道特有功能——仅 Direct 存在的能力（如 Sparkle 更新窗口、更新通道类设置）只写入 Direct 两份，写入 App Store 前须确认该功能在 App Store 构建中真实存在。
 - 既有 1.9.1（已发布）与 1.9.2-待发布 区段保持原状，不回改、不删除；它们与 2.0.0 的重复条目在正式发版时按第 5 节审计归并。
@@ -185,9 +185,9 @@ App 解析器仍兼容历史 ` — ` / ` – `，**新写入与整理待发布�
 
 1. 根据实际发布范围审计 4 份 Markdown，补漏、去重并复核中英文表述。
 2. 发布资源去掉目标版本的“待发布”标签，并排除未来版本及其他待发布区段。Beta 构建前固定快照，成功后才登记源目标节；正式版继续要求源目标节已完成发布准备。
-3. 只有发布范围包含官网页面时才运行对应渠道的 `generate-changelog.py`；Beta 不自动生成或部署正式官网。
-4. 检查 `supports/starcat-site/direct/changelog*.html` 与 `supports/starcat-site/appstore/changelog*.html` 只展示已正式发布的版本。
-5. 是否部署官网仍以 dong4j 的明确指令为准，不得因生成 HTML 而自动执行部署。
+3. Direct Beta 发布包含官网双语日志收尾：使用 `direct/generate-changelog.py --source-root dist/direct-development/downloads/release-notes-X.Y.Z-beta.N/` 读取当次快照，定向部署 `changelog.html` 与 `changelog-zh.html`；不以当前工作稿生成页面。
+4. 官网只展示对应渠道已经发布的版本，Beta 目标标题保留 `X.Y.Z Beta N`；未来版本与待发布区段不公开。Beta 日志更新不改变官网默认稳定版下载、正式 feed 或 App Store 页面。
+5. 获授权的发布任务包含上述日志部署；日常文案修改不授权部署。上线后回读两种语言正文，核对目标版本并与本地生成结果逐字节比较，不能只检查 HTTP 200。
 
 ## 6. 验证要求
 

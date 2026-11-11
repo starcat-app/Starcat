@@ -235,7 +235,7 @@ UI 仍显示「Version 0.1.0 (Build 201.f09a499)」，build 号和 hash 仍正�
 
 - [ ] **`docs/功能实现总览.md`** —— 顶部「最近更新」+「变更日志」追加发版条目（参考已有格式）
 - [ ] **Changelog Markdown** —— 确认日常任务已按授权逐条维护；发版时审计 `supports/starcat-site` 的 `appstore/` 与 `direct/` 中英文 Changelog（共 4 份，2026-11 迁入，见 Starcat#202）是否同步、是否遗漏，并将目标版本从“待发布”改为正式版本
-- [ ] **Changelog HTML** —— 仅在正式发版时运行 `python3 supports/starcat-site/direct/generate-changelog.py` 与 `python3 supports/starcat-site/appstore/generate-changelog.py`，更新并核对两渠道官网中英文更新日志页
+- [ ] **Changelog HTML** —— 按实际渠道生成并部署官网中英文更新日志页；Direct Beta 使用 `direct/generate-changelog.py --source-root dist/direct-development/downloads/release-notes-X.Y.Z-beta.N/` 读取固定快照，回读两页正文核对版本及内容，不公开未来版本或更新 App Store 页面
 - [ ] **测试** —— `xcodebuild test` 全绿，至少跑一次冒烟测
 - [ ] **手动验证** —— Xcode IDE Cmd+R 启动一次，关于页显示正确
 - [ ] **打 tag** —— `git tag vX.Y.Z` + `git push --tags`

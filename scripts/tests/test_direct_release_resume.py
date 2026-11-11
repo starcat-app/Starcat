@@ -166,7 +166,7 @@ if name == "git":
         sys.exit(97)
 elif name == "python3":
     target = Path(args[0]).name
-    if target in ("-", "verify-direct-release-artifacts.py", "release_changelog.py"):
+    if target in ("-", "verify-direct-release-artifacts.py", "release_changelog.py", "generate-changelog.py"):
         os.execv(sys.executable, [sys.executable] + args)
     if target == "publish-direct-github-release.py":
         sys.exit(int(os.environ.get("PUBLISH_EXIT", "0")))
@@ -176,7 +176,14 @@ elif name == "gh":
     if args != ["auth", "status"]:
         sys.exit(97)
 elif name == "curl" and "-fsSL" in args:
-    sys.stdout.write(os.environ.get("REMOTE_FEED", Path(os.environ["BETA_FEED"]).read_text()))
+    page = args[-1].rsplit("/", 1)[-1]
+    if page in ("changelog.html", "changelog-zh.html"):
+        content = (Path(os.environ["BETA_FEED"]).parent / page).read_text()
+        if page == os.environ.get("STALE_CHANGELOG_PAGE"):
+            content = "<h2>1.9.1</h2>"
+        sys.stdout.write(content)
+    else:
+        sys.stdout.write(os.environ.get("REMOTE_FEED", Path(os.environ["BETA_FEED"]).read_text()))
 '''
         for name in ("git", "gh", "python3", "xcrun", "spctl", "ssh", "rsync", "curl"):
             path = self.bin / name
@@ -184,6 +191,8 @@ elif name == "curl" and "-fsSL" in args:
             path.chmod(0o755)
         shutil.copy(ROOT / "scripts/verify-direct-release-artifacts.py", self.scripts)
         shutil.copy(ROOT / "scripts/release_changelog.py", self.scripts)
+        shutil.copy(ROOT / "supports/starcat-site/direct/generate-changelog.py",
+                    self.site / "direct")
 
     def run_entry(self, beta: bool, *, legacy=False, failure=False, resume=True, damaged=False,
                   missing_notes=False, extra_args=()):
@@ -232,10 +241,14 @@ elif name == "curl" and "-fsSL" in args:
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     commands = self.commands()
                     writes = [cmd for cmd in commands if cmd[0] == "rsync"]
-                    self.assertEqual(len(writes), 1 if beta else 2)
-                    self.assertTrue(all("appcast" in cmd[-1] for cmd in writes))
+                    self.assertEqual(len(writes), 2)
+                    feed_writes = [cmd for cmd in writes if "appcast" in cmd[-1]]
+                    self.assertEqual(len(feed_writes), 1 if beta else 2)
                     if beta:
-                        self.assertTrue(all(cmd[-1].endswith("appcast-development.xml") for cmd in writes))
+                        self.assertTrue(all(cmd[-1].endswith("appcast-development.xml") for cmd in feed_writes))
+                        pages = next(cmd for cmd in writes if cmd not in feed_writes)
+                        self.assertEqual([Path(path).name for path in pages[-3:-1]],
+                                         ["changelog.html", "changelog-zh.html"])
                     self.assertFalse(any("staple" in cmd for cmd in commands))
                     self.assertFalse(any(cmd[0] == "git" and cmd[1] in ("branch", "status") for cmd in commands))
                     self.assertEqual(sum(cmd[0] == "python3" and Path(cmd[1]).name == "publish-direct-github-release.py" for cmd in commands), 1)
@@ -266,6 +279,26 @@ elif name == "curl" and "-fsSL" in args:
         self.assertIn("## 10.0.0-待发布", text)
         self.assertEqual((self.site / "direct/appcast-development.xml").read_text(),
                          (notes.parent.parent / "appcast-current.xml").read_text())
+        for page in ("changelog.html", "changelog-zh.html"):
+            html = (self.site / "direct" / page).read_text()
+            self.assertIn("<h2>9.9.9 Beta 1</h2>", html)
+            self.assertNotIn("10.0.0", html)
+            self.assertNotIn("待发布", html)
+            self.assertTrue(any(cmd[0] == "curl" and cmd[-1].endswith("/" + page)
+                                for cmd in commands))
+
+    def test_beta_stale_changelog_blocks_completion_for_either_language(self):
+        """复现 HTTP 成功但正文仍旧的漏部署，任一语言未更新都不能宣布完成。"""
+        for page in ("changelog.html", "changelog-zh.html"):
+            with self.subTest(page=page):
+                self.log.unlink(missing_ok=True)
+                self.env["STALE_CHANGELOG_PAGE"] = page
+                result = self.run_entry(True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"线上更新日志 {page} 与本次发布内容不同", result.stderr)
+                self.assertNotIn("Beta 版发布完成", result.stdout)
+                self.assertIn("## 9.9.9-待发布", (self.site / "direct/CHANGELOG.md").read_text())
+                self.assertEqual(sum(cmd[0] == "rsync" for cmd in self.commands()), 2)
 
     def test_legacy_beta_without_snapshot_stops_before_publishing(self):
         result = self.run_entry(True, missing_notes=True)

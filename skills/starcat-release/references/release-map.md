@@ -8,7 +8,7 @@
 |---|---|---|
 | `scripts/package-appstore.sh` | App Store archive 构建入口 | 构建并验证 `Starcat` archive；上传由 Xcode Organizer / Transporter 完成 |
 | `scripts/release-direct.sh` | Direct 公开发布编排入口 | 完整路径：tag、官网/nginx 部署、Direct DMG、Sparkle appcast、上传、线上校验 |
-| `scripts/release-direct-development.sh` | Direct Beta 发布及恢复 | `X.Y.Z-beta.N`；只创建 prerelease 并公布 Beta feed；支持 `--resume` |
+| `scripts/release-direct-development.sh` | Direct Beta 发布及恢复 | `X.Y.Z-beta.N`；prerelease、Beta feed 和官网双语更新日志；支持 `--resume` |
 | `scripts/release-store.sh` | 历史 ad-hoc 内测发版入口 | legacy 且默认禁用；需 `STARCAT_ALLOW_LEGACY_RELEASE=1`，不用于正式双渠道发布 |
 | `scripts/package-direct.sh` | Direct 包构建入口 | 构建 `StarcatDirect`，校验 Sparkle 与非沙箱 entitlement，生成 DMG/SHA，可选 notarization/appcast |
 | `scripts/build-dmg.sh` | legacy 内测 DMG 构建入口 | 仅供 `release-store.sh` 历史流程使用，输出到 `build/dmg/` |
@@ -169,7 +169,7 @@ Direct 正式发布，也不要用它绕过双渠道签名、公证、上传和�
 - 本地 tag 对象与远端同名 tag 相同，并回显原 tag 的 commit；不要求当前 HEAD 等于 tag；
 - 已有公证票据和 Gatekeeper 接受状态；只 validate/assess，不重新公证、签名或 staple。
 
-恢复不会触碰源码脏状态，也不会创建或推送 tag。正式恢复只处理 GitHub 及正式/Beta feed；
+恢复不会触碰源码脏状态，也不会创建或推送 tag。Beta 恢复额外从同次快照补发并核验官网双语日志，正式恢复只处理 GitHub 及正式/Beta feed；
 官网静态页和 Homebrew 若尚未发布，作为原发布范围内的剩余阶段单独处理，不能报告整版完成。
 
 ### Beta 契约与验收
@@ -182,8 +182,13 @@ Beta 允许使用 Direct 对应版本的待发布 Changelog。
 
 完成必须同时核实：GitHub `isDraft=false`、`isPrerelease=true`，两份附件下载摘要正确，
 公开下载地址可用，线上 `appcast-development.xml` 与本地发布内容相同；
-正式 `appcast.xml`、正式 latest、Homebrew 和 App Store 保持原状。官网仓库的 feed
-改动按当前任务授权单独提交/推送。
+`changelog.html` 与 `changelog-zh.html` 从同次说明快照生成，显示本次 `X.Y.Z Beta N`，
+不含未来版本或待发布内容，逐页回读正文与本地逐字节一致。
+正式 `appcast.xml`、正式 latest、Homebrew 和 App Store 保持原状。官网仓库的 feed、
+日志 HTML 与源目标节改动按当前任务授权单独提交/推送，并完成所有项目 `dev/main` 同步。
+
+仅缺官网日志时，按 `starcat-public-site-and-promo/references/site-promo-map.md`
+的定向恢复步骤生成并上传两页，不重跑 DMG 构建或完整官网部署。
 
 ### 故障处理
 
