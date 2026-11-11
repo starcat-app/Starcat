@@ -102,6 +102,61 @@ struct DailyRecommendationTests {
         #expect(DailyRecommendationState.dayKey(date, timeZone: TimeZone(secondsFromGMT: 0)!) == "2026-11-4")
     }
 
+    @Test("未请求推荐也能保存自动展示偏好，重启与切换账号后各自恢复")
+    func preferencesWithoutRecommendations() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(store.hasLoadedState)
+        await store.setShowsOnLaunch(false)
+        #expect(!store.state.showsOnLaunch)
+        #expect(store.visibleItems.isEmpty)
+        #expect(!store.isLoading)
+
+        await store.loadPreferences(accountID: 99, scopeRevision: 2)
+        #expect(store.state.showsOnLaunch)
+        await store.setShowsOnLaunch(true)
+        await store.loadPreferences(accountID: 42, scopeRevision: 3)
+        #expect(!store.state.showsOnLaunch)
+
+        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await restored.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(!restored.state.showsOnLaunch)
+        await restored.loadPreferences(accountID: 99, scopeRevision: 2)
+        #expect(restored.state.showsOnLaunch)
+    }
+
+    @Test("推荐请求等待或失败时仍能保存开关，不被请求完成覆盖")
+    func preferencesWhileRequestIsPending() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var continuation: CheckedContinuation<DailyRecommendationResponse, Error>?
+        let request = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test",
+                fetchStars: { [repo(1)] },
+                fetchCandidates: { _, _ in
+                    try await withCheckedThrowingContinuation { continuation = $0 }
+                }
+            )
+        }
+        // 停在真实请求边界，验证开关可用性只取决于本地读盘，和网络加载状态无关
+        while continuation == nil { await Task.yield() }
+        #expect(store.isLoading)
+        #expect(store.hasLoadedState)
+        await store.setShowsOnLaunch(false)
+        continuation?.resume(throwing: URLError(.notConnectedToInternet))
+        await request.value
+        #expect(!store.state.showsOnLaunch)
+        #expect(store.errorKey == "recommendations.daily.failed")
+
+        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await restored.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(!restored.state.showsOnLaunch)
+    }
+
     @Test("重启恢复翻牌、屏蔽和自动展示记录，不重复请求当日候选")
     func restoreFrozenBatch() async throws {
         let root = temporaryRoot()
@@ -115,10 +170,15 @@ struct DailyRecommendationTests {
         )
         await store.reveal(100)
         await store.dismiss(101)
+        await store.setShowsOnLaunch(false)
+        #expect(!store.canAutomaticallyPresent(date: date))
+        #expect(store.visibleItems.map(\.repoID) == [100])
+        await store.setShowsOnLaunch(true)
         let firstClaim = await store.claimAutomaticPresentation(date: date)
         #expect(firstClaim)
         let secondClaim = await store.claimAutomaticPresentation(date: date)
         #expect(!secondClaim)
+        await store.setShowsOnLaunch(false)
         let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
         await restored.load(
             accountID: 42, scopeRevision: 2, date: date, serviceScope: "test",
@@ -131,6 +191,7 @@ struct DailyRecommendationTests {
         #expect(restored.state.revealedIDs == [100])
         #expect(restored.visibleItems.map(\.repoID) == [100])
         #expect(restored.state.dismissedIDs == [101])
+        #expect(!restored.state.showsOnLaunch)
         let restoredClaim = await restored.claimAutomaticPresentation(date: date)
         #expect(!restoredClaim)
     }
@@ -235,6 +296,7 @@ struct DailyRecommendationTests {
             fetchStars: { [] }, fetchCandidates: { _, _ in response([]) }
         )
         #expect(store.errorKey != nil)
+        await store.setShowsOnLaunch(false)
         #expect(try Data(contentsOf: file) == Data("invalid".utf8))
     }
 

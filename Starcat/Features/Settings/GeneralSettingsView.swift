@@ -32,6 +32,7 @@ struct GeneralSettingsView: View {
             // 感兴趣语言是长期候选池，保持在 macOS 集成之后，不与显示语言混排。
             InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
             ExploreCatalogSettingsSection()
+            dailyRecommendationSection
 
             if DistributionChannel.current.isDirect {
                 directUpdateSection
@@ -219,6 +220,42 @@ struct GeneralSettingsView: View {
             }
         } header: {
             SettingsSectionHeader("settings.general.macOSIntegration", systemImage: "macwindow.on.rectangle")
+        }
+    }
+
+    /// 与主窗口等待相同的账号/数据库边界，避免切换账号时编辑到上一账号的偏好
+    private var dailyRecommendationAccountID: Int64? {
+        guard let id = dependencies.authSession.state.user?.id,
+              dependencies.database.currentUserId == id else { return nil }
+        return id
+    }
+
+    /// 设置与抽卡页观察同一个 Store，离线或未打开抽卡页时也能独立读取并保存偏好
+    private var dailyRecommendationSection: some View {
+        let store = dependencies.dailyRecommendationStore
+        let accountID = dailyRecommendationAccountID
+        let revision = dependencies.databaseScopeRevision
+
+        return Section {
+            Toggle("recommendations.daily.autoShow", isOn: Binding(
+                get: { store.state.showsOnLaunch },
+                set: { enabled in Task { await store.setShowsOnLaunch(enabled) } }
+            ))
+            .toggleStyle(.switch)
+            .disabled(accountID == nil || store.accountID != accountID || !store.hasLoadedState)
+
+            if let error = store.errorKey,
+               !store.hasLoadedState || error == "recommendations.daily.saveFailed" {
+                Text(LocalizedStringKey(error))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            SettingsSectionHeader("recommendations.daily.title", systemImage: "sparkles")
+        }
+        .task(id: "\(accountID ?? 0)|\(revision)") {
+            guard let accountID, !TestEnvironment.isRunning else { return }
+            await store.loadPreferences(accountID: accountID, scopeRevision: revision)
         }
     }
 

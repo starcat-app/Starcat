@@ -292,7 +292,7 @@ struct DailyRecommendationCardsView: View {
             ))
             .toggleStyle(.checkbox)
             .font(interfaceScale.font(.caption))
-            .disabled(store.accountID == nil || store.isLoading)
+            .disabled(store.accountID == nil || !store.hasLoadedState)
             Spacer(minLength: 8)
             if let error = store.errorKey, !store.visibleItems.isEmpty {
                 Text(LocalizedStringKey(error)).font(interfaceScale.font(.caption)).lineLimit(2)
