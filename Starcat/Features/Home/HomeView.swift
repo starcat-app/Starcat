@@ -1233,7 +1233,8 @@ struct HomeView: View {
             ownerID: commandRouterOwnerID,
             globalSearchShortcut: settings.globalSearchShortcut,
             openGlobalSearch: { presentSearchCenterForGettingStarted() },
-            openKnowledgeRAGWorkspace: { openKnowledgeRAGWorkspaceForGettingStarted() }
+            openKnowledgeRAGWorkspace: { openKnowledgeRAGWorkspaceForGettingStarted() },
+            showDailyRecommendations: { showsDailyRecommendations = true }
         )
     }
 

@@ -188,7 +188,7 @@ struct StarcatApp: App {
             // Release 包整段不存在；菜单标题 / 选项标签都用 verbatim 文本，
             // 不进入 String Catalog——避免"切到英文后调试菜单也变英文"的循环噩梦。
             #if DEBUG
-            DebugMenuCommands(dependencies: dependencies)
+            DebugMenuCommands(dependencies: dependencies, commandRouter: commandRouter)
             #endif
         }
 
@@ -832,6 +832,7 @@ private enum DebugWindowResizer {
 
 struct DebugMenuCommands: Commands {
     let dependencies: AppDependencies?
+    let commandRouter: StarcatCommandRouter
 
     @AppStorage(DebugFlags.debugProOverrideKey) private var debugProOverride = false
 
@@ -848,6 +849,13 @@ struct DebugMenuCommands: Commands {
                     object: nil
                 )
             }
+
+            Button {
+                commandRouter.showDailyRecommendations()
+            } label: {
+                Text(verbatim: "Show Daily Recommendation Cards")
+            }
+            .disabled(!commandRouter.canShowDailyRecommendations)
 
             Toggle(
                 "Activate Pro",

@@ -53,6 +53,7 @@ final class StarcatCommandRouter {
         let globalSearchShortcut: KeyboardShortcutConfiguration
         let openGlobalSearch: @MainActor @Sendable () -> Void
         let openKnowledgeRAGWorkspace: @MainActor @Sendable () -> Void
+        let showDailyRecommendations: @MainActor @Sendable () -> Void
     }
 
     private var mainWindowActions: MainWindowActions?
@@ -69,6 +70,7 @@ final class StarcatCommandRouter {
 
     var canOpenGlobalSearch: Bool { mainWindowActions != nil }
     var canOpenKnowledgeRAGWorkspace: Bool { mainWindowActions != nil }
+    var canShowDailyRecommendations: Bool { mainWindowActions != nil }
     var canOpenCurrentRepositoryAI: Bool {
         isRepositoryAIAvailable(preferred: nil)
     }
@@ -87,13 +89,15 @@ final class StarcatCommandRouter {
         ownerID: UUID,
         globalSearchShortcut: KeyboardShortcutConfiguration,
         openGlobalSearch: @escaping @MainActor @Sendable () -> Void,
-        openKnowledgeRAGWorkspace: @escaping @MainActor @Sendable () -> Void
+        openKnowledgeRAGWorkspace: @escaping @MainActor @Sendable () -> Void,
+        showDailyRecommendations: @escaping @MainActor @Sendable () -> Void
     ) {
         mainWindowActions = MainWindowActions(
             ownerID: ownerID,
             globalSearchShortcut: globalSearchShortcut,
             openGlobalSearch: openGlobalSearch,
-            openKnowledgeRAGWorkspace: openKnowledgeRAGWorkspace
+            openKnowledgeRAGWorkspace: openKnowledgeRAGWorkspace,
+            showDailyRecommendations: showDailyRecommendations
         )
     }
 
@@ -108,6 +112,11 @@ final class StarcatCommandRouter {
 
     func openKnowledgeRAGWorkspace() {
         mainWindowActions?.openKnowledgeRAGWorkspace()
+    }
+
+    /// 调试菜单复用主窗口展示入口，避免另建批次或重置已保存的翻牌进度
+    func showDailyRecommendations() {
+        mainWindowActions?.showDailyRecommendations()
     }
 
     /// 优先执行 key window 通过 FocusedValues 发布的仓库 AI 动作。
