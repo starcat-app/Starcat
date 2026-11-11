@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-11
+> 最后核对：2026-11-12
 
 ## 登记说明
 
@@ -34,9 +34,14 @@
 |---|---|---|---|---|
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-11 本地 `main` 已 fast-forward 到当前 `dev`，准备 Direct `1.9.5-beta.1`；每日推荐仍在独立分支，未进入本次发布。 | 继续承载后续开发；本地 `main` 推送与 1.9.5 Beta 打包发布待单独授权，新增变更不得回写已公开 tag。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-12 已发布 Direct `1.9.5-beta.1`，发布源码为 `1aab33e6`；每日推荐仍在独立分支，未进入本次发布。 | 继续承载后续开发；每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-11 已从当前 `dev` fast-forward，本地与 `dev` 同步；远端尚未推送。 | 保持稳定；推送、打包、上传和发布须另行授权。 |
+| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-12 按本次发布收尾要求从 `dev` fast-forward 并推送，本地及远端 `dev/main` 保持一致。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
+
+2026-11-12 发布收尾覆盖主仓库及 supports 下共 31 个独立 Git 仓库。其中 30 个有
+`origin`，逐仓核对本地 `dev/main` 与远端同名分支；`supports/ai-file-wall` 无远端，
+只核对本地两分支。官网 `dev/main` 同步至发布元数据提交 `4677526f`；
+每日推荐独立 worktree 继续保留，不合入本次发布。
 
 ## 每周 AI 大事跨仓工作区
 
