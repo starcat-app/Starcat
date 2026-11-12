@@ -88,6 +88,17 @@ struct DailyRadarWeeklyTopicCard: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: scale.scaled(compact ? 480 : 320))
+            .overlay(alignment: .bottomTrailing) {
+                if let latest = editions.first, let heroBadges = latest.relatedProjectBadges, !heroBadges.isEmpty {
+                    // 专题入口大卡右下角叠加最新一期项目徽标；右侧卡片区足够容纳。
+                    DailyRadarProjectBadgeCluster(
+                        badges: heroBadges, maxVisible: 6,
+                        avatarSize: 34 * scale.multiplier, style: .hero
+                    )
+                    .padding(.trailing, 20 * scale.multiplier)
+                    .padding(.bottom, 20 * scale.multiplier)
+                }
+            }
             .background {
                 DailyRadarProgrammaticCover(
                     category: "ai-weekly-events", seed: "ai-weekly-events", textSafeLeading: 0.4

@@ -302,29 +302,46 @@ struct DailyRadarPreviewWorkspace: View {
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(olderStories.enumerated()), id: \.element.id) { index, item in
                                     Button { openStory(item) } label: {
-                                        HStack(spacing: 16) {
-                                            DailyRadarCoverView(cover: item.cover,
-                                                                category: item.category, seed: item.id)
-                                                .frame(width: 88, height: 56)
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                .accessibilityHidden(true)
-                                            VStack(alignment: .leading, spacing: 6) {
-                                                Text(verbatim: item.title.replacingOccurrences(of: "\n", with: ""))
-                                                    .font(scale.font(size: 14, weight: .medium))
-                                                    .lineLimit(1)
-                                                Text(verbatim: DailyRadarDateFormatting.label(item.editionDate, locale: locale))
-                                                    .font(scale.font(size: 11))
-                                                    .foregroundStyle(.secondary)
+                                        // 历史行斑马纹只在奇数行铺极轻底色；hover 统一压一档。
+                                        LocalHoverSurface(
+                                            normalBackground: index.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.025),
+                                            hoveredBackground: Color.primary.opacity(0.055),
+                                            normalBorder: .clear,
+                                            hoveredBorder: Color.primary.opacity(0.16),
+                                            cornerRadius: 6
+                                        ) {
+                                            HStack(spacing: 16) {
+                                                DailyRadarCoverView(cover: item.cover,
+                                                                    category: item.category, seed: item.id)
+                                                    .frame(width: 88, height: 56)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                    .accessibilityHidden(true)
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    Text(verbatim: item.title.replacingOccurrences(of: "\n", with: ""))
+                                                        .font(scale.font(size: 14, weight: .medium))
+                                                        .lineLimit(1)
+                                                    Text(verbatim: DailyRadarDateFormatting.label(item.editionDate, locale: locale))
+                                                        .font(scale.font(size: 11))
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                                Spacer(minLength: 8)
+                                                if let badges = item.relatedProjectBadges, !badges.isEmpty {
+                                                    DailyRadarProjectBadgeCluster(
+                                                        badges: badges, maxVisible: 4,
+                                                        avatarSize: 24 * scale.multiplier, style: .surface
+                                                    )
+                                                }
                                             }
-                                            Spacer(minLength: 8)
-                                            Image(systemName: "chevron.forward")
-                                                .foregroundStyle(.secondary)
+                                            // 行内留白：封面不与列表左缘相切，右侧徽标去掉箭头后
+                                            // 保持与右缘的距离，hover 表面仍铺满整行。
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 12)
+                                            .contentShape(Rectangle())
                                         }
-                                        .padding(.vertical, 12)
-                                        .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                     .focusEffectDisabled()
+                                    .pointerStyle(.link)
                                     .automaticListPagination(
                                         appearingIndex: index, visibleItemCount: olderStories.count,
                                         loadedItemCount: model.items.count, hasMore: model.nextCursor != nil,
