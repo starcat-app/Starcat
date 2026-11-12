@@ -670,6 +670,7 @@ struct ProSettingsTab: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .disabled(isOfferCodeRedemptionPresented)
 
             Button {
                 openURL(SubscriptionExternalLinks.manageSubscriptions)
