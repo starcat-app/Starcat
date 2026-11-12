@@ -48,12 +48,28 @@ struct SearchIntentRoutingOutcome: Equatable, Sendable {
     let decisionStatus: SearchIntentDecisionStatus
     let plannerStatus: SearchIntentPlannerStatus
     let plan: SearchDiscoveryPlan?
+    let diagnostic: SearchDiscoveryDiagnostic?
+
+    init(
+        route: SearchIntentRoute,
+        decisionStatus: SearchIntentDecisionStatus,
+        plannerStatus: SearchIntentPlannerStatus,
+        plan: SearchDiscoveryPlan?,
+        diagnostic: SearchDiscoveryDiagnostic? = nil
+    ) {
+        self.route = route
+        self.decisionStatus = decisionStatus
+        self.plannerStatus = plannerStatus
+        self.plan = plan
+        self.diagnostic = diagnostic
+    }
 
     static func == (lhs: SearchIntentRoutingOutcome, rhs: SearchIntentRoutingOutcome) -> Bool {
         lhs.route == rhs.route
             && lhs.decisionStatus == rhs.decisionStatus
             && lhs.plannerStatus == rhs.plannerStatus
             && lhs.plan == rhs.plan
+            && lhs.diagnostic == rhs.diagnostic
     }
 }
 
@@ -266,7 +282,8 @@ final class SearchIntentRouter {
                 route: .fastPath,
                 decisionStatus: decision.status,
                 plannerStatus: .failed("Search query planner is unavailable"),
-                plan: nil
+                plan: nil,
+                diagnostic: .unavailable(stage: .planning)
             )
         }
         do {
@@ -290,7 +307,8 @@ final class SearchIntentRouter {
                 route: .fastPath,
                 decisionStatus: decision.status,
                 plannerStatus: .failed(error.localizedDescription),
-                plan: nil
+                plan: nil,
+                diagnostic: .failure(stage: .planning, error: error)
             )
         }
     }

@@ -184,12 +184,12 @@ enum RepositoryDiscoveryError: Error, Equatable {
 
 private struct RepositoryDiscoveryTimeout: Error {}
 
-/// 一轮智能发现结果。warnings 只用于诊断和 UI 弱提示，失败不清空已成功证据。
+/// 一轮智能发现结果。诊断保留失败步骤与原因，局部失败不清空已成功证据。
 struct RepositoryDiscoveryResult: Equatable, Sendable {
     let session: SearchDiscoverySession
     let repositories: [RepositoryCandidate]
     let references: [ReferenceCandidate]
-    let warnings: [String]
+    let diagnostics: [SearchDiscoveryDiagnostic]
 }
 
 @MainActor
@@ -240,7 +240,7 @@ final class RepositoryDiscoveryService {
         budget: SearchDiscoveryBudget = .firstRound,
         initialLLMCalls: Int = 1
     ) async -> RepositoryDiscoveryResult {
-        var warnings: [String] = []
+        var diagnostics: [SearchDiscoveryDiagnostic] = []
         var usedLLMCalls = max(0, initialLLMCalls)
         let deadline = Date().addingTimeInterval(budget.timeoutSeconds)
 
@@ -258,7 +258,7 @@ final class RepositoryDiscoveryService {
                     session: session,
                     repositories: [],
                     references: [],
-                    warnings: ["Search query planner is unavailable"]
+                    diagnostics: [.unavailable(stage: .planning)]
                 )
             }
             do {
@@ -281,7 +281,7 @@ final class RepositoryDiscoveryService {
                     session: session,
                     repositories: [],
                     references: [],
-                    warnings: ["Search query planner failed"]
+                    diagnostics: [.failure(stage: .planning, error: error)]
                 )
             }
         }
@@ -298,7 +298,7 @@ final class RepositoryDiscoveryService {
                 session: session,
                 repositories: [],
                 references: [],
-                warnings: ["Invalid discovery plan or budget"]
+                diagnostics: [.failure(stage: .planning, error: SearchIntentRouterError.invalidPlan)]
             )
         }
 
@@ -315,7 +315,7 @@ final class RepositoryDiscoveryService {
 
         for webQuery in normalizedPlan.webQueries where session.canRunWebQuery(in: budget) {
             guard Date() < deadline else {
-                warnings.append("Discovery timeout before web search")
+                diagnostics.append(.failure(stage: .webSearch, error: URLError(.timedOut)))
                 break
             }
             guard let webProvider = webProvider else { continue }
@@ -348,13 +348,13 @@ final class RepositoryDiscoveryService {
                 session = Self.incrementing(session, webQueries: 1)
             } catch {
                 session = Self.incrementing(session, webQueries: 1)
-                warnings.append("Web query failed: \(webQuery)")
+                diagnostics.append(Self.failureDiagnostic(stage: .webSearch, error: error))
             }
         }
 
         for githubQuery in normalizedPlan.githubQueries where session.canRunGitHubQuery(in: budget) {
             guard Date() < deadline else {
-                warnings.append("Discovery timeout before GitHub search")
+                diagnostics.append(.failure(stage: .githubSearch, error: URLError(.timedOut)))
                 break
             }
             var filters = baseRequest.githubFilters
@@ -391,7 +391,7 @@ final class RepositoryDiscoveryService {
                 session = Self.incrementing(session, githubQueries: 1)
             } catch {
                 session = Self.incrementing(session, githubQueries: 1)
-                warnings.append("GitHub query failed: \(githubQuery)")
+                diagnostics.append(Self.failureDiagnostic(stage: .githubSearch, error: error))
             }
         }
 
@@ -412,7 +412,11 @@ final class RepositoryDiscoveryService {
               !extractedIdentities.isEmpty,
               Date() < deadline {
             let identity = extractedIdentities.removeFirst()
-            guard !repositories.contains(where: { $0.identity == identity }) else { continue }
+            // 网页身份没有 GitHub 数字 ID，不能与 API 结果直接比较 RepoIdentity；
+            // 按完整仓库名识别已核验候选，避免重复请求耗尽本轮核验上限。
+            guard !repositories.contains(where: {
+                $0.identity.normalizedFullName == identity.normalizedFullName
+            }) else { continue }
             do {
                 verificationAttempts += 1
                 let verifier = verifier
@@ -442,15 +446,27 @@ final class RepositoryDiscoveryService {
                 repositories.append(candidate)
             } catch {
                 if error is RepositoryDiscoveryTimeout {
-                    warnings.append("Discovery timeout during GitHub verification")
+                    diagnostics.append(Self.failureDiagnostic(stage: .verification, error: error))
                     extractedIdentities.removeAll()
                     break
                 }
-                warnings.append("GitHub verification failed: \(identity.owner)/\(identity.name)")
+                diagnostics.append(Self.failureDiagnostic(
+                    stage: .verification,
+                    error: error,
+                    context: "\(identity.owner)/\(identity.name)"
+                ))
             }
         }
-        if !extractedIdentities.isEmpty || verificationAttempts == budget.maxVerifiedRepositories {
-            warnings.append("GitHub verification budget reached")
+        // 恰好核验完最后一个仓库不算达到上限；只有仍有未处理身份时才给信息提示。
+        let pendingVerification = extractedIdentities.contains { identity in
+            !repositories.contains { $0.identity.normalizedFullName == identity.normalizedFullName }
+        }
+        if pendingVerification {
+            if Date() >= deadline {
+                diagnostics.append(.failure(stage: .verification, error: URLError(.timedOut)))
+            } else if verificationAttempts >= budget.maxVerifiedRepositories {
+                diagnostics.append(.limit(stage: .verification))
+            }
         }
 
         repositories = Self.deduplicated(repositories)
@@ -471,7 +487,9 @@ final class RepositoryDiscoveryService {
         let rankedRepositories: [RepositoryCandidate]
         if repositories.isEmpty || !session.canUseLLM(in: budget) || Date() >= deadline {
             if !repositories.isEmpty && Date() >= deadline {
-                warnings.append("Discovery timeout before ranking")
+                diagnostics.append(.failure(stage: .ranking, error: URLError(.timedOut)))
+            } else if !repositories.isEmpty && !session.canUseLLM(in: budget) {
+                diagnostics.append(.limit(stage: .ranking))
             }
             rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
         } else if let ranker {
@@ -499,9 +517,13 @@ final class RepositoryDiscoveryService {
                     evidence: evidence,
                     budget: budget
                 )
+                if !rankedItems.isEmpty,
+                   !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch }) {
+                    diagnostics.append(.failure(stage: .ranking, error: RepositoryDiscoveryError.invalidRankerResponse))
+                }
             } catch {
                 session = Self.incrementing(session, llmCalls: 1)
-                warnings.append("Discovery ranking failed")
+                diagnostics.append(Self.failureDiagnostic(stage: .ranking, error: error))
                 rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
             }
         } else {
@@ -522,7 +544,20 @@ final class RepositoryDiscoveryService {
             session: completed,
             repositories: rankedRepositories,
             references: references,
-            warnings: warnings
+            diagnostics: diagnostics
+        )
+    }
+
+    /// 编排超时与网络超时统一映射，用户能看到原因，日志保留原阶段。
+    private static func failureDiagnostic(
+        stage: SearchDiscoveryDiagnostic.Stage,
+        error: Error,
+        context: String? = nil
+    ) -> SearchDiscoveryDiagnostic {
+        .failure(
+            stage: stage,
+            error: error is RepositoryDiscoveryTimeout ? URLError(.timedOut) : error,
+            context: context
         )
     }
 
@@ -550,13 +585,14 @@ final class RepositoryDiscoveryService {
 
     private enum DeadlineOutcome<Value: Sendable>: Sendable {
         case value(Value)
-        case failure(String)
+        case failure(any Error)
         case timedOut
     }
 
-    private struct RepositoryDiscoveryOperationFailure: Error {}
-
     /// 对 Sendable 的远端调用施加同轮共享 deadline；LLM 客户端自身也收到剩余时间。
+    ///
+    /// 超时竞争必须保留真实 Error。转成字符串再抛占位错误会丢失 401 / 404 等状态，
+    /// 让统一错误映射只能给出“未知失败”，也无法解释为何某个候选被排除。
     private static func withDeadline<Value: Sendable>(
         to deadline: Date,
         operation: @escaping @Sendable () async throws -> Value
@@ -568,7 +604,7 @@ final class RepositoryDiscoveryService {
                 } catch is CancellationError {
                     return .timedOut
                 } catch {
-                    return .failure("\(error)")
+                    return .failure(error)
                 }
             }
             group.addTask {
@@ -584,8 +620,8 @@ final class RepositoryDiscoveryService {
         switch outcome {
         case .value(let value):
             return value
-        case .failure:
-            throw RepositoryDiscoveryOperationFailure()
+        case .failure(let error):
+            throw error
         case .timedOut:
             throw RepositoryDiscoveryTimeout()
         }

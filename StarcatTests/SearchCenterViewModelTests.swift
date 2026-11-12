@@ -608,7 +608,7 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.discoverySession?.phase == .completed)
         #expect(viewModel.discoveryResultCount == 1)
         #expect(viewModel.canContinueDiscovery)
-        #expect(viewModel.discoveryWarnings.isEmpty)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
     }
 
     @Test("发现结果与基础结果重复时保留单行、匹配理由和去重计数")
@@ -620,7 +620,7 @@ struct SearchCenterViewModelTests {
             session: firstResult.session,
             repositories: firstResult.repositories + firstResult.repositories,
             references: [],
-            warnings: []
+            diagnostics: []
         )
         let viewModel = SearchCenterViewModel(
             coordinator: SearchCoordinator(providers: [
@@ -652,7 +652,7 @@ struct SearchCenterViewModelTests {
             session: Self.makeDiscoveryResult(candidate: candidate).session,
             repositories: [],
             references: [],
-            warnings: []
+            diagnostics: []
         )
         let viewModel = SearchCenterViewModel(
             coordinator: SearchCoordinator(providers: [
@@ -700,7 +700,8 @@ struct SearchCenterViewModelTests {
 
         #expect(viewModel.candidates == [SearchCandidate.repository(local.candidate)])
         #expect(viewModel.discoverySession?.phase == .failed("AI 服务商要求付费或账户余额不足"))
-        #expect(viewModel.discoveryWarnings == ["AI 服务商要求付费或账户余额不足"])
+        #expect(viewModel.discoveryDiagnostics.first?.message == "AI 服务商要求付费或账户余额不足")
+        #expect(viewModel.hasDiscoveryFailures)
         #expect(discovery.requests.isEmpty)
         #expect(viewModel.canStartSmartDiscovery)
     }
@@ -753,7 +754,7 @@ struct SearchCenterViewModelTests {
                 session: failedSession,
                 repositories: [],
                 references: [],
-                warnings: ["Search query planner failed"]
+                diagnostics: [.failure(stage: .planning, error: AIClientError.emptyResponse)]
             )
         ])
         let viewModel = SearchCenterViewModel(
@@ -769,8 +770,38 @@ struct SearchCenterViewModelTests {
 
         #expect(viewModel.candidates == [SearchCandidate.repository(local.candidate)])
         #expect(viewModel.discoverySession?.phase == .failed("Search query planner failed"))
-        #expect(viewModel.discoveryWarnings == ["Search query planner failed"])
+        #expect(viewModel.discoveryDiagnostics.first?.stage == .planning)
+        #expect(viewModel.hasDiscoveryFailures)
         #expect(!viewModel.canContinueDiscovery)
+    }
+
+    @Test("正常达到核验上限有详情但不显示失败告警")
+    func verificationLimitIsNotAFailure() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy")
+        let baseResult = Self.makeDiscoveryResult(candidate: candidate)
+        let result = RepositoryDiscoveryResult(
+            session: baseResult.session,
+            repositories: baseResult.repositories,
+            references: [],
+            diagnostics: [.limit(stage: .verification)]
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: SearchCenterStubDiscoveryService(results: [result])
+        )
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.discoveryResultCount == 1)
+        #expect(viewModel.discoveryDiagnostics.count == 1)
+        #expect(!viewModel.hasDiscoveryFailures)
+        #expect(viewModel.canContinueDiscovery)
+        viewModel.clear()
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(viewModel.discoveryResultCount == 0)
     }
 
     @Test("继续查找执行下一轮并更新缓存结果")
@@ -892,7 +923,7 @@ struct SearchCenterViewModelTests {
             session: session,
             repositories: [item],
             references: [],
-            warnings: []
+            diagnostics: []
         )
     }
 
@@ -1165,7 +1196,7 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
                 ),
                 repositories: [],
                 references: [],
-                warnings: []
+                diagnostics: []
             )
             : results.removeFirst()
         let session = SearchDiscoverySession(
@@ -1182,7 +1213,7 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
             session: session,
             repositories: result.repositories,
             references: result.references,
-            warnings: result.warnings
+            diagnostics: result.diagnostics
         )
     }
 }

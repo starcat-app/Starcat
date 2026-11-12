@@ -67,7 +67,7 @@ final class SearchCenterViewModel {
     /// 智能发现独立于 Coordinator：基础搜索先展示，发现完成后再合并。
     private(set) var discoverySession: SearchDiscoverySession?
     private var latestDiscoveryResult: RepositoryDiscoveryResult?
-    private(set) var discoveryWarnings: [String] = []
+    private(set) var discoveryDiagnostics: [SearchDiscoveryDiagnostic] = []
     private(set) var isDiscoveryRunning = false
 
     init(
@@ -141,6 +141,10 @@ final class SearchCenterViewModel {
                 count += 1
             }
         }
+    }
+
+    var hasDiscoveryFailures: Bool {
+        discoveryDiagnostics.contains(where: \.isFailure)
     }
 
     var selectedCandidate: SearchCandidate? {
@@ -459,11 +463,15 @@ final class SearchCenterViewModel {
                 phase: .failed(message),
                 usedLLMCalls: 1
             )
-            discoveryWarnings = [message]
+            discoveryDiagnostics = [routingOutcome?.diagnostic ?? SearchDiscoveryDiagnostic(
+                stage: .planning,
+                kind: .failure,
+                message: message
+            )]
             await baseSearchTask.value
         } else {
             discoverySession = nil
-            discoveryWarnings = []
+            discoveryDiagnostics = []
             await baseSearchTask.value
         }
         clampSelection()
@@ -527,7 +535,7 @@ final class SearchCenterViewModel {
                 round: 1,
                 phase: .failed("Discovery router is unavailable")
             )
-            discoveryWarnings = ["Discovery router is unavailable"]
+            discoveryDiagnostics = [.unavailable(stage: .planning)]
             return
         }
         let outcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: true)
@@ -539,10 +547,14 @@ final class SearchCenterViewModel {
                     phase: .failed(message),
                     usedLLMCalls: 1
                 )
-                discoveryWarnings = [message]
+                discoveryDiagnostics = [outcome.diagnostic ?? SearchDiscoveryDiagnostic(
+                    stage: .planning,
+                    kind: .failure,
+                    message: message
+                )]
             } else {
                 discoverySession = nil
-                discoveryWarnings = []
+                discoveryDiagnostics = []
             }
             return
         }
@@ -566,13 +578,14 @@ final class SearchCenterViewModel {
                 round: round,
                 phase: .failed("Discovery service is unavailable")
             )
+            discoveryDiagnostics = [.unavailable(stage: .planning)]
             return Task {}
         }
         let generation = UUID()
         let service = discoveryService
         discoveryGeneration = generation
         isDiscoveryRunning = true
-        discoveryWarnings = []
+        discoveryDiagnostics = []
         discoverySession = SearchDiscoverySession(
             generation: generation,
             round: round,
@@ -602,7 +615,7 @@ final class SearchCenterViewModel {
     private func applyDiscovery(_ result: RepositoryDiscoveryResult, cacheRequest: SearchRequest) {
         discoverySession = result.session
         latestDiscoveryResult = result
-        discoveryWarnings = result.warnings
+        discoveryDiagnostics = result.diagnostics
         isDiscoveryRunning = false
         discoveryTask = nil
         if result.session.phase == .completed {
@@ -617,7 +630,7 @@ final class SearchCenterViewModel {
         isDiscoveryRunning = false
         discoverySession = nil
         latestDiscoveryResult = nil
-        discoveryWarnings = []
+        discoveryDiagnostics = []
         if !keepCache {
             discoveryCache = [:]
         }

@@ -124,7 +124,8 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.first?.discovery?.kind == .githubSearch)
         #expect(result.repositories.first?.discovery?.reason.isEmpty == true)
         #expect(result.references.isEmpty)
-        #expect(result.warnings.contains { $0.contains("Web query failed") })
+        #expect(result.diagnostics.contains { $0.stage == .webSearch && $0.isFailure })
+        #expect(result.diagnostics.contains { $0.stage == .ranking && $0.isFailure })
         #expect(result.session.usedLLMCalls == 2)
         #expect(result.session.phase == .completed)
     }
@@ -178,8 +179,186 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.session.usedWebQueries == 2)
         #expect(result.session.usedLLMCalls == 1)
         #expect(verifier.calls.count == 5)
-        #expect(result.warnings.contains("GitHub verification budget reached"))
+        #expect(result.diagnostics.contains { $0.stage == .verification && $0.kind == .limit })
+        #expect(!result.diagnostics.contains { $0.isFailure })
         #expect(result.references.count == 6)
+    }
+
+    @Test("恰好核验完五个仓库时不误报上限")
+    func completedVerificationAtLimitHasNoWarning() async {
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [],
+                references: (0..<5).map { number in
+                    Self.makeReference(url: "https://github.com/owner/repo-\(number)")
+                },
+                totalCount: 5,
+                hasNextPage: false
+            )
+        }
+        let verifier = StubRepositoryVerifier { owner, name in
+            Self.makeRepoDTO(id: Int64(name.suffix(1)) ?? 1, owner: owner, name: name)
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: web,
+            verifier: verifier,
+            ranker: nil
+        )
+
+        let result = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux", includeWebInAll: true),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(verifier.calls.count == 5)
+        #expect(result.repositories.count == 5)
+        #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test("网页与 GitHub 重复身份不再核验，不占用核验上限")
+    func githubSearchHitDoesNotConsumeVerificationBudget() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [],
+                references: [Self.makeReference(url: "https://github.com/Apple/Swift")],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let verifier = StubRepositoryVerifier { _, _ in throw TestError.failed }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: web,
+            verifier: verifier,
+            ranker: nil
+        )
+
+        let result = await service.discover(
+            query: "swift",
+            request: SearchRequest(query: "swift", includeWebInAll: true),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(result.repositories.count == 1)
+        #expect(verifier.calls.isEmpty)
+        #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test("仓库核验 404 保留仓库名和原因，其他已核验结果继续展示")
+    func verificationFailureRetainsCauseAndSuccessfulRepositories() async {
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [],
+                references: [
+                    Self.makeReference(url: "https://github.com/owner/missing"),
+                    Self.makeReference(url: "https://github.com/owner/existing")
+                ],
+                totalCount: 2,
+                hasNextPage: false
+            )
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: web,
+            verifier: StubRepositoryVerifier { owner, name in
+                if name == "missing" { throw NetworkError.notFound }
+                return Self.makeRepoDTO(id: 1, owner: owner, name: name)
+            },
+            ranker: nil
+        )
+
+        let result = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux", includeWebInAll: true),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(result.repositories.map(\.card.fullName) == ["owner/existing"])
+        #expect(result.repositories.first?.discovery?.kind == .githubVerification)
+        #expect(result.diagnostics.count == 1)
+        #expect(result.diagnostics.first?.stage == .verification)
+        #expect(result.diagnostics.first?.context == "owner/missing")
+        #expect(result.diagnostics.first?.statusCode == 404)
+        #expect(result.diagnostics.first?.technicalDetail?.isEmpty == false)
+        #expect(result.diagnostics.first?.isFailure == true)
+        #expect(result.diagnostics.first?.message.contains("search.discovery") == false)
+    }
+
+    @Test("重排超时保留检索候选并给出重排步骤的失败详情")
+    func rankingTimeoutRetainsCandidatesAndDiagnostic() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker { _, _, _, _, _ in throw URLError(.timedOut) }
+        )
+
+        let result = await service.discover(
+            query: "swift",
+            request: SearchRequest(query: "swift"),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(result.repositories.count == 1)
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.diagnostics.count == 1)
+        #expect(result.diagnostics.first?.stage == .ranking)
+        #expect(result.diagnostics.first?.isFailure == true)
+        #expect(result.diagnostics.first?.recovery?.isEmpty == false)
+    }
+
+    @Test("LLM 达到调用上限只给信息提示，候选仍可展示")
+    func rankingBudgetIsInformational() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker { _, _, _, _, _ in throw TestError.failed }
+        )
+
+        let result = await service.discover(
+            query: "swift",
+            request: SearchRequest(query: "swift"),
+            initialPlan: Self.makePlan(),
+            initialLLMCalls: SearchDiscoveryBudget.firstRound.maxLLMCalls
+        )
+
+        #expect(result.repositories.count == 1)
+        #expect(result.diagnostics.count == 1)
+        #expect(result.diagnostics.first?.stage == .ranking)
+        #expect(result.diagnostics.first?.kind == .limit)
+        #expect(!result.diagnostics.contains { $0.isFailure })
     }
 
     private static func makePlan() -> SearchDiscoveryPlan {

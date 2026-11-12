@@ -113,6 +113,126 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
     }
 }
 
+/// 一轮发现的可解释诊断。正常达到上限不属于请求失败，不能点亮警告三角形。
+///
+/// 用户文案复用统一错误映射；底层原因经现有脱敏机制留存，只在主动展开时显示。
+struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
+    enum Stage: String, Equatable, Sendable {
+        case planning
+        case webSearch
+        case githubSearch
+        case verification
+        case ranking
+
+        var titleKey: String {
+            switch self {
+            case .planning: return "search.discovery.phase.planning"
+            case .webSearch: return "search.scope.web"
+            case .githubSearch: return "search.footer.source.github"
+            case .verification: return "search.discovery.phase.verifying"
+            case .ranking: return "search.discovery.phase.ranking"
+            }
+        }
+    }
+
+    enum Kind: Equatable, Sendable {
+        case failure
+        case limit
+    }
+
+    let id = UUID()
+    let stage: Stage
+    let kind: Kind
+    let message: String
+    var context: String? = nil
+    var recovery: String? = nil
+    var technicalDetail: String? = nil
+    var statusCode: Int? = nil
+
+    var isFailure: Bool { kind == .failure }
+
+    var impactKey: String {
+        "search.discovery.diagnostic.impact.\(stage.rawValue)"
+    }
+
+    /// 不直接显示 Error.localizedDescription，避免把传输细节或模型原文当成用户提示。
+    static func failure(stage: Stage, error: Error, context: String? = nil) -> Self {
+        let mappedError: Error
+        switch error {
+        case SearchIntentRouterError.missingPlannerCredential,
+             RepositoryDiscoveryError.missingPlannerCredential,
+             RepositoryDiscoveryError.missingRankerCredential:
+            mappedError = AIClientError.missingAPIKey
+        case SearchIntentRouterError.invalidPlan, RepositoryDiscoveryError.invalidRankerResponse:
+            mappedError = NetworkError.decodingError(underlying: error)
+        case SearchIntentRouterError.timeout:
+            mappedError = URLError(.timedOut)
+        default:
+            mappedError = error
+        }
+        // 统一错误模板会把 operation 放进用户句子，须传可读步骤，不能泄露内部操作 ID。
+        let service: String? = switch stage {
+        case .githubSearch, .verification: "GitHub"
+        case .planning, .ranking: "AI"
+        case .webSearch: nil
+        }
+        let presentation = UserFacingError.map(
+            mappedError,
+            operation: String.l10n(stage.titleKey),
+            service: service
+        )
+        let diagnostic = Self(
+            stage: stage,
+            kind: .failure,
+            message: presentation.message,
+            context: context,
+            recovery: presentation.recovery,
+            technicalDetail: presentation.diagnosticSummary,
+            statusCode: presentation.statusCode
+        )
+        diagnostic.record()
+        return diagnostic
+    }
+
+    static func unavailable(stage: Stage) -> Self {
+        let diagnostic = Self(
+            stage: stage,
+            kind: .failure,
+            message: String.l10n("search.discovery.diagnostic.unavailable"),
+            recovery: String.l10n("error.user.aiProvider.recovery.modelsSettings")
+        )
+        diagnostic.record()
+        return diagnostic
+    }
+
+    static func limit(stage: Stage) -> Self {
+        Self(
+            stage: stage,
+            kind: .limit,
+            message: String.l10n(stage == .verification
+                ? "search.discovery.diagnostic.verificationLimit"
+                : "search.discovery.diagnostic.rankingLimit"),
+            recovery: String.l10n("search.discovery.diagnostic.continue")
+        )
+    }
+
+    /// 每次真实失败只记一次；缓存结果重复展示时不会生成新的失败证据。
+    private func record() {
+        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            level: .warning,
+            category: "search",
+            operation: "search.discovery.\(stage.rawValue)",
+            message: "Repository discovery step failed",
+            statusCode: statusCode,
+            underlying: technicalDetail,
+            operationID: id.uuidString,
+            phase: stage.rawValue,
+            outcome: .failed,
+            impact: .degraded
+        ))
+    }
+}
+
 /// 发现链路对一个仓库候选的增量解释，不覆盖关键词 / 语义分数。
 struct SearchDiscoveryAnnotation: Equatable, Hashable, Codable, Sendable {
     /// 检索命中或 API 核验不代表经过模型相关性筛选，必须与真正的匹配理由分开。

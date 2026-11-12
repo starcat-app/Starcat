@@ -220,6 +220,22 @@ struct SearchIntentRouterTests {
         #expect(outcome.route == .fastPath)
         #expect(outcome.plannerStatus == .failed("Search planner returned an invalid plan"))
         #expect(outcome.plan == nil)
+        #expect(outcome.diagnostic?.stage == .planning)
+        #expect(outcome.diagnostic?.isFailure == true)
+        #expect(outcome.diagnostic?.technicalDetail?.isEmpty == false)
+    }
+
+    @Test("Planner 鉴权失败保留 HTTP 原因与恢复建议")
+    func plannerAuthenticationFailureHasDiagnostic() async {
+        let fixture = makeFixture()
+        fixture.planner.error = AIClientError.authenticationRejected(detail: "HTTP 401")
+
+        let outcome = await fixture.router.route(query: "帮我管理 GitHub star 项目")
+
+        #expect(outcome.route == .fastPath)
+        #expect(outcome.diagnostic?.stage == .planning)
+        #expect(outcome.diagnostic?.statusCode == 401)
+        #expect(outcome.diagnostic?.recovery?.isEmpty == false)
     }
 
     private func makeFixture(

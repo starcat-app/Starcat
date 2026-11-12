@@ -44,6 +44,8 @@ struct SearchCenterView: View {
     /// 但“抽屉是否展开”只影响当前浮层布局。Local scope 没有 GitHub / Web 筛选，
     /// 切过去时会自动收起，避免右侧出现空抽屉。
     @State private var isFilterDrawerPresented = false
+    /// 告警必须能点击查看原因；正常上限也复用此详情入口，但只显示信息图标。
+    @State private var isDiscoveryDiagnosticsPresented = false
     /// GitHub「最低 Stars」输入草稿；点「应用筛选」时写入 `githubFilters.minimumStars`。
     @State private var minStarsDraft = ""
     /// Web「结果数」输入草稿；点「应用筛选」时写入 `anySearchFilters.maxResults`。
@@ -807,7 +809,7 @@ struct SearchCenterView: View {
                                     // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
                                     // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
                                     Text(snippet)
-                                        .font(interfaceScale.font(.caption))
+                                        .font(interfaceScale.font(.captionSmall))
                                         .foregroundStyle(.primary.opacity(0.85))
                                         .lineLimit(2)
                                 }
@@ -1130,11 +1132,11 @@ struct SearchCenterView: View {
             || rateLimit != nil
             || !errors.isEmpty
             || viewModel.discoverySession != nil
-            || !viewModel.discoveryWarnings.isEmpty {
+            || !viewModel.discoveryDiagnostics.isEmpty {
             HStack(spacing: 8) {
                 leadingSummaryContent(processChips: processChips, counts: counts)
                 Spacer(minLength: 8)
-                if !viewModel.discoveryWarnings.isEmpty {
+                if !viewModel.discoveryDiagnostics.isEmpty {
                     discoveryWarningChip
                 }
                 if viewModel.canStartSmartDiscovery {
@@ -1389,14 +1391,91 @@ struct SearchCenterView: View {
     }
 
     private var discoveryWarningChip: some View {
-        Image(systemName: "exclamationmark.triangle")
-            .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            .foregroundStyle(.orange)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.orange.opacity(0.12), in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
-            .help(viewModel.discoveryWarnings.joined(separator: "\n"))
+        Button {
+            isDiscoveryDiagnosticsPresented.toggle()
+        } label: {
+            Image(systemName: viewModel.hasDiscoveryFailures ? "exclamationmark.triangle" : "info.circle")
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    viewModel.hasDiscoveryFailures ? Color.orange.opacity(0.12) : Color.primary.opacity(0.08),
+                    in: Capsule()
+                )
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(String.l10n("search.discovery.diagnostic.open"))
+        .accessibilityLabel(Text("search.discovery.diagnostic.open"))
+        .popover(isPresented: $isDiscoveryDiagnosticsPresented, arrowEdge: .bottom) {
+            discoveryDiagnosticsPopover
+                .appLocaleEnvironment()
+        }
+    }
+
+    /// 标题即失败步骤；原因、影响与恢复建议保持分行，技术细节只在主动展开后显示。
+    private var discoveryDiagnosticsPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("search.discovery.diagnostic.title")
+                    .font(interfaceScale.font(.body, weight: .semibold))
+                Spacer()
+                SheetCloseButton { isDiscoveryDiagnosticsPresented = false }
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(viewModel.discoveryDiagnostics) { diagnostic in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Label(
+                                LocalizedStringKey(diagnostic.stage.titleKey),
+                                systemImage: diagnostic.isFailure ? "exclamationmark.triangle" : "info.circle"
+                            )
+                            .font(interfaceScale.font(.body, weight: .semibold))
+                            if let context = diagnostic.context {
+                                Text(verbatim: context)
+                                    .textSelection(.enabled)
+                            }
+                            Text(verbatim: diagnostic.message)
+                            Text(verbatim: String(
+                                format: String.l10n("search.discovery.diagnostic.impactFormat"),
+                                String.l10n(diagnostic.impactKey)
+                            ))
+                                .foregroundStyle(.secondary)
+                            if let recovery = diagnostic.recovery {
+                                Text(verbatim: String(
+                                    format: String.l10n("search.discovery.diagnostic.recoveryFormat"),
+                                    recovery
+                                ))
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let detail = diagnostic.technicalDetail, !detail.isEmpty {
+                                DisclosureGroup("search.discovery.diagnostic.technical") {
+                                    if let statusCode = diagnostic.statusCode {
+                                        Text(verbatim: "HTTP \(statusCode)")
+                                            .font(interfaceScale.font(.captionSmall).monospaced())
+                                    }
+                                    Text(verbatim: detail)
+                                        .font(interfaceScale.font(.caption))
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                                    accessibilityLabel: Text("search.discovery.diagnostic.technical")
+                                ))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxHeight: 320)
+        }
+        .font(interfaceScale.font(.body))
+        .foregroundStyle(.primary)
+        .padding(16)
+        .frame(width: 380)
     }
 
     /// 右侧文字按钮保持 footer 尺寸约束；不使用 icon-only，避免操作语义不清。
@@ -1439,19 +1518,18 @@ struct SearchCenterView: View {
         case .extractingCandidates: return String.l10n("search.discovery.phase.extracting")
         case .verifyingRepositories: return String.l10n("search.discovery.phase.verifying")
         case .ranking: return String.l10n("search.discovery.phase.ranking")
-        case .completed:
+        case .completed, .failed:
             return String(
                 format: String.l10n("search.discovery.results.countFormat"),
                 locale: locale,
                 viewModel.discoveryResultCount
             )
-        case .failed: return String.l10n("search.discovery.phase.failed")
         }
     }
 
     private func discoveryPhaseTooltip(_ phase: SearchDiscoveryPhase) -> String {
         if case .failed(let message) = phase {
-            return message
+            return viewModel.discoveryDiagnostics.first?.message ?? message
         }
         return discoveryPhaseText(phase)
     }
