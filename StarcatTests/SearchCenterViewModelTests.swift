@@ -610,6 +610,40 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.discoveryWarnings.isEmpty)
     }
 
+    @Test("Planner 失败保留基础结果并显示智能发现失败")
+    func plannerFailureKeepsBaseResultsAndDiscoveryState() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        var baseCandidate = Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        baseCandidate.sources = [.localKeyword]
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: baseCandidate
+        )
+        let router = SearchCenterStubIntentRouter(outcome: SearchIntentRoutingOutcome(
+            route: .fastPath,
+            decisionStatus: .skipped,
+            plannerStatus: .failed("AI 服务商要求付费或账户余额不足"),
+            plan: nil
+        ))
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(viewModel.candidates == [SearchCandidate.repository(local.candidate)])
+        #expect(viewModel.discoverySession?.phase == .failed("AI 服务商要求付费或账户余额不足"))
+        #expect(viewModel.discoveryWarnings == ["AI 服务商要求付费或账户余额不足"])
+        #expect(discovery.requests.isEmpty)
+        #expect(viewModel.canStartSmartDiscovery)
+    }
+
     @Test("相同搜索请求直接复用完成的智能发现缓存")
     func identicalRequestReusesCompletedDiscovery() async throws {
         let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())

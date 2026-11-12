@@ -433,6 +433,17 @@ final class SearchCenterViewModel {
             )
             await baseSearchTask.value
             await discoveryTask.value
+        } else if case .failed(let message) = routingOutcome?.plannerStatus {
+            // Planner 在 Router 内失败时不会进入 Discovery Service；这里必须留下
+            // failed 会话，否则用户只能看到基础搜索，无法知道智能分支为何没有启动。
+            discoverySession = SearchDiscoverySession(
+                generation: discoveryGeneration,
+                round: 1,
+                phase: .failed(message),
+                usedLLMCalls: 1
+            )
+            discoveryWarnings = [message]
+            await baseSearchTask.value
         } else {
             discoverySession = nil
             discoveryWarnings = []
@@ -504,8 +515,18 @@ final class SearchCenterViewModel {
         }
         let outcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: true)
         guard outcome.route == .smartDiscovery else {
-            discoverySession = nil
-            discoveryWarnings = []
+            if case .failed(let message) = outcome.plannerStatus {
+                discoverySession = SearchDiscoverySession(
+                    generation: discoveryGeneration,
+                    round: 1,
+                    phase: .failed(message),
+                    usedLLMCalls: 1
+                )
+                discoveryWarnings = [message]
+            } else {
+                discoverySession = nil
+                discoveryWarnings = []
+            }
             return
         }
         await startDiscovery(

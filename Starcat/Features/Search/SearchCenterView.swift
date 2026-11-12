@@ -1393,7 +1393,7 @@ struct SearchCenterView: View {
 
     /// 右侧文字按钮保持 footer 尺寸约束；不使用 icon-only，避免操作语义不清。
     private func discoveryActionButton(
-        titleKey: String,
+        titleKey: LocalizedStringKey,
         systemImage: String,
         isLoading: Bool,
         action: @escaping () -> Void
