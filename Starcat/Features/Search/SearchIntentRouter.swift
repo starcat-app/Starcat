@@ -60,7 +60,11 @@ struct SearchIntentRoutingOutcome: Equatable, Sendable {
 /// 搜索专属 Planner。实现必须校验模型输出，不把任意文本直接当成检索计划。
 @MainActor
 protocol SearchQueryPlannerProviding: AnyObject {
-    func plan(query: String, allowWebEvidence: Bool) async throws -> SearchDiscoveryPlan
+    func plan(
+        query: String,
+        allowWebEvidence: Bool,
+        maxSeconds: TimeInterval
+    ) async throws -> SearchDiscoveryPlan
 }
 
 /// 搜索专属 LLM Planner。
@@ -77,7 +81,11 @@ final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
         self.keychain = keychain
     }
 
-    func plan(query: String, allowWebEvidence: Bool) async throws -> SearchDiscoveryPlan {
+    func plan(
+        query: String,
+        allowWebEvidence: Bool,
+        maxSeconds: TimeInterval
+    ) async throws -> SearchDiscoveryPlan {
         let task = settings.resolvedAITask(settings.aiChatTask)
         let selection = try settings.resolveChatSelection(for: task)
         let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
@@ -123,7 +131,7 @@ final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
                 topP: task.parameters.topP,
                 topK: task.parameters.topK,
                 maxCompletionTokens: min(task.parameters.maxCompletionTokens, 1_024),
-                timeoutSeconds: min(task.parameters.timeoutSeconds, 30),
+                timeoutSeconds: min(task.parameters.timeoutSeconds, maxSeconds),
                 streamEnabled: false
             ),
             responseFormat: .jsonObject,
@@ -245,7 +253,11 @@ final class SearchIntentRouter {
         }
         do {
             let allowWebEvidence = settings.externalContextEnabled
-            let plan = try await planner.plan(query: query, allowWebEvidence: allowWebEvidence)
+            let plan = try await planner.plan(
+                query: query,
+                allowWebEvidence: allowWebEvidence,
+                maxSeconds: 15
+            )
             guard plan.isValid else {
                 throw SearchIntentRouterError.invalidPlan
             }

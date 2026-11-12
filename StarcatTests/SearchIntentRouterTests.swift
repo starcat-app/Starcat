@@ -208,7 +208,11 @@ private final class FakeSearchPlanner: SearchQueryPlannerProviding {
     var error: Error?
     private(set) var callCount = 0
 
-    func plan(query: String, allowWebEvidence: Bool) async throws -> SearchDiscoveryPlan {
+    func plan(
+        query: String,
+        allowWebEvidence: Bool,
+        maxSeconds: TimeInterval
+    ) async throws -> SearchDiscoveryPlan {
         callCount += 1
         if let error { throw error }
         return SearchDiscoveryPlan(
