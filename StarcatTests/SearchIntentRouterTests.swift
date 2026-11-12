@@ -113,6 +113,10 @@ struct SearchIntentRouterTests {
         #expect(outcome.plan?.webQueries == ["popular linux distro"])
         #expect(fixture.engine.requestCount == 1)
         #expect(fixture.planner.callCount == 1)
+        #expect(outcome.steps.map(\.stage) == [.routing, .planning])
+        #expect(outcome.steps.allSatisfy { $0.state == .completed })
+        #expect(outcome.steps.last?.detail == outcome.plan?.intentSummary)
+        #expect(outcome.steps.allSatisfy { ($0.durationSeconds ?? -1) >= 0 })
         let request = fixture.engine.lastRequest
         #expect(request?.questions.count == 2)
         #expect(request?.operation == .searchIntent)
@@ -223,6 +227,9 @@ struct SearchIntentRouterTests {
         #expect(outcome.diagnostic?.stage == .planning)
         #expect(outcome.diagnostic?.isFailure == true)
         #expect(outcome.diagnostic?.technicalDetail?.isEmpty == false)
+        #expect(outcome.steps.map(\.stage) == [.routing, .planning])
+        #expect(outcome.steps.last?.state == .failed)
+        #expect(outcome.steps.last?.detail == nil)
     }
 
     @Test("Planner 鉴权失败保留 HTTP 原因与恢复建议")

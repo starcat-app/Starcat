@@ -460954,6 +460954,248 @@
         "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gagal" } }
       }
     },
+    "search.discovery.step.routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Query routing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "查询分流" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "查詢分流" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "検索経路の選択" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "검색 경로 선택" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Suchrouting" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Orientation de la recherche" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Enrutamiento de la consulta" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Roteamento da consulta" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Instradamento della ricerca" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Выбор пути поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zoekroute kiezen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wybór ścieżki wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Вибір шляху пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorgu yönlendirme" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Định tuyến truy vấn" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Perutean kueri" } }
+      }
+    },
+    "search.discovery.step.planning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search planning" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "意图规划" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "意圖規劃" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "検索計画" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "검색 계획" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Suchplanung" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Planification de la recherche" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Planificación de la búsqueda" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Planejamento da busca" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Pianificazione della ricerca" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Планирование поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zoekplanning" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Planowanie wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Планування пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Arama planlama" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Lập kế hoạch tìm kiếm" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Perencanaan pencarian" } }
+      }
+    },
+    "search.discovery.step.verification" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository verification" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "仓库核验" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "儲存庫驗證" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "リポジトリの確認" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "저장소 검증" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository-Prüfung" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Vérification des dépôts" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Verificación de repositorios" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Verificação dos repositórios" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Verifica dei repository" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Проверка репозиториев" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositoryverificatie" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Weryfikacja repozytoriów" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перевірка репозиторіїв" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Depo doğrulama" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xác minh kho mã" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Verifikasi repositori" } }
+      }
+    },
+    "search.discovery.step.ranking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Relevance ranking" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "相关性重排" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "相關性重新排序" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "関連度による並べ替え" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "관련성 재정렬" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Relevanzsortierung" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Classement par pertinence" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Clasificación por relevancia" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Classificação por relevância" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordinamento per rilevanza" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Ранжирование по релевантности" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorteren op relevantie" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Ranking według trafności" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Ранжування за релевантністю" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İlgililiğe göre sıralama" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xếp hạng độ liên quan" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pemeringkatan relevansi" } }
+      }
+    },
+    "search.discovery.step.merging" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Merge results" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "合并结果" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "合併結果" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "結果の統合" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "결과 병합" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Ergebnisse zusammenführen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Fusion des résultats" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Combinar resultados" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Combinar resultados" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Unione dei risultati" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Объединение результатов" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Resultaten samenvoegen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Scalanie wyników" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Об'єднання результатів" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Sonuçları birleştirme" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hợp nhất kết quả" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Menggabungkan hasil" } }
+      }
+    },
+    "search.discovery.step.countFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld results" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 条结果" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 筆結果" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 件の結果" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "결과 %lld개" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld Ergebnisse" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld résultats" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld resultados" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld resultados" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld risultati" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Результатов: %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld resultaten" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld wyników" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Результатів: %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld sonuç" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld kết quả" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld hasil" } }
+      }
+    },
+    "search.discovery.step.verifiedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld verified" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已核验 %lld 个" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已驗證 %lld 個" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 件を確認" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld개 확인됨" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geprüft" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld vérifiés" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificati" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Проверено: %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geverifieerd" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zweryfikowano: %lld" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перевірено: %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld doğrulandı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã xác minh %lld" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld terverifikasi" } }
+      }
+    },
+    "search.discovery.step.verifiedFailedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld verified, %lld failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已核验 %lld 个，失败 %lld 个" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已驗證 %lld 個，失敗 %lld 個" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 件成功、%lld 件失敗" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld개 성공, %lld개 실패" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geprüft, %lld fehlgeschlagen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld vérifiés, %lld échecs" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados, %lld fallidos" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados, %lld falhas" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificati, %lld non riusciti" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Проверено %lld, ошибок %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geverifieerd, %lld mislukt" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld zweryfikowano, %lld niepowodzeń" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перевірено %lld, помилок %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld doğrulandı, %lld başarısız" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld xác minh thành công, %lld thất bại" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld terverifikasi, %lld gagal" } }
+      }
+    },
+    "search.discovery.steps.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show smart discovery steps" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "查看智能发现过程" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "檢視智慧探索過程" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索の手順を表示" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색 과정 보기" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Schritte der intelligenten Suche anzeigen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Afficher les étapes de la recherche intelligente" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostrar pasos de la búsqueda inteligente" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostrar etapas da busca inteligente" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostra i passaggi della ricerca intelligente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Показать шаги умного поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Stappen van slim zoeken weergeven" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Pokaż etapy inteligentnego wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Показати кроки розумного пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama adımlarını göster" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xem các bước tìm kiếm thông minh" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tampilkan langkah pencarian cerdas" } }
+      }
+    },
+    "search.discovery.steps.durationShort" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "<0.1s" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1秒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1秒" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1秒" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1초" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1с" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1с" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1 sn" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1 giây" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1 dtk" } }
+      }
+    },
+    "search.discovery.steps.durationFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%.1fs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f秒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f秒" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f秒" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f초" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fс" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fс" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f sn" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f giây" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f dtk" } }
+      }
+    },
     "search.disabledInPage" : {
       "extractionState" : "stale",
       "localizations" : {

@@ -609,6 +609,76 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.discoveryResultCount == 1)
         #expect(viewModel.canContinueDiscovery)
         #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(viewModel.discoverySteps.map(\.stage) == [
+            .planning, .githubSearch, .verification, .ranking, .merging
+        ])
+        #expect(viewModel.hasDiscoveryDetails)
+    }
+
+    @Test("成功的智能发现详情展示真实步骤而非伪造过程")
+    func successfulDiscoveryExposesRealSteps() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy")
+        let result = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: UUID(),
+                round: 1,
+                phase: .completed,
+                plan: Self.makeSmartOutcome().plan,
+                evidence: [],
+                usedLLMCalls: 2,
+                steps: [
+                    SearchDiscoveryStep(id: "planning", stage: .planning, state: .completed),
+                    SearchDiscoveryStep(id: "ranking", stage: .ranking, state: .completed)
+                ]
+            ),
+            repositories: [candidate],
+            references: [],
+            diagnostics: []
+        )
+        let upstreamSteps = [
+            SearchDiscoveryStep(id: "routing", stage: .routing, state: .skipped),
+            SearchDiscoveryStep(
+                id: "planning",
+                stage: .planning,
+                state: .completed,
+                detail: "Find trending Linux distributions",
+                durationSeconds: 0.4,
+                model: "planner-model"
+            )
+        ]
+        let smartOutcome = Self.makeSmartOutcome()
+        let router = SearchCenterStubIntentRouter(outcome: SearchIntentRoutingOutcome(
+            route: smartOutcome.route,
+            decisionStatus: smartOutcome.decisionStatus,
+            plannerStatus: smartOutcome.plannerStatus,
+            plan: smartOutcome.plan,
+            steps: upstreamSteps
+        ))
+        let discovery = SearchCenterStubDiscoveryService(results: [result])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(viewModel.hasDiscoveryDetails)
+        #expect(viewModel.discoverySteps.map(\.id) == ["routing", "planning", "ranking", "merging"])
+        #expect(viewModel.discoverySteps.first(where: { $0.stage == .planning }) == upstreamSteps.last)
+        #expect(viewModel.discoverySteps.last?.state == .completed)
+        #expect(viewModel.discoverySession?.steps == viewModel.discoverySteps)
+
+        let completedSteps = viewModel.discoverySteps
+        await viewModel.submit()
+
+        #expect(discovery.requests.count == 1)
+        #expect(viewModel.discoverySteps == completedSteps)
     }
 
     @Test("发现结果与基础结果重复时保留单行、匹配理由和去重计数")
@@ -917,7 +987,13 @@ struct SearchCenterViewModelTests {
                     url: URL(string: "https://github.com/\(candidate.card.fullName)")
                 )
             ],
-            usedLLMCalls: 2
+            usedLLMCalls: 2,
+            steps: [
+                SearchDiscoveryStep(id: "planning", stage: .planning, state: .completed),
+                SearchDiscoveryStep(id: "githubSearch-0", stage: .githubSearch, state: .completed),
+                SearchDiscoveryStep(id: "verification", stage: .verification, state: .skipped),
+                SearchDiscoveryStep(id: "ranking", stage: .ranking, state: .completed)
+            ]
         )
         return RepositoryDiscoveryResult(
             session: session,
@@ -1207,13 +1283,15 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
             evidence: result.session.evidence,
             usedLLMCalls: result.session.usedLLMCalls,
             usedWebQueries: result.session.usedWebQueries,
-            usedGitHubQueries: result.session.usedGitHubQueries
+            usedGitHubQueries: result.session.usedGitHubQueries,
+            steps: result.steps
         )
         return RepositoryDiscoveryResult(
             session: session,
             repositories: result.repositories,
             references: result.references,
-            diagnostics: result.diagnostics
+            diagnostics: result.diagnostics,
+            steps: result.steps
         )
     }
 }

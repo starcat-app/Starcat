@@ -147,6 +147,18 @@ final class SearchCenterViewModel {
         discoveryDiagnostics.contains(where: \.isFailure)
     }
 
+    /// 详情面板的展示条件：有诊断（失败或上限）或有真实执行步骤可看。
+    var hasDiscoveryDetails: Bool {
+        !discoveryDiagnostics.isEmpty || !discoverySteps.isEmpty
+    }
+
+    /// 详情面板展示的真实执行步骤。成功结果优先用发现服务返回的完整快照，
+    /// 路由/规划失败时回落到会话里 ViewModel 记录的局部步骤。
+    var discoverySteps: [SearchDiscoveryStep] {
+        guard discoverySession != nil else { return [] }
+        return latestDiscoveryResult?.steps ?? discoverySession?.steps ?? []
+    }
+
     var selectedCandidate: SearchCandidate? {
         guard let selectedIndex, candidates.indices.contains(selectedIndex) else { return nil }
         return candidates[selectedIndex]
@@ -450,7 +462,8 @@ final class SearchCenterViewModel {
                 query: request.query,
                 request: request,
                 plan: routingOutcome?.plan,
-                round: 1
+                round: 1,
+                initialSteps: routingOutcome?.steps ?? []
             )
             await baseSearchTask.value
             await discoveryTask.value
@@ -461,7 +474,8 @@ final class SearchCenterViewModel {
                 generation: discoveryGeneration,
                 round: 1,
                 phase: .failed(message),
-                usedLLMCalls: 1
+                usedLLMCalls: 1,
+                steps: routingOutcome?.steps ?? []
             )
             discoveryDiagnostics = [routingOutcome?.diagnostic ?? SearchDiscoveryDiagnostic(
                 stage: .planning,
@@ -545,7 +559,8 @@ final class SearchCenterViewModel {
                     generation: discoveryGeneration,
                     round: 1,
                     phase: .failed(message),
-                    usedLLMCalls: 1
+                    usedLLMCalls: 1,
+                    steps: outcome.steps
                 )
                 discoveryDiagnostics = [outcome.diagnostic ?? SearchDiscoveryDiagnostic(
                     stage: .planning,
@@ -562,7 +577,8 @@ final class SearchCenterViewModel {
             query: request.query,
             request: request,
             plan: outcome.plan,
-            round: 1
+            round: 1,
+            initialSteps: outcome.steps
         ).value
     }
 
@@ -570,7 +586,8 @@ final class SearchCenterViewModel {
         query: String,
         request: SearchRequest,
         plan: SearchDiscoveryPlan?,
-        round: Int
+        round: Int,
+        initialSteps: [SearchDiscoveryStep] = []
     ) -> Task<Void, Never> {
         guard let discoveryService else {
             discoverySession = SearchDiscoverySession(
@@ -591,7 +608,8 @@ final class SearchCenterViewModel {
             round: round,
             phase: .planning,
             plan: plan,
-            usedLLMCalls: 1
+            usedLLMCalls: 1,
+            steps: initialSteps
         )
         let task = Task { [weak self] in
             guard let self else { return }
@@ -606,20 +624,58 @@ final class SearchCenterViewModel {
             )
             // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
             guard self.discoveryGeneration == generation else { return }
-            self.applyDiscovery(result, cacheRequest: request)
+            self.applyDiscovery(result, cacheRequest: request, initialSteps: initialSteps)
         }
         discoveryTask = task
         return task
     }
 
-    private func applyDiscovery(_ result: RepositoryDiscoveryResult, cacheRequest: SearchRequest) {
+    private func applyDiscovery(
+        _ result: RepositoryDiscoveryResult,
+        cacheRequest: SearchRequest,
+        initialSteps: [SearchDiscoveryStep] = []
+    ) {
         discoverySession = result.session
         latestDiscoveryResult = result
         discoveryDiagnostics = result.diagnostics
         isDiscoveryRunning = false
         discoveryTask = nil
+        // Router 已执行的规划必须进入最终快照；服务收到现成计划时不会再次执行，
+        // 不能在服务结果覆盖会话时把前置步骤丢掉，也不能将缓存中的合并步骤重复追加。
+        let initialIDs = Set(initialSteps.map(\.id))
+        var steps = initialSteps + result.steps.filter { !initialIDs.contains($0.id) }
+        if result.session.phase == .completed, !steps.contains(where: { $0.stage == .merging }) {
+            let mergeStart = Date()
+            let mergedCount = candidates.count
+            steps.append(SearchDiscoveryStep(
+                id: "merging",
+                stage: .merging,
+                state: .completed,
+                detail: String(format: String.l10n("search.discovery.step.countFormat"), mergedCount),
+                durationSeconds: max(0, Date().timeIntervalSince(mergeStart))
+            ))
+        }
+        let session = SearchDiscoverySession(
+            generation: result.session.generation,
+            round: result.session.round,
+            phase: result.session.phase,
+            plan: result.session.plan,
+            evidence: result.session.evidence,
+            usedLLMCalls: result.session.usedLLMCalls,
+            usedWebQueries: result.session.usedWebQueries,
+            usedGitHubQueries: result.session.usedGitHubQueries,
+            steps: steps
+        )
+        let snapshot = RepositoryDiscoveryResult(
+            session: session,
+            repositories: result.repositories,
+            references: result.references,
+            diagnostics: result.diagnostics
+        )
+        discoverySession = session
+        latestDiscoveryResult = snapshot
         if result.session.phase == .completed {
-            discoveryCache[cacheRequest] = result
+            discoveryCache[cacheRequest] = snapshot
         }
     }
 

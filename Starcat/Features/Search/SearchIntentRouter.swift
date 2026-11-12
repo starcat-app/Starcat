@@ -49,19 +49,22 @@ struct SearchIntentRoutingOutcome: Equatable, Sendable {
     let plannerStatus: SearchIntentPlannerStatus
     let plan: SearchDiscoveryPlan?
     let diagnostic: SearchDiscoveryDiagnostic?
+    let steps: [SearchDiscoveryStep]
 
     init(
         route: SearchIntentRoute,
         decisionStatus: SearchIntentDecisionStatus,
         plannerStatus: SearchIntentPlannerStatus,
         plan: SearchDiscoveryPlan?,
-        diagnostic: SearchDiscoveryDiagnostic? = nil
+        diagnostic: SearchDiscoveryDiagnostic? = nil,
+        steps: [SearchDiscoveryStep] = []
     ) {
         self.route = route
         self.decisionStatus = decisionStatus
         self.plannerStatus = plannerStatus
         self.plan = plan
         self.diagnostic = diagnostic
+        self.steps = steps
     }
 
     static func == (lhs: SearchIntentRoutingOutcome, rhs: SearchIntentRoutingOutcome) -> Bool {
@@ -70,17 +73,25 @@ struct SearchIntentRoutingOutcome: Equatable, Sendable {
             && lhs.plannerStatus == rhs.plannerStatus
             && lhs.plan == rhs.plan
             && lhs.diagnostic == rhs.diagnostic
+            && lhs.steps == rhs.steps
     }
 }
 
 /// 搜索专属 Planner。实现必须校验模型输出，不把任意文本直接当成检索计划。
 @MainActor
 protocol SearchQueryPlannerProviding: AnyObject {
+    /// 用于详情面板展示的模型名称；本地/未解析时返回 nil，不影响规划执行。
+    var modelDisplayName: String? { get }
+
     func plan(
         query: String,
         allowWebEvidence: Bool,
         maxSeconds: TimeInterval
     ) async throws -> SearchDiscoveryPlan
+}
+
+extension SearchQueryPlannerProviding {
+    var modelDisplayName: String? { nil }
 }
 
 /// 搜索专属 LLM Planner。
@@ -95,6 +106,12 @@ final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
     init(settings: AppSettings, keychain: any KeychainManaging) {
         self.settings = settings
         self.keychain = keychain
+    }
+
+    var modelDisplayName: String? {
+        try? settings.resolveChatSelection(
+            for: settings.resolvedAITask(settings.aiChatTask)
+        ).modelName
     }
 
     func plan(
@@ -247,6 +264,7 @@ final class SearchIntentRouter {
             )
         }
 
+        let routingStart = Date()
         let decision: SearchIntentDecision
         if explicitSmartDiscovery {
             decision = SearchIntentDecision(
@@ -257,6 +275,17 @@ final class SearchIntentRouter {
         } else {
             decision = await classify(query: query)
         }
+        let routingState: SearchDiscoveryStepState = switch decision.status {
+        case .completed: .completed
+        case .skipped, .unavailable: .skipped
+        case .timeout, .failed: .failed
+        }
+        var steps = [SearchDiscoveryStep(
+            id: "routing",
+            stage: .routing,
+            state: routingState,
+            durationSeconds: max(0, Date().timeIntervalSince(routingStart))
+        )]
 
         // 分类明确说普通关键词时不再付费规划；其余情况进入唯一一次 Planner。
         // 关闭或调用前不可用时，classify 已经按保守规则给出是否需要规划。
@@ -272,7 +301,8 @@ final class SearchIntentRouter {
                 route: .fastPath,
                 decisionStatus: .completed,
                 plannerStatus: .notNeeded,
-                plan: nil
+                plan: nil,
+                steps: steps
             )
         }
 
@@ -283,9 +313,15 @@ final class SearchIntentRouter {
                 decisionStatus: decision.status,
                 plannerStatus: .failed("Search query planner is unavailable"),
                 plan: nil,
-                diagnostic: .unavailable(stage: .planning)
+                diagnostic: .unavailable(stage: .planning),
+                steps: steps + [SearchDiscoveryStep(
+                    id: "planning",
+                    stage: .planning,
+                    state: .failed
+                )]
             )
         }
+        let planningStart = Date()
         do {
             let allowWebEvidence = settings.externalContextEnabled
             let plan = try await planner.plan(
@@ -296,11 +332,20 @@ final class SearchIntentRouter {
             guard plan.isValid else {
                 throw SearchIntentRouterError.invalidPlan
             }
+            steps.append(SearchDiscoveryStep(
+                id: "planning",
+                stage: .planning,
+                state: .completed,
+                detail: plan.intentSummary,
+                durationSeconds: max(0, Date().timeIntervalSince(planningStart)),
+                model: planner.modelDisplayName
+            ))
             return SearchIntentRoutingOutcome(
                 route: .smartDiscovery,
                 decisionStatus: decision.status,
                 plannerStatus: .completed,
-                plan: plan.normalized
+                plan: plan.normalized,
+                steps: steps
             )
         } catch {
             return SearchIntentRoutingOutcome(
@@ -308,7 +353,14 @@ final class SearchIntentRouter {
                 decisionStatus: decision.status,
                 plannerStatus: .failed(error.localizedDescription),
                 plan: nil,
-                diagnostic: .failure(stage: .planning, error: error)
+                diagnostic: .failure(stage: .planning, error: error),
+                steps: steps + [SearchDiscoveryStep(
+                    id: "planning",
+                    stage: .planning,
+                    state: .failed,
+                    durationSeconds: max(0, Date().timeIntervalSince(planningStart)),
+                    model: planner.modelDisplayName
+                )]
             )
         }
     }

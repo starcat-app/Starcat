@@ -402,6 +402,86 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.first?.discovery?.rank == 0)
     }
 
+    @Test("发现步骤按实际执行顺序记录成功、跳过与失败")
+    func discoveryRecordsRealExecutionSteps() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, _, _, _ in
+            [SearchDiscoveryRankedItem(
+                id: "apple/swift",
+                reason: "Relevant",
+                evidenceIDs: []
+            )]
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: ranker
+        )
+
+        let result = await service.discover(
+            query: "swift",
+            request: SearchRequest(query: "swift"),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(result.steps.map(\.stage) == [.githubSearch, .verification, .ranking])
+        #expect(result.steps.first(where: { $0.stage == .githubSearch })?.state == .completed)
+        #expect(result.steps.first(where: { $0.stage == .verification })?.state == .skipped)
+        #expect(result.steps.first(where: { $0.stage == .ranking })?.state == .completed)
+        #expect(result.steps.first(where: { $0.stage == .ranking })?.model == nil)
+        #expect(result.session.steps == result.steps)
+    }
+
+    @Test("Planner 成功与失败都会落到步骤详情")
+    func plannerOutcomesAppearInSteps() async {
+        let planner = StubQueryPlanner(plan: Self.makePlan())
+        let service = RepositoryDiscoveryService(
+            planner: planner,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }
+        )
+
+        let success = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux"),
+            initialPlan: nil,
+            initialLLMCalls: 0
+        )
+
+        #expect(success.steps.first?.stage == .planning)
+        #expect(success.steps.first?.state == .completed)
+        #expect(success.steps.first?.detail?.isEmpty == false)
+
+        let failingPlanner = StubQueryPlanner(plan: Self.makePlan())
+        failingPlanner.error = TestError.failed
+        let failingService = RepositoryDiscoveryService(
+            planner: failingPlanner,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }
+        )
+        let failure = await failingService.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux"),
+            initialPlan: nil,
+            initialLLMCalls: 0
+        )
+
+        #expect(failure.steps.first?.stage == .planning)
+        #expect(failure.steps.first?.state == .failed)
+        #expect(failure.session.phase.isFailed)
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",
@@ -520,6 +600,7 @@ private enum TestError: Error {
 private final class StubQueryPlanner: SearchQueryPlannerProviding {
     private(set) var calls = 0
     private let planned: SearchDiscoveryPlan
+    var error: Error?
 
     init(plan: SearchDiscoveryPlan) {
         self.planned = plan
@@ -531,6 +612,7 @@ private final class StubQueryPlanner: SearchQueryPlannerProviding {
         maxSeconds: TimeInterval
     ) async throws -> SearchDiscoveryPlan {
         calls += 1
+        if let error { throw error }
         return planned
     }
 }

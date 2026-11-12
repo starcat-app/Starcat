@@ -54,6 +54,8 @@ struct SearchDiscoveryRankedItem: Equatable, Hashable, Codable, Sendable {
 @MainActor
 protocol SearchDiscoveryRankerProviding: AnyObject {
     var kind: SearchDiscoveryRankerKind { get }
+    /// 用于详情面板展示的模型名称；本地/未解析时返回 nil，不影响排序执行。
+    var modelDisplayName: String? { get }
 
     func rank(
         query: String,
@@ -62,6 +64,10 @@ protocol SearchDiscoveryRankerProviding: AnyObject {
         evidence: [SearchEvidence],
         maxSeconds: TimeInterval
     ) async throws -> [SearchDiscoveryRankedItem]
+}
+
+extension SearchDiscoveryRankerProviding {
+    var modelDisplayName: String? { nil }
 }
 
 /// 搜索重排有两种资源口径：Chat 排序消耗 LLM 预算，专用 Rerank 只消耗独立模型调用。
@@ -88,6 +94,12 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
     init(settings: AppSettings, keychain: any KeychainManaging) {
         self.settings = settings
         self.keychain = keychain
+    }
+
+    var modelDisplayName: String? {
+        try? settings.resolveChatSelection(
+            for: settings.resolvedAITask(settings.aiChatTask)
+        ).modelName
     }
 
     func rank(
@@ -205,6 +217,8 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
         }
     }
 
+    var modelDisplayName: String? { debugModel }
+
     func rank(
         query: String,
         plan: SearchDiscoveryPlan,
@@ -316,6 +330,12 @@ final class DynamicSearchDiscoveryRanker: SearchDiscoveryRankerProviding {
     private let chatRanker: SearchLLMDiscoveryRanker
     private let rerankRanker: SearchDiscoveryRerankRanker
 
+    var modelDisplayName: String? {
+        settings.ragRerankConfiguration.normalized.isEnabled
+            ? rerankRanker.modelDisplayName
+            : chatRanker.modelDisplayName
+    }
+
     init(settings: AppSettings, keychain: any KeychainManaging) {
         self.settings = settings
         self.chatRanker = SearchLLMDiscoveryRanker(settings: settings, keychain: keychain)
@@ -375,6 +395,23 @@ struct RepositoryDiscoveryResult: Equatable, Sendable {
     let repositories: [RepositoryCandidate]
     let references: [ReferenceCandidate]
     let diagnostics: [SearchDiscoveryDiagnostic]
+    /// 本轮完整步骤快照。默认回落到 session.steps，便于只返回局部结果的调用方
+    /// 无需重复维护两份一致的数据；发现服务成功完成时在这里写入最终顺序。
+    let steps: [SearchDiscoveryStep]
+
+    init(
+        session: SearchDiscoverySession,
+        repositories: [RepositoryCandidate],
+        references: [ReferenceCandidate],
+        diagnostics: [SearchDiscoveryDiagnostic],
+        steps: [SearchDiscoveryStep]? = nil
+    ) {
+        self.session = session
+        self.repositories = repositories
+        self.references = references
+        self.diagnostics = diagnostics
+        self.steps = steps ?? session.steps
+    }
 }
 
 @MainActor
@@ -426,6 +463,7 @@ final class RepositoryDiscoveryService {
         initialLLMCalls: Int = 1
     ) async -> RepositoryDiscoveryResult {
         var diagnostics: [SearchDiscoveryDiagnostic] = []
+        var steps: [SearchDiscoveryStep] = []
         var usedLLMCalls = max(0, initialLLMCalls)
         let deadline = Date().addingTimeInterval(budget.timeoutSeconds)
 
@@ -437,7 +475,8 @@ final class RepositoryDiscoveryService {
                     round: round,
                     phase: .failed("Search query planner is unavailable"),
                     plan: nil,
-                    usedLLMCalls: usedLLMCalls
+                    usedLLMCalls: usedLLMCalls,
+                    steps: [SearchDiscoveryStep(id: "planning", stage: .planning, state: .failed)]
                 )
                 return RepositoryDiscoveryResult(
                     session: session,
@@ -446,6 +485,7 @@ final class RepositoryDiscoveryService {
                     diagnostics: [.unavailable(stage: .planning)]
                 )
             }
+            let planStart = Date()
             do {
                 let generated = try await planner.plan(
                     query: query,
@@ -454,19 +494,35 @@ final class RepositoryDiscoveryService {
                 )
                 plan = generated.normalized
                 usedLLMCalls += 1
+                steps.append(SearchDiscoveryStep(
+                    id: "planning",
+                    stage: .planning,
+                    state: .completed,
+                    detail: generated.intentSummary.trimmingCharacters(in: .whitespacesAndNewlines),
+                    durationSeconds: Self.duration(since: planStart),
+                    model: planner.modelDisplayName
+                ))
             } catch {
                 let session = SearchDiscoverySession(
                     generation: generation,
                     round: round,
                     phase: .failed("Search query planner failed"),
                     plan: nil,
-                    usedLLMCalls: usedLLMCalls
+                    usedLLMCalls: usedLLMCalls,
+                    steps: steps + [SearchDiscoveryStep(
+                        id: "planning",
+                        stage: .planning,
+                        state: .failed,
+                        durationSeconds: Self.duration(since: planStart),
+                        model: planner.modelDisplayName
+                    )]
                 )
                 return RepositoryDiscoveryResult(
                     session: session,
                     repositories: [],
                     references: [],
-                    diagnostics: [.failure(stage: .planning, error: error)]
+                    diagnostics: [.failure(stage: .planning, error: error)],
+                    steps: session.steps
                 )
             }
         }
@@ -477,13 +533,19 @@ final class RepositoryDiscoveryService {
                 round: round,
                 phase: .failed("Invalid discovery plan or budget"),
                 plan: plan,
-                usedLLMCalls: usedLLMCalls
+                usedLLMCalls: usedLLMCalls,
+                steps: steps + [SearchDiscoveryStep(
+                    id: "planning",
+                    stage: .planning,
+                    state: .failed
+                )]
             )
             return RepositoryDiscoveryResult(
                 session: session,
                 repositories: [],
                 references: [],
-                diagnostics: [.failure(stage: .planning, error: SearchIntentRouterError.invalidPlan)]
+                diagnostics: [.failure(stage: .planning, error: SearchIntentRouterError.invalidPlan)],
+                steps: session.steps
             )
         }
 
@@ -504,6 +566,7 @@ final class RepositoryDiscoveryService {
                 break
             }
             guard let webProvider = webProvider else { continue }
+            let searchStart = Date()
             let request = SearchRequest(
                 query: webQuery,
                 scope: .web,
@@ -531,9 +594,22 @@ final class RepositoryDiscoveryService {
                     )
                 })
                 session = Self.incrementing(session, webQueries: 1)
+                steps.append(SearchDiscoveryStep(
+                    id: "webSearch-\(session.usedWebQueries - 1)",
+                    stage: .webSearch,
+                    state: .completed,
+                    detail: Self.countDetail(page.references.count),
+                    durationSeconds: Self.duration(since: searchStart)
+                ))
             } catch {
                 session = Self.incrementing(session, webQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .webSearch, error: error))
+                steps.append(SearchDiscoveryStep(
+                    id: "webSearch-\(session.usedWebQueries - 1)",
+                    stage: .webSearch,
+                    state: .failed,
+                    durationSeconds: Self.duration(since: searchStart)
+                ))
             }
         }
 
@@ -542,6 +618,7 @@ final class RepositoryDiscoveryService {
                 diagnostics.append(.failure(stage: .githubSearch, error: URLError(.timedOut)))
                 break
             }
+            let searchStart = Date()
             var filters = baseRequest.githubFilters
             if filters == .empty {
                 filters = normalizedPlan.githubFilters
@@ -574,9 +651,22 @@ final class RepositoryDiscoveryService {
                     )
                 }.filter(\.isValid))
                 session = Self.incrementing(session, githubQueries: 1)
+                steps.append(SearchDiscoveryStep(
+                    id: "githubSearch-\(session.usedGitHubQueries - 1)",
+                    stage: .githubSearch,
+                    state: .completed,
+                    detail: Self.countDetail(page.repositories.count),
+                    durationSeconds: Self.duration(since: searchStart)
+                ))
             } catch {
                 session = Self.incrementing(session, githubQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .githubSearch, error: error))
+                steps.append(SearchDiscoveryStep(
+                    id: "githubSearch-\(session.usedGitHubQueries - 1)",
+                    stage: .githubSearch,
+                    state: .failed,
+                    durationSeconds: Self.duration(since: searchStart)
+                ))
             }
         }
 
@@ -592,7 +682,10 @@ final class RepositoryDiscoveryService {
         )
 
         var extractedIdentities = Self.githubIdentities(from: references)
+        let verificationStart = Date()
+        let initialVerificationCount = extractedIdentities.count
         var verificationAttempts = 0
+        var verificationSuccessCount = 0
         while verificationAttempts < budget.maxVerifiedRepositories,
               !extractedIdentities.isEmpty,
               Date() < deadline {
@@ -629,6 +722,7 @@ final class RepositoryDiscoveryService {
                     kind: .githubVerification
                 )
                 repositories.append(candidate)
+                verificationSuccessCount += 1
             } catch {
                 if error is RepositoryDiscoveryTimeout {
                     diagnostics.append(Self.failureDiagnostic(stage: .verification, error: error))
@@ -653,6 +747,50 @@ final class RepositoryDiscoveryService {
                 diagnostics.append(.limit(stage: .verification))
             }
         }
+        // 步骤状态与诊断同口径：预算上限只是信息提示，不算步骤失败；
+        // 只有实际出现核验失败或一个仓库都没能核验时才标记失败。
+        if initialVerificationCount > 0 {
+            let verificationState: SearchDiscoveryStepState
+            let verificationDetail: String?
+            if verificationAttempts == 0 {
+                // 提取到身份但全部与 GitHub 检索候选重复时，没有任何仓库需要核验；
+                // 只有因 deadline 提前中断、仍剩身份未处理才是失败。
+                if pendingVerification {
+                    verificationState = .failed
+                    verificationDetail = nil
+                } else {
+                    verificationState = .skipped
+                    verificationDetail = nil
+                }
+            } else if verificationSuccessCount == verificationAttempts {
+                verificationState = .completed
+                verificationDetail = String(
+                    format: String.l10n("search.discovery.step.verifiedFormat"),
+                    verificationSuccessCount
+                )
+            } else {
+                verificationState = .failed
+                verificationDetail = String(
+                    format: String.l10n("search.discovery.step.verifiedFailedFormat"),
+                    verificationSuccessCount,
+                    verificationAttempts - verificationSuccessCount
+                )
+            }
+            steps.append(SearchDiscoveryStep(
+                id: "verification",
+                stage: .verification,
+                state: verificationState,
+                detail: verificationDetail,
+                durationSeconds: Self.duration(since: verificationStart)
+            ))
+        } else {
+            steps.append(SearchDiscoveryStep(
+                id: "verification",
+                stage: .verification,
+                state: .skipped,
+                durationSeconds: nil
+            ))
+        }
 
         repositories = Self.deduplicated(repositories)
         references = Self.deduplicatedReferences(references)
@@ -671,6 +809,7 @@ final class RepositoryDiscoveryService {
 
         let rankerConsumesLLMBudget = ranker?.kind.consumesLLMBudget ?? false
         let rankedRepositories: [RepositoryCandidate]
+        let rankingStart = Date()
         if repositories.isEmpty
             || (rankerConsumesLLMBudget && !session.canUseLLM(in: budget))
             || Date() >= deadline {
@@ -682,6 +821,13 @@ final class RepositoryDiscoveryService {
                 diagnostics.append(.limit(stage: .ranking))
             }
             rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
+            steps.append(SearchDiscoveryStep(
+                id: "ranking",
+                stage: .ranking,
+                state: !repositories.isEmpty && Date() >= deadline ? .failed : .skipped,
+                durationSeconds: Self.duration(since: rankingStart),
+                model: ranker?.modelDisplayName
+            ))
         } else if let ranker {
             let summaries = repositories.prefix(budget.maxRankedCandidates).map { candidate in
                 SearchDiscoveryRankingCandidate(
@@ -710,8 +856,9 @@ final class RepositoryDiscoveryService {
                     evidence: evidence,
                     budget: budget
                 )
-                if !rankedItems.isEmpty,
-                   !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch }) {
+                let rankerValidationFailed = !rankedItems.isEmpty
+                    && !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch })
+                if rankerValidationFailed {
                     diagnostics.append(.failure(
                         stage: .ranking,
                         error: RepositoryDiscoveryError.invalidRankerResponse(
@@ -719,6 +866,14 @@ final class RepositoryDiscoveryService {
                         )
                     ))
                 }
+                steps.append(SearchDiscoveryStep(
+                    id: "ranking",
+                    stage: .ranking,
+                    state: rankerValidationFailed ? .failed : .completed,
+                    detail: Self.countDetail(rankedRepositories.count),
+                    durationSeconds: Self.duration(since: rankingStart),
+                    model: ranker.modelDisplayName
+                ))
             } catch {
                 session = Self.incrementing(
                     session,
@@ -726,9 +881,23 @@ final class RepositoryDiscoveryService {
                 )
                 diagnostics.append(Self.failureDiagnostic(stage: .ranking, error: error))
                 rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
+                steps.append(SearchDiscoveryStep(
+                    id: "ranking",
+                    stage: .ranking,
+                    state: .failed,
+                    durationSeconds: Self.duration(since: rankingStart),
+                    model: ranker.modelDisplayName
+                ))
             }
         } else {
             rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
+            steps.append(SearchDiscoveryStep(
+                id: "ranking",
+                stage: .ranking,
+                state: .skipped,
+                detail: Self.countDetail(rankedRepositories.count),
+                durationSeconds: Self.duration(since: rankingStart)
+            ))
         }
 
         let completed = SearchDiscoverySession(
@@ -739,7 +908,8 @@ final class RepositoryDiscoveryService {
             evidence: evidence,
             usedLLMCalls: session.usedLLMCalls,
             usedWebQueries: session.usedWebQueries,
-            usedGitHubQueries: session.usedGitHubQueries
+            usedGitHubQueries: session.usedGitHubQueries,
+            steps: steps
         )
         return RepositoryDiscoveryResult(
             session: completed,
@@ -782,6 +952,16 @@ final class RepositoryDiscoveryService {
 
     private static func remainingSeconds(to deadline: Date) -> TimeInterval {
         max(0.05, deadline.timeIntervalSinceNow)
+    }
+
+    /// 步骤保留实际耗时，UI 决定显示精度；本地同步结果会得到接近 0 的值。
+    private static func duration(since start: Date) -> TimeInterval {
+        max(0, Date().timeIntervalSince(start))
+    }
+
+    /// 步骤详情里的命中数量，避免在多处重复拼接「N 条」这类字符串。
+    private static func countDetail(_ count: Int) -> String {
+        String(format: String.l10n("search.discovery.step.countFormat"), count)
     }
 
     private enum DeadlineOutcome<Value: Sendable>: Sendable {

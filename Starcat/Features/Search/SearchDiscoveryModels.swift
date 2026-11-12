@@ -118,19 +118,23 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
 /// 用户文案复用统一错误映射；底层原因经现有脱敏机制留存，只在主动展开时显示。
 struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
     enum Stage: String, Equatable, Sendable {
+        case routing
         case planning
         case webSearch
         case githubSearch
         case verification
         case ranking
+        case merging
 
         var titleKey: String {
             switch self {
+            case .routing: return "search.discovery.phase.routing"
             case .planning: return "search.discovery.phase.planning"
             case .webSearch: return "search.scope.web"
             case .githubSearch: return "search.footer.source.github"
             case .verification: return "search.discovery.phase.verifying"
             case .ranking: return "search.discovery.phase.ranking"
+            case .merging: return "search.discovery.step.merging"
             }
         }
     }
@@ -174,7 +178,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
         let service: String? = switch stage {
         case .githubSearch, .verification: "GitHub"
         case .planning, .ranking: "AI"
-        case .webSearch: nil
+        case .webSearch, .routing, .merging: nil
         }
         let presentation = UserFacingError.map(
             mappedError,
@@ -234,6 +238,56 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
             outcome: .failed,
             impact: .degraded
         ))
+    }
+}
+
+/// 智能发现执行步骤的最终状态。步骤在本轮完成后保留快照，不承载运行中的瞬时态。
+enum SearchDiscoveryStepState: Equatable, Hashable, Sendable {
+    case completed
+    case skipped
+    case failed
+}
+
+/// 一轮智能发现里一个真实执行过的步骤。
+///
+/// 与 `SearchDiscoveryDiagnostic` 不同：诊断只记录失败/预算上限，步骤则覆盖成功、
+/// 跳过与失败，用于「智能发现详情」按实际发生顺序展示链路。失败步骤的详细原因仍由
+/// 同阶段的诊断承载，这里只负责进度与数量/模型/耗时这类可观测事实，不重复写用户错误文案。
+struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
+    let id: String
+    let stage: SearchDiscoveryDiagnostic.Stage
+    let state: SearchDiscoveryStepState
+    let detail: String?
+    let durationSeconds: TimeInterval?
+    let model: String?
+
+    /// 过程标题使用步骤名，避免已完成的记录仍显示「规划中」「重排中」。
+    var titleKey: String {
+        switch stage {
+        case .routing: return "search.discovery.step.routing"
+        case .planning: return "search.discovery.step.planning"
+        case .webSearch: return "search.scope.web"
+        case .githubSearch: return "search.footer.source.github"
+        case .verification: return "search.discovery.step.verification"
+        case .ranking: return "search.discovery.step.ranking"
+        case .merging: return "search.discovery.step.merging"
+        }
+    }
+
+    init(
+        id: String,
+        stage: SearchDiscoveryDiagnostic.Stage,
+        state: SearchDiscoveryStepState,
+        detail: String? = nil,
+        durationSeconds: TimeInterval? = nil,
+        model: String? = nil
+    ) {
+        self.id = id
+        self.stage = stage
+        self.state = state
+        self.detail = detail
+        self.durationSeconds = durationSeconds
+        self.model = model
     }
 }
 
@@ -330,6 +384,9 @@ struct SearchDiscoverySession: Equatable, Hashable, Sendable {
     let usedLLMCalls: Int
     let usedWebQueries: Int
     let usedGitHubQueries: Int
+    /// 本轮实际发生过的路由、规划、检索、核验与重排步骤。
+    /// 路由与规划由 Router / ViewModel 记录，发现服务只追加其编排的后续步骤。
+    let steps: [SearchDiscoveryStep]
 
     init(
         generation: UUID,
@@ -339,7 +396,8 @@ struct SearchDiscoverySession: Equatable, Hashable, Sendable {
         evidence: [SearchEvidence] = [],
         usedLLMCalls: Int = 0,
         usedWebQueries: Int = 0,
-        usedGitHubQueries: Int = 0
+        usedGitHubQueries: Int = 0,
+        steps: [SearchDiscoveryStep] = []
     ) {
         self.generation = generation
         self.round = max(1, round)
@@ -349,6 +407,7 @@ struct SearchDiscoverySession: Equatable, Hashable, Sendable {
         self.usedLLMCalls = max(0, usedLLMCalls)
         self.usedWebQueries = max(0, usedWebQueries)
         self.usedGitHubQueries = max(0, usedGitHubQueries)
+        self.steps = steps
     }
 
     func canUseLLM(in budget: SearchDiscoveryBudget) -> Bool {

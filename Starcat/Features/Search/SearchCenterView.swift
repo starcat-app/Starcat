@@ -1132,11 +1132,11 @@ struct SearchCenterView: View {
             || rateLimit != nil
             || !errors.isEmpty
             || viewModel.discoverySession != nil
-            || !viewModel.discoveryDiagnostics.isEmpty {
+            || viewModel.hasDiscoveryDetails {
             HStack(spacing: 8) {
                 leadingSummaryContent(processChips: processChips, counts: counts)
                 Spacer(minLength: 8)
-                if !viewModel.discoveryDiagnostics.isEmpty {
+                if viewModel.hasDiscoveryDetails {
                     discoveryWarningChip
                 }
                 if viewModel.canStartSmartDiscovery {
@@ -1394,7 +1394,7 @@ struct SearchCenterView: View {
         Button {
             isDiscoveryDiagnosticsPresented.toggle()
         } label: {
-            Image(systemName: viewModel.hasDiscoveryFailures ? "exclamationmark.triangle" : "info.circle")
+            Image(systemName: viewModel.hasDiscoveryFailures ? "exclamationmark.triangle" : "sparkles")
                 .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
@@ -1407,15 +1407,24 @@ struct SearchCenterView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help(String.l10n("search.discovery.diagnostic.open"))
-        .accessibilityLabel(Text("search.discovery.diagnostic.open"))
+        .help(Text(verbatim: discoveryDetailsTooltip))
+        .accessibilityLabel(Text(verbatim: discoveryDetailsTooltip))
         .popover(isPresented: $isDiscoveryDiagnosticsPresented, arrowEdge: .bottom) {
             discoveryDiagnosticsPopover
                 .appLocaleEnvironment()
         }
     }
 
-    /// 标题即失败步骤；原因、影响与恢复建议保持分行，技术细节只在主动展开后显示。
+    /// 无失败但有完整步骤时，浮层入口文案说明「查看过程」，避免信息图标语义不清。
+    private var discoveryDetailsTooltip: String {
+        if viewModel.hasDiscoveryFailures {
+            return String.l10n("search.discovery.diagnostic.open")
+        }
+        return String.l10n("search.discovery.steps.open")
+    }
+
+    /// 标题固定为「智能发现详情」。上半区按真实执行顺序展示过程步骤，下半区保留
+    /// 失败/上限诊断；成功结果也能打开查看完整链路，而不是只在出错时才有入口。
     private var discoveryDiagnosticsPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -1427,6 +1436,13 @@ struct SearchCenterView: View {
             // 面板自身不内嵌滚动：技术详情展开时让 popover 自然增高，避免
             // 右侧滚动条与折叠箭头/正文重叠；内容仍由外层窗口布局约束兜底。
             VStack(alignment: .leading, spacing: 14) {
+                if !viewModel.discoverySteps.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(viewModel.discoverySteps) { step in
+                            discoveryStepRow(step)
+                        }
+                    }
+                }
                 ForEach(viewModel.discoveryDiagnostics) { diagnostic in
                     VStack(alignment: .leading, spacing: 5) {
                         Label(
@@ -1475,6 +1491,61 @@ struct SearchCenterView: View {
         .foregroundStyle(.primary)
         .padding(16)
         .frame(width: 380)
+    }
+
+    /// 单个执行步骤：图标表示状态，标题用阶段文案，右侧放实际耗时。
+    /// 数量/意图/模型等详情由 `detail` 与 `model` 拼进辅助行，不伪造完成状态。
+    private func discoveryStepRow(_ step: SearchDiscoveryStep) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: discoveryStepSymbol(step.state))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: String.l10n(step.titleKey))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
+                if let detail = step.detail, !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if let model = step.model, !model.isEmpty {
+                    Text(verbatim: model)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(Text(verbatim: model))
+                }
+            }
+            Spacer(minLength: 8)
+            if let duration = step.durationSeconds {
+                Text(verbatim: stepDurationText(duration))
+                    .font(interfaceScale.font(.captionSmall).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func discoveryStepSymbol(_ state: SearchDiscoveryStepState) -> String {
+        switch state {
+        case .completed: return "checkmark.circle.fill"
+        case .skipped: return "minus.circle"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func stepDurationText(_ duration: TimeInterval) -> String {
+        if duration < 0.1 {
+            return String.l10n("search.discovery.steps.durationShort")
+        }
+        return String(
+            format: String.l10n("search.discovery.steps.durationFormat"),
+            locale: locale,
+            duration
+        )
     }
 
     /// 右侧文字按钮保持 footer 尺寸约束；不使用 icon-only，避免操作语义不清。
