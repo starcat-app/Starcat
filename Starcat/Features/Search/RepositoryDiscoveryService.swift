@@ -398,19 +398,22 @@ struct RepositoryDiscoveryResult: Equatable, Sendable {
     /// 本轮完整步骤快照。默认回落到 session.steps，便于只返回局部结果的调用方
     /// 无需重复维护两份一致的数据；发现服务成功完成时在这里写入最终顺序。
     let steps: [SearchDiscoveryStep]
+    let contentSummary: SearchContentSummary
 
     init(
         session: SearchDiscoverySession,
         repositories: [RepositoryCandidate],
         references: [ReferenceCandidate],
         diagnostics: [SearchDiscoveryDiagnostic],
-        steps: [SearchDiscoveryStep]? = nil
+        steps: [SearchDiscoveryStep]? = nil,
+        contentSummary: SearchContentSummary = SearchContentSummary()
     ) {
         self.session = session
         self.repositories = repositories
         self.references = references
         self.diagnostics = diagnostics
         self.steps = steps ?? session.steps
+        self.contentSummary = contentSummary
     }
 }
 
@@ -436,19 +439,22 @@ final class RepositoryDiscoveryService {
     private let webProvider: (any SearchProvider)?
     private let verifier: any RepositoryVerificationProviding
     private let ranker: (any SearchDiscoveryRankerProviding)?
+    private let contentPolicy: SearchContentPolicy
 
     init(
         planner: (any SearchQueryPlannerProviding)?,
         githubProvider: any SearchProvider,
         webProvider: (any SearchProvider)? = nil,
         verifier: any RepositoryVerificationProviding,
-        ranker: (any SearchDiscoveryRankerProviding)? = nil
+        ranker: (any SearchDiscoveryRankerProviding)? = nil,
+        contentPolicy: SearchContentPolicy = .bundled
     ) {
         self.planner = planner
         self.githubProvider = githubProvider
         self.webProvider = webProvider
         self.verifier = verifier
         self.ranker = ranker
+        self.contentPolicy = contentPolicy
     }
 
     /// 执行一轮发现。`initialPlan` 来自 Router 时要传 `initialLLMCalls = 1`；
@@ -462,6 +468,16 @@ final class RepositoryDiscoveryService {
         budget: SearchDiscoveryBudget = .firstRound,
         initialLLMCalls: Int = 1
     ) async -> RepositoryDiscoveryResult {
+        var contentSummary = SearchContentSummary()
+        for value in [query, baseRequest.query] {
+            if let match = contentPolicy.match(query: value) {
+                contentSummary.record(SearchContentDocument(id: "query"), match: match)
+                return RepositoryDiscoveryResult(
+                    session: SearchDiscoverySession(generation: generation, round: round, phase: .completed),
+                    repositories: [], references: [], diagnostics: [], contentSummary: contentSummary
+                )
+            }
+        }
         var diagnostics: [SearchDiscoveryDiagnostic] = []
         var steps: [SearchDiscoveryStep] = []
         var usedLLMCalls = max(0, initialLLMCalls)
@@ -527,7 +543,7 @@ final class RepositoryDiscoveryService {
             }
         }
 
-        guard let normalizedPlan = plan, normalizedPlan.isValid, budget.isValid else {
+        guard let proposedPlan = plan, proposedPlan.isValid, budget.isValid else {
             let session = SearchDiscoverySession(
                 generation: generation,
                 round: round,
@@ -549,6 +565,16 @@ final class RepositoryDiscoveryService {
             )
         }
 
+        let normalizedPlan = contentPolicy.filtering(proposedPlan, originalQuery: query, summary: &contentSummary)
+        guard normalizedPlan.isValid else {
+            return RepositoryDiscoveryResult(
+                session: SearchDiscoverySession(
+                    generation: generation, round: round, phase: .completed,
+                    usedLLMCalls: usedLLMCalls, steps: steps
+                ),
+                repositories: [], references: [], diagnostics: [], contentSummary: contentSummary
+            )
+        }
         var session = SearchDiscoverySession(
             generation: generation,
             round: round,
@@ -580,9 +606,10 @@ final class RepositoryDiscoveryService {
                 minimumSemanticScore: baseRequest.minimumSemanticScore
             )
             do {
-                let page = try await Self.withDeadline(to: deadline) {
+                let rawPage = try await Self.withDeadline(to: deadline) {
                     try await webProvider.search(request)
                 }
+                let page = contentPolicy.filtering(rawPage, summary: &contentSummary)
                 references.append(contentsOf: page.references)
                 evidence.append(contentsOf: page.references.enumerated().map { index, reference in
                     SearchEvidence(
@@ -637,9 +664,10 @@ final class RepositoryDiscoveryService {
             )
             do {
                 let githubProvider = githubProvider
-                let page = try await Self.withDeadline(to: deadline) {
+                let rawPage = try await Self.withDeadline(to: deadline) {
                     try await githubProvider.search(request)
                 }
+                let page = contentPolicy.filtering(rawPage, summary: &contentSummary)
                 repositories.append(contentsOf: page.repositories)
                 evidence.append(contentsOf: page.repositories.enumerated().map { index, candidate in
                     SearchEvidence(
@@ -690,6 +718,14 @@ final class RepositoryDiscoveryService {
               !extractedIdentities.isEmpty,
               Date() < deadline {
             let identity = extractedIdentities.removeFirst()
+            let identityDocument = SearchContentDocument(
+                id: SearchContentPolicy.repositoryKey(identity.normalizedFullName),
+                repositoryFullName: identity.normalizedFullName
+            )
+            if let match = contentPolicy.match(identityDocument) {
+                contentSummary.record(identityDocument, match: match)
+                continue
+            }
             // 网页身份没有 GitHub 数字 ID，不能与 API 结果直接比较 RepoIdentity；
             // 按完整仓库名识别已核验候选，避免重复请求耗尽本轮核验上限。
             guard !repositories.contains(where: {
@@ -715,6 +751,15 @@ final class RepositoryDiscoveryService {
                     remoteRepo: repo,
                     semanticScore: nil
                 )
+                verificationSuccessCount += 1
+                let document = candidate.contentDocument
+                let match = contentPolicy.match(document)
+                contentSummary.record(document, match: match)
+                if let match {
+                    // GitHub 重定向可能揭示新身份；原网页别名与证据必须同时隐藏。
+                    contentSummary.record(identityDocument, match: match)
+                    continue
+                }
                 candidate.discovery = SearchDiscoveryAnnotation(
                     reason: "",
                     evidenceIDs: evidence.filter { $0.url?.absoluteString.hasSuffix("/\(identity.owner)/\(identity.name)") == true }.map(\.id),
@@ -722,7 +767,6 @@ final class RepositoryDiscoveryService {
                     kind: .githubVerification
                 )
                 repositories.append(candidate)
-                verificationSuccessCount += 1
             } catch {
                 if error is RepositoryDiscoveryTimeout {
                     diagnostics.append(Self.failureDiagnostic(stage: .verification, error: error))
@@ -792,9 +836,9 @@ final class RepositoryDiscoveryService {
             ))
         }
 
-        repositories = Self.deduplicated(repositories)
-        references = Self.deduplicatedReferences(references)
-        evidence = evidence.filter(\.isValid)
+        evidence = contentPolicy.filtering(evidence, summary: &contentSummary)
+        repositories = Self.deduplicated(repositories).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
+        references = Self.deduplicatedReferences(references).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
 
         session = SearchDiscoverySession(
             generation: generation,
@@ -854,7 +898,8 @@ final class RepositoryDiscoveryService {
                     rankedItems,
                     to: repositories,
                     evidence: evidence,
-                    budget: budget
+                    budget: budget,
+                    contentPolicy: contentPolicy
                 )
                 let rankerValidationFailed = !rankedItems.isEmpty
                     && !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch })
@@ -915,7 +960,8 @@ final class RepositoryDiscoveryService {
             session: completed,
             repositories: rankedRepositories,
             references: references,
-            diagnostics: diagnostics
+            diagnostics: diagnostics,
+            contentSummary: contentSummary
         )
     }
 
@@ -1013,11 +1059,8 @@ final class RepositoryDiscoveryService {
         var seen = Set<String>()
         var identities: [RepoIdentity] = []
         for reference in references {
-            guard let host = reference.originalURL.host?.lowercased(),
-                  host == "github.com" || host.hasSuffix(".github.com")
-            else { continue }
-            let components = reference.originalURL.pathComponents.filter { $0 != "/" }
-            guard components.count >= 2 else { continue }
+            guard let fullName = SearchContentPolicy.repositoryName(from: reference.originalURL) else { continue }
+            let components = fullName.split(separator: "/").map(String.init)
             let owner = components[0]
             let name = components[1]
             guard Self.isValidGitHubName(owner), Self.isValidGitHubName(name) else { continue }
@@ -1081,7 +1124,8 @@ final class RepositoryDiscoveryService {
         _ items: [SearchDiscoveryRankedItem],
         to candidates: [RepositoryCandidate],
         evidence: [SearchEvidence],
-        budget: SearchDiscoveryBudget
+        budget: SearchDiscoveryBudget,
+        contentPolicy: SearchContentPolicy
     ) -> [RepositoryCandidate] {
         let availableEvidence = Set(evidence.map(\.id))
         let byID = Dictionary(uniqueKeysWithValues: candidates.map {
@@ -1096,6 +1140,9 @@ final class RepositoryDiscoveryService {
                   !usedIDs.contains(id),
                   var candidate = byID[id],
                   !item.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  contentPolicy.match(SearchContentDocument(
+                    id: id, fields: [.description: [item.reason]]
+                  )) == nil,
                   Set(item.evidenceIDs).isSubset(of: availableEvidence)
             else { continue }
             candidate.discovery = SearchDiscoveryAnnotation(

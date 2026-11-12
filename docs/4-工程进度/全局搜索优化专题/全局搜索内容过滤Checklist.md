@@ -13,7 +13,7 @@
 | [x] | F1 | 同步本地 dev 搜索修复 | 合入 `dev@1755f26f`；自动合并无冲突，保留智能发现、Star 加载反馈与许可证展示 |
 | [x] | F2 | 本地规则库与匹配引擎 | 自有 JSON 规则、精确身份、上下文与局部例外；定向 10 项测试通过，含 53 个参数化样本 |
 | [x] | F3 | 普通搜索过滤与分页 | 四来源接入、跨来源隐藏与可见计数、最多补一页、失败重试游标；48 项搜索回归通过 |
-| [ ] | F4 | 智能发现与缓存过滤 | 查询、子查询、证据、核验、重排、缓存与继续查找 |
+| [x] | F4 | 智能发现与缓存过滤 | 查询前终止、子查询与证据过滤、核验别名、重排封闭输入、规则版本缓存与回读；45 项回归通过 |
 | [ ] | F5 | 筛选反馈与全语言文案 | 普通说明、真实过程、数量、17 语言与稳定面板布局 |
 | [ ] | F6 | 性能与完整交付验证 | 正反评测、批量基准、搜索回归、双渠道构建、资源与最终 diff |
 
@@ -23,6 +23,7 @@
 
 - F2：`make test TEST_ARGS="-only-testing:StarcatTests/SearchContentPolicyTests"` 通过。首轮 Debug 热态每百条 P50 36.32 ms、P95 37.50 ms；性能目标尚未达成，留待 F6 优化及优化构建实测。
 - F3：`make test TEST_ARGS="-only-testing:StarcatTests/SearchCoordinatorTests -only-testing:StarcatTests/SearchCenterViewModelTests"`，48 项通过；包含四来源、过滤空页、补页失败、真实游标与范围往返。
+- F4：`make test TEST_ARGS="-only-testing:StarcatTests/RepositoryDiscoveryServiceTests -only-testing:StarcatTests/SearchCenterViewModelTests"`，45 项通过；新增候选不进模型、禁止子查询不发请求、核验重定向、查询前终止、缓存与继续查找覆盖。
 
 ## 交付边界
 

@@ -62,7 +62,11 @@ final class SearchCenterViewModel {
     private let discoveryService: (any RepositoryDiscoveryProviding)?
     private var discoveryGeneration = UUID()
     private var discoveryTask: Task<Void, Never>?
-    private var discoveryCache: [SearchRequest: RepositoryDiscoveryResult] = [:]
+    private struct DiscoveryCacheKey: Hashable {
+        let request: SearchRequest
+        let policyVersion: String
+    }
+    private var discoveryCache: [DiscoveryCacheKey: RepositoryDiscoveryResult] = [:]
 
     /// 智能发现独立于 Coordinator：基础搜索先展示，发现完成后再合并。
     private(set) var discoverySession: SearchDiscoverySession?
@@ -130,8 +134,16 @@ final class SearchCenterViewModel {
             }
         }
 
-        return repositories.map(SearchCandidate.repository)
-            + references.map(SearchCandidate.reference)
+        let blockedIDs = contentSummary.blockedIDs
+        return repositories.filter { !blockedIDs.contains($0.contentKey) }.map(SearchCandidate.repository)
+            + references.filter { !blockedIDs.contains($0.contentKey) }.map(SearchCandidate.reference)
+    }
+
+    /// 合并已接入的统计，不在 SwiftUI 派生状态中重新归一化或扫描候选文字。
+    var contentSummary: SearchContentSummary {
+        var summary = coordinator.contentSummary
+        if let latestDiscoveryResult { summary.formUnion(latestDiscoveryResult.contentSummary) }
+        return summary
     }
 
     /// 与实际展示列表同口径：只计去重后的发现仓库，不包含网页资料或 API 命中总数。
@@ -322,6 +334,7 @@ final class SearchCenterViewModel {
         let currentRound = discoverySession?.round ?? 0
         guard scope == .all,
               !isDiscoveryRunning,
+              coordinator.blockedQuery == nil,
               intentRouter != nil,
               discoveryService != nil,
               discoverySession?.phase == .completed,
@@ -334,6 +347,7 @@ final class SearchCenterViewModel {
     var canStartSmartDiscovery: Bool {
         guard scope == .all,
               !isDiscoveryRunning,
+              coordinator.blockedQuery == nil,
               !lastSubmittedQuery.isEmpty
         else { return false }
         return discoverySession == nil || discoverySession?.phase.isFailed == true
@@ -412,6 +426,12 @@ final class SearchCenterViewModel {
             return
         }
         guard canRunExplicitWebSearch(request) else { return }
+        guard coordinator.allowsQuery(request.query) else {
+            resetDiscoveryState()
+            lastSubmittedQuery = request.query
+            selectedIndex = nil
+            return
+        }
 
         lastSubmittedQuery = request.query
         // 历史记录持久化 + 重新加载：try? 静默吞错避免 SQLite 异常炸 UI；
@@ -427,7 +447,8 @@ final class SearchCenterViewModel {
         NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
         resetDiscoveryState(keepCache: true)
 
-        if let cached = discoveryCache[request] {
+        let cacheKey = DiscoveryCacheKey(request: request, policyVersion: coordinator.contentPolicy.version)
+        if let cached = discoveryCache[cacheKey] {
             applyDiscovery(cached, cacheRequest: request)
             await coordinator.search(request)
             clampSelection()
@@ -437,6 +458,7 @@ final class SearchCenterViewModel {
         // 先启动基础搜索，再让 Router 做 LLM 分类/规划；两者都挂在 MainActor
         // 的服务上，但网络等待会让出 actor，因此本地和远端结果可以并行落地。
         let baseSearchTask = Task { await coordinator.search(request) }
+        let routingGeneration = discoveryGeneration
         let routingOutcome: SearchIntentRoutingOutcome?
         if let intentRouter, request.scope == .all {
             discoverySession = SearchDiscoverySession(
@@ -447,6 +469,10 @@ final class SearchCenterViewModel {
             routingOutcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: false)
         } else {
             routingOutcome = nil
+        }
+        guard routingGeneration == discoveryGeneration else {
+            await baseSearchTask.value
+            return
         }
 
         if routingOutcome?.route == .smartDiscovery {
@@ -511,6 +537,10 @@ final class SearchCenterViewModel {
     func continueDiscovery() async {
         guard canContinueDiscovery, let previousSession = discoverySession else { return }
         let request = makeRequest(query: lastSubmittedQuery)
+        guard coordinator.allowsQuery(request.query) else {
+            resetDiscoveryState()
+            return
+        }
         resetDiscoveryState(keepCache: true)
         discoverySession = SearchDiscoverySession(
             generation: discoveryGeneration,
@@ -529,6 +559,10 @@ final class SearchCenterViewModel {
     func startSmartDiscovery() async {
         guard canStartSmartDiscovery else { return }
         let request = makeRequest(query: lastSubmittedQuery)
+        guard coordinator.allowsQuery(request.query) else {
+            resetDiscoveryState()
+            return
+        }
         resetDiscoveryState(keepCache: true)
         discoverySession = SearchDiscoverySession(
             generation: discoveryGeneration,
@@ -544,7 +578,9 @@ final class SearchCenterViewModel {
             discoveryDiagnostics = [.unavailable(stage: .planning)]
             return
         }
+        let routingGeneration = discoveryGeneration
         let outcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: true)
+        guard routingGeneration == discoveryGeneration else { return }
         guard outcome.route == .smartDiscovery else {
             if case .failed(let message) = outcome.plannerStatus {
                 discoverySession = SearchDiscoverySession(
@@ -623,10 +659,11 @@ final class SearchCenterViewModel {
     }
 
     private func applyDiscovery(
-        _ result: RepositoryDiscoveryResult,
+        _ unfilteredResult: RepositoryDiscoveryResult,
         cacheRequest: SearchRequest,
         initialSteps: [SearchDiscoveryStep] = []
     ) {
+        let result = coordinator.contentPolicy.filtering(unfilteredResult)
         discoverySession = result.session
         latestDiscoveryResult = result
         discoveryDiagnostics = result.diagnostics
@@ -662,12 +699,15 @@ final class SearchCenterViewModel {
             session: session,
             repositories: result.repositories,
             references: result.references,
-            diagnostics: result.diagnostics
+            diagnostics: result.diagnostics,
+            contentSummary: result.contentSummary
         )
         discoverySession = session
         latestDiscoveryResult = snapshot
         if result.session.phase == .completed {
-            discoveryCache[cacheRequest] = snapshot
+            discoveryCache[DiscoveryCacheKey(
+                request: cacheRequest, policyVersion: coordinator.contentPolicy.version
+            )] = snapshot
         }
     }
 

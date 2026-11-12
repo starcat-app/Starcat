@@ -64,6 +64,74 @@ extension SearchContentPolicy {
         }
         return page.hidingContent(summary.blockedIDs)
     }
+
+    /// Planner 生成的子查询也受策略约束，拒绝项不消耗远端请求预算。
+    func filtering(
+        _ plan: SearchDiscoveryPlan,
+        originalQuery: String,
+        summary: inout SearchContentSummary
+    ) -> SearchDiscoveryPlan {
+        func allows(_ value: String) -> Bool {
+            guard let match = match(query: value) else { return true }
+            summary.record(SearchContentDocument(id: "query:" + value), match: match)
+            return false
+        }
+        let githubQueries = plan.githubQueries.filter(allows)
+        let webQueries = plan.webQueries.filter(allows)
+        return SearchDiscoveryPlan(
+            intentSummary: allows(plan.intentSummary) ? plan.intentSummary : originalQuery,
+            githubQueries: githubQueries,
+            webQueries: webQueries,
+            prefersFreshEvidence: plan.prefersFreshEvidence,
+            strictConstraints: plan.strictConstraints.filter(allows),
+            githubFilters: plan.githubFilters
+        )
+    }
+
+    /// 已被后续核验判定隐藏的身份，其早先网页证据也不能继续进入重排。
+    func filtering(_ evidence: [SearchEvidence], summary: inout SearchContentSummary) -> [SearchEvidence] {
+        for item in evidence where item.isValid {
+            let document = item.contentDocument
+            summary.record(document, match: match(document))
+        }
+        return evidence.filter { $0.isValid && !summary.blockedIDs.contains($0.contentDocument.id) }
+    }
+
+    /// 缓存回读和可注入发现服务仍过当前规则，不信任旧快照的“已经过滤”标记。
+    func filtering(_ result: RepositoryDiscoveryResult) -> RepositoryDiscoveryResult {
+        var summary = result.contentSummary
+        var page = filtering(SearchProviderPage(
+            repositories: result.repositories, references: result.references,
+            totalCount: nil, hasNextPage: false
+        ), summary: &summary)
+        let evidence = filtering(result.session.evidence, summary: &summary)
+        page = page.hidingContent(summary.blockedIDs)
+        let evidenceIDs = Set(evidence.map(\.id))
+        let repositories = page.repositories.map { candidate in
+            guard let annotation = candidate.discovery else { return candidate }
+            let reasonDocument = SearchContentDocument(
+                id: candidate.contentKey, fields: [.description: [annotation.reason]]
+            )
+            guard !Set(annotation.evidenceIDs).isSubset(of: evidenceIDs)
+                    || match(reasonDocument) != nil else { return candidate }
+            var sanitized = candidate
+            sanitized.discovery = SearchDiscoveryAnnotation(
+                reason: "", evidenceIDs: [], rank: annotation.rank, kind: .githubSearch
+            )
+            return sanitized
+        }
+        let session = SearchDiscoverySession(
+            generation: result.session.generation, round: result.session.round,
+            phase: result.session.phase, plan: result.session.plan,
+            evidence: evidence, usedLLMCalls: result.session.usedLLMCalls,
+            usedWebQueries: result.session.usedWebQueries,
+            usedGitHubQueries: result.session.usedGitHubQueries, steps: result.steps
+        )
+        return RepositoryDiscoveryResult(
+            session: session, repositories: repositories, references: page.references,
+            diagnostics: result.diagnostics, contentSummary: summary
+        )
+    }
 }
 
 extension SearchProviderPage {

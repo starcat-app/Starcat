@@ -13,6 +13,52 @@ import Testing
 @Suite("Search Center ViewModel")
 @MainActor
 struct SearchCenterViewModelTests {
+    @Test("禁止查询不进入 Router、历史或显式智能查找")
+    func blockedQueryStopsBeforeRoutingAndHistory() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []), historyRepository: history,
+            intentRouter: router, discoveryService: discovery
+        )
+        viewModel.query = "购买枪支"
+        await viewModel.submit()
+        await viewModel.startSmartDiscovery()
+        #expect(router.routeQueries.isEmpty)
+        #expect(discovery.requests.isEmpty)
+        #expect(try await history.fetchAll().isEmpty)
+        #expect(viewModel.coordinator.blockedQuery != nil)
+        #expect(!viewModel.canStartSmartDiscovery)
+        #expect(!viewModel.hasDiscoveryFailures)
+    }
+
+    @Test("发现返回、缓存回读与继续查找均不能恢复隐藏候选")
+    func discoveryCacheAndContinuationRespectContentPolicy() async throws {
+        let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let result = Self.makeDiscoveryResult(candidate: blocked)
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [result, result])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []), historyRepository: history,
+            intentRouter: router, discoveryService: discovery
+        )
+        viewModel.query = "find linux distributions"
+        await viewModel.submit()
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.discoverySession?.evidence.isEmpty == true)
+        #expect(viewModel.contentSummary.hiddenCount == 1)
+        await viewModel.submit()
+        #expect(discovery.requests.count == 1)
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.contentSummary.hiddenCount == 1)
+        await viewModel.continueDiscovery()
+        #expect(discovery.requests.count == 2)
+        #expect(viewModel.candidates.isEmpty)
+        #expect(!viewModel.hasDiscoveryFailures)
+    }
+
     @Test("关闭并重新打开时保留完整搜索会话")
     func dismissAndPresentPreservesSession() async throws {
         // 2026-06-14：历史从 UserDefaults 升级到 GRDB SQLite。测试用内存 DB +

@@ -12,6 +12,122 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("隐藏候选不进入网页身份提取、证据或重排输入")
+    func filteredContentNeverReachesRanker() async {
+        let safe = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let blocked = Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "cirosantilli", name: "china-dictatorship"))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [blocked, safe], references: [], totalCount: 2, hasNextPage: false)
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [],
+                references: [
+                    Self.makeReference(url: "https://github.com/cirosantilli/china-dictatorship"),
+                    Self.makeReference(url: "https://github.com/basecamp/omarchy"),
+                    ReferenceCandidate(
+                        normalizedURL: URL(string: "https://example.org/blocked")!,
+                        originalURL: URL(string: "https://example.org/blocked")!,
+                        title: "出售毒品", snippet: nil, domain: "example.org", source: .web
+                    )
+                ], totalCount: 3, hasNextPage: false
+            )
+        }
+        let verifier = StubRepositoryVerifier { owner, name in
+            #expect(owner == "basecamp")
+            #expect(name == "omarchy")
+            return Self.makeRepoDTO(id: 3, owner: owner, name: name)
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, evidence, _ in
+            #expect(Set(candidates.map(\.fullName)) == ["apple/swift", "basecamp/omarchy"])
+            #expect(evidence.allSatisfy { !$0.title.contains("毒品") })
+            #expect(evidence.allSatisfy { $0.url?.absoluteString.contains("china-dictatorship") != true })
+            return []
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web, verifier: verifier, ranker: ranker
+        ).discover(query: "Linux", request: SearchRequest(query: "Linux", includeWebInAll: true), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 2)
+        #expect(result.references.count == 1)
+        #expect(result.contentSummary.hiddenCount == 2)
+        #expect(verifier.calls.count == 1)
+        #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test("Planner 的禁止子查询和约束不发给 Provider 或 Ranker")
+    func blockedGeneratedQueriesAreRemoved() async {
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in .empty }
+        let ranker = StubDiscoveryRanker { _, plan, _, _, _ in
+            #expect(plan.githubQueries == ["swift"])
+            #expect(plan.webQueries.isEmpty)
+            #expect(plan.strictConstraints.isEmpty)
+            #expect(plan.intentSummary == "Find software")
+            return []
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "Find software", request: SearchRequest(query: "Find software"),
+            initialPlan: SearchDiscoveryPlan(
+                intentSummary: "法轮功", githubQueries: ["购买枪支", "swift"],
+                webQueries: ["出售毒品"], prefersFreshEvidence: false,
+                strictConstraints: ["人体器官出售"], githubFilters: .empty
+            )
+        )
+        #expect(github.requests.map(\.query) == ["swift"])
+        #expect(web.requests.isEmpty)
+        #expect(result.session.usedGitHubQueries == 1)
+        #expect(result.contentSummary.hiddenCount == 4)
+    }
+
+    @Test("核验重定向揭示禁止仓库时同步移除原网页证据")
+    func verifiedBlockedIdentityRemovesAliasEvidence() async {
+        let safe = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [safe], references: [], totalCount: 1, hasNextPage: false)
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: [Self.makeReference(url: "https://github.com/old/alias")],
+                totalCount: 1, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, evidence, _ in
+            #expect(candidates.map(\.fullName) == ["apple/swift"])
+            #expect(evidence.allSatisfy { $0.url?.absoluteString.contains("old/alias") != true })
+            return []
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in
+                Self.makeRepoDTO(id: 2, owner: "cirosantilli", name: "china-dictatorship")
+            }, ranker: ranker
+        ).discover(query: "Linux", request: SearchRequest(query: "Linux", includeWebInAll: true), initialPlan: Self.makePlan())
+        #expect(result.references.isEmpty)
+        #expect(result.repositories.map(\.card.fullName) == ["apple/swift"])
+        #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test("发现服务直接调用也先检查查询，不调用 Planner")
+    func blockedQuerySkipsPlanner() async {
+        let planner = StubQueryPlanner(plan: Self.makePlan())
+        let github = RecordingSearchProvider(source: .github) { _ in .empty }
+        let result = await RepositoryDiscoveryService(
+            planner: planner, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }
+        ).discover(query: "出售毒品", request: SearchRequest(query: "出售毒品"), initialLLMCalls: 0)
+        #expect(planner.calls == 0)
+        #expect(github.requests.isEmpty)
+        #expect(result.contentSummary.hiddenCount == 1)
+        #expect(result.session.usedLLMCalls == 0)
+        #expect(result.diagnostics.isEmpty)
+    }
+
     @Test("Web 证据提取仓库后核验并按 LLM 理由排序")
     func webEvidenceVerifiesAndRanksRepository() async {
         let swift = Self.makeRepo(id: 1, owner: "apple", name: "swift")
