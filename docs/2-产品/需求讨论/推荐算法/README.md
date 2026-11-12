@@ -16,7 +16,9 @@
 
 三条业务链路共用一套本地数据基础设施：BigQuery Raw 只在本地保存一份，History 和 Trainer 通过 Artifact URI 只读复用；云端只接收派生 History DB 和 Recommendation ServingBundle。
 
-2026-10-29 主仓源码核对：Direct 推荐使用 `/api/v2` 自研 ServingBundle，App Store 仍使用 `/api/v1` SimRepo 契约；`starcat-recommend-api` 是长期统一推荐入口。本轮未读取生产 active Bundle，训练覆盖与质量不能仅凭路由切换判定达标。普通公开仓库 Star History 已迁到聚合生产入口中的 `starcat-history-api`，Discovery 旧路径默认关闭，仅在一个稳定发布窗口内保留代码级回退能力。
+2026-11-12 主仓源码核对：App Store 与 Direct 均使用 `/api/v2` 自研 ServingBundle；服务端 v1 仅是已发布旧客户端的临时适配，也读取自研数据，不再调用 SimRepo。适配退役需等待包含双渠道 v2 切换的 App 版本发布，不能仅因后端部署就删除。证据与条件见[推荐服务说明](../../../../supports/starcat-recommend-api/README.md)及[切换记录](../../../../supports/starcat-recommend-api/docs/自研推荐切换与v1退役.md)。本轮未读取生产 active Bundle，模型质量不能由路由切换推定。
+
+Star History 的迁移背景见 62 / 66 号设计；生产入口、水位及旧回退路径的退役状态按对应服务运维记录核对，不把历史快照视为本轮线上验证。
 
 2026-08-24 本机真实数据全链路结果见 [公开 Star 自研推荐全链路最终测试报告](公开Star自研推荐全链路最终测试报告.md)，交付收口见 [公开 Star 自研推荐全链路需求完成结果报告](公开Star自研推荐全链路需求完成结果报告.md)。需要在当前 `dev` 重新执行真实数据验证时，按 [本地推荐全链路验证指南](本地推荐全链路验证指南.md) 操作。
 
@@ -148,8 +150,8 @@ Mubelotix/simrepo
 
 | 入口 | 职责 |
 |---|---|
-| [RecommendAPI.swift](../../../../Starcat/Core/Network/RecommendAPI.swift) | 显式选择 SimRepo v1 或自研 Bundle v2 的推荐网络请求 |
-| [RecommendModels.swift](../../../../Starcat/Core/Network/RecommendModels.swift) | v1/v2 共用推荐 DTO，v2 额外解码 `model_version` |
+| [RecommendAPI.swift](../../../../Starcat/Core/Network/RecommendAPI.swift) | 双渠道自研 v2 请求、重验证与缓存身份 |
+| [RecommendModels.swift](../../../../Starcat/Core/Network/RecommendModels.swift) | 自研推荐 DTO 与模型版本字段 |
 | [RecommendationContextService.swift](../../../../Starcat/Features/Recommendations/RecommendationContextService.swift) | 推荐结果与仓库上下文协调 |
 | [RepoRecommendationViewModel.swift](../../../../Starcat/Features/Recommendations/RepoRecommendationViewModel.swift) | 推荐加载、分页和状态 |
 | [RepoRecommendationPopover.swift](../../../../Starcat/Features/Recommendations/RepoRecommendationPopover.swift) | 推荐结果 UI |
@@ -161,8 +163,7 @@ Mubelotix/simrepo
 |---|---|
 | [starcat-recommend-api README](../../../../supports/starcat-recommend-api/README.md) | 当前服务说明、配置和运行方式 |
 | [recommend.go](../../../../supports/starcat-recommend-api/internal/handler/recommend.go) | 推荐 HTTP handler |
-| [simrepo.go](../../../../supports/starcat-recommend-api/internal/provider/simrepo.go) | SimRepo Provider |
-| [cache.go](../../../../supports/starcat-recommend-api/internal/provider/cache.go) | 当前服务端推荐缓存 |
+| [自研切换与 v1 退役](../../../../supports/starcat-recommend-api/docs/自研推荐切换与v1退役.md) | SimRepo Provider 已移除；旧客户端适配的保留条件与退役范围 |
 
 ### 7.3 Star History 客户端
 

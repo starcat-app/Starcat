@@ -6,8 +6,8 @@
 > **关联文档**：
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)：Agent 方向总览与共用编排器草案
 > - [`01-Foundation-Models-可行性分析.md`](01-Foundation-Models-可行性分析.md)：macOS 26 / FM 约束
-> - [`../详细设计/34-StarcatCLI与外部MCP桥接设计.md`](../详细设计/34-StarcatCLI与外部MCP桥接设计.md)：MCP 已落地能力
-> - [`../详细设计/30-本地RAG设计.md`](../详细设计/30-本地RAG设计.md)：带引用生成层（与调研报告同族）
+> - [Starcat CLI 与外部 MCP 桥接设计](../../../3-设计/详细设计/34-StarcatCLI与外部MCP桥接设计.md)：MCP 桥接能力
+> - [本地 RAG 设计](../../../3-设计/详细设计/30-本地RAG设计.md)：带引用生成层（与调研报告同族）
 
 ---
 

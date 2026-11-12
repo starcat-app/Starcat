@@ -1,8 +1,14 @@
 # Starred 与知识库改造详细设计
 
 > 日期: 2026-07-02
-> 状态: 设计方案, 尚未实现
+> 状态: 私有知识库状态已有实现；本文保留原始改造设计，不能作为未实施任务清单
 > 范围: 数据模型、Repository、Smart Collections、详情页 ❤️ 入口、AI/MCP/Companion 范围改造
+
+## 当前实现核对（2026-11-12）
+
+`LibraryState` 已定义在 `Starcat/Core/Database/Models/RepoNote.swift`，包含 `outside_library` / `in_library`。`GRDBRepoNoteRepository.updateLibraryState` 已持久化 `library_state` / `library_updated_at`：重复设置不推进状态时间，移出知识库只更新关系，不删除笔记、阅读状态或仓库缓存。
+
+字段已存在于当前数据库建表定义。新增变化必须先判断是否属于已发布 schema，遵守追加迁移规则；RAG 的 `v7-knowledge-rag` 已收口，不能按下面旧计划再次回写 v1 或新增启动期补表。下文 §2 是 2026-07-02 改造前的审计，涉及 CloudKit、导入导出与各入口的完整验收仍须按对应实现／验收记录核对，不能由状态类型存在推断全部验收通过。
 
 ## 1. 设计目标
 
@@ -13,12 +19,12 @@
 
 关键约束:
 
-- 本项目尚未上线,不写兼容旧字段/旧版本逻辑。
+- 本项目已发布。已发布数据结构使用追加迁移，禁止删库重建；未发布功能草稿只在 `AGENTS.md` 明确例外内处理。
 - 不把 `RepoStatus.using` 扩展成“知识库”状态,避免阅读/使用状态与入库状态混用。
 - 不把 `is_starred` 从 GitHub 事实改成 Starcat 入库状态。
 - 不机械替换所有 `starred`;必须按语义分类处理。
 
-## 2. 当前代码审计结论
+## 2. 改造前代码审计结论（2026-07-02）
 
 代码扫描覆盖了以下关键模式:
 
@@ -44,14 +50,14 @@
 
 ### 3.1 新增状态
 
-新增 `LibraryState`:
+当前已有 `LibraryState`:
 
 | case | DB raw value | UI |
 |---|---|---|
 | `outsideLibrary` | `outside_library` | 未入库 |
 | `inLibrary` | `in_library` | 已入库 |
 
-建议文件:
+实现文件:
 
 - `Starcat/Core/Database/Models/RepoNote.swift`
 
@@ -62,7 +68,7 @@
 
 ### 3.2 DB 字段位置
 
-建议在 `repo_notes` 增加:
+`repo_notes` 当前已有:
 
 - `library_state TEXT NOT NULL DEFAULT 'outside_library'`
 - `library_updated_at TEXT`

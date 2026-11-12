@@ -41,16 +41,19 @@ Close Xcode (or run tests only inside Xcode). Do not run command-line tests and 
 IDE against the same `testmanagerd` at the same time.
 
 ```bash
-xcodegen generate
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
+make test
 ```
 
 Run a single suite when iterating:
 
 ```bash
-xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' \
-  -only-testing:StarcatTests/TagRepositoryTests test
+make test TEST_ARGS="-only-testing:StarcatTests/TagRepositoryTests"
 ```
+
+The Makefile selects stable Xcode, regenerates the project, restores the controlled
+SwiftPM lock file, and uses the dedicated `build/DerivedData-Tests` cache. For a
+build without launching the app, use `make build-appstore` or `make build-direct`;
+use `make run-appstore` or `make run-direct` to build and launch.
 
 Any start-up path that talks to Keychain or system authorization dialogs must be gated with
 `TestEnvironment.isRunning`, or command-line tests will hang.

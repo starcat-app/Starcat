@@ -1,10 +1,20 @@
 # Starcat 数据平台 Web 运维控制台详细设计
 
 > 日期: 2026-08-26
-> 状态: 方案已确认，待实施
+> 状态: 已有数据平台基础实现；2026-11-12 静态核对，不把原方案全部范围视为已交付
 > 版本: v1.0
 > 范围: 本地数据平台可视化、结构化任务编排、多节点运行状态、History 与 Recommend 产物发布治理
 > 关联设计: [Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)、[Starcat 自研仓库推荐系统详细设计](61-Starcat自研仓库推荐系统详细设计.md)、[Starcat 自研星标历史服务详细设计](62-Starcat自研星标历史服务详细设计.md)
+
+## 0. 当前实现与原设计的边界
+
+`supports/starcat-admin-console` 已存在数据平台页面和 BFF 路由，不能再将本方案整体标为“待实施”：
+
+- [数据平台页面](../../../supports/starcat-admin-console/src/pages/data-platform.tsx)已接入配置、概览、下载任务，以及先 dry run 再执行的 SQL Lab 交互。
+- [数据平台路由](../../../supports/starcat-admin-console/server/routes-data-platform.ts)已定义 Dataset、Partition、Storage、Job 查询、任务创建与取消，并在未配置 Runtime 时返回不可用状态。
+- [Runtime](../../../supports/starcat-admin-console/server/data-platform/runtime.ts)与 [Catalog](../../../supports/starcat-admin-console/server/data-platform/catalog.ts)承载后端执行和状态访问，不能只按前端页面存在判断任务成功。
+
+以下保留完整设计目标与分期。多机 Worker、全部发布治理能力、真实数据连接和人工验收需分别按独立仓库的实现与交付证据核对；本次没有启动控制台、执行任务或验证生产状态。
 
 ## 1. 结论
 

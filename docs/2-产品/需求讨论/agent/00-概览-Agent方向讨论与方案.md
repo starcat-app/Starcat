@@ -19,9 +19,9 @@
 > - [`18-SwiftAgentSDK调研报告.md`](18-SwiftAgentSDK调研报告.md):开源 Swift Agent SDK 实时调研与 runtime 选型建议
 > - [`19-Cline-Agent设计学习心得.md`](19-Cline-Agent设计学习心得.md):Prompt、Tool Loop、Approval 与统一工作台边界
 > - [`20-CLI-Agent作为AI-Provider初步方案.md`](20-CLI-Agent作为AI-Provider初步方案.md):Direct 版通过双向协议接入 Codex、Claude Code、Gemini CLI，以 Agent 工作台为主入口，并由 Starcat 统一承载动态审批与 RAG Tool 边界
-> - [`../AI代理API设计.md`](../AI代理API设计.md):Starcat 现有 AI Proxy 协议
+> - [AI 代理 API 设计](../正式方案/AI代理API设计.md):Starcat AI Proxy 方案
 > - [`../../../../AGENTS.md`](../../../../AGENTS.md):项目铁律与 UI 规范
-> - [`../功能清单.md`](../功能清单.md):P0/P1/P2 优先级矩阵
+> - [功能清单](../../../1-立项/功能清单.md):P0/P1/P2 需求矩阵，不代表当前完成状态
 
 ---
 

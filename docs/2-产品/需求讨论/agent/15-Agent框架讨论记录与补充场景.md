@@ -6,9 +6,9 @@
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)：现有 Agent 总览与共用编排器草案
 > - [`04-AgentRunKit-Swarm-SwiftAgent-对比分析.md`](04-AgentRunKit-Swarm-SwiftAgent-对比分析.md)：运行时选型详细对比
 > - [`10-Agent产品叙事-三条主线.md`](10-Agent产品叙事-三条主线.md)：整理 / 发现 / 消化三条产品主线
-> - [`starcat_repo_research_agent_design.md`](starcat_repo_research_agent_design.md)：Repo Research / 技术选型 Agent 早期草案
-> - [`../发展规划.md`](../发展规划.md)：Starcat “本地优先开源项目知识库、项目情报订阅器与技术决策辅助工具”定位
-> - [`../详细设计/34-StarcatCLI与外部MCP桥接设计.md`](../详细设计/34-StarcatCLI与外部MCP桥接设计.md)：外部 MCP / CLI 桥接能力
+> - `starcat_repo_research_agent_design.md`：讨论时提及的 Repo Research 草案，当前仓库未保留该文件；不能当作现存实施依据
+> - [发展规划](../../../1-立项/发展规划.md)：Starcat “本地优先开源项目知识库、项目情报订阅器与技术决策辅助工具”定位
+> - [Starcat CLI 与外部 MCP 桥接设计](../../../3-设计/详细设计/34-StarcatCLI与外部MCP桥接设计.md)：外部 MCP / CLI 桥接能力
 
 ---
 
@@ -112,7 +112,7 @@ Phase 2（macOS 26 门控增强）
 
 从用户输入的技术问题出发，自动检索 GitHub 与用户本地 stars，生成一份**带候选项目、对比表、风险、推荐结论、后续验证清单**的调研报告。
 
-说明：该方向已有 [`starcat_repo_research_agent_design.md`](starcat_repo_research_agent_design.md) 早期草案。本文保留本节，是因为它是 dong4j 本轮提问中的核心例子；后续若正式立项，应合并该草案与本文的框架选型结论，避免双份方案长期并存。
+说明：讨论时曾提及 `starcat_repo_research_agent_design.md`，当前仓库未保留该草案。后续评估可从本节与 [Agent 方向总览](00-概览-Agent方向讨论与方案.md)追溯需求，但不能伪造旧草案的替代文件或据此确认已实施。
 
 ### 4.2 与 `13-项目采用计划` 的差异
 

@@ -3,7 +3,7 @@
 > **文档定位**：对 **未打 tag** 的已 star 仓库做 **批量 AI 归类**；在现有 HOM-52 `BatchAIQueueService` 之上，增加 **Agent 层**（tag 体系规划、主题预聚类、一致化命名），仍遵守「预览 → 确认 → 写入」。
 > **产品叙事**：[`10-Agent产品叙事-三条主线.md`](10-Agent产品叙事-三条主线.md) · **整理线**
 > **状态**：方案稿（2026-06-27），等 dong4j 拍板立项。
-> **与现有实现关系**：**不是重写**——[`BatchAIQueueService`](../../Starcat/Features/AI/BatchAIQueueService.swift) / `BatchAIUntaggedBanner` / `BatchAIOptionsSheet` 已落地 HOM-52；本方案描述 **Agent 化升级路径** 与 **冷启动扩展**。
+> **与现有实现关系**：[`BatchAIQueueService`](../../../../Starcat/Features/AI/BatchAIQueueService.swift) / `BatchAIUntaggedBanner` / `BatchAIOptionsSheet` 已落地 HOM-52；本方案仅描述当时的 **Agent 化升级提案** 与 **冷启动扩展**，不要求重写既有能力。
 > **关联文档**：
 > - [`07-Smart-Collection-生成方案.md`](07-Smart-Collection-生成方案.md)：整理后可 NL 建集合
 > - [`11-重叠扫描-Agent方案.md`](11-重叠扫描-Agent方案.md)：去冗余后可再批量打 tag

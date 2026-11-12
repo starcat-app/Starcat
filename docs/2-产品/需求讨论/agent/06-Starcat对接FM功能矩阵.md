@@ -7,7 +7,7 @@
 > - [`01-Foundation-Models-可行性分析.md`](01-Foundation-Models-可行性分析.md):MVP 决策
 > - [`02-替代品推荐-Agent方案.md`](02-替代品推荐-Agent方案.md):云端 agent 范本
 > - [`../../../../AGENTS.md`](../../../../AGENTS.md):macOS 15+ / AI 保守策略铁律
-> - [`../AI代理API设计.md`](../AI代理API设计.md):现有 AI Proxy 协议
+> - [AI 代理 API 设计](../正式方案/AI代理API设计.md):AI Proxy 方案
 
 ---
 

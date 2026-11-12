@@ -2,10 +2,19 @@
 
 > **状态**：✅ 已落地（2026-06-15，4 子项 R-06.1~R-06.4 全部完成）
 > **范围**：客户端 Starcat（macOS）+ 后端 `starcat-trending-api` / `starcat-weekly-api`
-> **关联**：进度文档 `工程进度/功能实现总览.md` §6.6 R-06；变更日志 2026-06-15 20:30 / 21:10 / 22:00 / 22:45
+> **关联**：[功能实现总览](../../功能实现总览.md) 的 R-06 历史记录；变更日志 2026-06-15 20:30 / 21:10 / 22:00 / 22:45
 > **互补文档**：07-Trending 数据本地缓存设计（基础持久化方案，本文不再赘述表结构来源）
 
 ---
+
+## 当前客户端补充（2026-11-12）
+
+- `TrendingViewModel` 先读会话内存快照，再读 SQLite。网络桶按周期固定读取 `language: .all`，语言、排序和全局筛选只重新派生本地快照；旧版按语言切网络桶的说明不再适用。
+- `fetchTrending` / `fetchBulk` 已返回来源标记。`.cachedFallback` 必须保留原成功刷新时间并显示缓存提示，不能把失败回退写成一次成功刷新而延长 TTL。
+- Trending TTL 仍为 1h / 6h / 24h。Weekly 保留 bulk 本地链路；只有 bulk 无可用结果且筛选允许时才退回分页 API。
+- 本文后端 cron、缓存参数与 2026-06-15 的验证结果保留原始基线；生产调度是否运行需另查独立服务的当前配置和日志，不能由本文推断。
+
+源码入口：`Starcat/Features/Trending/TrendingViewModel.swift`、`Starcat/Core/Sync/TrendingRepository.swift`、`Starcat/Features/Activity/WeeklyContentView.swift`、`Starcat/Core/Sync/WeeklyBulkRepository.swift`。
 
 ## 1. 背景与问题
 
@@ -67,12 +76,12 @@ flowchart LR
 
 | Policy | 触发场景 | 行为 |
 |---|---|---|
-| `.respectTTL` | `.task` 首次入场、`selectedPeriod / selectedLanguage` 切桶 | 命中当前周期 TTL 内的桶 → 零请求；过期 → 拉网络 |
+| `.respectTTL` | 首次入场、周期切桶 | 命中当前周期 TTL 内的桶 → 零请求；过期 → 拉网络；语言变化只做本地派生 |
 | `.forceNetwork` | toolbar 刷新按钮、`.refreshable` 下拉、错误重试 | 用户主动意图，必发请求 |
 
 **两个关键设计决策**：
 
-1. **TTL 判断放在 ViewModel 层**（而非 `TrendingRepository`）：ViewModel 本来就持有 `lastRefreshedAt` 做"新鲜度展示"，复用最直接；Repository 协议保持纯净，避免引入"返回值标记 from-cache vs from-network"的复杂度（否则 ViewModel 不知道要不要 `lastRefreshedAt = Date()`，会出现 always-fresh 死循环 bug）。
+1. **TTL 判断放在 ViewModel 层**：由 ViewModel 判断是否发请求。Repository 同时返回真实来源标记，ViewModel 只在网络成功后推进刷新时间；缓存回退保持旧时间，避免“失败却一直新鲜”。
 2. **`isStale` 使用当前周期 TTL 的 80%**：daily / weekly / monthly 分别在约 48 分钟 / 4.8 小时 / 19.2 小时后显示橙色"接近过期"提示，过期后入场自动走网络。
 
 ### 3.2 后端：TrendingCache 分桶 TTL + ETag
@@ -155,7 +164,7 @@ Weekly 数据量级（~4000 条）远大于 Trending（300 条/桶），原"分�
 
 ### 4.3 客户端：3 张 SQLite 表 + 渐进式 SWR + 双轨制
 
-#### 4.3.1 表结构（migration `v1-initial` 直接加）
+#### 4.3.1 表结构（上线前的初始建表记录）
 
 | 表 | PK | 用途 |
 |---|---|---|
@@ -163,7 +172,7 @@ Weekly 数据量级（~4000 条）远大于 Trending（300 条/桶），原"分�
 | `weekly_bulk_languages` | `key` | 后端 languages 聚合 1:1，附 `sort_order` 保留后端原始顺序 |
 | `weekly_bulk_meta` | `id = "singleton"` 单行 | etag / last_fetched_at / generated_at / total |
 
-产品未上线 → 直接改 v1-initial 不写 ALTER（遵循 AGENTS.md 铁律 #1）。
+上述表在上线前进入初始 schema。项目已经发布，后续修改必须按根 `AGENTS.md` 追加 `registerVN` 迁移，不能继续回写已发布的 `v1-initial`。
 
 #### 4.3.2 dataSource 双轨制
 
@@ -262,7 +271,7 @@ flowchart TD
 |---|---|
 | `AppEndpoints.Weekly.Paths.reposBulk = "/api/v1/repos/bulk"` | 新路径 |
 | `WeeklyAPI.fetchBulkRepos()` | URLSession 自动 gzip 解压（CFNetwork 透明） |
-| migration v1-initial 加 3 张 `weekly_bulk_*` 表 | 直接改 v1，不写 ALTER |
+| 初始 schema 增加 3 张 `weekly_bulk_*` 表 | 历史开发期操作；已发布后的变更追加迁移 |
 | `AppDependencies` 注入 `WeeklyBulkRepository` 单例 | 与 `weeklyAPI` actor 共享让 baseURL / apiKey 热更新双路径同时生效 |
 | `WeeklyContentViewModel` SWR 双轨制重写 | enum `WeeklyDataSource` / 6h TTL / 4 个入口分支调度 |
 

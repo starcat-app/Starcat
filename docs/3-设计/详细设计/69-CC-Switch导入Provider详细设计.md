@@ -1,18 +1,20 @@
 # 69 — 从 CC Switch 导入 AI Provider 详细设计
 
 > 日期：2026-09-13
-> 状态：方案已确认，可直接落地
+> 状态：导入入口、预览与解析器已有实现；2026-11-12 核对源码，旧实施拆分不再表示待开工
 > 适用版本：dev 后续功能迭代（不改已发布 schema）
 > 关联：`15-AI设置与调用链重构方案.md`、`68-Anthropic服务商详细设计.md`
 > 上游：https://github.com/farion1231/cc-switch （本机库默认 `~/.cc-switch/cc-switch.db`）
 
 ---
 
-## 1. 问题
+## 1. 原问题与当前实现
 
-用户已在 CC Switch 里维护多套 CLI 供应商（Claude Code / Codex / Gemini 等），Key 与 Base URL 都在那份 SQLite 里。Starcat「设置 → AI」目前只能手工再录一遍。
+用户在 CC Switch 维护的供应商配置原先需要手工重复录入。当前 `AISettingsView` 已有 CC Switch 导入入口和预览 Sheet；`CCSwitchConfigStore` 只读打开 SQLite，或解析 SQL dump 中的 Provider 数据，不执行备份文件里的任意 SQL。
 
-目标：在 AI 设置页提供一次性导入。只导入能被 Starcat 调用的 BYOK Profile（OpenAI 兼容，以及在文档 68 落地后的 Anthropic Messages）。永远新增，不覆盖现有 Profile。
+目标：在 AI 设置页提供一次性导入。只导入能被 Starcat 调用的 BYOK Profile（OpenAI 兼容，以及已接入的 Anthropic Messages）。永远新增，不覆盖现有 Profile。
+
+源码入口：`Starcat/Features/Settings/AISettingsView.swift` 和 `Starcat/Features/Settings/CCSwitchImport/`。当前 mapper 已能识别 Claude / Anthropic 路径并映射协议；不能因读取到一行配置就宣称它可调用，仍需保留跳过原因与连接测试结果。本次未读取用户真实 CC Switch 数据库，也未补签真实凭据导入验收。
 
 ## 2. 已冻结决策
 
@@ -33,7 +35,7 @@
 
 - 不覆盖用户已经配好的 DeepSeek 等同名或同类型 Profile。
 - 不导入 Google Official / Claude Official / OpenAI Official / GitHub Copilot 等无 Key 或代理注入 OAuth。
-- 不把 Anthropic URL 在「文档 68 未合入」时强行当 OpenAI 用（会测不通）。
+- 不把 Anthropic URL 强行映射成 OpenAI；使用现有 Anthropic adapter，无法匹配的协议保留跳过原因。
 - 不读 CC Switch 的代理接管占位符 Key（见 §7.3）。
 - 不新增表、不做 CloudKit 同步 Key。
 - 不改 `功能实现总览.md`（需 dong4j 另行确认）。

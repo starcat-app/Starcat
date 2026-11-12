@@ -41,7 +41,7 @@
 
 - 涉及分支/worktree 操作前，先读取根目录 [`BRANCH.md`](BRANCH.md)，再用 Git 命令核对真实 refs、提交关系和 worktree 归属。
 - 创建、切换或恢复长期分支后，必须向 dong4j 说明当前分支、用途、基线、worktree、状态和后续归宿。
-- 创建新 worktree 后，必须先从主仓库复制被 Git 忽略的本地配置（至少 `Configs/Secrets.xcconfig` 和 SPM `Package.resolved`）到相同路径，再构建或测试；不输出、不提交配置内容，详见 [Git-分支与Worktree规范](docs/5-规范/Git-分支与Worktree规范.md)。
+- 创建新 worktree 后，必须先从主仓库复制被 Git 忽略的本地配置（至少 `Configs/Secrets.xcconfig`）到相同路径，再构建或测试；不输出、不提交配置内容。SPM 完整锁由受控的 `Configs/SwiftPackages.resolved` 提供，生成工程时恢复，不再从其他工作区复制生成的 `Package.resolved` 作为版本来源，详见 [Git-分支与Worktree规范](docs/5-规范/Git-分支与Worktree规范.md)。
 - 创建、合并、停放、废弃或删除长期分支/worktree 时，必须在同一任务中同步更新 `BRANCH.md`。
 - 删除前必须检查独有提交、Git 合并关系、语义覆盖和 worktree 脏状态；未审查分支禁止直接删除。
 - 未经 dong4j 明确授权，不得 push、删除远端分支、强制删除 worktree 或改写共享历史。
@@ -250,7 +250,7 @@ Starcat/
 | `docs/5-规范/Git-提交规范.md` | Git commit message 格式与更新日志分类规则 |
 | `docs/5-规范/Git-分支与Worktree规范.md` | 分支、worktree、`BRANCH.md` 登记、合并与清理规则 |
 | `docs/5-规范/Changelog-更新规范.md` | Changelog 询问时机、授权边界、日常文件范围与发版生成规则 |
-| `docs/6-发版与上架/SOP-发版流程.md` | 发版 SOP（git tag 自动驱动版本号） |
+| `docs/6-发版与上架/SOP-双渠道签名与发布.md` | 当前 App Store / Direct 正式发布 SOP；`SOP-发版流程.md` 仅保留旧版流程与版本号机制 |
 
 > **阅读顺序建议**：先读 `AGENTS.md` 了解概览，再根据任务需要查阅对应文档。
 
@@ -335,11 +335,11 @@ Section {
 以下问题已在 `docs/1-立项/开发前问题清单.md` 中确认解决方案，开发时必须遵循：
 
 - ✅ macOS 最低版本：15 Sequoia
-- ✅ Swift：编译器 6.0 + 语言模式 5 + @Observable
-- ✅ README 渲染：WebView（100% GFM 兼容）
+- ✅ Swift：Swift 6 语言模式 + 严格并发检查 + @Observable；编译器由标准构建入口选择的稳定版 Xcode 提供
+- ✅ README 渲染：WKWebView；具体 GFM、资源加载与降级边界以渲染实现和相关设计为准
 - ✅ OAuth scope：`["read:user", "public_repo"]`
 - ✅ 后台任务：macOS 用 NSBackgroundActivityScheduler
-- ✅ 语义搜索：服务端计算，客户端存缓存
+- ✅ 语义搜索：Embedding Provider 生成向量，客户端保存索引并计算相似度；不依赖固定的服务端语义排序接口
 - ✅ Release 订阅通知：使用轮询方案
 
 ---
@@ -443,7 +443,7 @@ Section {
 
 ---
 
-*最后更新：2026-09-13*
+*最后更新：2026-11-12*
 
 
 <claude-mem-context>

@@ -1,24 +1,26 @@
 # Starcat 自研仓库推荐系统详细设计
 
 > 日期: 2026-08-24
-> 状态: 离线基线与 v2 本机真实全链路已完成；生产级混合模型、shadow 和灰度属于后续阶段
+> 状态: 本文保留 2026-08 的全链路基线与候选算法；当前客户端已双渠道使用自研 v2，后续收口与模型证据见文首补充
 > 版本: v1.1
-> 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api` + Starcat Direct
+> 范围: `starcat-collection-api` + `starcat-recsys-trainer` + `starcat-recommend-api` + Starcat App Store / Direct
 > 当前客户端数据契约: [Starcat 公开 Star 数据静默上报与 Collection 服务详细设计](63-Starcat公开Star数据静默上报与Collection服务详细设计.md)
 > 本地数据与发布契约: [Starcat 本地数据湖与云端 Serving 同步详细设计](66-Starcat本地数据湖与云端Serving同步详细设计.md)
 > 调研基线: `Puzer/github-repo-embeddings` commit `f6a2f836b63f1065b2a2efdee21e8485449923bc`；`Mubelotix/simrepo` commit `07c6ef1dcfe2fd96cc050ef91529b7f180a55288`
 
+> 现状核对（2026-11-12）：`RecommendAPI.swift` 的双渠道源代码均只调用 Starcat 自研 v2。服务端 v1 是已发布旧客户端的临时适配器，同样读取自研 ServingBundle，不再调用 SimRepo；退役条件见[自研推荐切换与 v1 退役](../../../supports/starcat-recommend-api/docs/自研推荐切换与v1退役.md)。本文件中的 Metric Learning、内容 embedding、shadow 与 SimRepo 降级是历史候选，不能都当成线上已启用链路；当前收口见[2.0.0 推荐系统收口方案](../../2-产品/需求讨论/推荐算法/23-2.0.0推荐系统收口方案.md)。本轮未读取生产 active Bundle。
+
 ## 1. 结论
 
-Starcat 自研推荐采用“时间衰减 co-star + Metric Learning 行为向量 + 内容向量冷启动 + 元数据校正 + MMR 去重”的混合方案。SimRepo 继续作为迁移期外部基线和降级来源；Puzer 项目提供可复现的行为向量训练骨架。两者的思路互补，不直接复制任一实现。
+初始研究提出“时间衰减 co-star + Metric Learning 行为向量 + 内容向量冷启动 + 元数据校正 + MMR 去重”的候选组合；这是研究范围，不能整体描述为当前线上算法。SimRepo 与 Puzer 仅保留选型背景，不恢复 SimRepo 外部调用或密钥。
 
 后端由三个独立 Git 项目承担三类职责：
 
 1. **`starcat-collection-api`**：独立、静默接收经用户同意的匿名公开 Star 完整快照，只向训练系统提供内部导出。
 2. **`starcat-recsys-trainer`**：主动 Pull Collection 导出、导入公开数据、清洗、构建特征、训练、离线评估并发布版本化推荐产物。
-3. **`starcat-recommend-api`**：长期统一推荐入口；`/api/v1` 保持 SimRepo Provider 不变，`/api/v2` 只读 Trainer 发布的 ServingBundle。
+3. **`starcat-recommend-api`**：长期统一推荐入口；当前 `/api/v1` 与 `/api/v2` 均读取 Trainer 发布的 ServingBundle，v1 仅服务已发布旧客户端。
 
-不再创建职责重复的 `starcat-recsys-api`。自研链路先通过新增 `/api/v2` 独立验证，不改变现有 `/api/v1` 行为；达到质量门槛后再灰度切换默认 Provider。收口时只删除 SimRepo Provider 和对应密钥，`starcat-recommend-api` 作为统一服务继续保留。
+不创建职责重复的 `starcat-recsys-api`。当前保留统一服务与旧客户端适配，v1 退役需等待包含双渠道 v2 切换的 App 版本发布；不能仅因后端已经部署就提前删除适配器。
 
 ## 2. 上游调研结论
 
@@ -544,7 +546,9 @@ v2 单仓响应的 ETag 包含 model version、repo、limit 与 offset，并设�
 
 每条由至少两人标注相关性 0～3、是否重复、是否可解释。分歧进入复核。
 
-## 13. 灰度与迁移
+## 13. 原始灰度与迁移设计（历史）
+
+> 以下保留初期分阶段草案。当前 SimRepo Provider 已移除，v1 / v2 都读取自研数据；生产回退针对先前的自研 Bundle，不能照下文重新接入 SimRepo。现行切换条件见本文开头的实现核对与服务端退役记录。
 
 ### Phase 0：基线
 

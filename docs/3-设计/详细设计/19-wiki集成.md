@@ -1,13 +1,15 @@
 # 外部文档站索引探测与跳转集成（DeepWiki / Google Code Wiki / Zread）
 
 > 创建：2026-06-10
-> 状态：**设计稿（待评审）**
+> 状态：**历史设计与决策演进，已由后续实现替代**
 > 版本：v0.5
 > 关联：
 > - `docs/需求讨论/github分析-讨论记录.md`（用户分类与早期讨论，作为本设计的输入）
 > - `docs/3-设计/详细设计/18-三场景共用架构.md`（三场景共用 DTO / Envelope / BaseURL 热更新 / Bearer 鉴权模式，**本设计沿用**）
 > - `docs/3-设计/详细设计/05-GitHub%20API设计.md`（OAuth / Rate Limit 处理范式，作为外部 HTTP 探测的对照参考）
 > - 后端脚手架：`supports/starcat-trending-api` / `supports/starcat-sharing-api` / `supports/starcat-weekly-api`（三个 Go 项目的目录 / 中间件 / Envelope / 部署约定）
+
+> 现状核对（2026-11-12）：Wiki 查询、客户端磁盘缓存与知识库后台补齐均已有实现，当前客户端说明见 [20-wiki-api-对接](20-wiki-api-对接.md)。本文的 optional API 装配、状态枚举、无客户端缓存等建议，以及 Zread 在不同服务之间迁移的过程，仅供解释历史取舍，不再作为待实施任务。
 
 ---
 

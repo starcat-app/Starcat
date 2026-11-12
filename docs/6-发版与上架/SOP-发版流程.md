@@ -1,12 +1,20 @@
-# 发版流程
+# 旧版发版流程与版本号机制
 
 > 创建：2026-06-07
 > 适用范围：Starcat macOS App
 > 配套实现：`scripts/bump-version.sh` + `project.yml` 中的 `postBuildScripts`
+> 状态更新：2026-11-12。本文的 `release-store.sh` / ad-hoc DMG 流程是历史记录，不能作为当前正式发版操作手册。正式发布以 [SOP-双渠道签名与发布](SOP-双渠道签名与发布.md) 为入口；新机器配置见 [SOP-新Mac开发发布环境搭建](SOP-新Mac开发发布环境搭建.md)。
 
 ---
 
-## TL;DR（一句话答案）
+## 当前入口与本文适用范围
+
+- Direct 正式发布使用 `scripts/release-direct.sh`；App Store 打包使用 `scripts/package-appstore.sh`，具体参数和门禁按双渠道 SOP。
+- `scripts/release-store.sh` 是默认禁用的旧 ad-hoc 入口，下面保留其原始行为以便理解旧提交。
+- 本文的 tag / build 号解释需要结合渠道覆盖规则阅读；打 tag 或推 tag 本身不等于发布完成。
+- 任何打包、签名、公证、上传或推送操作仍须按 `AGENTS.md` 获得明确授权。
+
+## 历史流程概览（2026-06-07）
 
 **版本号字段全自动**，发版一行命令：
 
@@ -66,11 +74,11 @@ Version 0.1.0 (Build 201.f09a499)
 
 ---
 
-## 2. 标准发版 SOP（每次发版都按这个走）
+## 2. 历史 ad-hoc 发版 SOP
 
-### 推荐路径：`scripts/release-store.sh`（一键发版）
+### 旧入口：`scripts/release-store.sh`
 
-`release-store.sh` 是发版总入口，把"打 tag → 出 DMG → 推 tag"串起来，并做完整前置校验。
+以下描述 `release-store.sh` 当时把“打 tag → 出 DMG → 推 tag”串联的行为，不是当前正式发布建议。
 
 ```bash
 ./scripts/release-store.sh v0.1.1                # 标准发版（happy path）
@@ -96,7 +104,7 @@ Version 0.1.0 (Build 201.f09a499)
 - `v` 前缀可省可加，内部归一化（与 `build-dmg.sh` 严格 `X.Y.Z` 接口对齐）
 - 严格 SemVer X.Y.Z 校验（暂不支持 `-beta` / `-rc` 后缀，与 `build-dmg.sh` 限制一致）
 
-> 下面 §2.x 的 5 步 SOP 是脚本背后做的事，理解一下有助于排查问题，但日常用 `release-store.sh` 一行就够。
+> 下面 §2.x 保留旧脚本的操作拆解。当前发布不要从这些步骤拼接命令，应使用双渠道 SOP。
 
 ### 第 1 步：定 marketing 版本号（SemVer）
 

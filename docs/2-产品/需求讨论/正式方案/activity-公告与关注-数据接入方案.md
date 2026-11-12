@@ -111,7 +111,7 @@ WHERE is_starred = 1
 
 遵循项目现有风格：ISO8601 TEXT 存日期、snake_case 列名 → GRDB camelCase CodingKeys、Bool 列用 GRDB `.boolean` 类型（对应 SQLite 0/1）。
 
-**铁律提醒**：本项目未上线，直接改 `DatabaseMigrationsV1.swift` 的 `v1-initial`，**不写 ALTER TABLE 迁移**（参考文件头「设计原则 2」）。
+**迁移规则更新（2026-11-12）**：项目已经发布，原来直接修改 `v1-initial` 的上线前做法已经失效。已发布 schema 必须追加 `registerVN` 迁移，不得要求用户删库；未发布草稿的例外按根目录 `AGENTS.md` 判断。
 
 ### 3.1 `activity_events` — following 事件流
 

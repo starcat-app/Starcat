@@ -1,13 +1,22 @@
 # 后端服务版本注入与 Ping 契约详细设计
 
 > 日期：2026-07-21
-> 状态：待实施
+> 状态：客户端与六服务本地代码已实现；本轮未核对各生产实例版本
 > 文档编号：45
 > 适用范围：`starcat-trending-api`、`starcat-weekly-api`、`starcat-sharing-api`、`starcat-wiki-api`、`starcat-recommend-api`、`starcat-discovery-api` 与 Starcat「设置 → 服务」连接测试
 
+## 0. 当前核对结果（2026-11-12）
+
+- 客户端 `ServicePingPayload.version` 已为可选字段，旧服务缺少版本时仍可完成连接检查。
+- 六个本地服务均有 `internal/version/version.go`，默认值为 `0.0.0-dev`；对应 Dockerfile 已使用 `ARG VERSION` 与 Go linker `-X` 注入。
+- 六服务的 `internal/handler/ping.go` 已委托 `starcat-api-kit/httputil.HandlePingV1(service, serviceVersion)`，统一返回 `service`、`version` 与 `ok`。
+- 本轮只读核对本地源码和构建配置，没有执行部署、远端 ping 或 release tag 对账；不能据此声明所有生产实例均运行某个版本。
+
+代码入口：`Starcat/Core/Network/ServiceHealthChecker.swift`、各独立服务的上述文件及 `supports/starcat-api-kit/httputil/ping.go`。下文第 1 / 3 节中的缺口是 2026-07-21 的实施前背景。
+
 ## 1. 背景
 
-Starcat 通过带 Bearer Auth 的 `GET /api/v1/ping` 验证外部服务地址、API Key 和服务类型。现有响应只包含：
+Starcat 通过带 Bearer Auth 的 `GET /api/v1/ping` 验证外部服务地址、API Key 和服务类型。方案提出前的响应只包含：
 
 ```json
 {
@@ -19,7 +28,7 @@ Starcat 通过带 Bearer Auth 的 `GET /api/v1/ping` 验证外部服务地址、
 }
 ```
 
-客户端目前能确认“服务可达且类型正确”，但无法判断线上实例运行的是哪个发布版本。六个 Go 服务的版本管理也不统一：部分仓库保留手工维护的 `internal/version.Version`，部分仓库没有版本包，构建流程尚未把 release tag 注入二进制。
+当时客户端只能确认“服务可达且类型正确”，六个 Go 服务也尚未统一版本管理。这些实现缺口现已由第 0 节所列代码补齐；当前线上版本仍需独立核验。
 
 本方案把生产发布 tag 作为版本单一真源，在构建镜像时注入 Go 二进制，再由现有 ping 响应返回版本号。客户端按可选字段解析，使后端可以逐个服务升级，不要求同时发布。
 
@@ -42,7 +51,7 @@ Starcat 通过带 Bearer Auth 的 `GET /api/v1/ping` 验证外部服务地址、
 - 不在服务启动后读取 `.git`、Makefile 或远端 GitHub API。
 - 不改变现有 Bearer Auth、envelope `schema_version` 或服务名校验逻辑。
 
-## 3. 当前基线
+## 3. 实施前基线（2026-07-21 历史快照）
 
 > 下表是 2026-07-21 本地仓库快照，只用于说明版本源漂移，不能证明当前线上部署版本。
 

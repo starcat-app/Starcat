@@ -1,8 +1,10 @@
 # Trending 数据本地缓存设计方案
 
+> 定位更新（2026-11-12）：本文保留早期持久化选型与方案对比，下面的“当前状态”指当时基线。现行实现使用独立 Trending 缓存，并非纯内存；daily / weekly / monthly TTL 分别为 1h / 6h / 24h，见 [31-Trending / Weekly 缓存改造](31-Trending-Weekly缓存改造.md) 和 `Starcat/Features/Trending/TrendingViewModel.swift`。不要重新执行方案 A 或恢复 monthly=12h。
+
 ## 1. 背景与问题
 
-### 当前状态
+### 原方案评估时的状态
 - **TrendingRepository**：纯内存缓存，应用重启后丢失
 - **TTL 策略**：daily=1h, weekly=6h, monthly=12h
 - **README**：使用 `ReadmeRepository` 关联 `repoId (Int64)` 存储

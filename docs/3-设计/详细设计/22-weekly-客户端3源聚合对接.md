@@ -2,11 +2,11 @@
 
 > **2026-07-15 后续方案**：本文只保留 R-05 三源客户端落地的历史设计。动态来源目录、通用 `source_entries`、HelloGitHub/AI 情报图标、本地缓存 migration 与置顶排序统一以 [`Weekly 多来源扩展、AI 情报采集与置顶运营正式方案`](../../2-产品/需求讨论/正式方案/Weekly多来源扩展与AI情报采集正式方案.md) 为准。
 
-> **状态**：关键契约已拍板（2026-06-12，待 R-04 后端接口稳定后施工）
+> **状态**：2026-06-12 的 R-05 历史设计；后续已有 bulk 缓存与多来源实现，不再是待后端稳定后开工的现行任务
 > **依赖**：[`21-weekly-api-后端3源聚合改造.md`](./21-weekly-api-后端3源聚合改造.md)
 > **影响范围**：客户端网络层、Activity / Weekly 列表、详情页、Weekly 语言筛选
-> **不影响**：客户端 GRDB schema、Manage、Trending、Activity 其它分类
-> **兼容策略**：项目未上线，直接替换旧 Weekly 接口，不保留双栈
+> **原始范围**：当时未规划客户端 GRDB 缓存；后续由 [31-缓存改造](31-Trending-Weekly缓存改造.md) 和 [42-多来源采集](42-Weekly多来源采集与置顶.md) 扩展
+> **现行约束**：项目已经发布，任何已发布 schema 变更遵守 `AGENTS.md` 的追加迁移规则；原文“未上线”不能作为修改旧迁移的依据
 
 ---
 
@@ -27,13 +27,13 @@ GET /api/v1/repos/languages
 3. 点击列表项时立即使用列表 DTO 的 `gh_repo_id` 和完整 Repo Card 构造首帧 `Repo`，不等待详情网络请求；
 4. 后台按 `gh_repo_id` 拉取详情，补齐完整 Repo Card 更新；来源只在 `full_name` 同行显示来源图标 + 短时间/期号标签；
 5. 继续沿用 `UnifiedRepoRow`、`RepoDetailScaffold`、`WeeklyDetailScaffoldShell` 和 `StarActionService`；
-6. 公共发现数据仍不写入客户端 SQLite，只有用户主动 Star 后才进入本地私有数据体系。
+6. 公共发现数据与用户私有关系分开。后续实现已将 Weekly bulk 写入客户端缓存；公共缓存存在不代表用户已 Star 或已加入知识库。
 
 列表和详情页都展示同款轻量来源标识：repo name / full_name 右侧显示来源小圆图标 + 短标签，不单独占据详情页纵向空间。
 
 ---
 
-## 1. 最新客户端现状
+## 1. R-05 评估时的客户端现状（历史）
 
 ### 1.1 Weekly 列表已经具备分页能力
 
@@ -72,7 +72,7 @@ Repo.isStarred = false
 
 Tags / Notes / Releases、Share、AI 等私有功能通过 `repo.isStarred` 控制，而不是通过 `repo.id != 0` 判断。
 
-但当前 `WeeklyDetailScaffoldShell.makeFallbackRepo(from:)` 仍构造 `id=0` fallback，并在本地未命中后直调 GitHub `/repos/{owner}/{repo}`。R-05 必须删除这条 Weekly 专用 fallback 语义，改为用 `WeeklyFeedItem.card.toEphemeralRepo()` 构造首帧 `Repo`。项目未上线，不保留 `id=0` Weekly 兼容路径。
+R-05 实施前，`WeeklyDetailScaffoldShell.makeFallbackRepo(from:)` 曾构造 `id=0` fallback，并直调 GitHub `/repos/{owner}/{repo}`；当时改造目标是使用 `WeeklyFeedItem.card.toEphemeralRepo()` 的真实 GitHub ID。这里记录旧路径替换，不表示当前仍需重做该改造，也不能据此回退现行私有知识库能力边界。
 
 ### 1.4 当前 Weekly Shell 未使用 RepoResolver
 
@@ -275,9 +275,9 @@ enum WeeklySource: Decodable, Sendable, Equatable {
 
 ### 4.4 分页触发
 
-沿用当前接近底部触发策略即可，不重新设计为新的 ScrollView sentinel。是否使用倒数第 3 行还是第 5 行属于实现时的体验微调，不是接口契约。
+现行滚动分页遵守 [UI-列表分页加载规范](../../5-规范/UI-列表分页加载规范.md)，统一使用 `ListPaginationPolicy` 与 `automaticListPagination`；不再按本方案早期的第 3 / 第 5 行建议各自实现触发器。
 
-`meta.next_page` 是 `hasMore` 的唯一真源。项目未上线，R-05 不兼容旧 fixture；后端未返回 `next_page` 视为接口错误并进入列表错误处理。
+R-05 的远端分页模式用 `meta.next_page` 判断是否继续。后续 bulk 本地模式按本地查询结果分页，两者不能混用；当前行为见 31 号缓存设计与 `WeeklyContentViewModel`。
 
 ### 4.5 刷新失败语义
 

@@ -7,7 +7,7 @@
 > - [`02-替代品推荐-Agent方案.md`](02-替代品推荐-Agent方案.md)：发现线「向外找替代」；本方案是「向内去冗余」
 > - [`07-Smart-Collection-生成方案.md`](07-Smart-Collection-生成方案.md)：扫描后可一键生成 Smart Collection 固化簇
 > - [`04-AgentRunKit-Swarm-SwiftAgent-对比分析.md`](04-AgentRunKit-Swarm-SwiftAgent-对比分析.md)：共用 AgentRuntime
-> - [`../详细设计/26-向量搜索改进.md`](../详细设计/26-向量搜索改进.md)：embedding 索引
+> - [向量搜索改进](../../../3-设计/详细设计/26-向量搜索改进.md)：embedding 索引
 
 ---
 

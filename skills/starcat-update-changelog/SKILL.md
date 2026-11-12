@@ -158,7 +158,7 @@ Contrast — too technical and verbose (DON'T do this):
 
 ### Bullet writing rules
 
-写法以主规范为准：[`docs/5-规范/Changelog-更新规范.md`](../../../docs/5-规范/Changelog-更新规范.md) 第 4 节（App 更新说明友好）。摘要：
+写法以主规范为准：[`docs/5-规范/Changelog-更新规范.md`](../../docs/5-规范/Changelog-更新规范.md) 第 4 节（App 更新说明友好）。摘要：
 
 - **短标题 + 冒号 + 说明**：中文用全角 `：`；英文用半角 `: `（冒号后必须有空格）。不要靠第一个逗号拆标题；新条目不要用 em dash。
 - **不要**以 `Added` / `Improved` / `Fixed` 或「新增 / 优化 / 修复」开头——分区标题已表达类别。
