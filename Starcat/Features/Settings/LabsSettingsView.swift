@@ -100,6 +100,10 @@ struct LabsSettingsTab: View {
                 explanation("settings.labs.layout.grouping", hint: "settings.labs.layout.groupingHelp")
             }
             .help(Text("settings.labs.decision.grouping.description"))
+            Toggle(isOn: $settings.decisionSearchRoutingEnabled) {
+                explanation("settings.labs.layout.searchRouting", hint: "settings.labs.layout.searchRoutingHelp")
+            }
+            .help(Text("settings.labs.decision.searchRouting.description"))
             Toggle(isOn: $settings.decisionTagSuggestionsEnabled) {
                 explanation("settings.labs.layout.tags", hint: "settings.labs.layout.tagsHelp")
             }
