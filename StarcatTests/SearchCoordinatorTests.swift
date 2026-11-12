@@ -12,6 +12,117 @@ import Testing
 @Suite("Search Coordinator")
 @MainActor
 struct SearchCoordinatorTests {
+    @Test("四来源过滤同一仓库且统计不因跨来源重复")
+    func contentFilteringAcrossSources() async {
+        let blocked = Self.makeRepo(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let safe = Self.makeRepo(id: 901, owner: "basecamp", name: "omarchy")
+        let providers = SearchSource.allCases.map { source in
+            StubSearchProvider(source: source) { _ in
+                SearchProviderPage(
+                    repositories: [blocked, safe].map { Self.makeCandidate(repo: $0, source: source) },
+                    references: [], totalCount: 5_000, hasNextPage: false
+                )
+            }
+        }
+        let coordinator = SearchCoordinator(providers: providers)
+        await coordinator.search(SearchRequest(query: "linux", includeWebInAll: true))
+        #expect(coordinator.repositories.map(\.card.fullName) == ["basecamp/omarchy"])
+        #expect(coordinator.contentSummary.checkedCount == 2)
+        #expect(coordinator.contentSummary.hiddenCount == 1)
+        #expect(coordinator.visibleCount(for: .github) == 1)
+        #expect(coordinator.loadedPage(for: .github)?.totalCount == 5_000)
+    }
+
+    @Test("禁止查询在所有 Provider 发出前终止")
+    func blockedQueryDoesNotCallProviders() async {
+        let provider = CountingSearchProvider(source: .github, page: .empty)
+        let coordinator = SearchCoordinator(providers: [provider])
+        await coordinator.search(SearchRequest(query: "购买枪支"))
+        #expect(provider.callCount == 0)
+        #expect(coordinator.blockedQuery != nil)
+        #expect(coordinator.statuses.isEmpty)
+        #expect(coordinator.contentSummary.hiddenCount == 1)
+    }
+
+    @Test("全隐藏页最多补一页且保留后续页码")
+    func filteredPagesPreservePagination() async {
+        let bad = Self.makeCandidate(
+            repo: Self.makeRepo(id: 900, owner: "cirosantilli", name: "china-dictatorship"), source: .github
+        )
+        let safe = Self.makeCandidate(
+            repo: Self.makeRepo(id: 901, owner: "basecamp", name: "omarchy"), source: .github
+        )
+        let provider = ContentPagingSearchProvider(source: .github, blocked: bad, safe: safe)
+        let coordinator = SearchCoordinator(providers: [provider])
+        await coordinator.search(SearchRequest(query: "linux", scope: .github))
+        #expect(await provider.requests.map(\.page) == [1, 2])
+        #expect(coordinator.repositories.isEmpty)
+        #expect(coordinator.currentGitHubPage == 2)
+        #expect(coordinator.loadedPage(for: .github)?.hasNextPage == true)
+        #expect(coordinator.contentSummary.hiddenCount == 1)
+        await coordinator.loadMore(SearchRequest(query: "linux", scope: .github, page: 3), source: .github)
+        #expect(coordinator.repositories.map(\.card.fullName) == ["basecamp/omarchy"])
+        #expect(coordinator.currentGitHubPage == 3)
+        #expect(coordinator.contentSummary.checkedCount == 2)
+    }
+
+    @Test("补页失败保留成功游标并允许从失败页重试")
+    func failedContentRefillKeepsCursor() async {
+        let bad = Self.makeCandidate(
+            repo: Self.makeRepo(id: 900, owner: "cirosantilli", name: "china-dictatorship"), source: .github
+        )
+        let safe = Self.makeCandidate(
+            repo: Self.makeRepo(id: 901, owner: "basecamp", name: "omarchy"), source: .github
+        )
+        let provider = ContentPagingSearchProvider(source: .github, blocked: bad, safe: safe, failRefillOnce: true)
+        let coordinator = SearchCoordinator(providers: [provider])
+        await coordinator.search(SearchRequest(query: "linux", scope: .github))
+        #expect(coordinator.currentGitHubPage == 1)
+        #expect(coordinator.loadedPage(for: .github)?.hasNextPage == true)
+        await coordinator.loadMore(SearchRequest(query: "linux", scope: .github, page: 2), source: .github)
+        #expect(await provider.requests.map(\.page) == [1, 2, 2, 3])
+        #expect(coordinator.currentGitHubPage == 3)
+        #expect(coordinator.repositories.count == 1)
+    }
+
+    @Test("网页补取沿用扩大窗口协议而不是虚构页码")
+    func webContentRefillTracksWindow() async {
+        let bad = Self.makeCandidate(
+            repo: Self.makeRepo(id: 900, owner: "cirosantilli", name: "china-dictatorship"), source: .web
+        )
+        let safe = Self.makeCandidate(
+            repo: Self.makeRepo(id: 901, owner: "basecamp", name: "omarchy"), source: .web
+        )
+        let provider = ContentPagingSearchProvider(source: .web, blocked: bad, safe: safe)
+        let coordinator = SearchCoordinator(providers: [provider])
+        await coordinator.search(SearchRequest(query: "linux", scope: .web))
+        #expect(await provider.requests.map(\.externalSearchFilters.maxResults) == [10, 20])
+        #expect(coordinator.currentWebMaxResults == 20)
+        #expect(coordinator.loadedPage(for: .web)?.hasNextPage == true)
+    }
+
+    @Test("后返回的危险元数据使相同仓库在切换范围后仍隐藏")
+    func blockedMetadataCannotReturnOnScopeChange() async {
+        let safeRepo = Self.makeRepo(id: 904, owner: "example", name: "project")
+        var unsafeRepo = safeRepo
+        unsafeRepo.description = "出售毒品"
+        let safe = Self.makeCandidate(repo: safeRepo, source: .localKeyword)
+        let unsafe = Self.makeCandidate(repo: unsafeRepo, source: .github)
+        let coordinator = SearchCoordinator(providers: [
+            StubSearchProvider(source: .localKeyword) { _ in
+                SearchProviderPage(repositories: [safe], references: [], totalCount: 1, hasNextPage: false)
+            },
+            StubSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: [unsafe], references: [], totalCount: 1, hasNextPage: false)
+            }
+        ])
+        await coordinator.search(SearchRequest(query: "tools"))
+        #expect(coordinator.repositories.isEmpty)
+        await coordinator.updateScope(SearchRequest(query: "tools", scope: .local))
+        #expect(coordinator.repositories.isEmpty)
+        #expect(coordinator.visibleCount(for: .localKeyword) == 0)
+    }
+
     @Test("单个 Provider 失败不清空其它来源结果")
     func partialFailureKeepsSuccessfulResults() async {
         let repo = Self.makeRepo(id: 1, owner: "apple", name: "swift")
@@ -507,6 +618,35 @@ private struct StubSearchProvider: SearchProvider {
 
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
         try await handler(request)
+    }
+}
+
+/// 记录自动补页边界，支持一次失败以验证重试游标不会提前推进。
+private actor ContentPagingSearchProvider: SearchProvider {
+    nonisolated let source: SearchSource
+    let blocked: RepositoryCandidate
+    let safe: RepositoryCandidate
+    var failRefillOnce: Bool
+    private(set) var requests: [SearchRequest] = []
+
+    init(source: SearchSource, blocked: RepositoryCandidate, safe: RepositoryCandidate, failRefillOnce: Bool = false) {
+        self.source = source
+        self.blocked = blocked
+        self.safe = safe
+        self.failRefillOnce = failRefillOnce
+    }
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        requests.append(request)
+        let number = source == .web ? request.externalSearchFilters.maxResults / 10 : request.page
+        if number == 2, failRefillOnce {
+            failRefillOnce = false
+            throw URLError(.cannotConnectToHost)
+        }
+        return SearchProviderPage(
+            repositories: [number < 3 ? blocked : safe],
+            references: [], totalCount: 100, hasNextPage: number < 3
+        )
     }
 }
 

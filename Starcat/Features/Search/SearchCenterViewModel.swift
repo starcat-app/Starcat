@@ -230,7 +230,7 @@ final class SearchCenterViewModel {
     }
 
     var canLoadMoreWeb: Bool {
-        externalSearchFilters.maxResults < 100
+        max(externalSearchFilters.maxResults, coordinator.currentWebMaxResults) < 100
             && !isLoadingWeb
             && coordinator.loadedPage(for: .web)?.hasNextPage == true
     }
@@ -241,11 +241,8 @@ final class SearchCenterViewModel {
     }
 
     var githubResultSummary: String? {
-        guard case .loaded(let page) = coordinator.status(for: .github), let total = page.totalCount else { return nil }
-        if total > 1_000 {
-            return String(format: String.l10n("search.github.summary.cappedFormat"), total)
-        }
-        return String(format: String.l10n("search.github.summary.format"), total)
+        guard case .loaded = coordinator.status(for: .github) else { return nil }
+        return String(format: String.l10n("search.github.summary.format"), coordinator.visibleCount(for: .github))
     }
 
     /// 网页搜索（AnySearch）成功响应后的页级元信息。
@@ -285,13 +282,8 @@ final class SearchCenterViewModel {
             return []
         }
         return sources.compactMap { source in
-            guard case .loaded(let page) = coordinator.status(for: source) else { return nil }
-            // GitHub 的 totalCount 是 API 报告的"全站命中总数"（可能 1000+），
-            // 与列表展示数（取首页 30 条）有差异；这里直接展示总数，与
-            // githubResultSummary 同口径，避免两处口径不一致。
-            // 本地 / web 的 totalCount 与实际返回数相同，无此问题。
-            let total = page.totalCount ?? 0
-            return ResultSourceCount(source: source, count: total)
+            guard case .loaded = coordinator.status(for: source) else { return nil }
+            return ResultSourceCount(source: source, count: coordinator.visibleCount(for: source))
         }
     }
 
@@ -304,8 +296,8 @@ final class SearchCenterViewModel {
             switch coordinator.status(for: source) {
             case .loading:
                 return SearchProcessChip(source: source, phase: .loading)
-            case .loaded(let page):
-                return SearchProcessChip(source: source, phase: .loaded(page.totalCount ?? 0))
+            case .loaded:
+                return SearchProcessChip(source: source, phase: .loaded(coordinator.visibleCount(for: source)))
             case .idle, .failed:
                 return nil
             }
@@ -744,7 +736,9 @@ final class SearchCenterViewModel {
     /// 后重跑 web source 实现，Coordinator 会按 URL 去重合并，避免重复卡片。
     func loadMoreWeb() async {
         guard canLoadMoreWeb, scope == .web, !lastSubmittedQuery.isEmpty else { return }
-        externalSearchFilters.maxResults = min(externalSearchFilters.maxResults + 10, 100)
+        externalSearchFilters.maxResults = min(
+            max(externalSearchFilters.maxResults, coordinator.currentWebMaxResults) + 10, 100
+        )
         await coordinator.loadMore(makeRequest(query: lastSubmittedQuery), source: .web)
         clampSelection()
     }
