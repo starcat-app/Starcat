@@ -2560,7 +2560,7 @@ private struct SearchRemoteRepoDetailView: View {
     /// Search Center 的候选卡同样是一次性快照；知识库状态写入成功后用本地覆盖值
     /// 驱动 ❤️ 空心/实心，避免必须关闭再打开详情卡才能看到变化。
     @State private var libraryOverride: Bool?
-    /// 防止连续点击 Star chip 叠加两次 GitHub 写操作。
+    /// 同时驱动 Star chip 的加载反馈与防连点，和知识库按钮保持一致。
     @State private var isStarToggleInFlight = false
 
     /// 折叠菜单 popover 显隐。点 ··· 触发；菜单项点击后置 false 关闭。
@@ -3072,6 +3072,7 @@ private struct SearchRemoteRepoDetailView: View {
                 titleKey: nil,
                 helpKey: effectiveIsStarred ? "search.detail.action.unstar" : "search.detail.action.star",
                 semanticColor: .actionStar,
+                isWorking: isStarToggleInFlight,
                 action: toggleStar
             )
             SearchDetailActionChip(
