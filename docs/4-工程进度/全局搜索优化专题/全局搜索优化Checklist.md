@@ -19,7 +19,7 @@
 | [x] | C8 | 决策引擎 search_intent 归因 | `improve(ai)` 提交；operation 枚举与 TypeSafe/Laya 传输映射，用量归因区分 route/planning/extraction/ranking |
 | [x] | C9 | 全语言本地化文案 | `improve(localization)` 提交；本次新增 key 覆盖当前全部支持语言，占位符与目录格式校验 |
 | [x] | C10 | 定向与全量单测 | 路由/发现/预算/降级/开关联动测试全绿；`make test` 全量通过（452.356s，exit 0） |
-| [ ] | C11 | 双渠道标准构建 | `make build-appstore`、`make build-direct` 均通过，记录耗时与产物指纹 |
+| [x] | C11 | 双渠道标准构建 | App Store 通过（复核 39.93s；可执行 SHA-256 `5042e7ad…`）；Direct 通过（208.95s；build `202611121646`，可执行 SHA-256 `d5716310…`） |
 | [ ] | C12 | 交付收尾 | 本表全部勾选；汇总提交清单、验证证据与未获授权事项（回写功能实现总览需单独确认） |
 
 ## 交付边界
