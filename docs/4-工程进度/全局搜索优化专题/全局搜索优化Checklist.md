@@ -9,7 +9,7 @@
 | 状态 | 编号 | 小功能 | 完成证据 / 提交主题 |
 |---|---|---|---|
 | [ ] | C0 | 落盘 Checklist 与查询评测集 | `docs(search)` 提交；查询集含 Omarchy 回归样本与分类标注 |
-| [ ] | C1 | 语义查询与索引维护解耦 | `perf(search)` 提交；`search()` 不再补建 repo embeddings，缺索引与零命中可区分，定向单测通过 |
+| [x] | C1 | 语义查询与索引维护解耦 | `perf(search)` 提交；`search()` 不再补建 repo embeddings，缺索引与零命中可区分，定向单测通过 |
 | [ ] | C2 | 发现计划 / 证据 / 会话契约 | `refactor(search)` 提交；`SearchModels` 新增计划、证据、阶段与轮次模型 |
 | [ ] | C3 | 搜索决策作用范围开关 | `feat(search)` 提交；`decisionSearchRoutingEnabled` 默认关闭，Labs 作用范围 UI，重置/键位齐全 |
 | [ ] | C4 | `SearchIntentRouter` 分流 | `feat(search)` 提交；确定性解析 + 双问题 noul + 搜索专属 Planner 降级，单测覆盖 |

@@ -194,7 +194,101 @@ struct SemanticSearchTests {
         #expect(cache.value(for: .init(query: "c", model: "m")) == [3])
     }
 
+    @Test("search 查询阶段不补建索引，缺索引与零命中区分")
+    @MainActor func searchDoesNotRebuildIndexAndDistinguishesMissingFromZeroHit() async throws {
+        let defaults = UserDefaults(suiteName: "semantic-search-query-decoupling")!
+        defaults.removePersistentDomain(forName: "semantic-search-query-decoupling")
+        let settings = AppSettings(defaults: defaults)
+        let model = "test-embedding-model"
+        let repository = RecordingEmbeddingRepository()
+        let service = SemanticSearchService(
+            embeddingRepository: repository,
+            settings: settings,
+            queryClientOverride: StubEmbeddingClient(queryVector: [1, 0]),
+            queryModelOverride: model
+        )
+        let repo = makeRepo(fullName: "starcat-app/starcat", description: "GitHub Stars Manager", topics: nil)
+
+        await #expect(throws: SemanticSearchError.noVectors) {
+            _ = try await service.search(query: "star manager", candidates: [repo])
+        }
+        #expect(await repository.upsertCount == 0)
+
+        await repository.store([
+            RepoEmbedding(
+                repoId: repo.id,
+                model: model,
+                vector: [1],
+                snapshotJson: "{}",
+                updatedAt: "2026-11-12T00:00:00Z"
+            )
+        ])
+        let hits = try await service.search(query: "star manager", candidates: [repo])
+        #expect(hits.isEmpty)
+        #expect(await repository.upsertCount == 0)
+    }
+
     // MARK: - helpers
+
+    private actor RecordingEmbeddingRepository: RepoEmbeddingRepositoryProtocol {
+        private var embeddingsByRepoID: [Int64: RepoEmbedding] = [:]
+        private(set) var upsertCount = 0
+
+        func store(_ embeddings: [RepoEmbedding]) {
+            for embedding in embeddings {
+                embeddingsByRepoID[embedding.repoId] = embedding
+            }
+        }
+
+        func fetchEmbeddings(model: String, repoIDs: [Int64]) async throws -> [RepoEmbedding] {
+            return repoIDs.compactMap { embeddingsByRepoID[$0] }.filter { $0.model == model }
+        }
+
+        func fetchEmbeddingsByRepoID(model: String, repoIDs: [Int64]) async throws -> [Int64: RepoEmbedding] {
+            let rows = try await fetchEmbeddings(model: model, repoIDs: repoIDs)
+            return Dictionary(uniqueKeysWithValues: rows.map { ($0.repoId, $0) })
+        }
+
+        func countEmbeddings(model: String, repoIDs: [Int64]) async throws -> Int {
+            try await fetchEmbeddings(model: model, repoIDs: repoIDs).count
+        }
+
+        func upsert(_ embeddings: [RepoEmbedding]) async throws {
+            upsertCount += embeddings.count
+        }
+    }
+
+    private struct StubEmbeddingClient: AIClientProtocol {
+        let queryVector: [Float]
+
+        func chat(request: AIChatRequest) async throws -> AIChatResponse {
+            throw NSError(domain: "StubEmbeddingClient", code: 1)
+        }
+
+        func chatStream(request: AIChatRequest) -> AsyncThrowingStream<AIChatStreamEvent, Error> {
+            AsyncThrowingStream { continuation in
+                continuation.finish(throwing: NSError(domain: "StubEmbeddingClient", code: 2))
+            }
+        }
+
+        func chat(systemPrompt: String, userPrompt: String, model: String?) async throws -> String {
+            throw NSError(domain: "StubEmbeddingClient", code: 3)
+        }
+
+        func embedding(input: String, model: String?) async throws -> [Float] {
+            queryVector
+        }
+
+        func embeddings(inputs: [String], model: String?) async throws -> [[Float]] {
+            inputs.map { _ in queryVector }
+        }
+
+        func listModels() async throws -> [AIModelDescriptor] {
+            []
+        }
+
+        func testConnection() async throws {}
+    }
 
     private func makeRepo(fullName: String, description: String?, topics: String?) -> Repo {
         let parts = fullName.split(separator: "/", maxSplits: 1).map(String.init)
