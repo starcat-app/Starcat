@@ -1424,53 +1424,52 @@ struct SearchCenterView: View {
                 Spacer()
                 SheetCloseButton { isDiscoveryDiagnosticsPresented = false }
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ForEach(viewModel.discoveryDiagnostics) { diagnostic in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Label(
-                                LocalizedStringKey(diagnostic.stage.titleKey),
-                                systemImage: diagnostic.isFailure ? "exclamationmark.triangle" : "info.circle"
-                            )
-                            .font(interfaceScale.font(.body, weight: .semibold))
-                            if let context = diagnostic.context {
-                                Text(verbatim: context)
-                                    .textSelection(.enabled)
-                            }
-                            Text(verbatim: diagnostic.message)
+            // 面板自身不内嵌滚动：技术详情展开时让 popover 自然增高，避免
+            // 右侧滚动条与折叠箭头/正文重叠；内容仍由外层窗口布局约束兜底。
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(viewModel.discoveryDiagnostics) { diagnostic in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(
+                            LocalizedStringKey(diagnostic.stage.titleKey),
+                            systemImage: diagnostic.isFailure ? "exclamationmark.triangle" : "info.circle"
+                        )
+                        .font(interfaceScale.font(.body, weight: .semibold))
+                        if let context = diagnostic.context {
+                            Text(verbatim: context)
+                                .textSelection(.enabled)
+                        }
+                        Text(verbatim: diagnostic.message)
+                        Text(verbatim: String(
+                            format: String.l10n("search.discovery.diagnostic.impactFormat"),
+                            String.l10n(diagnostic.impactKey)
+                        ))
+                            .foregroundStyle(.secondary)
+                        if let recovery = diagnostic.recovery {
                             Text(verbatim: String(
-                                format: String.l10n("search.discovery.diagnostic.impactFormat"),
-                                String.l10n(diagnostic.impactKey)
+                                format: String.l10n("search.discovery.diagnostic.recoveryFormat"),
+                                recovery
                             ))
                                 .foregroundStyle(.secondary)
-                            if let recovery = diagnostic.recovery {
-                                Text(verbatim: String(
-                                    format: String.l10n("search.discovery.diagnostic.recoveryFormat"),
-                                    recovery
-                                ))
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let detail = diagnostic.technicalDetail, !detail.isEmpty {
-                                DisclosureGroup("search.discovery.diagnostic.technical") {
-                                    if let statusCode = diagnostic.statusCode {
-                                        Text(verbatim: "HTTP \(statusCode)")
-                                            .font(interfaceScale.font(.captionSmall).monospaced())
-                                    }
-                                    Text(verbatim: detail)
-                                        .font(interfaceScale.font(.caption))
-                                        .textSelection(.enabled)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .disclosureGroupStyle(SettingsDisclosureGroupStyle(
-                                    accessibilityLabel: Text("search.discovery.diagnostic.technical")
-                                ))
-                            }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        if let detail = diagnostic.technicalDetail, !detail.isEmpty {
+                            DisclosureGroup("search.discovery.diagnostic.technical") {
+                                if let statusCode = diagnostic.statusCode {
+                                    Text(verbatim: "HTTP \(statusCode)")
+                                        .font(interfaceScale.font(.captionSmall).monospaced())
+                                }
+                                Text(verbatim: detail)
+                                    .font(interfaceScale.font(.caption))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                                accessibilityLabel: Text("search.discovery.diagnostic.technical")
+                            ))
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxHeight: 320)
         }
         .font(interfaceScale.font(.body))
         .foregroundStyle(.primary)

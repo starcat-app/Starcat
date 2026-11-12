@@ -27,7 +27,7 @@
 | [x] | C16 | Direct 验证与交付 | 58 项定向测试通过；本次 17 个 key × 17 种语言与 Direct 编译资源逐项一致，非英语仍为待审核初稿；`make run-direct` 成功，进程来自本 worktree；产物 `com.starcat.app.direct.debug` / `1.9.5-beta.1` / `202611122219` / 代码 `1e43fe0`；界面效果由 dong4j 复验 |
 | [x] | C17 | 接入已配置的专用重排模型 | 复用 RAG 的 TEI / Cohere / MLX Rerank 配置并动态路由；专用 Rerank 失败不回退 Chat，也不占用 LLM 预算；Chat 排序移除冲突 JSON object 响应约束并保留真实解析原因；9 项发现服务定向测试通过 |
 | [x] | C18 | 修正错误恢复联系方式 | `error.user.decoding.recovery` 与 `error.user.unknown.recovery` 全部 17 种语言均改为 `dong4j@gmail.com`；Catalog JSON 校验通过，且未把技术详情混入恢复建议 |
-| [ ] | C19 | 智能发现详情自然高度 | 待实现：移除面板内部滚动与固定最大高度，技术详情展开时增高、折叠时收缩 |
+| [x] | C19 | 智能发现详情自然高度 | 移除详情面板内部 `ScrollView` 与 `maxHeight: 320`；技术详情展开时随内容自然增高、折叠时收缩，避免滚动条与右侧文字重叠；27 项 Search Center 定向测试通过 |
 | [ ] | C20 | 智能发现标识移至右侧 | 待实现：删除列表项底部说明行，在右侧来源标识附近显示轻量标识，理由与证据进入 tooltip / 详情 |
 | [ ] | C21 | 智能发现完整过程 | 待实现：意图理解、检索、核验、重排、合并展示真实状态、数量、耗时与错误，成功后仍可打开详情 |
 
