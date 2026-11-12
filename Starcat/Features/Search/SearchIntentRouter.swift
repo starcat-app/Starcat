@@ -322,7 +322,7 @@ final class SearchIntentRouter {
         let request = DecisionEvaluationRequest(
             state: .text(Self.decisionStateText(for: query)),
             questions: Self.decisionQuestions,
-            operation: .unspecified
+            operation: .searchIntent
         )
         do {
             let response = try await evaluateWithTimeout(engine: engine, request: request)

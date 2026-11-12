@@ -184,6 +184,7 @@ enum DecisionEvaluationOperation: String, Sendable {
     case githubListGrouping = "github_list_grouping"
     case tagReuse = "tag_reuse"
     case connectionTest = "connection_test"
+    case searchIntent = "search_intent"
 }
 
 struct DecisionEvaluationRequest: Equatable, Sendable {

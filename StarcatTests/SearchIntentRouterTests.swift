@@ -59,6 +59,7 @@ struct SearchIntentRouterTests {
         #expect(fixture.planner.callCount == 1)
         let request = fixture.engine.lastRequest
         #expect(request?.questions.count == 2)
+        #expect(request?.operation == .searchIntent)
         #expect(request?.questions.keys.sorted() == [
             SearchIntentRouter.needsFreshEvidenceQuestionID,
             SearchIntentRouter.needsPlanningQuestionID
