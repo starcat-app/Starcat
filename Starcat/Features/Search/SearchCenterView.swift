@@ -884,10 +884,18 @@ struct SearchCenterView: View {
             }
     }
 
+    /// 与来源徽标保持相同的圆形尺寸，并用动态主色保证明暗主题下的层级一致。
     private func discoveryMarker(_ repo: RepositoryCandidate) -> some View {
         Image(systemName: "sparkles")
-            .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: 12, height: 12)
+            .padding(4)
+            .background(Color.primary.opacity(0.08), in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(Color.primary.opacity(0.18), lineWidth: 0.5)
+            }
             .help(Text(verbatim: discoveryTooltip(for: repo)))
             .accessibilityLabel(Text(verbatim: discoveryTooltip(for: repo)))
     }
@@ -905,8 +913,8 @@ struct SearchCenterView: View {
     ) -> CGFloat {
         let sourceWidth = sourceIndicatorTrailingReserve(for: source)
         guard hasDiscovery else { return sourceWidth }
-        // 12pt trailing + 约 12pt 图标；与来源图标并存时再补 4pt 间距。
-        return sourceWidth == 0 ? 24 : sourceWidth + 20
+        // 20pt 圆形徽标保留 12pt 尾距与 2pt 余量；双徽标再增加 20pt 和 4pt 间距。
+        return sourceWidth == 0 ? 34 : sourceWidth + 24
     }
 
     private func sourceIndicatorTrailingReserve(for source: SearchResultSourceIndicator?) -> CGFloat {
