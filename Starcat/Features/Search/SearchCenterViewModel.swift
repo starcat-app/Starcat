@@ -161,7 +161,15 @@ final class SearchCenterViewModel {
 
     /// 详情面板的展示条件：有诊断（失败或上限）或有真实执行步骤可看。
     var hasDiscoveryDetails: Bool {
-        !discoveryDiagnostics.isEmpty || !discoverySteps.isEmpty
+        !discoveryDiagnostics.isEmpty || !discoverySteps.isEmpty || contentSummary.checkedCount > 0
+    }
+
+    var contentSummaryText: String {
+        let summary = contentSummary
+        return String(
+            format: String.l10n("search.content.summaryFormat"),
+            summary.checkedCount, summary.hiddenCount, summary.retainedCount
+        )
     }
 
     /// 详情面板展示的真实执行步骤。成功结果优先用发现服务返回的完整快照，

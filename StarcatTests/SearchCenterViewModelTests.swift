@@ -33,6 +33,28 @@ struct SearchCenterViewModelTests {
         #expect(!viewModel.hasDiscoveryFailures)
     }
 
+    @Test("普通搜索的筛选详情可见，隐藏结果不算智能发现失败")
+    func ordinarySearchExposesFilteringDetailsWithoutFailure() async throws {
+        let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let provider = SearchCenterSessionStubProvider(candidate: blocked)
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]), historyRepository: history
+        )
+        viewModel.query = "linux distributions"
+        await viewModel.submit()
+
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.discoverySession == nil)
+        #expect(viewModel.hasDiscoveryDetails)
+        #expect(!viewModel.hasDiscoveryFailures)
+        #expect(viewModel.contentSummary.checkedCount == 1)
+        #expect(viewModel.contentSummary.hiddenCount == 1)
+        #expect(viewModel.contentSummary.retainedCount == 0)
+        #expect(!viewModel.contentSummaryText.contains("search.content.summaryFormat"))
+        #expect(!viewModel.contentSummaryText.contains("%1$lld"))
+    }
+
     @Test("发现返回、缓存回读与继续查找均不能恢复隐藏候选")
     func discoveryCacheAndContinuationRespectContentPolicy() async throws {
         let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")

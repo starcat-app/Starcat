@@ -524,6 +524,13 @@ struct SearchCenterView: View {
     private var resultContent: some View {
         if viewModel.lastSubmittedQuery.isEmpty {
             historyContent
+        } else if viewModel.coordinator.blockedQuery != nil {
+            ContentUnavailableView(
+                "search.content.title",
+                systemImage: "line.3.horizontal.decrease.circle",
+                description: Text("search.content.queryBlocked")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.shouldShowSearchSkeleton {
             // 骨架只在「谁都还没返回」时出现。关键词已落地 0、语义还在跑时
             // 不能继续画 8 行假列表，否则用户会以为结果还在路上。
@@ -533,6 +540,21 @@ struct SearchCenterView: View {
             // 已有 provider 落地且仍无候选：撑住结果区高度，底栏用过程 chip 说话。
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.candidates.isEmpty, viewModel.contentSummary.hiddenCount > 0 {
+            ContentUnavailableView {
+                Label("search.content.title", systemImage: "line.3.horizontal.decrease.circle")
+            } description: {
+                Text("search.content.allHidden")
+            } actions: {
+                // 过滤空页仍有后续时保留真实的加载入口，不能因没有 List 而锁死分页。
+                if viewModel.scope != .web, viewModel.canLoadMoreGitHub {
+                    Button("search.github.loadMore") { Task { await viewModel.loadMoreGitHub() } }
+                }
+                if viewModel.scope == .web, viewModel.canLoadMoreWeb {
+                    Button("search.github.loadMore") { Task { await viewModel.loadMoreWeb() } }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isExternalSearchUnavailableEmpty {
             // 专属空态：.web scope + AnySearch 未启用。
             // 通用 "search.empty.title" 走的 errorMessages 拼接会带 "web:" 前缀
@@ -1325,10 +1347,9 @@ struct SearchCenterView: View {
     ) -> some View {
         if viewModel.scope == .web,
            let webMetadata = viewModel.webMetadata,
-           let total = webMetadata.totalResults,
            let ms = webMetadata.searchTimeMs {
-            // .web scope 走"含用时"的紧凑形态（保留 v1 体验）
-            webOnlySummaryChip(totalResults: total, timeMs: ms)
+            // 上游总量尚未过滤；汇总必须与当前实际可展示的网页一致。
+            webOnlySummaryChip(totalResults: viewModel.coordinator.visibleCount(for: .web), timeMs: ms)
         } else if !processChips.isEmpty {
             HStack(spacing: 6) {
                 ForEach(processChips) { chip in
@@ -1390,21 +1411,28 @@ struct SearchCenterView: View {
         Button {
             isDiscoveryDiagnosticsPresented.toggle()
         } label: {
-            Image(systemName: viewModel.hasDiscoveryFailures ? "exclamationmark.triangle" : "sparkles")
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    viewModel.hasDiscoveryFailures ? Color.orange.opacity(0.12) : Color.primary.opacity(0.08),
-                    in: Capsule()
-                )
-                .fixedSize(horizontal: true, vertical: false)
+            HStack(spacing: 4) {
+                Image(systemName: viewModel.hasDiscoveryFailures
+                    ? "exclamationmark.triangle" : "line.3.horizontal.decrease.circle")
+                if viewModel.contentSummary.hiddenCount > 0 {
+                    Text(viewModel.contentSummary.hiddenCount, format: .number)
+                        .monospacedDigit()
+                }
+            }
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                viewModel.hasDiscoveryFailures ? Color.orange.opacity(0.12) : Color.primary.opacity(0.08),
+                in: Capsule()
+            )
+            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .help(Text(verbatim: discoveryDetailsTooltip))
-        .accessibilityLabel(Text(verbatim: discoveryDetailsTooltip))
+        .accessibilityLabel(Text(verbatim: discoveryDetailsTooltip + " " + viewModel.contentSummaryText))
         .popover(isPresented: $isDiscoveryDiagnosticsPresented, arrowEdge: .bottom) {
             discoveryDiagnosticsPopover
                 .appLocaleEnvironment()
@@ -1416,6 +1444,9 @@ struct SearchCenterView: View {
         if viewModel.hasDiscoveryFailures {
             return String.l10n("search.discovery.diagnostic.open")
         }
+        if viewModel.discoverySession == nil {
+            return String.l10n("search.content.details") + "\n" + viewModel.contentSummaryText
+        }
         return String.l10n("search.discovery.steps.open")
     }
 
@@ -1424,7 +1455,8 @@ struct SearchCenterView: View {
     private var discoveryDiagnosticsPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("search.discovery.diagnostic.title")
+                Text(verbatim: String.l10n(viewModel.discoverySession == nil
+                    ? "search.content.title" : "search.discovery.diagnostic.title"))
                     .font(interfaceScale.font(.body, weight: .semibold))
                 Spacer()
                 SheetCloseButton { isDiscoveryDiagnosticsPresented = false }
@@ -1432,6 +1464,9 @@ struct SearchCenterView: View {
             // 面板自身不内嵌滚动：技术详情展开时让 popover 自然增高，避免
             // 右侧滚动条与折叠箭头/正文重叠；内容仍由外层窗口布局约束兜底。
             VStack(alignment: .leading, spacing: 14) {
+                if viewModel.contentSummary.checkedCount > 0 {
+                    contentFilteringDetails
+                }
                 if !viewModel.discoverySteps.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(viewModel.discoverySteps) { step in
@@ -1487,6 +1522,36 @@ struct SearchCenterView: View {
         .foregroundStyle(.primary)
         .padding(16)
         .frame(width: 380)
+    }
+
+    /// 内容筛选是正常步骤。只展示数量、规则版本与 ID，不泄露被隐藏的正文。
+    private var contentFilteringDetails: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if viewModel.discoverySession != nil {
+                Label("search.content.title", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
+            }
+            Text(verbatim: viewModel.contentSummaryText)
+                .font(interfaceScale.font(.caption))
+                .fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup("search.discovery.diagnostic.technical") {
+                Text(verbatim: String(
+                    format: String.l10n("search.content.versionFormat"),
+                    viewModel.coordinator.contentPolicy.version
+                ))
+                if !viewModel.contentSummary.ruleIDs.isEmpty {
+                    Text(verbatim: viewModel.contentSummary.ruleIDs.sorted().joined(separator: ", "))
+                        .textSelection(.enabled)
+                }
+            }
+            .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                accessibilityLabel: Text("search.discovery.diagnostic.technical")
+            ))
+            .font(interfaceScale.font(.captionSmall))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 单个执行步骤：图标表示状态，标题用阶段文案，右侧放实际耗时。
