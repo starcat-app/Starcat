@@ -8,14 +8,27 @@
 
 import Foundation
 
-/// 六种空间组织规则；分类只增加偏好权重，不能把某分类锁死成一种封面。
+/// 14 种空间组织规则；分类只增加偏好权重，不能把某分类锁死成一种封面。
 enum DailyRadarCoverStyle: CaseIterable, Sendable {
     case terrain, network, orbital, architecture, strata, interference
+    case aurora, vortex, prism, nebula, circuit, crystal, signal, mosaic
+}
+
+/// 色彩策略决定饱和度与明度曲线，让同一色相能呈现不同的材料感。
+enum DailyRadarCoverPalette: CaseIterable, Sendable {
+    case neon, solar, bio, cyber, ice, magma
+}
+
+/// 底场参与报告身份，避免所有封面共享同一种网格背景。
+enum DailyRadarCoverBackground: CaseIterable, Sendable {
+    case deepField, scanline, vignette, colorWash
 }
 
 /// 尺寸无关的封面身份；渲染时只按可见尺寸裁减次级细节。
 struct DailyRadarCoverComposition: Equatable, Sendable {
     let style: DailyRadarCoverStyle
+    let palette: DailyRadarCoverPalette
+    let background: DailyRadarCoverBackground
     let geometrySeed: UInt64
     let textureSeed: UInt64
     let hue: Double
@@ -47,6 +60,8 @@ struct DailyRadarCoverComposition: Equatable, Sendable {
         }
         let pool = DailyRadarCoverStyle.allCases + [preferred, preferred]
         style = pool[identity.int(pool.count)]
+        palette = DailyRadarCoverPalette.allCases[identity.int(DailyRadarCoverPalette.allCases.count)]
+        background = DailyRadarCoverBackground.allCases[identity.int(DailyRadarCoverBackground.allCases.count)]
         geometrySeed = identity.next()
         textureSeed = identity.next()
         hue = Self.wrapped(baseHue + identity.range(-0.16, 0.16))
@@ -64,6 +79,11 @@ struct DailyRadarCoverComposition: Equatable, Sendable {
         if edge < 110 { return 0 }
         if edge < 230 { return 1 }
         return 2
+    }
+
+    /// 往期列表复用封面身份中的主色，避免渲染后取色随尺寸和色彩空间漂移。
+    static func dominantHue(category: String?, seed: String) -> Double {
+        Self.init(category: category, seed: seed).hue
     }
 
     /// 安全区来自布局而非随机数；钳制后仍保留至少六成宽度绘制主体。

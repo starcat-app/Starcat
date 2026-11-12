@@ -122,7 +122,7 @@ struct DailyRadarPreviewReader: View {
                         .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: headerAppeared)
                         Divider()
                         Group {
-                            if let detail, let markdown = detail.markdown {
+                            if let detail, let markdown = detail.presentationMarkdown {
                                 VStack(alignment: .leading, spacing: 28) {
                                     DailyRadarMarkdownView(
                                         markdown: article?.body ?? markdown, identity: detail.contentIdentity,
@@ -135,10 +135,7 @@ struct DailyRadarPreviewReader: View {
                                             Divider()
                                             Text("dailyRadar.source").font(scale.font(size: 12, weight: .semibold))
                                             if let safe = DailyRadarMarkdownRenderer.safeURL(source.url.absoluteString) {
-                                                Link(destination: safe) {
-                                                    Label(source.name, systemImage: "arrow.up.right")
-                                                }
-                                                .help("dailyRadar.openSource")
+                                                DailyRadarSourceLink(source: source, destination: safe, scale: scale)
                                             }
                                             Text("dailyRadar.generatedNotice")
                                                 .font(scale.font(size: 11))
@@ -209,7 +206,8 @@ struct DailyRadarPreviewReader: View {
     }
 
     private var article: DailyRadarArticle? {
-        detail?.markdown.flatMap(DailyRadarArticle.parse)
+        // 结构化文章的 body 也必须来自展示版 markdown，否则尾注会绕过内容来源去重。
+        detail?.presentationMarkdown.flatMap(DailyRadarArticle.parse)
     }
 
     /// 头图先稳定，标题和元信息再短延迟入场；正文与摘要仍沿用原有加载/逐字节奏。
@@ -244,6 +242,45 @@ struct DailyRadarPreviewReader: View {
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// 内容来源本质是文档深层链接；用项目头像和胶囊状态明确“可点击”，而不是伪装成普通 metadata。
+private struct DailyRadarSourceLink: View {
+    let source: DailyRadarReport.Source
+    let destination: URL
+    let scale: InterfaceScale
+
+    private var title: String {
+        source.repositoryFullName ?? source.name
+    }
+
+    var body: some View {
+        Link(destination: destination) {
+            HStack(spacing: 8) {
+                RemoteAvatar(urlString: source.ownerAvatarURL?.absoluteString, size: 22, showBorder: false)
+                Text(verbatim: title)
+                    .font(scale.font(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                Image(systemName: "arrow.up.right")
+                    .font(scale.font(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background {
+                Capsule().fill(Color.primary.opacity(0.06))
+            }
+            .overlay {
+                Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("dailyRadar.openSource")
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityHint(Text("dailyRadar.openSource"))
     }
 }
 

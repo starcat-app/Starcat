@@ -33,7 +33,7 @@
 `codex/global-search-content-filter` 由既有搜索优化提交 `61e9e9cf` 创建，
 工作区为 `../Starcat-global-search-content-filter`，2026-11-13 状态为开发中，
 用途为已授权的 Search Center 本地内容过滤、误杀控制与性能验证。
-后续合入本地 `dev` 的最新搜索修复；原 `../Starcat-global-search-optimization`
+已合入本地 `dev@1755f26f` 的最新搜索修复；原 `../Starcat-global-search-optimization`
 由另一任务继续使用，本工作区不修改其未提交文件。已复制本机 Secrets 配置，
 依赖锁继续使用本分支受控文件。按功能本地提交，验收后归宿为 `dev`，
 不自动合并、push、发布或清理。
@@ -43,6 +43,7 @@
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
+| `codex/global-search-optimization` | 本地 worktree：`../Starcat-global-search-optimization`；无远端分支 | 基于 `dev` 实现全局搜索智能发现：决策引擎查询分流、LLM 规划与仓库发现、语义检索查询路径解耦；GitHub Issue #207 / HOM-239。 | `开发中`；2026-11-12 创建于 `dev@9639ada9`，按 checklist 逐项勾选并本地提交。 | 完成全部 checklist 勾选、单测与双渠道构建后报告 dong4j 验收，再合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-12 已发布 Direct `1.9.5-beta.1`，发布源码为 `1aab33e6`；每日推荐仍在独立分支，未进入本次发布。 | 继续承载后续开发；每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |

@@ -279,33 +279,48 @@ final class SubscriptionManager: ProEntitlementProviding {
             "itemCount": .integer(observedCount), "rejectedCount": .integer(rejectedCount)])
     }
 
-    /// 处理 `offerCodeRedemption` sheet 关闭后的结果并刷新 Pro 权益。
+    /// 处理系统兑换结果：新系统先验证并完成交易，旧系统在面板关闭后重新读取权益。
+    ///
+    /// nil 只代表旧系统没有交易返回值，不能据此授予 Pro；所有入口最终都以有效权益为准。
     @MainActor
-    func handleOfferCodeRedemptionResult(_ result: Result<Void, Error>) async -> Bool {
-        switch result {
-        case .success:
-            await refreshEntitlements()
-            if entitlement.isActive {
-                lastErrorMessage = nil
-                return true
+    func handleOfferCodeRedemptionResult(
+        _ result: Result<VerificationResult<Transaction>?, Error>
+    ) async -> Bool {
+        let diagnostic = DiagnosticOperation(category: "subscription", name: "offerCodeRedemption")
+        do {
+            if let verification = try result.get() {
+                let transaction = try verifiedTransaction(from: verification)
+                await transaction.finish()
             }
-            return false
-        case .failure(let error):
+            await DiagnosticContext.$current.withValue(diagnostic) { await refreshEntitlements() }
+            lastErrorMessage = nil
+            diagnostic.finish(entitlement.isActive ? .succeeded : .partial,
+                fields: ["entitlementActive": .boolean(entitlement.isActive)])
+            return entitlement.isActive
+        } catch {
             if Self.isUserCancelledOfferCodeError(error) {
+                diagnostic.finish(.cancelled)
                 lastErrorMessage = nil
             } else {
-                lastErrorMessage = SubscriptionError.offerCodeRedemptionFailed.localizedDescription
-                AppLog.general.error("[subscription] offer code redemption failed: \(error.localizedDescription, privacy: .public)")
+                diagnostic.finish(.failed, error: error)
+                lastErrorMessage = (error as? SubscriptionError ?? .offerCodeRedemptionFailed).localizedDescription
+                let systemError = error as NSError
+                AppLog.general.error("[subscription] offer code redemption failed: domain=\(systemError.domain, privacy: .public), code=\(systemError.code), error=\(error.localizedDescription, privacy: .public)")
             }
             return false
         }
     }
 
     private static func isUserCancelledOfferCodeError(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return true
+        }
         if let storeKit = error as? StoreKitError, case .userCancelled = storeKit {
             return true
         }
-        return (error as NSError).code == NSUserCancelledError
+        let systemError = error as NSError
+        return (systemError.domain == NSCocoaErrorDomain && systemError.code == NSUserCancelledError)
+            || (systemError.domain == SKErrorDomain && systemError.code == SKError.Code.paymentCancelled.rawValue)
     }
 
     private func listenForTransactionUpdates() async {

@@ -301,14 +301,16 @@ struct DailyRadarPreviewWorkspace: View {
                         if isHistoryExpanded {
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(olderStories.enumerated()), id: \.element.id) { index, item in
+                                    let hue = DailyRadarCoverComposition.dominantHue(category: item.category, seed: item.id)
+                                    let coverTint = Color(hue: hue, saturation: 0.55, brightness: 0.70)
                                     Button { openStory(item) } label: {
-                                        // 历史行斑马纹只在奇数行铺极轻底色；hover 统一压一档。
+                                        // 底色来自报告封面身份，不用像素取色，避免缩略图尺寸影响行底色。
                                         LocalHoverSurface(
-                                            normalBackground: index.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.025),
-                                            hoveredBackground: Color.primary.opacity(0.055),
-                                            normalBorder: .clear,
-                                            hoveredBorder: Color.primary.opacity(0.16),
-                                            cornerRadius: 6
+                                            normalBackground: coverTint.opacity(index.isMultiple(of: 2) ? 0.045 : 0.065),
+                                            hoveredBackground: coverTint.opacity(0.10),
+                                            normalBorder: coverTint.opacity(0.09),
+                                            hoveredBorder: coverTint.opacity(0.18),
+                                            cornerRadius: 10
                                         ) {
                                             HStack(spacing: 16) {
                                                 DailyRadarCoverView(cover: item.cover,
@@ -328,7 +330,7 @@ struct DailyRadarPreviewWorkspace: View {
                                                 if let badges = item.relatedProjectBadges, !badges.isEmpty {
                                                     DailyRadarProjectBadgeCluster(
                                                         badges: badges, maxVisible: 4,
-                                                        avatarSize: 24 * scale.multiplier, style: .surface
+                                                        avatarSize: 30 * scale.multiplier, style: .surface
                                                     )
                                                 }
                                             }

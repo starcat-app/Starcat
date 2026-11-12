@@ -37,11 +37,12 @@ struct DailyRadarProjectBadgeCluster: View {
             }
             if hiddenCount > 0 {
                 Text(verbatim: "+\(hiddenCount)")
-                    .font(scale.font(size: max(10, avatarSize * 0.42), weight: .semibold))
+                    .font(scale.font(size: max(10, avatarSize * 0.40), weight: .semibold))
                     .foregroundStyle(style == .hero ? .white : .primary)
-                    .frame(minWidth: avatarSize, minHeight: avatarSize)
+                    .padding(.horizontal, max(4, avatarSize * 0.20))
+                    .frame(minHeight: avatarSize * 0.76)
                     .background {
-                        Capsule().fill(style == .hero ? Color.black.opacity(0.55) : Color(nsColor: .controlBackgroundColor))
+                        Capsule().fill(style == .hero ? Color.black.opacity(0.58) : Color.primary.opacity(0.09))
                     }
                     .overlay {
                         Capsule().strokeBorder(style == .hero ? Color.white.opacity(0.30) : Color.primary.opacity(0.16), lineWidth: 1)
@@ -53,6 +54,36 @@ struct DailyRadarProjectBadgeCluster: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: accessibilityNames))
         .help(accessibilityNames)
+    }
+}
+
+/// 元信息与专题操作统一使用轻胶囊：只增强边界，不引入新的层级或阴影。
+struct DailyRadarPillLabel<Content: View>: View {
+    var emphasized = false
+    var onDark = false
+    @ViewBuilder let content: Content
+
+    @Environment(\.starcatInterfaceScale) private var scale
+
+    var body: some View {
+        content
+            .font(scale.font(size: 11, weight: emphasized ? .semibold : .medium))
+            .foregroundStyle(emphasized ? .primary : .secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 9 * scale.multiplier)
+            .padding(.vertical, 4 * scale.multiplier)
+            .background {
+                Capsule().fill(onDark
+                               ? Color.white.opacity(emphasized ? 0.20 : 0.12)
+                               : Color.primary.opacity(emphasized ? 0.10 : 0.055))
+            }
+            .overlay {
+                Capsule().strokeBorder(
+                    onDark ? Color.white.opacity(emphasized ? 0.34 : 0.20)
+                           : Color.primary.opacity(emphasized ? 0.18 : 0.10),
+                    lineWidth: 1
+                )
+            }
     }
 }
 

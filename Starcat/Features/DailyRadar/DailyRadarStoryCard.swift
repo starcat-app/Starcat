@@ -43,9 +43,9 @@ struct DailyRadarStoryCard: View {
                         // 本地封面在文字安全区降低细节与亮度，文字固定深色语义
                         // 环境（白字），保持明暗主题下相同的阅读对比。
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("dailyRadar.featured")
-                                .font(scale.font(size: 12, weight: .semibold))
-                                .tracking(2)
+                            DailyRadarPillLabel(onDark: true) {
+                                Text("dailyRadar.featured").tracking(1)
+                            }
                             Spacer(minLength: 12)
                             Text(verbatim: story.title)
                                 .font(scale.font(size: 34, weight: .bold))
@@ -55,11 +55,13 @@ struct DailyRadarStoryCard: View {
                                 .font(scale.font(size: 14))
                                 .lineLimit(2)
                                 .frame(maxWidth: 380, alignment: .leading)
-                            HStack(spacing: 8) {
-                                Text("dailyRadar.read")
-                                Image(systemName: "arrow.right")
+                            DailyRadarPillLabel(emphasized: true, onDark: true) {
+                                HStack(spacing: 6) {
+                                    Text("dailyRadar.read")
+                                    Image(systemName: "arrow.right")
+                                }
+                                .font(scale.font(size: 12, weight: .semibold))
                             }
-                            .font(scale.font(size: 12, weight: .semibold))
                             .padding(.top, 4)
                         }
                         .padding(28)
@@ -74,7 +76,7 @@ struct DailyRadarStoryCard: View {
                         // 专题 hero 右下角叠加项目徽标；胶囊底色压深保证任意封面上可读。
                         DailyRadarProjectBadgeCluster(
                             badges: projectBadges, maxVisible: 6,
-                            avatarSize: 34 * scale.multiplier, style: .hero
+                            avatarSize: 36 * scale.multiplier, style: .hero
                         )
                         .padding(.trailing, 20 * scale.multiplier)
                         .padding(.bottom, 20 * scale.multiplier)
@@ -93,12 +95,15 @@ struct DailyRadarStoryCard: View {
                                 .lineLimit(2)
                             Spacer(minLength: 4)
                             // 分类与时长同属弱化元信息；固定在卡底让两列卡的对齐关系稳定。
-                            HStack(spacing: 6) {
-                                Text(verbatim: DailyRadarCatalog.Category.localizedTitle(for: story.category))
-                                Text("·")
-                                    .accessibilityHidden(true)
-                                Text(verbatim: String(format: String.l10n("dailyRadar.readingTime"), locale: locale, story.minutes.formatted(.number.locale(locale))))
-                                    .lineLimit(1)
+                            HStack(spacing: 8) {
+                                DailyRadarPillLabel {
+                                    HStack(spacing: 4) {
+                                        Text(verbatim: DailyRadarCatalog.Category.localizedTitle(for: story.category))
+                                        Text("·")
+                                            .accessibilityHidden(true)
+                                        Text(verbatim: String(format: String.l10n("dailyRadar.readingTime"), locale: locale, story.minutes.formatted(.number.locale(locale))))
+                                    }
+                                }
                                 Spacer(minLength: 8)
                                 if !projectBadges.isEmpty {
                                     DailyRadarProjectBadgeCluster(
@@ -108,8 +113,6 @@ struct DailyRadarStoryCard: View {
                                     .layoutPriority(1)
                                 }
                             }
-                            .font(scale.font(size: 11))
-                            .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, minHeight: scale.scaled(118), alignment: .topLeading)
                         .padding(20)

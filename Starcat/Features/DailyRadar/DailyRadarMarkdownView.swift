@@ -452,7 +452,7 @@ enum DailyRadarMarkdownDocument {
 
     /// 未知图片尺寸先预留 16:9，加载中才运动；失败立即撤掉占位，保留可读原图链接。
     static let imageStyles = """
-    .article-image{display:block;position:relative;overflow:hidden;border-radius:8px;margin:.8em 0}
+        .article-image{display:block;position:relative;overflow:hidden;border-radius:8px;margin:.8em 0;-webkit-user-select:none}
     .article-image[data-state="pending"],.article-image[data-state="loading"]{aspect-ratio:16/9;min-height:120px;background:rgba(128,128,128,.12)}
     .article-image>img{display:block;margin:0 auto;opacity:0;transition:opacity .3s ease}
     .article-image:not([data-state="loaded"])>img{position:absolute;visibility:hidden}
@@ -529,6 +529,17 @@ enum DailyRadarMarkdownDocument {
             visibleRange={top,bottom,width};
             schedule();
         };
+        // 日报图片只用于阅读，不允许 WebKit 图片菜单 / 拖拽打断报告浏览；
+        // 不拦截正文和链接菜单，保留用户对文字与来源的正常操作。
+        const isArticleImageTarget=(target)=>Boolean(
+            target&&typeof target.closest==="function"&&target.closest(".article-image")
+        );
+        document.addEventListener("contextmenu",(event)=>{
+            if(isArticleImageTarget(event.target))event.preventDefault();
+        },true);
+        document.addEventListener("dragstart",(event)=>{
+            if(isArticleImageTarget(event.target))event.preventDefault();
+        },true);
         new ResizeObserver(()=>{send();schedule();}).observe(content);
         document.addEventListener("toggle",()=>{send();schedule();},true);
         send();

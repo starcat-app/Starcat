@@ -93,16 +93,14 @@ struct DailyRadarWeeklyTopicCard: View {
                     // 专题入口大卡右下角叠加最新一期项目徽标；右侧卡片区足够容纳。
                     DailyRadarProjectBadgeCluster(
                         badges: heroBadges, maxVisible: 6,
-                        avatarSize: 34 * scale.multiplier, style: .hero
+                        avatarSize: 36 * scale.multiplier, style: .hero
                     )
                     .padding(.trailing, 20 * scale.multiplier)
                     .padding(.bottom, 20 * scale.multiplier)
                 }
             }
             .background {
-                DailyRadarProgrammaticCover(
-                    category: "ai-weekly-events", seed: "ai-weekly-events", textSafeLeading: 0.4
-                )
+                animatedBackground
                 .overlay(Color.black.opacity(0.35))
                 .allowsHitTesting(false)
             }
@@ -160,9 +158,9 @@ struct DailyRadarWeeklyTopicCard: View {
     private var copy: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Text("dailyRadar.featured")
-                    .font(scale.font(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                DailyRadarPillLabel(onDark: true) {
+                    Text("dailyRadar.featured")
+                }
                 if isLoading { ProgressView().controlSize(.small) }
             }
             Spacer(minLength: 0)
@@ -176,15 +174,36 @@ struct DailyRadarWeeklyTopicCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-            HStack(spacing: 8) {
-                Text("insights.drilldown.viewAll")
-                Image(systemName: "arrow.right").accessibilityHidden(true)
+            DailyRadarPillLabel(emphasized: true, onDark: true) {
+                HStack(spacing: 6) {
+                    Text("insights.drilldown.viewAll")
+                    Image(systemName: "arrow.right").accessibilityHidden(true)
+                }
+                .font(scale.font(size: 12, weight: .semibold))
             }
-            .font(scale.font(size: 12, weight: .semibold))
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding(24 * scale.multiplier)
+    }
+
+    /// 仅周专题入口持续播放背景光效；Reduce Motion 时直接回落静态封面。
+    private var animatedBackground: some View {
+        Group {
+            if reduceMotion {
+                DailyRadarProgrammaticCover(
+                    category: "ai-weekly-events", seed: "ai-weekly-events", textSafeLeading: 0.4
+                )
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    DailyRadarProgrammaticCover(
+                        category: "ai-weekly-events", seed: "ai-weekly-events",
+                        textSafeLeading: 0.4,
+                        animationPhase: timeline.date.timeIntervalSinceReferenceDate / 7
+                    )
+                }
+            }
+        }
     }
 
     /// 图片层完全禁用命中；日期与静态感应区复用封面锚点，动画不会反过来改变选期。
@@ -217,20 +236,12 @@ struct DailyRadarWeeklyTopicCard: View {
                 .frame(maxHeight: .infinity, alignment: .top)
                 .allowsHitTesting(false)
                 if !editions.isEmpty {
-                    ForEach(Array(editions.enumerated()), id: \.element.id) { index, report in
-                        VStack(spacing: 6) {
-                            Capsule()
-                                .fill(Color.primary.opacity(activeIndex == index ? 0.9 : 0.35))
-                                .frame(width: activeIndex == index ? 14 : 3, height: 3)
-                            // 六期仅显示短日期；窄窗口允许轻微缩字，日期仍与封面中心对齐。
-                            Text(verbatim: String(report.editionDate.suffix(5)).replacingOccurrences(of: "-", with: "."))
-                                .font(scale.font(size: 11))
-                                .monospacedDigit()
-                                .foregroundStyle(activeIndex == index ? .primary : .secondary)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.75)
-                        }
-                        .frame(width: coverCount > 1 ? layout.spacing : layout.width, height: 30 * scale.multiplier)
+                    ForEach(Array(editions.enumerated()), id: \.element.id) { index, _ in
+                        // 只保留指示点，不显示日期文案，避免与右下角项目徽标重叠。
+                        Capsule()
+                            .fill(Color.primary.opacity(activeIndex == index ? 0.9 : 0.35))
+                            .frame(width: activeIndex == index ? 14 : 3, height: 3)
+                            .frame(width: coverCount > 1 ? layout.spacing : layout.width)
                         .position(x: layout.center(at: index), y: geometry.size.height - 25 * scale.multiplier)
                         .allowsHitTesting(false)
                     }
