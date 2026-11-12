@@ -78,6 +78,40 @@ struct DailyRadarClientTests {
         #expect(!structuredBody.contains("自动生成"))
     }
 
+    /// 非 H1 开头的重复标题只由展示层移除；不同标题和正文中间标题必须保留。
+    @Test func presentationMarkdownRemovesOnlyDuplicatedLeadingTitle() {
+        let title = "AI CLI 工具社区动态日报 2026-11-11"
+        let duplicated = """
+        # \(title)
+
+        Report body.
+        """
+        #expect(
+            DailyRadarReport.removingDuplicatedLeadingTitle(from: duplicated, title: title)
+                == "Report body."
+        )
+
+        let different = """
+        # Another title
+
+        Report body.
+        """
+        #expect(
+            DailyRadarReport.removingDuplicatedLeadingTitle(from: different, title: title)
+                == different.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        let interior = """
+        Report body.
+
+        # \(title)
+        """
+        #expect(
+            DailyRadarReport.removingDuplicatedLeadingTitle(from: interior, title: title)
+                == interior.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
     /// 新栏目独立路由与凭据，不能借 Weekly 的 key 或当前选中分类读取正文
     @Test func eventsRequestsUseIndependentServiceAndCredential() async throws {
         let fixture = DailyRadarFixture()

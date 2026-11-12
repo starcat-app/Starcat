@@ -207,7 +207,12 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
     var minutes: Int { readingMinutes }
     var contentIdentity: String { "\(id)|\(contentLanguage)|\(revision)" }
     var presentationMarkdown: String? {
-        markdown.map(Self.removingGeneratedAttribution)
+        // 非结构化报告由原生标题承担 H1；只有开头标题与报告标题一致时才移除，避免误删正文内容。
+        markdown.map {
+            Self.removingGeneratedAttribution(
+                from: Self.removingDuplicatedLeadingTitle(from: $0, title: title)
+            )
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -229,8 +234,31 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
         return updated.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 删除正文开头与报告标题相同的 H1。标题不同或标题出现在正文中间时保持原样。
+    static func removingDuplicatedLeadingTitle(from markdown: String, title: String) -> String {
+        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        guard let match = leadingTitlePattern.firstMatch(in: markdown, range: range),
+              let fullRange = Range(match.range, in: markdown),
+              let capturedRange = Range(match.range(at: 1), in: markdown)
+        else { return markdown }
+
+        let headingTitle = String(markdown[capturedRange])
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        let normalizedTitle = title
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        guard headingTitle.caseInsensitiveCompare(normalizedTitle) == .orderedSame else { return markdown }
+        return String(markdown[fullRange.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static let generatedAttributionPattern = try! NSRegularExpression(
         pattern: #"(?:^|\n)\*[^\n]*https://github\.com/duanyytop/agents-radar(?:/[^\s)]*)?[^\n]*\*[ \t]*(?:\n)*\z"#
+    )
+
+    private static let leadingTitlePattern = try! NSRegularExpression(
+        pattern: #"\A[ \t]*#[ \t]+([^\n]+?)[ \t]*#*[ \t]*(?:\r?\n|$)"#
     )
 }
 
