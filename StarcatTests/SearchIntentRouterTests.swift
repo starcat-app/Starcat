@@ -12,6 +12,62 @@ import Testing
 @Suite("Search Intent Router")
 @MainActor
 struct SearchIntentRouterTests {
+    @Test("Planner 直接解析模型返回的 snake_case JSON")
+    func plannerDecodesSnakeCaseResponse() throws {
+        let response = """
+        {"intent_summary":"寻找用于管理 GitHub Star 收藏的开源项目。","github_queries":["github stars manager","github starred repositories organizer"],"web_queries":[],"prefers_fresh_evidence":false,"strict_constraints":["开源项目","用于管理 GitHub Star"]}
+        """
+
+        let plan = try SearchLLMQueryPlanner.decode(response, allowWebEvidence: true)
+
+        #expect(plan.intentSummary == "寻找用于管理 GitHub Star 收藏的开源项目。")
+        #expect(plan.githubQueries == ["github stars manager", "github starred repositories organizer"])
+        #expect(plan.webQueries.isEmpty)
+        #expect(!plan.prefersFreshEvidence)
+        #expect(plan.strictConstraints == ["开源项目", "用于管理 GitHub Star"])
+        #expect(plan.githubFilters == .empty)
+        #expect(plan.isValid)
+    }
+
+    @Test("Planner 解析 fence 响应并遵守网页权限", arguments: [true, false])
+    func plannerNormalizesResponse(allowWebEvidence: Bool) throws {
+        let response = """
+        ```json
+        {
+          "intent_summary": " 查找热门 Linux 发行版 ",
+          "github_queries": [" linux distribution ", "linux distribution", "", "linux distro", "extra"],
+          "web_queries": [" trending Linux distribution GitHub "],
+          "prefers_fresh_evidence": true,
+          "strict_constraints": [" Linux 发行版 ", ""]
+        }
+        ```
+        """
+
+        let plan = try SearchLLMQueryPlanner.decode(response, allowWebEvidence: allowWebEvidence)
+
+        #expect(plan.intentSummary == "查找热门 Linux 发行版")
+        #expect(plan.githubQueries == ["linux distribution", "linux distro"])
+        #expect(plan.webQueries == (allowWebEvidence ? ["trending Linux distribution GitHub"] : []))
+        #expect(plan.prefersFreshEvidence)
+        #expect(plan.strictConstraints == ["Linux 发行版"])
+        #expect(plan.isValid)
+    }
+
+    @Test("Planner 拒绝缺字段和不可执行的计划", arguments: [
+        "{}",
+        """
+        {"intent_summary":"查找项目","github_queries":[],"web_queries":[],"prefers_fresh_evidence":false,"strict_constraints":[]}
+        """,
+        """
+        {"intent_summary":"查找项目","github_queries":[],"web_queries":["project search"],"prefers_fresh_evidence":false,"strict_constraints":[]}
+        """
+    ])
+    func plannerRejectsInvalidResponse(response: String) {
+        #expect(throws: SearchIntentRouterError.invalidPlan) {
+            try SearchLLMQueryPlanner.decode(response, allowWebEvidence: false)
+        }
+    }
+
     @Test("确定性解析识别 URL、owner/name 与 GitHub 语法")
     func deterministicRoutes() {
         #expect(SearchIntentRouter.deterministicRoute(for: "https://github.com/basecamp/omarchy") == .fastPath)

@@ -140,7 +140,8 @@ final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
         return try Self.decode(response.content, allowWebEvidence: allowWebEvidence)
     }
 
-    private static func decode(_ raw: String, allowWebEvidence: Bool) throws -> SearchDiscoveryPlan {
+    /// 保持可在模块内调用，让回归测试直接回放模型响应，验证真实的 JSON 契约。
+    static func decode(_ raw: String, allowWebEvidence: Bool) throws -> SearchDiscoveryPlan {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = extractJSONObject(from: text).data(using: .utf8)
         else { throw SearchIntentRouterError.invalidPlan }
@@ -178,6 +179,16 @@ private struct RawPlan: Decodable {
     let webQueries: [String]
     let prefersFreshEvidence: Bool
     let strictConstraints: [String]
+
+    /// Planner 的 prompt 要求输出 snake_case JSON；把字段名显式映射到 Swift 的 camelCase
+    /// 属性，避免裸 `JSONDecoder` 因键名不匹配把合法响应误判成 `invalidPlan`。
+    enum CodingKeys: String, CodingKey {
+        case intentSummary = "intent_summary"
+        case githubQueries = "github_queries"
+        case webQueries = "web_queries"
+        case prefersFreshEvidence = "prefers_fresh_evidence"
+        case strictConstraints = "strict_constraints"
+    }
 }
 
 @MainActor
