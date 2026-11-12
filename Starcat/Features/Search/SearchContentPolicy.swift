@@ -86,6 +86,12 @@ struct SearchContentPolicy: Sendable {
         let rules: [Rule]
     }
 
+    /// 归一化后的纯 ASCII 文本不可能命中非 ASCII 词，加载时预选以减少热态探测。
+    private struct PreparedRule: Sendable {
+        let rule: Rule
+        let asciiTerms: [String]
+    }
+
     enum RulesetError: Error {
         case invalid
     }
@@ -94,7 +100,8 @@ struct SearchContentPolicy: Sendable {
     private let repositories: [String: SearchContentMatch]
     private let repositoryIDs: [Int64: SearchContentMatch]
     private let domains: [String: SearchContentMatch]
-    private let rules: [Rule]
+    private let rulesByField: [SearchContentDocument.Field: [PreparedRule]]
+    private static let fieldOrder: [SearchContentDocument.Field] = [.query, .title, .description, .topic]
     private static let locale = Locale(identifier: "en_US_POSIX")
     private static let clauseSeparators = CharacterSet(charactersIn: ".。;；!?！？\n\r,，")
 
@@ -131,13 +138,18 @@ struct SearchContentPolicy: Sendable {
         domains = Dictionary(uniqueKeysWithValues: decoded.domains.map {
             ($0.domain.lowercased(), SearchContentMatch(ruleID: $0.id, category: $0.category))
         })
-        rules = decoded.rules.map { original in
+        let preparedRules = decoded.rules.map { original in
             var rule = original
             rule.terms = original.terms.map(Self.normalized)
             rule.actions = original.actions.map(Self.normalized)
             rule.exceptions = original.exceptions.map(Self.normalized)
-            return rule
+            return PreparedRule(rule: rule, asciiTerms: rule.terms.filter {
+                $0.utf8.allSatisfy({ $0 < 128 })
+            })
         }
+        rulesByField = Dictionary(uniqueKeysWithValues: Self.fieldOrder.map { field in
+            (field, preparedRules.filter { $0.rule.fields.contains(field) })
+        })
     }
 
     func match(query: String) -> SearchContentMatch? {
@@ -163,14 +175,23 @@ struct SearchContentPolicy: Sendable {
                 }
             }
         }
-        for (field, values) in document.fields {
-            let applicable = rules.filter { $0.fields.contains(field) }
+        // 固定字段优先级令命中解释可复现；适用规则在加载时分组，避免每条重复分配。
+        for field in Self.fieldOrder {
+            guard let values = document.fields[field], let applicable = rulesByField[field] else { continue }
             for value in values {
                 // 描述通常只有数百字符；异常巨量文本不应占住输入响应线程。
                 // 仅取连续前缀，不能将头尾拼接后制造原文不存在的命中。
                 let text = Self.normalized(String(value.prefix(4_096)))
-                for rule in applicable {
-                    guard rule.terms.contains(where: { text.contains($0) }) else { continue }
+                let searchable = text as NSString
+                let isASCII = text.utf8.allSatisfy({ $0 < 128 })
+                for prepared in applicable {
+                    let rule = prepared.rule
+                    let terms = isASCII ? prepared.asciiTerms : rule.terms
+                    // 两边已经做过相同的 Unicode 归一化。逐词重复进行规范等价搜索
+                    // 会放大整批耗时；literal 保留归一化后的语义并避开重复转换。
+                    guard terms.contains(where: {
+                        searchable.range(of: $0, options: .literal).location != NSNotFound
+                    }) else { continue }
                     let fragments = rule.actions.isEmpty
                         ? [text] : text.components(separatedBy: Self.clauseSeparators)
                     if fragments.contains(where: { Self.matches(rule, in: $0) }) {
@@ -224,7 +245,8 @@ struct SearchContentPolicy: Sendable {
         var result: [NSRange] = []
         var start = text.startIndex
         let needsBoundary = term.unicodeScalars.contains(where: isASCIIWord)
-        while start < text.endIndex, let range = text.range(of: term, range: start..<text.endIndex) {
+        while start < text.endIndex,
+              let range = text.range(of: term, options: .literal, range: start..<text.endIndex) {
             let before = range.lowerBound == text.startIndex ? nil : text[text.index(before: range.lowerBound)].asciiValue
             let after = range.upperBound == text.endIndex ? nil : text[range.upperBound].asciiValue
             if !needsBoundary || (!isASCIIWord(before) && !isASCIIWord(after)) {
@@ -247,14 +269,32 @@ struct SearchContentPolicy: Sendable {
     /// ASCII 快速路径避免正常英文仓库描述触发 ICU 全文转换。
     /// 零宽字符可移除；空格/横线只在两侧均为汉字时折叠，英文边界始终保留。
     private static func normalized(_ input: String) -> String {
-        let value = input.utf8.allSatisfy({ $0 < 128 })
-            ? input.lowercased()
-            : input.precomposedStringWithCompatibilityMapping.lowercased(with: locale)
+        if input.utf8.allSatisfy({ $0 < 128 }) {
+            // ASCII 不需要逐字符查询 Unicode 属性，但仍须保留原有的大小写与
+            // 分隔符归一化，不能用“直接返回”破坏 Falun-Gong 等变体的匹配。
+            var bytes: [UInt8] = []
+            bytes.reserveCapacity(input.utf8.count)
+            var pendingSpace = false
+            for byte in input.utf8 {
+                if byte == 32 || byte == 9 || byte == 45 || byte == 95 {
+                    pendingSpace = !bytes.isEmpty
+                    continue
+                }
+                if pendingSpace { bytes.append(32) }
+                pendingSpace = false
+                bytes.append((65...90).contains(byte) ? byte + 32 : byte)
+            }
+            return String(decoding: bytes, as: UTF8.self)
+        }
+        let value = input.precomposedStringWithCompatibilityMapping.lowercased(with: locale)
         var result = String.UnicodeScalarView()
         var pendingSpace = false
         var previousWasHan = false
         for scalar in value.unicodeScalars {
-            if [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF].contains(scalar.value) { continue }
+            switch scalar.value {
+            case 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF: continue
+            default: break
+            }
             if scalar == " " || scalar == "\t" || scalar == "_" || scalar == "-" || scalar == "·" {
                 pendingSpace = !result.isEmpty
                 continue

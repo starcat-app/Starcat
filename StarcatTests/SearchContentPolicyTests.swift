@@ -33,7 +33,7 @@ struct SearchContentPolicyTests {
 
     @Test("主题与明确交易规则命中", arguments: [
         "法轮功", "法輪功", "法\u{200B}轮功", "法 轮 功", "ＦＡＬＵＮ　ＧＯＮＧ",
-        "Falun-Gong", "falungong", "反中共政治宣传库",
+        "Falun-Gong", "  FALUN__--\tGONG  ", "falungong", "反中共政治宣传库",
         "购买枪支", "出售毒品", "販賣人口", "出售人体器官", "sell human organs",
         "buy cocaine", "buy guns", "恐怖组织招募", "出售被盗账号",
         "sell stolen credentials", "赌博平台招募", "online casino signup bonus"
@@ -45,7 +45,8 @@ struct SearchContentPolicyTests {
     @Test("正常技术和防治项目保留", arguments: [
         "帮我查一下 github 最近比较火的 linux 发行版，我搞忘叫什么名字了",
         "管理 github star 的开源项目", "basecamp/omarchy",
-        "gunicorn", "kill-process", "drug discovery toolkit", "药物研发",
+        "gunicorn", "buy gunicorn", "sell gunslinger", "buy ｇｕｎｉｃｏｒｎ",
+        "kill-process", "drug discovery toolkit", "药物研发",
         "枪声检测", "购买毒品检测设备", "研究毒品交易", "毒品交易检测",
         "反人口贩卖公益项目", "打击贩卖人口", "人體器官移植研究",
         "human organ transplantation", "buy a pipe organ", "anti-human-trafficking",
@@ -66,6 +67,14 @@ struct SearchContentPolicyTests {
         #expect(policy.match(query: "枪支检测。购买软件许可证") == nil)
         #expect(policy.match(query: "枪支检测，购买软件许可证") == nil)
         #expect(policy.match(query: "gun detection " + String(repeating: "normal software ", count: 10) + "buy license") == nil)
+    }
+
+    @Test("多字段命中时解释遵循固定优先级")
+    func stableFieldPriority() {
+        let document = SearchContentDocument(
+            id: "multiple", fields: [.description: ["出售毒品"], .title: ["购买枪支"]]
+        )
+        #expect(SearchContentPolicy.bundled.match(document)?.ruleID == "safety.firearms.zh")
     }
 
     @Test("局部例外不覆盖同一结果里的另一次交易或精确身份")
