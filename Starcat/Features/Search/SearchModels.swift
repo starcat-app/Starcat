@@ -116,6 +116,8 @@ struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     /// 远端瞬时态字段（disabled / is_template / score）。默认 `.empty` 让现有
     /// 调用点零改动；GitHub Search Provider 显式填值后弹窗能渲染对应徽章。
     var remoteExtras: RemoteRepoExtras = .empty
+    /// 智能发现链路的理由、证据引用与重排位置；普通搜索保持 nil。
+    var discovery: SearchDiscoveryAnnotation?
 
     var isStarred: Bool { localRepo?.isStarred ?? card.isStarred }
     var displayRepo: Repo? { localRepo ?? remoteRepo }
