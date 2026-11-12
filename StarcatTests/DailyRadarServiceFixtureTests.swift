@@ -35,6 +35,9 @@ struct DailyRadarServiceFixtureTests {
         #expect(report.cover.cardURL == nil)
         #expect(report.cover.fallback == "orbit")
         #expect(report.markdown == nil)
+        #expect(report.relatedProjectBadges?.count == 1)
+        #expect(report.relatedProjectBadges?.first?.fullName == "owner/repo")
+        #expect(report.relatedProjectBadges?.first?.ghRepoId == 123)
     }
 
     @Test("Go 正文解码保留所选修订、原文及公开仓库身份")
@@ -48,6 +51,7 @@ struct DailyRadarServiceFixtureTests {
         #expect(detail.markdown?.hasPrefix("# AI CLI") == true)
         #expect(detail.relatedProjectsStatus == "complete")
         #expect(detail.relatedProjectCount == detail.relatedProjects?.count)
+        #expect(detail.relatedProjectBadges?.map(\.fullName) == detail.relatedProjects?.map(\.repo.fullName))
         #expect(detail.source?.commit.count == 40)
         #expect(project.repo.ghRepoId == 123)
         #expect(project.repo.fullName == "owner/repo")

@@ -165,6 +165,20 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
             case repo, evidenceURL = "evidence_url", sectionAnchor = "section_anchor"
         }
     }
+    /// 列表摘要里的轻量项目徽标，只承载头像渲染所需字段。
+    struct ProjectBadge: Decodable, Sendable, Identifiable, Hashable {
+        let ghRepoId: Int64
+        let fullName: String
+        let ownerAvatar: String?
+        var id: String { fullName }
+        var initial: String {
+            let owner = fullName.split(separator: "/").first.map(String.init) ?? fullName
+            return String(owner.prefix(1)).uppercased()
+        }
+        enum CodingKeys: String, CodingKey {
+            case ghRepoId = "gh_repo_id", fullName = "full_name", ownerAvatar = "owner_avatar"
+        }
+    }
 
     let id: String
     let revision: String
@@ -176,6 +190,7 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
     let readingMinutes: Int
     let cover: Cover
     let relatedProjectCount: Int
+    let relatedProjectBadges: [ProjectBadge]?
     let contentLanguage: String
     let availableLanguages: [String]
     let source: Source?
@@ -194,6 +209,7 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, revision, editionDate = "edition_date", category, period, title, summary
         case readingMinutes = "reading_minutes", cover, relatedProjectCount = "related_project_count"
+        case relatedProjectBadges = "related_project_badges"
         case contentLanguage = "content_language", availableLanguages = "available_languages"
         case source, markdown, relatedProjects = "related_projects", relatedProjectsStatus = "related_projects_status"
         case generatedAt = "generated_at", updatedAt = "updated_at"
