@@ -1177,13 +1177,14 @@ struct SearchCenterView: View {
         }
     }
 
-    /// 向量库存 / 刷新进度。点击即刷新语义索引（原右上角刷新按钮已收进这里）。
+    /// 本地索引覆盖率 / 刷新进度。点击即刷新语义索引（原右上角刷新按钮已收进这里）。
     /// 不要和左侧「语义 1」合成一个数：那是本次查询命中，这是索引覆盖率。
+    /// 列表索引图标用于区分索引状态与智能发现，不改变原有刷新入口。
     private func vectorIndexChip(_ phase: SemanticIndexFooterPhase) -> some View {
         let isDisabled = homeViewModel.isSemanticIndexing || viewModel.isSearching
         return Button(action: refreshSemanticIndex) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                Image(systemName: "list.bullet.rectangle")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 Text(verbatim: vectorIndexChipText(phase))
                     .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
@@ -1216,12 +1217,12 @@ struct SearchCenterView: View {
             )
         case .coverage(let indexed, let total):
             return String(
-                format: String.l10n("search.footer.vector.coverageFormat"),
+                format: String.l10n("search.footer.index.coverageFormat"),
                 indexed,
                 total
             )
         case .notReady:
-            return String.l10n("search.footer.vector.notReady")
+            return String.l10n("search.footer.index.notReady")
         }
     }
 
