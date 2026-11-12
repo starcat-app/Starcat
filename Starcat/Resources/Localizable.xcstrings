@@ -190207,103 +190207,103 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versuchen Sie, Starcat zu aktualisieren. Falls das Problem weiterhin besteht, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j."
+            "value" : "Versuchen Sie, Starcat zu aktualisieren. Falls das Problem weiterhin besteht, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j@gmail.com."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try updating Starcat. If it still fails, export debug logs and send them to dong4j."
+            "value" : "Try updating Starcat. If it still fails, export debug logs and send them to dong4j@gmail.com."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Intenta actualizar Starcat. Si sigue fallando, exporta los registros de depuración y envíalos a dong4j."
+            "value" : "Intenta actualizar Starcat. Si sigue fallando, exporta los registros de depuración y envíalos a dong4j@gmail.com."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Essayez de mettre à jour Starcat. Si le problème persiste, exportez les journaux de débogage et envoyez-les à dong4j."
+            "value" : "Essayez de mettre à jour Starcat. Si le problème persiste, exportez les journaux de débogage et envoyez-les à dong4j@gmail.com."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coba perbarui Starcat. Jika masih gagal, ekspor log debug dan kirimkan ke dong4j."
+            "value" : "Coba perbarui Starcat. Jika masih gagal, ekspor log debug dan kirimkan ke dong4j@gmail.com."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prova ad aggiornare Starcat. Se persiste, esporta i log di debug e inviali a dong4j."
+            "value" : "Prova ad aggiornare Starcat. Se persiste, esporta i log di debug e inviali a dong4j@gmail.com."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcatをアップデートしてください。それでも失敗する場合は、デバッグログを書き出してdong4jに送信してください。"
+            "value" : "Starcatをアップデートしてください。それでも失敗する場合は、デバッグログを書き出してdong4j@gmail.comに送信してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat을 업데이트해 보세요. 그래도 실패하면 디버그 로그를 내보내 dong4j에게 보내주세요."
+            "value" : "Starcat을 업데이트해 보세요. 그래도 실패하면 디버그 로그를 내보내 dong4j@gmail.com에게 보내주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Probeer Starcat bij te werken. Als het blijft mislukken, exporteer dan debuglogs en stuur ze naar dong4j."
+            "value" : "Probeer Starcat bij te werken. Als het blijft mislukken, exporteer dan debuglogs en stuur ze naar dong4j@gmail.com."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spróbuj zaktualizować Starcat. Jeśli nadal nie działa, wyeksportuj logi debugowania i wyślij je do dong4j."
+            "value" : "Spróbuj zaktualizować Starcat. Jeśli nadal nie działa, wyeksportuj logi debugowania i wyślij je do dong4j@gmail.com."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tente atualizar o Starcat. Se ainda falhar, exporte os registros de depuração e envie para dong4j."
+            "value" : "Tente atualizar o Starcat. Se ainda falhar, exporte os registros de depuração e envie para dong4j@gmail.com."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Попробуйте обновить Starcat. Если проблема сохранится, экспортируйте отладочные логи и отправьте их dong4j."
+            "value" : "Попробуйте обновить Starcat. Если проблема сохранится, экспортируйте отладочные логи и отправьте их dong4j@gmail.com."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat'ı güncellemeyi deneyin. Hala başarısız olursa, hata ayıklama günlüklerini dışa aktarın ve dong4j'e gönderin."
+            "value" : "Starcat'ı güncellemeyi deneyin. Hala başarısız olursa, hata ayıklama günlüklerini dışa aktarın ve dong4j@gmail.com'e gönderin."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Спробуйте оновити Starcat. Якщо проблема не зникне, експортуйте журнали налагодження та надішліть їх dong4j."
+            "value" : "Спробуйте оновити Starcat. Якщо проблема не зникне, експортуйте журнали налагодження та надішліть їх dong4j@gmail.com."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hãy thử cập nhật Starcat. Nếu vẫn thất bại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j."
+            "value" : "Hãy thử cập nhật Starcat. Nếu vẫn thất bại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j@gmail.com."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j。"
+            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j@gmail.com。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j。"
+            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j@gmail.com。"
           }
         }
       }
@@ -192882,103 +192882,103 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versuchen Sie es erneut. Wenn das Problem wiederholt auftritt, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j."
+            "value" : "Versuchen Sie es erneut. Wenn das Problem wiederholt auftritt, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j@gmail.com."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try again. If it repeats, export debug logs and send them to dong4j."
+            "value" : "Try again. If it repeats, export debug logs and send them to dong4j@gmail.com."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inténtalo de nuevo. Si se repite, exporta los registros de depuración y envíalos a dong4j."
+            "value" : "Inténtalo de nuevo. Si se repite, exporta los registros de depuración y envíalos a dong4j@gmail.com."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Réessayez. Si le problème se répète, exportez les journaux de débogage et envoyez-les à dong4j."
+            "value" : "Réessayez. Si le problème se répète, exportez les journaux de débogage et envoyez-les à dong4j@gmail.com."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coba lagi. Jika berulang, ekspor log debug dan kirimkan ke dong4j."
+            "value" : "Coba lagi. Jika berulang, ekspor log debug dan kirimkan ke dong4j@gmail.com."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Riprova. Se si ripete, esporta i log di debug e inviali a dong4j."
+            "value" : "Riprova. Se si ripete, esporta i log di debug e inviali a dong4j@gmail.com."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "もう一度お試しください。繰り返す場合は、デバッグログをエクスポートしてdong4jに送信してください。"
+            "value" : "もう一度お試しください。繰り返す場合は、デバッグログをエクスポートしてdong4j@gmail.comに送信してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다시 시도하세요. 반복되면 디버그 로그를 내보내 dong4j에게 보내주세요."
+            "value" : "다시 시도하세요. 반복되면 디버그 로그를 내보내 dong4j@gmail.com에게 보내주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Probeer het opnieuw. Als het zich herhaalt, exporteer dan debuglogs en stuur ze naar dong4j."
+            "value" : "Probeer het opnieuw. Als het zich herhaalt, exporteer dan debuglogs en stuur ze naar dong4j@gmail.com."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spróbuj ponownie. Jeśli problem się powtarza, wyeksportuj logi debugowania i wyślij je do dong4j."
+            "value" : "Spróbuj ponownie. Jeśli problem się powtarza, wyeksportuj logi debugowania i wyślij je do dong4j@gmail.com."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tente novamente. Se repetir, exporte os registros de depuração e envie para dong4j."
+            "value" : "Tente novamente. Se repetir, exporte os registros de depuração e envie para dong4j@gmail.com."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повторите попытку. Если ошибка повторится, экспортируйте отладочные логи и отправьте их dong4j."
+            "value" : "Повторите попытку. Если ошибка повторится, экспортируйте отладочные логи и отправьте их dong4j@gmail.com."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tekrar deneyin. Tekrarlarsa, hata ayıklama günlüklerini dışa aktarın ve dong4j'e gönderin."
+            "value" : "Tekrar deneyin. Tekrarlarsa, hata ayıklama günlüklerini dışa aktarın ve dong4j@gmail.com'e gönderin."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Спробуйте знову. Якщо проблема повториться, експортуйте журнали налагодження та надішліть їх dong4j."
+            "value" : "Спробуйте знову. Якщо проблема повториться, експортуйте журнали налагодження та надішліть їх dong4j@gmail.com."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thử lại. Nếu lặp lại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j."
+            "value" : "Thử lại. Nếu lặp lại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j@gmail.com."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请重试；如果重复出现，请导出调试日志发给 dong4j。"
+            "value" : "请重试；如果重复出现，请导出调试日志发给 dong4j@gmail.com。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重試。若重複發生，請匯出除錯日誌並傳送給 dong4j。"
+            "value" : "請重試。若重複發生，請匯出除錯日誌並傳送給 dong4j@gmail.com。"
           }
         }
       }
