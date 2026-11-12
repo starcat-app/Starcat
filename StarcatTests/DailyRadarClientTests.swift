@@ -11,6 +11,73 @@ import Testing
 @testable import Starcat
 
 struct DailyRadarClientTests {
+    /// 来源链接的项目身份来自 GitHub URL，栏目名只作为非 GitHub 来源的兜底。
+    @Test func sourceLinksExposeRepositoryIdentityAndOwnerAvatar() throws {
+        let weekly = DailyRadarReport.Source(
+            name: "每周 AI 大事",
+            url: try #require(URL(string: "https://github.com/starcat-app/starcat-ai-events/blob/main/reports/2026-11-12.md")),
+            commit: "fixture",
+            path: "reports/2026-11-12.md"
+        )
+        let daily = DailyRadarReport.Source(
+            name: "agents-radar",
+            url: try #require(URL(string: "https://github.com/duanyytop/agents-radar/blob/main/daily/2026-11-12.md")),
+            commit: "fixture",
+            path: "daily/2026-11-12.md"
+        )
+        let external = DailyRadarReport.Source(
+            name: "External source",
+            url: try #require(URL(string: "https://example.com/report.md")),
+            commit: "",
+            path: ""
+        )
+
+        #expect(weekly.repositoryFullName == "starcat-app/starcat-ai-events")
+        #expect(weekly.ownerAvatarURL?.absoluteString == "https://github.com/starcat-app.png?size=64")
+        #expect(daily.repositoryFullName == "duanyytop/agents-radar")
+        #expect(daily.ownerAvatarURL?.absoluteString == "https://github.com/duanyytop.png?size=64")
+        #expect(external.repositoryFullName == nil)
+    }
+
+    /// 正文末尾 agents-radar 生成尾注由原生“内容来源”承担；正文内普通提及必须保留。
+    @Test func presentationMarkdownRemovesOnlyTrailingAgentsRadarAttribution() throws {
+        let markdown = """
+        ## News
+
+        *See [agents-radar](https://github.com/duanyytop/agents-radar) for context.*
+
+        Report body.
+
+        *本日报由 [agents-radar](https://github.com/duanyytop/agents-radar) 自动生成。*
+        """
+        let result = DailyRadarReport.removingGeneratedAttribution(from: markdown)
+        #expect(result.hasSuffix("Report body."))
+        #expect(result.contains("See [agents-radar]"))
+        #expect(!result.contains("自动生成"))
+
+        let unchanged = DailyRadarReport.removingGeneratedAttribution(
+            from: "Report body.\n\n*本日报由 [agents-radar](https://github.com/duanyytop/agents-radar) 自动生成。*\n\n## Next"
+        )
+        #expect(unchanged.contains("自动生成"))
+
+        let structured = """
+        ---
+        {"article_format":1,"title":"Report","summary":"Summary","edition_date":"2026-11-12","reading_minutes":3}
+        ---
+
+        # Report
+
+        Report body.
+
+        *本日报由 [agents-radar](https://github.com/duanyytop/agents-radar) 自动生成。*
+        """
+        let structuredBody = try #require(
+            DailyRadarArticle.parse(DailyRadarReport.removingGeneratedAttribution(from: structured))?.body
+        )
+        #expect(structuredBody.hasSuffix("Report body."))
+        #expect(!structuredBody.contains("自动生成"))
+    }
+
     /// 新栏目独立路由与凭据，不能借 Weekly 的 key 或当前选中分类读取正文
     @Test func eventsRequestsUseIndependentServiceAndCredential() async throws {
         let fixture = DailyRadarFixture()

@@ -206,6 +206,10 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
     }
     var minutes: Int { readingMinutes }
     var contentIdentity: String { "\(id)|\(contentLanguage)|\(revision)" }
+    var presentationMarkdown: String? {
+        markdown.map(Self.removingGeneratedAttribution)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, revision, editionDate = "edition_date", category, period, title, summary
         case readingMinutes = "reading_minutes", cover, relatedProjectCount = "related_project_count"
@@ -213,5 +217,45 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
         case contentLanguage = "content_language", availableLanguages = "available_languages"
         case source, markdown, relatedProjects = "related_projects", relatedProjectsStatus = "related_projects_status"
         case generatedAt = "generated_at", updatedAt = "updated_at"
+    }
+
+    /// 正文里的 agents-radar 尾注与“内容来源”重复。只删除文档末尾独立斜体段，
+    /// 不扫描正文普通段落，避免误删正常介绍该仓库的内容。
+    static func removingGeneratedAttribution(from markdown: String) -> String {
+        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        let updated = generatedAttributionPattern.stringByReplacingMatches(
+            in: markdown, range: range, withTemplate: ""
+        )
+        return updated.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let generatedAttributionPattern = try! NSRegularExpression(
+        pattern: #"(?:^|\n)\*[^\n]*https://github\.com/duanyytop/agents-radar(?:/[^\s)]*)?[^\n]*\*[ \t]*(?:\n)*\z"#
+    )
+}
+
+extension DailyRadarReport.Source {
+    /// GitHub 文档深层链接仍以 owner/repo 作为项目身份；来源文案可能显示栏目名，不适合直接当项目名。
+    var repositoryFullName: String? {
+        guard url.scheme?.lowercased() == "https", url.host?.lowercased() == "github.com" else { return nil }
+        let components = url.pathComponents.filter { $0 != "/" }
+        guard components.count >= 2 else { return nil }
+        let owner = components[0]
+        let repository = components[1].hasSuffix(".git")
+            ? String(components[1].dropLast(4))
+            : components[1]
+        guard !owner.isEmpty, !repository.isEmpty,
+              owner != ".", owner != "..", repository != ".", repository != ".." else { return nil }
+        return "\(owner)/\(repository)"
+    }
+
+    var repositoryOwner: String? {
+        repositoryFullName?.split(separator: "/").first.map(String.init)
+    }
+
+    var ownerAvatarURL: URL? {
+        repositoryOwner.flatMap { owner in
+            URL(string: "https://github.com/\(owner).png?size=64")
+        }
     }
 }
