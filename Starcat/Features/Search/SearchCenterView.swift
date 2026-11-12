@@ -119,12 +119,8 @@ struct SearchCenterView: View {
             .transition(reduceMotion ? .opacity : .opacity)
         }
         .sheet(item: $remoteDetailCandidate) { candidate in
-            // 把 sort 模式一并传入：仅在 bestMatch 时才渲染匹配度，否则
-            // score 字段对当前结果排序无解释力（按 stars / forks / updated
-            // 排序时它仍是 search 端点回的同一个值，但语义已和位置脱钩）。
             SearchRemoteRepoDetailView(
                 candidate: candidate,
-                isCurrentSortBestMatch: viewModel.githubFilters.sort == .bestMatch,
                 isStarred: candidate.displayRepo.map { isStarred($0.id) } ?? false,
                 onToggleStar: {
                     guard let repo = candidate.displayRepo else {
@@ -2500,13 +2496,11 @@ private struct SearchDetailActionChip: View {
 /// 的字段尽量暴露出来，帮用户在 Star 之前完成「这个 repo 值不值得收藏」决策。
 ///
 /// **不入库约束**：本视图仅消化 `RepositoryCandidate.remoteRepo`（搜索页 ephemeral
-/// 转换得到，未进数据库）+ `remoteRepo.remoteExtras`（disabled / isTemplate /
-/// score 三类瞬时态字段，旁挂在 candidate 上）。用户点击 Star 后才通过
+/// 转换得到，未进数据库）+ `candidate.remoteExtras`（disabled / isTemplate
+/// 等瞬时态字段）。用户点击 Star 后才通过
 /// `StarActionService` 走正式入库流程；本视图自身不写任何持久化层。
 ///
-/// **匹配度可见性**：`score` 字段对 best-match 排序才有意义，其他排序模式
-/// （stars / forks / updated）下 score 仍是 search 端点回传的同一个值，但语义
-/// 与当前列表位置已脱钩 → 弹窗只在 `isCurrentSortBestMatch == true` 时显示。
+/// GitHub 返回的 score 不作为可解释的匹配度展示，标题区优先留给仓库名与许可证。
 ///
 /// **未填字段降级策略**：
 /// - `remoteRepo == nil`：理论上 activate 函数已守卫，进入本视图前 remoteRepo 必非空；
@@ -2516,7 +2510,6 @@ private struct SearchDetailActionChip: View {
 private struct SearchRemoteRepoDetailView: View {
 
     let candidate: RepositoryCandidate
-    let isCurrentSortBestMatch: Bool
     let isStarred: Bool
     let onToggleStar: () async throws -> Bool
     let onOpenAI: () -> Void
@@ -2705,16 +2698,14 @@ private struct SearchRemoteRepoDetailView: View {
 
             Spacer(minLength: 8)
 
-            if isCurrentSortBestMatch, let score = candidate.remoteExtras.score {
-                scoreBadge(score: score)
-            }
             // License 胶囊（2026-11-01 统一改版）：与详情 Hero 区同一组件。
             // 无 license 的仓库也显示灰色"待确认"胶囊（原来整颗隐藏），
             // 类别解析与说明卡交互全部由组件内部处理。
             LicenseKnowledgeCapsule(
                 rawLicense: repo.license,
                 owner: repo.owner,
-                repoName: repo.name
+                repoName: repo.name,
+                isCompact: true
             )
 
             SheetCloseButton(
@@ -2756,26 +2747,6 @@ private struct SearchRemoteRepoDetailView: View {
     private func avatarImage(repo: Repo) -> some View {
         let urlString: String = repo.ownerAvatar ?? "https://github.com/\(repo.owner).png"
         RemoteAvatar(urlString: urlString, size: Self.avatarSize)
-    }
-
-    private func scoreBadge(score: Double) -> some View {
-        // 显示精度：保留两位小数足够区分 0.95 / 0.97 / 1.0；更高位无信息密度。
-        let formatted = String(format: "%.2f", score)
-        let label = String(format: String.l10n("search.detail.score.format"), formatted)
-        return Label {
-            Text(label)
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                .monospacedDigit()
-        } icon: {
-            Image(systemName: "bolt.fill")
-                .font(interfaceScale.font(.captionSmall, weight: .semibold))
-        }
-        .labelStyle(.titleAndIcon)
-        .foregroundStyle(.orange)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(Color.orange.opacity(0.12), in: Capsule())
-        .help("search.detail.score.tooltip")
     }
 
     // MARK: - State badges (archived / fork / template / disabled)

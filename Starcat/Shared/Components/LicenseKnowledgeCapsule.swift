@@ -9,7 +9,7 @@
 //
 //  关键设计决策：
 //  - 颜色按「许可义务类别」而不是「能否商用」；互惠档允许商用这一点必须在卡里写明。
-//  - 颜色只占小面积（浅底 + 深字 + 细边框），胶囊高 24pt，文字类别始终保留，
+//  - 颜色只占小面积（浅底 + 深字 + 细边框），胶囊默认高 24pt，文字类别始终保留，
 //    用户不依赖颜色也能理解（同时天然兼容暗色与辅助功能）。
 //  - 多重许可（OR / AND / WITH）不取"最严格"颜色，落中性灰并由卡展开解释；
 //    待确认（未识别 / NOASSERTION / 缺失）同灰但文案不同。
@@ -145,6 +145,8 @@ struct LicenseKnowledgeCapsule: View {
     let rawLicense: String?
     let owner: String
     let repoName: String
+    /// 搜索详情沿用原匹配度胶囊的上下各 3pt 留白，其他详情仍使用默认 24pt 高度。
+    var isCompact = false
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var showsDetails = false
@@ -171,7 +173,8 @@ struct LicenseKnowledgeCapsule: View {
                     .imageScale(.small)
             }
             .padding(.horizontal, 8)
-            .frame(height: 24)
+            .padding(.vertical, isCompact ? 3 : 0)
+            .frame(height: isCompact ? nil : 24)
             .background(showsDetails ? palette.backgroundSelected : palette.background, in: Capsule())
             .overlay {
                 Capsule().strokeBorder(palette.border, lineWidth: 0.5)
