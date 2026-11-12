@@ -107,6 +107,16 @@
 - Seen: 2026-06-08
 - Status: active
 
+## UI 与布局
+
+### L-UI-001 轻量浮层随内容伸缩，滚动条不得覆盖控件
+
+- Rule: 有界内容的轻量 popover 展开详情时增加面板高度，折叠时缩减高度，不用固定限高的 `ScrollView` 承载这类详情。确实需要滚动的区域必须为滚动条保留独立空间，文字、Disclosure 箭头与按钮不得进入覆盖区；检查展开 / 折叠、长文案及系统“始终显示滚动条”状态。
+- Reason: 把可展开内容放入限高滚动区会让浮层不随内容增高，滚动条还可能压住右侧箭头、文字或操作入口；隐藏滚动条不能解决尺寸所有权和内容避让问题。
+- Evidence: 2026-11-12 dong4j 的智能发现详情截图与明确要求；commit `1e43fe0c` 中 `Starcat/Features/Search/SearchCenterView.swift:1427` 的 `ScrollView` 与 `maxHeight: 320` 组合；`docs/5-规范/UI-Sheet-尺寸与承载规范.md:60`。
+- Seen: 2026-11-12
+- Status: active
+
 ## 发布、协作与提交
 
 ### L-RELEASE-001 发布动作需要当前显式授权
