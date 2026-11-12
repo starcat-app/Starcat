@@ -460844,6 +460844,28 @@
         "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pencarian cerdas %lld" } }
       }
     },
+    "search.discovery.rerank.reason" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ranked by the dedicated reranking model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "由专用重排模型排序" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "由專用重排序模型排序" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "専用リランキングモデルによる順位" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "전용 리랭킹 모델로 정렬됨" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vom dedizierten Reranking-Modell sortiert" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Classé par le modèle de reranking dédié" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordenado por el modelo de reordenación dedicado" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordenado pelo modelo de reordenação dedicado" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordinato dal modello di reranking dedicato" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Отсортировано выделенной моделью переранжирования" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Gesorteerd door het toegewijde rerankmodel" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Posortowano przez dedykowany model rerankingu" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Відсортовано виділеною моделлю переранжування" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Özel yeniden sıralama modeliyle sıralandı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Được xếp hạng bằng mô hình rerank chuyên dụng" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Diurutkan oleh model rerank khusus" } }
+      }
+    },
     "search.discovery.candidate.search" : {
       "extractionState" : "manual",
       "localizations" : {

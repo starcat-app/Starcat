@@ -53,6 +53,8 @@ struct SearchDiscoveryRankedItem: Equatable, Hashable, Codable, Sendable {
 
 @MainActor
 protocol SearchDiscoveryRankerProviding: AnyObject {
+    var kind: SearchDiscoveryRankerKind { get }
+
     func rank(
         query: String,
         plan: SearchDiscoveryPlan,
@@ -62,12 +64,24 @@ protocol SearchDiscoveryRankerProviding: AnyObject {
     ) async throws -> [SearchDiscoveryRankedItem]
 }
 
+/// 搜索重排有两种资源口径：Chat 排序消耗 LLM 预算，专用 Rerank 只消耗独立模型调用。
+enum SearchDiscoveryRankerKind: Equatable, Sendable {
+    case chat
+    case dedicatedRerank
+
+    var consumesLLMBudget: Bool {
+        self == .chat
+    }
+}
+
 /// 搜索专属 LLM Ranker。
 ///
 /// 模型只输出候选 ID、理由和证据引用；服务层负责校验并重写排名。这样模型无法
 /// 发明仓库名、覆盖 GitHub 元数据或把未验证网页内容变成事实。
 @MainActor
 final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
+    let kind: SearchDiscoveryRankerKind = .chat
+
     private let settings: AppSettings
     private let keychain: any KeychainManaging
 
@@ -128,11 +142,10 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
                 temperature: min(task.parameters.temperature, 0.1),
                 topP: task.parameters.topP,
                 topK: task.parameters.topK,
-                maxCompletionTokens: min(task.parameters.maxCompletionTokens, 1_024),
+                maxCompletionTokens: min(task.parameters.maxCompletionTokens, 2_048),
                 timeoutSeconds: min(task.parameters.timeoutSeconds, maxSeconds),
                 streamEnabled: false
             ),
-            responseFormat: .jsonObject,
             disableThinking: true
         ))
         return try Self.decode(response.content)
@@ -141,7 +154,7 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
     private static func decode(_ raw: String) throws -> [SearchDiscoveryRankedItem] {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = extractJSONArray(from: text).data(using: .utf8)
-        else { throw RepositoryDiscoveryError.invalidRankerResponse }
+        else { throw RepositoryDiscoveryError.invalidRankerResponse("No JSON array was found") }
         do {
             return try JSONDecoder().decode([RawRankedItem].self, from: data).map {
                 SearchDiscoveryRankedItem(
@@ -151,7 +164,7 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
                 )
             }
         } catch {
-            throw RepositoryDiscoveryError.invalidRankerResponse
+            throw RepositoryDiscoveryError.invalidRankerResponse(String(describing: error))
         }
     }
 
@@ -161,6 +174,177 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
               start < end
         else { return value }
         return String(value[start...end])
+    }
+}
+
+/// 使用用户在 RAG 设置中启用的专用 Rerank。
+///
+/// 这里复用现有 TEI / Cohere / Local MLX Provider，只把仓库候选映射成一次性内存
+/// `RAGChildHit`；不会伪造可持久化的知识库分片，也不会改动 RAG 的检索行为。
+@MainActor
+final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
+    let kind: SearchDiscoveryRankerKind = .dedicatedRerank
+
+    private let settings: AppSettings
+    private let keychain: any KeychainManaging
+
+    init(settings: AppSettings, keychain: any KeychainManaging) {
+        self.settings = settings
+        self.keychain = keychain
+    }
+
+    var debugModel: String? {
+        let configuration = settings.ragRerankConfiguration.normalized
+        switch configuration.provider {
+        case .localMLX:
+            return settings.selectedLocalAIModel(for: .reranker).displayName
+        case .cohereCompatible:
+            return configuration.model
+        case .huggingFaceTEI:
+            return "Hugging Face TEI"
+        }
+    }
+
+    func rank(
+        query: String,
+        plan: SearchDiscoveryPlan,
+        candidates: [SearchDiscoveryRankingCandidate],
+        evidence: [SearchEvidence],
+        maxSeconds: TimeInterval
+    ) async throws -> [SearchDiscoveryRankedItem] {
+        let configuration = settings.ragRerankConfiguration.normalized
+        guard configuration.isEnabled else {
+            throw RepositoryDiscoveryError.dedicatedRerankDisabled
+        }
+
+        let apiKey = try keychain.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let reranker: any RAGReranking
+        switch configuration.provider {
+        case .huggingFaceTEI:
+            reranker = HuggingFaceTEIRAGReranker(configuration: configuration, apiKey: apiKey)
+        case .cohereCompatible:
+            reranker = CohereCompatibleRAGReranker(configuration: configuration, apiKey: apiKey)
+        case .localMLX:
+            reranker = LocalMLXRAGReranker(
+                configuration: configuration,
+                model: settings.selectedLocalAIModel(for: .reranker)
+            )
+        }
+
+        let hits = candidates.enumerated().map { index, candidate in
+            Self.hit(for: candidate, index: index, evidence: evidence)
+        }
+        let scored = try await reranker.rerank(query: query, candidates: hits)
+        var usedKeys = Set<String>()
+        var ranked: [SearchDiscoveryRankedItem] = []
+
+        for result in scored {
+            let key = result.hit.chunk.parentKey
+            guard !key.isEmpty,
+                  usedKeys.insert(key).inserted,
+                  let candidate = candidates.first(where: { $0.id.lowercased() == key })
+            else { continue }
+            ranked.append(SearchDiscoveryRankedItem(
+                id: candidate.id,
+                reason: String.l10n("search.discovery.rerank.reason"),
+                evidenceIDs: candidate.evidenceIDs
+            ))
+        }
+
+        // Provider 允许过滤低分结果。未返回的候选保留原顺序，避免候选凭空消失。
+        for candidate in candidates where !usedKeys.contains(candidate.id.lowercased()) {
+            ranked.append(SearchDiscoveryRankedItem(
+                id: candidate.id,
+                reason: String.l10n("search.discovery.rerank.reason"),
+                evidenceIDs: candidate.evidenceIDs
+            ))
+        }
+        return ranked
+    }
+
+    /// `parentKey` 只存在于本轮函数调用内，用来把 Provider 结果映射回搜索候选 ID。
+    private static func hit(
+        for candidate: SearchDiscoveryRankingCandidate,
+        index: Int,
+        evidence: [SearchEvidence]
+    ) -> RAGChildHit {
+        let evidenceText = evidence
+            .filter { candidate.evidenceIDs.contains($0.id) }
+            .map { [$0.title, $0.snippet ?? ""].filter { !$0.isEmpty }.joined(separator: "\n") }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let description = candidate.description ?? ""
+        let chunk = RAGChunk(
+            id: Int64(index),
+            repoId: Int64(index + 1),
+            source: .metadata,
+            sourceId: candidate.id,
+            parentType: .readmeSection,
+            parentKey: candidate.id.lowercased(),
+            parentTitle: candidate.fullName,
+            chunkKey: "search-discovery-\(index)",
+            chunkIndex: index,
+            sectionPath: "Repository",
+            title: candidate.fullName,
+            content: [description, evidenceText].filter { !$0.isEmpty }.joined(separator: "\n"),
+            contentHash: RAGChunk.hash("\(candidate.id)|\(evidenceText)"),
+            tokenCount: max(1, description.count / 4),
+            isTruncated: false,
+            embeddingModel: nil,
+            embeddingDim: nil,
+            embedding: nil,
+            embeddingStatus: .pending,
+            embeddingError: nil,
+            indexedAt: timestamp,
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+        return RAGChildHit(chunk: chunk, score: 0, kind: .structured)
+    }
+}
+
+/// 按当前设置动态选择 Ranker，保证设置页切换启用状态后无需重建 AppDependencies。
+@MainActor
+final class DynamicSearchDiscoveryRanker: SearchDiscoveryRankerProviding {
+    var kind: SearchDiscoveryRankerKind {
+        settings.ragRerankConfiguration.normalized.isEnabled ? .dedicatedRerank : .chat
+    }
+
+    private let settings: AppSettings
+    private let chatRanker: SearchLLMDiscoveryRanker
+    private let rerankRanker: SearchDiscoveryRerankRanker
+
+    init(settings: AppSettings, keychain: any KeychainManaging) {
+        self.settings = settings
+        self.chatRanker = SearchLLMDiscoveryRanker(settings: settings, keychain: keychain)
+        self.rerankRanker = SearchDiscoveryRerankRanker(settings: settings, keychain: keychain)
+    }
+
+    func rank(
+        query: String,
+        plan: SearchDiscoveryPlan,
+        candidates: [SearchDiscoveryRankingCandidate],
+        evidence: [SearchEvidence],
+        maxSeconds: TimeInterval
+    ) async throws -> [SearchDiscoveryRankedItem] {
+        if settings.ragRerankConfiguration.normalized.isEnabled {
+            return try await rerankRanker.rank(
+                query: query,
+                plan: plan,
+                candidates: candidates,
+                evidence: evidence,
+                maxSeconds: maxSeconds
+            )
+        }
+        return try await chatRanker.rank(
+            query: query,
+            plan: plan,
+            candidates: candidates,
+            evidence: evidence,
+            maxSeconds: maxSeconds
+        )
     }
 }
 
@@ -178,8 +362,9 @@ private struct RawRankedItem: Decodable {
 
 enum RepositoryDiscoveryError: Error, Equatable {
     case missingPlannerCredential
-    case invalidRankerResponse
+    case invalidRankerResponse(String)
     case missingRankerCredential
+    case dedicatedRerankDisabled
 }
 
 private struct RepositoryDiscoveryTimeout: Error {}
@@ -484,11 +669,16 @@ final class RepositoryDiscoveryService {
             usedGitHubQueries: session.usedGitHubQueries
         )
 
+        let rankerConsumesLLMBudget = ranker?.kind.consumesLLMBudget ?? false
         let rankedRepositories: [RepositoryCandidate]
-        if repositories.isEmpty || !session.canUseLLM(in: budget) || Date() >= deadline {
+        if repositories.isEmpty
+            || (rankerConsumesLLMBudget && !session.canUseLLM(in: budget))
+            || Date() >= deadline {
             if !repositories.isEmpty && Date() >= deadline {
                 diagnostics.append(.failure(stage: .ranking, error: URLError(.timedOut)))
-            } else if !repositories.isEmpty && !session.canUseLLM(in: budget) {
+            } else if !repositories.isEmpty
+                && rankerConsumesLLMBudget
+                && !session.canUseLLM(in: budget) {
                 diagnostics.append(.limit(stage: .ranking))
             }
             rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
@@ -510,7 +700,10 @@ final class RepositoryDiscoveryService {
                     evidence: evidence,
                     maxSeconds: Self.remainingSeconds(to: deadline)
                 )
-                session = Self.incrementing(session, llmCalls: 1)
+                session = Self.incrementing(
+                    session,
+                    llmCalls: rankerConsumesLLMBudget ? 1 : 0
+                )
                 rankedRepositories = Self.applying(
                     rankedItems,
                     to: repositories,
@@ -519,10 +712,18 @@ final class RepositoryDiscoveryService {
                 )
                 if !rankedItems.isEmpty,
                    !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch }) {
-                    diagnostics.append(.failure(stage: .ranking, error: RepositoryDiscoveryError.invalidRankerResponse))
+                    diagnostics.append(.failure(
+                        stage: .ranking,
+                        error: RepositoryDiscoveryError.invalidRankerResponse(
+                            "No ranked candidate passed validation"
+                        )
+                    ))
                 }
             } catch {
-                session = Self.incrementing(session, llmCalls: 1)
+                session = Self.incrementing(
+                    session,
+                    llmCalls: rankerConsumesLLMBudget ? 1 : 0
+                )
                 diagnostics.append(Self.failureDiagnostic(stage: .ranking, error: error))
                 rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
             }

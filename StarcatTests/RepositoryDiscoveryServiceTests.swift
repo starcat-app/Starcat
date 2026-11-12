@@ -125,7 +125,11 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.first?.discovery?.reason.isEmpty == true)
         #expect(result.references.isEmpty)
         #expect(result.diagnostics.contains { $0.stage == .webSearch && $0.isFailure })
-        #expect(result.diagnostics.contains { $0.stage == .ranking && $0.isFailure })
+        #expect(result.diagnostics.contains {
+            $0.stage == .ranking
+                && $0.isFailure
+                && $0.technicalDetail?.contains("No ranked candidate passed validation") == true
+        })
         #expect(result.session.usedLLMCalls == 2)
         #expect(result.session.phase == .completed)
     }
@@ -361,6 +365,43 @@ struct RepositoryDiscoveryServiceTests {
         #expect(!result.diagnostics.contains { $0.isFailure })
     }
 
+    @Test("专用 Rerank 不消耗 LLM 调用上限")
+    func dedicatedRerankRunsAfterLLMBudgetIsExhausted() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                references: [],
+                totalCount: 1,
+                hasNextPage: false
+            )
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker(kind: .dedicatedRerank) { _, _, candidates, _, _ in
+                [SearchDiscoveryRankedItem(
+                    id: candidates[0].id,
+                    reason: "Relevant to the query",
+                    evidenceIDs: []
+                )]
+            }
+        )
+
+        let result = await service.discover(
+            query: "swift",
+            request: SearchRequest(query: "swift"),
+            initialPlan: Self.makePlan(),
+            initialLLMCalls: SearchDiscoveryBudget.firstRound.maxLLMCalls
+        )
+
+        #expect(result.session.usedLLMCalls == SearchDiscoveryBudget.firstRound.maxLLMCalls)
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.repositories.first?.discovery?.kind == .modelMatch)
+        #expect(result.repositories.first?.discovery?.rank == 0)
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",
@@ -539,6 +580,7 @@ private final class StubRepositoryVerifier: RepositoryVerificationProviding, @un
 
 @MainActor
 private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
+    let kind: SearchDiscoveryRankerKind
     private let handler: @Sendable (
         String,
         SearchDiscoveryPlan,
@@ -548,6 +590,7 @@ private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
     ) async throws -> [SearchDiscoveryRankedItem]
 
     init(
+        kind: SearchDiscoveryRankerKind = .chat,
         handler: @escaping @Sendable (
             String,
             SearchDiscoveryPlan,
@@ -556,6 +599,7 @@ private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
             TimeInterval
         ) async throws -> [SearchDiscoveryRankedItem]
     ) {
+        self.kind = kind
         self.handler = handler
     }
 

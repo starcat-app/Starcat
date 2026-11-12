@@ -163,7 +163,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
              RepositoryDiscoveryError.missingPlannerCredential,
              RepositoryDiscoveryError.missingRankerCredential:
             mappedError = AIClientError.missingAPIKey
-        case SearchIntentRouterError.invalidPlan, RepositoryDiscoveryError.invalidRankerResponse:
+        case SearchIntentRouterError.invalidPlan, RepositoryDiscoveryError.invalidRankerResponse(_):
             mappedError = NetworkError.decodingError(underlying: error)
         case SearchIntentRouterError.timeout:
             mappedError = URLError(.timedOut)
@@ -181,13 +181,17 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
             operation: String.l10n(stage.titleKey),
             service: service
         )
+        var technicalDetail = presentation.diagnosticSummary
+        if case RepositoryDiscoveryError.invalidRankerResponse(let detail) = error {
+            technicalDetail = "Ranker response validation failed: \(detail)"
+        }
         let diagnostic = Self(
             stage: stage,
             kind: .failure,
             message: presentation.message,
             context: context,
             recovery: presentation.recovery,
-            technicalDetail: presentation.diagnosticSummary,
+            technicalDetail: technicalDetail,
             statusCode: presentation.statusCode
         )
         diagnostic.record()

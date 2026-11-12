@@ -1233,7 +1233,10 @@ final class AppDependencies {
             ),
             webProvider: ExternalSearchWebProvider(),
             verifier: GitHubRepositoryVerifier(client: api),
-            ranker: SearchLLMDiscoveryRanker(settings: self.settings, keychain: KeychainManager.shared)
+            ranker: DynamicSearchDiscoveryRanker(
+                settings: self.settings,
+                keychain: KeychainManager.shared
+            )
         )
         self.searchIntentRouter = searchIntentRouter
         self.repositoryDiscoveryService = repositoryDiscoveryService
