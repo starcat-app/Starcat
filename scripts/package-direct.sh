@@ -171,12 +171,6 @@ if find "$APP_PATH/Contents/Resources" -type f -name 'codebase.bin' -print -quit
   fail "Direct 包禁止内置 CodebaseMemory 二进制"
 fi
 
-# Sparkle 更新弹窗固定英文：签名前移除非英文本地化，只留 Base/en。
-# 必须在 codesign Sparkle 之前做，否则改 Resources 会破坏框架签名。
-log "固定 Sparkle 更新 UI 为英文"
-bash "${SCRIPT_DIR}/strip-sparkle-non-english-localizations.sh" "$APP_PATH" \
-  || fail "剥离 Sparkle 非英文本地化失败"
-
 SPARKLE_NESTED_CODE=(
   "$SPARKLE_CURRENT_PATH/XPCServices/Downloader.xpc"
   "$SPARKLE_CURRENT_PATH/XPCServices/Installer.xpc"
@@ -498,6 +492,7 @@ if [ "${STARCAT_GENERATE_APPCAST:-0}" = "1" ]; then
   python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
     --appcast "$CURRENT_APPCAST_PATH" \
     --changelog-en "$RELEASE_NOTES_DIR/CHANGELOG.md" \
+    --changelog-zh "$RELEASE_NOTES_DIR/CHANGELOG-ZH.md" \
     --version "$VERSION"
 else
   log "跳过 appcast 生成；需要时设置 STARCAT_GENERATE_APPCAST=1"

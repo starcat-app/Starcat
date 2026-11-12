@@ -159,6 +159,7 @@ SHA_PATH="${DMG_PATH}.sha256"
 APPCAST_PATH="${PAGES_DIR}/appcast.xml"
 DEVELOPMENT_APPCAST_PATH="${PAGES_DIR}/appcast-development.xml"
 CURRENT_APPCAST_PATH="${DOWNLOADS_DIR}/appcast-current.xml"
+RELEASE_NOTES_DIR="${STARCAT_RELEASE_CHANGELOG_DIR:-${DOWNLOADS_DIR}/release-notes-${VERSION}}"
 NOTARY_SUBMISSION_PATH="${DOWNLOADS_DIR}/Starcat-${VERSION}-arm64.notary-submission-id"
 
 RELEASE_BRANCH="${STARCAT_RELEASE_BRANCH:-main}"
@@ -401,6 +402,8 @@ generate_current_appcast_from_existing_dmg() {
   log "注入 Sparkle 更新说明: ${VERSION}"
   python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
     --appcast "$CURRENT_APPCAST_PATH" \
+    --changelog-en "$RELEASE_NOTES_DIR/CHANGELOG.md" \
+    --changelog-zh "$RELEASE_NOTES_DIR/CHANGELOG-ZH.md" \
     --version "$VERSION"
   rm -f "$NOTARY_SUBMISSION_PATH"
 }
@@ -472,12 +475,8 @@ merge_appcast() {
     --incoming "$CURRENT_APPCAST_PATH" \
     --output "$DEVELOPMENT_APPCAST_PATH"
 
-  # 合并后再按 CHANGELOG 全量回填，历史版本说明与当前版本保持一致来源。
-  log "回填 appcast 更新说明"
-  python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
-    --appcast "$APPCAST_PATH"
-  python3 "${SCRIPT_DIR}/inject-appcast-release-notes.py" \
-    --appcast "$DEVELOPMENT_APPCAST_PATH"
+  # 当前 item 已从当次双语快照生成，合并保留该正文和历史说明。
+  # 不再读当前工作稿全量回填，避免续跑时把固定说明替换为后续编辑内容。
 
   if ! grep -q "Starcat-${VERSION}-arm64.dmg" "$APPCAST_PATH"; then
     fail "合并后的 appcast 未指向本次 DMG: Starcat-${VERSION}-arm64.dmg"

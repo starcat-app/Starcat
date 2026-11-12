@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""把英文 CHANGELOG 版本节注入 Sparkle appcast 的 <description> CDATA。
+"""把中英文 CHANGELOG 版本节注入 Sparkle appcast 的 <description> CDATA。
 
 为什么做：
   Sparkle 标准更新窗只有在 appcast item 带 release notes 时才会展开说明区。
   generate_appcast 只根据 DMG 生成签名与 enclosure，不会读取仓库 Changelog。
 
 关键约束：
-  - 更新说明固定英文（xml:lang=en），与「Sparkle 弹窗不跟 App 语言走」的产品决策一致。
+  - 两种语言必须包含同一目标版本，不能静默发布缺少中文的说明。
+  - 标准 description 供 Sparkle 按系统语言选择；扩展字段保留双语，供应用语言覆盖使用。
   - 只改 appcast XML，不改 DMG / 签名。
   - 内嵌 HTML（description），避免额外上传同名 .html 到 downloads/。
   - 去掉截图：更新窗 WebView 很窄，大图会把要点挤没。
@@ -25,7 +26,7 @@ from pathlib import Path
 # 允许直接 `python3 scripts/inject-appcast-release-notes.py` 找到同目录工具模块。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from appcast_xml_util import SPARKLE_NS, write_appcast_xml
+from appcast_xml_util import SPARKLE_NS, STARCAT_NS, write_appcast_xml
 from release_changelog import release_body
 
 SPARKLE_SHORT_VERSION = f"{{{SPARKLE_NS}}}shortVersionString"
@@ -45,7 +46,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--changelog-en",
         type=Path,
-        help="英文 CHANGELOG（Sparkle 更新说明固定英文，只读这份）",
+        help="英文 CHANGELOG 或当次发布快照",
+    )
+    parser.add_argument(
+        "--changelog-zh",
+        type=Path,
+        help="中文 CHANGELOG，默认读取英文文件同目录的 CHANGELOG-ZH.md",
     )
     parser.add_argument(
         "--version",
@@ -55,6 +61,11 @@ def parse_args() -> argparse.Namespace:
         "--more-url-en",
         default="https://starcat.ink/changelog.html",
         help="英文完整更新记录链接",
+    )
+    parser.add_argument(
+        "--more-url-zh",
+        default="https://starcat.ink/changelog-zh.html",
+        help="中文完整更新记录链接",
     )
     parser.add_argument(
         "--dry-run",
@@ -231,7 +242,7 @@ def short_version(item: ET.Element) -> str | None:
 
 def remove_descriptions(item: ET.Element) -> None:
     for child in list(item):
-        if child.tag == "description":
+        if child.tag == "description" or child.tag.startswith(f"{{{STARCAT_NS}}}releaseNotes-"):
             item.remove(child)
 
 
@@ -253,31 +264,48 @@ def insert_descriptions(
         element.text = html_body
         item.insert(enclosure_index + offset, element)
 
+    # Sparkle 的 XML 解析器只留下进程首选语言的 description。以不同字段保留
+    # 每种正文，让客户端无需改系统语言，也不必另发请求就能跟随应用设置。
+    for offset, (lang, html_body) in enumerate(notes, start=len(notes)):
+        element = ET.Element(f"{{{STARCAT_NS}}}releaseNotes-{lang}")
+        element.text = html_body
+        item.insert(enclosure_index + offset, element)
+
 
 def build_notes_for_version(
     version: str,
     changelog_en: str,
     more_url_en: str,
+    changelog_zh: str,
+    more_url_zh: str,
 ) -> list[tuple[str | None, str]]:
-    """只生成英文 description，并显式标注 xml:lang=en。
+    """两种语言均可用才替换说明；完全不在快照中的历史条目保留原样。"""
 
-    产品决策：Sparkle 更新窗固定英文，不做多语言；避免无 lang 节点被
-    Sparkle 默认当成 en 却塞进中文正文的坑。
-    """
-
-    section = extract_version_section(changelog_en, version)
-    if not section:
+    section_en = extract_version_section(changelog_en, version)
+    section_zh = extract_version_section(changelog_zh, version)
+    if not section_en and not section_zh:
         return []
+    if not section_en or not section_zh:
+        raise ValueError(f"{version} 中英文 CHANGELOG 必须同时包含非空版本正文")
     return [
         (
             "en",
             section_to_sparkle_html(
-                section,
+                section_en,
                 version=version,
                 more_url=more_url_en,
                 more_label="View full changelog",
             ),
-        )
+        ),
+        (
+            "zh-Hans",
+            section_to_sparkle_html(
+                section_zh,
+                version=version,
+                more_url=more_url_zh,
+                more_label="查看完整更新记录",
+            ),
+        ),
     ]
 
 
@@ -285,8 +313,10 @@ def inject(
     appcast_path: Path,
     *,
     changelog_en: str,
+    changelog_zh: str,
     version: str | None,
     more_url_en: str,
+    more_url_zh: str,
     dry_run: bool,
 ) -> list[str]:
     if not appcast_path.is_file():
@@ -314,9 +344,11 @@ def inject(
             item_version,
             changelog_en,
             more_url_en,
+            changelog_zh,
+            more_url_zh,
         )
         if not notes:
-            print(f"skip {item_version}: English CHANGELOG 中没有对应版本节", file=sys.stderr)
+            print(f"skip {item_version}: 双语 CHANGELOG 中没有对应版本节，保留原说明", file=sys.stderr)
             continue
         remove_descriptions(item)
         insert_descriptions(item, notes)
@@ -363,13 +395,20 @@ def main() -> None:
     changelog_en = load_optional_markdown(changelog_en_path)
     if changelog_en is None:
         raise SystemExit(f"英文 CHANGELOG 为空: {changelog_en_path}")
+    changelog_zh_path = args.changelog_zh or changelog_en_path.with_name("CHANGELOG-ZH.md")
+    changelog_zh = load_optional_markdown(changelog_zh_path) if changelog_zh_path.is_file() else None
+    if changelog_zh is None:
+        raise SystemExit(f"中文 CHANGELOG 缺失或为空: {changelog_zh_path}")
     print(f"changelog-en: {changelog_en_path}")
+    print(f"changelog-zh: {changelog_zh_path}")
 
     inject(
         args.appcast,
         changelog_en=changelog_en,
+        changelog_zh=changelog_zh,
         version=args.version,
         more_url_en=args.more_url_en,
+        more_url_zh=args.more_url_zh,
         dry_run=args.dry_run,
     )
 
