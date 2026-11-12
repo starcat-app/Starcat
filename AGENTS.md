@@ -241,6 +241,7 @@ Starcat/
 |------|------|
 | **`AGENTS.md`** | **跨 Agent 协作唯一维护源（本文档）** |
 | **`docs/功能实现总览.md`** | **【主进度索引】所有功能 checkbox + 重构债务，开工前必读** |
+| [`LESSONS.md`](LESSONS.md) | 高置信经验规则索引；开工前按任务域核对，新增教训先登记 Rule / Reason / Evidence |
 | `docs/0-总览/README.md` | 文档总入口 / 目录结构 |
 | `docs/1-立项/概要设计.md` | 技术选型、阶段规划 |
 | `docs/1-立项/功能清单.md` | 功能优先级原表（P0/P1/P2 详细描述） |
