@@ -305,6 +305,20 @@ final class SearchCenterViewModel {
         return true
     }
 
+    /// 显式智能查找只在没有智能分支或上一轮失败时展示；成功结果继续走“继续查找”。
+    var canStartSmartDiscovery: Bool {
+        guard scope == .all,
+              !isDiscoveryRunning,
+              !lastSubmittedQuery.isEmpty
+        else { return false }
+        return discoverySession == nil || discoverySession?.phase.isFailed == true
+    }
+
+    func evidence(for candidate: RepositoryCandidate) -> [SearchEvidence] {
+        let ids = Set(candidate.discovery?.evidenceIDs ?? [])
+        return (discoverySession?.evidence ?? []).filter { ids.contains($0.id) && $0.isValid }
+    }
+
     /// 骨架只在「这次提交后谁都还没落地」时出现。
     /// 任一 provider 已返回（含 0 条）且列表仍空：交给空白等待区 + 底栏过程文案。
     var shouldShowSearchSkeleton: Bool {
@@ -466,6 +480,39 @@ final class SearchCenterViewModel {
             request: request,
             plan: nil,
             round: previousSession.round + 1
+        ).value
+    }
+
+    /// 显式按钮触发；不重跑基础搜索，只让 Planner 重新规划并执行一轮发现。
+    func startSmartDiscovery() async {
+        guard canStartSmartDiscovery else { return }
+        let request = makeRequest(query: lastSubmittedQuery)
+        resetDiscoveryState(keepCache: true)
+        discoverySession = SearchDiscoverySession(
+            generation: discoveryGeneration,
+            round: 1,
+            phase: .routing
+        )
+        guard let intentRouter else {
+            discoverySession = SearchDiscoverySession(
+                generation: discoveryGeneration,
+                round: 1,
+                phase: .failed("Discovery router is unavailable")
+            )
+            discoveryWarnings = ["Discovery router is unavailable"]
+            return
+        }
+        let outcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: true)
+        guard outcome.route == .smartDiscovery else {
+            discoverySession = nil
+            discoveryWarnings = []
+            return
+        }
+        await startDiscovery(
+            query: request.query,
+            request: request,
+            plan: outcome.plan,
+            round: 1
         ).value
     }
 

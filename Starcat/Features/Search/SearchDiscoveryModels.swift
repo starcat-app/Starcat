@@ -146,6 +146,14 @@ enum SearchDiscoveryPhase: Equatable, Hashable, Sendable {
     case failed(String)
 }
 
+extension SearchDiscoveryPhase {
+    /// UI 只需要一个稳定的“是否失败”信号，不暴露错误字符串给状态机判断。
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
 /// 一轮智能发现的资源上限。预算由服务层集中扣减，避免各 Provider 自行放大请求。
 struct SearchDiscoveryBudget: Equatable, Hashable, Sendable {
     let timeoutSeconds: TimeInterval

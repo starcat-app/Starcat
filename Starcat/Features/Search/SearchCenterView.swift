@@ -757,17 +757,20 @@ struct SearchCenterView: View {
                 rowWithSourceIndicator(
                     source: source
                 ) {
-                    UnifiedRepoRow(
-                        card: repo.card,
-                        isSelected: isSelected,
-                        semanticHit: repo.semanticScore.map {
-                            SemanticSearchHit.displayOnly(
-                                score: $0,
-                                reason: repo.semanticReason ?? ""
-                            )
-                        },
-                        trailingReservedWidth: sourceIndicatorTrailingReserve(for: source)
-                    )
+                    VStack(alignment: .leading, spacing: 0) {
+                        UnifiedRepoRow(
+                            card: repo.card,
+                            isSelected: isSelected,
+                            semanticHit: repo.semanticScore.map {
+                                SemanticSearchHit.displayOnly(
+                                    score: $0,
+                                    reason: repo.semanticReason ?? ""
+                                )
+                            },
+                            trailingReservedWidth: sourceIndicatorTrailingReserve(for: source)
+                        )
+                        discoveryAnnotationView(repo)
+                    }
                 }
             case .reference(let reference):
                 let source = reference.providerID.map(SearchResultSourceIndicator.externalProvider) ?? .web
@@ -842,6 +845,40 @@ struct SearchCenterView: View {
         // hit-test 用 Rectangle 而不是 RoundedRectangle：圆角四个角会成为 onHover 死区,
         // 鼠标在角附近移入时无法触发 hover；改用矩形让整行的命中区域与可视区域一致。
         .contentShape(Rectangle())
+    }
+
+    /// 智能发现的匹配理由和证据入口。证据不进入主标题，只在 Ranker 给出解释时追加。
+    @ViewBuilder
+    private func discoveryAnnotationView(_ repo: RepositoryCandidate) -> some View {
+        if let discovery = repo.discovery,
+           !discovery.reason.isEmpty {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                Text(discovery.reason)
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let firstEvidence = viewModel.evidence(for: repo).first,
+                   let url = firstEvidence.url {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("search.discovery.evidence", systemImage: "link")
+                            .font(interfaceScale.font(.captionSmall, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pointerStyle(.link)
+                    .help(Text(verbatim: firstEvidence.title))
+                }
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 12)
+            .padding(.bottom, 8)
+        }
     }
 
     /// 「全部」Tab 用右侧来源图标区分本地/GitHub/Web；Web Tab 也显示具体
@@ -1083,10 +1120,33 @@ struct SearchCenterView: View {
             || vectorPhase != .hidden
             || !counts.isEmpty
             || rateLimit != nil
-            || !errors.isEmpty {
+            || !errors.isEmpty
+            || viewModel.discoverySession != nil
+            || !viewModel.discoveryWarnings.isEmpty {
             HStack(spacing: 8) {
                 leadingSummaryContent(processChips: processChips, counts: counts)
                 Spacer(minLength: 8)
+                if !viewModel.discoveryWarnings.isEmpty {
+                    discoveryWarningChip
+                }
+                if viewModel.canStartSmartDiscovery {
+                    discoveryActionButton(
+                        titleKey: "search.discovery.start",
+                        systemImage: "sparkles",
+                        isLoading: false
+                    ) {
+                        Task { await viewModel.startSmartDiscovery() }
+                    }
+                }
+                if viewModel.canContinueDiscovery {
+                    discoveryActionButton(
+                        titleKey: "search.discovery.continue",
+                        systemImage: "arrow.triangle.2.circlepath",
+                        isLoading: false
+                    ) {
+                        Task { await viewModel.continueDiscovery() }
+                    }
+                }
                 if vectorPhase != .hidden {
                     vectorIndexChip(vectorPhase)
                 }
@@ -1268,7 +1328,12 @@ struct SearchCenterView: View {
                 ForEach(processChips) { chip in
                     processChip(chip)
                 }
+                if viewModel.scope == .all, let phase = viewModel.discoverySession?.phase {
+                    discoveryPhaseChip(phase)
+                }
             }
+        } else if viewModel.scope == .all, let phase = viewModel.discoverySession?.phase {
+            discoveryPhaseChip(phase)
         } else {
             HStack(spacing: 6) {
                 ForEach(counts) { entry in
@@ -1290,6 +1355,92 @@ struct SearchCenterView: View {
         .padding(.vertical, 3)
         .background(.primary.opacity(chip.isLoading ? 0.05 : 0.08), in: Capsule())
         .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// 智能发现阶段 chip：左栏保持过程语义，不把阶段错误混入 provider 错误。
+    private func discoveryPhaseChip(_ phase: SearchDiscoveryPhase) -> some View {
+        HStack(spacing: 4) {
+            if viewModel.isDiscoveryRunning {
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.7)
+            } else {
+                Image(systemName: "sparkles")
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            }
+            Text(verbatim: discoveryPhaseText(phase))
+                .font(interfaceScale.font(.captionSmall, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(phase.isFailed ? Color.orange : Color.secondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(.primary.opacity(phase.isFailed ? 0.05 : 0.08), in: Capsule())
+        .fixedSize(horizontal: true, vertical: false)
+        .help(discoveryPhaseTooltip(phase))
+    }
+
+    private var discoveryWarningChip: some View {
+        Image(systemName: "exclamationmark.triangle")
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.orange.opacity(0.12), in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
+            .help(viewModel.discoveryWarnings.joined(separator: "\n"))
+    }
+
+    /// 右侧文字按钮保持 footer 尺寸约束；不使用 icon-only，避免操作语义不清。
+    private func discoveryActionButton(
+        titleKey: String,
+        systemImage: String,
+        isLoading: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                }
+                Text(titleKey)
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .fixedSize(horizontal: true, vertical: false)
+        .pointerStyle(.link)
+    }
+
+    private func discoveryPhaseText(_ phase: SearchDiscoveryPhase) -> String {
+        switch phase {
+        case .routing: return String.l10n("search.discovery.phase.routing")
+        case .planning: return String.l10n("search.discovery.phase.planning")
+        case .searching: return String.l10n("search.discovery.phase.searching")
+        case .extractingCandidates: return String.l10n("search.discovery.phase.extracting")
+        case .verifyingRepositories: return String.l10n("search.discovery.phase.verifying")
+        case .ranking: return String.l10n("search.discovery.phase.ranking")
+        case .completed: return String.l10n("search.discovery.phase.completed")
+        case .failed: return String.l10n("search.discovery.phase.failed")
+        }
+    }
+
+    private func discoveryPhaseTooltip(_ phase: SearchDiscoveryPhase) -> String {
+        if case .failed(let message) = phase {
+            return message
+        }
+        return discoveryPhaseText(phase)
     }
 
     /// `.web` scope 专用 chip：放大镜 + "X 条结果 · Y.Ys"（含用时）。
