@@ -757,22 +757,23 @@ struct SearchCenterView: View {
             case .repository(let repo):
                 let source = repositorySourceIndicator(for: repo)
                 rowWithSourceIndicator(
-                    source: source
+                    source: source,
+                    discoveryRepo: repo
                 ) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        UnifiedRepoRow(
-                            card: repo.card,
-                            isSelected: isSelected,
-                            semanticHit: repo.semanticScore.map {
-                                SemanticSearchHit.displayOnly(
-                                    score: $0,
-                                    reason: repo.semanticReason ?? ""
-                                )
-                            },
-                            trailingReservedWidth: sourceIndicatorTrailingReserve(for: source)
+                    UnifiedRepoRow(
+                        card: repo.card,
+                        isSelected: isSelected,
+                        semanticHit: repo.semanticScore.map {
+                            SemanticSearchHit.displayOnly(
+                                score: $0,
+                                reason: repo.semanticReason ?? ""
+                            )
+                        },
+                        trailingReservedWidth: trailingReservedWidth(
+                            source: source,
+                            hasDiscovery: repo.discovery != nil
                         )
-                        discoveryAnnotationView(repo)
-                    }
+                    )
                 }
             case .reference(let reference):
                 let source = reference.providerID.map(SearchResultSourceIndicator.externalProvider) ?? .web
@@ -849,39 +850,6 @@ struct SearchCenterView: View {
         .contentShape(Rectangle())
     }
 
-    /// 智能发现的匹配理由和证据入口。证据不进入主标题，只在 Ranker 给出解释时追加。
-    @ViewBuilder
-    private func discoveryAnnotationView(_ repo: RepositoryCandidate) -> some View {
-        if let discovery = repo.discovery {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                Text(verbatim: discoveryReason(discovery))
-                    .font(interfaceScale.font(.captionSmall))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let firstEvidence = viewModel.evidence(for: repo).first,
-                   let url = firstEvidence.url {
-                    Button {
-                        NSWorkspace.shared.open(url)
-                    } label: {
-                        Label("search.discovery.evidence", systemImage: "link")
-                            .font(interfaceScale.font(.captionSmall, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .pointerStyle(.link)
-                    .help(Text(verbatim: firstEvidence.title))
-                }
-            }
-            .padding(.leading, 12)
-            .padding(.trailing, 12)
-            .padding(.bottom, 8)
-        }
-    }
-
     /// 兜底来源在展示时本地化，不把固定英文写进模型理由或持久化对象。
     private func discoveryReason(_ annotation: SearchDiscoveryAnnotation) -> String {
         switch annotation.kind {
@@ -896,17 +864,49 @@ struct SearchCenterView: View {
     @ViewBuilder
     private func rowWithSourceIndicator<Content: View>(
         source: SearchResultSourceIndicator?,
+        discoveryRepo: RepositoryCandidate? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        if shouldShowSourceIndicator(source), let source {
-            content()
-                .overlay(alignment: .trailing) {
-                    SearchResultSourceIcon(source: source)
-                        .padding(.trailing, 12)
+        // 智能发现是解释性元信息，不再占用列表第二行；与来源图标放在同一
+        // trailing 区域，避免正文被底部说明打断，也避免和滚动条/操作区重叠。
+        content()
+            .overlay(alignment: .trailing) {
+                HStack(spacing: 4) {
+                    if shouldShowSourceIndicator(source), let source {
+                        SearchResultSourceIcon(source: source)
+                    }
+                    if let discoveryRepo, discoveryRepo.discovery != nil {
+                        discoveryMarker(discoveryRepo)
+                    }
                 }
-        } else {
-            content()
-        }
+                .padding(.trailing, 12)
+                .accessibilityElement(children: .combine)
+            }
+    }
+
+    private func discoveryMarker(_ repo: RepositoryCandidate) -> some View {
+        Image(systemName: "sparkles")
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .help(Text(verbatim: discoveryTooltip(for: repo)))
+            .accessibilityLabel(Text(verbatim: discoveryTooltip(for: repo)))
+    }
+
+    private func discoveryTooltip(for repo: RepositoryCandidate) -> String {
+        guard let discovery = repo.discovery else { return "" }
+        var lines = [discoveryReason(discovery)]
+        lines.append(contentsOf: viewModel.evidence(for: repo).map(\.title))
+        return lines.joined(separator: "\n")
+    }
+
+    private func trailingReservedWidth(
+        source: SearchResultSourceIndicator?,
+        hasDiscovery: Bool
+    ) -> CGFloat {
+        let sourceWidth = sourceIndicatorTrailingReserve(for: source)
+        guard hasDiscovery else { return sourceWidth }
+        // 12pt trailing + 约 12pt 图标；与来源图标并存时再补 4pt 间距。
+        return sourceWidth == 0 ? 24 : sourceWidth + 20
     }
 
     private func sourceIndicatorTrailingReserve(for source: SearchResultSourceIndicator?) -> CGFloat {
