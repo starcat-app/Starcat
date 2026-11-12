@@ -193,6 +193,21 @@ struct RepositoryDiscoveryResult: Equatable, Sendable {
 }
 
 @MainActor
+protocol RepositoryDiscoveryProviding: AnyObject {
+    func discover(
+        query: String,
+        request baseRequest: SearchRequest,
+        initialPlan: SearchDiscoveryPlan?,
+        generation: UUID,
+        round: Int,
+        budget: SearchDiscoveryBudget,
+        initialLLMCalls: Int
+    ) async -> RepositoryDiscoveryResult
+}
+
+extension RepositoryDiscoveryService: RepositoryDiscoveryProviding {}
+
+@MainActor
 final class RepositoryDiscoveryService {
     private let planner: (any SearchQueryPlannerProviding)?
     private let githubProvider: any SearchProvider

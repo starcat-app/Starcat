@@ -581,6 +581,137 @@ struct SearchCenterViewModelTests {
         #expect(!viewModel.isSearching)
     }
 
+    @Test("All 范围自然语言查询自动合并智能发现结果")
+    func allScopeRoutesNaturalLanguageToDiscovery() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(
+            results: [Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"))]
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(router.routeQueries == ["github 最近比较火的 linux 发行版"])
+        #expect(viewModel.candidates.map(\.id) == ["repo:apple/swift", "repo:omarchy/omarchy"])
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.canContinueDiscovery)
+        #expect(viewModel.discoveryWarnings.isEmpty)
+    }
+
+    @Test("相同搜索请求直接复用完成的智能发现缓存")
+    func identicalRequestReusesCompletedDiscovery() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(
+            results: [Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"))]
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+        await viewModel.submit()
+
+        #expect(router.routeQueries.count == 1)
+        #expect(discovery.requests.count == 1)
+        #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
+    }
+
+    @Test("智能发现失败不清空基础搜索结果")
+    func discoveryFailureKeepsBaseResults() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        var baseCandidate = Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        baseCandidate.sources = [.localKeyword]
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: baseCandidate
+        )
+        let failedSession = SearchDiscoverySession(
+            generation: UUID(),
+            round: 1,
+            phase: .failed("Search query planner failed")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            RepositoryDiscoveryResult(
+                session: failedSession,
+                repositories: [],
+                references: [],
+                warnings: ["Search query planner failed"]
+            )
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(viewModel.candidates == [SearchCandidate.repository(local.candidate)])
+        #expect(viewModel.discoverySession?.phase == .failed("Search query planner failed"))
+        #expect(viewModel.discoveryWarnings == ["Search query planner failed"])
+        #expect(!viewModel.canContinueDiscovery)
+    }
+
+    @Test("继续查找执行下一轮并更新缓存结果")
+    func continueDiscoveryRunsNextRound() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"), round: 1),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 10, owner: "linux", name: "os"), round: 2)
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+        await viewModel.continueDiscovery()
+
+        #expect(discovery.requestRounds == [1, 2])
+        #expect(router.routeQueries.count == 1)
+        #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+        #expect(viewModel.discoverySession?.round == 2)
+        #expect(viewModel.canContinueDiscovery)
+
+        await viewModel.submit()
+        #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+    }
+
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
@@ -618,6 +749,55 @@ struct SearchCenterViewModelTests {
             localRepo: nil,
             remoteRepo: nil,
             semanticScore: nil
+        )
+    }
+
+    private nonisolated static func makeSmartOutcome() -> SearchIntentRoutingOutcome {
+        SearchIntentRoutingOutcome(
+            route: .smartDiscovery,
+            decisionStatus: .completed,
+            plannerStatus: .completed,
+            plan: SearchDiscoveryPlan(
+                intentSummary: "Find trending Linux distributions",
+                githubQueries: ["trending linux distribution"],
+                webQueries: ["trending linux distribution GitHub"],
+                prefersFreshEvidence: true,
+                strictConstraints: [],
+                githubFilters: .empty
+            )
+        )
+    }
+
+    private nonisolated static func makeDiscoveryResult(
+        candidate: RepositoryCandidate,
+        round: Int = 1
+    ) -> RepositoryDiscoveryResult {
+        var item = candidate
+        item.discovery = SearchDiscoveryAnnotation(
+            reason: "Web evidence points to this repository",
+            evidenceIDs: ["web-0-0"],
+            rank: 0
+        )
+        let session = SearchDiscoverySession(
+            generation: UUID(),
+            round: round,
+            phase: .completed,
+            plan: makeSmartOutcome().plan,
+            evidence: [
+                SearchEvidence(
+                    id: "web-0-0",
+                    kind: .web,
+                    title: "Trending Linux distribution",
+                    url: URL(string: "https://github.com/\(candidate.card.fullName)")
+                )
+            ],
+            usedLLMCalls: 2
+        )
+        return RepositoryDiscoveryResult(
+            session: session,
+            repositories: [item],
+            references: [],
+            warnings: []
         )
     }
 
@@ -842,5 +1022,72 @@ private actor SearchHoldGate {
         isReleased = true
         continuation?.resume()
         continuation = nil
+    }
+}
+
+@MainActor
+private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
+    let outcome: SearchIntentRoutingOutcome
+    private(set) var routeQueries: [String] = []
+
+    init(outcome: SearchIntentRoutingOutcome) {
+        self.outcome = outcome
+    }
+
+    func route(query: String, explicitSmartDiscovery: Bool) async -> SearchIntentRoutingOutcome {
+        routeQueries.append(query)
+        return outcome
+    }
+}
+
+@MainActor
+private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProviding {
+    private var results: [RepositoryDiscoveryResult]
+    private(set) var requests: [SearchRequest] = []
+    private(set) var requestRounds: [Int] = []
+
+    init(results: [RepositoryDiscoveryResult]) {
+        self.results = results
+    }
+
+    func discover(
+        query: String,
+        request baseRequest: SearchRequest,
+        initialPlan: SearchDiscoveryPlan?,
+        generation: UUID,
+        round: Int,
+        budget: SearchDiscoveryBudget,
+        initialLLMCalls: Int
+    ) async -> RepositoryDiscoveryResult {
+        requests.append(baseRequest)
+        requestRounds.append(round)
+        let result = results.isEmpty
+            ? RepositoryDiscoveryResult(
+                session: SearchDiscoverySession(
+                    generation: generation,
+                    round: round,
+                    phase: .failed("No stub result")
+                ),
+                repositories: [],
+                references: [],
+                warnings: []
+            )
+            : results.removeFirst()
+        let session = SearchDiscoverySession(
+            generation: generation,
+            round: round,
+            phase: result.session.phase,
+            plan: result.session.plan,
+            evidence: result.session.evidence,
+            usedLLMCalls: result.session.usedLLMCalls,
+            usedWebQueries: result.session.usedWebQueries,
+            usedGitHubQueries: result.session.usedGitHubQueries
+        )
+        return RepositoryDiscoveryResult(
+            session: session,
+            repositories: result.repositories,
+            references: result.references,
+            warnings: result.warnings
+        )
     }
 }

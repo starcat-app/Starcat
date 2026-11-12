@@ -58,19 +58,34 @@ final class SearchCenterViewModel {
     private let includeWebInAll: () -> Bool
     private let entitlementGate: EntitlementGate?
     private let telemetryManager: TelemetryManager?
+    private let intentRouter: (any SearchIntentRoutingProviding)?
+    private let discoveryService: (any RepositoryDiscoveryProviding)?
+    private var discoveryGeneration = UUID()
+    private var discoveryTask: Task<Void, Never>?
+    private var discoveryCache: [SearchRequest: RepositoryDiscoveryResult] = [:]
+
+    /// 智能发现独立于 Coordinator：基础搜索先展示，发现完成后再合并。
+    private(set) var discoverySession: SearchDiscoverySession?
+    private var latestDiscoveryResult: RepositoryDiscoveryResult?
+    private(set) var discoveryWarnings: [String] = []
+    private(set) var isDiscoveryRunning = false
 
     init(
         coordinator: SearchCoordinator,
         historyRepository: any SearchHistoryRepositoryProtocol,
         includeWebInAll: @escaping () -> Bool = { false },
         entitlementGate: EntitlementGate? = nil,
-        telemetryManager: TelemetryManager? = nil
+        telemetryManager: TelemetryManager? = nil,
+        intentRouter: (any SearchIntentRoutingProviding)? = nil,
+        discoveryService: (any RepositoryDiscoveryProviding)? = nil
     ) {
         self.coordinator = coordinator
         self.historyRepository = historyRepository
         self.includeWebInAll = includeWebInAll
         self.entitlementGate = entitlementGate
         self.telemetryManager = telemetryManager
+        self.intentRouter = intentRouter
+        self.discoveryService = discoveryService
         self.webSearchProvider = AppSettings.shared.externalSearchDefaultProvider
 
         // 历史加载放在 `present()` 触发，不在 init 做。
@@ -89,8 +104,26 @@ final class SearchCenterViewModel {
     }
 
     var candidates: [SearchCandidate] {
-        coordinator.repositories.map(SearchCandidate.repository)
-            + coordinator.references.map(SearchCandidate.reference)
+        var repositories = coordinator.repositories
+        var seenRepositoryIDs = Set(repositories.map(\.id))
+        var references = coordinator.references
+        var seenReferenceIDs = Set(references.map(\.id))
+
+        // 智能发现只进入 .all。基础结果已经在列表中时，发现候选延后合并；
+        // 后返回的本地结果也不会把发现候选挤出，因为每次读取都重新去重。
+        if scope == .all, let latestDiscoveryResult {
+            for candidate in latestDiscoveryResult.repositories
+            where seenRepositoryIDs.insert(candidate.id).inserted {
+                repositories.append(candidate)
+            }
+            for reference in latestDiscoveryResult.references
+            where seenReferenceIDs.insert(reference.id).inserted {
+                references.append(reference)
+            }
+        }
+
+        return repositories.map(SearchCandidate.repository)
+            + references.map(SearchCandidate.reference)
     }
 
     var selectedCandidate: SearchCandidate? {
@@ -103,6 +136,7 @@ final class SearchCenterViewModel {
             if case .loading = coordinator.status(for: source) { return true }
             return false
         }
+            || isDiscoveryRunning
     }
 
     /// 结果区不再叠浮层错误；完整句留给 footer chip 的 tooltip，
@@ -258,6 +292,19 @@ final class SearchCenterViewModel {
         }
     }
 
+    /// 继续查找的入口条件。上限 3 轮可防止用户误触造成无限远端消耗。
+    var canContinueDiscovery: Bool {
+        let currentRound = discoverySession?.round ?? 0
+        guard scope == .all,
+              !isDiscoveryRunning,
+              intentRouter != nil,
+              discoveryService != nil,
+              discoverySession?.phase == .completed,
+              currentRound < 3
+        else { return false }
+        return true
+    }
+
     /// 骨架只在「这次提交后谁都还没落地」时出现。
     /// 任一 provider 已返回（含 0 条）且列表仍空：交给空白等待区 + 底栏过程文案。
     var shouldShowSearchSkeleton: Bool {
@@ -320,6 +367,7 @@ final class SearchCenterViewModel {
         let request = makeRequest(query: query)
         guard !request.query.isEmpty else {
             coordinator.reset()
+            resetDiscoveryState()
             lastSubmittedQuery = ""
             selectedIndex = nil
             return
@@ -338,7 +386,44 @@ final class SearchCenterViewModel {
         )
         // Getting Started 清单的“试用一次搜索”对应真实提交行为，而不是只打开搜索面板。
         NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
-        await coordinator.search(request)
+        resetDiscoveryState(keepCache: true)
+
+        if let cached = discoveryCache[request] {
+            applyDiscovery(cached, cacheRequest: request)
+            await coordinator.search(request)
+            clampSelection()
+            return
+        }
+
+        // 先启动基础搜索，再让 Router 做 LLM 分类/规划；两者都挂在 MainActor
+        // 的服务上，但网络等待会让出 actor，因此本地和远端结果可以并行落地。
+        let baseSearchTask = Task { await coordinator.search(request) }
+        let routingOutcome: SearchIntentRoutingOutcome?
+        if let intentRouter, request.scope == .all {
+            discoverySession = SearchDiscoverySession(
+                generation: discoveryGeneration,
+                round: 1,
+                phase: .routing
+            )
+            routingOutcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: false)
+        } else {
+            routingOutcome = nil
+        }
+
+        if routingOutcome?.route == .smartDiscovery {
+            let discoveryTask = startDiscovery(
+                query: request.query,
+                request: request,
+                plan: routingOutcome?.plan,
+                round: 1
+            )
+            await baseSearchTask.value
+            await discoveryTask.value
+        } else {
+            discoverySession = nil
+            discoveryWarnings = []
+            await baseSearchTask.value
+        }
         clampSelection()
     }
 
@@ -363,6 +448,94 @@ final class SearchCenterViewModel {
         lastSubmittedQuery = ""
         selectedIndex = nil
         coordinator.reset()
+        resetDiscoveryState()
+    }
+
+    /// 用户显式触发下一轮发现。Router 跳过分类并重新规划，基础结果保持不变。
+    func continueDiscovery() async {
+        guard canContinueDiscovery, let previousSession = discoverySession else { return }
+        let request = makeRequest(query: lastSubmittedQuery)
+        resetDiscoveryState(keepCache: true)
+        discoverySession = SearchDiscoverySession(
+            generation: discoveryGeneration,
+            round: previousSession.round + 1,
+            phase: .routing
+        )
+        await startDiscovery(
+            query: request.query,
+            request: request,
+            plan: nil,
+            round: previousSession.round + 1
+        ).value
+    }
+
+    private func startDiscovery(
+        query: String,
+        request: SearchRequest,
+        plan: SearchDiscoveryPlan?,
+        round: Int
+    ) -> Task<Void, Never> {
+        guard let discoveryService else {
+            discoverySession = SearchDiscoverySession(
+                generation: discoveryGeneration,
+                round: round,
+                phase: .failed("Discovery service is unavailable")
+            )
+            return Task {}
+        }
+        let generation = UUID()
+        let service = discoveryService
+        discoveryGeneration = generation
+        isDiscoveryRunning = true
+        discoveryWarnings = []
+        discoverySession = SearchDiscoverySession(
+            generation: generation,
+            round: round,
+            phase: .planning,
+            plan: plan,
+            usedLLMCalls: 1
+        )
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let result = await service.discover(
+                query: query,
+                request: request,
+                initialPlan: plan,
+                generation: generation,
+                round: round,
+                budget: .firstRound,
+                initialLLMCalls: 1
+            )
+            // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
+            guard self.discoveryGeneration == generation else { return }
+            self.applyDiscovery(result, cacheRequest: request)
+        }
+        discoveryTask = task
+        return task
+    }
+
+    private func applyDiscovery(_ result: RepositoryDiscoveryResult, cacheRequest: SearchRequest) {
+        discoverySession = result.session
+        latestDiscoveryResult = result
+        discoveryWarnings = result.warnings
+        isDiscoveryRunning = false
+        discoveryTask = nil
+        if result.session.phase == .completed {
+            discoveryCache[cacheRequest] = result
+        }
+    }
+
+    private func resetDiscoveryState(keepCache: Bool = false) {
+        discoveryGeneration = UUID()
+        discoveryTask?.cancel()
+        discoveryTask = nil
+        isDiscoveryRunning = false
+        discoverySession = nil
+        latestDiscoveryResult = nil
+        discoveryWarnings = []
+        if !keepCache {
+            discoveryCache = [:]
+        }
     }
 
     /// 删除单条历史。仅在用户主动点击 chip 上的 "x" 时调用，

@@ -257,7 +257,9 @@ struct HomeView: View {
         githubAPIClient: any GitHubAPIClientProtocol,
         readmeTranslationService: ReadmeTranslationService,
         entitlementGate: EntitlementGate,
-        telemetryManager: TelemetryManager? = nil
+        telemetryManager: TelemetryManager? = nil,
+        searchIntentRouter: SearchIntentRouter,
+        repositoryDiscoveryService: RepositoryDiscoveryService
     ) {
         _viewModel = State(initialValue: HomeViewModel(
             repository: repository,
@@ -307,7 +309,9 @@ struct HomeView: View {
                 AppSettings.shared.externalSearchIncludeInAll
             },
             entitlementGate: entitlementGate,
-            telemetryManager: telemetryManager
+            telemetryManager: telemetryManager,
+            intentRouter: searchIntentRouter,
+            discoveryService: repositoryDiscoveryService
         ))
         _myInsightsViewModel = State(initialValue: MyInsightsViewModel(
             provider: myInsightsSnapshotProvider

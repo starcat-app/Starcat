@@ -181,6 +181,13 @@ private struct RawPlan: Decodable {
 }
 
 @MainActor
+protocol SearchIntentRoutingProviding: AnyObject {
+    func route(query: String, explicitSmartDiscovery: Bool) async -> SearchIntentRoutingOutcome
+}
+
+extension SearchIntentRouter: SearchIntentRoutingProviding {}
+
+@MainActor
 final class SearchIntentRouter {
     private let settings: AppSettings
     private let engineRegistry: DecisionEngineRegistry
