@@ -330,7 +330,7 @@ struct DailyRadarPreviewWorkspace: View {
                                                 if let badges = item.relatedProjectBadges, !badges.isEmpty {
                                                     DailyRadarProjectBadgeCluster(
                                                         badges: badges, maxVisible: 4,
-                                                        avatarSize: 26 * scale.multiplier, style: .surface
+                                                        avatarSize: 30 * scale.multiplier, style: .surface
                                                     )
                                                 }
                                             }
