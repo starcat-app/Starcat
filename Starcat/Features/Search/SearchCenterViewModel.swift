@@ -105,16 +105,24 @@ final class SearchCenterViewModel {
 
     var candidates: [SearchCandidate] {
         var repositories = coordinator.repositories
-        var seenRepositoryIDs = Set(repositories.map(\.id))
+        var repositoryIndices = Dictionary(uniqueKeysWithValues: repositories.enumerated().map {
+            ($0.element.id, $0.offset)
+        })
         var references = coordinator.references
         var seenReferenceIDs = Set(references.map(\.id))
 
-        // 智能发现只进入 .all。基础结果已经在列表中时，发现候选延后合并；
-        // 后返回的本地结果也不会把发现候选挤出，因为每次读取都重新去重。
+        // 同一个仓库只显示一行，但保留发现来源和理由；否则本地命中会吞掉发现标记，
+        // 导致列表已有候选而“智能发现”计数为零。库内状态继续以基础结果为准。
         if scope == .all, let latestDiscoveryResult {
-            for candidate in latestDiscoveryResult.repositories
-            where seenRepositoryIDs.insert(candidate.id).inserted {
-                repositories.append(candidate)
+            for candidate in latestDiscoveryResult.repositories {
+                if let index = repositoryIndices[candidate.id] {
+                    repositories[index].discovery = candidate.discovery
+                    repositories[index].sources.formUnion(candidate.sources)
+                    repositories[index].remoteRepo = repositories[index].remoteRepo ?? candidate.remoteRepo
+                } else {
+                    repositoryIndices[candidate.id] = repositories.count
+                    repositories.append(candidate)
+                }
             }
             for reference in latestDiscoveryResult.references
             where seenReferenceIDs.insert(reference.id).inserted {
@@ -124,6 +132,15 @@ final class SearchCenterViewModel {
 
         return repositories.map(SearchCandidate.repository)
             + references.map(SearchCandidate.reference)
+    }
+
+    /// 与实际展示列表同口径：只计去重后的发现仓库，不包含网页资料或 API 命中总数。
+    var discoveryResultCount: Int {
+        candidates.reduce(into: 0) { count, candidate in
+            if case .repository(let repository) = candidate, repository.discovery != nil {
+                count += 1
+            }
+        }
     }
 
     var selectedCandidate: SearchCandidate? {

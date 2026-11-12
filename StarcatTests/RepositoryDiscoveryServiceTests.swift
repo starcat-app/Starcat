@@ -121,7 +121,8 @@ struct RepositoryDiscoveryServiceTests {
         )
 
         #expect(result.repositories.map(\.card.fullName) == ["apple/swift"])
-        #expect(result.repositories.first?.discovery?.reason == "GitHub repository search candidate")
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.repositories.first?.discovery?.reason.isEmpty == true)
         #expect(result.references.isEmpty)
         #expect(result.warnings.contains { $0.contains("Web query failed") })
         #expect(result.session.usedLLMCalls == 2)

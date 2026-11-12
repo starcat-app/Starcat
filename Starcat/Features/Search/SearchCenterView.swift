@@ -850,12 +850,11 @@ struct SearchCenterView: View {
     /// 智能发现的匹配理由和证据入口。证据不进入主标题，只在 Ranker 给出解释时追加。
     @ViewBuilder
     private func discoveryAnnotationView(_ repo: RepositoryCandidate) -> some View {
-        if let discovery = repo.discovery,
-           !discovery.reason.isEmpty {
+        if let discovery = repo.discovery {
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
-                Text(discovery.reason)
+                Text(verbatim: discoveryReason(discovery))
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -878,6 +877,15 @@ struct SearchCenterView: View {
             .padding(.leading, 12)
             .padding(.trailing, 12)
             .padding(.bottom, 8)
+        }
+    }
+
+    /// 兜底来源在展示时本地化，不把固定英文写进模型理由或持久化对象。
+    private func discoveryReason(_ annotation: SearchDiscoveryAnnotation) -> String {
+        switch annotation.kind {
+        case .modelMatch: return annotation.reason
+        case .githubSearch: return String.l10n("search.discovery.candidate.search")
+        case .githubVerification: return String.l10n("search.discovery.candidate.verified")
         }
     }
 
@@ -1369,7 +1377,7 @@ struct SearchCenterView: View {
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
             }
             Text(verbatim: discoveryPhaseText(phase))
-                .font(interfaceScale.font(.captionSmall, weight: .medium))
+                .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
                 .lineLimit(1)
         }
         .foregroundStyle(phase.isFailed ? Color.orange : Color.secondary)
@@ -1431,7 +1439,12 @@ struct SearchCenterView: View {
         case .extractingCandidates: return String.l10n("search.discovery.phase.extracting")
         case .verifyingRepositories: return String.l10n("search.discovery.phase.verifying")
         case .ranking: return String.l10n("search.discovery.phase.ranking")
-        case .completed: return String.l10n("search.discovery.phase.completed")
+        case .completed:
+            return String(
+                format: String.l10n("search.discovery.results.countFormat"),
+                locale: locale,
+                viewModel.discoveryResultCount
+            )
         case .failed: return String.l10n("search.discovery.phase.failed")
         }
     }

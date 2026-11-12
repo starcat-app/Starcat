@@ -115,6 +115,14 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
 
 /// 发现链路对一个仓库候选的增量解释，不覆盖关键词 / 语义分数。
 struct SearchDiscoveryAnnotation: Equatable, Hashable, Codable, Sendable {
+    /// 检索命中或 API 核验不代表经过模型相关性筛选，必须与真正的匹配理由分开。
+    enum Kind: String, Codable, Sendable {
+        case modelMatch
+        case githubSearch
+        case githubVerification
+    }
+
+    let kind: Kind
     /// Ranker 给出的简短理由，必须由服务层校验只陈述已核验事实。
     let reason: String
     /// 只能引用本轮输入给 Ranker 的证据 ID。
@@ -122,7 +130,13 @@ struct SearchDiscoveryAnnotation: Equatable, Hashable, Codable, Sendable {
     /// 每轮内的重排位置；0 表示第一。
     let rank: Int?
 
-    init(reason: String, evidenceIDs: [String], rank: Int? = nil) {
+    init(
+        reason: String,
+        evidenceIDs: [String],
+        rank: Int? = nil,
+        kind: Kind = .modelMatch
+    ) {
+        self.kind = kind
         self.reason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
         self.evidenceIDs = evidenceIDs
         self.rank = rank

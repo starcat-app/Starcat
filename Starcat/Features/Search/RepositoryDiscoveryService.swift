@@ -434,9 +434,10 @@ final class RepositoryDiscoveryService {
                     semanticScore: nil
                 )
                 candidate.discovery = SearchDiscoveryAnnotation(
-                    reason: "GitHub API verified repository",
+                    reason: "",
                     evidenceIDs: evidence.filter { $0.url?.absoluteString.hasSuffix("/\(identity.owner)/\(identity.name)") == true }.map(\.id),
-                    rank: nil
+                    rank: nil,
+                    kind: .githubVerification
                 )
                 repositories.append(candidate)
             } catch {
@@ -650,11 +651,10 @@ final class RepositoryDiscoveryService {
         candidates.prefix(budget.maxRankedCandidates).enumerated().map { index, candidate in
             var ranked = candidate
             ranked.discovery = SearchDiscoveryAnnotation(
-                reason: candidate.discovery?.reason.isEmpty == false
-                    ? candidate.discovery!.reason
-                    : "GitHub repository search candidate",
+                reason: candidate.discovery?.reason ?? "",
                 evidenceIDs: candidate.discovery?.evidenceIDs ?? [],
-                rank: index
+                rank: index,
+                kind: candidate.discovery?.kind ?? .githubSearch
             )
             return ranked
         }
@@ -667,7 +667,7 @@ final class RepositoryDiscoveryService {
         budget: SearchDiscoveryBudget
     ) -> [RepositoryCandidate] {
         let availableEvidence = Set(evidence.map(\.id))
-        var byID = Dictionary(uniqueKeysWithValues: candidates.map {
+        let byID = Dictionary(uniqueKeysWithValues: candidates.map {
             ($0.identity.normalizedFullName, $0)
         })
         var ranked: [RepositoryCandidate] = []
@@ -688,14 +688,17 @@ final class RepositoryDiscoveryService {
             )
             ranked.append(candidate)
             usedIDs.insert(id)
-            byID[id] = nil
         }
 
-        for var candidate in byID.values where ranked.count < budget.maxRankedCandidates {
+        // 没有有效模型理由的候选保留原检索顺序，不能用字典遍历伪造相关性排序。
+        for var candidate in candidates
+        where !usedIDs.contains(candidate.identity.normalizedFullName)
+            && ranked.count < budget.maxRankedCandidates {
             candidate.discovery = SearchDiscoveryAnnotation(
-                reason: "GitHub repository search candidate",
-                evidenceIDs: [],
-                rank: ranked.count
+                reason: candidate.discovery?.reason ?? "",
+                evidenceIDs: candidate.discovery?.evidenceIDs ?? [],
+                rank: ranked.count,
+                kind: candidate.discovery?.kind ?? .githubSearch
             )
             ranked.append(candidate)
         }

@@ -460514,6 +460514,72 @@
         "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Memberi peringkat" } }
       }
     },
+    "search.discovery.results.countFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Smart discovery %lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "智能发现 %lld" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "智慧探索 %lld" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索 %lld" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색 %lld" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Intelligente Suche %lld" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Recherche intelligente %lld" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Búsqueda inteligente %lld" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Busca inteligente %lld" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ricerca intelligente %lld" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Умный поиск %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Slim zoeken %lld" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Inteligentne wyszukiwanie %lld" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Розумний пошук %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama %lld" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tìm kiếm thông minh %lld" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pencarian cerdas %lld" } }
+      }
+    },
+    "search.discovery.candidate.search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub search candidate" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 检索候选" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 搜尋候選" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 検索の候補" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 검색 후보" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub-Suchtreffer" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Résultat de recherche GitHub" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Candidato de búsqueda en GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Candidato da busca no GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Candidato della ricerca GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Кандидат из поиска GitHub" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandidaat uit GitHub-zoekopdracht" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandydat z wyszukiwania GitHub" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Кандидат із пошуку GitHub" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub arama adayı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Ứng viên từ tìm kiếm GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandidat dari pencarian GitHub" } }
+      }
+    },
+    "search.discovery.candidate.verified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository verified on GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已通过 GitHub 核验" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已通過 GitHub 驗證" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub で確認済みのリポジトリ" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub에서 확인된 저장소" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository auf GitHub geprüft" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Dépôt vérifié sur GitHub" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositorio verificado en GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositório verificado no GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository verificato su GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Репозиторий проверен на GitHub" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository geverifieerd op GitHub" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repozytorium zweryfikowane w GitHub" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Репозиторій перевірено на GitHub" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub üzerinde doğrulanmış depo" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Kho mã đã được xác minh trên GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositori terverifikasi di GitHub" } }
+      }
+    },
     "search.discovery.phase.completed" : {
       "extractionState" : "manual",
       "localizations" : {

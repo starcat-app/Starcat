@@ -606,8 +606,69 @@ struct SearchCenterViewModelTests {
         #expect(router.routeQueries == ["github 最近比较火的 linux 发行版"])
         #expect(viewModel.candidates.map(\.id) == ["repo:apple/swift", "repo:omarchy/omarchy"])
         #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.discoveryResultCount == 1)
         #expect(viewModel.canContinueDiscovery)
         #expect(viewModel.discoveryWarnings.isEmpty)
+    }
+
+    @Test("发现结果与基础结果重复时保留单行、匹配理由和去重计数")
+    func discoveryCountMergesOverlappingRepositories() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy")
+        let firstResult = Self.makeDiscoveryResult(candidate: candidate)
+        let result = RepositoryDiscoveryResult(
+            session: firstResult.session,
+            repositories: firstResult.repositories + firstResult.repositories,
+            references: [],
+            warnings: []
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterCountingStubProvider(source: .localKeyword, candidate: candidate)
+            ]),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: SearchCenterStubDiscoveryService(results: [result])
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.candidates.count == 1)
+        #expect(viewModel.discoveryResultCount == 1)
+        guard case .repository(let displayed) = viewModel.candidates.first else {
+            Issue.record("Expected a repository candidate")
+            return
+        }
+        #expect(displayed.discovery?.reason == "Web evidence points to this repository")
+        #expect(viewModel.coordinator.repositories.first?.discovery == nil)
+    }
+
+    @Test("发现没有仓库时计数为零，不把普通结果或网页资料计入")
+    func emptyDiscoveryCountExcludesBaseResults() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate()
+        let result = RepositoryDiscoveryResult(
+            session: Self.makeDiscoveryResult(candidate: candidate).session,
+            repositories: [],
+            references: [],
+            warnings: []
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterCountingStubProvider(source: .localKeyword, candidate: candidate)
+            ]),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: SearchCenterStubDiscoveryService(results: [result])
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.candidates.count == 1)
+        #expect(viewModel.discoveryResultCount == 0)
     }
 
     @Test("Planner 失败保留基础结果并显示智能发现失败")
