@@ -146,6 +146,10 @@ final class AppDependencies {
     let undoStarHistoryRepository: any UndoStarHistoryRepositoryProtocol
     /// 搜索浮层 `⌘K` 的关键词历史 Repository（GRDB SQLite，CloudKit-ready 字段已就绪，W5 同步接入）。
     let searchHistoryRepository: any SearchHistoryRepositoryProtocol
+    /// Search Center 自然语言查询的决策分流与受控规划器。
+    let searchIntentRouter: SearchIntentRouter
+    /// Search Center 智能发现编排；与决策分流共享 Planner 契约。
+    let repositoryDiscoveryService: RepositoryDiscoveryService
     /// 用户自定义智能集合 Repository。内置集合不入库，只有用户保存的规则在这里。
     let smartCollectionRepository: any SmartCollectionRepositoryProtocol
     /// W6 AI：repo embedding SQLite 缓存。
@@ -1212,6 +1216,37 @@ final class AppDependencies {
             base: GRDBSmartCollectionRepository(database: db),
             entitlementGate: self.entitlementGate
         )
+
+        // Search Center 智能发现：Router 只做查询分类/规划，Discovery Service 负责受控
+        // 检索、核验和重排。三个服务共享同一 AppSettings；Keychain 仍按所选模型动态读取。
+        let searchQueryPlanner = SearchLLMQueryPlanner(settings: self.settings, keychain: KeychainManager.shared)
+        // 网页展示开关不授权 AI 联网；只检查所选服务商，不能隐式切换到其他服务商。
+        let webEvidenceAllowed: (ExternalSearchProviderID) -> Bool = { [settings = self.settings] provider in
+            settings.externalContextEnabled
+                && ExternalSearchRegistry(settings: settings).usableProviderIDs().contains(provider)
+        }
+        let searchIntentRouter = SearchIntentRouter(
+            settings: self.settings,
+            engineRegistry: decisionEngineRegistry,
+            planner: searchQueryPlanner,
+            webEvidenceAllowed: webEvidenceAllowed
+        )
+        let repositoryDiscoveryService = RepositoryDiscoveryService(
+            planner: searchQueryPlanner,
+            githubProvider: GitHubRepositorySearchProvider(
+                client: api,
+                noteRepository: self.repoNoteRepository
+            ),
+            webProvider: ExternalSearchWebProvider(),
+            verifier: GitHubRepositoryVerifier(client: api),
+            ranker: DynamicSearchDiscoveryRanker(
+                settings: self.settings,
+                keychain: KeychainManager.shared
+            ),
+            webEvidenceAllowed: webEvidenceAllowed
+        )
+        self.searchIntentRouter = searchIntentRouter
+        self.repositoryDiscoveryService = repositoryDiscoveryService
 
         // HOM-52：批量整理服务装在 AI insight + 标签 + 标签关联 + AI 摘要 Repo 之后。
         // 注：onTagsChanged 由 HomeView 在 environment 注入后挂接，刷新 Sidebar 计数。

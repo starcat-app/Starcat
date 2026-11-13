@@ -38,6 +38,12 @@ enum SearchSource: String, CaseIterable, Codable, Hashable, Sendable {
     case web
 }
 
+/// 底栏只筛选已经接纳的候选，不改变 Provider 请求或把智能发现伪装成新检索源。
+enum SearchResultFilter: Hashable, Sendable {
+    case source(SearchSource)
+    case discovery
+}
+
 /// 跨来源 Repo 身份。
 ///
 /// `ghRepoID` 能跨 rename 保持稳定，所以只要存在就优先使用；网络来源缺 ID 时，
@@ -116,6 +122,8 @@ struct RepositoryCandidate: Identifiable, Hashable, Sendable {
     /// 远端瞬时态字段（disabled / is_template / score）。默认 `.empty` 让现有
     /// 调用点零改动；GitHub Search Provider 显式填值后弹窗能渲染对应徽章。
     var remoteExtras: RemoteRepoExtras = .empty
+    /// 智能发现链路的理由、证据引用与重排位置；普通搜索保持 nil。
+    var discovery: SearchDiscoveryAnnotation?
 
     var isStarred: Bool { localRepo?.isStarred ?? card.isStarred }
     var displayRepo: Repo? { localRepo ?? remoteRepo }

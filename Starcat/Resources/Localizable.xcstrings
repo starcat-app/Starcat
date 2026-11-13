@@ -15288,6 +15288,28 @@
         }
       }
     },
+    "settings.labs.decision.searchRouting.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Uses the selected decision engine to route global searches. Failed decisions fall back to smart discovery." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "使用当前选定的决策引擎判断全局搜索意图；决策失败时回退智能发现。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "使用目前選定的決策引擎判斷全域搜尋意圖；決策失敗時回退智慧發現。" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "選択したデシジョンエンジンでグローバル検索の意図を判定します。判定失敗時はスマート検出にフォールバックします。" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "선택한 의사결정 엔진으로 전역 검색 의도를 판단합니다. 판단 실패 시 스마트 발견으로 대체합니다." } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Nutzt die ausgewählte Entscheidungs-Engine, um globale Suchanfragen zu routen. Bei Fehlern wird auf intelligente Suche zurückgefallen." } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Utilise le moteur de décision sélectionné pour router les recherches globales. En cas d’échec, bascule vers la découverte intelligente." } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Usa el motor de decisión seleccionado para enrutar búsquedas globales. Si falla, recurre al descubrimiento inteligente." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Usa o motor de decisão selecionado para rotear buscas globais. Em caso de falha, retorna à descoberta inteligente." } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Usa il motore decisionale selezionato per instradare le ricerche globali. In caso di errore usa la scoperta intelligente." } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Использует выбранный решающий движок для маршрутизации глобального поиска. При сбое переходит к умному поиску." } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gebruikt de gekozen beslisengine om globaal zoeken te routeren. Bij fouten valt het terug op slimme detectie." } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Używa wybranego silnika decyzyjnego do kierowania wyszukiwania globalnego. Po błędzie wraca do inteligentnego odkrywania." } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Використовує вибраний вирішальний рушій для маршрутизації глобального пошуку. У разі помилки переходить до розумного пошуку." } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Genel aramaları yönlendirmek için seçili karar motorunu kullanır. Hata olursa akıllı keşfe döner." } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Dùng công cụ quyết định đã chọn để định tuyến tìm kiếm toàn cục. Khi lỗi sẽ chuyển sang khám phá thông minh." } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Menggunakan mesin keputusan terpilih untuk merutekan pencarian global. Jika gagal, kembali ke penemuan pintar." } }
+      }
+    },
     "settings.labs.decision.tags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17212,6 +17234,50 @@
             "value" : "Mencakup pengelompokan manual dan otomatis, dengan validasi kandidat dan ambang keyakinan."
           }
         }
+      }
+    },
+    "settings.labs.layout.searchRouting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use for global search" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "用于全局搜索" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "用於全域搜尋" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "グローバル検索に使用" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "전역 검색에 사용" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Für globale Suche verwenden" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Utiliser pour la recherche globale" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Usar para la búsqueda global" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Usar na busca global" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Usa per la ricerca globale" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Использовать в глобальном поиске" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gebruiken voor globaal zoeken" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Użyj w wyszukiwaniu globalnym" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Використовувати в глобальному пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Genel arama için kullan" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Dùng cho tìm kiếm toàn cục" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gunakan untuk pencarian global" } }
+      }
+    },
+    "settings.labs.layout.searchRoutingHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Classifies ambiguous queries before smart discovery. Deterministic queries keep their existing path." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "先判断模糊查询是否需要智能发现；确定性查询仍走原路径。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "先判斷模糊查詢是否需要智慧發現；確定性查詢仍走原路徑。" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "あいまいなクエリはスマート検出の要否を先に判定します。確実なクエリは従来どおりです。" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "모호한 쿼리는 스마트 발견 필요 여부를 먼저 판단합니다. 확정적 쿼리는 기존 경로를 유지합니다." } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Klassifiziert mehrdeutige Suchanfragen vor der intelligenten Suche. Eindeutige Suchanfragen behalten ihren bisherigen Weg." } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Classe les requêtes ambiguës avant la découverte intelligente. Les requêtes déterministes conservent leur chemin actuel." } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Clasifica consultas ambiguas antes del descubrimiento inteligente. Las consultas deterministas mantienen su ruta actual." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Classifica consultas ambíguas antes da descoberta inteligente. Consultas determinísticas mantêm o caminho atual." } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Classifica le query ambigue prima della scoperta intelligente. Le query deterministiche mantengono il percorso attuale." } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Сначала классифицирует неоднозначные запросы. Детерминированные запросы сохраняют текущий путь." } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Beoordeelt vage zoekopdrachten vóór slimme detectie. Ondubbelzinnige opdrachten houden hun huidige pad." } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Klasyfikuje niejednoznaczne zapytania przed inteligentnym odkrywaniem. Jednoznaczne zachowują bieżącą ścieżkę." } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Спочатку класифікує неоднозначні запити. Детерміновані запити зберігають поточний шлях." } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Belirsiz sorguları akıllı keşiften önce sınıflandırır. Kesin sorgular mevcut yolunu korur." } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Phân loại truy vấn mơ hồ trước khi khám phá thông minh. Truy vấn rõ ràng giữ nguyên đường dẫn hiện tại." } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Mengklasifikasikan kueri ambigu sebelum penemuan pintar. Kueri deterministik mempertahankan jalur saat ini." } }
       }
     },
     "settings.labs.layout.introduction" : {
@@ -190141,103 +190207,103 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versuchen Sie, Starcat zu aktualisieren. Falls das Problem weiterhin besteht, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j."
+            "value" : "Versuchen Sie, Starcat zu aktualisieren. Falls das Problem weiterhin besteht, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j@gmail.com."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try updating Starcat. If it still fails, export debug logs and send them to dong4j."
+            "value" : "Try updating Starcat. If it still fails, export debug logs and send them to dong4j@gmail.com."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Intenta actualizar Starcat. Si sigue fallando, exporta los registros de depuración y envíalos a dong4j."
+            "value" : "Intenta actualizar Starcat. Si sigue fallando, exporta los registros de depuración y envíalos a dong4j@gmail.com."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Essayez de mettre à jour Starcat. Si le problème persiste, exportez les journaux de débogage et envoyez-les à dong4j."
+            "value" : "Essayez de mettre à jour Starcat. Si le problème persiste, exportez les journaux de débogage et envoyez-les à dong4j@gmail.com."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coba perbarui Starcat. Jika masih gagal, ekspor log debug dan kirimkan ke dong4j."
+            "value" : "Coba perbarui Starcat. Jika masih gagal, ekspor log debug dan kirimkan ke dong4j@gmail.com."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prova ad aggiornare Starcat. Se persiste, esporta i log di debug e inviali a dong4j."
+            "value" : "Prova ad aggiornare Starcat. Se persiste, esporta i log di debug e inviali a dong4j@gmail.com."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcatをアップデートしてください。それでも失敗する場合は、デバッグログを書き出してdong4jに送信してください。"
+            "value" : "Starcatをアップデートしてください。それでも失敗する場合は、デバッグログを書き出してdong4j@gmail.comに送信してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat을 업데이트해 보세요. 그래도 실패하면 디버그 로그를 내보내 dong4j에게 보내주세요."
+            "value" : "Starcat을 업데이트해 보세요. 그래도 실패하면 디버그 로그를 내보내 dong4j@gmail.com에게 보내주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Probeer Starcat bij te werken. Als het blijft mislukken, exporteer dan debuglogs en stuur ze naar dong4j."
+            "value" : "Probeer Starcat bij te werken. Als het blijft mislukken, exporteer dan debuglogs en stuur ze naar dong4j@gmail.com."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spróbuj zaktualizować Starcat. Jeśli nadal nie działa, wyeksportuj logi debugowania i wyślij je do dong4j."
+            "value" : "Spróbuj zaktualizować Starcat. Jeśli nadal nie działa, wyeksportuj logi debugowania i wyślij je do dong4j@gmail.com."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tente atualizar o Starcat. Se ainda falhar, exporte os registros de depuração e envie para dong4j."
+            "value" : "Tente atualizar o Starcat. Se ainda falhar, exporte os registros de depuração e envie para dong4j@gmail.com."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Попробуйте обновить Starcat. Если проблема сохранится, экспортируйте отладочные логи и отправьте их dong4j."
+            "value" : "Попробуйте обновить Starcat. Если проблема сохранится, экспортируйте отладочные логи и отправьте их dong4j@gmail.com."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Starcat'ı güncellemeyi deneyin. Hala başarısız olursa, hata ayıklama günlüklerini dışa aktarın ve dong4j'e gönderin."
+            "value" : "Starcat'ı güncellemeyi deneyin. Hala başarısız olursa, hata ayıklama günlüklerini dışa aktarın ve dong4j@gmail.com'e gönderin."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Спробуйте оновити Starcat. Якщо проблема не зникне, експортуйте журнали налагодження та надішліть їх dong4j."
+            "value" : "Спробуйте оновити Starcat. Якщо проблема не зникне, експортуйте журнали налагодження та надішліть їх dong4j@gmail.com."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hãy thử cập nhật Starcat. Nếu vẫn thất bại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j."
+            "value" : "Hãy thử cập nhật Starcat. Nếu vẫn thất bại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j@gmail.com."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j。"
+            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j@gmail.com。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j。"
+            "value" : "请尝试更新 Starcat；如果仍失败，请导出调试日志发给 dong4j@gmail.com。"
           }
         }
       }
@@ -192816,103 +192882,103 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Versuchen Sie es erneut. Wenn das Problem wiederholt auftritt, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j."
+            "value" : "Versuchen Sie es erneut. Wenn das Problem wiederholt auftritt, exportieren Sie Debug-Protokolle und senden Sie sie an dong4j@gmail.com."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try again. If it repeats, export debug logs and send them to dong4j."
+            "value" : "Try again. If it repeats, export debug logs and send them to dong4j@gmail.com."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Inténtalo de nuevo. Si se repite, exporta los registros de depuración y envíalos a dong4j."
+            "value" : "Inténtalo de nuevo. Si se repite, exporta los registros de depuración y envíalos a dong4j@gmail.com."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Réessayez. Si le problème se répète, exportez les journaux de débogage et envoyez-les à dong4j."
+            "value" : "Réessayez. Si le problème se répète, exportez les journaux de débogage et envoyez-les à dong4j@gmail.com."
           }
         },
         "id" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coba lagi. Jika berulang, ekspor log debug dan kirimkan ke dong4j."
+            "value" : "Coba lagi. Jika berulang, ekspor log debug dan kirimkan ke dong4j@gmail.com."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Riprova. Se si ripete, esporta i log di debug e inviali a dong4j."
+            "value" : "Riprova. Se si ripete, esporta i log di debug e inviali a dong4j@gmail.com."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "もう一度お試しください。繰り返す場合は、デバッグログをエクスポートしてdong4jに送信してください。"
+            "value" : "もう一度お試しください。繰り返す場合は、デバッグログをエクスポートしてdong4j@gmail.comに送信してください。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다시 시도하세요. 반복되면 디버그 로그를 내보내 dong4j에게 보내주세요."
+            "value" : "다시 시도하세요. 반복되면 디버그 로그를 내보내 dong4j@gmail.com에게 보내주세요."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Probeer het opnieuw. Als het zich herhaalt, exporteer dan debuglogs en stuur ze naar dong4j."
+            "value" : "Probeer het opnieuw. Als het zich herhaalt, exporteer dan debuglogs en stuur ze naar dong4j@gmail.com."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Spróbuj ponownie. Jeśli problem się powtarza, wyeksportuj logi debugowania i wyślij je do dong4j."
+            "value" : "Spróbuj ponownie. Jeśli problem się powtarza, wyeksportuj logi debugowania i wyślij je do dong4j@gmail.com."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tente novamente. Se repetir, exporte os registros de depuração e envie para dong4j."
+            "value" : "Tente novamente. Se repetir, exporte os registros de depuração e envie para dong4j@gmail.com."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Повторите попытку. Если ошибка повторится, экспортируйте отладочные логи и отправьте их dong4j."
+            "value" : "Повторите попытку. Если ошибка повторится, экспортируйте отладочные логи и отправьте их dong4j@gmail.com."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tekrar deneyin. Tekrarlarsa, hata ayıklama günlüklerini dışa aktarın ve dong4j'e gönderin."
+            "value" : "Tekrar deneyin. Tekrarlarsa, hata ayıklama günlüklerini dışa aktarın ve dong4j@gmail.com'e gönderin."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Спробуйте знову. Якщо проблема повториться, експортуйте журнали налагодження та надішліть їх dong4j."
+            "value" : "Спробуйте знову. Якщо проблема повториться, експортуйте журнали налагодження та надішліть їх dong4j@gmail.com."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thử lại. Nếu lặp lại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j."
+            "value" : "Thử lại. Nếu lặp lại, hãy xuất nhật ký gỡ lỗi và gửi cho dong4j@gmail.com."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "请重试；如果重复出现，请导出调试日志发给 dong4j。"
+            "value" : "请重试；如果重复出现，请导出调试日志发给 dong4j@gmail.com。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請重試。若重複發生，請匯出除錯日誌並傳送給 dong4j。"
+            "value" : "請重試。若重複發生，請匯出除錯日誌並傳送給 dong4j@gmail.com。"
           }
         }
       }
@@ -460250,6 +460316,2277 @@
         }
       }
     },
+    "search.content.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inhaltsfilter"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Content filtering"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filtrado de contenido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filtrage du contenu"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filter konten"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filtro dei contenuti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "コンテンツの絞り込み"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "콘텐츠 필터링"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inhoudsfilter"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filtrowanie treści"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Filtro de conteúdo"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Фильтрация содержимого"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İçerik filtreleme"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Фільтрація вмісту"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lọc nội dung"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "内容筛选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "內容篩選"
+          }
+        }
+      }
+    },
+    "search.content.summaryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geprüft %1$lld · Ausgeblendet %2$lld · Behalten %3$lld"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Checked %1$lld · Hidden %2$lld · Kept %3$lld"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Revisados %1$lld · Ocultos %2$lld · Conservados %3$lld"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Vérifiés %1$lld · Masqués %2$lld · Conservés %3$lld"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diperiksa %1$lld · Disembunyikan %2$lld · Dipertahankan %3$lld"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Controllati %1$lld · Nascosti %2$lld · Mantenuti %3$lld"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "確認 %1$lld 件・非表示 %2$lld 件・保持 %3$lld 件"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "확인 %1$lld개 · 숨김 %2$lld개 · 유지 %3$lld개"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gecontroleerd %1$lld · Verborgen %2$lld · Behouden %3$lld"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sprawdzono %1$lld · Ukryto %2$lld · Zachowano %3$lld"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verificados %1$lld · Ocultos %2$lld · Mantidos %3$lld"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Проверено %1$lld · Скрыто %2$lld · Оставлено %3$lld"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İncelenen %1$lld · Gizlenen %2$lld · Korunan %3$lld"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Перевірено %1$lld · Приховано %2$lld · Залишено %3$lld"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã kiểm tra %1$lld · Đã ẩn %2$lld · Giữ lại %3$lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已检查 %1$lld 项 · 隐藏 %2$lld 项 · 保留 %3$lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "已檢查 %1$lld 項 · 隱藏 %2$lld 項 · 保留 %3$lld 項"
+          }
+        }
+      }
+    },
+    "search.content.queryBlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diese Suche enthält Inhalte, die nicht angezeigt werden. Bitte passe die Suchanfrage an."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This query includes content that is not shown. Please adjust your query."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta búsqueda incluye contenido que no se muestra. Modifica la consulta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cette recherche contient des éléments qui ne sont pas affichés. Modifiez votre recherche."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pencarian ini mencakup konten yang tidak ditampilkan. Silakan ubah kueri Anda."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Questa ricerca include contenuti che non vengono mostrati. Modifica la ricerca."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "この検索には表示対象外の内容が含まれています。検索語を変更してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "표시되지 않는 콘텐츠가 검색어에 포함되어 있습니다. 검색어를 수정해 주세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze zoekopdracht bevat inhoud die niet wordt getoond. Pas je zoekopdracht aan."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "To zapytanie zawiera treści, które nie są wyświetlane. Zmień zapytanie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta busca inclui conteúdo que não é exibido. Ajuste a consulta."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Этот запрос содержит материалы, которые не отображаются. Измените запрос."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu arama, gösterilmeyen içerikler içeriyor. Lütfen sorgunuzu değiştirin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Цей запит містить матеріали, які не відображаються. Змініть запит."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Truy vấn này có nội dung không được hiển thị. Vui lòng điều chỉnh truy vấn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此查询涉及不展示的内容，请调整后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此查詢涉及不顯示的內容，請調整後重試。"
+          }
+        }
+      }
+    },
+    "search.content.allHidden" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Ergebnisse dieser Runde wurden durch die Inhaltsregeln ausgeblendet. Passe die Suche an oder lade weitere Ergebnisse."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Results in this round were hidden by the content rules. Adjust your query or load more."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Los resultados de esta ronda se han ocultado según las reglas de contenido. Modifica la consulta o carga más resultados."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les résultats de cette recherche ont été masqués par les règles de contenu. Modifiez la recherche ou chargez d’autres résultats."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hasil pada putaran ini disembunyikan oleh aturan konten. Ubah kueri atau muat hasil lainnya."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I risultati di questa ricerca sono stati nascosti dalle regole sui contenuti. Modifica la ricerca o carica altri risultati."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今回の結果はコンテンツルールにより非表示になりました。検索語を変更するか、追加で読み込んでください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이번 검색 결과는 콘텐츠 규칙에 따라 숨겨졌습니다. 검색어를 수정하거나 더 불러오세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De resultaten van deze ronde zijn verborgen door de inhoudsregels. Pas de zoekopdracht aan of laad meer resultaten."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wyniki tej rundy zostały ukryte przez reguły treści. Zmień zapytanie lub wczytaj więcej wyników."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Os resultados desta rodada foram ocultados pelas regras de conteúdo. Ajuste a consulta ou carregue mais resultados."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Результаты этого поиска скрыты правилами фильтрации. Измените запрос или загрузите ещё результаты."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu turdaki sonuçlar içerik kuralları nedeniyle gizlendi. Sorguyu değiştirin veya daha fazla sonuç yükleyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Результати цього пошуку приховано правилами фільтрації. Змініть запит або завантажте більше результатів."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kết quả của lượt này đã bị ẩn theo quy tắc nội dung. Hãy điều chỉnh truy vấn hoặc tải thêm kết quả."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "本轮结果已按内容规则隐藏，可调整查询或继续加载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "本輪結果已依內容規則隱藏，可調整查詢或繼續載入。"
+          }
+        }
+      }
+    },
+    "search.content.details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inhaltsfilter anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "View content filtering"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ver el filtrado de contenido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Voir le filtrage du contenu"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lihat filter konten"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Visualizza il filtro dei contenuti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "コンテンツの絞り込みを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "콘텐츠 필터링 보기"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Inhoudsfilter bekijken"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zobacz filtrowanie treści"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ver filtro de conteúdo"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Посмотреть фильтрацию содержимого"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İçerik filtrelemeyi görüntüle"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Переглянути фільтрацію вмісту"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Xem thông tin lọc nội dung"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "查看内容筛选"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "查看內容篩選"
+          }
+        }
+      }
+    },
+    "search.content.versionFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Regelversion: %@"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rule version: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versión de las reglas: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Version des règles : %@"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versi aturan: %@"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versione delle regole: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ルールのバージョン：%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "규칙 버전: %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Regelversie: %@"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wersja reguł: %@"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Versão das regras: %@"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Версия правил: %@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kural sürümü: %@"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Версія правил: %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Phiên bản quy tắc: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "规则版本：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "規則版本：%@"
+          }
+        }
+      }
+    },
+    "search.discovery.start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Smart Find" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "智能查找" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "智慧尋找" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "スマート検索" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "스마트 찾기" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Intelligent suchen" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Recherche intelligente" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Búsqueda inteligente" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Busca inteligente" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ricerca intelligente" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Умный поиск" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Slim zoeken" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Szukaj inteligentnie" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Розумний пошук" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Akıllı ara" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Tìm thông minh" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Cari pintar" } }
+      }
+    },
+    "search.discovery.continue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue Finding" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "继续查找" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "繼續尋找" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "検索を続ける" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "계속 찾기" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Weiter suchen" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Continuer la recherche" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Seguir buscando" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Continuar busca" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Continua ricerca" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Продолжить поиск" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Doorgaan met zoeken" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Szukaj dalej" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Продовжити пошук" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Aramayı sürdür" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Tìm tiếp" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Lanjutkan pencarian" } }
+      }
+    },
+    "search.discovery.evidence" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Evidence" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "证据" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "證據" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "証拠" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "근거" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Belege" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Preuves" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Evidencia" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Evidência" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Prove" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Подтверждения" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Bewijs" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Dowody" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Підтвердження" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Kanıt" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Bằng chứng" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Bukti" } }
+      }
+    },
+    "search.discovery.phase.routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Routing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "路由中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "路由中" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "分類中" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "라우팅 중" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Routing" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Routage" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Enrutando" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Roteando" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Instradamento" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Маршрутизация" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Routeren" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Kierowanie" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Маршрутизація" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Yönlendiriliyor" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đang định tuyến" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Merutekan" } }
+      }
+    },
+    "search.discovery.phase.planning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Planning" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "规划中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "規劃中" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "計画中" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "계획 중" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Planung" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Planification" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Planificando" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Planejando" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Pianificazione" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Планирование" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Plannen" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Planowanie" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Планування" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Planlanıyor" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đang lập kế hoạch" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Merencanakan" } }
+      }
+    },
+    "search.discovery.phase.searching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Searching" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "搜索中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "搜尋中" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "検索中" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "검색 중" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Suche" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Recherche" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Buscando" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Buscando" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ricerca" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Поиск" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Zoeken" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Wyszukiwanie" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Пошук" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Aranıyor" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đang tìm" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Mencari" } }
+      }
+    },
+    "search.discovery.phase.extracting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Extracting" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "提取中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "擷取中" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "抽出中" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "추출 중" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Extraktion" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Extraction" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Extrayendo" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Extraindo" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Estrazione" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Извлечение" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Extraheren" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Wyodrębnianie" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Витяг" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Çıkarılıyor" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đang trích xuất" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Mengekstrak" } }
+      }
+    },
+    "search.discovery.phase.verifying" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Verifying" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "核验中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "驗證中" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "検証中" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "확인 중" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Prüfung" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Vérification" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Verificando" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Verificando" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Verifica" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Проверка" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Verifiëren" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Weryfikacja" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Перевірка" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Doğrulanıyor" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đang xác minh" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Memverifikasi" } }
+      }
+    },
+    "search.discovery.phase.ranking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ranking" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "排序中" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "排序中" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "ランキング中" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "순위 지정 중" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ranking" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Classement" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Clasificando" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Classificando" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Classificazione" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ранжирование" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Rangschikken" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ranking" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ранжування" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Sıralanıyor" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đang xếp hạng" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Memberi peringkat" } }
+      }
+    },
+    "search.discovery.diagnostic.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Smart discovery details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "智能发现详情" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "智慧探索詳細資訊" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索の詳細" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색 세부 정보" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Details zur intelligenten Suche" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Détails de la recherche intelligente" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Detalles de la búsqueda inteligente" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Detalhes da busca inteligente" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Dettagli della ricerca intelligente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Подробности умного поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Details van slim zoeken" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Szczegóły inteligentnego wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Подробиці розумного пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama ayrıntıları" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Chi tiết tìm kiếm thông minh" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Detail pencarian cerdas" } }
+      }
+    },
+    "search.discovery.diagnostic.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show smart discovery details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "查看智能发现详情" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "檢視智慧探索詳細資訊" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索の詳細を表示" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색 세부 정보 보기" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Details zur intelligenten Suche anzeigen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Afficher les détails de la recherche intelligente" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Ver detalles de la búsqueda inteligente" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ver detalhes da busca inteligente" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostra i dettagli della ricerca intelligente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Показать подробности умного поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Details van slim zoeken weergeven" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Pokaż szczegóły inteligentnego wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Показати подробиці розумного пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama ayrıntılarını göster" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xem chi tiết tìm kiếm thông minh" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Lihat detail pencarian cerdas" } }
+      }
+    },
+    "search.discovery.diagnostic.technical" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Technical details" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "技术详情" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "技術詳細資訊" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "技術的な詳細" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "기술 세부 정보" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Technische Details" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Détails techniques" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Detalles técnicos" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Detalhes técnicos" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Dettagli tecnici" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Технические подробности" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Technische details" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Szczegóły techniczne" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Технічні подробиці" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Teknik ayrıntılar" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Chi tiết kỹ thuật" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Detail teknis" } }
+      }
+    },
+    "search.discovery.diagnostic.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Smart discovery is unavailable. Check model settings." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "智能发现暂不可用，请检查模型设置。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "智慧探索暫時無法使用，請檢查模型設定。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索を利用できません。モデル設定を確認してください。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색을 사용할 수 없습니다. 모델 설정을 확인하세요." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die intelligente Suche ist nicht verfügbar. Prüfe die Modelleinstellungen." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "La recherche intelligente est indisponible. Vérifiez les réglages du modèle." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "La búsqueda inteligente no está disponible. Revisa los ajustes del modelo." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "A busca inteligente está indisponível. Confira as configurações do modelo." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "La ricerca intelligente non è disponibile. Controlla le impostazioni del modello." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Умный поиск недоступен. Проверьте настройки модели." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Slim zoeken is niet beschikbaar. Controleer de modelinstellingen." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Inteligentne wyszukiwanie jest niedostępne. Sprawdź ustawienia modelu." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Розумний пошук недоступний. Перевірте налаштування моделі." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama kullanılamıyor. Model ayarlarını kontrol edin." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tìm kiếm thông minh hiện không khả dụng. Hãy kiểm tra cài đặt mô hình." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pencarian cerdas tidak tersedia. Periksa pengaturan model." } }
+      }
+    },
+    "search.discovery.diagnostic.verificationLimit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This round's repository verification limit was reached." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已达到本轮仓库核验上限。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已達本輪儲存庫驗證上限。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "この検索のリポジトリ確認上限に達しました。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이번 검색의 저장소 확인 한도에 도달했습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Das Limit für Repository-Prüfungen dieser Suchrunde wurde erreicht." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "La limite de vérification des dépôts pour cette recherche a été atteinte." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Se alcanzó el límite de verificación de repositorios de esta búsqueda." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "O limite de verificação de repositórios desta busca foi atingido." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "È stato raggiunto il limite di verifica dei repository per questa ricerca." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Достигнут лимит проверки репозиториев для этого раунда поиска." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "De limiet voor repositoryverificaties in deze zoekronde is bereikt." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Osiągnięto limit weryfikacji repozytoriów w tej rundzie wyszukiwania." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Досягнуто ліміту перевірки репозиторіїв для цього раунду пошуку." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu arama turunun depo doğrulama sınırına ulaşıldı." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã đạt giới hạn xác minh kho mã cho lượt tìm kiếm này." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Batas verifikasi repositori untuk putaran pencarian ini telah tercapai." } }
+      }
+    },
+    "search.discovery.diagnostic.rankingLimit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This round's model call limit was reached." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已达到本轮模型调用上限。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已達本輪模型呼叫上限。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "この検索のモデル呼び出し上限に達しました。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "이번 검색의 모델 호출 한도에 도달했습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Das Limit für Modellaufrufe dieser Suchrunde wurde erreicht." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "La limite d'appels au modèle pour cette recherche a été atteinte." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Se alcanzó el límite de llamadas al modelo de esta búsqueda." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "O limite de chamadas ao modelo desta busca foi atingido." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "È stato raggiunto il limite di chiamate al modello per questa ricerca." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Достигнут лимит вызовов модели для этого раунда поиска." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "De limiet voor modelaanroepen in deze zoekronde is bereikt." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Osiągnięto limit wywołań modelu w tej rundzie wyszukiwania." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Досягнуто ліміту викликів моделі для цього раунду пошуку." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bu arama turunun model çağrısı sınırına ulaşıldı." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã đạt giới hạn gọi mô hình cho lượt tìm kiếm này." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Batas pemanggilan model untuk putaran pencarian ini telah tercapai." } }
+      }
+    },
+    "search.discovery.diagnostic.continue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use Continue searching to start another round." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "可点击“继续查找”开始新一轮搜索。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "可點選「繼續尋找」開始新一輪搜尋。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "「検索を続ける」で次の検索を開始できます。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "검색을 계속하여 새 검색을 시작할 수 있습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Mit „Weitersuchen“ startest du eine neue Suchrunde." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Choisissez « Continuer la recherche » pour lancer une nouvelle recherche." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Usa «Seguir buscando» para iniciar otra búsqueda." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Use “Continuar buscando” para iniciar outra busca." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Usa «Continua la ricerca» per avviare una nuova ricerca." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Нажмите «Продолжить поиск», чтобы начать новый раунд." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Gebruik ‘Verder zoeken’ om een nieuwe zoekronde te starten." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Użyj opcji „Szukaj dalej”, aby rozpocząć kolejną rundę." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Натисніть «Продовжити пошук», щоб почати новий раунд." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Yeni bir tur başlatmak için aramaya devam edin." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Chọn tiếp tục tìm kiếm để bắt đầu lượt mới." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Gunakan Lanjutkan pencarian untuk memulai putaran baru." } }
+      }
+    },
+    "search.discovery.diagnostic.impactFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Impact: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "影响：%@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "影響：%@" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "影響：%@" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "영향: %@" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Auswirkung: %@" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Conséquence : %@" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Efecto: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Impacto: %@" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Effetto: %@" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Влияние: %@" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Gevolg: %@" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wpływ: %@" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Вплив: %@" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Etkisi: %@" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Ảnh hưởng: %@" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Dampak: %@" } }
+      }
+    },
+    "search.discovery.diagnostic.recoveryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Suggestion: %@" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "建议：%@" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "建議：%@" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "対処方法：%@" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "권장 사항: %@" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Empfehlung: %@" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Suggestion : %@" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Sugerencia: %@" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Sugestão: %@" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Suggerimento: %@" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Рекомендация: %@" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Suggestie: %@" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zalecenie: %@" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Рекомендація: %@" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Öneri: %@" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Gợi ý: %@" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Saran: %@" } }
+      }
+    },
+    "search.discovery.diagnostic.impact.planning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Smart discovery did not run. Basic search results are still available." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "本轮智能发现未执行，基础搜索结果仍可使用。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "本輪智慧探索未執行，基本搜尋結果仍可使用。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索は実行されませんでした。通常の検索結果は引き続き利用できます。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색이 실행되지 않았습니다. 기본 검색 결과는 계속 사용할 수 있습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die intelligente Suche wurde nicht ausgeführt. Die normalen Suchergebnisse bleiben verfügbar." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "La recherche intelligente n'a pas été exécutée. Les résultats de la recherche classique restent disponibles." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "La búsqueda inteligente no se ejecutó. Los resultados de la búsqueda básica siguen disponibles." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "A busca inteligente não foi executada. Os resultados da busca básica continuam disponíveis." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "La ricerca intelligente non è stata eseguita. I risultati della ricerca di base restano disponibili." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Умный поиск не выполнен. Результаты обычного поиска по-прежнему доступны." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Slim zoeken is niet uitgevoerd. De gewone zoekresultaten blijven beschikbaar." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Inteligentne wyszukiwanie nie zostało wykonane. Wyniki podstawowego wyszukiwania są nadal dostępne." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Розумний пошук не виконано. Результати звичайного пошуку залишаються доступними." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama çalışmadı. Temel arama sonuçları kullanılabilir durumda." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tìm kiếm thông minh chưa được thực hiện. Kết quả tìm kiếm cơ bản vẫn có sẵn." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pencarian cerdas tidak dijalankan. Hasil pencarian dasar tetap tersedia." } }
+      }
+    },
+    "search.discovery.diagnostic.impact.webSearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Some web evidence is missing, which may affect repository recall and freshness assessment." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "部分网页线索缺失，可能影响候选召回和时效判断。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "部分網頁線索缺失，可能影響候選搜尋與時效判斷。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "一部のウェブ情報が不足しているため、候補の発見や情報の新しさの判断に影響する可能性があります。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "일부 웹 근거가 누락되어 후보 검색과 최신성 판단에 영향을 줄 수 있습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Einige Webbelege fehlen. Das kann die Suche nach passenden Repositorys und die Bewertung ihrer Aktualität beeinträchtigen." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Certaines sources web manquent, ce qui peut affecter la sélection des dépôts et l'évaluation de leur actualité." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Faltan algunas fuentes web, lo que puede afectar la selección de repositorios y la evaluación de su actualidad." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Faltam algumas fontes da web, o que pode afetar a busca de candidatos e a avaliação da atualidade." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Mancano alcune fonti web, il che può influire sulla ricerca dei repository e sulla valutazione della loro attualità." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Некоторые веб-источники недоступны. Это может повлиять на поиск репозиториев и оценку актуальности." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sommige webbronnen ontbreken. Dit kan het vinden van repository's en de beoordeling van hun actualiteit beïnvloeden." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Brakuje części źródeł internetowych, co może wpłynąć na wyszukiwanie repozytoriów i ocenę aktualności." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Деякі вебджерела недоступні. Це може вплинути на пошук репозиторіїв і оцінку актуальності." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bazı web kaynakları eksik. Bu durum depo adaylarının bulunmasını ve güncellik değerlendirmesini etkileyebilir." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Thiếu một số nguồn web, có thể ảnh hưởng đến việc tìm kho mã phù hợp và đánh giá độ mới." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sebagian sumber web tidak tersedia, sehingga dapat memengaruhi pencarian kandidat dan penilaian kebaruan." } }
+      }
+    },
+    "search.discovery.diagnostic.impact.githubSearch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Some GitHub candidates could not be retrieved. Other results remain available." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "部分 GitHub 候选未能获取，其他结果仍可使用。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "部分 GitHub 候選無法取得，其他結果仍可使用。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "一部の GitHub 候補を取得できませんでした。他の結果は引き続き利用できます。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "일부 GitHub 후보를 가져오지 못했습니다. 다른 결과는 계속 사용할 수 있습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Einige GitHub-Kandidaten konnten nicht abgerufen werden. Andere Ergebnisse bleiben verfügbar." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Certains dépôts GitHub n'ont pas pu être récupérés. Les autres résultats restent disponibles." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "No se pudieron obtener algunos candidatos de GitHub. Los demás resultados siguen disponibles." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Não foi possível obter alguns candidatos do GitHub. Os outros resultados continuam disponíveis." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Non è stato possibile recuperare alcuni candidati GitHub. Gli altri risultati restano disponibili." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Не удалось получить некоторые репозитории GitHub. Остальные результаты доступны." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sommige GitHub-kandidaten konden niet worden opgehaald. Andere resultaten blijven beschikbaar." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Nie udało się pobrać części kandydatów z GitHub. Pozostałe wyniki są nadal dostępne." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Не вдалося отримати деякі репозиторії GitHub. Інші результати залишаються доступними." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Bazı GitHub adayları alınamadı. Diğer sonuçlar kullanılabilir durumda." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Không thể lấy một số ứng viên GitHub. Các kết quả khác vẫn có sẵn." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Sebagian kandidat GitHub tidak dapat diambil. Hasil lainnya tetap tersedia." } }
+      }
+    },
+    "search.discovery.diagnostic.impact.verification" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repositories that failed or await verification are hidden. Verified results are kept." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "未通过核验或尚未核验的仓库未展示，已确认结果保留。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "未通過驗證或尚未驗證的儲存庫不會顯示，已確認的結果保留。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "未確認または確認に失敗したリポジトリは表示されません。確認済みの結果は保持されます。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "확인에 실패했거나 아직 확인하지 않은 저장소는 표시하지 않습니다. 확인된 결과는 유지됩니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositorys mit fehlgeschlagener oder ausstehender Prüfung werden ausgeblendet. Geprüfte Ergebnisse bleiben erhalten." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Les dépôts non vérifiés ou dont la vérification a échoué sont masqués. Les résultats vérifiés sont conservés." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Los repositorios sin verificar o cuya verificación falló se ocultan. Los resultados verificados se conservan." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositórios ainda não verificados ou com falha na verificação ficam ocultos. Os resultados verificados são mantidos." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "I repository non ancora verificati o con verifica non riuscita sono nascosti. I risultati verificati vengono mantenuti." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Непроверенные репозитории и репозитории с ошибкой проверки скрыты. Проверенные результаты сохранены." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository's die nog niet zijn geverifieerd of waarvan de verificatie mislukte, zijn verborgen. Geverifieerde resultaten blijven behouden." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repozytoria oczekujące na weryfikację lub z nieudaną weryfikacją są ukryte. Zweryfikowane wyniki pozostają widoczne." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Неперевірені репозиторії та репозиторії з помилкою перевірки приховано. Перевірені результати збережено." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Doğrulanmamış veya doğrulaması başarısız depolar gizlenir. Doğrulanmış sonuçlar korunur." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Các kho mã chưa được xác minh hoặc xác minh thất bại sẽ bị ẩn. Kết quả đã xác minh vẫn được giữ lại." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositori yang belum atau gagal diverifikasi disembunyikan. Hasil yang terverifikasi tetap disimpan." } }
+      }
+    },
+    "search.discovery.diagnostic.impact.ranking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Candidates keep their search order. Smart ranking did not finish this round." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "候选保留检索顺序，本轮没有完成智能排序。" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "候選保留搜尋順序，本輪未完成智慧排序。" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "候補は検索時の順序を維持します。この検索ではスマートな並べ替えが完了していません。" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "후보는 검색 순서를 유지합니다. 이번 검색의 스마트 정렬이 완료되지 않았습니다." } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Die Kandidaten behalten ihre Suchreihenfolge. Die intelligente Sortierung wurde in dieser Runde nicht abgeschlossen." } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Les dépôts conservent leur ordre de recherche. Le classement intelligent n'a pas abouti cette fois-ci." } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Los candidatos mantienen el orden de búsqueda. La clasificación inteligente no se completó en esta búsqueda." } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Os candidatos mantêm a ordem da busca. A classificação inteligente não foi concluída nesta busca." } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "I candidati mantengono l'ordine di ricerca. Il riordinamento intelligente non è stato completato." } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Кандидаты сохраняют порядок поиска. Умное ранжирование в этом раунде не завершено." } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandidaten behouden hun zoekvolgorde. Slim rangschikken is deze ronde niet voltooid." } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandydaci zachowują kolejność z wyszukiwania. Inteligentne sortowanie nie zostało ukończone w tej rundzie." } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Кандидати зберігають порядок пошуку. Розумне ранжування в цьому раунді не завершено." } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Adaylar arama sırasını korur. Bu turda akıllı sıralama tamamlanmadı." } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Các ứng viên giữ nguyên thứ tự tìm kiếm. Lượt này chưa hoàn tất sắp xếp thông minh." } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandidat mempertahankan urutan pencarian. Pemeringkatan cerdas belum selesai pada putaran ini." } }
+      }
+    },
+    "search.discovery.results.countFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Smart discovery %lld" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "智能发现 %lld" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "智慧探索 %lld" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索 %lld" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색 %lld" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Intelligente Suche %lld" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Recherche intelligente %lld" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Búsqueda inteligente %lld" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Busca inteligente %lld" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ricerca intelligente %lld" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Умный поиск %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Slim zoeken %lld" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Inteligentne wyszukiwanie %lld" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Розумний пошук %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama %lld" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tìm kiếm thông minh %lld" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pencarian cerdas %lld" } }
+      }
+    },
+    "search.discovery.rerank.reason" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Ranked by the dedicated reranking model" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "由专用重排模型排序" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "由專用重排序模型排序" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "専用リランキングモデルによる順位" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "전용 리랭킹 모델로 정렬됨" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vom dedizierten Reranking-Modell sortiert" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Classé par le modèle de reranking dédié" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordenado por el modelo de reordenación dedicado" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordenado pelo modelo de reordenação dedicado" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordinato dal modello di reranking dedicato" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Отсортировано выделенной моделью переранжирования" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Gesorteerd door het toegewijde rerankmodel" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Posortowano przez dedykowany model rerankingu" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Відсортовано виділеною моделлю переранжування" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Özel yeniden sıralama modeliyle sıralandı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Được xếp hạng bằng mô hình rerank chuyên dụng" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Diurutkan oleh model rerank khusus" } }
+      }
+    },
+    "search.discovery.candidate.search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "GitHub search candidate" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 检索候选" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 搜尋候選" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 検索の候補" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub 검색 후보" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub-Suchtreffer" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Résultat de recherche GitHub" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Candidato de búsqueda en GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Candidato da busca no GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Candidato della ricerca GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Кандидат из поиска GitHub" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandidaat uit GitHub-zoekopdracht" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandydat z wyszukiwania GitHub" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Кандидат із пошуку GitHub" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub arama adayı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Ứng viên từ tìm kiếm GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Kandidat dari pencarian GitHub" } }
+      }
+    },
+    "search.discovery.candidate.verified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository verified on GitHub" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已通过 GitHub 核验" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已通過 GitHub 驗證" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub で確認済みのリポジトリ" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub에서 확인된 저장소" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository auf GitHub geprüft" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Dépôt vérifié sur GitHub" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositorio verificado en GitHub" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositório verificado no GitHub" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository verificato su GitHub" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Репозиторий проверен на GitHub" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository geverifieerd op GitHub" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repozytorium zweryfikowane w GitHub" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Репозиторій перевірено на GitHub" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "GitHub üzerinde doğrulanmış depo" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Kho mã đã được xác minh trên GitHub" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositori terverifikasi di GitHub" } }
+      }
+    },
+    "search.discovery.phase.completed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Completed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已完成" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "已完成" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "完了" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "완료됨" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Abgeschlossen" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Terminé" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Completado" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Concluído" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Completato" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Завершено" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Voltooid" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Zakończono" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Завершено" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Tamamlandı" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Đã xong" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Selesai" } }
+      }
+    },
+    "search.discovery.phase.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "失败" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "失敗" } },
+        "ja" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "失敗" } },
+        "ko" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "실패" } },
+        "de" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Fehlgeschlagen" } },
+        "fr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Échec" } },
+        "es" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Error" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Falhou" } },
+        "it" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Non riuscito" } },
+        "ru" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Ошибка" } },
+        "nl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Mislukt" } },
+        "pl" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Niepowodzenie" } },
+        "uk" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Помилка" } },
+        "tr" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Başarısız" } },
+        "vi" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Thất bại" } },
+        "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gagal" } }
+      }
+    },
+    "search.discovery.web.skipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KI-Websuche deaktiviert oder ausgewählter Suchdienst nicht verfügbar. Websuche übersprungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI web access is off or the selected search service is unavailable. Web discovery was skipped."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El acceso web de IA está desactivado o el servicio elegido no está disponible. Se omitió la búsqueda web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’accès web de l’IA est désactivé ou le service choisi est indisponible. Recherche web ignorée."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Akses web AI nonaktif atau layanan pencarian yang dipilih tidak tersedia. Penemuan web dilewati."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’accesso web IA è disattivato o il servizio scelto non è disponibile. Ricerca web saltata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI のウェブアクセスが無効か、選択した検索サービスを利用できないため、ウェブ検索をスキップしました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 웹 접근이 꺼져 있거나 선택한 검색 서비스를 사용할 수 없어 웹 검색을 건너뛰었습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI-webtoegang is uitgeschakeld of de gekozen zoekdienst is niet beschikbaar. Webzoeken overgeslagen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostęp AI do sieci jest wyłączony lub wybrana usługa jest niedostępna. Pominięto wyszukiwanie w sieci."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O acesso da IA à web está desativado ou o serviço escolhido está indisponível. A busca na web foi ignorada."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступ ИИ к сети отключён или выбранный сервис недоступен. Веб-поиск пропущен."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ web erişimi kapalı veya seçilen arama hizmeti kullanılamıyor. Web keşfi atlandı."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступ ШІ до мережі вимкнено або вибрана служба недоступна. Вебпошук пропущено."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quyền truy cập web của AI đã tắt hoặc dịch vụ đã chọn không khả dụng. Đã bỏ qua tìm kiếm web."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 联网已关闭或所选搜索服务不可用，本轮跳过网页发现。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 連網已關閉或所選搜尋服務無法使用，本輪略過網頁探索。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.providerUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der KI-Anbieter ist deaktiviert oder noch nicht geprüft. Aktiviere und prüfe ihn in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AI provider is disabled or has not passed its connection test. Enable and verify it in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El proveedor de IA está desactivado o no ha superado la prueba de conexión. Actívalo y verifícalo en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le fournisseur d’IA est désactivé ou n’a pas réussi le test de connexion. Activez-le et vérifiez-le dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Penyedia AI nonaktif atau belum lulus uji koneksi. Aktifkan dan verifikasi di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il provider IA è disattivato o non ha superato il test di connessione. Attivalo e verificalo nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI プロバイダーが無効か、接続テストが完了していません。モデル設定で有効化し、接続を確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 제공업체가 비활성화되었거나 연결 테스트를 통과하지 못했습니다. 모델 설정에서 활성화하고 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De AI-aanbieder is uitgeschakeld of heeft de verbindingstest niet doorstaan. Schakel deze in en controleer de verbinding in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostawca AI jest wyłączony lub nie przeszedł testu połączenia. Włącz go i zweryfikuj w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O provedor de IA está desativado ou não passou no teste de conexão. Ative-o e verifique-o nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Провайдер ИИ отключён или не прошёл проверку подключения. Включите и проверьте его в настройках моделей."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ sağlayıcısı devre dışı veya bağlantı testini geçemedi. Model ayarlarında etkinleştirip doğrulayın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Постачальника ШІ вимкнено або він не пройшов перевірку з’єднання. Увімкніть і перевірте його в налаштуваннях моделей."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nhà cung cấp AI đã tắt hoặc chưa vượt qua kiểm tra kết nối. Hãy bật và xác minh trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 服务商未启用或尚未通过连接测试，请在模型设置中启用并验证。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 服務商未啟用或尚未通過連線測試，請在模型設定中啟用並驗證。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.missingModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kein verfügbares Chatmodell ausgewählt oder das gewählte Modell ist deaktiviert. Wähle ein Modell in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No available Chat model is selected, or the selected model is disabled. Choose a model in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hay un modelo de chat disponible seleccionado, o está desactivado. Elige uno en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucun modèle de conversation disponible n’est sélectionné, ou le modèle est désactivé. Choisissez-en un dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Belum ada model Chat yang tersedia dipilih, atau model yang dipilih nonaktif. Pilih model di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessun modello Chat disponibile è selezionato, oppure il modello è disattivato. Scegline uno nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "利用可能なチャットモデルが未選択か、選択したモデルが無効です。モデル設定で選択し直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사용 가능한 채팅 모델이 선택되지 않았거나 선택한 모델이 비활성화되었습니다. 모델 설정에서 다시 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Er is geen beschikbaar chatmodel geselecteerd of het model is uitgeschakeld. Kies een model in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie wybrano dostępnego modelu czatu lub wybrany model jest wyłączony. Wybierz model w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nenhum modelo de chat disponível foi selecionado ou o modelo está desativado. Escolha um nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступная модель чата не выбрана или выбранная модель отключена. Выберите модель в настройках."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kullanılabilir bir sohbet modeli seçilmedi veya seçilen model devre dışı. Model ayarlarından bir model seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступну модель чату не вибрано або вибрану модель вимкнено. Виберіть модель у налаштуваннях."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chưa chọn mô hình trò chuyện khả dụng hoặc mô hình đã chọn bị tắt. Hãy chọn mô hình trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未选择可用的对话模型，或所选模型已被禁用。请在模型设置中重新选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尚未選擇可用的對話模型，或所選模型已停用。請在模型設定中重新選擇。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.incompatibleModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Das gewählte Modell unterstützt keine Chats. Wähle ein Chatmodell in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The selected model does not support Chat. Choose a Chat model in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El modelo elegido no admite chat. Elige un modelo de chat en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le modèle choisi ne prend pas en charge la conversation. Choisissez un modèle adapté dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Model yang dipilih tidak mendukung Chat. Pilih model Chat di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il modello scelto non supporta Chat. Scegli un modello Chat nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選択したモデルはチャットに対応していません。モデル設定でチャットモデルを選択してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "선택한 모델은 채팅을 지원하지 않습니다. 모델 설정에서 채팅 모델을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Het gekozen model ondersteunt geen chat. Kies een chatmodel in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wybrany model nie obsługuje czatu. Wybierz model czatu w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O modelo escolhido não oferece suporte a chat. Escolha um modelo de chat nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Выбранная модель не поддерживает чат. Выберите модель чата в настройках моделей."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seçilen model sohbeti desteklemiyor. Model ayarlarından bir sohbet modeli seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вибрана модель не підтримує чат. Виберіть модель чату в налаштуваннях моделей."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mô hình đã chọn không hỗ trợ trò chuyện. Hãy chọn mô hình trò chuyện trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选模型不支持对话，请在模型设置中选择 Chat 模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "所選模型不支援對話，請在模型設定中選擇 Chat 模型。"
+          }
+        }
+      }
+    },
+    "search.discovery.routing.fallbackFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nDie Absichtsplanung übernimmt. Das Ergebnis steht im Planungsschritt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\nIntent planning took over. See the planning step for its outcome."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa planificación de intención tomó el relevo. Consulta su resultado en el paso de planificación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa planification de l’intention a pris le relais. Son résultat figure à l’étape de planification."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nPerencanaan maksud mengambil alih. Lihat hasilnya pada langkah perencanaan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa pianificazione dell’intento è subentrata. Consulta il risultato nel passaggio di pianificazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n意図の計画に引き継ぎました。結果は計画ステップで確認できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n의도 계획 단계가 이어서 처리했습니다. 결과는 계획 단계를 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nDe intentieplanning heeft het overgenomen. Bekijk het resultaat bij de planningsstap."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nPlanowanie intencji przejęło zadanie. Wynik jest widoczny w kroku planowania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nO planejamento de intenção assumiu a tarefa. Veja o resultado na etapa de planejamento."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nЗадача передана планированию намерения. Результат указан на этапе планирования."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nNiyet planlaması devraldı. Sonuç için planlama adımına bakın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nЗавдання передано плануванню наміру. Результат наведено на кроці планування."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nBước lập kế hoạch ý định đã tiếp quản. Xem kết quả tại bước lập kế hoạch."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n已交由意图规划接管，执行结果见规划步骤。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n已交由意圖規劃接手，執行結果請見規劃步驟。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.rateLimitedRetryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ hat die Anfragen begrenzt. Versuche es in %d Sekunden erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ rate limited this request. Try again in %d seconds."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ha limitado las solicitudes. Inténtalo de nuevo en %d segundos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ limite les requêtes. Réessayez dans %d secondes."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ membatasi permintaan. Coba lagi dalam %d detik."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ha limitato le richieste. Riprova tra %d secondi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ のリクエスト制限に達しました。%d 秒後に再試行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@의 요청 한도에 도달했습니다. %d초 후에 다시 시도하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ heeft het aantal verzoeken beperkt. Probeer het over %d seconden opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ograniczył liczbę żądań. Spróbuj ponownie za %d sekund."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ limitou as solicitações. Tente novamente em %d segundos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ограничил частоту запросов. Повторите попытку через %d сек."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ istekleri sınırlandırdı. %d saniye sonra tekrar deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ обмежив частоту запитів. Спробуйте знову через %d с."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ đã giới hạn yêu cầu. Hãy thử lại sau %d giây."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 请求过于频繁，请在 %d 秒后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 請求過於頻繁，請在 %d 秒後重試。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.timeoutFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Suchanfrage an %@ hat das Zeitlimit überschritten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The search request to %@ timed out."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La solicitud de búsqueda a %@ agotó el tiempo de espera."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La requête de recherche vers %@ a expiré."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Permintaan pencarian ke %@ kehabisan waktu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La richiesta di ricerca a %@ è scaduta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ への検索リクエストがタイムアウトしました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 검색 요청 시간이 초과되었습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De zoekopdracht naar %@ heeft de tijdslimiet overschreden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Upłynął limit czasu żądania wyszukiwania do %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A solicitação de pesquisa para %@ excedeu o tempo limite."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Время ожидания поискового запроса к %@ истекло."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ arama isteği zaman aşımına uğradı."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Час очікування пошукового запиту до %@ вичерпано."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yêu cầu tìm kiếm tới %@ đã hết thời gian chờ."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 搜索请求超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 搜尋請求逾時。"
+          }
+        }
+      }
+    },
+    "search.discovery.step.routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Query routing" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "查询分流" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "查詢分流" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "検索経路の選択" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "검색 경로 선택" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Suchrouting" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Orientation de la recherche" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Enrutamiento de la consulta" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Roteamento da consulta" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Instradamento della ricerca" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Выбор пути поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zoekroute kiezen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Wybór ścieżki wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Вибір шляху пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorgu yönlendirme" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Định tuyến truy vấn" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Perutean kueri" } }
+      }
+    },
+    "search.discovery.step.planning" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search planning" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "意图规划" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "意圖規劃" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "検索計画" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "검색 계획" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Suchplanung" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Planification de la recherche" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Planificación de la búsqueda" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Planejamento da busca" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Pianificazione della ricerca" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Планирование поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zoekplanning" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Planowanie wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Планування пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Arama planlama" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Lập kế hoạch tìm kiếm" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Perencanaan pencarian" } }
+      }
+    },
+    "search.discovery.step.verification" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Repository verification" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "仓库核验" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "儲存庫驗證" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "リポジトリの確認" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "저장소 검증" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Repository-Prüfung" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Vérification des dépôts" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Verificación de repositorios" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Verificação dos repositórios" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Verifica dei repository" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Проверка репозиториев" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Repositoryverificatie" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Weryfikacja repozytoriów" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перевірка репозиторіїв" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Depo doğrulama" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xác minh kho mã" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Verifikasi repositori" } }
+      }
+    },
+    "search.discovery.step.ranking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Relevance ranking" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "相关性重排" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "相關性重新排序" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "関連度による並べ替え" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "관련성 재정렬" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Relevanzsortierung" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Classement par pertinence" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Clasificación por relevancia" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Classificação por relevância" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ordinamento per rilevanza" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Ранжирование по релевантности" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Sorteren op relevantie" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Ranking według trafności" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Ранжування за релевантністю" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "İlgililiğe göre sıralama" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xếp hạng độ liên quan" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pemeringkatan relevansi" } }
+      }
+    },
+    "search.discovery.step.merging" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Merge results" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "合并结果" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "合併結果" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "結果の統合" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "결과 병합" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Ergebnisse zusammenführen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Fusion des résultats" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Combinar resultados" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Combinar resultados" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Unione dei risultati" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Объединение результатов" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Resultaten samenvoegen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Scalanie wyników" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Об'єднання результатів" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Sonuçları birleştirme" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Hợp nhất kết quả" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Menggabungkan hasil" } }
+      }
+    },
+    "search.discovery.step.countFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld results" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 条结果" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 筆結果" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 件の結果" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "결과 %lld개" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld Ergebnisse" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld résultats" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld resultados" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld resultados" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld risultati" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Результатов: %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld resultaten" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld wyników" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Результатів: %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld sonuç" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld kết quả" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld hasil" } }
+      }
+    },
+    "search.discovery.step.verifiedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld verified" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已核验 %lld 个" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已驗證 %lld 個" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 件を確認" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld개 확인됨" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geprüft" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld vérifiés" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificati" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Проверено: %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geverifieerd" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Zweryfikowano: %lld" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перевірено: %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld doğrulandı" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Đã xác minh %lld" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld terverifikasi" } }
+      }
+    },
+    "search.discovery.step.verifiedFailedFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld verified, %lld failed" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "已核验 %lld 个，失败 %lld 个" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "已驗證 %lld 個，失敗 %lld 個" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld 件成功、%lld 件失敗" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld개 성공, %lld개 실패" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geprüft, %lld fehlgeschlagen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld vérifiés, %lld échecs" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados, %lld fallidos" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificados, %lld falhas" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld verificati, %lld non riusciti" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Проверено %lld, ошибок %lld" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld geverifieerd, %lld mislukt" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld zweryfikowano, %lld niepowodzeń" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Перевірено %lld, помилок %lld" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld doğrulandı, %lld başarısız" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld xác minh thành công, %lld thất bại" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%lld terverifikasi, %lld gagal" } }
+      }
+    },
+    "search.discovery.steps.open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show smart discovery steps" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "查看智能发现过程" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "檢視智慧探索過程" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "スマート検索の手順を表示" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "스마트 검색 과정 보기" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Schritte der intelligenten Suche anzeigen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Afficher les étapes de la recherche intelligente" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostrar pasos de la búsqueda inteligente" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostrar etapas da busca inteligente" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Mostra i passaggi della ricerca intelligente" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Показать шаги умного поиска" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Stappen van slim zoeken weergeven" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Pokaż etapy inteligentnego wyszukiwania" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Показати кроки розумного пошуку" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Akıllı arama adımlarını göster" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Xem các bước tìm kiếm thông minh" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Tampilkan langkah pencarian cerdas" } }
+      }
+    },
+    "search.discovery.steps.durationShort" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "<0.1s" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1秒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1秒" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1秒" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "<0.1초" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1с" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1s" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1с" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1 sn" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1 giây" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "<0,1 dtk" } }
+      }
+    },
+    "search.discovery.steps.durationFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%.1fs" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f秒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f秒" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f秒" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f초" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fс" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fs" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1fс" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f sn" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f giây" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "%.1f dtk" } }
+      }
+    },
     "search.disabledInPage" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -462172,6 +464509,220 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "语义"
+          }
+        }
+      }
+    },
+    "search.footer.index.coverageFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index %d/%d"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "索引 %d/%d"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "索引 %d/%d"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "インデックス %d/%d"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "인덱스 %d/%d"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Index %d/%d"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Index %d/%d"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Índice %d/%d"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Índice %d/%d"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Indice %d/%d"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Индекс %d/%d"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Index %d/%d"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Indeks %d/%d"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Індекс %d/%d"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dizin %d/%d"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chỉ mục %d/%d"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Indeks %d/%d"
+          }
+        }
+      }
+    },
+    "search.footer.index.notReady" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Index not ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "索引 未就绪"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "索引尚未就緒"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "インデックス未準備"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "인덱스 준비 안 됨"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Index nicht bereit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Index non prêt"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Índice no listo"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Índice não pronto"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Indice non pronto"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Индекс не готов"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Index niet gereed"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Indeks niegotowy"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Індекс не готовий"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dizin hazır değil"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chỉ mục chưa sẵn sàng"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Indeks belum siap"
           }
         }
       }

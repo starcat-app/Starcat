@@ -20,8 +20,12 @@ final class SearchCoordinator {
     private(set) var statuses: [SearchSource: SearchProviderStatus] = [:]
     private(set) var repositories: [RepositoryCandidate] = []
     private(set) var references: [ReferenceCandidate] = []
+    private(set) var contentSummary = SearchContentSummary()
+    private(set) var blockedQuery: SearchContentMatch?
 
     private let providers: [any SearchProvider]
+    let contentPolicy: SearchContentPolicy
+    private var contentSummaries: [SearchSource: SearchContentSummary] = [:]
     /// 每个来源独立持有任务，翻页只影响该来源；否则 GitHub 翻页会取消仍在计算的语义结果
     private var activeTasks: [SearchSource: (request: SearchRequest, task: Task<Bool, Never>)] = [:]
     /// 成功快照与加载/失败状态分离，分页失败和范围切换都不能丢掉已成功返回的页
@@ -34,8 +38,9 @@ final class SearchCoordinator {
     /// 最近一次有效请求。切换 scope 时用来判断哪些来源还能直接展示。
     private var currentRequest: SearchRequest?
 
-    init(providers: [any SearchProvider]) {
+    init(providers: [any SearchProvider], contentPolicy: SearchContentPolicy = .bundled) {
         self.providers = providers
+        self.contentPolicy = contentPolicy
     }
 
     func reset() {
@@ -49,6 +54,19 @@ final class SearchCoordinator {
         statuses = [:]
         repositories = []
         references = []
+        contentSummaries = [:]
+        contentSummary = SearchContentSummary()
+        blockedQuery = nil
+    }
+
+    /// ViewModel 在 Router/历史写入之前调用；Coordinator 自身也在各请求入口检查。
+    @discardableResult
+    func allowsQuery(_ query: String) -> Bool {
+        guard let match = contentPolicy.match(query: query) else { return true }
+        reset()
+        blockedQuery = match
+        contentSummary.record(SearchContentDocument(id: "query"), match: match)
+        return false
     }
 
     /// 提交新搜索并等待当前 generation 的 Provider 全部结束。
@@ -59,7 +77,7 @@ final class SearchCoordinator {
         currentRequest = request
         let selectedProviders = providers.filter { Self.shouldRun($0.source, for: request) }
 
-        guard !request.query.isEmpty else { return }
+        guard !request.query.isEmpty, allowsQuery(request.query) else { return }
         await runProviders(selectedProviders, request: request)
     }
 
@@ -68,6 +86,7 @@ final class SearchCoordinator {
     /// 参数兼容时不取消在途任务、不递增 generation，避免「全部 → 本地」丢掉语义结果
     /// 显式应用筛选只刷新对应来源；query 变了或从未搜过则退回完整 `search`
     func updateScope(_ request: SearchRequest, refreshing refreshedSource: SearchSource? = nil) async {
+        guard allowsQuery(request.query) else { return }
         if request.query.isEmpty {
             reset()
             return
@@ -103,6 +122,13 @@ final class SearchCoordinator {
         return providerRequests[.github]?.page ?? 1
     }
 
+    var currentWebMaxResults: Int { providerRequests[.web]?.externalSearchFilters.maxResults ?? 0 }
+
+    /// 数量来自实际可展示的已加载结果，远端总量仅作为页的原始元信息保留。
+    func visibleCount(for source: SearchSource) -> Int {
+        loadedPages[source]?.hidingContent(contentSummary.blockedIDs).visibleCount ?? 0
+    }
+
     /// 用户在 Search Center 里直接修改知识库状态后，原地刷新已加载候选。
     ///
     /// Coordinator 仍只负责结果集合的内存合并；真正的数据库写入由 View 层经
@@ -128,7 +154,7 @@ final class SearchCoordinator {
     /// generation 属于整次查询，分页不能递增它，否则其他来源的在途结果会被误判为过期
     @discardableResult
     func loadMore(_ request: SearchRequest, source: SearchSource) async -> Bool {
-        guard currentRequest?.query == request.query,
+        guard allowsQuery(request.query), currentRequest?.query == request.query,
               activeTasks[source] == nil,
               let provider = providers.first(where: { $0.source == source }) else { return false }
         currentRequest = request
@@ -140,6 +166,9 @@ final class SearchCoordinator {
     /// “关键词 → 语义补召回 → GitHub → Web”重建，保证本地精确命中始终在前，同时
     /// 让同一仓库合并 `.localKeyword` / `.localSemantic` provenance 与 semanticScore。
     private func rebuildLoadedResults() {
+        contentSummary = contentSummaries.values.reduce(into: SearchContentSummary()) {
+            $0.formUnion($1)
+        }
         let displayOrder: [SearchSource] = [.localKeyword, .localSemantic, .github, .web]
         var mergedRepositories: [RepositoryCandidate] = []
         var mergedReferences: [ReferenceCandidate] = []
@@ -147,7 +176,8 @@ final class SearchCoordinator {
 
         for source in displayOrder {
             if let request, !Self.shouldRun(source, for: request) { continue }
-            guard let page = loadedPages[source] else { continue }
+            guard let loaded = loadedPages[source] else { continue }
+            let page = loaded.hidingContent(contentSummary.blockedIDs)
             mergedRepositories = Self.mergeRepositories(
                 existing: mergedRepositories,
                 incoming: page.repositories
@@ -197,6 +227,7 @@ final class SearchCoordinator {
         let requestGeneration = generation
         if !append {
             loadedPages[source] = nil
+            contentSummaries[source] = nil
             providerRequests[source] = request
         }
         statuses[source] = .loading
@@ -204,29 +235,42 @@ final class SearchCoordinator {
 
         let task = Task {
             do {
-                let page = try await provider.search(request)
-                guard !Task.isCancelled, requestGeneration == generation else { return false }
-                let accumulated: SearchProviderPage
-                if append, let previous = loadedPages[source] {
-                    accumulated = SearchProviderPage(
-                        repositories: Self.mergeRepositories(
-                            existing: previous.repositories, incoming: page.repositories
-                        ),
-                        references: Self.mergeReferences(
-                            existing: previous.references, incoming: page.references
-                        ),
-                        totalCount: page.totalCount,
-                        hasNextPage: page.hasNextPage,
-                        webMetadata: page.webMetadata
-                    )
-                } else {
-                    // 首页直接保存，避免本地全量结果在展示合并之外再做一遍去重
-                    accumulated = page
+                var pageRequest = request
+                var appending = append
+                // 一次用户操作最多自动补一页；先保存空页的真实游标，补取失败仍可重试。
+                for attempt in 0..<2 {
+                    let rawPage = try await provider.search(pageRequest)
+                    guard !Task.isCancelled, requestGeneration == generation else { return false }
+                    var summary = contentSummaries[source] ?? SearchContentSummary()
+                    let page = contentPolicy.filtering(rawPage, summary: &summary)
+                    let accumulated: SearchProviderPage
+                    if appending, let previous = loadedPages[source] {
+                        accumulated = SearchProviderPage(
+                            repositories: Self.mergeRepositories(
+                                existing: previous.repositories, incoming: page.repositories
+                            ),
+                            references: Self.mergeReferences(
+                                existing: previous.references, incoming: page.references
+                            ),
+                            totalCount: page.totalCount,
+                            hasNextPage: page.hasNextPage,
+                            webMetadata: page.webMetadata
+                        ).hidingContent(summary.blockedIDs)
+                    } else {
+                        accumulated = page
+                    }
+                    contentSummaries[source] = summary
+                    loadedPages[source] = accumulated
+                    providerRequests[source] = pageRequest
+                    statuses[source] = .loaded(accumulated)
+                    rebuildLoadedResults()
+                    guard attempt == 0, page.visibleCount == 0,
+                          rawPage.visibleCount > 0, page.hasNextPage,
+                          let next = pageRequest.advancingContentPage(for: source) else { break }
+                    pageRequest = next
+                    appending = true
+                    statuses[source] = .loading
                 }
-                loadedPages[source] = accumulated
-                providerRequests[source] = request
-                statuses[source] = .loaded(accumulated)
-                rebuildLoadedResults()
                 activeTasks[source] = nil
                 return true
             } catch {

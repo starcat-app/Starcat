@@ -2758,7 +2758,8 @@ struct KnowledgeRAGCoreTests {
                 candidateLimit: 10
             ),
             apiKey: "tei-token",
-            httpClient: client
+            httpClient: client,
+            timeoutSeconds: 0.3
         )
 
         let result = try await reranker.rerank(
@@ -2769,6 +2770,7 @@ struct KnowledgeRAGCoreTests {
         #expect(result.compactMap(\.hit.chunk.id) == [402, 401])
         let request = try #require(await client.lastRequest())
         #expect(request.url?.path == "/rerank")
+        #expect(abs(request.timeoutInterval - 0.3) < 0.001)
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tei-token")
         let body = try #require(request.httpBody)
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
@@ -2856,6 +2858,53 @@ struct KnowledgeRAGCoreTests {
         let cohereBody = try #require(cohereRequest.httpBody)
         let cohereJSON = try #require(JSONSerialization.jsonObject(with: cohereBody) as? [String: Any])
         #expect(cohereJSON["top_n"] as? Int == 10)
+    }
+
+    @Test("重排拒绝空评分、全越界、重复编号和非有限分数",
+          arguments: ["empty", "outOfBounds", "duplicate", "nan", "infinity"])
+    func rerankRejectsInvalidScores(kind: String) throws {
+        let snapshot = RAGRerankCandidateSnapshot(
+            candidates: [
+                RAGChildHit(chunk: fixtureChunk(id: 601, repoID: 1, source: .readme), score: 0.1, kind: .vector)
+            ],
+            limit: 1
+        )
+        let scores: [RAGRerankIndexedScore] = switch kind {
+        case "empty": []
+        case "outOfBounds": [.init(index: -1, score: 0.9), .init(index: 1, score: 0.8)]
+        case "duplicate": [.init(index: 0, score: 0.9), .init(index: 0, score: 0.8)]
+        case "nan": [.init(index: 0, score: .nan)]
+        default: [.init(index: 0, score: .infinity)]
+        }
+        #expect(throws: RAGExternalBackendError.self) {
+            try snapshot.applying(scores, backend: "Test Rerank")
+        }
+    }
+
+    @Test("远程重排过滤后无有效评分时报告无效响应", arguments: [false, true])
+    func remoteRerankRejectsUnusableResponse(cohere: Bool) async throws {
+        let client = RecordingRAGHTTPClient(data: Data(
+            (cohere
+                ? #"{"results":[{"index":9,"relevance_score":0.9}]}"#
+                : #"[{"index":9,"score":0.9}]"#).utf8
+        ))
+        let configuration = RAGRerankConfiguration(
+            isEnabled: true,
+            provider: cohere ? .cohereCompatible : .huggingFaceTEI,
+            endpoint: "https://rerank.example.test/rerank",
+            model: "rerank-model"
+        )
+        let reranker: any RAGReranking = cohere
+            ? CohereCompatibleRAGReranker(configuration: configuration, httpClient: client)
+            : HuggingFaceTEIRAGReranker(configuration: configuration, httpClient: client)
+        await #expect(throws: RAGExternalBackendError.self) {
+            try await reranker.rerank(
+                query: "query",
+                candidates: [RAGChildHit(
+                    chunk: fixtureChunk(id: 601, repoID: 1, source: .readme), score: 0.1, kind: .vector
+                )]
+            )
+        }
     }
 
     @Test("关闭全部分片来源时返回可解释的检索诊断")

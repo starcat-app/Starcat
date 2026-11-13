@@ -146,15 +146,15 @@ enum AnySearchError: Error, LocalizedError, Equatable {
 
     /// 500 / 502 / 503 / 504 —— 服务端临时性异常，建议重试。`message` 来自
     /// envelope 或 statusCode 兜底，UI 用来给"内部错误 / 配额检查失败"等差异化提示。
-    case serviceUnavailable(message: String?)
+    case serviceUnavailable(message: String?, statusCode: Int? = nil)
 
     /// 仍保留原 `.server(statusCode:)`，作为前述 typed case 都没命中的兜底。
     case server(statusCode: Int)
 
     case invalidResponse
-    case api(code: Int, message: String)
-    case decoding
-    case transport(String)
+    case api(code: Int, message: String, statusCode: Int? = nil)
+    case decoding(statusCode: Int)
+    case transport(String, code: Int? = nil)
 
     enum KeyFailReason: Equatable, Sendable {
         case invalid
@@ -197,7 +197,7 @@ enum AnySearchError: Error, LocalizedError, Equatable {
                 return String(format: String.l10n("anySearch.error.rateLimitedFormat"), retryAfter)
             }
             return String.l10n("anySearch.error.rateLimited")
-        case .serviceUnavailable(let message):
+        case .serviceUnavailable(let message, _):
             if let message {
                 return String(format: String.l10n("anySearch.error.serviceUnavailableFormat"), message)
             }
@@ -206,11 +206,11 @@ enum AnySearchError: Error, LocalizedError, Equatable {
             return String(format: String.l10n("anySearch.error.serverFormat"), code)
         case .invalidResponse:
             return String.l10n("anySearch.error.invalidResponse")
-        case .api(_, let message):
+        case .api(_, let message, _):
             return message
         case .decoding:
             return String.l10n("anySearch.error.decoding")
-        case .transport(let message):
+        case .transport(let message, _):
             return message
         }
     }

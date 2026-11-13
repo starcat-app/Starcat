@@ -24,6 +24,7 @@ struct SearchCenterView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
@@ -44,6 +45,8 @@ struct SearchCenterView: View {
     /// 但“抽屉是否展开”只影响当前浮层布局。Local scope 没有 GitHub / Web 筛选，
     /// 切过去时会自动收起，避免右侧出现空抽屉。
     @State private var isFilterDrawerPresented = false
+    /// 告警必须能点击查看原因；正常上限也复用此详情入口，但只显示信息图标。
+    @State private var isDiscoveryDiagnosticsPresented = false
     /// GitHub「最低 Stars」输入草稿；点「应用筛选」时写入 `githubFilters.minimumStars`。
     @State private var minStarsDraft = ""
     /// Web「结果数」输入草稿；点「应用筛选」时写入 `anySearchFilters.maxResults`。
@@ -79,7 +82,19 @@ struct SearchCenterView: View {
                 themedSeparator
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
-                        resultContent
+                        // epoch 只在范围/来源切换时变化；不要绑定候选数组，
+                        // 否则异步召回和分页追加都会让整张列表重复淡入淡出。
+                        ZStack {
+                            resultContent
+                                .id(viewModel.resultListEpoch)
+                                .transition(reduceMotion ? .identity : .opacity)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 0.16),
+                            value: viewModel.resultListEpoch
+                        )
                         webResultFooter
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -522,6 +537,26 @@ struct SearchCenterView: View {
     private var resultContent: some View {
         if viewModel.lastSubmittedQuery.isEmpty {
             historyContent
+        } else if viewModel.coordinator.blockedQuery != nil {
+            ContentUnavailableView(
+                "search.content.title",
+                systemImage: "line.3.horizontal.decrease.circle",
+                description: Text("search.content.queryBlocked")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.candidates.isEmpty, let title = resultFilterEmptyTitle {
+            ContentUnavailableView {
+                Label {
+                    Text(verbatim: title)
+                } icon: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+            } description: {
+                if !viewModel.isResultFilterSearching {
+                    Text("search.empty.description")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.shouldShowSearchSkeleton {
             // 骨架只在「谁都还没返回」时出现。关键词已落地 0、语义还在跑时
             // 不能继续画 8 行假列表，否则用户会以为结果还在路上。
@@ -531,6 +566,21 @@ struct SearchCenterView: View {
             // 已有 provider 落地且仍无候选：撑住结果区高度，底栏用过程 chip 说话。
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.candidates.isEmpty, viewModel.contentSummary.hiddenCount > 0 {
+            ContentUnavailableView {
+                Label("search.content.title", systemImage: "line.3.horizontal.decrease.circle")
+            } description: {
+                Text("search.content.allHidden")
+            } actions: {
+                // 过滤空页仍有后续时保留真实的加载入口，不能因没有 List 而锁死分页。
+                if viewModel.scope != .web, viewModel.canLoadMoreGitHub {
+                    Button("search.github.loadMore") { Task { await viewModel.loadMoreGitHub() } }
+                }
+                if viewModel.scope == .web, viewModel.canLoadMoreWeb {
+                    Button("search.github.loadMore") { Task { await viewModel.loadMoreWeb() } }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isExternalSearchUnavailableEmpty {
             // 专属空态：.web scope + AnySearch 未启用。
             // 通用 "search.empty.title" 走的 errorMessages 拼接会带 "web:" 前缀
@@ -658,6 +708,24 @@ struct SearchCenterView: View {
         }
     }
 
+    /// 筛选零命中时仍明确显示当前来源；其他来源加载中不能把它覆盖成空白等待区。
+    private var resultFilterEmptyTitle: String? {
+        switch viewModel.resultFilter {
+        case .source(let source):
+            if let error = viewModel.footerErrors.first(where: { $0.source == source }) {
+                return error.shortLabel
+            }
+            return SearchProcessChip(
+                source: source,
+                phase: viewModel.isResultFilterSearching ? .loading : .loaded(0)
+            ).displayText
+        case .discovery:
+            return discoveryPhaseText(viewModel.discoverySession?.phase ?? .completed)
+        case nil:
+            return nil
+        }
+    }
+
     /// 历史区域：标签流式布局 + 顶部"最近搜索 / 清空全部"。
     /// 设计要点：
     /// - 不再用 List 一行一项，避免浅色主题下 List 默认 row separator 过亮
@@ -751,7 +819,8 @@ struct SearchCenterView: View {
             case .repository(let repo):
                 let source = repositorySourceIndicator(for: repo)
                 rowWithSourceIndicator(
-                    source: source
+                    source: source,
+                    discoveryRepo: repo
                 ) {
                     UnifiedRepoRow(
                         card: repo.card,
@@ -762,7 +831,10 @@ struct SearchCenterView: View {
                                 reason: repo.semanticReason ?? ""
                             )
                         },
-                        trailingReservedWidth: sourceIndicatorTrailingReserve(for: source)
+                        trailingReservedWidth: trailingReservedWidth(
+                            source: source,
+                            hasDiscovery: repo.discovery != nil
+                        )
                     )
                 }
             case .reference(let reference):
@@ -800,7 +872,7 @@ struct SearchCenterView: View {
                                     // .primary.opacity(0.85)，明暗主题下都能保持"主文字仅次于标题"
                                     // 的视觉层级（不直接用 Color.black 是为了暗色主题自动适配）。
                                     Text(snippet)
-                                        .font(interfaceScale.font(.caption))
+                                        .font(interfaceScale.font(.captionSmall))
                                         .foregroundStyle(.primary.opacity(0.85))
                                         .lineLimit(2)
                                 }
@@ -840,22 +912,67 @@ struct SearchCenterView: View {
         .contentShape(Rectangle())
     }
 
+    /// 兜底来源在展示时本地化，不把固定英文写进模型理由或持久化对象。
+    private func discoveryReason(_ annotation: SearchDiscoveryAnnotation) -> String {
+        switch annotation.kind {
+        case .modelMatch: return annotation.reason
+        case .githubSearch: return String.l10n("search.discovery.candidate.search")
+        case .githubVerification: return String.l10n("search.discovery.candidate.verified")
+        }
+    }
+
     /// 「全部」Tab 用右侧来源图标区分本地/GitHub/Web；Web Tab 也显示具体
     /// External Search Provider，避免用户看不出当前结果来自哪个服务。
     @ViewBuilder
     private func rowWithSourceIndicator<Content: View>(
         source: SearchResultSourceIndicator?,
+        discoveryRepo: RepositoryCandidate? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        if shouldShowSourceIndicator(source), let source {
-            content()
-                .overlay(alignment: .trailing) {
-                    SearchResultSourceIcon(source: source)
-                        .padding(.trailing, 12)
+        // 智能发现是解释性元信息，不再占用列表第二行；与来源图标放在同一
+        // trailing 区域，避免正文被底部说明打断，也避免和滚动条/操作区重叠。
+        content()
+            .overlay(alignment: .trailing) {
+                HStack(spacing: 4) {
+                    if shouldShowSourceIndicator(source), let source {
+                        SearchResultSourceIcon(source: source)
+                    }
+                    if let discoveryRepo, discoveryRepo.discovery != nil {
+                        discoveryMarker(discoveryRepo)
+                    }
                 }
-        } else {
-            content()
-        }
+                .padding(.trailing, 12)
+                .accessibilityElement(children: .combine)
+            }
+    }
+
+    /// 与来源徽标保持相同的圆形尺寸，并用动态主色保证明暗主题下的层级一致。
+    private func discoveryMarker(_ repo: RepositoryCandidate) -> some View {
+        Image(systemName: "sparkles")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: 12, height: 12)
+            .padding(4)
+            .modifier(SearchResultBadgeSurface())
+            .help(Text(verbatim: discoveryTooltip(for: repo)))
+            .accessibilityLabel(Text(verbatim: discoveryTooltip(for: repo)))
+    }
+
+    private func discoveryTooltip(for repo: RepositoryCandidate) -> String {
+        guard let discovery = repo.discovery else { return "" }
+        var lines = [discoveryReason(discovery)]
+        lines.append(contentsOf: viewModel.evidence(for: repo).map(\.title))
+        return lines.joined(separator: "\n")
+    }
+
+    private func trailingReservedWidth(
+        source: SearchResultSourceIndicator?,
+        hasDiscovery: Bool
+    ) -> CGFloat {
+        let sourceWidth = sourceIndicatorTrailingReserve(for: source)
+        guard hasDiscovery else { return sourceWidth }
+        // 20pt 圆形徽标保留 12pt 尾距与 2pt 余量；双徽标再增加 20pt 和 4pt 间距。
+        return sourceWidth == 0 ? 34 : sourceWidth + 24
     }
 
     private func sourceIndicatorTrailingReserve(for source: SearchResultSourceIndicator?) -> CGFloat {
@@ -911,21 +1028,35 @@ struct SearchCenterView: View {
         case externalProvider(ExternalSearchProviderID)
     }
 
+    /// 来源与发现徽标共用中性底座，避免固定金色背景在深色卡片上形成突兀色块。
+    /// 只改变绘制颜色，不改变 12pt 图标、4pt 内边距和右侧预留空间。
+    private struct SearchResultBadgeSurface: ViewModifier {
+        @Environment(\.colorScheme) private var colorScheme
+
+        func body(content: Content) -> some View {
+            content
+                .background(
+                    Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06),
+                    in: Circle()
+                )
+                .overlay {
+                    Circle().stroke(
+                        Color.primary.opacity(colorScheme == .dark ? 0.26 : 0.16),
+                        lineWidth: 0.5
+                    )
+                }
+        }
+    }
+
     private struct SearchResultSourceIcon: View {
         let source: SearchResultSourceIndicator
 
         var body: some View {
             icon
-                .foregroundStyle(tint)
+                .foregroundStyle(foregroundColor)
                 .frame(width: 12, height: 12)
                 .padding(4)
-                // GitHub 来源使用独立金色底座，避免 primary 同色底在浅色主题下层级不清；
-                // 图标本身仍走动态 primary，确保明暗主题都有足够对比度。
-                .background(backgroundStyle, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(borderStyle, lineWidth: 0.5)
-                }
+                .modifier(SearchResultBadgeSurface())
                 .help(helpText)
                 .accessibilityLabel(helpText)
         }
@@ -937,7 +1068,8 @@ struct SearchCenterView: View {
                 Image(systemName: "internaldrive")
                     .font(.system(size: 11, weight: .semibold))
             case .semantic:
-                Image(systemName: "sparkles")
+                // 节点连线表达语义关联，避免与智能发现的星光徽标混淆。
+                Image(systemName: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 11, weight: .semibold))
             case .github:
                 Image("github")
@@ -952,28 +1084,12 @@ struct SearchCenterView: View {
             }
         }
 
-        private var backgroundStyle: Color {
+        private var foregroundColor: Color {
             switch source {
-            case .github: return Color.orange.opacity(0.24)
-            default: return tint.opacity(0.18)
-            }
-        }
-
-        private var borderStyle: Color {
-            switch source {
-            case .github: return Color.orange.opacity(0.40)
-            default: return tint.opacity(0.18)
-            }
-        }
-
-        private var tint: Color {
-            switch source {
-            case .local: return .secondary
-            case .semantic: return .secondary
-            case .github: return .primary
-            case .web: return .blue
-            case .externalProvider(let provider):
-                return ExternalSearchProviderIcon.tint(for: provider)
+            case .local, .semantic:
+                return .secondary
+            case .github, .web, .externalProvider:
+                return .primary
             }
         }
 
@@ -1079,10 +1195,33 @@ struct SearchCenterView: View {
             || vectorPhase != .hidden
             || !counts.isEmpty
             || rateLimit != nil
-            || !errors.isEmpty {
+            || !errors.isEmpty
+            || viewModel.discoverySession != nil
+            || viewModel.hasDiscoveryDetails {
             HStack(spacing: 8) {
                 leadingSummaryContent(processChips: processChips, counts: counts)
                 Spacer(minLength: 8)
+                if viewModel.hasDiscoveryDetails {
+                    discoveryWarningChip
+                }
+                if viewModel.canStartSmartDiscovery {
+                    discoveryActionButton(
+                        titleKey: "search.discovery.start",
+                        systemImage: "sparkles",
+                        isLoading: false
+                    ) {
+                        Task { await viewModel.startSmartDiscovery() }
+                    }
+                }
+                if viewModel.canContinueDiscovery {
+                    discoveryActionButton(
+                        titleKey: "search.discovery.continue",
+                        systemImage: "arrow.triangle.2.circlepath",
+                        isLoading: false
+                    ) {
+                        Task { await viewModel.continueDiscovery() }
+                    }
+                }
                 if vectorPhase != .hidden {
                     vectorIndexChip(vectorPhase)
                 }
@@ -1103,13 +1242,14 @@ struct SearchCenterView: View {
         }
     }
 
-    /// 向量库存 / 刷新进度。点击即刷新语义索引（原右上角刷新按钮已收进这里）。
+    /// 本地索引覆盖率 / 刷新进度。点击即刷新语义索引（原右上角刷新按钮已收进这里）。
     /// 不要和左侧「语义 1」合成一个数：那是本次查询命中，这是索引覆盖率。
+    /// 列表索引图标用于区分索引状态与智能发现，不改变原有刷新入口。
     private func vectorIndexChip(_ phase: SemanticIndexFooterPhase) -> some View {
         let isDisabled = homeViewModel.isSemanticIndexing || viewModel.isSearching
         return Button(action: refreshSemanticIndex) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                Image(systemName: "list.bullet.rectangle")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 Text(verbatim: vectorIndexChipText(phase))
                     .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
@@ -1142,12 +1282,12 @@ struct SearchCenterView: View {
             )
         case .coverage(let indexed, let total):
             return String(
-                format: String.l10n("search.footer.vector.coverageFormat"),
+                format: String.l10n("search.footer.index.coverageFormat"),
                 indexed,
                 total
             )
         case .notReady:
-            return String.l10n("search.footer.vector.notReady")
+            return String.l10n("search.footer.index.notReady")
         }
     }
 
@@ -1255,16 +1395,22 @@ struct SearchCenterView: View {
     ) -> some View {
         if viewModel.scope == .web,
            let webMetadata = viewModel.webMetadata,
-           let total = webMetadata.totalResults,
            let ms = webMetadata.searchTimeMs {
-            // .web scope 走"含用时"的紧凑形态（保留 v1 体验）
-            webOnlySummaryChip(totalResults: total, timeMs: ms)
+            // 上游总量尚未过滤；汇总必须与当前实际可展示的网页一致。
+            resultFilterButton(.source(.web)) {
+                webOnlySummaryChip(totalResults: viewModel.resultCount(for: .web), timeMs: ms)
+            }
         } else if !processChips.isEmpty {
             HStack(spacing: 6) {
                 ForEach(processChips) { chip in
                     processChip(chip)
                 }
+                if viewModel.scope == .all, let phase = viewModel.discoverySession?.phase {
+                    discoveryPhaseChip(phase)
+                }
             }
+        } else if viewModel.scope == .all, let phase = viewModel.discoverySession?.phase {
+            discoveryPhaseChip(phase)
         } else {
             HStack(spacing: 6) {
                 ForEach(counts) { entry in
@@ -1276,16 +1422,353 @@ struct SearchCenterView: View {
 
     /// `.all` / `.local` 过程 chip：加载中弱化颜色，落地后与 sourceCountChip 同规格。
     private func processChip(_ chip: SearchProcessChip) -> some View {
-        HStack(spacing: 4) {
-            Text(verbatim: chip.displayText)
-                .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
-                .lineLimit(1)
+        resultFilterButton(.source(chip.source)) {
+            HStack(spacing: 4) {
+                Text(verbatim: chip.displayText)
+                    .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
+                    .lineLimit(1)
+            }
+            .foregroundStyle(chip.isLoading ? Color.secondary : Color.primary)
         }
-        .foregroundStyle(chip.isLoading ? Color.secondary : Color.primary.opacity(0.75))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(chip.isLoading ? 0.05 : 0.08), in: Capsule())
+    }
+
+    /// 智能发现阶段 chip：左栏保持过程语义，不把阶段错误混入 provider 错误。
+    private func discoveryPhaseChip(_ phase: SearchDiscoveryPhase) -> some View {
+        resultFilterButton(.discovery) {
+            HStack(spacing: 4) {
+                if viewModel.isDiscoveryRunning {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                }
+                Text(verbatim: discoveryPhaseText(phase))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
+                    .lineLimit(1)
+            }
+            .foregroundStyle(viewModel.isDiscoveryRunning ? Color.secondary : Color.primary)
+        }
+        .help(discoveryPhaseTooltip(phase))
+    }
+
+    /// 五类来源共用按钮语义，零命中仍可选择；过程详情继续使用右侧既有入口。
+    private func resultFilterButton<Content: View>(
+        _ filter: SearchResultFilter,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let isSelected = viewModel.resultFilter == filter
+        let tint = resultFilterTint(filter)
+        // 来源色只用于底色和边框；文字保持语义前景色，选中态在明暗主题下分别增强。
+        let backgroundOpacity = colorScheme == .dark
+            ? (isSelected ? 0.30 : 0.15) : (isSelected ? 0.20 : 0.09)
+        let borderOpacity = colorScheme == .dark
+            ? (isSelected ? 0.70 : 0.32) : (isSelected ? 0.48 : 0.20)
+
+        return Button {
+            viewModel.toggleResultFilter(filter)
+        } label: {
+            content()
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(tint.opacity(backgroundOpacity), in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(tint.opacity(borderOpacity), lineWidth: 1)
+                }
+                .contentShape(Capsule())
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .pointerStyle(.link)
+    }
+
+    private func resultFilterTint(_ filter: SearchResultFilter) -> Color {
+        switch filter {
+        case .source(.localKeyword): return .blue
+        case .source(.localSemantic): return .purple
+        case .source(.github): return .orange
+        case .source(.web): return .green
+        case .discovery: return .accentColor
+        }
+    }
+
+    private var discoveryWarningChip: some View {
+        Button {
+            isDiscoveryDiagnosticsPresented.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: viewModel.hasDiscoveryFailures
+                    ? "exclamationmark.triangle" : "line.3.horizontal.decrease.circle")
+                if viewModel.contentSummary.hiddenCount > 0 {
+                    Text(viewModel.contentSummary.hiddenCount, format: .number)
+                        .monospacedDigit()
+                }
+            }
+            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                viewModel.hasDiscoveryFailures ? Color.orange.opacity(0.12) : Color.primary.opacity(0.08),
+                in: Capsule()
+            )
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(verbatim: discoveryDetailsTooltip))
+        .accessibilityLabel(Text(verbatim: discoveryDetailsTooltip + " " + viewModel.contentSummaryText))
+        .popover(isPresented: $isDiscoveryDiagnosticsPresented, arrowEdge: .bottom) {
+            discoveryDiagnosticsPopover
+                .appLocaleEnvironment()
+        }
+    }
+
+    /// 无失败但有完整步骤时，浮层入口文案说明「查看过程」，避免信息图标语义不清。
+    private var discoveryDetailsTooltip: String {
+        if viewModel.hasDiscoveryFailures {
+            return String.l10n("search.discovery.diagnostic.open")
+        }
+        if viewModel.discoverySession == nil {
+            return String.l10n("search.content.details") + "\n" + viewModel.contentSummaryText
+        }
+        return String.l10n("search.discovery.steps.open")
+    }
+
+    /// 标题固定为「智能发现详情」。上半区按真实执行顺序展示过程步骤，下半区保留
+    /// 失败/上限诊断；成功结果也能打开查看完整链路，而不是只在出错时才有入口。
+    private var discoveryDiagnosticsPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(verbatim: String.l10n(viewModel.discoverySession == nil
+                    ? "search.content.title" : "search.discovery.diagnostic.title"))
+                    .font(interfaceScale.font(.body, weight: .semibold))
+                Spacer()
+                SheetCloseButton { isDiscoveryDiagnosticsPresented = false }
+            }
+            // 面板自身不内嵌滚动：技术详情展开时让 popover 自然增高，避免
+            // 右侧滚动条与折叠箭头/正文重叠；内容仍由外层窗口布局约束兜底。
+            VStack(alignment: .leading, spacing: 14) {
+                if viewModel.contentSummary.checkedCount > 0 {
+                    contentFilteringDetails
+                }
+                if !viewModel.discoverySteps.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(viewModel.discoverySteps) { step in
+                            discoveryStepRow(step)
+                        }
+                    }
+                }
+                ForEach(viewModel.discoveryDiagnostics) { diagnostic in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Label(
+                            LocalizedStringKey(diagnostic.stage.titleKey),
+                            systemImage: diagnostic.isFailure ? "exclamationmark.triangle" : "info.circle"
+                        )
+                        .font(interfaceScale.font(.body, weight: .semibold))
+                        if let context = diagnostic.context {
+                            Text(verbatim: context)
+                                .textSelection(.enabled)
+                        }
+                        Text(verbatim: diagnostic.message)
+                        Text(verbatim: String(
+                            format: String.l10n("search.discovery.diagnostic.impactFormat"),
+                            String.l10n(diagnostic.impactKey)
+                        ))
+                            .foregroundStyle(.secondary)
+                        if let recovery = diagnostic.recovery {
+                            Text(verbatim: String(
+                                format: String.l10n("search.discovery.diagnostic.recoveryFormat"),
+                                recovery
+                            ))
+                                .foregroundStyle(.secondary)
+                        }
+                        if let target = diagnostic.settingsTarget {
+                            Button("menubar.openSettings") {
+                                isDiscoveryDiagnosticsPresented = false
+                                AppDelegate.openSettingsWindow(target: target)
+                            }
+                        }
+                        if let detail = diagnostic.technicalDetail, !detail.isEmpty {
+                            DisclosureGroup("search.discovery.diagnostic.technical") {
+                                if let statusCode = diagnostic.statusCode {
+                                    Text(verbatim: "HTTP \(statusCode)")
+                                        .font(interfaceScale.font(.captionSmall).monospaced())
+                                }
+                                Text(verbatim: detail)
+                                    .font(interfaceScale.font(.caption))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                                accessibilityLabel: Text("search.discovery.diagnostic.technical")
+                            ))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .font(interfaceScale.font(.body))
+        .foregroundStyle(.primary)
+        .padding(16)
+        .frame(width: 380)
+    }
+
+    /// 内容筛选是正常步骤。只展示数量、规则版本与 ID，不泄露被隐藏的正文。
+    private var contentFilteringDetails: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if viewModel.discoverySession != nil {
+                Label("search.content.title", systemImage: "line.3.horizontal.decrease.circle")
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
+            }
+            Text(verbatim: viewModel.contentSummaryText)
+                .font(interfaceScale.font(.caption))
+                .fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup("search.discovery.diagnostic.technical") {
+                Text(verbatim: String(
+                    format: String.l10n("search.content.versionFormat"),
+                    viewModel.coordinator.contentPolicy.version
+                ))
+                if !viewModel.contentSummary.ruleIDs.isEmpty {
+                    Text(verbatim: viewModel.contentSummary.ruleIDs.sorted().joined(separator: ", "))
+                        .textSelection(.enabled)
+                }
+            }
+            .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                accessibilityLabel: Text("search.discovery.diagnostic.technical")
+            ))
+            .font(interfaceScale.font(.captionSmall))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 单个执行步骤：图标表示状态，标题用阶段文案，右侧放实际耗时。
+    /// 数量/意图/模型等详情由 `detail` 与 `model` 拼进辅助行，不伪造完成状态。
+    private func discoveryStepRow(_ step: SearchDiscoveryStep) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: discoveryStepSymbol(step.state))
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: String.l10n(step.titleKey))
+                    .font(interfaceScale.font(.captionStrong, weight: .semibold))
+                if let detail = step.detail, !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+                if let model = step.model, !model.isEmpty {
+                    Text(verbatim: model)
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(Text(verbatim: model))
+                }
+                if let detail = step.technicalDetail, !detail.isEmpty {
+                    DisclosureGroup("search.discovery.diagnostic.technical") {
+                        Text(verbatim: detail)
+                            .font(interfaceScale.font(.captionSmall))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                        accessibilityLabel: Text("search.discovery.diagnostic.technical")
+                    ))
+                }
+            }
+            Spacer(minLength: 8)
+            if let duration = step.durationSeconds {
+                Text(verbatim: stepDurationText(duration))
+                    .font(interfaceScale.font(.captionSmall).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func discoveryStepSymbol(_ state: SearchDiscoveryStepState) -> String {
+        switch state {
+        case .completed: return "checkmark.circle.fill"
+        case .skipped: return "minus.circle"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func stepDurationText(_ duration: TimeInterval) -> String {
+        if duration < 0.1 {
+            return String.l10n("search.discovery.steps.durationShort")
+        }
+        return String(
+            format: String.l10n("search.discovery.steps.durationFormat"),
+            locale: locale,
+            duration
+        )
+    }
+
+    /// 右侧文字按钮保持 footer 尺寸约束；不使用 icon-only，避免操作语义不清。
+    private func discoveryActionButton(
+        titleKey: LocalizedStringKey,
+        systemImage: String,
+        isLoading: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                }
+                Text(titleKey)
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
         .fixedSize(horizontal: true, vertical: false)
+        .pointerStyle(.link)
+    }
+
+    private func discoveryPhaseText(_ phase: SearchDiscoveryPhase) -> String {
+        switch phase {
+        case .routing: return String.l10n("search.discovery.phase.routing")
+        case .planning: return String.l10n("search.discovery.phase.planning")
+        case .searching: return String.l10n("search.discovery.phase.searching")
+        case .extractingCandidates: return String.l10n("search.discovery.phase.extracting")
+        case .verifyingRepositories: return String.l10n("search.discovery.phase.verifying")
+        case .ranking: return String.l10n("search.discovery.phase.ranking")
+        case .completed, .noResults, .partialFailure, .cancelled, .failed:
+            return String(
+                format: String.l10n("search.discovery.results.countFormat"),
+                locale: locale,
+                viewModel.discoveryResultCount
+            )
+        }
+    }
+
+    private func discoveryPhaseTooltip(_ phase: SearchDiscoveryPhase) -> String {
+        if case .failed(let message) = phase {
+            return viewModel.discoveryDiagnostics.first?.message ?? message
+        }
+        return discoveryPhaseText(phase)
     }
 
     /// `.web` scope 专用 chip：放大镜 + "X 条结果 · Y.Ys"（含用时）。
@@ -1302,31 +1785,23 @@ struct SearchCenterView: View {
             .font(interfaceScale.font(.captionSmall, weight: .medium))
             .lineLimit(1)
         }
-        .foregroundStyle(.primary.opacity(0.75))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(0.08), in: Capsule())
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 聚合 footer 的单段 chip：source 标签 + 数字。
     /// 例如 "本地 3" / "GitHub 10" / "网页 20"。
     /// 视觉规格与 webOnlySummaryChip 完全一致，让 .all 与 .web scope 切换时不抖动。
     private func sourceCountChip(_ entry: ResultSourceCount) -> some View {
-        HStack(spacing: 4) {
-            Text(String(
-                format: String.l10n("search.footer.summaryFormat"),
-                String.l10n(entry.labelKey),
-                entry.count
-            ))
-            .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
-            .lineLimit(1)
+        resultFilterButton(.source(entry.source)) {
+            HStack(spacing: 4) {
+                Text(String(
+                    format: String.l10n("search.footer.summaryFormat"),
+                    String.l10n(entry.labelKey),
+                    entry.count
+                ))
+                .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
+                .lineLimit(1)
+            }
         }
-        .foregroundStyle(.primary.opacity(0.75))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(0.08), in: Capsule())
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 右侧 rate limit chip：未用尽走"已用 N/M"形态，用尽走"额度用尽 · 重置时间"。

@@ -84,6 +84,71 @@ struct SearchModelsTests {
             semanticScore: nil
         )
         #expect(candidate.remoteExtras == .empty)
+        #expect(candidate.discovery == nil)
+    }
+
+    @Test("智能发现计划去重、截断并保留硬约束")
+    func discoveryPlanNormalizesQueriesAndConstraints() {
+        let plan = SearchDiscoveryPlan(
+            intentSummary: "  查找热门 Linux 发行版  ",
+            githubQueries: ["linux distro", "linux distro", " linux desktop ", "extra"],
+            webQueries: ["", "popular linux distro 2026", "popular linux distro 2026", "extra", "extra-web-2"],
+            prefersFreshEvidence: true,
+            strictConstraints: [" 过去 7 天 Star 增长最快 ", "", " 时间必须严格执行 "],
+            githubFilters: .empty
+        ).normalized
+
+        #expect(plan.intentSummary == "查找热门 Linux 发行版")
+        #expect(plan.githubQueries == ["linux distro", "linux desktop"])
+        #expect(plan.webQueries == ["popular linux distro 2026", "extra"])
+        #expect(plan.strictConstraints == ["过去 7 天 Star 增长最快", "时间必须严格执行"])
+        #expect(plan.isValid)
+    }
+
+    @Test("证据必须可定位，注解只能引用已有证据")
+    func discoveryEvidenceAndAnnotationValidation() {
+        let valid = SearchEvidence(
+            id: "web-1",
+            kind: .web,
+            title: "Linux desktop discussion",
+            snippet: "Omarchy is an Arch-based Linux distribution."
+        )
+        let missingLocator = SearchEvidence(
+            id: "web-2",
+            kind: .web,
+            title: "No locator",
+            snippet: " "
+        )
+        let annotation = SearchDiscoveryAnnotation(
+            reason: "资料描述其为 Linux 发行版",
+            evidenceIDs: ["web-1"]
+        )
+
+        #expect(valid.isValid)
+        #expect(!missingLocator.isValid)
+        #expect(annotation.referencesOnly([valid]))
+        #expect(!annotation.referencesOnly([]))
+    }
+
+    @Test("发现会话限制预算并拒绝旧轮次")
+    func discoverySessionBudgetAndGenerationGuards() {
+        let generation = UUID()
+        let session = SearchDiscoverySession(
+            generation: generation,
+            round: 2,
+            phase: .searching,
+            usedLLMCalls: 2,
+            usedWebQueries: 2,
+            usedGitHubQueries: 1
+        )
+        let budget = SearchDiscoveryBudget.firstRound
+
+        #expect(session.canUseLLM(in: budget))
+        #expect(!session.canRunWebQuery(in: budget))
+        #expect(session.canRunGitHubQuery(in: budget))
+        #expect(session.isCurrent(generation: generation, round: 2))
+        #expect(!session.isCurrent(generation: generation, round: 1))
+        #expect(budget.isValid)
     }
 
     /// 验证 `GRDBRepoRepository.repoFromDTO` 把 DTO 的 `default_branch` /

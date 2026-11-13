@@ -13,6 +13,353 @@ import Testing
 @Suite("Search Center ViewModel")
 @MainActor
 struct SearchCenterViewModelTests {
+    @Test("底部来源筛选保留重叠命中且与计数一致", arguments: [
+        SearchSource.localKeyword, .localSemantic, .github, .web
+    ])
+    func resultSourceFilterMatchesCount(_ source: SearchSource) async throws {
+        let viewModel = try await makeSourceFilterViewModel()
+        let expectedIDs: Set<String>
+        switch source {
+        case .localKeyword: expectedIDs = ["repo:apple/keyword", "repo:apple/shared"]
+        case .localSemantic: expectedIDs = ["repo:apple/shared"]
+        case .github: expectedIDs = ["repo:apple/shared", "repo:apple/remote"]
+        case .web: expectedIDs = ["reference:https://example.com/swift"]
+        }
+        viewModel.toggleResultFilter(.source(source))
+
+        #expect(Set(viewModel.candidates.map(\.id)) == expectedIDs)
+        #expect(viewModel.resultCount(for: source) == expectedIDs.count)
+        #expect(viewModel.processChips.map(\.phase) == [.loaded(2), .loaded(1), .loaded(2), .loaded(1)])
+        #expect(viewModel.discoveryResultCount == 2)
+    }
+
+    @Test("智能发现筛选独立于普通 GitHub，切换和取消保留完整快照")
+    func discoveryFilterDoesNotInflateGitHubCount() async throws {
+        let viewModel = try await makeSourceFilterViewModel()
+        let allIDs = viewModel.candidates.map(\.id)
+        let initialEpoch = viewModel.resultListEpoch
+        viewModel.moveSelection(by: 0)
+        #expect(viewModel.selectedCandidate != nil)
+
+        viewModel.toggleResultFilter(.discovery)
+        #expect(Set(viewModel.candidates.map(\.id)) == ["repo:apple/shared", "repo:apple/discovered"])
+        #expect(viewModel.discoveryResultCount == 2)
+        #expect(viewModel.resultCount(for: .github) == 2)
+        #expect(viewModel.selectedIndex == nil)
+        #expect(viewModel.selectedCandidate == nil)
+        #expect(viewModel.resultListEpoch == initialEpoch + 1)
+
+        viewModel.toggleResultFilter(.source(.localSemantic))
+        #expect(viewModel.candidates.map(\.id) == ["repo:apple/shared"])
+        viewModel.moveSelection(by: 3)
+        #expect(viewModel.selectedCandidate?.id == "repo:apple/shared")
+        viewModel.toggleResultFilter(.source(.localSemantic))
+        #expect(viewModel.resultFilter == nil)
+        #expect(viewModel.candidates.map(\.id) == allIDs)
+        #expect(viewModel.selectedIndex == nil)
+    }
+
+    @Test("零命中来源仍可筛选和取消")
+    func emptySourceFilterRemainsSelectable() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterImmediateStubProvider(source: .localKeyword, page: .empty),
+                SearchCenterSessionStubProvider(candidate: Self.makeCandidate())
+            ]),
+            historyRepository: history
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.localKeyword))
+
+        #expect(viewModel.resultFilter == .source(.localKeyword))
+        #expect(viewModel.candidates.isEmpty)
+        #expect(!viewModel.shouldShowSearchSkeleton)
+        #expect(!viewModel.isResultFilterSearching)
+        #expect(viewModel.processChips.first?.phase == .loaded(0))
+        viewModel.toggleResultFilter(.source(.localKeyword))
+        #expect(viewModel.candidates.count == 1)
+    }
+
+    @Test("顶部范围切换清空来源筛选且保留发现快照")
+    func changingScopeResetsResultFilter() async throws {
+        let viewModel = try await makeSourceFilterViewModel()
+        viewModel.toggleResultFilter(.discovery)
+        await viewModel.changeScope(.local)
+        #expect(viewModel.resultFilter == nil)
+        #expect(Set(viewModel.candidates.map(\.id)) == ["repo:apple/keyword", "repo:apple/shared"])
+        await viewModel.changeScope(.all)
+        #expect(viewModel.resultFilter == nil)
+        #expect(viewModel.candidates.count == 5)
+        #expect(viewModel.discoveryResultCount == 2)
+
+        viewModel.toggleResultFilter(.discovery)
+        await viewModel.changeScope(.all)
+        #expect(viewModel.resultFilter == nil)
+        #expect(viewModel.candidates.count == 5)
+    }
+
+    @Test("关闭重开保留来源筛选，重新提交与清空重置筛选")
+    func resultFilterFollowsSessionLifetime() async throws {
+        let viewModel = try await makeSourceFilterViewModel()
+        viewModel.toggleResultFilter(.source(.github))
+        viewModel.dismiss()
+        viewModel.present()
+        #expect(viewModel.resultFilter == .source(.github))
+        #expect(viewModel.candidates.count == 2)
+
+        await viewModel.submit()
+        #expect(viewModel.resultFilter == nil)
+        #expect(viewModel.candidates.count == 5)
+        viewModel.toggleResultFilter(.discovery)
+        viewModel.clear()
+        #expect(viewModel.resultFilter == nil)
+        #expect(viewModel.candidates.isEmpty)
+    }
+
+    @Test("来源筛选不重复请求 Provider、Router 或智能发现")
+    func resultFilteringDoesNotRepeatSearch() async throws {
+        let providers = [SearchSource.localKeyword, .localSemantic, .github].map {
+            SearchCenterCountingStubProvider(source: $0, candidate: Self.makeCandidate())
+        }
+        let web = WebLoadMoreStubProvider()
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate())
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: providers.map { $0 as any SearchProvider } + [web]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            includeWebInAll: { true }, intentRouter: router, discoveryService: discovery
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        for source in [SearchSource.localKeyword, .localSemantic, .github, .web] {
+            viewModel.toggleResultFilter(.source(source))
+        }
+        viewModel.toggleResultFilter(.discovery)
+        viewModel.toggleResultFilter(.discovery)
+
+        #expect(providers.allSatisfy { $0.callCount == 1 })
+        #expect(web.maxResultsRequests == [10])
+        #expect(router.routeQueries.count == 1)
+        #expect(discovery.requests.count == 1)
+    }
+
+    @Test("选中来源失败后仍保留可取消的胶囊")
+    func failedSourceFilterRemainsCancellable() async throws {
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterSemanticFailureStubProvider(),
+                SearchCenterSessionStubProvider(candidate: Self.makeCandidate())
+            ]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.localSemantic))
+        #expect(viewModel.candidates.isEmpty)
+        #expect(!viewModel.isResultFilterSearching)
+        #expect(viewModel.processChips.first?.phase == .failed(String.l10n("search.footer.error.semantic")))
+        viewModel.toggleResultFilter(.source(.localSemantic))
+        #expect(viewModel.candidates.count == 1)
+    }
+
+    @Test("加载中切换来源后保留筛选，迟到结果不重置列表身份")
+    func pendingSourceCompletionPreservesFilterAndListIdentity() async throws {
+        let gate = SearchHoldGate()
+        var keyword = Self.makeCandidate(id: 1, name: "keyword")
+        keyword.sources = [.localKeyword]
+        var semantic = Self.makeCandidate(id: 2, name: "semantic")
+        semantic.sources = [.localSemantic]
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterImmediateStubProvider(
+                    source: .localKeyword,
+                    page: SearchProviderPage(
+                        repositories: [keyword], references: [], totalCount: 1, hasNextPage: false
+                    )
+                ),
+                SearchCenterGatedStubProvider(
+                    source: .localSemantic, gate: gate,
+                    page: SearchProviderPage(
+                        repositories: [semantic], references: [], totalCount: 1, hasNextPage: false
+                    )
+                )
+            ]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.scope = .local
+        viewModel.query = "swift"
+        let searchTask = Task { await viewModel.submit() }
+        await gate.waitUntilBlocked()
+        try await waitUntil { viewModel.resultCount(for: .localKeyword) == 1 }
+        let originalEpoch = viewModel.resultListEpoch
+
+        viewModel.toggleResultFilter(.source(.localSemantic))
+        let filteredEpoch = viewModel.resultListEpoch
+        #expect(filteredEpoch == originalEpoch + 1)
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.isResultFilterSearching)
+
+        await gate.resume()
+        await searchTask.value
+        #expect(viewModel.resultFilter == .source(.localSemantic))
+        #expect(viewModel.candidates.map(\.id) == ["repo:apple/semantic"])
+        #expect(viewModel.resultCount(for: .localKeyword) == 1)
+        #expect(viewModel.resultCount(for: .localSemantic) == 1)
+        #expect(!viewModel.isResultFilterSearching)
+        #expect(viewModel.resultListEpoch == filteredEpoch)
+    }
+
+    @Test("分页追加保留来源筛选和列表身份")
+    func paginationPreservesResultFilterAndListIdentity() async throws {
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1, name: "first"),
+            Self.makeCandidate(id: 2, name: "second")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.scope = .github
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.github))
+        let filteredEpoch = viewModel.resultListEpoch
+        viewModel.moveSelection(by: 0)
+
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.resultFilter == .source(.github))
+        #expect(viewModel.candidates.count == 2)
+        #expect(viewModel.resultCount(for: .github) == 2)
+        #expect(viewModel.selectedCandidate?.id == "repo:apple/first")
+        #expect(viewModel.resultListEpoch == filteredEpoch)
+        #expect(await provider.requests.map(\.page) == [1, 2])
+    }
+
+    /// 固定来源交叉关系用于验收：发现与普通搜索交叠一项，并另增一项 GitHub 来源仓库。
+    private func makeSourceFilterViewModel() async throws -> SearchCenterViewModel {
+        var keyword = Self.makeCandidate(id: 1, name: "keyword")
+        keyword.sources = [.localKeyword]
+        var shared = Self.makeCandidate(id: 2, name: "shared")
+        shared.sources = [.localKeyword, .localSemantic, .github]
+        shared.semanticScore = 0.95
+        let remote = Self.makeCandidate(id: 3, name: "remote")
+        let discovered = Self.makeCandidate(id: 4, name: "discovered")
+        let sharedResult = Self.makeDiscoveryResult(candidate: shared)
+        let discoveredResult = Self.makeDiscoveryResult(candidate: discovered)
+        let reference = ReferenceCandidate(
+            normalizedURL: URL(string: "https://example.com/swift")!,
+            originalURL: URL(string: "https://example.com/swift")!,
+            title: "Swift documentation", snippet: nil, domain: "example.com", source: .web
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            RepositoryDiscoveryResult(
+                session: sharedResult.session,
+                repositories: sharedResult.repositories + discoveredResult.repositories,
+                references: [], diagnostics: []
+            )
+        ])
+        let providers: [any SearchProvider] = [
+            SearchCenterImmediateStubProvider(
+                source: .localKeyword,
+                page: SearchProviderPage(repositories: [keyword, shared], references: [], totalCount: 2, hasNextPage: false)
+            ),
+            SearchCenterImmediateStubProvider(
+                source: .localSemantic,
+                page: SearchProviderPage(repositories: [shared], references: [], totalCount: 1, hasNextPage: false)
+            ),
+            SearchCenterImmediateStubProvider(
+                source: .github,
+                page: SearchProviderPage(repositories: [shared, remote], references: [], totalCount: 2, hasNextPage: false)
+            ),
+            SearchCenterImmediateStubProvider(
+                source: .web,
+                page: SearchProviderPage(repositories: [], references: [reference], totalCount: 1, hasNextPage: false)
+            )
+        ]
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: providers),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            includeWebInAll: { true },
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        return viewModel
+    }
+
+    @Test("禁止查询不进入 Router、历史或显式智能查找")
+    func blockedQueryStopsBeforeRoutingAndHistory() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []), historyRepository: history,
+            intentRouter: router, discoveryService: discovery
+        )
+        viewModel.query = "购买枪支"
+        await viewModel.submit()
+        await viewModel.startSmartDiscovery()
+        #expect(router.routeQueries.isEmpty)
+        #expect(discovery.requests.isEmpty)
+        #expect(try await history.fetchAll().isEmpty)
+        #expect(viewModel.coordinator.blockedQuery != nil)
+        #expect(!viewModel.canStartSmartDiscovery)
+        #expect(!viewModel.hasDiscoveryFailures)
+    }
+
+    @Test("普通搜索的筛选详情可见，隐藏结果不算智能发现失败")
+    func ordinarySearchExposesFilteringDetailsWithoutFailure() async throws {
+        let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let provider = SearchCenterSessionStubProvider(candidate: blocked)
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]), historyRepository: history
+        )
+        viewModel.query = "linux distributions"
+        await viewModel.submit()
+
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.discoverySession == nil)
+        #expect(viewModel.hasDiscoveryDetails)
+        #expect(!viewModel.hasDiscoveryFailures)
+        #expect(viewModel.contentSummary.checkedCount == 1)
+        #expect(viewModel.contentSummary.hiddenCount == 1)
+        #expect(viewModel.contentSummary.retainedCount == 0)
+        #expect(!viewModel.contentSummaryText.contains("search.content.summaryFormat"))
+        #expect(!viewModel.contentSummaryText.contains("%1$lld"))
+    }
+
+    @Test("发现返回、缓存回读与继续查找均不能恢复隐藏候选")
+    func discoveryCacheAndContinuationRespectContentPolicy() async throws {
+        let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let result = Self.makeDiscoveryResult(candidate: blocked)
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [result, result])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []), historyRepository: history,
+            intentRouter: router, discoveryService: discovery
+        )
+        viewModel.query = "find linux distributions"
+        await viewModel.submit()
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.discoverySession?.evidence.isEmpty == true)
+        #expect(viewModel.contentSummary.hiddenCount == 1)
+        await viewModel.submit()
+        #expect(discovery.requests.count == 1)
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.contentSummary.hiddenCount == 1)
+        await viewModel.continueDiscovery()
+        #expect(discovery.requests.count == 2)
+        #expect(viewModel.candidates.isEmpty)
+        #expect(!viewModel.hasDiscoveryFailures)
+    }
+
     @Test("关闭并重新打开时保留完整搜索会话")
     func dismissAndPresentPreservesSession() async throws {
         // 2026-06-14：历史从 UserDefaults 升级到 GRDB SQLite。测试用内存 DB +
@@ -179,6 +526,64 @@ struct SearchCenterViewModelTests {
         #expect(!viewModel.isSearching)
         #expect(!viewModel.shouldShowSearchSkeleton)
         #expect(viewModel.hasSettledSearchProvider)
+    }
+
+    @Test("新查询取消旧 Router 链路且旧响应不启动发现")
+    func replacingQueryCancelsOldRoutingChain() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        router.delays = ["linux distribution": 0.15]
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 2, name: "rust"))
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "linux distribution"
+        let oldTask = Task { await viewModel.submit() }
+        try await Self.waitUntil {
+            router.routeQueries == ["linux distribution"]
+        }
+        viewModel.query = "rust"
+        await viewModel.submit()
+        await oldTask.value
+
+        #expect(router.routeQueries == ["linux distribution", "rust"])
+        #expect(discovery.requests.map(\.query) == ["rust"])
+        #expect(viewModel.lastSubmittedQuery == "rust")
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/rust" })
+    }
+
+    @Test("清空查询时取消智能链路且不留下失败")
+    func clearingQueryCancelsDiscoverySilently() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        router.delays = ["linux distribution": 0.15]
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "linux distribution"
+        let task = Task { await viewModel.submit() }
+        try await Self.waitUntil {
+            router.routeQueries == ["linux distribution"]
+        }
+        viewModel.clear()
+        await task.value
+
+        #expect(discovery.requests.isEmpty)
+        #expect(viewModel.discoverySession == nil)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(!viewModel.isDiscoveryRunning)
+        #expect(viewModel.lastSubmittedQuery.isEmpty)
     }
 
     @Test("应用 GitHub 筛选重置首页并保留兼容的本地快照")
@@ -581,6 +986,495 @@ struct SearchCenterViewModelTests {
         #expect(!viewModel.isSearching)
     }
 
+    @Test("All 范围自然语言查询自动合并智能发现结果")
+    func allScopeRoutesNaturalLanguageToDiscovery() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(
+            results: [Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"))]
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(router.routeQueries == ["github 最近比较火的 linux 发行版"])
+        #expect(viewModel.candidates.map(\.id) == ["repo:apple/swift", "repo:omarchy/omarchy"])
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.discoveryResultCount == 1)
+        #expect(viewModel.canContinueDiscovery)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(viewModel.discoverySteps.map(\.stage) == [
+            .planning, .githubSearch, .verification, .ranking, .merging
+        ])
+        #expect(viewModel.hasDiscoveryDetails)
+    }
+
+    @Test("成功的智能发现详情展示真实步骤而非伪造过程")
+    func successfulDiscoveryExposesRealSteps() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy")
+        let result = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: UUID(),
+                round: 1,
+                phase: .completed,
+                plan: Self.makeSmartOutcome().plan,
+                evidence: [],
+                usedLLMCalls: 2,
+                steps: [
+                    SearchDiscoveryStep(id: "planning", stage: .planning, state: .completed),
+                    SearchDiscoveryStep(id: "ranking", stage: .ranking, state: .completed)
+                ]
+            ),
+            repositories: [candidate],
+            references: [],
+            diagnostics: []
+        )
+        let upstreamSteps = [
+            SearchDiscoveryStep(id: "routing", stage: .routing, state: .skipped),
+            SearchDiscoveryStep(
+                id: "planning",
+                stage: .planning,
+                state: .completed,
+                detail: "Find trending Linux distributions",
+                durationSeconds: 0.4,
+                model: "planner-model"
+            )
+        ]
+        let smartOutcome = Self.makeSmartOutcome()
+        let router = SearchCenterStubIntentRouter(outcome: SearchIntentRoutingOutcome(
+            route: smartOutcome.route,
+            decisionStatus: smartOutcome.decisionStatus,
+            plannerStatus: smartOutcome.plannerStatus,
+            plan: smartOutcome.plan,
+            steps: upstreamSteps
+        ))
+        let discovery = SearchCenterStubDiscoveryService(results: [result])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(viewModel.hasDiscoveryDetails)
+        #expect(viewModel.discoverySteps.map(\.id) == ["routing", "planning", "ranking", "merging"])
+        #expect(viewModel.discoverySteps.first(where: { $0.stage == .planning }) == upstreamSteps.last)
+        #expect(viewModel.discoverySteps.last?.state == .completed)
+        #expect(viewModel.discoverySession?.steps == viewModel.discoverySteps)
+
+        let completedSteps = viewModel.discoverySteps
+        await viewModel.submit()
+
+        #expect(discovery.requests.count == 1)
+        #expect(viewModel.discoverySteps == completedSteps)
+    }
+
+    @Test("发现结果与基础结果重复时保留单行、匹配理由和去重计数")
+    func discoveryCountMergesOverlappingRepositories() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy")
+        let firstResult = Self.makeDiscoveryResult(candidate: candidate)
+        let result = RepositoryDiscoveryResult(
+            session: firstResult.session,
+            repositories: firstResult.repositories + firstResult.repositories,
+            references: [],
+            diagnostics: []
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterCountingStubProvider(source: .localKeyword, candidate: candidate)
+            ]),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: SearchCenterStubDiscoveryService(results: [result])
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.candidates.count == 1)
+        #expect(viewModel.discoveryResultCount == 1)
+        guard case .repository(let displayed) = viewModel.candidates.first else {
+            Issue.record("Expected a repository candidate")
+            return
+        }
+        #expect(displayed.discovery?.reason == "Web evidence points to this repository")
+        #expect(viewModel.coordinator.repositories.first?.discovery == nil)
+    }
+
+    @Test("发现没有仓库时计数为零，不把普通结果或网页资料计入")
+    func emptyDiscoveryCountExcludesBaseResults() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate()
+        let result = RepositoryDiscoveryResult(
+            session: Self.makeDiscoveryResult(candidate: candidate).session,
+            repositories: [],
+            references: [],
+            diagnostics: []
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterCountingStubProvider(source: .localKeyword, candidate: candidate)
+            ]),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: SearchCenterStubDiscoveryService(results: [result])
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.candidates.count == 1)
+        #expect(viewModel.discoveryResultCount == 0)
+    }
+
+    @Test("Planner 失败保留基础结果并显示智能发现失败")
+    func plannerFailureKeepsBaseResultsAndDiscoveryState() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        var baseCandidate = Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        baseCandidate.sources = [.localKeyword]
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: baseCandidate
+        )
+        let router = SearchCenterStubIntentRouter(outcome: SearchIntentRoutingOutcome(
+            route: .fastPath,
+            decisionStatus: .skipped,
+            plannerStatus: .failed("AI 服务商要求付费或账户余额不足"),
+            plan: nil
+        ))
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(viewModel.candidates == [SearchCandidate.repository(local.candidate)])
+        #expect(viewModel.discoverySession?.phase == .failed("AI 服务商要求付费或账户余额不足"))
+        #expect(viewModel.discoveryDiagnostics.first?.message == "AI 服务商要求付费或账户余额不足")
+        #expect(viewModel.hasDiscoveryFailures)
+        #expect(discovery.requests.isEmpty)
+        #expect(viewModel.canStartSmartDiscovery)
+    }
+
+    @Test("相同搜索请求直接复用完成的智能发现缓存")
+    func identicalRequestReusesCompletedDiscovery() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(
+            results: [Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"))]
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+        await viewModel.submit()
+
+        #expect(router.routeQueries.count == 1)
+        #expect(discovery.requests.count == 1)
+        #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
+    }
+
+    @Test("部分失败不缓存，恢复成功后同一请求可复用")
+    func partialFailureIsNotCachedButRecoveredSuccessIsCached() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let baseResult = Self.makeDiscoveryResult(
+            candidate: Self.makeCandidate(id: 9, owner: "apple", name: "partial")
+        )
+        let partialFailure = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: baseResult.session.generation,
+                round: 1,
+                phase: .partialFailure,
+                plan: baseResult.session.plan,
+                evidence: baseResult.session.evidence,
+                usedLLMCalls: baseResult.session.usedLLMCalls,
+                steps: baseResult.steps
+            ),
+            repositories: baseResult.repositories,
+            references: [],
+            diagnostics: [.failure(stage: .webSearch, error: URLError(.timedOut))]
+        )
+        let success = Self.makeDiscoveryResult(
+            candidate: Self.makeCandidate(id: 10, owner: "apple", name: "success")
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [partialFailure, success])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github linux distribution"
+        viewModel.scope = .all
+        await viewModel.submit()
+        await viewModel.submit()
+        await viewModel.submit()
+
+        #expect(discovery.requests.count == 2)
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/success" })
+    }
+
+    @Test("配置身份与缓存过期会重新执行智能发现")
+    func cacheIdentityAndTTLInvalidateDiscoverySnapshot() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "apple", name: "old")),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 10, owner: "apple", name: "new")),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 11, owner: "apple", name: "restored")),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 12, owner: "apple", name: "fresh"))
+        ])
+        var identity = SearchDiscoveryCacheIdentity.constant
+        var now = Date()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery,
+            discoveryCacheIdentity: { identity },
+            discoveryNow: { now }
+        )
+
+        viewModel.query = "github linux distribution"
+        viewModel.scope = .all
+        await viewModel.submit()
+        identity = SearchDiscoveryCacheIdentity(
+            chatConfiguration: "changed-chat",
+            rerankConfiguration: identity.rerankConfiguration,
+            externalSearchConfiguration: identity.externalSearchConfiguration,
+            credentialFingerprint: identity.credentialFingerprint
+        )
+        await viewModel.submit()
+        identity = .constant
+        await viewModel.submit()
+        now = now.addingTimeInterval(15 * 60)
+        await viewModel.submit()
+
+        #expect(router.routeQueries.count == 4)
+        #expect(discovery.requests.count == 4)
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/fresh" })
+    }
+
+    @Test("缓存命中不延长外部证据的有效期")
+    func cacheHitDoesNotExtendTTL() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let result = Self.makeDiscoveryResult(candidate: Self.makeCandidate())
+        let discovery = SearchCenterStubDiscoveryService(results: [result, result])
+        var now = Date()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery,
+            discoveryNow: { now }
+        )
+        viewModel.query = "linux distribution"
+        await viewModel.submit()
+        now = now.addingTimeInterval(14 * 60)
+        await viewModel.submit()
+        #expect(discovery.requests.count == 1)
+        now = now.addingTimeInterval(60)
+        await viewModel.submit()
+        #expect(discovery.requests.count == 2)
+    }
+
+    @Test("失败与取消快照不会阻止相同查询恢复", arguments: [
+        SearchDiscoveryPhase.failed("Unavailable"), .cancelled, .completed
+    ])
+    func unsuccessfulSnapshotIsNotCached(phase: SearchDiscoveryPhase) async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let failure = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(generation: UUID(), round: 1, phase: phase),
+            repositories: [],
+            references: [],
+            diagnostics: phase == .cancelled
+                ? [] : [.failure(stage: .githubSearch, error: URLError(.notConnectedToInternet))]
+        )
+        let success = Self.makeDiscoveryResult(candidate: Self.makeCandidate())
+        let discovery = SearchCenterStubDiscoveryService(results: [failure, success])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "linux distribution"
+        await viewModel.submit()
+        await viewModel.submit()
+        #expect(discovery.requests.count == 2)
+        #expect(viewModel.discoverySession?.phase == .completed)
+    }
+
+    @Test("真实配置与凭据修改会改变缓存身份", arguments: [
+        "chatModel", "chatProvider", "rerank", "webPermission",
+        "webProvider", "chatKey", "githubAccount", "rerankKey", "webKey", "decisionKey"
+    ])
+    func liveCacheIdentityTracksConfigurationChanges(change: String) throws {
+        let defaults = try #require(UserDefaults(suiteName: "SearchCache-\(UUID().uuidString)"))
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+        let previous = SearchDiscoveryCacheIdentity.live(settings: settings, keychain: keychain)
+        switch change {
+        case "chatModel":
+            settings.aiChatTask.useCustomModel = true
+            settings.aiChatTask.customModelName = "new-model"
+        case "chatProvider": settings.aiChatTask.providerID = "new-provider"
+        case "rerank": settings.ragRerankConfiguration.model = "new-reranker"
+        case "webPermission": settings.externalContextEnabled.toggle()
+        case "webProvider": settings.externalSearchDefaultProvider = .exa
+        case "chatKey": try keychain.storeAIKey("secret-new-chat-key", forProvider: settings.aiChatTask.providerID)
+        case "githubAccount": try keychain.storeGithubToken("secret-new-account-token")
+        case "rerankKey": try keychain.storeAIKey("secret-rerank-key", forProvider: RAGRerankConfiguration.keychainID)
+        case "webKey": try keychain.storeServiceAPIKey("secret-web-key", forService: ExternalSearchProviderID.exa.keychainServiceID)
+        case "decisionKey": try keychain.storeServiceAPIKey("secret-decision-key", forService: JevDecisionEngine.keychainServiceID)
+        default: Issue.record("Unexpected test case")
+        }
+        let current = SearchDiscoveryCacheIdentity.live(settings: settings, keychain: keychain)
+        #expect(previous != current)
+        #expect(!String(describing: current).contains("secret-"))
+    }
+
+    @Test("智能发现失败不清空基础搜索结果")
+    func discoveryFailureKeepsBaseResults() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        var baseCandidate = Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        baseCandidate.sources = [.localKeyword]
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: baseCandidate
+        )
+        let failedSession = SearchDiscoverySession(
+            generation: UUID(),
+            round: 1,
+            phase: .failed("Search query planner failed")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            RepositoryDiscoveryResult(
+                session: failedSession,
+                repositories: [],
+                references: [],
+                diagnostics: [.failure(stage: .planning, error: AIClientError.emptyResponse)]
+            )
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+
+        #expect(viewModel.candidates == [SearchCandidate.repository(local.candidate)])
+        #expect(viewModel.discoverySession?.phase == .failed("Search query planner failed"))
+        #expect(viewModel.discoveryDiagnostics.first?.stage == .planning)
+        #expect(viewModel.hasDiscoveryFailures)
+        #expect(!viewModel.canContinueDiscovery)
+    }
+
+    @Test("正常达到核验上限有详情但不显示失败告警")
+    func verificationLimitIsNotAFailure() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let candidate = Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy")
+        let baseResult = Self.makeDiscoveryResult(candidate: candidate)
+        let result = RepositoryDiscoveryResult(
+            session: baseResult.session,
+            repositories: baseResult.repositories,
+            references: [],
+            diagnostics: [.limit(stage: .verification)]
+        )
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: SearchCenterStubDiscoveryService(results: [result])
+        )
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        await viewModel.submit()
+
+        #expect(viewModel.discoveryResultCount == 1)
+        #expect(viewModel.discoveryDiagnostics.count == 1)
+        #expect(!viewModel.hasDiscoveryFailures)
+        #expect(viewModel.canContinueDiscovery)
+        viewModel.clear()
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(viewModel.discoveryResultCount == 0)
+    }
+
+    @Test("继续查找执行下一轮并更新缓存结果")
+    func continueDiscoveryRunsNextRound() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let local = SearchCenterCountingStubProvider(
+            source: .localKeyword,
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+        )
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"), round: 1),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 10, owner: "linux", name: "os"), round: 2)
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [local]),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github 最近比较火的 linux 发行版"
+        viewModel.scope = .all
+        await viewModel.submit()
+        await viewModel.continueDiscovery()
+
+        #expect(discovery.requestRounds == [1, 2])
+        #expect(router.routeQueries.count == 1)
+        #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+        #expect(viewModel.discoverySession?.round == 2)
+        #expect(viewModel.canContinueDiscovery)
+
+        await viewModel.submit()
+        #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+    }
+
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
@@ -618,6 +1512,68 @@ struct SearchCenterViewModelTests {
             localRepo: nil,
             remoteRepo: nil,
             semanticScore: nil
+        )
+    }
+
+    private static func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<100 where !condition() {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard condition() else { throw URLError(.timedOut) }
+    }
+
+    private nonisolated static func makeSmartOutcome() -> SearchIntentRoutingOutcome {
+        SearchIntentRoutingOutcome(
+            route: .smartDiscovery,
+            decisionStatus: .completed,
+            plannerStatus: .completed,
+            plan: SearchDiscoveryPlan(
+                intentSummary: "Find trending Linux distributions",
+                githubQueries: ["trending linux distribution"],
+                webQueries: ["trending linux distribution GitHub"],
+                prefersFreshEvidence: true,
+                strictConstraints: [],
+                githubFilters: .empty
+            )
+        )
+    }
+
+    private nonisolated static func makeDiscoveryResult(
+        candidate: RepositoryCandidate,
+        round: Int = 1
+    ) -> RepositoryDiscoveryResult {
+        var item = candidate
+        item.discovery = SearchDiscoveryAnnotation(
+            reason: "Web evidence points to this repository",
+            evidenceIDs: ["web-0-0"],
+            rank: 0
+        )
+        let session = SearchDiscoverySession(
+            generation: UUID(),
+            round: round,
+            phase: .completed,
+            plan: makeSmartOutcome().plan,
+            evidence: [
+                SearchEvidence(
+                    id: "web-0-0",
+                    kind: .web,
+                    title: "Trending Linux distribution",
+                    url: URL(string: "https://github.com/\(candidate.card.fullName)")
+                )
+            ],
+            usedLLMCalls: 2,
+            steps: [
+                SearchDiscoveryStep(id: "planning", stage: .planning, state: .completed),
+                SearchDiscoveryStep(id: "githubSearch-0", stage: .githubSearch, state: .completed),
+                SearchDiscoveryStep(id: "verification", stage: .verification, state: .skipped),
+                SearchDiscoveryStep(id: "ranking", stage: .ranking, state: .completed)
+            ]
+        )
+        return RepositoryDiscoveryResult(
+            session: session,
+            repositories: [item],
+            references: [],
+            diagnostics: []
         )
     }
 
@@ -842,5 +1798,80 @@ private actor SearchHoldGate {
         isReleased = true
         continuation?.resume()
         continuation = nil
+    }
+}
+
+@MainActor
+private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
+    let outcome: SearchIntentRoutingOutcome
+    var delays: [String: TimeInterval] = [:]
+    private(set) var routeQueries: [String] = []
+
+    init(outcome: SearchIntentRoutingOutcome) {
+        self.outcome = outcome
+    }
+
+    func route(query: String, explicitSmartDiscovery: Bool, deadline: Date) async -> SearchIntentRoutingOutcome {
+        routeQueries.append(query)
+        if let delay = delays[query] {
+            // 模拟慢 Router；Task.sleep 响应取消，能验证取消是否真的向下传导。
+            try? await Task.sleep(for: .seconds(delay))
+        }
+        return outcome
+    }
+}
+
+@MainActor
+private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProviding {
+    private var results: [RepositoryDiscoveryResult]
+    private(set) var requests: [SearchRequest] = []
+    private(set) var requestRounds: [Int] = []
+
+    init(results: [RepositoryDiscoveryResult]) {
+        self.results = results
+    }
+
+    func discover(
+        query: String,
+        request baseRequest: SearchRequest,
+        initialPlan: SearchDiscoveryPlan?,
+        generation: UUID,
+        round: Int,
+        budget: SearchDiscoveryBudget,
+        initialLLMCalls: Int,
+        deadline: Date?
+    ) async -> RepositoryDiscoveryResult {
+        requests.append(baseRequest)
+        requestRounds.append(round)
+        let result = results.isEmpty
+            ? RepositoryDiscoveryResult(
+                session: SearchDiscoverySession(
+                    generation: generation,
+                    round: round,
+                    phase: .failed("No stub result")
+                ),
+                repositories: [],
+                references: [],
+                diagnostics: []
+            )
+            : results.removeFirst()
+        let session = SearchDiscoverySession(
+            generation: generation,
+            round: round,
+            phase: result.session.phase,
+            plan: result.session.plan,
+            evidence: result.session.evidence,
+            usedLLMCalls: result.session.usedLLMCalls,
+            usedWebQueries: result.session.usedWebQueries,
+            usedGitHubQueries: result.session.usedGitHubQueries,
+            steps: result.steps
+        )
+        return RepositoryDiscoveryResult(
+            session: session,
+            repositories: result.repositories,
+            references: result.references,
+            diagnostics: result.diagnostics,
+            steps: result.steps
+        )
     }
 }

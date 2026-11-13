@@ -105,7 +105,7 @@ struct ExternalContextDegradationReasonTests {
             .invalidRequest(message: "bad request"),
             .invalidResponse,
             .api(code: -1, message: "biz error"),
-            .decoding
+            .decoding(statusCode: 200)
         ]
         for err in cases {
             #expect(ExternalContextDegradationReason.classify(err) == .unknown)
