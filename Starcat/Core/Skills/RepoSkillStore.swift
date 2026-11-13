@@ -13,7 +13,13 @@ import Observation
 @MainActor
 @Observable
 final class RepoSkillStore {
-    private(set) var scans: [Int64: RepoSkillScan] = [:]
+    @ObservationIgnored private var scanSnapshots: [Int64: RepoSkillScan] = [:]
+    /// 主列表读取扫描证据时只订阅语义修订；详情进度经独立消费者回调发布。
+    /// 否则即便 revision 不变，观察 scans 字典仍会使所有仓库行随每批 manifest 失效。
+    var scans: [Int64: RepoSkillScan] {
+        _ = revision
+        return scanSnapshots
+    }
     private(set) var errors: [Int64: String] = [:]
     private(set) var scanningIDs: Set<Int64> = []
     private(set) var revision: UInt64 = 0
@@ -40,7 +46,9 @@ final class RepoSkillStore {
     @ObservationIgnored private var loadTask: Task<[RepoSkillScan], Error>?
     @ObservationIgnored private var installations: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var knownRepos: [Int64: Repo] = [:]
-    @ObservationIgnored private var updateHandlers: [Int64: [@MainActor @Sendable (RepoSkillScan) -> Void]] = [:]
+    @ObservationIgnored private var updateHandlers: [Int64: [UUID: @MainActor @Sendable (RepoSkillScan) -> Void]] = [:]
+    @ObservationIgnored private var consumers: [Int64: Set<UUID>] = [:]
+    @ObservationIgnored private var scanTokens: [Int64: UUID] = [:]
 
     var accountRevision: UInt64 { epoch }
 
@@ -83,7 +91,7 @@ final class RepoSkillStore {
             // 恢复期间详情可能已完成新扫描，旧数据库快照不能覆盖更新后的证据。
             for value in values where scans[value.repositoryID] == nil
                 && errors[value.repositoryID] == nil && !scanningIDs.contains(value.repositoryID) {
-                scans[value.repositoryID] = value
+                scanSnapshots[value.repositoryID] = value
             }
             loadedAccount = account
             loadTask = nil
@@ -170,76 +178,118 @@ final class RepoSkillStore {
         guard !isChangingAccount, requestedEpoch == epoch else { throw CancellationError() }
         remember(repo)
         let source = withKnownMetadata(repo)
-        if !force, let value = scans[repo.id], value.isFresh(for: source), errors[repo.id] == nil { return value }
-        if let task = inflight[repo.id] {
-            if let onUpdate {
-                updateHandlers[repo.id, default: []].append(onUpdate)
-                // 加入已在扫描中的仓库时先回放部分结果，窗口不用等下一批 manifest。
-                if let partial = scans[repo.id] { onUpdate(partial) }
-            }
-            return try await task.value
+        try Task.checkCancellation()
+        // 先检查进行中的任务，不能把内存 partial 当成已结束的缓存返回给新窗口。
+        if let task = inflight[repo.id], !task.isCancelled {
+            return try await consume(task, repositoryID: repo.id, onUpdate: onUpdate)
         }
+        if !force, !scanningIDs.contains(repo.id), let value = scans[repo.id],
+           value.isFresh(for: source), errors[repo.id] == nil { return value }
         let expected = epoch
         let writer = database.writer
+        let token = UUID()
+        // 关窗后立即重开时，上一轮取消可能尚未收尾；它的 partial 不能成为新扫描的缓存回退。
+        let previousScan = scanningIDs.contains(repo.id) ? nil : scans[repo.id]
         let api = repo.isPrivate ? privateAPI : publicAPI
         let scanner = RepoSkillScanner(
             api: api, downloader: repo.isPrivate ? privateDownloader : publicDownloader,
             cacheScope: api.fileTreeCacheScope
         )
         scanningIDs.insert(repo.id)
+        scanTokens[repo.id] = token
         errors[repo.id] = nil
-        if let onUpdate {
-            updateHandlers[repo.id, default: []].append(onUpdate)
-            if let partial = scans[repo.id] { onUpdate(partial) }
-        }
         let task = Task {
-            try await scanner.scan(source, treeBudget: force ? 256 : 64, manifestBudget: force ? 1_000 : 200) { value in
-                Task { @MainActor [weak self] in
-                    self?.publishPartial(value, repositoryID: repo.id, epoch: expected)
+            defer {
+                if self.epoch == expected, self.scanTokens[repo.id] == token {
+                    self.scanningIDs.remove(repo.id)
+                    self.inflight[repo.id] = nil
+                    self.updateHandlers[repo.id] = nil
+                    self.consumers[repo.id] = nil
+                    self.scanTokens[repo.id] = nil
                 }
+            }
+            do {
+                let value = try await scanner.scan(
+                    source, treeBudget: force ? 256 : 64, manifestBudget: force ? 1_000 : 200
+                ) { value in
+                    Task { @MainActor [weak self] in
+                        self?.publishPartial(value, repositoryID: repo.id, epoch: expected, token: token)
+                    }
+                }
+                try Task.checkCancellation()
+                guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
+                let data = try await Self.encode(value)
+                try Task.checkCancellation()
+                try await writer.write { db in
+                    try db.execute(sql: """
+                        INSERT OR REPLACE INTO repo_skill_scans
+                        (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, arguments: [
+                            repo.id, value.commitSHA, value.sourcePushedAt, value.sourceBranch, value.version,
+                            value.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, value.presence.rawValue, data
+                        ])
+                }
+                guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
+                self.scanSnapshots[repo.id] = value
+                self.updateCoverage()
+                // 最终落库只发一次全局修订，供 SQL Skill 筛选重新取稳定分页。
+                self.revision &+= 1
+                return value
+            } catch {
+                guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
+                if Task.isCancelled || error is CancellationError {
+                    let previousPresence = self.presence(for: source)
+                    self.scanSnapshots[repo.id] = previousScan
+                    if previousPresence != self.presence(for: source) { self.revision &+= 1 }
+                } else {
+                    self.errors[repo.id] = error.localizedDescription
+                    try? await writer.write { db in
+                        try db.execute(sql: "DELETE FROM repo_skill_scans WHERE repo_id = ?", arguments: [repo.id])
+                    }
+                    guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
+                    self.scanSnapshots[repo.id] = nil
+                    self.revision &+= 1
+                }
+                throw error
             }
         }
         inflight[repo.id] = task
-        defer {
-            if epoch == expected {
-                scanningIDs.remove(repo.id)
-                inflight[repo.id] = nil
-                updateHandlers[repo.id] = nil
-            }
+        return try await consume(task, repositoryID: repo.id, onUpdate: onUpdate)
+    }
+
+    /// 每个窗口/后台队列拥有独立订阅；最后一个消费者离开才取消共享请求。
+    /// 取消回调只投递 MainActor 清理，不能跨隔离域直接修改观察状态。
+    private func consume(
+        _ task: Task<RepoSkillScan, Error>, repositoryID: Int64,
+        onUpdate: (@MainActor @Sendable (RepoSkillScan) -> Void)?
+    ) async throws -> RepoSkillScan {
+        let consumer = UUID()
+        consumers[repositoryID, default: []].insert(consumer)
+        if let onUpdate {
+            updateHandlers[repositoryID, default: [:]][consumer] = onUpdate
+            if let partial = scans[repositoryID], !partial.complete { onUpdate(partial) }
         }
-        do {
-            let value = try await task.value
+        return try await withTaskCancellationHandler {
+            defer { releaseConsumer(consumer, repositoryID: repositoryID) }
+            let result = try await task.value
             try Task.checkCancellation()
-            guard epoch == expected else { throw CancellationError() }
-            let data = try JSONEncoder().encode(value)
-            try await writer.write { db in
-                try db.execute(sql: """
-                    INSERT OR REPLACE INTO repo_skill_scans
-                    (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, arguments: [
-                        repo.id, value.commitSHA, value.sourcePushedAt, value.sourceBranch, value.version,
-                        value.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, value.presence.rawValue, data
-                    ])
-            }
-            guard epoch == expected else { throw CancellationError() }
-            scans[repo.id] = value
-            updateCoverage()
-            revision &+= 1
-            return value
-        } catch {
-            guard epoch == expected else { throw CancellationError() }
-            if !Task.isCancelled {
-                errors[repo.id] = error.localizedDescription
-                // 失败必须同时失效 SQL 摘要，否则详情 unknown 而数据库仍按旧 absent 筛选。
-                try? await writer.write { db in
-                    try db.execute(sql: "DELETE FROM repo_skill_scans WHERE repo_id = ?", arguments: [repo.id])
-                }
-                scans[repo.id] = nil
-                revision &+= 1
-            }
-            throw error
+            return result
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.releaseConsumer(consumer, repositoryID: repositoryID) }
         }
+    }
+
+    private func releaseConsumer(_ consumer: UUID, repositoryID: Int64) {
+        guard consumers[repositoryID]?.remove(consumer) != nil else { return }
+        updateHandlers[repositoryID]?[consumer] = nil
+        if consumers[repositoryID]?.isEmpty == true { inflight[repositoryID]?.cancel() }
+    }
+
+    /// 大正文和文件清单的 JSON 编码必须在通用执行器完成，主线程只提交数据库异步写入。
+    @concurrent private nonisolated static func encode(_ value: RepoSkillScan) async throws -> Data {
+        try Task.checkCancellation()
+        return try JSONEncoder().encode(value)
     }
 
     func downloader(for repo: Repo) -> any RepoFileDownloading {
@@ -262,12 +312,14 @@ final class RepoSkillStore {
         for task in activeInstallations { await task.value }
         installations = [:]
         updateHandlers = [:]
+        consumers = [:]
+        scanTokens = [:]
         pending = []
         candidateRepos = []
         attempted = []
         admitted = []
         candidateScope = ""
-        scans = [:]
+        scanSnapshots = [:]
         knownRepos = [:]
         errors = [:]
         scanningIDs = []
@@ -289,14 +341,19 @@ final class RepoSkillStore {
     }
 
     /// 部分结果只进入内存和 UI，最终落库仍由 scan 完成后的主路径处理。
-    private func publishPartial(_ value: RepoSkillScan, repositoryID: Int64, epoch expected: UInt64) {
-        guard epoch == expected, !isChangingAccount, repositoryID == value.repositoryID else { return }
-        if let current = scans[repositoryID], current.complete || current.skills.count > value.skills.count { return }
-        errors[repositoryID] = nil
-        scans[repositoryID] = value
-        updateCoverage()
-        revision &+= 1
-        updateHandlers[repositoryID]?.forEach { $0(value) }
+    private func publishPartial(_ value: RepoSkillScan, repositoryID: Int64, epoch expected: UInt64, token: UUID) {
+        guard epoch == expected, scanTokens[repositoryID] == token, !isChangingAccount,
+              inflight[repositoryID]?.isCancelled == false, repositoryID == value.repositoryID else { return }
+        if let current = scans[repositoryID], current.commitSHA == value.commitSHA,
+           (current.manifestChecked ?? 0) > (value.manifestChecked ?? 0) { return }
+        let previous = presence(repositoryID: repositoryID)
+        scanSnapshots[repositoryID] = value
+        // manifest 数量和正文属于详情进度；主列表只关心 unknown/contains/absent 的变化。
+        if previous != presence(repositoryID: repositoryID) {
+            updateCoverage()
+            revision &+= 1
+        }
+        updateHandlers[repositoryID]?.values.forEach { $0(value) }
     }
 
     /// 摘要型来源缺字段时保留已知元数据，使按 ID 的筛选和详情采用同一新鲜度判断。

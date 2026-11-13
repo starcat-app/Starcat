@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-12
+> 最后核对：2026-11-13
 
 ## 登记说明
 
@@ -32,6 +32,7 @@
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/skill-performance` | 本地 worktree：`../Starcat-skill-performance`；无远端分支 | 基于 `dev@1755f26f` 优化大量 Skill 的探测、三栏浏览和安装状态计算，消除对主窗口滚动的干扰。 | `待交互验收`；2026-11-13 完成 28 项定向回归与双渠道 build-only；已复制本机配置，依赖继续使用受控锁文件。 | 待大集合滚动与详情切换实机验收后合回 `dev`；不自动提交、推送或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/global-search-optimization` | 本地 worktree：`../Starcat-global-search-optimization`；无远端分支 | 基于 `dev` 实现全局搜索智能发现：决策引擎查询分流、LLM 规划与仓库发现、语义检索查询路径解耦；GitHub Issue #207 / HOM-239。 | `开发中`；2026-11-12 创建于 `dev@9639ada9`，按 checklist 逐项勾选并本地提交。 | 完成全部 checklist 勾选、单测与双渠道构建后报告 dong4j 验收，再合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |

@@ -5,7 +5,6 @@
 //  中栏展示固定提交中的 Markdown、完整文件清单与可折叠目录。
 //
 
-import MarkdownUI
 import SwiftUI
 
 /// 阅读区独立滚动，切换 Skill 只重置阅读位置，不影响安装选择或右侧队列。
@@ -18,6 +17,7 @@ struct RepoSkillDetailPane: View {
     @State private var tab = Tab.manifest
     @State private var expandedFolders: Set<String> = ["references", "templates", "assets", "scripts"]
     @State private var previewedFile: RepoSkillFile?
+    @State private var document: RepoSkillReadingCache.Document?
 
     private enum Tab: CaseIterable { case manifest, files, tree }
 
@@ -35,18 +35,26 @@ struct RepoSkillDetailPane: View {
             .padding(4)
             .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    switch tab {
-                    case .manifest: manifest
-                    case .files: fileList
-                    case .tree: fileTree
+            Group {
+                if tab == .manifest {
+                    manifest
+                } else if document?.skillID != skill.id {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 18) {
+                            switch tab {
+                            case .manifest: EmptyView()
+                            case .files: fileList
+                            case .tree: fileTree
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(18)
                     }
+                    .id("\(skill.id)-\(tab)")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(18)
             }
-            .id("\(skill.id)-\(tab)")
             .background(RepoSkillPanelStyle.panelColor(colorScheme), in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -59,6 +67,17 @@ struct RepoSkillDetailPane: View {
                 .appLocaleEnvironment()
         }
         .onChange(of: skill.id) { _, _ in previewedFile = nil }
+        .task(id: skill.id) {
+            do {
+                let prepared = try await session.readingCache.prepare(
+                    skill, imageBaseURL: contentBaseURL(raw: true), contentBaseURL: contentBaseURL(raw: false)
+                )
+                try Task.checkCancellation()
+                document = prepared
+            } catch {
+                // 快速点选会取消旧任务；旧正文不能在新标题下回填。
+            }
+        }
     }
 
     private func tabButton(_ value: Tab, title: String, symbol: String) -> some View {
@@ -83,12 +102,20 @@ struct RepoSkillDetailPane: View {
     }
 
     /// 只渲染仓库原文，不生成示例命令，也不执行 Markdown 中的安装指令。
+    @ViewBuilder
     private var manifest: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Markdown(skill.manifest, baseURL: contentBaseURL(raw: false), imageBaseURL: contentBaseURL(raw: true))
-                .markdownTheme(RepoIssueMarkdownTheme.content(baseFontSize: 13 * interfaceScale.multiplier))
-                .textSelection(.enabled)
-
+        if let document {
+            ReadmeWebView(
+                htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL
+            )
+            // 保持渲染器身份稳定；准备新文档时隐藏旧内容，不能销毁并重建 WKWebView。
+            .opacity(document.skillID == skill.id ? 1 : 0)
+            .allowsHitTesting(document.skillID == skill.id)
+            .overlay {
+                if document.skillID != skill.id { ProgressView() }
+            }
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -105,7 +132,7 @@ struct RepoSkillDetailPane: View {
     }
 
     private var fileList: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(skill.files) { file in
                 Button {
                     previewedFile = file
@@ -139,18 +166,18 @@ struct RepoSkillDetailPane: View {
 
     /// 标题整行是折叠触发区，目录只表达完整复制范围，不支持把 Skill 拆散安装。
     private var fileTree: some View {
-        let folders = Set(skill.files.map(\.folder).filter { !$0.isEmpty }).sorted()
-        return VStack(alignment: .leading, spacing: 10) {
+        return LazyVStack(alignment: .leading, spacing: 10) {
             Label(skill.directory.isEmpty ? "/" : skill.directory, systemImage: "folder")
                 .font(interfaceScale.font(.code, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            ForEach(skill.files.filter { $0.folder.isEmpty }) { file in
+            ForEach(document?.rootFiles ?? []) { file in
                 treeFile(file)
                     .padding(.leading, 20)
             }
-            ForEach(folders, id: \.self) { folder in
-                VStack(alignment: .leading, spacing: 10) {
+            ForEach(document?.folders ?? []) { group in
+                let folder = group.id
+                LazyVStack(alignment: .leading, spacing: 10) {
                     Button {
                         if expandedFolders.contains(folder) {
                             expandedFolders.remove(folder)
@@ -175,7 +202,7 @@ struct RepoSkillDetailPane: View {
                         expandedFolders.contains(folder) ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"
                     )))
                     if expandedFolders.contains(folder) {
-                        ForEach(skill.files.filter { $0.folder == folder }) { file in
+                        ForEach(group.files) { file in
                             treeFile(file)
                                 .padding(.leading, 36)
                         }
