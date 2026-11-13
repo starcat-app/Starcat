@@ -461382,6 +461382,113 @@
         }
       }
     },
+    "search.discovery.routing.fallbackFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nDie Absichtsplanung übernimmt. Das Ergebnis steht im Planungsschritt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\nIntent planning took over. See the planning step for its outcome."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa planificación de intención tomó el relevo. Consulta su resultado en el paso de planificación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa planification de l’intention a pris le relais. Son résultat figure à l’étape de planification."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nPerencanaan maksud mengambil alih. Lihat hasilnya pada langkah perencanaan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa pianificazione dell’intento è subentrata. Consulta il risultato nel passaggio di pianificazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n意図の計画に引き継ぎました。結果は計画ステップで確認できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n의도 계획 단계가 이어서 처리했습니다. 결과는 계획 단계를 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nDe intentieplanning heeft het overgenomen. Bekijk het resultaat bij de planningsstap."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nPlanowanie intencji przejęło zadanie. Wynik jest widoczny w kroku planowania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nO planejamento de intenção assumiu a tarefa. Veja o resultado na etapa de planejamento."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nЗадача передана планированию намерения. Результат указан на этапе планирования."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nNiyet planlaması devraldı. Sonuç için planlama adımına bakın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nЗавдання передано плануванню наміру. Результат наведено на кроці планування."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nBước lập kế hoạch ý định đã tiếp quản. Xem kết quả tại bước lập kế hoạch."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n已交由意图规划接管，执行结果见规划步骤。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n已交由意圖規劃接手，執行結果請見規劃步驟。"
+          }
+        }
+      }
+    },
     "search.discovery.step.routing" : {
       "extractionState" : "manual",
       "localizations" : {

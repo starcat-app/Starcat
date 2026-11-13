@@ -1533,6 +1533,17 @@ struct SearchCenterView: View {
                         .lineLimit(1)
                         .help(Text(verbatim: model))
                 }
+                if let detail = step.technicalDetail, !detail.isEmpty {
+                    DisclosureGroup("search.discovery.diagnostic.technical") {
+                        Text(verbatim: detail)
+                            .font(interfaceScale.font(.captionSmall))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                        accessibilityLabel: Text("search.discovery.diagnostic.technical")
+                    ))
+                }
             }
             Spacer(minLength: 8)
             if let duration = step.durationSeconds {

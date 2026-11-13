@@ -273,6 +273,7 @@ final class SearchIntentRouter {
         guard !Task.isCancelled else { return Self.cancelledOutcome }
 
         let routingStart = Date()
+        let engineName = settings.decisionEngineID.displayName
         let decision: SearchIntentDecision
         if explicitSmartDiscovery {
             decision = SearchIntentDecision(
@@ -289,11 +290,40 @@ final class SearchIntentRouter {
         case .skipped, .unavailable: .skipped
         case .timeout, .failed: .failed
         }
+        var routingDetail: String = switch decision.status {
+        case .skipped:
+            explicitSmartDiscovery
+                ? "\(String.l10n("search.discovery.start")) → \(String.l10n("search.discovery.step.planning"))"
+                : String.l10n("settings.externalSearch.layout.disabled")
+        case .unavailable:
+            String(format: String.l10n("error.user.aiConfiguration.message"),
+                   String.l10n("search.discovery.step.routing"), engineName)
+        case .timeout, .failed:
+            decision.failurePresentation?.message ?? String.l10n("ai.client.error.requestFailed")
+        case .completed:
+            ""
+        }
+        if decision.needsPlanning || decision.needsFreshEvidence {
+            switch decision.status {
+            case .unavailable, .timeout, .failed:
+                routingDetail = String(
+                    format: String.l10n("search.discovery.routing.fallbackFormat"), routingDetail
+                )
+            default: break
+            }
+        }
+        let routingTechnicalDetail: String? = switch decision.status {
+        case .unavailable(let reason): reason
+        default: decision.failurePresentation?.diagnosticSummary
+        }
         var steps = [SearchDiscoveryStep(
             id: "routing",
             stage: .routing,
             state: routingState,
-            durationSeconds: max(0, Date().timeIntervalSince(routingStart))
+            detail: routingDetail.isEmpty ? nil : routingDetail,
+            durationSeconds: max(0, Date().timeIntervalSince(routingStart)),
+            model: explicitSmartDiscovery ? nil : engineName,
+            technicalDetail: routingTechnicalDetail
         )]
 
         // 分类明确说普通关键词时不再付费规划；其余情况进入唯一一次 Planner。
@@ -308,7 +338,7 @@ final class SearchIntentRouter {
            canSkipPlanner {
             return SearchIntentRoutingOutcome(
                 route: .fastPath,
-                decisionStatus: .completed,
+                decisionStatus: decision.status,
                 plannerStatus: .notNeeded,
                 plan: nil,
                 steps: steps
@@ -326,7 +356,8 @@ final class SearchIntentRouter {
                 steps: steps + [SearchDiscoveryStep(
                     id: "planning",
                     stage: .planning,
-                    state: .failed
+                    state: .failed,
+                    detail: String.l10n("search.discovery.diagnostic.unavailable")
                 )]
             )
         }
@@ -361,16 +392,18 @@ final class SearchIntentRouter {
         } catch where DiagnosticFailure.isCancellation(error) {
             return Self.cancelledOutcome
         } catch {
+            let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .planning, error: error)
             return SearchIntentRoutingOutcome(
                 route: .fastPath,
                 decisionStatus: decision.status,
                 plannerStatus: .failed(error.localizedDescription),
                 plan: nil,
-                diagnostic: .failure(stage: .planning, error: error),
+                diagnostic: diagnostic,
                 steps: steps + [SearchDiscoveryStep(
                     id: "planning",
                     stage: .planning,
                     state: .failed,
+                    detail: diagnostic.message,
                     durationSeconds: max(0, Date().timeIntervalSince(planningStart)),
                     model: planner.modelDisplayName
                 )]
@@ -447,7 +480,8 @@ final class SearchIntentRouter {
             return SearchIntentDecision(
                 needsPlanning: true,
                 needsFreshEvidence: false,
-                status: .timeout
+                status: .timeout,
+                failurePresentation: decisionFailurePresentation(error, engineName: engine.id.displayName)
             )
         } catch where DiagnosticFailure.isCancellation(error) {
             return SearchIntentDecision(
@@ -459,9 +493,39 @@ final class SearchIntentRouter {
             return SearchIntentDecision(
                 needsPlanning: true,
                 needsFreshEvidence: false,
-                status: .failed(error.localizedDescription)
+                status: .failed(error.localizedDescription),
+                failurePresentation: decisionFailurePresentation(error, engineName: engine.id.displayName)
             )
         }
+    }
+
+    /// 决策失败只有一次 Planner 接管。友好原因与技术正文分开保存，成功接管不制造整轮告警。
+    private func decisionFailurePresentation(_ error: Error, engineName: String) -> UserFacingError {
+        let mapped: Error
+        switch error {
+        case TypeSafeClientError.missingAPIKey:
+            mapped = AIClientError.missingAPIKey
+        case TypeSafeClientError.unauthorized:
+            mapped = AIClientError.authenticationRejected(detail: error.localizedDescription)
+        case TypeSafeClientError.rateLimited:
+            mapped = AIClientError.rateLimited(detail: error.localizedDescription)
+        case TypeSafeClientError.overloaded:
+            mapped = NetworkError.serverError(statusCode: 529)
+        case TypeSafeClientError.server(let status):
+            mapped = NetworkError.serverError(statusCode: status)
+        case TypeSafeClientError.validation:
+            mapped = AIClientError.requestRejected(statusCode: 422, detail: error.localizedDescription)
+        case TypeSafeClientError.transport:
+            mapped = AIClientError.networkUnavailable(detail: error.localizedDescription)
+        case TypeSafeClientError.decoding, TypeSafeClientError.invalidAnswer,
+             SearchIntentRouterError.invalidDecision:
+            mapped = NetworkError.decodingError(underlying: error)
+        default: mapped = error
+        }
+        return UserFacingError.map(
+            mapped, operation: String.l10n("search.discovery.step.routing"),
+            service: engineName
+        )
     }
 
     private func validatedProbability(
@@ -484,19 +548,22 @@ private struct SearchIntentDecision: Equatable, Sendable {
     let status: SearchIntentDecisionStatus
     let planningProbability: Double?
     let freshEvidenceProbability: Double?
+    let failurePresentation: UserFacingError?
 
     init(
         needsPlanning: Bool,
         needsFreshEvidence: Bool,
         status: SearchIntentDecisionStatus,
         planningProbability: Double? = nil,
-        freshEvidenceProbability: Double? = nil
+        freshEvidenceProbability: Double? = nil,
+        failurePresentation: UserFacingError? = nil
     ) {
         self.needsPlanning = needsPlanning
         self.needsFreshEvidence = needsFreshEvidence
         self.status = status
         self.planningProbability = planningProbability
         self.freshEvidenceProbability = freshEvidenceProbability
+        self.failurePresentation = failurePresentation
     }
 
     func isDefinite(thresholds: SearchIntentThresholds) -> Bool {

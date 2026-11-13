@@ -262,8 +262,8 @@ enum SearchDiscoveryStepState: Equatable, Hashable, Sendable {
 /// 一轮智能发现里一个真实执行过的步骤。
 ///
 /// 与 `SearchDiscoveryDiagnostic` 不同：诊断只记录失败/预算上限，步骤则覆盖成功、
-/// 跳过与失败，用于「智能发现详情」按实际发生顺序展示链路。失败步骤的详细原因仍由
-/// 同阶段的诊断承载，这里只负责进度与数量/模型/耗时这类可观测事实，不重复写用户错误文案。
+/// 跳过与失败，用于「智能发现详情」按实际发生顺序展示链路。被 Planner 接管的决策
+/// 失败保留在步骤中，不再生成整轮告警；原始原因只放入可展开的脱敏技术详情。
 struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
     let id: String
     let stage: SearchDiscoveryDiagnostic.Stage
@@ -271,6 +271,7 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
     let detail: String?
     let durationSeconds: TimeInterval?
     let model: String?
+    let technicalDetail: String?
 
     /// 过程标题使用步骤名，避免已完成的记录仍显示「规划中」「重排中」。
     var titleKey: String {
@@ -291,7 +292,8 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
         state: SearchDiscoveryStepState,
         detail: String? = nil,
         durationSeconds: TimeInterval? = nil,
-        model: String? = nil
+        model: String? = nil,
+        technicalDetail: String? = nil
     ) {
         self.id = id
         self.stage = stage
@@ -299,6 +301,7 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
         self.detail = detail
         self.durationSeconds = durationSeconds
         self.model = model
+        self.technicalDetail = technicalDetail.map { DiagnosticEvent.redact($0) }
     }
 }
 
