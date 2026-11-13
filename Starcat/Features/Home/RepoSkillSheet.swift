@@ -36,17 +36,6 @@ struct RepoSkillSheet: View {
                         if session.isLoading && preview == nil {
                             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else if let preview {
-                            if let progress = session.scanProgressText {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text(verbatim: progress)
-                                }
-                                .font(interfaceScale.font(.caption))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 18)
-                                .padding(.bottom, 8)
-                            }
                             if let issue = preview.installationIssue {
                                 Label(issue, systemImage: "exclamationmark.triangle")
                                     .font(interfaceScale.font(.caption)).padding(.horizontal, 18)
@@ -99,6 +88,15 @@ struct RepoSkillSheet: View {
                 .help(session.repo.fullName)
             Spacer(minLength: 12)
             RepoSkillScanNotice(session: session)
+            if let progress = session.scanProgressText {
+                Text(verbatim: progress)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityLabel(Text(verbatim: progress))
+            }
             SyncIconButton(isRefreshing: session.isLoading, disabled: session.isInstalling,
                            tooltip: String.l10n("repo.skills.scan.refresh")) {
                 Task { await session.load(force: true) }

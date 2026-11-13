@@ -82,6 +82,7 @@ final class RepoSkillSession {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var hasAppliedSingleSkillDefault = false
     @ObservationIgnored private var directoriesPrepared: Bool
+    private var isManualScan = false
 
     private static let selectedKey = "skills.install.destinations.selected"
     private static let bookmarksKey = "skills.install.destinations.bookmarks"
@@ -101,8 +102,9 @@ final class RepoSkillSession {
     }
 
     var skills: [RepoSkill] { scan?.skills ?? [] }
+    /// 顶栏仅为手动重新检测显示计数；首次自动加载不挤占阅读区或标题空间。
     var scanProgressText: String? {
-        guard isLoading, let scan else { return nil }
+        guard isLoading, isManualScan, let scan else { return nil }
         let checked = scan.manifestChecked ?? scan.skills.count
         let total = scan.manifestTotal ?? max(scan.skills.count, checked)
         return String(format: String.l10n("repo.skills.scan.progress"), checked, total)
@@ -130,6 +132,7 @@ final class RepoSkillSession {
     /// 单项默认选中；集合保持按需选择，重新扫描会清除不再存在的 Skill。
     func load(force: Bool = false) async {
         guard !isClosed, store.accountRevision == accountRevision, !isInstalling, !isLoading else { return }
+        isManualScan = force
         isLoading = true
         let loading = Task { [weak self] in
             guard let self else { return }
@@ -143,6 +146,7 @@ final class RepoSkillSession {
         }
         scanTask = nil
         isLoading = false
+        isManualScan = false
     }
 
     /// 会话持有扫描任务，手动刷新产生的非结构化入口也能在关窗时取消订阅。

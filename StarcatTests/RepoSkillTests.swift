@@ -226,6 +226,59 @@ struct RepoSkillTests {
     }
 
     @MainActor
+    @Test("扫描计数仅在手动重新检测期间显示，完成与失败后收起")
+    func manualScanProgress() async throws {
+        let db = try InMemoryDatabaseManager()
+        let api = MockGitHubAPIClient()
+        let paths = ["skills/review/SKILL.md"]
+        api.repositoryGitTreeHandler = { _, _, _ in
+            GitHubGitTreeDTO(sha: "tree", truncated: false, tree: paths.map { skillEntry($0, sha: "manifest") })
+        }
+        let store = RepoSkillStore(
+            database: db, publicAPI: api, privateAPI: api,
+            publicDownloader: ManifestTestDownloader(paths: paths),
+            privateDownloader: ManifestTestDownloader(paths: paths)
+        )
+        let defaults = try #require(UserDefaults(suiteName: "skills-progress-\(UUID().uuidString)"))
+        let session = RepoSkillSession(repo: try await repo(), store: store, destinations: [], defaults: defaults)
+        defer { session.close() }
+        api.repositoryLatestCommitHandler = { [weak session] _, _, _, _ in
+            let session = try #require(session)
+            #expect(session.isLoading)
+            #expect(session.scanProgressText == nil)
+            return GitHubCommitSummaryDTO(
+                sha: "progress-initial", commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil)
+            )
+        }
+        await session.load()
+        #expect(session.skills.count == 1)
+        #expect(session.scanProgressText == nil)
+
+        // 在 API 悬挂点检查会话，覆盖真实加载周期，而非手动设置 UI 状态。
+        api.repositoryLatestCommitHandler = { [weak session] _, _, _, _ in
+            let session = try #require(session)
+            #expect(session.isLoading)
+            #expect(session.scanProgressText != nil)
+            return GitHubCommitSummaryDTO(
+                sha: "progress-manual", commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil)
+            )
+        }
+        await session.load(force: true)
+        #expect(!session.isLoading)
+        #expect(session.error == nil)
+        #expect(session.scanProgressText == nil)
+
+        api.repositoryLatestCommitHandler = { [weak session] _, _, _, _ in
+            #expect(session?.scanProgressText != nil)
+            throw URLError(.timedOut)
+        }
+        await session.load(force: true)
+        #expect(session.error != nil)
+        #expect(!session.isLoading)
+        #expect(session.scanProgressText == nil)
+    }
+
+    @MainActor
     @Test("多目录会话按目录独立核对，全部目录完成才算已安装")
     func multiDestinationSession() async throws {
         let db = try InMemoryDatabaseManager()
