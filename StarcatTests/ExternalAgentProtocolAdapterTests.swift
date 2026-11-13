@@ -576,11 +576,20 @@ struct ExternalAgentProtocolAdapterTests {
             adapter: ExternalRetryFixtureAdapter(recorder: recorder),
             distributionGate: DistributionGate(channel: .direct)
         )
+        let diagnosticDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: diagnosticDirectory) }
+        let diagnosticStore = DiagnosticLogStore(directoryURL: diagnosticDirectory)
+        let diagnostic = DiagnosticOperation(category: "runtime", name: "retry", store: diagnosticStore)
 
-        var events: [AgentRunEvent] = []
-        for await event in runtime.retryFailedRun(snapshot: snapshot, definition: definition) {
-            events.append(event)
+        let events = await DiagnosticContext.$current.withValue(diagnostic) {
+            var events: [AgentRunEvent] = []
+            for await event in runtime.retryFailedRun(snapshot: snapshot, definition: definition) {
+                events.append(event)
+            }
+            return events
         }
+        diagnostic.finish()
+        #expect(await diagnosticStore.readAllText().isEmpty)
 
         let request = try #require(recorder.latestRequest)
         #expect(request.runID != failedRunID)
@@ -610,15 +619,22 @@ struct ExternalAgentProtocolAdapterTests {
             distributionGate: DistributionGate(channel: .direct),
             toolRegistry: try AgentToolRegistry(tools: [FailingExternalCompletionTool()])
         )
+        let diagnosticDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: diagnosticDirectory) }
+        let diagnosticStore = DiagnosticLogStore(directoryURL: diagnosticDirectory)
+        let diagnostic = DiagnosticOperation(category: "runtime", name: "completion", store: diagnosticStore)
 
-        var events: [AgentRunEvent] = []
-        for await event in runtime.run(
-            definition: definition,
-            prompt: "生成报告",
-            context: .empty
-        ) {
-            events.append(event)
+        let events = await DiagnosticContext.$current.withValue(diagnostic) {
+            var events: [AgentRunEvent] = []
+            for await event in runtime.run(definition: definition, prompt: "生成报告", context: .empty) {
+                events.append(event)
+            }
+            return events
         }
+        diagnostic.finish(.failed)
+        let diagnosticSummary = await diagnosticStore.issueSummary()
+        #expect(diagnosticSummary.issueCount == 1)
+        #expect(diagnosticSummary.latestIssue?.summaryKey == DiagnosticIssue.runtimeUnavailable.rawValue)
 
         #expect(events.contains { event in
             guard case .runFailed(let message) = event else { return false }

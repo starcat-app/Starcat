@@ -87,7 +87,7 @@ actor FollowGraphStore {
             refreshedTargets.formUnion(page.nodes.map(\.id))
             refreshedCount += page.nodes.count
             value.merge(page, replacing: refresh && !page.hasNextPage ? refreshedTargets : nil)
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            DiagnosticContext.current?.capture(DiagnosticEvent(
                 level: .info, category: "followGraph", operation: "pageMerge",
                 message: "Relation page merged", context: ["user": userID], phase: "merged",
                 fields: ["totalCount": .integer(page.totalCount),

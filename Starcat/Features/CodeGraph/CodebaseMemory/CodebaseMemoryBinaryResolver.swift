@@ -77,10 +77,19 @@ actor CodebaseMemoryBinaryResolver {
 
     /// 返回路径、版本和来源，供设置页展示当前实际使用的可执行文件。
     func resolveExecutableInfo() async throws -> CodebaseMemoryExecutable {
-        if channel.isAppStore {
-            return try await resolveBundledExecutable()
+        let diagnostic = DiagnosticOperation(category: "runtime", name: "codebaseMemory.resolveBinary")
+        return try await DiagnosticContext.$current.withValue(diagnostic) {
+            do {
+                let executable: CodebaseMemoryExecutable
+                if channel.isAppStore { executable = try await resolveBundledExecutable() }
+                else { executable = try await resolveDirectExecutable() }
+                diagnostic.finish()
+                return executable
+            } catch {
+                diagnostic.finish(.failed, error: error)
+                throw error
+            }
         }
-        return try await resolveDirectExecutable()
     }
 
     /// 验证成功后才持久化用户选择，避免一次误选覆盖仍可工作的自动检测结果。
@@ -326,6 +335,8 @@ actor CodebaseMemoryBinaryResolver {
             category: "runtime",
             operation: "codebaseMemory.resolveBinary",
             message: message,
+            summary: channel.isAppStore ? .runtimeUnavailable : nil,
+            impact: channel.isAppStore ? .blocked : .none,
             context: ["channel": channel.rawValue]
         )
     }

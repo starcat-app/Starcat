@@ -161,7 +161,7 @@ struct DirectLicenseAPI: Sendable {
         let traceID = DirectLicenseAPIError.safeTraceID(body.traceID) ?? "-"
         let isRateLimited = http.statusCode == 429 || code == "rate_limit_reached"
         let diagnosticCode = isRateLimited ? "rate_limit_reached" : (code ?? "http_\(http.statusCode)")
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: .warning, category: "license", operation: "businessResult",
             message: "License service rejected request", service: "license",
             statusCode: http.statusCode, errorCode: diagnosticCode,

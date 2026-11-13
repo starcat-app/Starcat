@@ -5,7 +5,7 @@
 //  用户可导出的诊断事件模型。
 //
 //  模块职责：
-//  - 给关键错误与少量生命周期事件提供结构化 JSONL 记录；
+//  - 只给最终阻断功能或危及关键数据的故障提供结构化 JSONL 记录；
 //  - 保持字段克制，避免把 OSLog 变成高频业务埋点；
 //  - 明确区分「给用户看的友好文案」与「给开发者定位问题的诊断细节」。
 //
@@ -68,8 +68,8 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
 
     /// 事件在诊断体系中的用途。
     ///
-    /// `context` 保留可恢复故障和取消证据，不点亮全局故障；
-    /// `issue` 仅表达需要开发者协助的提醒，与证据采集范围独立。
+    /// `context` 仅用于内存阶段及读取历史证据，不再允许作为普通事件落盘；
+    /// 新严重故障使用 `issue`，准入还需结果、影响和固定摘要共同成立。
     enum Visibility: String, Codable, Sendable {
         case context
         case issue
@@ -82,12 +82,13 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     var category: String
     var operation: String
     var message: String
+    var summaryKey: String?
     var service: String?
     var statusCode: Int?
     var errorCode: String?
     var underlying: String?
     var context: [String: String]
-    var schemaVersion: Int = 2
+    var schemaVersion: Int = 3
     var eventID: String = UUID().uuidString
     var sequence: UInt64?
     var sessionID: String? = DiagnosticContext.sessionID
@@ -109,16 +110,44 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
     var sourceFunction: String?
     var sourceLine: Int?
     var errorChain: [DiagnosticErrorCause] = []
+    var breadcrumbs: [DiagnosticBreadcrumb] = []
+    var breadcrumbsTruncated: Bool = false
+
+    /// 旧记录中的 blocked 曾由所有失败自动推断，不能据此重新点亮严重故障提醒。
+    /// 新记录必须由业务入口明确选择影响；摘要缺失的既有 v3 故障仍需显示通用提醒。
+    var isSevereFailure: Bool {
+        schemaVersion >= 3 && visibility == .issue && [.error, .critical].contains(level)
+            && [.failed, .partial].contains(outcome)
+            && [.blocked, .dataRisk].contains(impact)
+    }
+
+    /// 新写入必须提供固定摘要；读取既有文件时不能因摘要损坏而隐去实际严重故障。
+    var hasValidSummaryKey: Bool {
+        summaryKey.map { $0.hasPrefix("diagnostics.issue.") && Self.safeTrace($0) != nil } == true
+    }
+
+    /// 分组保留模块、操作、稳定错误分类和匿名作用范围，不能仅按翻译后的摘要合并。
+    var issueFingerprint: String {
+        let scope = context.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        let references = ["documentID", "scopeMatches", "feature"].compactMap { key in
+            fields[key].map { "\(key)=\($0.reportValue)" }
+        }
+        return ([category, operation, errorCode ?? underlying ?? "unknown",
+                 service ?? "", statusCode.map(String.init) ?? ""] + scope + references).joined(separator: "|")
+    }
 
     /// 入队预算用保守的标量体积估计，避免为测量大小在 UI 线程编码整条 JSON。
     var estimatedQueuedBytes: Int {
-        let metadata = [timestamp, category, operation, message, service, errorCode, underlying,
+        let metadata = [timestamp, category, operation, message, summaryKey, service, errorCode, underlying,
                         eventID, sessionID, environmentID, operationID, parentOperationID, requestID,
                         serverTraceID, phase, sourceFile, sourceFunction].compactMap { $0 }
         let strings = metadata.reduce(0) { $0 + $1.utf8.count }
         let contexts = context.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count + 64 }
         let values = fields.reduce(0) { $0 + $1.key.utf8.count + $1.value.reportValue.utf8.count + 64 }
-        return 1024 + (strings + contexts + values) * 2 + errorChain.count * 384
+        let stages = breadcrumbs.reduce(0) { bytes, stage in
+            bytes + 2048 + stage.fields.reduce(0) { $0 + $1.key.utf8.count + $1.value.reportValue.utf8.count + 64 }
+        }
+        return 1024 + (strings + contexts + values) * 2 + errorChain.count * 384 + stages * 2
     }
 
     enum Outcome: String, Codable, Sendable {
@@ -136,6 +165,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         category: String,
         operation: String,
         message: StaticString,
+        summaryKey: String? = nil,
         service: String? = nil,
         statusCode: Int? = nil,
         errorCode: String? = nil,
@@ -151,6 +181,8 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         impact: Impact = .none,
         fields: [String: DiagnosticValue] = [:],
         errorChain: [DiagnosticErrorCause] = [],
+        breadcrumbs: [DiagnosticBreadcrumb] = [],
+        breadcrumbsTruncated: Bool = false,
         sourceFile: String = #fileID,
         sourceFunction: String = #function,
         sourceLine: Int = #line
@@ -162,6 +194,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         self.operation = Self.sanitize(operation, maxLength: 160)
         // 编译期消息避免调用方误把响应或用户正文拼进日志；变量只能进入受控标量字段。
         self.message = Self.sanitize(String(describing: message), maxLength: 1_024)
+        self.summaryKey = summaryKey.flatMap(Self.safeTrace)
         self.service = service.map { Self.sanitize($0, maxLength: 80) }
         self.statusCode = statusCode
         self.errorCode = errorCode.map { Self.sanitize($0, maxLength: 128) }
@@ -176,8 +209,8 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
             partial[String(pair.key.prefix(80))] = !sensitive && scalar
                 ? pair.value : Self.anonymousReference(pair.value)
         }
-        self.operationID = operationID ?? DiagnosticContext.current?.id
-        self.parentOperationID = parentOperationID ?? DiagnosticContext.current?.parentID
+        self.operationID = operationID ?? DiagnosticContext.active?.id
+        self.parentOperationID = parentOperationID ?? DiagnosticContext.active?.parentID
         self.requestID = requestID
         self.serverTraceID = serverTraceID.flatMap(Self.safeTrace)
         self.phase = phase
@@ -190,7 +223,14 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         self.sourceFile = String(Self.redact(sourceFile, includeURLs: true).suffix(160))
         self.sourceFunction = String(Self.redact(sourceFunction, includeURLs: true).prefix(160))
         self.sourceLine = sourceLine
-        self.fields = fields.sorted { $0.key < $1.key }.prefix(48).reduce(into: [:]) { result, item in
+        self.fields = Self.safeFields(fields)
+        self.breadcrumbs = breadcrumbs.suffix(DiagnosticBreadcrumb.limit).map(\.sanitized)
+        self.breadcrumbsTruncated = breadcrumbsTruncated || breadcrumbs.count > DiagnosticBreadcrumb.limit
+    }
+
+    /// 事件和阶段共用白名单，避免同一敏感值从另一层字段进入导出包。
+    static func safeFields(_ fields: [String: DiagnosticValue]) -> [String: DiagnosticValue] {
+        fields.sorted { $0.key < $1.key }.prefix(48).reduce(into: [:]) { result, item in
             guard Self.safeFieldKeys.contains(item.key) else { return }
             if case .decimal(let number) = item.value, !number.isFinite { return }
             if case .string(let text) = item.value {
@@ -209,7 +249,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         case visibility
         case category
         case operation
-        case message
+        case message, summaryKey, breadcrumbs, breadcrumbsTruncated
         case service
         case statusCode
         case errorCode
@@ -231,6 +271,9 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         category = try container.decode(String.self, forKey: .category)
         operation = try container.decode(String.self, forKey: .operation)
         message = try container.decode(String.self, forKey: .message)
+        summaryKey = try container.decodeIfPresent(String.self, forKey: .summaryKey)
+        breadcrumbs = try container.decodeIfPresent([DiagnosticBreadcrumb].self, forKey: .breadcrumbs) ?? []
+        breadcrumbsTruncated = try container.decodeIfPresent(Bool.self, forKey: .breadcrumbsTruncated) ?? false
         service = try container.decodeIfPresent(String.self, forKey: .service)
         statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode)
         errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
@@ -269,7 +312,7 @@ struct DiagnosticEvent: Codable, Sendable, Equatable {
         text.range(of: #"^[A-Za-z0-9_.:\-]{1,128}$"#, options: .regularExpression) != nil ? text : nil
     }
 
-    private static func isSafeKey(_ key: String) -> Bool {
+    static func isSafeKey(_ key: String) -> Bool {
         guard key.count <= 80 else { return false }
         return !["token", "secret", "password", "cookie", "authorization", "prompt", "content",
                  "body", "response", "apikey", "api_key", "licensekey", "note", "query"]

@@ -221,7 +221,8 @@ struct LoopAgentRuntime: AgentRuntime {
             let runID = UUID()
             let session = AgentRunSession(runID: runID, limits: resolvedLimits(for: definition))
             let taskHandle = AgentRuntimeTaskHandle()
-            let task = Task {
+            let diagnostic = DiagnosticOperation(category: "agent", name: "run")
+            let task = DiagnosticContext.$current.withValue(diagnostic) { Task {
                 AppLog.ai.info("[AgentRuntime] run.start runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) mode=\(mode.rawValue, privacy: .public)")
                 await sessionRouter.activate(session, taskHandle: taskHandle)
                 do {
@@ -240,6 +241,9 @@ struct LoopAgentRuntime: AgentRuntime {
                     if Task.isCancelled || state == .cancelled {
                         await finishCancelled(runID: runID, session: session, continuation: continuation)
                     } else {
+                        UserFacingError.map(error, operation: "agent.run", service: "AI",
+                            impact: .blocked, summary: .aiUnavailable)
+                            .record(category: "agent", operation: "run")
                         await finishFailed(
                             runID: runID,
                             session: session,
@@ -249,8 +253,11 @@ struct LoopAgentRuntime: AgentRuntime {
                     }
                 }
                 await sessionRouter.deactivate(runID: runID)
+                let finalState = await session.snapshot().state
+                if case .failed = finalState { diagnostic.finish(.failed) }
+                else { diagnostic.finish(finalState == .cancelled ? .cancelled : .succeeded) }
                 continuation.finish()
-            }
+            } }
             Task { await taskHandle.install(task) }
 
             continuation.onTermination = { _ in
@@ -323,7 +330,8 @@ struct LoopAgentRuntime: AgentRuntime {
         AsyncStream { continuation in
             let runID = session.runID
             let taskHandle = AgentRuntimeTaskHandle()
-            let task = Task {
+            let diagnostic = DiagnosticOperation(category: "agent", name: "resume")
+            let task = DiagnosticContext.$current.withValue(diagnostic) { Task {
                 AppLog.ai.info("[AgentRuntime] run.resume runID=\(runID.uuidString, privacy: .public) agent=\(definition.id, privacy: .public) reason=\(restoration.logLabel, privacy: .public)")
                 await sessionRouter.activate(session, taskHandle: taskHandle)
                 do {
@@ -343,6 +351,9 @@ struct LoopAgentRuntime: AgentRuntime {
                     if Task.isCancelled || state == .cancelled {
                         await finishCancelled(runID: runID, session: session, continuation: continuation)
                     } else {
+                        UserFacingError.map(error, operation: "agent.resume", service: "AI",
+                            impact: .blocked, summary: .aiUnavailable)
+                            .record(category: "agent", operation: "resume")
                         await finishFailed(
                             runID: runID,
                             session: session,
@@ -352,8 +363,11 @@ struct LoopAgentRuntime: AgentRuntime {
                     }
                 }
                 await sessionRouter.deactivate(runID: runID)
+                let finalState = await session.snapshot().state
+                if case .failed = finalState { diagnostic.finish(.failed) }
+                else { diagnostic.finish(finalState == .cancelled ? .cancelled : .succeeded) }
                 continuation.finish()
-            }
+            } }
             Task { await taskHandle.install(task) }
 
             continuation.onTermination = { _ in

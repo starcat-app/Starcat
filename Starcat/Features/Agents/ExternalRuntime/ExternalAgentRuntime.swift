@@ -65,7 +65,8 @@ struct ExternalAgentRuntime: AgentRuntime {
                 runRepository: runRepository,
                 continuation: continuation
             )
-            let task = Task {
+            let diagnostic = DiagnosticOperation(category: "runtime", name: "externalAgent.run")
+            let task = DiagnosticContext.$current.withValue(diagnostic) { Task {
                 let workingDirectory = FileManager.default.temporaryDirectory
                     .appendingPathComponent("starcat-external-agent-\(runID.uuidString)", isDirectory: true)
                 do {
@@ -138,17 +139,26 @@ struct ExternalAgentRuntime: AgentRuntime {
                         throw error
                     }
                     if let mcpLease { await mcpLease.shutdown() }
-                    await projector.finishIfNeeded()
+                    // Host 正常返回只表示协议结束，Provider 或完成工具仍可能给出失败终态。
+                    let outcome = await projector.finishIfNeeded()
+                    diagnostic.finish(outcome, impact: outcome == .failed ? .blocked : .none,
+                                      summary: outcome == .failed ? .runtimeUnavailable : nil)
                 } catch is CancellationError {
                     await host.cancel(runID: runID)
                     await projector.cancelIfNeeded()
+                    diagnostic.finish(.cancelled)
                 } catch DistributionGateError.directOnly {
                     await projector.failIfNeeded(ExternalAgentRuntimeError.directOnly.localizedDescription)
+                    diagnostic.finish(.skipped)
                 } catch {
+                    UserFacingError.map(error, operation: "externalAgent.run", service: "Runtime",
+                        impact: .blocked, summary: .runtimeUnavailable)
+                        .record(category: "runtime", operation: "externalAgent.run")
+                    diagnostic.finish(.failed, error: error)
                     await projector.failIfNeeded(error.localizedDescription)
                 }
                 continuation.finish()
-            }
+            } }
 
             continuation.onTermination = { _ in
                 task.cancel()
@@ -480,6 +490,7 @@ private actor ExternalAgentEventProjector {
     private var completionToolSucceeded = false
     private var completionToolFailure: String?
     private var isTerminal = false
+    private var diagnosticOutcome: DiagnosticEvent.Outcome = .skipped
     private var hasTerminalErrorTrace = false
 
     init(
@@ -706,8 +717,9 @@ private actor ExternalAgentEventProjector {
         }
     }
 
-    func finishIfNeeded() async {
+    func finishIfNeeded() async -> DiagnosticEvent.Outcome {
         if !isTerminal { await complete() }
+        return diagnosticOutcome
     }
 
     func cancelIfNeeded() async {
@@ -978,6 +990,13 @@ private actor ExternalAgentEventProjector {
     }
 
     private func persistTerminal(status: AgentRunStatus, errorMessage: String?) async {
+        // 诊断取业务终态，不依赖可选历史库是否存在或写入是否成功。
+        switch status {
+        case .completed: diagnosticOutcome = .succeeded
+        case .failed: diagnosticOutcome = .failed
+        case .cancelled: diagnosticOutcome = .cancelled
+        default: diagnosticOutcome = .skipped
+        }
         guard let runRepository else { return }
         do {
             try await runRepository.updateRunStatus(

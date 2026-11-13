@@ -298,7 +298,7 @@ final class KnowledgeRAGIndexBuilder {
                 // `cancel()` 已把状态打成 idle；被更新一轮替换时也不要覆盖新状态。
             } catch {
                 self.assignStatus(.failed(error.localizedDescription))
-                self.recordDeveloperDiagnosticIfNeeded(error, operation: "rag.rebuild")
+                await self.recordDeveloperDiagnosticIfNeeded(error, operation: "rag.rebuild")
                 NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
             }
         }
@@ -574,7 +574,7 @@ final class KnowledgeRAGIndexBuilder {
             // 切换账号或停止索引属于正常生命周期，不进入开发者诊断。
         } catch {
             AppLog.ai.error("RAG library-add indexing failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            recordDeveloperDiagnosticIfNeeded(error, operation: "rag.indexLibraryAddition", repo: repo.fullName)
+            await recordDeveloperDiagnosticIfNeeded(error, operation: "rag.indexLibraryAddition", repo: repo.fullName)
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
         }
     }
@@ -585,8 +585,12 @@ final class KnowledgeRAGIndexBuilder {
         _ error: Error,
         operation: String,
         repo: String? = nil
-    ) {
-        let friendly = UserFacingError.map(error, operation: operation, service: "Starcat")
+    ) async {
+        // 部分索引失败不能代表知识库不可用；已有文本 chunk 仍可完成检索时不升级提醒。
+        let existingCoverage = try? await coverage()
+        let friendly = UserFacingError.map(error, operation: operation, service: "Starcat",
+            impact: existingCoverage == nil || existingCoverage?.totalChunks == 0 ? .blocked : .none,
+            summary: .knowledgeUnavailable)
         guard friendly.shouldRecordDiagnostic else { return }
         DiagnosticLogStore.record(
             level: .error,
@@ -594,8 +598,9 @@ final class KnowledgeRAGIndexBuilder {
             category: "rag-index",
             operation: operation,
             message: "Knowledge RAG indexing failed because of a local or contract error",
+            summary: .knowledgeUnavailable, impact: .blocked,
             underlying: friendly.diagnosticSummary,
-            context: repo.map { ["repo": $0] } ?? [:]
+            context: repo.map { ["repo": $0] } ?? [:], error: error
         )
     }
 
@@ -685,7 +690,7 @@ final class KnowledgeRAGIndexBuilder {
         } catch {
             assignStatus(.failed(error.localizedDescription))
             AppLog.ai.error("RAG source refresh failed for \(repo.fullName, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshSources", repo: repo.fullName)
+            await recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshSources", repo: repo.fullName)
             NotificationCenter.default.post(name: .knowledgeRAGIndexDidChange, object: nil)
         }
     }
@@ -728,7 +733,7 @@ final class KnowledgeRAGIndexBuilder {
         } catch {
             assignStatus(.failed(error.localizedDescription))
             AppLog.ai.error("RAG metadata refresh failed: \(error.localizedDescription, privacy: .public)")
-            recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshMetadata")
+            await recordDeveloperDiagnosticIfNeeded(error, operation: "rag.refreshMetadata")
         }
     }
 
@@ -1311,7 +1316,7 @@ final class KnowledgeRAGIndexBuilder {
         case .failed: projection = ("failed", [:])
         }
         if newStatus != status {
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            DiagnosticContext.current?.capture(DiagnosticEvent(
                 level: projection.0 == "failed" ? .error : .info,
                 category: "rag", operation: "index", message: "Index state changed",
                 phase: projection.0, outcome: projection.0 == "failed" ? .failed : projection.0 == "completed" ? .succeeded : nil,
@@ -1366,7 +1371,7 @@ final class KnowledgeRAGIndexBuilder {
                     self.assignStatus(.failed(error.localizedDescription))
                 }
                 AppLog.ai.error("RAG coalesced follow-up indexing failed: \(error.localizedDescription, privacy: .public)")
-                self.recordDeveloperDiagnosticIfNeeded(error, operation: "rag.drainPending")
+                await self.recordDeveloperDiagnosticIfNeeded(error, operation: "rag.drainPending")
             }
         }
         exclusiveLock = task

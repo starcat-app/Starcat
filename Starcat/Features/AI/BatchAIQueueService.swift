@@ -1547,12 +1547,28 @@ final class BatchAIQueueService {
 
     /// 单仓请求完成后立即整合结果；无论成功、失败或取消，都释放 Worker 的 processing 占位。
     private func processClaimedJob(repoID: Int64, options: BatchAIQueueOptions) async {
+        let diagnostic = DiagnosticOperation(category: "ai", name: "batchAI.job")
+        await DiagnosticContext.$current.withValue(diagnostic) {
+            await processClaimedJob(repoID: repoID, options: options, diagnostic: diagnostic)
+        }
+    }
+
+    /// 每次尝试仅保存有界上下文；是否耗尽重试仍由原队列状态机决定。
+    private func processClaimedJob(repoID: Int64, options: BatchAIQueueOptions, diagnostic: DiagnosticOperation) async {
         defer { processingJobIDs.remove(repoID) }
+        defer {
+            let failed = jobs.first { $0.repoId == repoID }?.status == .failed
+            diagnostic.finish(Task.isCancelled || cancelRequested ? .cancelled : failed ? .failed : .succeeded)
+        }
+        var outputAvailable = false
         do {
             // processing 必须先 durable 再请求 AI。若 App 在请求期间退出，恢复时才能明确
             // 标成“处理中断”，而不是把同一 queued 项静默再调用一次并重复消耗 token。
             try await persistJob(repoID: repoID)
+            diagnostic.event(phase: "jobPersisted")
             let result = try await processSingle(jobId: repoID, options: options)
+            outputAvailable = true
+            diagnostic.event(phase: "response", fields: ["outputAvailable": .boolean(true)])
             try Task.checkCancellation()
             guard !cancelRequested else { return }
             try await applyResult(jobId: repoID, result: result, options: options)
@@ -1560,7 +1576,7 @@ final class BatchAIQueueService {
             try await persistJob(repoID: repoID)
         } catch {
             guard !cancelRequested, !Task.isCancelled, !(error is CancellationError) else { return }
-            handleFailure(jobId: repoID, error: error, options: options)
+            handleFailure(jobId: repoID, error: error, options: options, outputAvailable: outputAvailable)
             await persistJobBestEffort(repoID: repoID)
         }
     }
@@ -2175,13 +2191,16 @@ final class BatchAIQueueService {
     }
 
     /// 处理单个 job 的失败：分流"重试" vs "终态失败"。
-    private func handleFailure(jobId: Int64, error: Error, options: BatchAIQueueOptions) {
+    private func handleFailure(jobId: Int64, error: Error, options: BatchAIQueueOptions,
+                               outputAvailable: Bool = false) {
         guard let idx = jobs.firstIndex(where: { $0.repoId == jobId }) else { return }
 
         let friendly = UserFacingError.map(
             error,
             operation: String.l10n("diagnostics.operation.generateAIInsight"),
-            service: "AI"
+            service: "AI",
+            impact: outputAvailable ? .dataRisk : .blocked,
+            summary: outputAvailable ? .dataSaveFailed : .aiUnavailable
         )
         let failure = BatchAIFailure(error: error)
         let shortMessage = failure.localizedMessage
@@ -2198,7 +2217,6 @@ final class BatchAIQueueService {
         AppLog.ai.error(
             "[batch-ai] job failed: repo=\(jobId, privacy: .public), attempt=\(self.jobs[idx].attempts, privacy: .public), error=\(shortMessage, privacy: .public)"
         )
-        friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider")
 
         // 即使当前 job 已达到重试上限，剩余 queued jobs 仍需立即继承降速窗口，
         // 不能继续以五路并发撞击同一个已限流 Provider。
@@ -2207,6 +2225,10 @@ final class BatchAIQueueService {
         }
 
         if isPermanentError(error) || jobs[idx].attempts >= options.maxRetries {
+            // 单次尝试失败不落盘；现有重试已耗尽或确定不可重试时才确认请求失败。
+            friendly.record(category: "ai", operation: "batchAI.job", service: "ai-provider",
+                context: ["repoID": String(jobId)],
+                fields: ["attempt": .integer(jobs[idx].attempts), "outputAvailable": .boolean(outputAvailable)])
             jobs[idx].status = .failed
             jobs[idx].failure = failure
             jobs[idx].errorDiagnostic = diagnostic

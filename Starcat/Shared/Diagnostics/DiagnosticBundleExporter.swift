@@ -56,7 +56,9 @@ enum DiagnosticBundleExporter {
                 category: "diagnostics",
                 operation: "export",
                 message: "Diagnostic export failed",
-                underlying: error.localizedDescription
+                summary: .exportFailed,
+                impact: .blocked,
+                error: error
             )
             return .failed(error.localizedDescription)
         }
@@ -73,8 +75,16 @@ enum DiagnosticBundleExporter {
         let snapshot = await DiagnosticDeadline.capture { await store.snapshot() }
         let local = await DiagnosticDeadline.capture { await localAIStore.snapshot() }
         let system = await DiagnosticDeadline.capture { await systemStore.snapshot() }
-        let storageFailed = snapshot?.health.contains { $0.key.hasSuffix("Failures") && $0.value > 0 } ?? false
+        let storageFailed = snapshot?.health.contains {
+            ($0.key.hasSuffix("Failures") || $0.key == "damagedLines" || $0.key == "captureUnavailable") && $0.value > 0
+        } ?? false
         let storageTruncated = (snapshot?.health["droppedEvents"] ?? 0) > 0
+        let severeEvents = (snapshot?.text ?? "").split(separator: "\n").compactMap {
+            try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8))
+        }.filter(\.isSevereFailure)
+        let relatedRequestIDs = Set(severeEvents.flatMap { event in
+            [event.requestID].compactMap { $0 } + event.breadcrumbs.compactMap(\.requestID)
+        })
         var collectors: [DiagnosticCollectorResult] = [
             .init(name: "events", status: snapshot == nil ? .timedOut : storageFailed ? .failed : storageTruncated ? .truncated : .collected,
                   detail: storageFailed ? "Some diagnostic storage operations failed" : storageTruncated ? "Some queued events were dropped" : nil),
@@ -86,10 +96,17 @@ enum DiagnosticBundleExporter {
         if let local, local.droppedCount > 0 {
             collectors.append(.init(name: "localAIQueue", status: .truncated, detail: "Local AI events were dropped"))
         }
-        if (local?.events.count ?? 0) > 500 {
-            collectors.append(.init(name: "localAIWindow", status: .truncated, detail: "Only the last 500 Local AI events were included"))
+        let correlatedLocal = (local?.events ?? []).filter { event in
+            event.requestID.map(relatedRequestIDs.contains) == true
         }
-        let safeLocal = (local?.events ?? []).suffix(500).map { event in
+        if let local, !local.events.isEmpty, correlatedLocal.isEmpty {
+            collectors.append(.init(name: "localAICorrelation", status: .notCollected,
+                detail: "No Local AI event shared a request or operation ID with a severe failure"))
+        }
+        if correlatedLocal.count > 500 {
+            collectors.append(.init(name: "localAIWindow", status: .truncated, detail: "Only the last 500 correlated Local AI events were included"))
+        }
+        let safeLocal = correlatedLocal.suffix(500).map { event in
             var safe = DiagnosticEvent(level: event.level == .error ? .error : event.level == .warning ? .warning : .info,
                 category: "localAI", operation: "runtime", message: "Local AI stage",
                 requestID: event.requestID, phase: event.stage,
@@ -113,8 +130,6 @@ enum DiagnosticBundleExporter {
         let result = try await Task.detached(priority: .utility) {
             try archive(input: input, destination: destination)
         }.value
-        DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "export",
-                                  message: "Diagnostic material saved locally")
         // 导出仅生成本地证据，不确认提醒，不代表故障恢复或文件已上传。
         return result
     }

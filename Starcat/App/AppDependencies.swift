@@ -1928,8 +1928,10 @@ final class AppDependencies {
                     category: "database",
                     operation: "database.switchUser",
                     message: "Failed to switch the active user database",
+                    summary: .databaseUnavailable,
+                    impact: .blocked,
                     underlying: DiagnosticEvent.summarize(error),
-                    context: ["targetUser": userId.map(String.init) ?? "anonymous"]
+                    context: ["targetUser": userId.map(String.init) ?? "anonymous"], error: error
                 )
                 self.widgetRefreshCoordinator.publishEmpty(state: .unavailable)
             }
@@ -2139,8 +2141,10 @@ final class AppDependencies {
             category: "factory-reset",
             operation: "factoryReset.cleanup",
             message: "Factory reset left generated user data on disk",
+            summary: .dataCleanupFailed,
+            impact: .dataRisk,
             underlying: DiagnosticEvent.summarize(error),
-            context: ["component": component]
+            context: ["component": component], error: error
         )
     }
 

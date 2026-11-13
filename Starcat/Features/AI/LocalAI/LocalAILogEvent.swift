@@ -115,6 +115,14 @@ enum LocalAILog {
         _ stage: String, _ message: String, level: LocalAILogEvent.Level = .info,
         context: LocalAILogContext? = LocalAILogContext.current, fields: [String: String] = [:]
     ) {
+        // 只在当前真实业务操作中关联请求身份与阶段；独立运行日志的内容、采集和清理不变。
+        DiagnosticContext.current?.capture(DiagnosticEvent(
+            level: .info, category: "localAI", operation: "request", message: "Local AI request stage",
+            requestID: context?.requestID, phase: stage,
+            fields: fields.reduce(into: [String: DiagnosticValue]()) { result, field in
+                if let number = Int(field.value) { result[field.key] = .integer(number) }
+            }
+        ))
         LocalAILogContext.store.record(.init(level: level, stage: stage, message: message, context: context, fields: fields))
     }
 }

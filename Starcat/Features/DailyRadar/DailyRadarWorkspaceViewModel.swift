@@ -236,9 +236,17 @@ final class DailyRadarWorkspaceViewModel {
     /// 到新内容就位）；未命中才清空进入骨架态。同身份刷新跳过快照直接网络重验证。
     /// CATALOG_CHANGED 只有限重试一次。
     func reload(force: Bool = false) async {
-        guard let repository else { return }
+        guard repository != nil else { return }
         let diagnostic = DiagnosticOperation(category: "dailyRadar", name: "reload",
                                              fields: ["force": .boolean(force)])
+        await DiagnosticContext.$current.withValue(diagnostic) {
+            await reload(force: force, diagnostic: diagnostic)
+        }
+    }
+
+    /// 目录变化重试和有效快照回退均在根操作内完成，避免把首次请求失败独立落盘。
+    private func reload(force: Bool, diagnostic: DiagnosticOperation) async {
+        guard let repository else { return }
         var diagnosticOutcome: DiagnosticEvent.Outcome = .cancelled
         defer {
             diagnostic.finish(Task.isCancelled ? .cancelled : diagnosticOutcome,
@@ -314,6 +322,11 @@ final class DailyRadarWorkspaceViewModel {
                 diagnosticOutcome = DiagnosticFailure.isCancellation(error) ? .cancelled : .failed
                 guard generation == token else { return }
                 if (error as? DailyRadarError)?.catalogChanged == true, attempt == 0 { continue }
+                let outputAvailable = publishedIdentity == expectedIdentity
+                UserFacingError.map(error, operation: "dailyRadar.reload", service: "DailyRadar",
+                    impact: outputAvailable ? .none : .blocked, summary: .contentUnavailable)
+                    .record(category: "dailyRadar", operation: "reload",
+                        fields: ["attempt": .integer(attempt + 1), "outputAvailable": .boolean(outputAvailable)])
                 if !(error is CancellationError) { failed = true }
                 return
             }

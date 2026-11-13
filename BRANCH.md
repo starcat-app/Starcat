@@ -93,6 +93,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/severe-diagnostics` | 已合并；本地分支与 worktree 保留。 | 2026-11-13 dong4j 授权合回 `dev`。功能提交 `d2b710f6` 经 `7b0a6d8e` 整合主线后合入本地 `dev`，保留同期主线文档清理。174 项定向测试、16 项 Python 测试、双渠道 build-only 及 17 语言编译资源校验通过。保留 `../Starcat-severe-diagnostics`，界面与译文后续在 `dev` 验收；本次未推送或清理。 |
 | `codex/github-overview` | 已删除（方案废弃） | 2026-11-13 dong4j 查看效果后明确永久取消，不再安排后续开发。删除前确认分支独有提交为 0，全部实现仍为 worktree 内的未提交改动；按授权通过 `git worktree remove --force` 丢弃实现、测试、本地化改动与构建产物，随后通过 `git branch -d` 删除本地分支。最终方案与设计图一并删除，未合入 `dev`，未操作远端。 |
 | 主仓及三个 supports 仓库的 `codex/daily-radar-sharing` | 已删除四仓本地专项分支及 worktree。 | 2026-11-13 dong4j 确认功能完成并授权清理。主仓功能提交 `9fcf469d` 经 `96836605` 整合后合回 `dev`；sharing-api `e98d51a`、聚合 API `db6800e`、starcat-site `1400a7d` 均已合入各自 `dev`。删除前逐仓确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、专项 worktree 干净；生产备份与含 `/d/` 路由的本机私有配置已保留到主工作区。先清理三个嵌套支持仓，再以非强制 `git worktree remove` 和 `git branch -d` 清理主专项；四仓主工作区仍在 `dev`，其他 worktree 保留，未操作远端。后续公开页 HTML/CSS 在 sharing-api 迭代。 |
 | `codex/global-search-review-fixes` | 已删除 | 2026-11-13 dong4j 授权清理；分支头 `fd213c5b` 的 10 项独立修复已通过 merge commit `e66c56da` 合入 `dev`。删除前确认是 `dev` 祖先、独有提交为 0、`git cherry` 为空，搜索源码与 `dev` 一致，worktree 干净且 Secrets 配置与主工作区一致。已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-global-search-review-fixes` 与本地分支；本次未操作远端。 |

@@ -549,7 +549,8 @@ final class TrendingViewModel {
                 let friendly = UserFacingError.map(
                     error,
                     operation: String.l10n("diagnostics.operation.loadTrending"),
-                    service: "Trending"
+                    service: "Trending",
+                    impact: hasUsableSnapshot ? .none : .blocked, summary: .contentUnavailable
                 )
                 if hasUsableSnapshot {
                     // 与探索发现一致：列表继续用缓存，横条说明刷新失败原因。

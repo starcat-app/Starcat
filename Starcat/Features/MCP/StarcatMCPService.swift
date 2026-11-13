@@ -352,8 +352,10 @@ final class StarcatMCPService {
                         category: "mcp",
                         operation: "mcp.start",
                         message: "MCP runtime failed to start",
+                        summary: .serviceUnavailable,
+                        impact: .blocked,
                         underlying: DiagnosticEvent.summarize(error),
-                        context: ["port": String(port)]
+                        context: ["port": String(port)], error: error
                     )
                 }
                 await self.notificationService?.dispatchMCPFailure(message: error.localizedDescription)

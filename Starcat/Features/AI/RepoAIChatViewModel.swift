@@ -484,7 +484,12 @@ final class RepoAIChatViewModel {
     ///   翻 false。
     func sendMessage(_ text: String, repo: Repo) async {
         let task = Task<Void, Never> { [weak self] in
-            await self?.performSendMessage(text: text, repo: repo)
+            guard let self else { return }
+            let diagnostic = DiagnosticOperation(category: "ai", name: "chat.stream")
+            await DiagnosticContext.$current.withValue(diagnostic) {
+                await self.performSendMessage(text: text, repo: repo)
+            }
+            diagnostic.finish(Task.isCancelled ? .cancelled : self.errorMessage == nil ? .succeeded : .failed)
         }
         sendTask = task
         await task.value
@@ -691,7 +696,8 @@ final class RepoAIChatViewModel {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.aiChat"),
-                service: "AI"
+                service: "AI",
+                impact: .blocked, summary: .aiUnavailable
             )
             let description = friendly.message
             if let gateError = error as? EntitlementGateError {
@@ -703,7 +709,8 @@ final class RepoAIChatViewModel {
                 || Self.looksLikeContextOverflow(description) {
                 isContextOverflow = true
             }
-            friendly.record(category: "ai", operation: "chat.stream", service: "ai-provider")
+            friendly.record(category: "ai", operation: "chat.stream", service: "ai-provider",
+                            context: ["repoID": String(repo.id)])
             if var failed = streamingMessage {
                 failed.content = accumulated
                 failed.reasoning = Self.nonEmptyReasoning(reasoningSession.text)

@@ -14,9 +14,16 @@ actor RecordingRepositorySpotlightIndex: RepositorySpotlightIndexing {
     private(set) var upserted: [RepositorySpotlightEntity] = []
     private(set) var removedIdentifiers: [RepositorySpotlightEntity.ID] = []
     private(set) var removeAllCallCount = 0
+    private var replacementError: (any Error)?
+
+    /// 注入清空后或写入阶段的实际失败，避免测试触碰系统 Spotlight。
+    func failReplacement(with error: any Error) {
+        replacementError = error
+    }
 
     func replaceAll(with entities: [RepositorySpotlightEntity]) async throws {
         replacementCallCount += 1
+        if let replacementError { throw replacementError }
         replacement = entities
     }
 

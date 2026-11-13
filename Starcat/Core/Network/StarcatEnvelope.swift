@@ -216,7 +216,7 @@ enum StarcatEnvelopeDecoder {
         // 可能是非 envelope 文本，所以拆失败也得给一个兜底错。
         guard (200...299).contains(http.statusCode) else {
             if let envelopeError = try? decoder.decode(StarcatErrorEnvelope.self, from: data) {
-                DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                DiagnosticContext.current?.capture(DiagnosticEvent(
                     level: .warning, category: "network", operation: "envelope",
                     message: "Service business failure", statusCode: http.statusCode,
                     errorCode: DiagnosticEvent.safeTrace(envelopeError.error.code),
@@ -241,7 +241,7 @@ enum StarcatEnvelopeDecoder {
         do {
             envelope = try decoder.decode(StarcatEnvelope<T>.self, from: data)
         } catch {
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            DiagnosticContext.current?.capture(DiagnosticEvent(
                 level: .error, category: "network", operation: "envelope",
                 message: "Service decoding failed", statusCode: http.statusCode,
                 errorCode: "response.decoding", underlying: DiagnosticEvent.summarize(error),

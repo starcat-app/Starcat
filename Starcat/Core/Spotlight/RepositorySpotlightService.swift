@@ -118,7 +118,7 @@ final class RepositorySpotlightService {
         do {
             try await index.removeAll()
         } catch {
-            recordFailure(operation: "spotlight.removeAll", error: error)
+            recordFailure(operation: "spotlight.removeAll", error: error, impact: .dataRisk)
         }
     }
 
@@ -160,6 +160,7 @@ final class RepositorySpotlightService {
     /// 保留为 internal 便于单元测试注入内存索引并验证 private repo、笔记和删除边界，
     /// 测试不会因此写入真实系统 Spotlight。
     func rebuild() async {
+        let hadUsableIndex = database.currentUserId.map { indexState.belongs(to: $0) } ?? false
         guard settings.spotlightSearchEnabled else {
             await performRemoveAll()
             return
@@ -190,7 +191,13 @@ final class RepositorySpotlightService {
         } catch is CancellationError {
             return
         } catch {
-            recordFailure(operation: "spotlight.rebuild", error: error)
+            let replacement = error as? CoreSpotlightRepositoryIndex.ReplacementFailure
+            if replacement != nil { indexState.invalidate() }
+            let failure = replacement?.underlying ?? error
+            guard !DiagnosticFailure.isCancellation(failure) else { return }
+            let hasUsableIndex = replacement.map { $0.indexedCount > 0 } ?? hadUsableIndex
+            recordFailure(operation: "spotlight.rebuild", error: failure,
+                          impact: hasUsableIndex ? .none : .blocked)
         }
     }
 
@@ -289,7 +296,8 @@ final class RepositorySpotlightService {
           AND r.access_state = 'accessible'
         """
 
-    private func recordFailure(operation: String, error: any Error, repositoryID: Int64? = nil) {
+    private func recordFailure(operation: String, error: any Error, repositoryID: Int64? = nil,
+                               impact: DiagnosticEvent.Impact = .none) {
         AppLog.general.error(
             "Spotlight repository indexing failed (operation=\(operation, privacy: .public)): \(error.localizedDescription, privacy: .public)"
         )
@@ -303,8 +311,9 @@ final class RepositorySpotlightService {
             category: "systemIntegration",
             operation: operation,
             message: "Spotlight repository index update failed",
+            summary: .searchUnavailable, impact: impact,
             underlying: DiagnosticEvent.summarize(error),
-            context: context
+            context: context, error: error
         )
     }
 }

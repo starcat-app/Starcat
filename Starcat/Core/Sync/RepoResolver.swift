@@ -91,14 +91,7 @@ final class RepoResolver {
         // 理论不可达：链末尾 MinimalRepoSource 永远命中。
         // 兜底：构造一个最小 Repo 直接返回，避免 force unwrap 崩溃。
         AppLog.sync.error("RepoResolver: all sources failed unexpectedly (chain misconfigured?). Falling back to MinimalRepoSource directly.")
-        DiagnosticLogStore.record(
-            level: .critical,
-            visibility: .issue,
-            category: "repository-resolution",
-            operation: "repoResolver.exhausted",
-            message: "Repository resolver exhausted every source including its mandatory fallback",
-            context: ["repo": "\(owner)/\(name)"]
-        )
+        // 最小仓库回退仍能完成本次解析，异常链路仅保留系统日志。
         return RepoResolution(
             sourceName: "MinimalRepoSource (forced)",
             repo: Repo.makeMinimal(owner: owner, name: name, hint: hint),
