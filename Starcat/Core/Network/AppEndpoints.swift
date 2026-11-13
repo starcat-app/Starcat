@@ -182,6 +182,8 @@ enum AppEndpoints {
         enum Paths {
             /// `POST /api/v1/share` —— 创建分享链接。envelope 包装 + Bearer Auth。
             static let share = "/api/v1/share"
+            /// `POST` multipart；日报快照独立于 Repo 分享的数据模型。
+            static let dailyRadarShares = "/api/v1/daily-radar/shares"
             /// `GET /api/v1/ping` —— Starcat 客户端「测试连接」专用端点（R-03 2026-06-11）。
             /// 需要 Bearer Auth，鉴权通过返回 200。详见 supports/starcat-sharing-api/internal/handler/ping.go。
             static let ping = "/api/v1/ping"
