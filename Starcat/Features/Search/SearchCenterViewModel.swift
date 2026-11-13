@@ -422,9 +422,22 @@ final class SearchCenterViewModel {
     }
 
     var canLoadMoreWeb: Bool {
-        externalSearchFilters.maxResults < 100
+        max(externalSearchFilters.maxResults, coordinator.currentWebMaxResults) < 100
             && !isLoadingWeb
             && coordinator.loadedPage(for: .web)?.hasNextPage == true
+    }
+
+    /// 来源筛选可能把当前页全部隐藏，空态仍需保留该来源的分页入口。
+    var filteredLoadMoreSource: SearchSource? {
+        guard !lastSubmittedQuery.isEmpty, case .source(let source) = resultFilter else { return nil }
+        switch source {
+        case .github where (scope == .all || scope == .github) && canLoadMoreGitHub:
+            return .github
+        case .web where (scope == .all || scope == .web) && canLoadMoreWeb:
+            return .web
+        default:
+            return nil
+        }
     }
 
     var isLoadingWeb: Bool {
@@ -1184,8 +1197,11 @@ final class SearchCenterViewModel {
     /// Web provider 普遍没有统一 cursor/page 协议；“加载更多”通过增大 maxResults
     /// 后重跑 web source 实现，Coordinator 会按 URL 去重合并，避免重复卡片。
     func loadMoreWeb() async {
-        guard canLoadMoreWeb, scope == .web, !lastSubmittedQuery.isEmpty else { return }
-        externalSearchFilters.maxResults = min(externalSearchFilters.maxResults + 10, 100)
+        guard canLoadMoreWeb, scope == .web || scope == .all, !lastSubmittedQuery.isEmpty else { return }
+        // 内容过滤可能已自动补过一页，必须从实际成功上限继续，不能重复请求旧页。
+        externalSearchFilters.maxResults = min(
+            max(externalSearchFilters.maxResults, coordinator.currentWebMaxResults) + 10, 100
+        )
         await coordinator.loadMore(makeRequest(query: lastSubmittedQuery), source: .web)
         clampSelection()
     }

@@ -13,6 +13,69 @@ import Testing
 @Suite("Search Center ViewModel")
 @MainActor
 struct SearchCenterViewModelTests {
+    @Test("GitHub 筛选空页仍能手动取得后续可见结果", arguments: [SearchScope.all, .github])
+    func filteredGitHubEmptyPageCanContinue(_ scope: SearchScope) async throws {
+        let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            blocked, blocked, Self.makeCandidate(id: 3, owner: "swiftlang", name: "swift")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.scope = scope
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.github))
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.currentGitHubPage == 2)
+        #expect(viewModel.filteredLoadMoreSource == .github)
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.candidates.map(\.id) == ["repo:swiftlang/swift"])
+        #expect(viewModel.filteredLoadMoreSource == nil)
+        #expect(await provider.requests.map(\.page) == [1, 2, 3])
+    }
+
+    @Test("全部范围内的网页筛选空态可增加检索上限")
+    func filteredWebEmptyPageCanContinueInAllScope() async throws {
+        let provider = SearchCenterFilteredWebPagingProvider()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            includeWebInAll: { true }
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.web))
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.filteredLoadMoreSource == .web)
+        await viewModel.loadMoreWeb()
+        #expect(viewModel.candidates.count == 1)
+        #expect(await provider.maxResultsRequests == [10, 20, 30])
+        #expect(viewModel.filteredLoadMoreSource == nil)
+    }
+
+    @Test("本地与智能发现筛选不显示其他来源的分页入口")
+    func nonRemoteFiltersDoNotOfferUnrelatedPagination() async throws {
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1), Self.makeCandidate(id: 2)
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        #expect(viewModel.canLoadMoreGitHub)
+        #expect(viewModel.filteredLoadMoreSource == nil)
+        for filter in [SearchResultFilter.source(.localKeyword), .source(.localSemantic), .discovery] {
+            viewModel.toggleResultFilter(filter)
+            #expect(viewModel.candidates.isEmpty)
+            #expect(viewModel.filteredLoadMoreSource == nil)
+        }
+        #expect(await provider.requests.count == 1)
+    }
+
     @Test("发现专属卡片的知识库状态同步刷新当前结果、重开及缓存")
     func discoveryLibraryChangesUpdateSnapshotsAndCache() async throws {
         let candidate = Self.makeCandidate(id: 9, owner: "web", name: "tool")
@@ -1819,6 +1882,27 @@ private final class CapturingWebSearchProvider: SearchProvider, @unchecked Senda
     func search(_ request: SearchRequest) async throws -> SearchProviderPage {
         lastRequest = request
         return .empty
+    }
+}
+
+/// 连续两个被过滤的网页页，验证自动补页结束后仍有手动入口。
+private actor SearchCenterFilteredWebPagingProvider: SearchProvider {
+    nonisolated let source: SearchSource = .web
+    private(set) var maxResultsRequests: [Int] = []
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        let maximum = request.externalSearchFilters.maxResults
+        maxResultsRequests.append(maximum)
+        let url = URL(string: "https://example.org/\(maximum)")!
+        return SearchProviderPage(
+            repositories: [],
+            references: [ReferenceCandidate(
+                normalizedURL: url, originalURL: url,
+                title: maximum < 30 ? "buy guns" : "Swift guide",
+                snippet: nil, domain: "example.org", source: .web
+            )],
+            totalCount: 3, hasNextPage: maximum < 30
+        )
     }
 }
 
