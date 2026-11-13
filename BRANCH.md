@@ -31,7 +31,7 @@
 ## 全局搜索内容过滤工作区
 
 `codex/global-search-content-filter` 由既有搜索优化提交 `61e9e9cf` 创建，
-工作区为 `../Starcat-global-search-content-filter`，2026-11-13 状态为停放，
+工作区为 `../Starcat-global-search-content-filter`，2026-11-13 状态为开发中，
 用途为已授权的 Search Center 本地内容过滤、误杀控制与性能验证。
 已合入本地 `dev@1755f26f` 的最新搜索修复；原 `../Starcat-global-search-optimization`
 由另一任务继续使用，本工作区不修改其未提交文件。已复制本机 Secrets 配置，
@@ -42,6 +42,9 @@
 2026-11-13 按 dong4j 要求，将 `codex/global-search-optimization@7acc1674`
 的已提交内容合入本分支，保留内容过滤实现、Router 迟到响应校验与整轮共享截止时间。
 两条专项分支及其 worktree 继续保留；本次仅同步搜索专项，`dev` 未变更。
+
+2026-11-13 在合并提交 `2242ecc0` 上继续已确认的来源胶囊筛选、明暗主题徽标和
+列表切换过渡，按三项 Checklist 独立提交；仍在本 worktree 验证，验收后合回 `dev`。
 
 ## 当前分支
 

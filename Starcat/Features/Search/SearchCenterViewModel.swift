@@ -47,6 +47,8 @@ final class SearchCenterViewModel {
     /// 结果 List 的重建令牌。切 scope 复用候选后 SwiftUI List 会保留旧 contentOffset，
     /// 首卡会被截在可见区域上方；递增此值让 List 以新身份从顶部开始。
     private(set) var resultListEpoch: Int = 0
+    /// 与范围正交的会话展示状态；切来源只改内存视图，不重新访问数据库或网络。
+    private(set) var resultFilter: SearchResultFilter?
     /// 历史记录（按 `decayedScore` 降序排列；UI 直接遍历即可）。
     /// 持久化由 `historyRepository` 负责；本字段是异步加载后的最新内存快照。
     private(set) var history: [SearchHistory] = []
@@ -108,6 +110,13 @@ final class SearchCenterViewModel {
     }
 
     var candidates: [SearchCandidate] {
+        let candidates = unfilteredCandidates
+        guard let resultFilter else { return candidates }
+        return matchingCandidates(resultFilter, in: candidates)
+    }
+
+    /// 内容策略与多来源合并先完成，再应用底栏筛选；计数始终基于这一完整快照。
+    private var unfilteredCandidates: [SearchCandidate] {
         var repositories = coordinator.repositories
         var repositoryIndices = Dictionary(uniqueKeysWithValues: repositories.enumerated().map {
             ($0.element.id, $0.offset)
@@ -139,6 +148,53 @@ final class SearchCenterViewModel {
             + references.filter { !blockedIDs.contains($0.contentKey) }.map(SearchCandidate.reference)
     }
 
+    /// 普通来源只认基础搜索的贡献，避免发现链路内部的 GitHub 请求膨胀普通来源计数。
+    /// 对同仓库保留多来源身份，因此关键词与语义同时命中时，两种筛选都能看到它。
+    private func matchingCandidates(
+        _ filter: SearchResultFilter,
+        in candidates: [SearchCandidate]
+    ) -> [SearchCandidate] {
+        switch filter {
+        case .source(let source):
+            let repositoryIDs = Set(coordinator.repositories.filter { $0.sources.contains(source) }.map(\.id))
+            let referenceIDs = Set(coordinator.references.filter { $0.source == source }.map(\.id))
+            return candidates.filter { candidate in
+                switch candidate {
+                case .repository(let repository): return repositoryIDs.contains(repository.id)
+                case .reference(let reference): return referenceIDs.contains(reference.id)
+                }
+            }
+        case .discovery:
+            return candidates.filter { candidate in
+                if case .repository(let repository) = candidate { return repository.discovery != nil }
+                return false
+            }
+        }
+    }
+
+    /// 与对应筛选列表一致的去重数，不受当前选择了哪个来源影响。
+    func resultCount(for source: SearchSource) -> Int {
+        matchingCandidates(.source(source), in: unfilteredCandidates).count
+    }
+
+    /// 空结果等待态只关心当前所选来源，不能被其他来源的在途请求遮成空白。
+    var isResultFilterSearching: Bool {
+        switch resultFilter {
+        case .source(let source):
+            if case .loading = coordinator.status(for: source) { return true }
+            return false
+        case .discovery: return isDiscoveryRunning
+        case nil: return false
+        }
+    }
+
+    /// 再次点击同一胶囊恢复全部；列表和键盘位置一起重置，不触碰 Provider 快照。
+    func toggleResultFilter(_ filter: SearchResultFilter) {
+        resultFilter = resultFilter == filter ? nil : filter
+        selectedIndex = nil
+        resultListEpoch += 1
+    }
+
     /// 合并已接入的统计，不在 SwiftUI 派生状态中重新归一化或扫描候选文字。
     var contentSummary: SearchContentSummary {
         var summary = coordinator.contentSummary
@@ -148,11 +204,7 @@ final class SearchCenterViewModel {
 
     /// 与实际展示列表同口径：只计去重后的发现仓库，不包含网页资料或 API 命中总数。
     var discoveryResultCount: Int {
-        candidates.reduce(into: 0) { count, candidate in
-            if case .repository(let repository) = candidate, repository.discovery != nil {
-                count += 1
-            }
-        }
+        matchingCandidates(.discovery, in: unfilteredCandidates).count
     }
 
     var hasDiscoveryFailures: Bool {
@@ -303,7 +355,7 @@ final class SearchCenterViewModel {
         }
         return sources.compactMap { source in
             guard case .loaded = coordinator.status(for: source) else { return nil }
-            return ResultSourceCount(source: source, count: coordinator.visibleCount(for: source))
+            return ResultSourceCount(source: source, count: resultCount(for: source))
         }
     }
 
@@ -317,8 +369,15 @@ final class SearchCenterViewModel {
             case .loading:
                 return SearchProcessChip(source: source, phase: .loading)
             case .loaded:
-                return SearchProcessChip(source: source, phase: .loaded(coordinator.visibleCount(for: source)))
-            case .idle, .failed:
+                return SearchProcessChip(source: source, phase: .loaded(resultCount(for: source)))
+            case .failed:
+                // 用户在等待时选中了该来源，失败后也必须保留可取消的胶囊。
+                guard resultFilter == .source(source) else { return nil }
+                return SearchProcessChip(
+                    source: source,
+                    phase: .failed(String.l10n(Self.footerErrorShortKey(for: source)))
+                )
+            case .idle:
                 return nil
             }
         }
@@ -400,6 +459,7 @@ final class SearchCenterViewModel {
         // 原来的 query、scope、filters、结果和键盘位置。
         let shouldRefreshScope = requestedScope.map { $0 != scope } ?? false
         if let requestedScope {
+            if shouldRefreshScope { resultFilter = nil }
             scope = requestedScope
         }
         isPresented = true
@@ -425,6 +485,7 @@ final class SearchCenterViewModel {
     }
 
     func submit() async {
+        resultFilter = nil
         let request = makeRequest(query: query)
         guard !request.query.isEmpty else {
             coordinator.reset()
@@ -522,6 +583,7 @@ final class SearchCenterViewModel {
     }
 
     func changeScope(_ newScope: SearchScope) async {
+        resultFilter = nil
         scope = newScope
         resultListEpoch += 1
         guard canRunExplicitWebSearch(makeRequest(query: query)) else { return }
@@ -538,6 +600,7 @@ final class SearchCenterViewModel {
     }
 
     func clear() {
+        resultFilter = nil
         query = ""
         lastSubmittedQuery = ""
         selectedIndex = nil
@@ -898,6 +961,7 @@ final class SearchCenterViewModel {
 enum SearchProcessPhase: Equatable, Sendable {
     case loading
     case loaded(Int)
+    case failed(String)
 }
 
 struct SearchProcessChip: Identifiable, Equatable, Sendable {
@@ -930,6 +994,8 @@ struct SearchProcessChip: Identifiable, Equatable, Sendable {
                 label,
                 count
             )
+        case .failed(let label):
+            return label
         }
     }
 

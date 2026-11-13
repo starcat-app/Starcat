@@ -38,6 +38,12 @@ enum SearchSource: String, CaseIterable, Codable, Hashable, Sendable {
     case web
 }
 
+/// 底栏只筛选已经接纳的候选，不改变 Provider 请求或把智能发现伪装成新检索源。
+enum SearchResultFilter: Hashable, Sendable {
+    case source(SearchSource)
+    case discovery
+}
+
 /// 跨来源 Repo 身份。
 ///
 /// `ghRepoID` 能跨 rename 保持稳定，所以只要存在就优先使用；网络来源缺 ID 时，

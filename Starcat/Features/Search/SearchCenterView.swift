@@ -531,6 +531,19 @@ struct SearchCenterView: View {
                 description: Text("search.content.queryBlocked")
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if viewModel.candidates.isEmpty, let title = resultFilterEmptyTitle {
+            ContentUnavailableView {
+                Label {
+                    Text(verbatim: title)
+                } icon: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+            } description: {
+                if !viewModel.isResultFilterSearching {
+                    Text("search.empty.description")
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.shouldShowSearchSkeleton {
             // 骨架只在「谁都还没返回」时出现。关键词已落地 0、语义还在跑时
             // 不能继续画 8 行假列表，否则用户会以为结果还在路上。
@@ -679,6 +692,24 @@ struct SearchCenterView: View {
             }
             // Provider 失败提示已迁到 `webResultFooter` 右侧，避免结果列表底角
             // 玻璃胶囊挡住末行 hover / 与底部状态栏抢视线。
+        }
+    }
+
+    /// 筛选零命中时仍明确显示当前来源；其他来源加载中不能把它覆盖成空白等待区。
+    private var resultFilterEmptyTitle: String? {
+        switch viewModel.resultFilter {
+        case .source(let source):
+            if let error = viewModel.footerErrors.first(where: { $0.source == source }) {
+                return error.shortLabel
+            }
+            return SearchProcessChip(
+                source: source,
+                phase: viewModel.isResultFilterSearching ? .loading : .loaded(0)
+            ).displayText
+        case .discovery:
+            return discoveryPhaseText(viewModel.discoverySession?.phase ?? .completed)
+        case nil:
+            return nil
         }
     }
 
@@ -1358,7 +1389,9 @@ struct SearchCenterView: View {
            let webMetadata = viewModel.webMetadata,
            let ms = webMetadata.searchTimeMs {
             // 上游总量尚未过滤；汇总必须与当前实际可展示的网页一致。
-            webOnlySummaryChip(totalResults: viewModel.coordinator.visibleCount(for: .web), timeMs: ms)
+            resultFilterButton(.source(.web)) {
+                webOnlySummaryChip(totalResults: viewModel.resultCount(for: .web), timeMs: ms)
+            }
         } else if !processChips.isEmpty {
             HStack(spacing: 6) {
                 ForEach(processChips) { chip in
@@ -1381,39 +1414,65 @@ struct SearchCenterView: View {
 
     /// `.all` / `.local` 过程 chip：加载中弱化颜色，落地后与 sourceCountChip 同规格。
     private func processChip(_ chip: SearchProcessChip) -> some View {
-        HStack(spacing: 4) {
-            Text(verbatim: chip.displayText)
-                .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
-                .lineLimit(1)
+        resultFilterButton(.source(chip.source)) {
+            HStack(spacing: 4) {
+                Text(verbatim: chip.displayText)
+                    .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
+                    .lineLimit(1)
+            }
+            .foregroundStyle(chip.isLoading ? Color.secondary : Color.primary.opacity(0.75))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.primary.opacity(chip.isLoading ? 0.05 : 0.08), in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .foregroundStyle(chip.isLoading ? Color.secondary : Color.primary.opacity(0.75))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(chip.isLoading ? 0.05 : 0.08), in: Capsule())
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 智能发现阶段 chip：左栏保持过程语义，不把阶段错误混入 provider 错误。
     private func discoveryPhaseChip(_ phase: SearchDiscoveryPhase) -> some View {
-        HStack(spacing: 4) {
-            if viewModel.isDiscoveryRunning {
-                ProgressView()
-                    .controlSize(.mini)
-                    .scaleEffect(0.7)
-            } else {
-                Image(systemName: "sparkles")
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+        resultFilterButton(.discovery) {
+            HStack(spacing: 4) {
+                if viewModel.isDiscoveryRunning {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.7)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                }
+                Text(verbatim: discoveryPhaseText(phase))
+                    .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
+                    .lineLimit(1)
             }
-            Text(verbatim: discoveryPhaseText(phase))
-                .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
-                .lineLimit(1)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.primary.opacity(phase.isFailed ? 0.05 : 0.08), in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .foregroundStyle(phase.isFailed ? Color.orange : Color.secondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(phase.isFailed ? 0.05 : 0.08), in: Capsule())
-        .fixedSize(horizontal: true, vertical: false)
         .help(discoveryPhaseTooltip(phase))
+    }
+
+    /// 五类来源共用按钮语义，零命中仍可选择；过程详情继续使用右侧既有入口。
+    private func resultFilterButton<Content: View>(
+        _ filter: SearchResultFilter,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Button {
+            viewModel.toggleResultFilter(filter)
+        } label: {
+            content()
+                .overlay {
+                    Capsule().strokeBorder(
+                        Color.primary.opacity(viewModel.resultFilter == filter ? 0.35 : 0),
+                        lineWidth: 1
+                    )
+                }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .accessibilityAddTraits(viewModel.resultFilter == filter ? .isSelected : [])
+        .pointerStyle(.link)
     }
 
     private var discoveryWarningChip: some View {
@@ -1699,20 +1758,22 @@ struct SearchCenterView: View {
     /// 例如 "本地 3" / "GitHub 10" / "网页 20"。
     /// 视觉规格与 webOnlySummaryChip 完全一致，让 .all 与 .web scope 切换时不抖动。
     private func sourceCountChip(_ entry: ResultSourceCount) -> some View {
-        HStack(spacing: 4) {
-            Text(String(
-                format: String.l10n("search.footer.summaryFormat"),
-                String.l10n(entry.labelKey),
-                entry.count
-            ))
-            .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
-            .lineLimit(1)
+        resultFilterButton(.source(entry.source)) {
+            HStack(spacing: 4) {
+                Text(String(
+                    format: String.l10n("search.footer.summaryFormat"),
+                    String.l10n(entry.labelKey),
+                    entry.count
+                ))
+                .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
+                .lineLimit(1)
+            }
+            .foregroundStyle(.primary.opacity(0.75))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(.primary.opacity(0.08), in: Capsule())
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .foregroundStyle(.primary.opacity(0.75))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(0.08), in: Capsule())
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 右侧 rate limit chip：未用尽走"已用 N/M"形态，用尽走"额度用尽 · 重置时间"。
