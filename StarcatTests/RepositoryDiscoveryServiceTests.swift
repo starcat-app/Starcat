@@ -511,6 +511,48 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.steps.contains { $0.stage == .ranking && $0.state == .failed })
     }
 
+    @Test("取消后不再启动后续 Web 或 GitHub 检索")
+    func cancellationStopsSubsequentDiscoveryRequests() async throws {
+        let web = RecordingSearchProvider(source: .web) { _ in
+            try await Task.sleep(for: .seconds(0.2))
+            return .empty
+        }
+        let github = RecordingSearchProvider(source: .github) { _ in .empty }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: nil
+        )
+        let plan = SearchDiscoveryPlan(
+            intentSummary: "Cancel discovery",
+            githubQueries: ["github query"],
+            webQueries: ["first web query", "second web query"],
+            prefersFreshEvidence: true,
+            strictConstraints: [],
+            githubFilters: .empty
+        )
+
+        let task = Task {
+            await service.discover(
+                query: "cancelled query",
+                request: SearchRequest(query: "cancelled query"),
+                initialPlan: plan,
+                deadline: Date().addingTimeInterval(5)
+            )
+        }
+        try await Self.waitUntil {
+            web.requests.count == 1
+        }
+        task.cancel()
+        _ = await task.value
+
+        #expect(web.requests.count == 1)
+        #expect(github.requests.isEmpty)
+        #expect(!Task.isCancelled)
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",
@@ -520,6 +562,13 @@ struct RepositoryDiscoveryServiceTests {
             strictConstraints: ["trending"],
             githubFilters: .empty
         )
+    }
+
+    private static func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<100 where !condition() {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard condition() else { throw TestError.failed }
     }
 
     private nonisolated static func makeRepo(id: Int64, owner: String, name: String) -> Repo {

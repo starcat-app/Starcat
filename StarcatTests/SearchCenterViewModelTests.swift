@@ -181,6 +181,64 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.hasSettledSearchProvider)
     }
 
+    @Test("新查询取消旧 Router 链路且旧响应不启动发现")
+    func replacingQueryCancelsOldRoutingChain() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        router.delays = ["linux distribution": 0.15]
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 2, name: "rust"))
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "linux distribution"
+        let oldTask = Task { await viewModel.submit() }
+        try await Self.waitUntil {
+            router.routeQueries == ["linux distribution"]
+        }
+        viewModel.query = "rust"
+        await viewModel.submit()
+        await oldTask.value
+
+        #expect(router.routeQueries == ["linux distribution", "rust"])
+        #expect(discovery.requests.map(\.query) == ["rust"])
+        #expect(viewModel.lastSubmittedQuery == "rust")
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/rust" })
+    }
+
+    @Test("清空查询时取消智能链路且不留下失败")
+    func clearingQueryCancelsDiscoverySilently() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        router.delays = ["linux distribution": 0.15]
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "linux distribution"
+        let task = Task { await viewModel.submit() }
+        try await Self.waitUntil {
+            router.routeQueries == ["linux distribution"]
+        }
+        viewModel.clear()
+        await task.value
+
+        #expect(discovery.requests.isEmpty)
+        #expect(viewModel.discoverySession == nil)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(!viewModel.isDiscoveryRunning)
+        #expect(viewModel.lastSubmittedQuery.isEmpty)
+    }
+
     @Test("应用 GitHub 筛选重置首页并保留兼容的本地快照")
     func applyingGitHubFiltersPreservesLocalSnapshot() async throws {
         let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
@@ -948,6 +1006,13 @@ struct SearchCenterViewModelTests {
         )
     }
 
+    private static func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<100 where !condition() {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard condition() else { throw URLError(.timedOut) }
+    }
+
     private nonisolated static func makeSmartOutcome() -> SearchIntentRoutingOutcome {
         SearchIntentRoutingOutcome(
             route: .smartDiscovery,
@@ -1230,6 +1295,7 @@ private actor SearchHoldGate {
 @MainActor
 private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
     let outcome: SearchIntentRoutingOutcome
+    var delays: [String: TimeInterval] = [:]
     private(set) var routeQueries: [String] = []
 
     init(outcome: SearchIntentRoutingOutcome) {
@@ -1238,6 +1304,10 @@ private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
 
     func route(query: String, explicitSmartDiscovery: Bool, deadline: Date) async -> SearchIntentRoutingOutcome {
         routeQueries.append(query)
+        if let delay = delays[query] {
+            // 模拟慢 Router；Task.sleep 响应取消，能验证取消是否真的向下传导。
+            try? await Task.sleep(for: .seconds(delay))
+        }
         return outcome
     }
 }

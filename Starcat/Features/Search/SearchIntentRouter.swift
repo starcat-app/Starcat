@@ -267,6 +267,7 @@ final class SearchIntentRouter {
                 plan: nil
             )
         }
+        guard !Task.isCancelled else { return Self.cancelledOutcome }
 
         let routingStart = Date()
         let decision: SearchIntentDecision
@@ -279,6 +280,7 @@ final class SearchIntentRouter {
         } else {
             decision = await classify(query: query, deadline: deadline)
         }
+        guard !Task.isCancelled else { return Self.cancelledOutcome }
         let routingState: SearchDiscoveryStepState = switch decision.status {
         case .completed: .completed
         case .skipped, .unavailable: .skipped
@@ -353,6 +355,8 @@ final class SearchIntentRouter {
                 plan: plan.normalized,
                 steps: steps
             )
+        } catch where DiagnosticFailure.isCancellation(error) {
+            return Self.cancelledOutcome
         } catch {
             return SearchIntentRoutingOutcome(
                 route: .fastPath,
@@ -369,6 +373,16 @@ final class SearchIntentRouter {
                 )]
             )
         }
+    }
+
+    /// 取消结果只给调用方做身份丢弃，不进入失败诊断，也不触发后续 Planner。
+    private static var cancelledOutcome: SearchIntentRoutingOutcome {
+        SearchIntentRoutingOutcome(
+            route: .fastPath,
+            decisionStatus: .skipped,
+            plannerStatus: .notNeeded,
+            plan: nil
+        )
     }
 
     /// 调用前固定所选引擎；一旦开始执行，任何错误都转为 Planner 接管，不重试分类。
@@ -431,6 +445,12 @@ final class SearchIntentRouter {
                 needsPlanning: true,
                 needsFreshEvidence: false,
                 status: .timeout
+            )
+        } catch where DiagnosticFailure.isCancellation(error) {
+            return SearchIntentDecision(
+                needsPlanning: false,
+                needsFreshEvidence: false,
+                status: .skipped
             )
         } catch {
             return SearchIntentDecision(

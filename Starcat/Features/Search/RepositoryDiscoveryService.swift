@@ -473,6 +473,9 @@ final class RepositoryDiscoveryService {
         var steps: [SearchDiscoveryStep] = []
         var usedLLMCalls = max(0, initialLLMCalls)
         let deadline = deadline ?? Date().addingTimeInterval(budget.timeoutSeconds)
+        guard !Task.isCancelled else {
+            return Self.cancelledResult(generation: generation, round: round)
+        }
 
         var plan = initialPlan?.normalized
         if plan == nil {
@@ -511,6 +514,8 @@ final class RepositoryDiscoveryService {
                     durationSeconds: Self.duration(since: planStart),
                     model: planner.modelDisplayName
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 let session = SearchDiscoverySession(
                     generation: generation,
@@ -569,7 +574,8 @@ final class RepositoryDiscoveryService {
         var references: [ReferenceCandidate] = []
         var evidence: [SearchEvidence] = []
 
-        for webQuery in normalizedPlan.webQueries where session.canRunWebQuery(in: budget) {
+        for webQuery in normalizedPlan.webQueries
+        where session.canRunWebQuery(in: budget) && !Task.isCancelled {
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .webSearch, error: URLError(.timedOut)))
                 break
@@ -610,6 +616,8 @@ final class RepositoryDiscoveryService {
                     detail: Self.countDetail(page.references.count),
                     durationSeconds: Self.duration(since: searchStart)
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 session = Self.incrementing(session, webQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .webSearch, error: error))
@@ -622,7 +630,8 @@ final class RepositoryDiscoveryService {
             }
         }
 
-        for githubQuery in normalizedPlan.githubQueries where session.canRunGitHubQuery(in: budget) {
+        for githubQuery in normalizedPlan.githubQueries
+        where session.canRunGitHubQuery(in: budget) && !Task.isCancelled {
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .githubSearch, error: URLError(.timedOut)))
                 break
@@ -667,6 +676,8 @@ final class RepositoryDiscoveryService {
                     detail: Self.countDetail(page.repositories.count),
                     durationSeconds: Self.duration(since: searchStart)
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 session = Self.incrementing(session, githubQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .githubSearch, error: error))
@@ -697,7 +708,8 @@ final class RepositoryDiscoveryService {
         var verificationSuccessCount = 0
         while verificationAttempts < budget.maxVerifiedRepositories,
               !extractedIdentities.isEmpty,
-              Date() < deadline {
+              Date() < deadline,
+              !Task.isCancelled {
             let identity = extractedIdentities.removeFirst()
             // 网页身份没有 GitHub 数字 ID，不能与 API 结果直接比较 RepoIdentity；
             // 按完整仓库名识别已核验候选，避免重复请求耗尽本轮核验上限。
@@ -732,6 +744,8 @@ final class RepositoryDiscoveryService {
                 )
                 repositories.append(candidate)
                 verificationSuccessCount += 1
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 if error is RepositoryDiscoveryTimeout {
                     diagnostics.append(Self.failureDiagnostic(stage: .verification, error: error))
@@ -821,7 +835,8 @@ final class RepositoryDiscoveryService {
         let rankingStart = Date()
         if repositories.isEmpty
             || (rankerConsumesLLMBudget && !session.canUseLLM(in: budget))
-            || Date() >= deadline {
+            || Date() >= deadline
+            || Task.isCancelled {
             if !repositories.isEmpty && Date() >= deadline {
                 diagnostics.append(.failure(stage: .ranking, error: URLError(.timedOut)))
             } else if !repositories.isEmpty
@@ -886,6 +901,8 @@ final class RepositoryDiscoveryService {
                     durationSeconds: Self.duration(since: rankingStart),
                     model: ranker.modelDisplayName
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 session = Self.incrementing(
                     session,
@@ -928,6 +945,20 @@ final class RepositoryDiscoveryService {
             repositories: rankedRepositories,
             references: references,
             diagnostics: diagnostics
+        )
+    }
+
+    /// 取消结果只用于调用方身份丢弃；普通失败诊断必须留在失败分支，不能把用户取消记为错误。
+    private static func cancelledResult(generation: UUID, round: Int) -> RepositoryDiscoveryResult {
+        RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: generation,
+                round: round,
+                phase: .completed
+            ),
+            repositories: [],
+            references: [],
+            diagnostics: []
         )
     }
 

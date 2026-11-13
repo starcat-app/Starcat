@@ -60,6 +60,9 @@ final class SearchCenterViewModel {
     private let telemetryManager: TelemetryManager?
     private let intentRouter: (any SearchIntentRoutingProviding)?
     private let discoveryService: (any RepositoryDiscoveryProviding)?
+    /// 搜索提交、Router 与 Discovery 共用的请求身份；新提交会先取消旧链路。
+    private var searchGeneration = UUID()
+    private var searchTask: Task<Void, Never>?
     private var discoveryGeneration = UUID()
     private var discoveryTask: Task<Void, Never>?
     private var discoveryCache: [SearchRequest: RepositoryDiscoveryResult] = [:]
@@ -413,8 +416,8 @@ final class SearchCenterViewModel {
     func submit() async {
         let request = makeRequest(query: query)
         guard !request.query.isEmpty else {
+            cancelActiveSearch()
             coordinator.reset()
-            resetDiscoveryState()
             lastSubmittedQuery = ""
             selectedIndex = nil
             return
@@ -422,10 +425,24 @@ final class SearchCenterViewModel {
         guard canRunExplicitWebSearch(request) else { return }
 
         lastSubmittedQuery = request.query
+        let task = startExclusiveSearchOperation(.submit(request))
+        await awaitSearchTasks([task])
+    }
+
+    private func performSubmit(_ request: SearchRequest, generation: UUID) async {
+        lastSubmittedQuery = request.query
         // 历史记录持久化 + 重新加载：try? 静默吞错避免 SQLite 异常炸 UI；
         // 真实失败留到 W5 接 CloudKit 时一起观测。
         try? await historyRepository.record(request.query)
+        guard isActiveSearch(generation) else {
+            resetIfSearchCancelled(generation)
+            return
+        }
         await reloadHistory()
+        guard isActiveSearch(generation) else {
+            resetIfSearchCancelled(generation)
+            return
+        }
         selectedIndex = nil
         telemetryManager?.track(
             .searchPerformed,
@@ -433,18 +450,28 @@ final class SearchCenterViewModel {
         )
         // Getting Started 清单的“试用一次搜索”对应真实提交行为，而不是只打开搜索面板。
         NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
-        resetDiscoveryState(keepCache: true)
 
         if let cached = discoveryCache[request] {
+            let baseSearchTask = Task {
+                guard !Task.isCancelled else { return }
+                await coordinator.search(request)
+            }
             applyDiscovery(cached, cacheRequest: request)
-            await coordinator.search(request)
+            await awaitSearchTasks([baseSearchTask])
+            guard isActiveSearch(generation) else {
+                resetIfSearchCancelled(generation)
+                return
+            }
             clampSelection()
             return
         }
 
         // 先启动基础搜索，再让 Router 做 LLM 分类/规划；两者都挂在 MainActor
         // 的服务上，但网络等待会让出 actor，因此本地和远端结果可以并行落地。
-        let baseSearchTask = Task { await coordinator.search(request) }
+        let baseSearchTask = Task {
+            guard !Task.isCancelled else { return }
+            await coordinator.search(request)
+        }
         let deadline = Date().addingTimeInterval(SearchDiscoveryBudget.firstRound.timeoutSeconds)
         let routingOutcome: SearchIntentRoutingOutcome?
         if let intentRouter, request.scope == .all {
@@ -459,6 +486,11 @@ final class SearchCenterViewModel {
         } else {
             routingOutcome = nil
         }
+        guard isActiveSearch(generation) else {
+            baseSearchTask.cancel()
+            resetIfSearchCancelled(generation)
+            return
+        }
 
         if routingOutcome?.route == .smartDiscovery {
             let discoveryTask = startDiscovery(
@@ -467,10 +499,10 @@ final class SearchCenterViewModel {
                 plan: routingOutcome?.plan,
                 round: 1,
                 initialSteps: routingOutcome?.steps ?? [],
-                deadline: deadline
+                deadline: deadline,
+                generation: generation
             )
-            await baseSearchTask.value
-            await discoveryTask.value
+            await awaitSearchTasks([baseSearchTask, discoveryTask])
         } else if case .failed(let message) = routingOutcome?.plannerStatus {
             // Planner 在 Router 内失败时不会进入 Discovery Service；这里必须留下
             // failed 会话，否则用户只能看到基础搜索，无法知道智能分支为何没有启动。
@@ -486,11 +518,15 @@ final class SearchCenterViewModel {
                 kind: .failure,
                 message: message
             )]
-            await baseSearchTask.value
+            await awaitSearchTasks([baseSearchTask])
         } else {
             discoverySession = nil
             discoveryDiagnostics = []
-            await baseSearchTask.value
+            await awaitSearchTasks([baseSearchTask])
+        }
+        guard isActiveSearch(generation) else {
+            resetIfSearchCancelled(generation)
+            return
         }
         clampSelection()
     }
@@ -512,6 +548,7 @@ final class SearchCenterViewModel {
     }
 
     func clear() {
+        cancelActiveSearch()
         query = ""
         lastSubmittedQuery = ""
         selectedIndex = nil
@@ -523,33 +560,43 @@ final class SearchCenterViewModel {
     func continueDiscovery() async {
         guard canContinueDiscovery, let previousSession = discoverySession else { return }
         let request = makeRequest(query: lastSubmittedQuery)
-        resetDiscoveryState(keepCache: true)
+        let task = startExclusiveSearchOperation(.continueDiscovery(request, previousSession.round + 1))
+        await awaitSearchTasks([task])
+    }
+
+    private func performContinueDiscovery(_ request: SearchRequest, round: Int, generation: UUID) async {
         discoverySession = SearchDiscoverySession(
-            generation: discoveryGeneration,
-            round: previousSession.round + 1,
+            generation: generation,
+            round: round,
             phase: .routing
         )
-        await startDiscovery(
+        let discoveryTask = startDiscovery(
             query: request.query,
             request: request,
             plan: nil,
-            round: previousSession.round + 1
-        ).value
+            round: round,
+            generation: generation
+        )
+        await awaitSearchTasks([discoveryTask])
     }
 
     /// 显式按钮触发；不重跑基础搜索，只让 Planner 重新规划并执行一轮发现。
     func startSmartDiscovery() async {
         guard canStartSmartDiscovery else { return }
         let request = makeRequest(query: lastSubmittedQuery)
-        resetDiscoveryState(keepCache: true)
+        let task = startExclusiveSearchOperation(.smartDiscovery(request))
+        await awaitSearchTasks([task])
+    }
+
+    private func performSmartDiscovery(_ request: SearchRequest, generation: UUID) async {
         discoverySession = SearchDiscoverySession(
-            generation: discoveryGeneration,
+            generation: generation,
             round: 1,
             phase: .routing
         )
         guard let intentRouter else {
             discoverySession = SearchDiscoverySession(
-                generation: discoveryGeneration,
+                generation: generation,
                 round: 1,
                 phase: .failed("Discovery router is unavailable")
             )
@@ -560,10 +607,14 @@ final class SearchCenterViewModel {
         let outcome = await intentRouter.route(
             query: request.query, explicitSmartDiscovery: true, deadline: deadline
         )
+        guard isActiveSearch(generation) else {
+            resetIfSearchCancelled(generation)
+            return
+        }
         guard outcome.route == .smartDiscovery else {
             if case .failed(let message) = outcome.plannerStatus {
                 discoverySession = SearchDiscoverySession(
-                    generation: discoveryGeneration,
+                    generation: generation,
                     round: 1,
                     phase: .failed(message),
                     usedLLMCalls: 1,
@@ -580,14 +631,72 @@ final class SearchCenterViewModel {
             }
             return
         }
-        await startDiscovery(
+        let discoveryTask = startDiscovery(
             query: request.query,
             request: request,
             plan: outcome.plan,
             round: 1,
             initialSteps: outcome.steps,
-            deadline: deadline
-        ).value
+            deadline: deadline,
+            generation: generation
+        )
+        await awaitSearchTasks([discoveryTask])
+    }
+
+    private enum SearchCenterOperation {
+        case submit(SearchRequest)
+        case continueDiscovery(SearchRequest, Int)
+        case smartDiscovery(SearchRequest)
+    }
+
+    /// 所有会触发远端智能链路的入口都必须先取消上一条链路，再固定同一请求身份。
+    private func startExclusiveSearchOperation(_ operation: SearchCenterOperation) -> Task<Void, Never> {
+        searchTask?.cancel()
+        let generation = UUID()
+        searchGeneration = generation
+        resetDiscoveryState(keepCache: true)
+        discoveryGeneration = generation
+
+        let task = Task { [weak self] in
+            guard let self else { return }
+            switch operation {
+            case .submit(let request):
+                await self.performSubmit(request, generation: generation)
+            case .continueDiscovery(let request, let round):
+                await self.performContinueDiscovery(request, round: round, generation: generation)
+            case .smartDiscovery(let request):
+                await self.performSmartDiscovery(request, generation: generation)
+            }
+        }
+        searchTask = task
+        return task
+    }
+
+    private func isActiveSearch(_ generation: UUID) -> Bool {
+        searchGeneration == generation && !Task.isCancelled
+    }
+
+    private func resetIfSearchCancelled(_ generation: UUID) {
+        guard searchGeneration == generation else { return }
+        resetDiscoveryState(keepCache: true)
+    }
+
+    private func cancelActiveSearch() {
+        searchTask?.cancel()
+        searchTask = nil
+        searchGeneration = UUID()
+        resetDiscoveryState()
+    }
+
+    /// 子任务是非结构化 Task，不会继承外层取消；等待点必须显式向下传导。
+    private func awaitSearchTasks(_ tasks: [Task<Void, Never>]) async {
+        await withTaskCancellationHandler {
+            for task in tasks {
+                await task.value
+            }
+        } onCancel: {
+            tasks.forEach { $0.cancel() }
+        }
     }
 
     private func startDiscovery(
@@ -596,18 +705,19 @@ final class SearchCenterViewModel {
         plan: SearchDiscoveryPlan?,
         round: Int,
         initialSteps: [SearchDiscoveryStep] = [],
-        deadline: Date? = nil
+        deadline: Date? = nil,
+        generation: UUID? = nil
     ) -> Task<Void, Never> {
         guard let discoveryService else {
             discoverySession = SearchDiscoverySession(
-                generation: discoveryGeneration,
+                generation: generation ?? UUID(),
                 round: round,
                 phase: .failed("Discovery service is unavailable")
             )
             discoveryDiagnostics = [.unavailable(stage: .planning)]
             return Task {}
         }
-        let generation = UUID()
+        let generation = generation ?? UUID()
         let service = discoveryService
         discoveryGeneration = generation
         isDiscoveryRunning = true
@@ -633,7 +743,8 @@ final class SearchCenterViewModel {
                 deadline: deadline
             )
             // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
-            guard self.discoveryGeneration == generation else { return }
+            guard self.discoveryGeneration == generation,
+                  self.searchTask?.isCancelled != true else { return }
             self.applyDiscovery(result, cacheRequest: request, initialSteps: initialSteps)
         }
         discoveryTask = task
