@@ -314,7 +314,7 @@ extension RAGReranking {
 ///
 /// 服务端返回的是请求数组下标而不是 chunk id，因此候选截断、文档拼装和下标映射必须来自
 /// 同一个不可变快照；否则两个 Provider 各自维护这段逻辑时，很容易出现请求顺序与回填顺序漂移。
-private struct RAGRerankCandidateSnapshot: Sendable {
+struct RAGRerankCandidateSnapshot: Sendable {
     let hits: [RAGChildHit]
     let documents: [String]
 
@@ -327,15 +327,25 @@ private struct RAGRerankCandidateSnapshot: Sendable {
         }
     }
 
-    func applying(_ scores: [RAGRerankIndexedScore]) -> [(hit: RAGChildHit, score: Double)] {
-        scores.compactMap { result in
+    /// 越界项不能映射到未发出的候选；重复编号或非有限分数则使本次评分不可信。
+    /// 部分评分可以正常使用，但过滤后必须至少保留一项，避免把空响应当成重排成功。
+    func applying(
+        _ scores: [RAGRerankIndexedScore], backend: String
+    ) throws -> [(hit: RAGChildHit, score: Double)] {
+        var seen = Set<Int>()
+        guard scores.allSatisfy({ $0.score.isFinite && seen.insert($0.index).inserted }) else {
+            throw RAGExternalBackendError.invalidResponse(backend)
+        }
+        let valid = scores.compactMap { result -> (hit: RAGChildHit, score: Double)? in
             guard hits.indices.contains(result.index) else { return nil }
             return (hits[result.index], result.score)
         }.sorted { $0.score > $1.score }
+        guard !valid.isEmpty else { throw RAGExternalBackendError.invalidResponse(backend) }
+        return valid
     }
 }
 
-private struct RAGRerankIndexedScore: Sendable {
+struct RAGRerankIndexedScore: Sendable {
     let index: Int
     let score: Double
 }
@@ -408,8 +418,10 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
         let body = TEIRerankRequest(query: query, texts: snapshot.documents)
         let data = try await transport.post(body, to: url, backend: "Hugging Face TEI Rerank")
         let results = try JSONDecoder().decode([TEIRerankResult].self, from: data)
-        guard !results.isEmpty else { throw RAGExternalBackendError.invalidResponse("Hugging Face TEI Rerank") }
-        return snapshot.applying(results.map { RAGRerankIndexedScore(index: $0.index, score: $0.score) })
+        return try snapshot.applying(
+            results.map { RAGRerankIndexedScore(index: $0.index, score: $0.score) },
+            backend: "Hugging Face TEI Rerank"
+        )
     }
 
     private struct TEIRerankRequest: Encodable {
@@ -461,10 +473,10 @@ struct CohereCompatibleRAGReranker: RAGReranking {
         )
         let data = try await transport.post(body, to: url, backend: "Cohere-compatible Rerank")
         let decoded = try JSONDecoder().decode(CohereRerankResponse.self, from: data)
-        guard !decoded.results.isEmpty else { throw RAGExternalBackendError.invalidResponse("Cohere-compatible Rerank") }
-        return snapshot.applying(decoded.results.map {
-            RAGRerankIndexedScore(index: $0.index, score: $0.relevanceScore)
-        })
+        return try snapshot.applying(
+            decoded.results.map { RAGRerankIndexedScore(index: $0.index, score: $0.relevanceScore) },
+            backend: "Cohere-compatible Rerank"
+        )
     }
 
     private struct CohereRerankRequest: Encodable {

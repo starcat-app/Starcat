@@ -9,8 +9,8 @@
 //  显式开启；模型未下载时抛 `LocalAIError.modelNotInstalled`，由检索管线把错误上抛。
 //
 //  关键约束：
-//  - 候选截断、文档拼装、下标映射保持与 TEI/Cohere 相同的「同一快照」纪律
-//    （见 `RAGRerankCandidateSnapshot` 注释）；本地实现自持一份等价逻辑。
+//  - 候选截断、文档拼装、下标映射与评分校验复用 TEI/Cohere 的同一候选快照，
+//    本地异常评分也必须上抛，不能让界面误报重排成功。
 //  - Qwen3-Reranker 是判别式 causal 打分（yes/no logits → normalizedRelevance 0...1），
 //    mlx-swift-lm 的 `RerankerContainer` 已封装该协议；score 直接可用，无需归一化。
 //
@@ -73,34 +73,25 @@ struct LocalMLXRAGReranker: RAGReranking {
     private func performRerank(
         query: String, candidates: [RAGChildHit], directory: URL?
     ) async throws -> [(hit: RAGChildHit, score: Double)] {
-        let hits = Array(candidates.prefix(configuration.candidateLimit))
-        guard !hits.isEmpty else { return [] }
+        let snapshot = RAGRerankCandidateSnapshot(candidates: candidates, limit: configuration.candidateLimit)
+        guard !snapshot.hits.isEmpty else { return [] }
 
         guard let directory else {
             throw LocalAIError.modelNotInstalled(model.displayName)
-        }
-
-        // 与远程 Provider 的文档拼装口径一致：标题 + 路径 + 正文前 6000 字符。
-        let documents = hits.map { hit in
-            [hit.chunk.title, hit.chunk.sectionPath, String(hit.chunk.content.prefix(6_000))]
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
         }
 
         // score 类型由 config.json 决定（Qwen3 判别式 → normalizedRelevance 0...1）。
         let response = try await runtime.withReranker(directory: directory) { container in
             try await container.scores(
                 query: query,
-                documents: documents,
+                documents: snapshot.documents,
                 instruction: Self.instruction,
                 options: RerankExecutionOptions(maxBatchSize: 1, maxBatchTokens: 2_048))
         }
 
-        var scored: [(hit: RAGChildHit, score: Double)] = []
-        scored.reserveCapacity(hits.count)
-        for result in response.results where hits.indices.contains(result.index) {
-            scored.append((hits[result.index], result.score))
-        }
-        return scored.sorted { $0.score > $1.score }
+        return try snapshot.applying(
+            response.results.map { RAGRerankIndexedScore(index: $0.index, score: $0.score) },
+            backend: model.displayName
+        )
     }
 }

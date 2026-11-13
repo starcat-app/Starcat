@@ -255,15 +255,27 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
             Self.hit(for: candidate, index: index, evidence: evidence)
         }
         let scored = try await reranker.rerank(query: query, candidates: hits)
+        return try Self.rankedItems(
+            from: scored.map { (candidateID: $0.hit.chunk.parentKey, score: $0.score) },
+            candidates: candidates
+        )
+    }
+
+    /// 只把真实且可对齐的评分转为模型匹配；未评分候选由发现服务按原来源补回。
+    nonisolated static func rankedItems(
+        from scores: [(candidateID: String, score: Double)],
+        candidates: [SearchDiscoveryRankingCandidate]
+    ) throws -> [SearchDiscoveryRankedItem] {
         var usedKeys = Set<String>()
         var ranked: [SearchDiscoveryRankedItem] = []
 
-        for result in scored {
-            let key = result.hit.chunk.parentKey
+        for result in scores {
+            let key = result.candidateID.lowercased()
             guard !key.isEmpty,
+                  result.score.isFinite,
                   usedKeys.insert(key).inserted,
                   let candidate = candidates.first(where: { $0.id.lowercased() == key })
-            else { continue }
+            else { throw RepositoryDiscoveryError.invalidRankerResponse("Invalid scored candidate") }
             ranked.append(SearchDiscoveryRankedItem(
                 id: candidate.id,
                 reason: String.l10n("search.discovery.rerank.reason"),
@@ -271,13 +283,8 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
             ))
         }
 
-        // Provider 允许过滤低分结果。未返回的候选保留原顺序，避免候选凭空消失。
-        for candidate in candidates where !usedKeys.contains(candidate.id.lowercased()) {
-            ranked.append(SearchDiscoveryRankedItem(
-                id: candidate.id,
-                reason: String.l10n("search.discovery.rerank.reason"),
-                evidenceIDs: candidate.evidenceIDs
-            ))
+        guard !ranked.isEmpty else {
+            throw RepositoryDiscoveryError.invalidRankerResponse("No valid scored candidate")
         }
         return ranked
     }
@@ -901,8 +908,8 @@ final class RepositoryDiscoveryService {
                     evidence: evidence,
                     budget: budget
                 )
-                let rankerValidationFailed = !rankedItems.isEmpty
-                    && !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch })
+                let scoredCount = rankedRepositories.filter { $0.discovery?.kind == .modelMatch }.count
+                let rankerValidationFailed = rankedItems.isEmpty || scoredCount == 0
                 if rankerValidationFailed {
                     diagnostics.append(.failure(
                         stage: .ranking,
@@ -915,7 +922,7 @@ final class RepositoryDiscoveryService {
                     id: "ranking",
                     stage: .ranking,
                     state: rankerValidationFailed ? .failed : .completed,
-                    detail: Self.countDetail(rankedRepositories.count),
+                    detail: Self.countDetail(rankerValidationFailed ? 0 : scoredCount),
                     durationSeconds: Self.duration(since: rankingStart),
                     model: ranker.modelDisplayName
                 ))

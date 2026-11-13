@@ -457,6 +457,80 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.first?.discovery?.rank == 0)
     }
 
+    @Test("空重排失败保留候选，部分评分仅标记实际模型匹配", arguments: [false, true])
+    func rerankAnnotationsReflectActualScores(empty: Bool) async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift")),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "rust-lang", name: "rust"))
+                ],
+                references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker(kind: .dedicatedRerank) { _, _, candidates, _, _ in
+                try SearchDiscoveryRerankRanker.rankedItems(
+                    from: empty ? [] : [(candidateID: "rust-lang/rust", score: 0.9)],
+                    candidates: candidates
+                )
+            }
+        )
+        let result = await service.discover(
+            query: "language", request: SearchRequest(query: "language"), initialPlan: Self.makePlan()
+        )
+        #expect(result.repositories.count == 2)
+        #expect(result.steps.first { $0.stage == .ranking }?.state == (empty ? .failed : .completed))
+        #expect(result.repositories.first { $0.card.fullName == "apple/swift" }?.discovery?.kind == .githubSearch)
+        #expect(result.repositories.first { $0.card.fullName == "rust-lang/rust" }?.discovery?.kind
+                == (empty ? .githubSearch : .modelMatch))
+        #expect(result.session.phase == (empty ? .partialFailure : .completed))
+        #expect(result.diagnostics.contains { $0.stage == .ranking && $0.isFailure } == empty)
+        if !empty {
+            #expect(result.repositories.map(\.card.fullName) == ["rust-lang/rust", "apple/swift"])
+        }
+    }
+
+    @Test("Chat Ranker 空响应也不能标为重排成功")
+    func emptyChatRankingIsInvalid() async {
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            webProvider: nil, verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker { _, _, _, _, _ in [] }
+        )
+        let result = await service.discover(
+            query: "swift", request: SearchRequest(query: "swift"), initialPlan: Self.makePlan()
+        )
+        #expect(result.steps.first { $0.stage == .ranking }?.state == .failed)
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.session.phase == .partialFailure)
+    }
+
+    @Test("重排适配器拒绝无关候选、重复评分和非有限评分",
+          arguments: ["unknown", "duplicate", "nan", "infinity"])
+    func rerankAdapterRejectsInvalidScores(kind: String) {
+        let candidates = [SearchDiscoveryRankingCandidate(
+            id: "apple/swift", fullName: "apple/swift", description: nil, stars: 1, evidenceIDs: []
+        )]
+        let scores: [(candidateID: String, score: Double)] = switch kind {
+        case "unknown": [("unknown/repo", 0.9)]
+        case "duplicate": [("apple/swift", 0.9), ("apple/swift", 0.8)]
+        case "nan": [("apple/swift", .nan)]
+        default: [("apple/swift", .infinity)]
+        }
+        #expect(throws: RepositoryDiscoveryError.self) {
+            try SearchDiscoveryRerankRanker.rankedItems(from: scores, candidates: candidates)
+        }
+    }
+
     @Test("发现步骤按实际执行顺序记录成功、跳过与失败")
     func discoveryRecordsRealExecutionSteps() async {
         let github = RecordingSearchProvider(source: .github) { _ in
