@@ -13,6 +13,39 @@ import Testing
 @Suite("Search Center ViewModel")
 @MainActor
 struct SearchCenterViewModelTests {
+    @Test("发现网页资料卡遵守展示开关，仓库证据与缓存仍保留", arguments: [false, true])
+    func discoveryReferencesRespectDisplaySetting(includeWeb: Bool) async throws {
+        let initial = Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "web", name: "tool"))
+        let url = URL(string: "https://example.org/article")!
+        let result = RepositoryDiscoveryResult(
+            session: initial.session, repositories: initial.repositories,
+            references: [ReferenceCandidate(
+                normalizedURL: url, originalURL: url, title: "Project introduction",
+                snippet: "Public project evidence", domain: "example.org", source: .web
+            )],
+            diagnostics: []
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [result])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            includeWebInAll: { includeWeb },
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "find a project"
+        await viewModel.submit()
+        #expect(viewModel.candidates.count == (includeWeb ? 2 : 1))
+        if case .repository(let candidate) = viewModel.candidates.first {
+            #expect(viewModel.evidence(for: candidate).map(\.id) == ["web-0-0"])
+        } else {
+            Issue.record("Expected the discovered repository and its evidence")
+        }
+        await viewModel.submit()
+        #expect(viewModel.candidates.count == (includeWeb ? 2 : 1))
+        #expect(discovery.requests.count == 1)
+    }
+
     @Test("底部来源筛选保留重叠命中且与计数一致", arguments: [
         SearchSource.localKeyword, .localSemantic, .github, .web
     ])

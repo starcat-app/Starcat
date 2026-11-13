@@ -240,9 +240,12 @@ final class SearchCenterViewModel {
                     repositories.append(candidate)
                 }
             }
-            for reference in latestDiscoveryResult.references
-            where seenReferenceIDs.insert(reference.id).inserted {
-                references.append(reference)
+            // AI 取证许可与资料卡展示是两个开关；隐藏网页卡片仍保留仓库的证据链接。
+            if includeWebInAll() {
+                for reference in latestDiscoveryResult.references
+                where seenReferenceIDs.insert(reference.id).inserted {
+                    references.append(reference)
+                }
             }
             // 只认同一轮模型给出的相对顺序；基础来源的分数没有共同量纲。
             var ranks: [String: Int] = [:]
