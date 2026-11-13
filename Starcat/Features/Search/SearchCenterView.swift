@@ -82,7 +82,19 @@ struct SearchCenterView: View {
                 themedSeparator
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
-                        resultContent
+                        // epoch 只在范围/来源切换时变化；不要绑定候选数组，
+                        // 否则异步召回和分页追加都会让整张列表重复淡入淡出。
+                        ZStack {
+                            resultContent
+                                .id(viewModel.resultListEpoch)
+                                .transition(reduceMotion ? .identity : .opacity)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 0.16),
+                            value: viewModel.resultListEpoch
+                        )
                         webResultFooter
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

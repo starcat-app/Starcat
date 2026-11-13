@@ -166,6 +166,79 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.candidates.count == 1)
     }
 
+    @Test("加载中切换来源后保留筛选，迟到结果不重置列表身份")
+    func pendingSourceCompletionPreservesFilterAndListIdentity() async throws {
+        let gate = SearchHoldGate()
+        var keyword = Self.makeCandidate(id: 1, name: "keyword")
+        keyword.sources = [.localKeyword]
+        var semantic = Self.makeCandidate(id: 2, name: "semantic")
+        semantic.sources = [.localSemantic]
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [
+                SearchCenterImmediateStubProvider(
+                    source: .localKeyword,
+                    page: SearchProviderPage(
+                        repositories: [keyword], references: [], totalCount: 1, hasNextPage: false
+                    )
+                ),
+                SearchCenterGatedStubProvider(
+                    source: .localSemantic, gate: gate,
+                    page: SearchProviderPage(
+                        repositories: [semantic], references: [], totalCount: 1, hasNextPage: false
+                    )
+                )
+            ]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.scope = .local
+        viewModel.query = "swift"
+        let searchTask = Task { await viewModel.submit() }
+        await gate.waitUntilBlocked()
+        try await waitUntil { viewModel.resultCount(for: .localKeyword) == 1 }
+        let originalEpoch = viewModel.resultListEpoch
+
+        viewModel.toggleResultFilter(.source(.localSemantic))
+        let filteredEpoch = viewModel.resultListEpoch
+        #expect(filteredEpoch == originalEpoch + 1)
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.isResultFilterSearching)
+
+        await gate.resume()
+        await searchTask.value
+        #expect(viewModel.resultFilter == .source(.localSemantic))
+        #expect(viewModel.candidates.map(\.id) == ["repo:apple/semantic"])
+        #expect(viewModel.resultCount(for: .localKeyword) == 1)
+        #expect(viewModel.resultCount(for: .localSemantic) == 1)
+        #expect(!viewModel.isResultFilterSearching)
+        #expect(viewModel.resultListEpoch == filteredEpoch)
+    }
+
+    @Test("分页追加保留来源筛选和列表身份")
+    func paginationPreservesResultFilterAndListIdentity() async throws {
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1, name: "first"),
+            Self.makeCandidate(id: 2, name: "second")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.scope = .github
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.github))
+        let filteredEpoch = viewModel.resultListEpoch
+        viewModel.moveSelection(by: 0)
+
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.resultFilter == .source(.github))
+        #expect(viewModel.candidates.count == 2)
+        #expect(viewModel.resultCount(for: .github) == 2)
+        #expect(viewModel.selectedCandidate?.id == "repo:apple/first")
+        #expect(viewModel.resultListEpoch == filteredEpoch)
+        #expect(await provider.requests.map(\.page) == [1, 2])
+    }
+
     /// 固定来源交叉关系用于验收：发现与普通搜索交叠一项，并另增一项 GitHub 来源仓库。
     private func makeSourceFilterViewModel() async throws -> SearchCenterViewModel {
         var keyword = Self.makeCandidate(id: 1, name: "keyword")
