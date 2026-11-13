@@ -93,7 +93,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| `codex/global-search-review-fixes` | 已合并；本地分支及 worktree 保留。 | 2026-11-13 dong4j 授权合回 `dev`；分支基于 `dev@df82542c`，10 项修复保留独立提交，分支头 `fd213c5b` 通过 merge commit `e66c56da` 合入 `dev`。本地 `../Starcat-global-search-review-fixes` 保留，后续清理另行授权；本次未推送。 |
+| `codex/global-search-review-fixes` | 已删除 | 2026-11-13 dong4j 授权清理；分支头 `fd213c5b` 的 10 项独立修复已通过 merge commit `e66c56da` 合入 `dev`。删除前确认是 `dev` 祖先、独有提交为 0、`git cherry` 为空，搜索源码与 `dev` 一致，worktree 干净且 Secrets 配置与主工作区一致。已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-global-search-review-fixes` 与本地分支；本次未操作远端。 |
 | `codex/global-search-optimization` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `d9e9439b` 经 `1b8002c7` 整合后，通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、worktree 干净；已删除 `../Starcat-global-search-optimization` 与本地分支，本次未操作远端。 |
 | `codex/global-search-content-filter` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `1b8002c7` 已通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、内容过滤关键源码一致且 worktree 干净；已删除 `../Starcat-global-search-content-filter` 与本地分支，本次未操作远端。 |
 | `codex/skill-performance` | 已删除 | 2026-11-13 dong4j 授权删除；优化提交 `38e9a6c3` 已通过 merge commit `3c3c328b` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、源码一致且 worktree 干净；已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-skill-performance` 及本地分支，未操作远端。28 项定向回归及双渠道 build-only 已通过，大集合滚动、详情切换及无彩虹圈仍待实机验收。 |
