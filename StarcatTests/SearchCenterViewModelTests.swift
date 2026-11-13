@@ -528,6 +528,64 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.hasSettledSearchProvider)
     }
 
+    @Test("新查询取消旧 Router 链路且旧响应不启动发现")
+    func replacingQueryCancelsOldRoutingChain() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        router.delays = ["linux distribution": 0.15]
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 2, name: "rust"))
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "linux distribution"
+        let oldTask = Task { await viewModel.submit() }
+        try await Self.waitUntil {
+            router.routeQueries == ["linux distribution"]
+        }
+        viewModel.query = "rust"
+        await viewModel.submit()
+        await oldTask.value
+
+        #expect(router.routeQueries == ["linux distribution", "rust"])
+        #expect(discovery.requests.map(\.query) == ["rust"])
+        #expect(viewModel.lastSubmittedQuery == "rust")
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/rust" })
+    }
+
+    @Test("清空查询时取消智能链路且不留下失败")
+    func clearingQueryCancelsDiscoverySilently() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        router.delays = ["linux distribution": 0.15]
+        let discovery = SearchCenterStubDiscoveryService(results: [])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery
+        )
+
+        viewModel.query = "linux distribution"
+        let task = Task { await viewModel.submit() }
+        try await Self.waitUntil {
+            router.routeQueries == ["linux distribution"]
+        }
+        viewModel.clear()
+        await task.value
+
+        #expect(discovery.requests.isEmpty)
+        #expect(viewModel.discoverySession == nil)
+        #expect(viewModel.discoveryDiagnostics.isEmpty)
+        #expect(!viewModel.isDiscoveryRunning)
+        #expect(viewModel.lastSubmittedQuery.isEmpty)
+    }
+
     @Test("应用 GitHub 筛选重置首页并保留兼容的本地快照")
     func applyingGitHubFiltersPreservesLocalSnapshot() async throws {
         let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
@@ -1151,6 +1209,168 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
     }
 
+    @Test("部分失败不缓存，恢复成功后同一请求可复用")
+    func partialFailureIsNotCachedButRecoveredSuccessIsCached() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let baseResult = Self.makeDiscoveryResult(
+            candidate: Self.makeCandidate(id: 9, owner: "apple", name: "partial")
+        )
+        let partialFailure = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: baseResult.session.generation,
+                round: 1,
+                phase: .partialFailure,
+                plan: baseResult.session.plan,
+                evidence: baseResult.session.evidence,
+                usedLLMCalls: baseResult.session.usedLLMCalls,
+                steps: baseResult.steps
+            ),
+            repositories: baseResult.repositories,
+            references: [],
+            diagnostics: [.failure(stage: .webSearch, error: URLError(.timedOut))]
+        )
+        let success = Self.makeDiscoveryResult(
+            candidate: Self.makeCandidate(id: 10, owner: "apple", name: "success")
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [partialFailure, success])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+
+        viewModel.query = "github linux distribution"
+        viewModel.scope = .all
+        await viewModel.submit()
+        await viewModel.submit()
+        await viewModel.submit()
+
+        #expect(discovery.requests.count == 2)
+        #expect(viewModel.discoverySession?.phase == .completed)
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/success" })
+    }
+
+    @Test("配置身份与缓存过期会重新执行智能发现")
+    func cacheIdentityAndTTLInvalidateDiscoverySnapshot() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
+        let discovery = SearchCenterStubDiscoveryService(results: [
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "apple", name: "old")),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 10, owner: "apple", name: "new")),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 11, owner: "apple", name: "restored")),
+            Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 12, owner: "apple", name: "fresh"))
+        ])
+        var identity = SearchDiscoveryCacheIdentity.constant
+        var now = Date()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: router,
+            discoveryService: discovery,
+            discoveryCacheIdentity: { identity },
+            discoveryNow: { now }
+        )
+
+        viewModel.query = "github linux distribution"
+        viewModel.scope = .all
+        await viewModel.submit()
+        identity = SearchDiscoveryCacheIdentity(
+            chatConfiguration: "changed-chat",
+            rerankConfiguration: identity.rerankConfiguration,
+            externalSearchConfiguration: identity.externalSearchConfiguration,
+            credentialFingerprint: identity.credentialFingerprint
+        )
+        await viewModel.submit()
+        identity = .constant
+        await viewModel.submit()
+        now = now.addingTimeInterval(15 * 60)
+        await viewModel.submit()
+
+        #expect(router.routeQueries.count == 4)
+        #expect(discovery.requests.count == 4)
+        #expect(viewModel.candidates.contains { $0.id == "repo:apple/fresh" })
+    }
+
+    @Test("缓存命中不延长外部证据的有效期")
+    func cacheHitDoesNotExtendTTL() async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let result = Self.makeDiscoveryResult(candidate: Self.makeCandidate())
+        let discovery = SearchCenterStubDiscoveryService(results: [result, result])
+        var now = Date()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery,
+            discoveryNow: { now }
+        )
+        viewModel.query = "linux distribution"
+        await viewModel.submit()
+        now = now.addingTimeInterval(14 * 60)
+        await viewModel.submit()
+        #expect(discovery.requests.count == 1)
+        now = now.addingTimeInterval(60)
+        await viewModel.submit()
+        #expect(discovery.requests.count == 2)
+    }
+
+    @Test("失败与取消快照不会阻止相同查询恢复", arguments: [
+        SearchDiscoveryPhase.failed("Unavailable"), .cancelled, .completed
+    ])
+    func unsuccessfulSnapshotIsNotCached(phase: SearchDiscoveryPhase) async throws {
+        let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        let failure = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(generation: UUID(), round: 1, phase: phase),
+            repositories: [],
+            references: [],
+            diagnostics: phase == .cancelled
+                ? [] : [.failure(stage: .githubSearch, error: URLError(.notConnectedToInternet))]
+        )
+        let success = Self.makeDiscoveryResult(candidate: Self.makeCandidate())
+        let discovery = SearchCenterStubDiscoveryService(results: [failure, success])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: history,
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "linux distribution"
+        await viewModel.submit()
+        await viewModel.submit()
+        #expect(discovery.requests.count == 2)
+        #expect(viewModel.discoverySession?.phase == .completed)
+    }
+
+    @Test("真实配置与凭据修改会改变缓存身份", arguments: [
+        "chatModel", "chatProvider", "rerank", "webPermission",
+        "webProvider", "chatKey", "githubAccount", "rerankKey", "webKey", "decisionKey"
+    ])
+    func liveCacheIdentityTracksConfigurationChanges(change: String) throws {
+        let defaults = try #require(UserDefaults(suiteName: "SearchCache-\(UUID().uuidString)"))
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+        let previous = SearchDiscoveryCacheIdentity.live(settings: settings, keychain: keychain)
+        switch change {
+        case "chatModel":
+            settings.aiChatTask.useCustomModel = true
+            settings.aiChatTask.customModelName = "new-model"
+        case "chatProvider": settings.aiChatTask.providerID = "new-provider"
+        case "rerank": settings.ragRerankConfiguration.model = "new-reranker"
+        case "webPermission": settings.externalContextEnabled.toggle()
+        case "webProvider": settings.externalSearchDefaultProvider = .exa
+        case "chatKey": try keychain.storeAIKey("secret-new-chat-key", forProvider: settings.aiChatTask.providerID)
+        case "githubAccount": try keychain.storeGithubToken("secret-new-account-token")
+        case "rerankKey": try keychain.storeAIKey("secret-rerank-key", forProvider: RAGRerankConfiguration.keychainID)
+        case "webKey": try keychain.storeServiceAPIKey("secret-web-key", forService: ExternalSearchProviderID.exa.keychainServiceID)
+        case "decisionKey": try keychain.storeServiceAPIKey("secret-decision-key", forService: JevDecisionEngine.keychainServiceID)
+        default: Issue.record("Unexpected test case")
+        }
+        let current = SearchDiscoveryCacheIdentity.live(settings: settings, keychain: keychain)
+        #expect(previous != current)
+        #expect(!String(describing: current).contains("secret-"))
+    }
+
     @Test("智能发现失败不清空基础搜索结果")
     func discoveryFailureKeepsBaseResults() async throws {
         let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
@@ -1293,6 +1513,13 @@ struct SearchCenterViewModelTests {
             remoteRepo: nil,
             semanticScore: nil
         )
+    }
+
+    private static func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<100 where !condition() {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard condition() else { throw URLError(.timedOut) }
     }
 
     private nonisolated static func makeSmartOutcome() -> SearchIntentRoutingOutcome {
@@ -1577,6 +1804,7 @@ private actor SearchHoldGate {
 @MainActor
 private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
     let outcome: SearchIntentRoutingOutcome
+    var delays: [String: TimeInterval] = [:]
     private(set) var routeQueries: [String] = []
 
     init(outcome: SearchIntentRoutingOutcome) {
@@ -1585,6 +1813,10 @@ private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
 
     func route(query: String, explicitSmartDiscovery: Bool, deadline: Date) async -> SearchIntentRoutingOutcome {
         routeQueries.append(query)
+        if let delay = delays[query] {
+            // 模拟慢 Router；Task.sleep 响应取消，能验证取消是否真的向下传导。
+            try? await Task.sleep(for: .seconds(delay))
+        }
         return outcome
     }
 }

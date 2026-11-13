@@ -255,15 +255,27 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
             Self.hit(for: candidate, index: index, evidence: evidence)
         }
         let scored = try await reranker.rerank(query: query, candidates: hits)
+        return try Self.rankedItems(
+            from: scored.map { (candidateID: $0.hit.chunk.parentKey, score: $0.score) },
+            candidates: candidates
+        )
+    }
+
+    /// 只把真实且可对齐的评分转为模型匹配；未评分候选由发现服务按原来源补回。
+    nonisolated static func rankedItems(
+        from scores: [(candidateID: String, score: Double)],
+        candidates: [SearchDiscoveryRankingCandidate]
+    ) throws -> [SearchDiscoveryRankedItem] {
         var usedKeys = Set<String>()
         var ranked: [SearchDiscoveryRankedItem] = []
 
-        for result in scored {
-            let key = result.hit.chunk.parentKey
+        for result in scores {
+            let key = result.candidateID.lowercased()
             guard !key.isEmpty,
+                  result.score.isFinite,
                   usedKeys.insert(key).inserted,
                   let candidate = candidates.first(where: { $0.id.lowercased() == key })
-            else { continue }
+            else { throw RepositoryDiscoveryError.invalidRankerResponse("Invalid scored candidate") }
             ranked.append(SearchDiscoveryRankedItem(
                 id: candidate.id,
                 reason: String.l10n("search.discovery.rerank.reason"),
@@ -271,13 +283,8 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
             ))
         }
 
-        // Provider 允许过滤低分结果。未返回的候选保留原顺序，避免候选凭空消失。
-        for candidate in candidates where !usedKeys.contains(candidate.id.lowercased()) {
-            ranked.append(SearchDiscoveryRankedItem(
-                id: candidate.id,
-                reason: String.l10n("search.discovery.rerank.reason"),
-                evidenceIDs: candidate.evidenceIDs
-            ))
+        guard !ranked.isEmpty else {
+            throw RepositoryDiscoveryError.invalidRankerResponse("No valid scored candidate")
         }
         return ranked
     }
@@ -400,10 +407,10 @@ struct RepositoryDiscoveryResult: Equatable, Sendable {
     let repositories: [RepositoryCandidate]
     let references: [ReferenceCandidate]
     let diagnostics: [SearchDiscoveryDiagnostic]
+    let contentSummary: SearchContentSummary
     /// 本轮完整步骤快照。默认回落到 session.steps，便于只返回局部结果的调用方
     /// 无需重复维护两份一致的数据；发现服务成功完成时在这里写入最终顺序。
     let steps: [SearchDiscoveryStep]
-    let contentSummary: SearchContentSummary
 
     init(
         session: SearchDiscoverySession,
@@ -445,6 +452,7 @@ final class RepositoryDiscoveryService {
     private let webProvider: (any SearchProvider)?
     private let verifier: any RepositoryVerificationProviding
     private let ranker: (any SearchDiscoveryRankerProviding)?
+    private let webEvidenceAllowed: (ExternalSearchProviderID) -> Bool
     private let contentPolicy: SearchContentPolicy
 
     init(
@@ -453,6 +461,7 @@ final class RepositoryDiscoveryService {
         webProvider: (any SearchProvider)? = nil,
         verifier: any RepositoryVerificationProviding,
         ranker: (any SearchDiscoveryRankerProviding)? = nil,
+        webEvidenceAllowed: @escaping (ExternalSearchProviderID) -> Bool = { _ in false },
         contentPolicy: SearchContentPolicy = .bundled
     ) {
         self.planner = planner
@@ -460,6 +469,7 @@ final class RepositoryDiscoveryService {
         self.webProvider = webProvider
         self.verifier = verifier
         self.ranker = ranker
+        self.webEvidenceAllowed = webEvidenceAllowed
         self.contentPolicy = contentPolicy
     }
 
@@ -489,6 +499,9 @@ final class RepositoryDiscoveryService {
         var steps: [SearchDiscoveryStep] = []
         var usedLLMCalls = max(0, initialLLMCalls)
         let deadline = deadline ?? Date().addingTimeInterval(budget.timeoutSeconds)
+        guard !Task.isCancelled else {
+            return Self.cancelledResult(generation: generation, round: round)
+        }
 
         var plan = initialPlan?.normalized
         if plan == nil {
@@ -513,7 +526,7 @@ final class RepositoryDiscoveryService {
                 let generated = try await SearchDiscoveryDeadline.run(until: deadline) {
                     try await planner.plan(
                         query: query,
-                        allowWebEvidence: baseRequest.includeWebInAll || baseRequest.scope == .web,
+                        allowWebEvidence: self.webEvidenceAllowed(baseRequest.externalSearchProvider),
                         maxSeconds: Self.remainingSeconds(to: deadline)
                     )
                 }
@@ -527,6 +540,8 @@ final class RepositoryDiscoveryService {
                     durationSeconds: Self.duration(since: planStart),
                     model: planner.modelDisplayName
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 let session = SearchDiscoverySession(
                     generation: generation,
@@ -584,6 +599,7 @@ final class RepositoryDiscoveryService {
                 repositories: [], references: [], diagnostics: [], contentSummary: contentSummary
             )
         }
+
         var session = SearchDiscoverySession(
             generation: generation,
             round: round,
@@ -595,7 +611,16 @@ final class RepositoryDiscoveryService {
         var references: [ReferenceCandidate] = []
         var evidence: [SearchEvidence] = []
 
-        for webQuery in normalizedPlan.webQueries where session.canRunWebQuery(in: budget) {
+        for webQuery in normalizedPlan.webQueries
+        where session.canRunWebQuery(in: budget) && !Task.isCancelled {
+            // 首轮计划可能在设置变更前生成；每次请求都重新检查，继续查找也走同一策略。
+            guard webEvidenceAllowed(baseRequest.externalSearchProvider) else {
+                steps.append(SearchDiscoveryStep(
+                    id: "web-skipped", stage: .webSearch, state: .skipped,
+                    detail: String.l10n("search.discovery.web.skipped")
+                ))
+                break
+            }
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .webSearch, error: URLError(.timedOut)))
                 break
@@ -637,6 +662,15 @@ final class RepositoryDiscoveryService {
                     detail: Self.countDetail(page.references.count),
                     durationSeconds: Self.duration(since: searchStart)
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
+            } catch ExternalSearchError.disabled(let provider) {
+                steps.append(SearchDiscoveryStep(
+                    id: "web-disabled", stage: .webSearch, state: .skipped,
+                    detail: ExternalSearchError.disabled(provider: provider).friendlyMessage,
+                    durationSeconds: Self.duration(since: searchStart)
+                ))
+                break
             } catch {
                 session = Self.incrementing(session, webQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .webSearch, error: error))
@@ -649,7 +683,8 @@ final class RepositoryDiscoveryService {
             }
         }
 
-        for githubQuery in normalizedPlan.githubQueries where session.canRunGitHubQuery(in: budget) {
+        for githubQuery in normalizedPlan.githubQueries
+        where session.canRunGitHubQuery(in: budget) && !Task.isCancelled {
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .githubSearch, error: URLError(.timedOut)))
                 break
@@ -695,6 +730,8 @@ final class RepositoryDiscoveryService {
                     detail: Self.countDetail(page.repositories.count),
                     durationSeconds: Self.duration(since: searchStart)
                 ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 session = Self.incrementing(session, githubQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .githubSearch, error: error))
@@ -725,7 +762,8 @@ final class RepositoryDiscoveryService {
         var verificationSuccessCount = 0
         while verificationAttempts < budget.maxVerifiedRepositories,
               !extractedIdentities.isEmpty,
-              Date() < deadline {
+              Date() < deadline,
+              !Task.isCancelled {
             let identity = extractedIdentities.removeFirst()
             let identityDocument = SearchContentDocument(
                 id: SearchContentPolicy.repositoryKey(identity.normalizedFullName),
@@ -760,7 +798,6 @@ final class RepositoryDiscoveryService {
                     remoteRepo: repo,
                     semanticScore: nil
                 )
-                verificationSuccessCount += 1
                 let document = candidate.contentDocument
                 let match = contentPolicy.match(document)
                 contentSummary.record(document, match: match)
@@ -776,6 +813,9 @@ final class RepositoryDiscoveryService {
                     kind: .githubVerification
                 )
                 repositories.append(candidate)
+                verificationSuccessCount += 1
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
             } catch {
                 if error is RepositoryDiscoveryTimeout {
                     diagnostics.append(Self.failureDiagnostic(stage: .verification, error: error))
@@ -865,7 +905,8 @@ final class RepositoryDiscoveryService {
         let rankingStart = Date()
         if repositories.isEmpty
             || (rankerConsumesLLMBudget && !session.canUseLLM(in: budget))
-            || Date() >= deadline {
+            || Date() >= deadline
+            || Task.isCancelled {
             if !repositories.isEmpty && Date() >= deadline {
                 diagnostics.append(.failure(stage: .ranking, error: URLError(.timedOut)))
             } else if !repositories.isEmpty
@@ -913,8 +954,8 @@ final class RepositoryDiscoveryService {
                     budget: budget,
                     contentPolicy: contentPolicy
                 )
-                let rankerValidationFailed = !rankedItems.isEmpty
-                    && !rankedRepositories.contains(where: { $0.discovery?.kind == .modelMatch })
+                let scoredCount = rankedRepositories.filter { $0.discovery?.kind == .modelMatch }.count
+                let rankerValidationFailed = rankedItems.isEmpty || scoredCount == 0
                 if rankerValidationFailed {
                     diagnostics.append(.failure(
                         stage: .ranking,
@@ -927,7 +968,16 @@ final class RepositoryDiscoveryService {
                     id: "ranking",
                     stage: .ranking,
                     state: rankerValidationFailed ? .failed : .completed,
-                    detail: Self.countDetail(rankedRepositories.count),
+                    detail: Self.countDetail(rankerValidationFailed ? 0 : scoredCount),
+                    durationSeconds: Self.duration(since: rankingStart),
+                    model: ranker.modelDisplayName
+                ))
+            } catch where DiagnosticFailure.isCancellation(error) {
+                return Self.cancelledResult(generation: generation, round: round)
+            } catch RepositoryDiscoveryError.dedicatedRerankDisabled {
+                rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
+                steps.append(SearchDiscoveryStep(
+                    id: "ranking", stage: .ranking, state: .skipped,
                     durationSeconds: Self.duration(since: rankingStart),
                     model: ranker.modelDisplayName
                 ))
@@ -957,10 +1007,28 @@ final class RepositoryDiscoveryService {
             ))
         }
 
+        guard !Task.isCancelled else {
+            return Self.cancelledResult(generation: generation, round: round)
+        }
+        let hasFailureDiagnostic = diagnostics.contains { $0.isFailure }
+        let hasSuccessfulSearch = steps.contains {
+            ($0.stage == .webSearch || $0.stage == .githubSearch) && $0.state == .completed
+        }
+        // 全部实际发出的检索都失败时不能伪装成“零命中”；仍有任一来源成功则保留
+        // 结果并标记部分失败，让用户可以查看诊断，同时继续使用已核验的候选。
+        let terminalPhase: SearchDiscoveryPhase = if hasFailureDiagnostic && !hasSuccessfulSearch {
+            .failed("Search discovery failed")
+        } else if hasFailureDiagnostic {
+            .partialFailure
+        } else if rankedRepositories.isEmpty {
+            .noResults
+        } else {
+            .completed
+        }
         let completed = SearchDiscoverySession(
             generation: generation,
             round: round,
-            phase: .completed,
+            phase: terminalPhase,
             plan: normalizedPlan,
             evidence: evidence,
             usedLLMCalls: session.usedLLMCalls,
@@ -974,6 +1042,20 @@ final class RepositoryDiscoveryService {
             references: references,
             diagnostics: diagnostics,
             contentSummary: contentSummary
+        )
+    }
+
+    /// 取消结果只用于调用方身份丢弃；普通失败诊断必须留在失败分支，不能把用户取消记为错误。
+    private static func cancelledResult(generation: UUID, round: Int) -> RepositoryDiscoveryResult {
+        RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: generation,
+                round: round,
+                phase: .cancelled
+            ),
+            repositories: [],
+            references: [],
+            diagnostics: []
         )
     }
 

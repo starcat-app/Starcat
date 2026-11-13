@@ -461596,6 +461596,755 @@
         "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gagal" } }
       }
     },
+    "search.discovery.web.skipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KI-Websuche deaktiviert oder ausgewählter Suchdienst nicht verfügbar. Websuche übersprungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI web access is off or the selected search service is unavailable. Web discovery was skipped."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El acceso web de IA está desactivado o el servicio elegido no está disponible. Se omitió la búsqueda web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’accès web de l’IA est désactivé ou le service choisi est indisponible. Recherche web ignorée."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Akses web AI nonaktif atau layanan pencarian yang dipilih tidak tersedia. Penemuan web dilewati."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’accesso web IA è disattivato o il servizio scelto non è disponibile. Ricerca web saltata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI のウェブアクセスが無効か、選択した検索サービスを利用できないため、ウェブ検索をスキップしました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 웹 접근이 꺼져 있거나 선택한 검색 서비스를 사용할 수 없어 웹 검색을 건너뛰었습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI-webtoegang is uitgeschakeld of de gekozen zoekdienst is niet beschikbaar. Webzoeken overgeslagen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostęp AI do sieci jest wyłączony lub wybrana usługa jest niedostępna. Pominięto wyszukiwanie w sieci."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O acesso da IA à web está desativado ou o serviço escolhido está indisponível. A busca na web foi ignorada."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступ ИИ к сети отключён или выбранный сервис недоступен. Веб-поиск пропущен."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ web erişimi kapalı veya seçilen arama hizmeti kullanılamıyor. Web keşfi atlandı."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступ ШІ до мережі вимкнено або вибрана служба недоступна. Вебпошук пропущено."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quyền truy cập web của AI đã tắt hoặc dịch vụ đã chọn không khả dụng. Đã bỏ qua tìm kiếm web."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 联网已关闭或所选搜索服务不可用，本轮跳过网页发现。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 連網已關閉或所選搜尋服務無法使用，本輪略過網頁探索。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.providerUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der KI-Anbieter ist deaktiviert oder noch nicht geprüft. Aktiviere und prüfe ihn in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AI provider is disabled or has not passed its connection test. Enable and verify it in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El proveedor de IA está desactivado o no ha superado la prueba de conexión. Actívalo y verifícalo en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le fournisseur d’IA est désactivé ou n’a pas réussi le test de connexion. Activez-le et vérifiez-le dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Penyedia AI nonaktif atau belum lulus uji koneksi. Aktifkan dan verifikasi di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il provider IA è disattivato o non ha superato il test di connessione. Attivalo e verificalo nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI プロバイダーが無効か、接続テストが完了していません。モデル設定で有効化し、接続を確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 제공업체가 비활성화되었거나 연결 테스트를 통과하지 못했습니다. 모델 설정에서 활성화하고 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De AI-aanbieder is uitgeschakeld of heeft de verbindingstest niet doorstaan. Schakel deze in en controleer de verbinding in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostawca AI jest wyłączony lub nie przeszedł testu połączenia. Włącz go i zweryfikuj w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O provedor de IA está desativado ou não passou no teste de conexão. Ative-o e verifique-o nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Провайдер ИИ отключён или не прошёл проверку подключения. Включите и проверьте его в настройках моделей."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ sağlayıcısı devre dışı veya bağlantı testini geçemedi. Model ayarlarında etkinleştirip doğrulayın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Постачальника ШІ вимкнено або він не пройшов перевірку з’єднання. Увімкніть і перевірте його в налаштуваннях моделей."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nhà cung cấp AI đã tắt hoặc chưa vượt qua kiểm tra kết nối. Hãy bật và xác minh trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 服务商未启用或尚未通过连接测试，请在模型设置中启用并验证。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 服務商未啟用或尚未通過連線測試，請在模型設定中啟用並驗證。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.missingModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kein verfügbares Chatmodell ausgewählt oder das gewählte Modell ist deaktiviert. Wähle ein Modell in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No available Chat model is selected, or the selected model is disabled. Choose a model in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hay un modelo de chat disponible seleccionado, o está desactivado. Elige uno en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucun modèle de conversation disponible n’est sélectionné, ou le modèle est désactivé. Choisissez-en un dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Belum ada model Chat yang tersedia dipilih, atau model yang dipilih nonaktif. Pilih model di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessun modello Chat disponibile è selezionato, oppure il modello è disattivato. Scegline uno nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "利用可能なチャットモデルが未選択か、選択したモデルが無効です。モデル設定で選択し直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사용 가능한 채팅 모델이 선택되지 않았거나 선택한 모델이 비활성화되었습니다. 모델 설정에서 다시 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Er is geen beschikbaar chatmodel geselecteerd of het model is uitgeschakeld. Kies een model in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie wybrano dostępnego modelu czatu lub wybrany model jest wyłączony. Wybierz model w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nenhum modelo de chat disponível foi selecionado ou o modelo está desativado. Escolha um nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступная модель чата не выбрана или выбранная модель отключена. Выберите модель в настройках."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kullanılabilir bir sohbet modeli seçilmedi veya seçilen model devre dışı. Model ayarlarından bir model seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступну модель чату не вибрано або вибрану модель вимкнено. Виберіть модель у налаштуваннях."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chưa chọn mô hình trò chuyện khả dụng hoặc mô hình đã chọn bị tắt. Hãy chọn mô hình trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未选择可用的对话模型，或所选模型已被禁用。请在模型设置中重新选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尚未選擇可用的對話模型，或所選模型已停用。請在模型設定中重新選擇。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.incompatibleModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Das gewählte Modell unterstützt keine Chats. Wähle ein Chatmodell in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The selected model does not support Chat. Choose a Chat model in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El modelo elegido no admite chat. Elige un modelo de chat en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le modèle choisi ne prend pas en charge la conversation. Choisissez un modèle adapté dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Model yang dipilih tidak mendukung Chat. Pilih model Chat di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il modello scelto non supporta Chat. Scegli un modello Chat nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選択したモデルはチャットに対応していません。モデル設定でチャットモデルを選択してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "선택한 모델은 채팅을 지원하지 않습니다. 모델 설정에서 채팅 모델을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Het gekozen model ondersteunt geen chat. Kies een chatmodel in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wybrany model nie obsługuje czatu. Wybierz model czatu w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O modelo escolhido não oferece suporte a chat. Escolha um modelo de chat nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Выбранная модель не поддерживает чат. Выберите модель чата в настройках моделей."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seçilen model sohbeti desteklemiyor. Model ayarlarından bir sohbet modeli seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вибрана модель не підтримує чат. Виберіть модель чату в налаштуваннях моделей."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mô hình đã chọn không hỗ trợ trò chuyện. Hãy chọn mô hình trò chuyện trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选模型不支持对话，请在模型设置中选择 Chat 模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "所選模型不支援對話，請在模型設定中選擇 Chat 模型。"
+          }
+        }
+      }
+    },
+    "search.discovery.routing.fallbackFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nDie Absichtsplanung übernimmt. Das Ergebnis steht im Planungsschritt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\nIntent planning took over. See the planning step for its outcome."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa planificación de intención tomó el relevo. Consulta su resultado en el paso de planificación."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa planification de l’intention a pris le relais. Son résultat figure à l’étape de planification."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nPerencanaan maksud mengambil alih. Lihat hasilnya pada langkah perencanaan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nLa pianificazione dell’intento è subentrata. Consulta il risultato nel passaggio di pianificazione."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n意図の計画に引き継ぎました。結果は計画ステップで確認できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n의도 계획 단계가 이어서 처리했습니다. 결과는 계획 단계를 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nDe intentieplanning heeft het overgenomen. Bekijk het resultaat bij de planningsstap."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nPlanowanie intencji przejęło zadanie. Wynik jest widoczny w kroku planowania."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nO planejamento de intenção assumiu a tarefa. Veja o resultado na etapa de planejamento."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nЗадача передана планированию намерения. Результат указан на этапе планирования."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nNiyet planlaması devraldı. Sonuç için planlama adımına bakın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nЗавдання передано плануванню наміру. Результат наведено на кроці планування."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\nBước lập kế hoạch ý định đã tiếp quản. Xem kết quả tại bước lập kế hoạch."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@\n已交由意图规划接管，执行结果见规划步骤。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@\n已交由意圖規劃接手，執行結果請見規劃步驟。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.rateLimitedRetryFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ hat die Anfragen begrenzt. Versuche es in %d Sekunden erneut."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ rate limited this request. Try again in %d seconds."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ha limitado las solicitudes. Inténtalo de nuevo en %d segundos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ limite les requêtes. Réessayez dans %d secondes."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ membatasi permintaan. Coba lagi dalam %d detik."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ha limitato le richieste. Riprova tra %d secondi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ のリクエスト制限に達しました。%d 秒後に再試行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@의 요청 한도에 도달했습니다. %d초 후에 다시 시도하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ heeft het aantal verzoeken beperkt. Probeer het over %d seconden opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ograniczył liczbę żądań. Spróbuj ponownie za %d sekund."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ limitou as solicitações. Tente novamente em %d segundos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ ограничил частоту запросов. Повторите попытку через %d сек."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ istekleri sınırlandırdı. %d saniye sonra tekrar deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ обмежив частоту запитів. Спробуйте знову через %d с."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ đã giới hạn yêu cầu. Hãy thử lại sau %d giây."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 请求过于频繁，请在 %d 秒后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 請求過於頻繁，請在 %d 秒後重試。"
+          }
+        }
+      }
+    },
+    "externalSearch.error.timeoutFormat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Suchanfrage an %@ hat das Zeitlimit überschritten."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The search request to %@ timed out."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La solicitud de búsqueda a %@ agotó el tiempo de espera."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La requête de recherche vers %@ a expiré."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Permintaan pencarian ke %@ kehabisan waktu."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La richiesta di ricerca a %@ è scaduta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ への検索リクエストがタイムアウトしました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 검색 요청 시간이 초과되었습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De zoekopdracht naar %@ heeft de tijdslimiet overschreden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Upłynął limit czasu żądania wyszukiwania do %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "A solicitação de pesquisa para %@ excedeu o tempo limite."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Время ожидания поискового запроса к %@ истекло."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ arama isteği zaman aşımına uğradı."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Час очікування пошукового запиту до %@ вичерпано."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yêu cầu tìm kiếm tới %@ đã hết thời gian chờ."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 搜索请求超时。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%@ 搜尋請求逾時。"
+          }
+        }
+      }
+    },
     "search.discovery.step.routing" : {
       "extractionState" : "manual",
       "localizations" : {

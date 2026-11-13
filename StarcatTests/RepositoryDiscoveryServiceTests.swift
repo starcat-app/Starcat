@@ -42,10 +42,13 @@ struct RepositoryDiscoveryServiceTests {
             #expect(Set(candidates.map(\.fullName)) == ["apple/swift", "basecamp/omarchy"])
             #expect(evidence.allSatisfy { !$0.title.contains("毒品") })
             #expect(evidence.allSatisfy { $0.url?.absoluteString.contains("china-dictatorship") != true })
-            return []
+            return candidates.map { candidate in
+                SearchDiscoveryRankedItem(id: candidate.id, reason: "Allowed candidate", evidenceIDs: [])
+            }
         }
         let result = await RepositoryDiscoveryService(
-            planner: nil, githubProvider: github, webProvider: web, verifier: verifier, ranker: ranker
+            planner: nil, githubProvider: github, webProvider: web, verifier: verifier, ranker: ranker,
+            webEvidenceAllowed: { _ in true }
         ).discover(query: "Linux", request: SearchRequest(query: "Linux", includeWebInAll: true), initialPlan: Self.makePlan())
         #expect(result.repositories.count == 2)
         #expect(result.references.count == 1)
@@ -100,13 +103,16 @@ struct RepositoryDiscoveryServiceTests {
         let ranker = StubDiscoveryRanker { _, _, candidates, evidence, _ in
             #expect(candidates.map(\.fullName) == ["apple/swift"])
             #expect(evidence.allSatisfy { $0.url?.absoluteString.contains("old/alias") != true })
-            return []
+            return candidates.map { candidate in
+                SearchDiscoveryRankedItem(id: candidate.id, reason: "Allowed candidate", evidenceIDs: [])
+            }
         }
         let result = await RepositoryDiscoveryService(
             planner: nil, githubProvider: github, webProvider: web,
             verifier: StubRepositoryVerifier { _, _ in
                 Self.makeRepoDTO(id: 2, owner: "cirosantilli", name: "china-dictatorship")
-            }, ranker: ranker
+            }, ranker: ranker,
+            webEvidenceAllowed: { _ in true }
         ).discover(query: "Linux", request: SearchRequest(query: "Linux", includeWebInAll: true), initialPlan: Self.makePlan())
         #expect(result.references.isEmpty)
         #expect(result.repositories.map(\.card.fullName) == ["apple/swift"])
@@ -173,7 +179,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: verifier,
-            ranker: ranker
+            ranker: ranker,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -227,7 +234,8 @@ struct RepositoryDiscoveryServiceTests {
             verifier: StubRepositoryVerifier { _, _ in
                 throw TestError.failed
             },
-            ranker: ranker
+            ranker: ranker,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -247,7 +255,7 @@ struct RepositoryDiscoveryServiceTests {
                 && $0.technicalDetail?.contains("No ranked candidate passed validation") == true
         })
         #expect(result.session.usedLLMCalls == 2)
-        #expect(result.session.phase == .completed)
+        #expect(result.session.phase == .partialFailure)
     }
 
     @Test("预算截断 Planner 查询与 Web 提取仓库核验")
@@ -282,7 +290,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: verifier,
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -302,6 +311,55 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.diagnostics.contains { $0.stage == .verification && $0.kind == .limit })
         #expect(!result.diagnostics.contains { $0.isFailure })
         #expect(result.references.count == 6)
+    }
+
+    @Test("全部检索失败时返回失败而不是零命中")
+    func allSearchFailuresProduceFailureTerminalState() async {
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                throw TestError.failed
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in
+                throw TestError.failed
+            },
+            verifier: StubRepositoryVerifier { _, _ in
+                throw TestError.failed
+            },
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
+        )
+
+        let result = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux"),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(result.repositories.isEmpty)
+        #expect(result.session.phase.isFailed)
+        #expect(result.diagnostics.contains { $0.stage == .webSearch && $0.isFailure })
+        #expect(result.diagnostics.contains { $0.stage == .githubSearch && $0.isFailure })
+    }
+
+    @Test("检索成功且没有仓库时保留独立的零命中终态")
+    func successfulEmptySearchHasNoResultsState() async {
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in .empty },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
+        )
+        let result = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux"),
+            initialPlan: Self.makePlan()
+        )
+        #expect(result.session.phase == .noResults)
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.repositories.isEmpty)
     }
 
     @Test("恰好核验完五个仓库时不误报上限")
@@ -324,7 +382,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
             webProvider: web,
             verifier: verifier,
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -362,7 +421,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: verifier,
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -397,7 +457,8 @@ struct RepositoryDiscoveryServiceTests {
                 if name == "missing" { throw NetworkError.notFound }
                 return Self.makeRepoDTO(id: 1, owner: owner, name: name)
             },
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -518,6 +579,80 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.first?.discovery?.rank == 0)
     }
 
+    @Test("空重排失败保留候选，部分评分仅标记实际模型匹配", arguments: [false, true])
+    func rerankAnnotationsReflectActualScores(empty: Bool) async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift")),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "rust-lang", name: "rust"))
+                ],
+                references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: nil,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker(kind: .dedicatedRerank) { _, _, candidates, _, _ in
+                try SearchDiscoveryRerankRanker.rankedItems(
+                    from: empty ? [] : [(candidateID: "rust-lang/rust", score: 0.9)],
+                    candidates: candidates
+                )
+            }
+        )
+        let result = await service.discover(
+            query: "language", request: SearchRequest(query: "language"), initialPlan: Self.makePlan()
+        )
+        #expect(result.repositories.count == 2)
+        #expect(result.steps.first { $0.stage == .ranking }?.state == (empty ? .failed : .completed))
+        #expect(result.repositories.first { $0.card.fullName == "apple/swift" }?.discovery?.kind == .githubSearch)
+        #expect(result.repositories.first { $0.card.fullName == "rust-lang/rust" }?.discovery?.kind
+                == (empty ? .githubSearch : .modelMatch))
+        #expect(result.session.phase == (empty ? .partialFailure : .completed))
+        #expect(result.diagnostics.contains { $0.stage == .ranking && $0.isFailure } == empty)
+        if !empty {
+            #expect(result.repositories.map(\.card.fullName) == ["rust-lang/rust", "apple/swift"])
+        }
+    }
+
+    @Test("Chat Ranker 空响应也不能标为重排成功")
+    func emptyChatRankingIsInvalid() async {
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            webProvider: nil, verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker { _, _, _, _, _ in [] }
+        )
+        let result = await service.discover(
+            query: "swift", request: SearchRequest(query: "swift"), initialPlan: Self.makePlan()
+        )
+        #expect(result.steps.first { $0.stage == .ranking }?.state == .failed)
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.session.phase == .partialFailure)
+    }
+
+    @Test("重排适配器拒绝无关候选、重复评分和非有限评分",
+          arguments: ["unknown", "duplicate", "nan", "infinity"])
+    func rerankAdapterRejectsInvalidScores(kind: String) {
+        let candidates = [SearchDiscoveryRankingCandidate(
+            id: "apple/swift", fullName: "apple/swift", description: nil, stars: 1, evidenceIDs: []
+        )]
+        let scores: [(candidateID: String, score: Double)] = switch kind {
+        case "unknown": [("unknown/repo", 0.9)]
+        case "duplicate": [("apple/swift", 0.9), ("apple/swift", 0.8)]
+        case "nan": [("apple/swift", .nan)]
+        default: [("apple/swift", .infinity)]
+        }
+        #expect(throws: RepositoryDiscoveryError.self) {
+            try SearchDiscoveryRerankRanker.rankedItems(from: scores, candidates: candidates)
+        }
+    }
+
     @Test("发现步骤按实际执行顺序记录成功、跳过与失败")
     func discoveryRecordsRealExecutionSteps() async {
         let github = RecordingSearchProvider(source: .github) { _ in
@@ -549,7 +684,8 @@ struct RepositoryDiscoveryServiceTests {
             initialPlan: Self.makePlan()
         )
 
-        #expect(result.steps.map(\.stage) == [.githubSearch, .verification, .ranking])
+        #expect(result.steps.map(\.stage) == [.webSearch, .githubSearch, .verification, .ranking])
+        #expect(result.steps.first(where: { $0.stage == .webSearch })?.state == .skipped)
         #expect(result.steps.first(where: { $0.stage == .githubSearch })?.state == .completed)
         #expect(result.steps.first(where: { $0.stage == .verification })?.state == .skipped)
         #expect(result.steps.first(where: { $0.stage == .ranking })?.state == .completed)
@@ -627,6 +763,128 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.steps.contains { $0.stage == .ranking && $0.state == .failed })
     }
 
+    @Test("取消后不再启动后续 Web 或 GitHub 检索")
+    func cancellationStopsSubsequentDiscoveryRequests() async throws {
+        let web = RecordingSearchProvider(source: .web) { _ in
+            try await Task.sleep(for: .seconds(0.2))
+            return .empty
+        }
+        let github = RecordingSearchProvider(source: .github) { _ in .empty }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
+        )
+        let plan = SearchDiscoveryPlan(
+            intentSummary: "Cancel discovery",
+            githubQueries: ["github query"],
+            webQueries: ["first web query", "second web query"],
+            prefersFreshEvidence: true,
+            strictConstraints: [],
+            githubFilters: .empty
+        )
+
+        let task = Task {
+            await service.discover(
+                query: "cancelled query",
+                request: SearchRequest(query: "cancelled query"),
+                initialPlan: plan,
+                deadline: Date().addingTimeInterval(5)
+            )
+        }
+        try await Self.waitUntil {
+            web.requests.count == 1
+        }
+        task.cancel()
+        let result = await task.value
+
+        #expect(web.requests.count == 1)
+        #expect(github.requests.isEmpty)
+        #expect(result.session.phase == .cancelled)
+        #expect(!Task.isCancelled)
+    }
+
+    @Test("AI 联网与网页展示开关四种组合在首轮和继续轮次一致", arguments: [false, true], [false, true])
+    func webPermissionIsIndependentOfPresentation(aiEnabled: Bool, includeWeb: Bool) async {
+        let planner = StubQueryPlanner(plan: Self.makePlan())
+        let web = RecordingSearchProvider(source: .web) { _ in .empty }
+        let service = RepositoryDiscoveryService(
+            planner: planner,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            webEvidenceAllowed: { _ in aiEnabled }
+        )
+        for round in 1...2 {
+            let result = await service.discover(
+                query: "linux", request: SearchRequest(query: "linux", includeWebInAll: includeWeb),
+                round: round, initialLLMCalls: 0
+            )
+            #expect(result.session.usedWebQueries == (aiEnabled ? 1 : 0))
+            #expect(result.diagnostics.isEmpty)
+        }
+        #expect(planner.webPermissions == [aiEnabled, aiEnabled])
+        #expect(web.requests.count == (aiEnabled ? 2 : 0))
+    }
+
+    @Test("执行中关闭 AI 联网或服务商后不再请求下一条网页", arguments: [false, true])
+    func permissionChangesStopLaterWebRequests(disableProvider: Bool) async {
+        let permission = DiscoveryWebPermission()
+        let web = RecordingSearchProvider(source: .web) { _ in
+            await MainActor.run {
+                if disableProvider { permission.providerAvailable = false } else { permission.aiEnabled = false }
+            }
+            return .empty
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            webEvidenceAllowed: { _ in permission.aiEnabled && permission.providerAvailable }
+        )
+        let plan = SearchDiscoveryPlan(
+            intentSummary: "Linux", githubQueries: ["linux"], webQueries: ["first", "second"],
+            prefersFreshEvidence: false, strictConstraints: [], githubFilters: .empty
+        )
+        let result = await service.discover(
+            query: "linux", request: SearchRequest(query: "linux"), initialPlan: plan
+        )
+        #expect(web.requests.map(\.query) == ["first"])
+        #expect(result.steps.contains { $0.stage == .webSearch && $0.state == .skipped })
+        #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test("关闭的网页与重排能力正常跳过而不告警")
+    func disabledOptionalCapabilitiesAreSkipped() async {
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in
+                throw ExternalSearchError.disabled(provider: .exa)
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker(kind: .dedicatedRerank) { _, _, _, _, _ in
+                throw RepositoryDiscoveryError.dedicatedRerankDisabled
+            },
+            webEvidenceAllowed: { _ in true }
+        )
+        let result = await service.discover(
+            query: "swift", request: SearchRequest(query: "swift"), initialPlan: Self.makePlan()
+        )
+        #expect(result.session.phase == .completed)
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.steps.contains { $0.stage == .webSearch && $0.state == .skipped })
+        #expect(result.steps.contains { $0.stage == .ranking && $0.state == .skipped })
+        #expect(result.repositories.count == 1)
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",
@@ -636,6 +894,13 @@ struct RepositoryDiscoveryServiceTests {
             strictConstraints: ["trending"],
             githubFilters: .empty
         )
+    }
+
+    private static func waitUntil(_ condition: @escaping () -> Bool) async throws {
+        for _ in 0..<100 where !condition() {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        guard condition() else { throw TestError.failed }
     }
 
     private nonisolated static func makeRepo(id: Int64, owner: String, name: String) -> Repo {
@@ -737,12 +1002,19 @@ struct RepositoryDiscoveryServiceTests {
     }
 }
 
+@MainActor
+private final class DiscoveryWebPermission {
+    var aiEnabled = true
+    var providerAvailable = true
+}
+
 private enum TestError: Error {
     case failed
 }
 
 @MainActor
 private final class StubQueryPlanner: SearchQueryPlannerProviding {
+    var webPermissions: [Bool] = []
     private(set) var calls = 0
     private let planned: SearchDiscoveryPlan
     var error: Error?
@@ -757,6 +1029,7 @@ private final class StubQueryPlanner: SearchQueryPlannerProviding {
         maxSeconds: TimeInterval
     ) async throws -> SearchDiscoveryPlan {
         calls += 1
+        webPermissions.append(allowWebEvidence)
         if let error { throw error }
         return planned
     }

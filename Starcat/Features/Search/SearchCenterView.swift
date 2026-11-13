@@ -1587,6 +1587,12 @@ struct SearchCenterView: View {
                             ))
                                 .foregroundStyle(.secondary)
                         }
+                        if let target = diagnostic.settingsTarget {
+                            Button("menubar.openSettings") {
+                                isDiscoveryDiagnosticsPresented = false
+                                AppDelegate.openSettingsWindow(target: target)
+                            }
+                        }
                         if let detail = diagnostic.technicalDetail, !detail.isEmpty {
                             DisclosureGroup("search.discovery.diagnostic.technical") {
                                 if let statusCode = diagnostic.statusCode {
@@ -1668,6 +1674,17 @@ struct SearchCenterView: View {
                         .lineLimit(1)
                         .help(Text(verbatim: model))
                 }
+                if let detail = step.technicalDetail, !detail.isEmpty {
+                    DisclosureGroup("search.discovery.diagnostic.technical") {
+                        Text(verbatim: detail)
+                            .font(interfaceScale.font(.captionSmall))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .disclosureGroupStyle(SettingsDisclosureGroupStyle(
+                        accessibilityLabel: Text("search.discovery.diagnostic.technical")
+                    ))
+                }
             }
             Spacer(minLength: 8)
             if let duration = step.durationSeconds {
@@ -1738,7 +1755,7 @@ struct SearchCenterView: View {
         case .extractingCandidates: return String.l10n("search.discovery.phase.extracting")
         case .verifyingRepositories: return String.l10n("search.discovery.phase.verifying")
         case .ranking: return String.l10n("search.discovery.phase.ranking")
-        case .completed, .failed:
+        case .completed, .noResults, .partialFailure, .cancelled, .failed:
             return String(
                 format: String.l10n("search.discovery.results.countFormat"),
                 locale: locale,

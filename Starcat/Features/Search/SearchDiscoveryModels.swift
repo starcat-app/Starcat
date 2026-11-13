@@ -152,6 +152,10 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
     var recovery: String? = nil
     var technicalDetail: String? = nil
     var statusCode: Int? = nil
+    var settingsTarget: String? = nil
+    var provider: ExternalSearchProviderID? = nil
+    var urlErrorCode: Int? = nil
+    var retryAfter: TimeInterval? = nil
 
     var isFailure: Bool { kind == .failure }
 
@@ -189,6 +193,15 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
         if case RepositoryDiscoveryError.invalidRankerResponse(let detail) = error {
             technicalDetail = "Ranker response validation failed: \(detail)"
         }
+        let settingsTarget: String? = if error is ExternalSearchError {
+            "ai.externalSearch"
+        } else if error is RAGExternalBackendError || error is LocalAIError {
+            stage == .ranking ? "rag.retrieval" : "ai.chat"
+        } else if mappedError is AIChatSelectionError || mappedError is AIClientError {
+            "ai.chat"
+        } else {
+            nil
+        }
         let diagnostic = Self(
             stage: stage,
             kind: .failure,
@@ -196,7 +209,11 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
             context: context,
             recovery: presentation.recovery,
             technicalDetail: technicalDetail,
-            statusCode: presentation.statusCode
+            statusCode: presentation.statusCode,
+            settingsTarget: settingsTarget,
+            provider: (error as? ExternalSearchError)?.providerID,
+            urlErrorCode: (error as? ExternalSearchError)?.urlErrorCode,
+            retryAfter: (error as? ExternalSearchError)?.retryAfter
         )
         diagnostic.record()
         return diagnostic
@@ -251,8 +268,8 @@ enum SearchDiscoveryStepState: Equatable, Hashable, Sendable {
 /// 一轮智能发现里一个真实执行过的步骤。
 ///
 /// 与 `SearchDiscoveryDiagnostic` 不同：诊断只记录失败/预算上限，步骤则覆盖成功、
-/// 跳过与失败，用于「智能发现详情」按实际发生顺序展示链路。失败步骤的详细原因仍由
-/// 同阶段的诊断承载，这里只负责进度与数量/模型/耗时这类可观测事实，不重复写用户错误文案。
+/// 跳过与失败，用于「智能发现详情」按实际发生顺序展示链路。被 Planner 接管的决策
+/// 失败保留在步骤中，不再生成整轮告警；原始原因只放入可展开的脱敏技术详情。
 struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
     let id: String
     let stage: SearchDiscoveryDiagnostic.Stage
@@ -260,6 +277,7 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
     let detail: String?
     let durationSeconds: TimeInterval?
     let model: String?
+    let technicalDetail: String?
 
     /// 过程标题使用步骤名，避免已完成的记录仍显示「规划中」「重排中」。
     var titleKey: String {
@@ -280,7 +298,8 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
         state: SearchDiscoveryStepState,
         detail: String? = nil,
         durationSeconds: TimeInterval? = nil,
-        model: String? = nil
+        model: String? = nil,
+        technicalDetail: String? = nil
     ) {
         self.id = id
         self.stage = stage
@@ -288,6 +307,7 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
         self.detail = detail
         self.durationSeconds = durationSeconds
         self.model = model
+        self.technicalDetail = technicalDetail.map { DiagnosticEvent.redact($0) }
     }
 }
 
@@ -335,10 +355,24 @@ enum SearchDiscoveryPhase: Equatable, Hashable, Sendable {
     case verifyingRepositories
     case ranking
     case completed
+    case noResults
+    /// 远端源已有可用结果，但至少一个必要阶段失败；结果可展示，快照不可复用。
+    case partialFailure
+    /// 用户取消或请求身份失效。调用方必须丢弃该结果，不能把取消渲染成搜索失败。
+    case cancelled
     case failed(String)
 }
 
 extension SearchDiscoveryPhase {
+    var canContinue: Bool {
+        switch self {
+        case .completed, .noResults, .partialFailure: true
+        default: false
+        }
+    }
+
+    var isCacheable: Bool { self == .completed || self == .noResults }
+
     /// UI 只需要一个稳定的“是否失败”信号，不暴露错误字符串给状态机判断。
     var isFailed: Bool {
         if case .failed = self { return true }

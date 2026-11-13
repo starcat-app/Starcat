@@ -170,6 +170,8 @@ struct SearchIntentRouterTests {
         #expect(naturalOutcome.decisionStatus == .skipped)
         #expect(naturalOutcome.plannerStatus == .completed)
         #expect(keywordOutcome.route == .fastPath)
+        #expect(keywordOutcome.decisionStatus == .skipped)
+        #expect(keywordOutcome.steps.first?.detail?.isEmpty == false)
         #expect(keywordOutcome.plannerStatus == .notNeeded)
         #expect(fixture.planner.callCount == 1)
         #expect(fixture.engine.requestCount == 0)
@@ -192,6 +194,10 @@ struct SearchIntentRouterTests {
         #expect(outcome.plannerStatus == .completed)
         #expect(fixture.engine.requestCount == 1)
         #expect(fixture.planner.callCount == 1)
+        #expect(outcome.steps.first?.detail?.isEmpty == false)
+        #expect(outcome.steps.first?.technicalDetail?.contains("needs_intent_planning") == true)
+        #expect(outcome.steps.first?.model == "Jev")
+        #expect(outcome.diagnostic == nil)
     }
 
     @Test("决策超时不重试，直接交给 Planner")
@@ -229,7 +235,7 @@ struct SearchIntentRouterTests {
         #expect(outcome.diagnostic?.technicalDetail?.isEmpty == false)
         #expect(outcome.steps.map(\.stage) == [.routing, .planning])
         #expect(outcome.steps.last?.state == .failed)
-        #expect(outcome.steps.last?.detail == nil)
+        #expect(outcome.steps.last?.detail?.isEmpty == false)
     }
 
     @Test("Planner 鉴权失败保留 HTTP 原因与恢复建议")
@@ -263,14 +269,74 @@ struct SearchIntentRouterTests {
         #expect(result.diagnostic?.isFailure == true)
     }
 
+    @Test("首轮规划只受 AI 联网权限影响", arguments: [false, true], [false, true])
+    func initialPlanningUsesAIWebPermission(aiEnabled: Bool, includeWeb: Bool) async {
+        let fixture = makeFixture()
+        fixture.settings.externalContextEnabled = aiEnabled
+        fixture.settings.externalSearchIncludeInAll = includeWeb
+        let outcome = await fixture.router.route(query: "找个 Linux 发行版", explicitSmartDiscovery: true)
+        #expect(outcome.plan?.webQueries.isEmpty == !aiEnabled)
+    }
+
+    @Test("所选服务商不可用时规划不请求网页证据")
+    func unavailableWebProviderDisablesPlanningEvidence() async {
+        let fixture = makeFixture()
+        fixture.settings.externalContextEnabled = true
+        let router = SearchIntentRouter(
+            settings: fixture.settings,
+            engineRegistry: DecisionEngineRegistry(engines: [fixture.engine]),
+            planner: fixture.planner,
+            webEvidenceAllowed: { _ in false }
+        )
+        let outcome = await router.route(query: "Linux", explicitSmartDiscovery: true)
+        #expect(outcome.plan?.webQueries.isEmpty == true)
+    }
+
+    @Test("决策不可用保留引擎原因，Planner 接管结果可见", arguments: [DecisionEngineID.jev, .laya], [false, true])
+    func unavailableEnginePreservesReason(engineID: DecisionEngineID, plannerFails: Bool) async {
+        let fixture = makeFixture(engineID: engineID)
+        fixture.settings.decisionEngineEnabled = true
+        fixture.settings.decisionSearchRoutingEnabled = true
+        let reason = engineID == .jev ? "Key not configured" : "Model not installed"
+        fixture.engine.availability = .unavailable(reason: reason)
+        if plannerFails { fixture.planner.error = AIChatSelectionError.missingModel }
+        let outcome = await fixture.router.route(query: "帮我找一个管理 GitHub star 的项目")
+        #expect(outcome.steps.first?.state == .skipped)
+        #expect(outcome.steps.first?.model == engineID.displayName)
+        #expect(outcome.steps.first?.technicalDetail == reason)
+        #expect(outcome.steps.first?.detail?.isEmpty == false)
+        #expect(outcome.steps.last?.state == (plannerFails ? .failed : .completed))
+        #expect(fixture.engine.requestCount == 0)
+        #expect(fixture.planner.callCount == 1)
+        #expect((outcome.diagnostic != nil) == plannerFails)
+    }
+
+    @Test("决策鉴权失败保留详情，成功接管不误报整轮失败")
+    func decisionAuthenticationFailureIsExplained() async {
+        let fixture = makeFixture()
+        fixture.settings.decisionEngineEnabled = true
+        fixture.settings.decisionSearchRoutingEnabled = true
+        fixture.engine.error = TypeSafeClientError.unauthorized
+        let outcome = await fixture.router.route(query: "找一个 Linux 发行版")
+        #expect(outcome.steps.first?.state == .failed)
+        #expect(outcome.steps.first?.detail?.isEmpty == false)
+        #expect(outcome.steps.first?.technicalDetail?.contains("401") == true)
+        #expect(outcome.steps.last?.state == .completed)
+        #expect(outcome.diagnostic == nil)
+        #expect(fixture.engine.requestCount == 1)
+        #expect(fixture.planner.callCount == 1)
+    }
+
     private func makeFixture(
-        decisionTimeoutSeconds: TimeInterval = 3
+        decisionTimeoutSeconds: TimeInterval = 3,
+        engineID: DecisionEngineID = .jev
     ) -> (router: SearchIntentRouter, settings: AppSettings, engine: FakeDecisionEngine, planner: FakeSearchPlanner) {
         let suiteName = "SearchIntentRouterTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         defaults.removePersistentDomain(forName: suiteName)
         let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
-        let engine = FakeDecisionEngine()
+        settings.decisionEngineID = engineID
+        let engine = FakeDecisionEngine(id: engineID)
         let planner = FakeSearchPlanner()
         let router = SearchIntentRouter(
             settings: settings,
@@ -284,12 +350,15 @@ struct SearchIntentRouterTests {
 
 @MainActor
 private final class FakeDecisionEngine: DecisionEngineProviding {
-    let id: DecisionEngineID = .jev
+    let id: DecisionEngineID
+    var error: Error?
     var availability: DecisionEngineAvailability = .available
     var answers: [String: DecisionNoulAnswer] = [:]
     var delay: TimeInterval = 0
     private(set) var requestCount = 0
     private(set) var lastRequest: DecisionEvaluationRequest?
+
+    init(id: DecisionEngineID = .jev) { self.id = id }
 
     func evaluate(_ request: DecisionEvaluationRequest) async throws -> DecisionEvaluationResponse {
         requestCount += 1
@@ -297,6 +366,7 @@ private final class FakeDecisionEngine: DecisionEngineProviding {
         if delay > 0 {
             try await Task.sleep(for: .seconds(delay))
         }
+        if let error { throw error }
         return DecisionEvaluationResponse(answers: answers)
     }
 }

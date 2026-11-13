@@ -199,16 +199,266 @@ struct ExternalSearchProviderClientTests {
             )
         }
 
-        let provider = TavilySearchProvider(
-            apiKey: "tvly-key",
-            isEnabled: true,
-            baseURL: URL(string: "https://api.test.invalid")!,
-            session: URLProtocolStub.ephemeralSession()
+        let client = ExternalSearchHTTPClient(
+            session: URLProtocolStub.ephemeralSession(), retryGate: ExternalSearchRetryGate()
         )
-
         await #expect(throws: ExternalSearchError.rateLimited(provider: .tavily, retryAfter: 30, message: "too many requests")) {
-            _ = try await provider.search(ExternalSearchRequest(query: "rate", purpose: .globalSearch))
+            let _: [String: String] = try await client.perform(
+                URLRequest(url: URL(string: "https://api.test.invalid/search")!), provider: .tavily
+            )
         }
+    }
+
+    @Test("HTTP 网络错误保留 Provider 与 URL 错误码",
+          arguments: [URLError.timedOut, .notConnectedToInternet, .dnsLookupFailed, .secureConnectionFailed])
+    func networkErrorsKeepCode(code: URLError.Code) async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { _ in throw URLError(code) }
+        let client = ExternalSearchHTTPClient(
+            session: URLProtocolStub.ephemeralSession(), retryGate: ExternalSearchRetryGate()
+        )
+        do {
+            let _: [String: String] = try await client.perform(
+                URLRequest(url: URL(string: "https://api.test.invalid/search")!), provider: .exa
+            )
+            Issue.record("Expected a network failure")
+        } catch {
+            let failure = try #require(error as? ExternalSearchError)
+            #expect(failure.urlErrorCode == code.rawValue)
+            #expect(failure.providerID == .exa)
+            let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .webSearch, error: failure)
+            #expect(diagnostic.provider == .exa)
+            #expect(diagnostic.urlErrorCode == code.rawValue)
+            #expect(diagnostic.statusCode == nil)
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("HTTP 取消原样终止，不包装成网络故障")
+    func httpCancellationIsPreserved() async {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { _ in throw URLError(.cancelled) }
+        let client = ExternalSearchHTTPClient(
+            session: URLProtocolStub.ephemeralSession(), retryGate: ExternalSearchRetryGate()
+        )
+        await #expect(throws: CancellationError.self) {
+            let _: [String: String] = try await client.perform(
+                URLRequest(url: URL(string: "https://api.test.invalid/search")!), provider: .exa
+            )
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("HTTP 状态跨层进入发现诊断，鉴权与配置错误不自动重试",
+          arguments: [400, 401, 402, 403, 429, 503])
+    func httpStatusSurvivesDiagnostics(status: Int) async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            (
+                HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+                                headerFields: ["Retry-After": "20"])!,
+                Data(#"{"message":"service error"}"#.utf8)
+            )
+        }
+        let client = ExternalSearchHTTPClient(
+            session: URLProtocolStub.ephemeralSession(), retryGate: ExternalSearchRetryGate()
+        )
+        do {
+            let _: [String: String] = try await client.perform(
+                URLRequest(url: URL(string: "https://api.test.invalid/search")!), provider: .tavily
+            )
+            Issue.record("Expected an HTTP failure")
+        } catch {
+            let failure = try #require(error as? ExternalSearchError)
+            let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .webSearch, error: failure)
+            #expect(diagnostic.statusCode == status)
+            #expect(diagnostic.provider == .tavily)
+            #expect(diagnostic.retryAfter == (status == 429 ? 20 : nil))
+            #expect(diagnostic.settingsTarget == "ai.externalSearch")
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("无效 JSON 保留成功 HTTP 状态，不成为成功搜索")
+    func malformedJSONIsInvalidResponse() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+             Data("invalid json".utf8))
+        }
+        let client = ExternalSearchHTTPClient(
+            session: URLProtocolStub.ephemeralSession(), retryGate: ExternalSearchRetryGate()
+        )
+        do {
+            let _: [String: String] = try await client.perform(
+                URLRequest(url: URL(string: "https://api.test.invalid/search")!), provider: .exa
+            )
+            Issue.record("Expected an invalid response")
+        } catch {
+            let failure = try #require(error as? ExternalSearchError)
+            #expect(UserFacingError.map(failure, operation: "Search").statusCode == 200)
+            if case .invalidResponse = failure {
+                #expect(failure.providerID == .exa)
+            } else {
+                Issue.record("Expected an invalid response classification")
+            }
+        }
+    }
+
+    @Test("Retry-After 支持秒数与 HTTP 日期，拒绝无效值")
+    func retryAfterParsesSecondsAndHTTPDate() {
+        let now = Date(timeIntervalSince1970: 0)
+        #expect(HTTPRetryAfter.seconds(from: "30", now: now) == 30)
+        #expect(HTTPRetryAfter.seconds(from: "Thu, 01 Jan 1970 00:01:00 GMT", now: now) == 60)
+        #expect(HTTPRetryAfter.seconds(from: "Wed, 31 Dec 1969 23:59:59 GMT", now: now) == 0)
+        for value in ["NaN", "inf", "-1", "invalid", ""] {
+            #expect(HTTPRetryAfter.seconds(from: value, now: now) == nil)
+        }
+        #expect(HTTPRetryAfter.seconds(from: nil, now: now) == nil)
+    }
+
+    @Test("冷却期跨客户端阻止同 Provider 请求，其他 Provider 与到期请求可用")
+    func retryGateBlocksUntilDeadline() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let firstRequest = URLProtocolStub.receivedRequests.count == 1
+            return (
+                HTTPURLResponse(
+                    url: request.url!, statusCode: firstRequest ? 429 : 200, httpVersion: nil,
+                    headerFields: ["Retry-After": "Thu, 01 Jan 1970 00:00:30 GMT"]
+                )!,
+                Data((firstRequest ? #"{"message":"rate limited"}"# : #"{"status":"ok"}"#).utf8)
+            )
+        }
+        let clock = ExternalSearchTestClock()
+        let gate = ExternalSearchRetryGate(now: { clock.read() })
+        let session = URLProtocolStub.ephemeralSession()
+        let request = URLRequest(url: URL(string: "https://api.test.invalid/search")!)
+        let first = ExternalSearchHTTPClient(session: session, retryGate: gate)
+        await #expect(throws: ExternalSearchError.rateLimited(provider: .tavily, retryAfter: 30, message: "rate limited")) {
+            let _: [String: String] = try await first.perform(request, provider: .tavily)
+        }
+        let next = ExternalSearchHTTPClient(session: session, retryGate: gate)
+        await #expect(throws: ExternalSearchError.rateLimited(provider: .tavily, retryAfter: 30, message: nil)) {
+            let _: [String: String] = try await next.perform(request, provider: .tavily)
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+        let _: [String: String] = try await next.perform(request, provider: .exa)
+        #expect(URLProtocolStub.receivedRequests.count == 2)
+        clock.advance(by: 31)
+        let _: [String: String] = try await next.perform(request, provider: .tavily)
+        #expect(URLProtocolStub.receivedRequests.count == 3)
+    }
+
+    @Test("AnySearch 取消、超时与网络错误保留真实分类",
+          arguments: [URLError.cancelled, .timedOut, .notConnectedToInternet, .dnsLookupFailed, .secureConnectionFailed])
+    func anySearchTransportPreservesCode(code: URLError.Code) async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { _ in throw URLError(code) }
+        let session = URLProtocolStub.ephemeralSession()
+        let provider = AnySearchExternalSearchProvider(
+            apiKey: nil, anonymous: true, isEnabled: true, retryGate: ExternalSearchRetryGate(),
+            client: { _, _ in AnySearchClient(apiKey: nil, anonymous: true, session: session) }
+        )
+        do {
+            _ = try await provider.search(ExternalSearchRequest(query: "query", purpose: .globalSearch))
+            Issue.record("Expected a transport failure")
+        } catch {
+            if code == .cancelled {
+                #expect(error is CancellationError)
+            } else {
+                let failure = try #require(error as? ExternalSearchError)
+                #expect(failure.providerID == .anySearch)
+                #expect(failure.urlErrorCode == code.rawValue)
+            }
+        }
+        #expect(URLProtocolStub.receivedRequests.count == (code == .timedOut ? 2 : 1))
+    }
+
+    @Test("AnySearch HTTP 原因进入发现诊断，非暂时错误不重试",
+          arguments: [400, 401, 402, 403, 404, 429, 503])
+    func anySearchHTTPStatusIsPreserved(status: Int) async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+                             headerFields: ["Retry-After": "20"])!,
+             Data(#"{"code":40001,"message":"service error","data":null}"#.utf8))
+        }
+        let session = URLProtocolStub.ephemeralSession()
+        let provider = AnySearchExternalSearchProvider(
+            apiKey: nil, anonymous: true, isEnabled: true, retryGate: ExternalSearchRetryGate(),
+            client: { _, _ in AnySearchClient(apiKey: nil, anonymous: true, session: session) }
+        )
+        do {
+            _ = try await provider.search(ExternalSearchRequest(query: "query", purpose: .globalSearch))
+            Issue.record("Expected an HTTP failure")
+        } catch {
+            let failure = try #require(error as? ExternalSearchError)
+            let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .webSearch, error: failure)
+            #expect(diagnostic.statusCode == status)
+            #expect(diagnostic.provider == .anySearch)
+            #expect(diagnostic.retryAfter == (status == 429 ? 20 : nil))
+        }
+        #expect(URLProtocolStub.receivedRequests.count == (status == 503 ? 2 : 1))
+    }
+
+    @Test("AnySearch 2xx 的解析和业务失败保留 HTTP 状态", arguments: [false, true])
+    func anySearchInvalidSuccessRetainsStatus(businessFailure: Bool) async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            (
+                HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!,
+                Data((businessFailure
+                    ? #"{"code":123,"message":"rejected","data":null}"#
+                    : "invalid json").utf8)
+            )
+        }
+        let session = URLProtocolStub.ephemeralSession()
+        let provider = AnySearchExternalSearchProvider(
+            apiKey: nil, anonymous: true, isEnabled: true, retryGate: ExternalSearchRetryGate(),
+            client: { _, _ in AnySearchClient(apiKey: nil, anonymous: true, session: session) }
+        )
+        do {
+            _ = try await provider.search(ExternalSearchRequest(query: "query", purpose: .globalSearch))
+            Issue.record("Expected an invalid response")
+        } catch {
+            let failure = try #require(error as? ExternalSearchError)
+            let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .webSearch, error: failure)
+            #expect(diagnostic.statusCode == 201)
+            #expect(diagnostic.provider == .anySearch)
+        }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+    }
+
+    @Test("AnySearch 限流后新建包装器仍受冷却期约束，到期恢复")
+    func anySearchRetryGateSurvivesNewWrapper() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            let firstRequest = URLProtocolStub.receivedRequests.count == 1
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: firstRequest ? 429 : 200,
+                                httpVersion: nil, headerFields: ["Retry-After": "30"])!,
+                Data((firstRequest
+                    ? #"{"code":42901,"message":"rate limited","data":null}"#
+                    : #"{"code":0,"message":"ok","data":{"results":[]}}"#).utf8)
+            )
+        }
+        let clock = ExternalSearchTestClock()
+        let gate = ExternalSearchRetryGate(now: { clock.read() })
+        let session = URLProtocolStub.ephemeralSession()
+        let request = ExternalSearchRequest(query: "query", purpose: .globalSearch)
+        func provider() -> AnySearchExternalSearchProvider {
+            AnySearchExternalSearchProvider(
+                apiKey: nil, anonymous: true, isEnabled: true, retryGate: gate,
+                client: { _, _ in AnySearchClient(apiKey: nil, anonymous: true, session: session) }
+            )
+        }
+        await #expect(throws: ExternalSearchError.self) { try await provider().search(request) }
+        await #expect(throws: ExternalSearchError.self) { try await provider().search(request) }
+        #expect(URLProtocolStub.receivedRequests.count == 1)
+        clock.advance(by: 31)
+        _ = try await provider().search(request)
+        #expect(URLProtocolStub.receivedRequests.count == 2)
     }
 
     @Test("Provider disabled 和 missing key 不发网络")
@@ -384,6 +634,18 @@ struct ExternalSearchProviderClientTests {
         let response = try await anonymous.search(ExternalSearchRequest(query: "x", purpose: .globalSearch))
         #expect(response.metadata.provider == .firecrawl)
         #expect(response.hits.isEmpty)
+    }
+}
+
+/// HTTP 回调和测试任务共享可控时间；锁保证 Swift 6 并发测试不会读写竞态。
+private final class ExternalSearchTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Date(timeIntervalSince1970: 0)
+
+    func read() -> Date { lock.withLock { value } }
+
+    func advance(by seconds: TimeInterval) {
+        lock.withLock { value = value.addingTimeInterval(seconds) }
     }
 }
 
