@@ -461061,6 +461061,327 @@
         }
       }
     },
+    "search.discovery.configuration.providerUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der KI-Anbieter ist deaktiviert oder noch nicht geprüft. Aktiviere und prüfe ihn in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The AI provider is disabled or has not passed its connection test. Enable and verify it in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El proveedor de IA está desactivado o no ha superado la prueba de conexión. Actívalo y verifícalo en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le fournisseur d’IA est désactivé ou n’a pas réussi le test de connexion. Activez-le et vérifiez-le dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Penyedia AI nonaktif atau belum lulus uji koneksi. Aktifkan dan verifikasi di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il provider IA è disattivato o non ha superato il test di connessione. Attivalo e verificalo nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI プロバイダーが無効か、接続テストが完了していません。モデル設定で有効化し、接続を確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 제공업체가 비활성화되었거나 연결 테스트를 통과하지 못했습니다. 모델 설정에서 활성화하고 확인하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De AI-aanbieder is uitgeschakeld of heeft de verbindingstest niet doorstaan. Schakel deze in en controleer de verbinding in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostawca AI jest wyłączony lub nie przeszedł testu połączenia. Włącz go i zweryfikuj w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O provedor de IA está desativado ou não passou no teste de conexão. Ative-o e verifique-o nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Провайдер ИИ отключён или не прошёл проверку подключения. Включите и проверьте его в настройках моделей."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ sağlayıcısı devre dışı veya bağlantı testini geçemedi. Model ayarlarında etkinleştirip doğrulayın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Постачальника ШІ вимкнено або він не пройшов перевірку з’єднання. Увімкніть і перевірте його в налаштуваннях моделей."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nhà cung cấp AI đã tắt hoặc chưa vượt qua kiểm tra kết nối. Hãy bật và xác minh trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 服务商未启用或尚未通过连接测试，请在模型设置中启用并验证。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 服務商未啟用或尚未通過連線測試，請在模型設定中啟用並驗證。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.missingModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kein verfügbares Chatmodell ausgewählt oder das gewählte Modell ist deaktiviert. Wähle ein Modell in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No available Chat model is selected, or the selected model is disabled. Choose a model in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No hay un modelo de chat disponible seleccionado, o está desactivado. Elige uno en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aucun modèle de conversation disponible n’est sélectionné, ou le modèle est désactivé. Choisissez-en un dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Belum ada model Chat yang tersedia dipilih, atau model yang dipilih nonaktif. Pilih model di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nessun modello Chat disponibile è selezionato, oppure il modello è disattivato. Scegline uno nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "利用可能なチャットモデルが未選択か、選択したモデルが無効です。モデル設定で選択し直してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "사용 가능한 채팅 모델이 선택되지 않았거나 선택한 모델이 비활성화되었습니다. 모델 설정에서 다시 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Er is geen beschikbaar chatmodel geselecteerd of het model is uitgeschakeld. Kies een model in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie wybrano dostępnego modelu czatu lub wybrany model jest wyłączony. Wybierz model w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nenhum modelo de chat disponível foi selecionado ou o modelo está desativado. Escolha um nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступная модель чата не выбрана или выбранная модель отключена. Выберите модель в настройках."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kullanılabilir bir sohbet modeli seçilmedi veya seçilen model devre dışı. Model ayarlarından bir model seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступну модель чату не вибрано або вибрану модель вимкнено. Виберіть модель у налаштуваннях."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chưa chọn mô hình trò chuyện khả dụng hoặc mô hình đã chọn bị tắt. Hãy chọn mô hình trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未选择可用的对话模型，或所选模型已被禁用。请在模型设置中重新选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "尚未選擇可用的對話模型，或所選模型已停用。請在模型設定中重新選擇。"
+          }
+        }
+      }
+    },
+    "search.discovery.configuration.incompatibleModel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Das gewählte Modell unterstützt keine Chats. Wähle ein Chatmodell in den Modelleinstellungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The selected model does not support Chat. Choose a Chat model in model settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El modelo elegido no admite chat. Elige un modelo de chat en los ajustes de modelos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le modèle choisi ne prend pas en charge la conversation. Choisissez un modèle adapté dans les réglages des modèles."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Model yang dipilih tidak mendukung Chat. Pilih model Chat di pengaturan model."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il modello scelto non supporta Chat. Scegli un modello Chat nelle impostazioni dei modelli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "選択したモデルはチャットに対応していません。モデル設定でチャットモデルを選択してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "선택한 모델은 채팅을 지원하지 않습니다. 모델 설정에서 채팅 모델을 선택하세요."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Het gekozen model ondersteunt geen chat. Kies een chatmodel in de modelinstellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wybrany model nie obsługuje czatu. Wybierz model czatu w ustawieniach modeli."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O modelo escolhido não oferece suporte a chat. Escolha um modelo de chat nas configurações de modelos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Выбранная модель не поддерживает чат. Выберите модель чата в настройках моделей."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seçilen model sohbeti desteklemiyor. Model ayarlarından bir sohbet modeli seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вибрана модель не підтримує чат. Виберіть модель чату в налаштуваннях моделей."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mô hình đã chọn không hỗ trợ trò chuyện. Hãy chọn mô hình trò chuyện trong cài đặt mô hình."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选模型不支持对话，请在模型设置中选择 Chat 模型。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "所選模型不支援對話，請在模型設定中選擇 Chat 模型。"
+          }
+        }
+      }
+    },
     "search.discovery.step.routing" : {
       "extractionState" : "manual",
       "localizations" : {

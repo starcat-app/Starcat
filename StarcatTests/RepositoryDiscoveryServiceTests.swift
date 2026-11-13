@@ -662,6 +662,33 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.diagnostics.isEmpty)
     }
 
+    @Test("关闭的网页与重排能力正常跳过而不告警")
+    func disabledOptionalCapabilitiesAreSkipped() async {
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in
+                throw ExternalSearchError.disabled(provider: .exa)
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker(kind: .dedicatedRerank) { _, _, _, _, _ in
+                throw RepositoryDiscoveryError.dedicatedRerankDisabled
+            },
+            webEvidenceAllowed: { _ in true }
+        )
+        let result = await service.discover(
+            query: "swift", request: SearchRequest(query: "swift"), initialPlan: Self.makePlan()
+        )
+        #expect(result.session.phase == .completed)
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.steps.contains { $0.stage == .webSearch && $0.state == .skipped })
+        #expect(result.steps.contains { $0.stage == .ranking && $0.state == .skipped })
+        #expect(result.repositories.count == 1)
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",

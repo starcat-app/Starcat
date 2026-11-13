@@ -152,6 +152,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
     var recovery: String? = nil
     var technicalDetail: String? = nil
     var statusCode: Int? = nil
+    var settingsTarget: String? = nil
 
     var isFailure: Bool { kind == .failure }
 
@@ -189,6 +190,15 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
         if case RepositoryDiscoveryError.invalidRankerResponse(let detail) = error {
             technicalDetail = "Ranker response validation failed: \(detail)"
         }
+        let settingsTarget: String? = if error is ExternalSearchError {
+            "ai.externalSearch"
+        } else if error is RAGExternalBackendError || error is LocalAIError {
+            stage == .ranking ? "rag.retrieval" : "ai.chat"
+        } else if mappedError is AIChatSelectionError || mappedError is AIClientError {
+            "ai.chat"
+        } else {
+            nil
+        }
         let diagnostic = Self(
             stage: stage,
             kind: .failure,
@@ -196,7 +206,8 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
             context: context,
             recovery: presentation.recovery,
             technicalDetail: technicalDetail,
-            statusCode: presentation.statusCode
+            statusCode: presentation.statusCode,
+            settingsTarget: settingsTarget
         )
         diagnostic.record()
         return diagnostic

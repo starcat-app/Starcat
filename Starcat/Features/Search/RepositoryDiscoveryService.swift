@@ -629,6 +629,13 @@ final class RepositoryDiscoveryService {
                 ))
             } catch where DiagnosticFailure.isCancellation(error) {
                 return Self.cancelledResult(generation: generation, round: round)
+            } catch ExternalSearchError.disabled(let provider) {
+                steps.append(SearchDiscoveryStep(
+                    id: "web-disabled", stage: .webSearch, state: .skipped,
+                    detail: ExternalSearchError.disabled(provider: provider).friendlyMessage,
+                    durationSeconds: Self.duration(since: searchStart)
+                ))
+                break
             } catch {
                 session = Self.incrementing(session, webQueries: 1)
                 diagnostics.append(Self.failureDiagnostic(stage: .webSearch, error: error))
@@ -914,6 +921,13 @@ final class RepositoryDiscoveryService {
                 ))
             } catch where DiagnosticFailure.isCancellation(error) {
                 return Self.cancelledResult(generation: generation, round: round)
+            } catch RepositoryDiscoveryError.dedicatedRerankDisabled {
+                rankedRepositories = Self.deterministicallyRanked(repositories, budget: budget)
+                steps.append(SearchDiscoveryStep(
+                    id: "ranking", stage: .ranking, state: .skipped,
+                    durationSeconds: Self.duration(since: rankingStart),
+                    model: ranker.modelDisplayName
+                ))
             } catch {
                 session = Self.incrementing(
                     session,

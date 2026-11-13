@@ -1476,6 +1476,12 @@ struct SearchCenterView: View {
                             ))
                                 .foregroundStyle(.secondary)
                         }
+                        if let target = diagnostic.settingsTarget {
+                            Button("menubar.openSettings") {
+                                isDiscoveryDiagnosticsPresented = false
+                                AppDelegate.openSettingsWindow(target: target)
+                            }
+                        }
                         if let detail = diagnostic.technicalDetail, !detail.isEmpty {
                             DisclosureGroup("search.discovery.diagnostic.technical") {
                                 if let statusCode = diagnostic.statusCode {
