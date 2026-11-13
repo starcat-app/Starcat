@@ -463,7 +463,8 @@ protocol RepositoryDiscoveryProviding: AnyObject {
         round: Int,
         budget: SearchDiscoveryBudget,
         initialLLMCalls: Int,
-        deadline: Date?
+        deadline: Date?,
+        previousResult: RepositoryDiscoveryResult?
     ) async -> RepositoryDiscoveryResult
 }
 
@@ -507,7 +508,8 @@ final class RepositoryDiscoveryService {
         round: Int = 1,
         budget: SearchDiscoveryBudget = .firstRound,
         initialLLMCalls: Int = 1,
-        deadline: Date? = nil
+        deadline: Date? = nil,
+        previousResult: RepositoryDiscoveryResult? = nil
     ) async -> RepositoryDiscoveryResult {
         var contentSummary = SearchContentSummary()
         for value in [query, baseRequest.query] {
@@ -527,7 +529,7 @@ final class RepositoryDiscoveryService {
             return Self.cancelledResult(generation: generation, round: round)
         }
 
-        var plan = initialPlan?.normalized
+        var plan = (initialPlan ?? previousResult?.session.plan)?.normalized
         if plan == nil {
             guard let planner else {
                 let session = SearchDiscoverySession(
@@ -632,11 +634,18 @@ final class RepositoryDiscoveryService {
             usedLLMCalls: usedLLMCalls
         )
         var repositories: [RepositoryCandidate] = []
-        var references: [ReferenceCandidate] = []
-        var evidence: [SearchEvidence] = []
+        let knownRepositoryNames = Set(previousResult?.repositories.map(\.identity.normalizedFullName) ?? [])
+        let canReuseWebEvidence = webEvidenceAllowed(baseRequest.externalSearchProvider)
+        var references = canReuseWebEvidence ? previousResult?.references ?? [] : []
+        var evidence = (previousResult?.session.evidence ?? []).filter {
+            $0.kind != .web || canReuseWebEvidence
+        }
+        let evidencePrefix = round > 1 ? "round-\(round)-" : ""
 
         for webQuery in normalizedPlan.webQueries
-        where session.canRunWebQuery(in: budget) && !Task.isCancelled {
+        where session.canRunWebQuery(in: budget) && !Task.isCancelled
+            && (previousResult == nil || previousResult?.diagnostics.contains { $0.stage == .webSearch && $0.isFailure } == true) {
+            // 外部搜索没有统一翻页接口；续查复用已取得的线索，只有失败请求才重试。
             // 首轮计划可能在设置变更前生成；每次请求都重新检查，继续查找也走同一策略。
             guard webEvidenceAllowed(baseRequest.externalSearchProvider) else {
                 steps.append(SearchDiscoveryStep(
@@ -671,7 +680,7 @@ final class RepositoryDiscoveryService {
                 references.append(contentsOf: page.references)
                 evidence.append(contentsOf: page.references.enumerated().map { index, reference in
                     SearchEvidence(
-                        id: "web-\(session.usedWebQueries)-\(index)",
+                        id: "\(evidencePrefix)web-\(session.usedWebQueries)-\(index)",
                         kind: .web,
                         title: reference.title,
                         url: reference.originalURL,
@@ -725,7 +734,7 @@ final class RepositoryDiscoveryService {
                 anySearchFilters: baseRequest.anySearchFilters,
                 externalSearchFilters: baseRequest.externalSearchFilters,
                 externalSearchProvider: baseRequest.externalSearchProvider,
-                page: 1,
+                page: max(1, round),
                 perPage: min(baseRequest.perPage, budget.maxRankedCandidates),
                 includeWebInAll: false,
                 minimumSemanticScore: baseRequest.minimumSemanticScore
@@ -736,10 +745,12 @@ final class RepositoryDiscoveryService {
                     try await githubProvider.search(request)
                 }
                 let page = contentPolicy.filtering(rawPage, summary: &contentSummary)
-                repositories.append(contentsOf: page.repositories)
+                repositories.append(contentsOf: page.repositories.filter {
+                    !knownRepositoryNames.contains($0.identity.normalizedFullName)
+                })
                 evidence.append(contentsOf: page.repositories.enumerated().map { index, candidate in
                     SearchEvidence(
-                        id: "github-\(session.usedGitHubQueries)-\(index)",
+                        id: "\(evidencePrefix)github-\(session.usedGitHubQueries)-\(index)",
                         kind: .github,
                         title: candidate.card.fullName,
                         url: URL(string: candidate.card.fullName == "" ? "" : "https://github.com/\(candidate.card.fullName)"),
@@ -780,7 +791,9 @@ final class RepositoryDiscoveryService {
             usedGitHubQueries: session.usedGitHubQueries
         )
 
-        var extractedIdentities = Self.githubIdentities(from: references)
+        var extractedIdentities = Self.githubIdentities(from: references).filter {
+            !knownRepositoryNames.contains($0.normalizedFullName)
+        }
         let verificationStart = Date()
         let initialVerificationCount = extractedIdentities.count
         var verificationAttempts = 0
@@ -938,7 +951,9 @@ final class RepositoryDiscoveryService {
         )
 
         let rankerConsumesLLMBudget = ranker?.kind.consumesLLMBudget ?? false
-        let privateNames = Set(repositories.filter(\.card.isPrivate).map(\.identity.normalizedFullName))
+        let privateNames = Set(
+            (repositories + (previousResult?.repositories ?? [])).filter(\.card.isPrivate).map(\.identity.normalizedFullName)
+        )
         let rankingCandidates = ranker?.usesLocalOnly == true
             ? repositories
             : repositories.filter { !privateNames.contains($0.identity.normalizedFullName) }

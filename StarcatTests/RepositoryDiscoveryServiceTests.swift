@@ -12,6 +12,79 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("续查复用计划和未核验线索，只取下一页 GitHub 结果")
+    func continuationReusesPlanAndPendingVerification() async {
+        let github = RecordingSearchProvider(source: .github) { request in
+            let name = request.page == 1 ? "first" : "second"
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: Int64(request.page), owner: "owner", name: name))],
+                references: [], totalCount: 2, hasNextPage: request.page == 1
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: (0..<7).map {
+                    Self.makeReference(url: "https://github.com/web/repo-\($0)")
+                }, totalCount: 7, hasNextPage: false
+            )
+        }
+        let verifier = StubRepositoryVerifier { owner, name in
+            Self.makeRepoDTO(id: 100 + (Int64(name.suffix(1)) ?? 0), owner: owner, name: name)
+        }
+        let planner = StubQueryPlanner(plan: Self.makePlan())
+        let service = RepositoryDiscoveryService(
+            planner: planner, githubProvider: github, webProvider: web,
+            verifier: verifier, webEvidenceAllowed: { _ in true }
+        )
+        let first = await service.discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan()
+        )
+        let second = await service.discover(
+            query: "tool", request: SearchRequest(query: "tool"),
+            round: 2, initialLLMCalls: 0, previousResult: first
+        )
+        #expect(planner.calls == 0)
+        #expect(web.requests.count == 1)
+        #expect(github.requests.map(\.page) == [1, 2])
+        #expect(verifier.calls.count == 7)
+        #expect(Set(second.repositories.map(\.card.fullName)) == ["owner/second", "web/repo-5", "web/repo-6"])
+        #expect(second.session.usedLLMCalls == 0)
+        #expect(second.session.evidence.contains { $0.id == "round-2-github-0-0" })
+        #expect(Set(second.session.evidence.map(\.id)).count == second.session.evidence.count)
+    }
+
+    @Test("续查复用线索时仍排除前轮私仓的远程证据")
+    func continuationFiltersPreviousPrivateEvidence() async {
+        let privateRepo = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "internal", name: "secret", isPrivate: true))
+        let previous = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: UUID(), round: 1, phase: .completed, plan: Self.makePlan(),
+                evidence: [SearchEvidence(
+                    id: "private", kind: .github, title: "internal/secret",
+                    snippet: "private details", repositoryFullName: "internal/secret"
+                )]
+            ),
+            repositories: [privateRepo], references: [], diagnostics: []
+        )
+        let ranker = StubDiscoveryRanker { _, _, _, evidence, _ in
+            #expect(evidence.allSatisfy { $0.repositoryFullName != "internal/secret" })
+            return []
+        }
+        _ = await RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "public", name: "tool"))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"),
+            round: 2, initialLLMCalls: 0, previousResult: previous
+        )
+    }
+
     @Test("规划与 Chat 重排共用 Pro 门控，本地模型免费", arguments: [false, true], [false, true])
     func chatEntitlementsAreCheckedBeforeClientCreation(isPro: Bool, usesLocalOnly: Bool) async {
         let settings = Self.entitlementSettings(usesLocalOnly: usesLocalOnly)

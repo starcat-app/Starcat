@@ -1468,11 +1468,43 @@ struct SearchCenterViewModelTests {
         #expect(discovery.requestRounds == [1, 2])
         #expect(router.routeQueries.count == 1)
         #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+        #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
+        #expect(discovery.previousResults.compactMap { $0 }.last?.repositories.count == 1)
         #expect(viewModel.discoverySession?.round == 2)
         #expect(viewModel.canContinueDiscovery)
 
         await viewModel.submit()
         #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+        #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
+    }
+
+    @Test("续查等待、零命中或失败都保留前轮结果及证据", arguments: [false, true])
+    func continuationKeepsPreviousResultsOnEmptyOrFailure(fails: Bool) async throws {
+        let first = Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"))
+        let next = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: UUID(), round: 2, phase: fails ? .failed("offline") : .noResults
+            ),
+            repositories: [], references: [],
+            diagnostics: fails ? [.failure(stage: .githubSearch, error: URLError(.notConnectedToInternet))] : []
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [first, next])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "find linux distribution"
+        await viewModel.submit()
+        discovery.onDiscover = {
+            #expect(viewModel.candidates.map(\.id) == ["repo:omarchy/omarchy"])
+        }
+        await viewModel.continueDiscovery()
+        #expect(viewModel.candidates.map(\.id) == ["repo:omarchy/omarchy"])
+        #expect(viewModel.discoverySession?.evidence == first.session.evidence)
+        #expect(viewModel.discoverySession?.phase == (fails ? .partialFailure : .completed))
+        #expect(viewModel.canContinueDiscovery)
     }
 
     private nonisolated static func makeCandidate(
@@ -1542,10 +1574,11 @@ struct SearchCenterViewModelTests {
         candidate: RepositoryCandidate,
         round: Int = 1
     ) -> RepositoryDiscoveryResult {
+        let evidenceID = round > 1 ? "round-\(round)-web-0-0" : "web-0-0"
         var item = candidate
         item.discovery = SearchDiscoveryAnnotation(
             reason: "Web evidence points to this repository",
-            evidenceIDs: ["web-0-0"],
+            evidenceIDs: [evidenceID],
             rank: 0
         )
         let session = SearchDiscoverySession(
@@ -1555,7 +1588,7 @@ struct SearchCenterViewModelTests {
             plan: makeSmartOutcome().plan,
             evidence: [
                 SearchEvidence(
-                    id: "web-0-0",
+                    id: evidenceID,
                     kind: .web,
                     title: "Trending Linux distribution",
                     url: URL(string: "https://github.com/\(candidate.card.fullName)")
@@ -1826,6 +1859,8 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
     private var results: [RepositoryDiscoveryResult]
     private(set) var requests: [SearchRequest] = []
     private(set) var requestRounds: [Int] = []
+    private(set) var previousResults: [RepositoryDiscoveryResult?] = []
+    var onDiscover: (() -> Void)?
 
     init(results: [RepositoryDiscoveryResult]) {
         self.results = results
@@ -1839,10 +1874,13 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
         round: Int,
         budget: SearchDiscoveryBudget,
         initialLLMCalls: Int,
-        deadline: Date?
+        deadline: Date?,
+        previousResult: RepositoryDiscoveryResult?
     ) async -> RepositoryDiscoveryResult {
         requests.append(baseRequest)
         requestRounds.append(round)
+        previousResults.append(previousResult)
+        onDiscover?()
         let result = results.isEmpty
             ? RepositoryDiscoveryResult(
                 session: SearchDiscoverySession(
