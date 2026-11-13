@@ -12,6 +12,26 @@ import Testing
 @Suite("Search Intent Router")
 @MainActor
 struct SearchIntentRouterTests {
+    @Test("文章提取解析真实 snake_case JSON 与 Markdown fence")
+    func articleExtractionDecodesResponse() throws {
+        let candidates = try SearchLLMQueryPlanner.decodeArticleCandidates("""
+        ```json
+        {"candidates":[{"name":"Omarchy","evidence_ids":["web-0-0"]}]}
+        ```
+        """)
+        #expect(candidates == [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])])
+        #expect(try SearchLLMQueryPlanner.decodeArticleCandidates(#"{"candidates":[]}"#).isEmpty)
+    }
+
+    @Test("文章提取拒绝缺失字段的响应", arguments: [
+        "{}", #"{"candidates":[{"name":"Omarchy"}]}"#, #"{"candidates":[{"name":"Omarchy","evidenceIDs":[]}]}"#
+    ])
+    func articleExtractionRejectsMalformedResponse(_ response: String) {
+        #expect(throws: SearchIntentRouterError.invalidPlan) {
+            try SearchLLMQueryPlanner.decodeArticleCandidates(response)
+        }
+    }
+
     @Test("Planner 直接解析模型返回的 snake_case JSON")
     func plannerDecodesSnakeCaseResponse() throws {
         let response = """

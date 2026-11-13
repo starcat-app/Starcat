@@ -555,6 +555,19 @@ struct SearchCenterView: View {
                 if !viewModel.isResultFilterSearching {
                     Text("search.empty.description")
                 }
+            } actions: {
+                if let source = viewModel.filteredLoadMoreSource {
+                    Button("search.github.loadMore") {
+                        Task {
+                            if source == .github {
+                                await viewModel.loadMoreGitHub()
+                            } else {
+                                await viewModel.loadMoreWeb()
+                                maxResultsDraft = String(viewModel.externalSearchFilters.maxResults)
+                            }
+                        }
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if viewModel.shouldShowSearchSkeleton {
@@ -1110,14 +1123,14 @@ struct SearchCenterView: View {
     /// GitHub scope 的分页入口必须作为列表最后一行，而不是固定在面板底部。
     /// 这样用户滚到当前页末尾时才会看到“查看更多”，追加下一页后入口自然跟到新末尾。
     private var shouldShowGitHubLoadMoreRow: Bool {
-        viewModel.scope == .github
+        (viewModel.scope == .github || (viewModel.scope == .all && viewModel.resultFilter == .source(.github)))
             && !viewModel.lastSubmittedQuery.isEmpty
             && !viewModel.candidates.isEmpty
             && (viewModel.canLoadMoreGitHub || viewModel.isLoadingGitHub)
     }
 
     private var shouldShowWebLoadMoreRow: Bool {
-        viewModel.scope == .web
+        (viewModel.scope == .web || (viewModel.scope == .all && viewModel.resultFilter == .source(.web)))
             && !viewModel.lastSubmittedQuery.isEmpty
             && !viewModel.candidates.isEmpty
             && (viewModel.canLoadMoreWeb || viewModel.isLoadingWeb)

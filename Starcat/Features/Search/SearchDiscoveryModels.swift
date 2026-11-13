@@ -90,6 +90,8 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
     let url: URL?
     let snippet: String?
     let observedAt: Date
+    /// GitHub 元数据的归属用于远程调用前排除私仓证据，不能仅过滤候选卡片。
+    let repositoryFullName: String?
 
     init(
         id: String,
@@ -97,7 +99,8 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
         title: String,
         url: URL? = nil,
         snippet: String? = nil,
-        observedAt: Date = Date()
+        observedAt: Date = Date(),
+        repositoryFullName: String? = nil
     ) {
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         self.kind = kind
@@ -105,6 +108,7 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
         self.url = url
         self.snippet = snippet?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.observedAt = observedAt
+        self.repositoryFullName = repositoryFullName?.lowercased()
     }
 
     /// 证据必须有稳定 ID、标题，以及 URL 或原文片段之一；否则不能进入候选解释。
@@ -121,6 +125,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
         case routing
         case planning
         case webSearch
+        case extraction
         case githubSearch
         case verification
         case ranking
@@ -131,6 +136,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
             case .routing: return "search.discovery.phase.routing"
             case .planning: return "search.discovery.phase.planning"
             case .webSearch: return "search.scope.web"
+            case .extraction: return "search.discovery.phase.extracting"
             case .githubSearch: return "search.footer.source.github"
             case .verification: return "search.discovery.phase.verifying"
             case .ranking: return "search.discovery.phase.ranking"
@@ -160,7 +166,9 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
     var isFailure: Bool { kind == .failure }
 
     var impactKey: String {
-        "search.discovery.diagnostic.impact.\(stage.rawValue)"
+        // 文章线索提取失败与仓库核验失败都只影响部分候选，复用现有全语言提示。
+        if stage == .extraction { return "search.discovery.diagnostic.impact.verification" }
+        return "search.discovery.diagnostic.impact.\(stage.rawValue)"
     }
 
     /// 不直接显示 Error.localizedDescription，避免把传输细节或模型原文当成用户提示。
@@ -181,7 +189,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
         // 统一错误模板会把 operation 放进用户句子，须传可读步骤，不能泄露内部操作 ID。
         let service: String? = switch stage {
         case .githubSearch, .verification: "GitHub"
-        case .planning, .ranking: "AI"
+        case .planning, .extraction, .ranking: "AI"
         case .webSearch, .routing, .merging: nil
         }
         let presentation = UserFacingError.map(
@@ -285,6 +293,7 @@ struct SearchDiscoveryStep: Equatable, Hashable, Identifiable, Sendable {
         case .routing: return "search.discovery.step.routing"
         case .planning: return "search.discovery.step.planning"
         case .webSearch: return "search.scope.web"
+        case .extraction: return "search.discovery.phase.extracting"
         case .githubSearch: return "search.footer.source.github"
         case .verification: return "search.discovery.step.verification"
         case .ranking: return "search.discovery.step.ranking"

@@ -1219,7 +1219,9 @@ final class AppDependencies {
 
         // Search Center 智能发现：Router 只做查询分类/规划，Discovery Service 负责受控
         // 检索、核验和重排。三个服务共享同一 AppSettings；Keychain 仍按所选模型动态读取。
-        let searchQueryPlanner = SearchLLMQueryPlanner(settings: self.settings, keychain: KeychainManager.shared)
+        let searchQueryPlanner = SearchLLMQueryPlanner(
+            settings: self.settings, keychain: KeychainManager.shared, entitlementGate: self.entitlementGate
+        )
         // 网页展示开关不授权 AI 联网；只检查所选服务商，不能隐式切换到其他服务商。
         let webEvidenceAllowed: (ExternalSearchProviderID) -> Bool = { [settings = self.settings] provider in
             settings.externalContextEnabled
@@ -1233,6 +1235,7 @@ final class AppDependencies {
         )
         let repositoryDiscoveryService = RepositoryDiscoveryService(
             planner: searchQueryPlanner,
+            articleExtractor: searchQueryPlanner,
             githubProvider: GitHubRepositorySearchProvider(
                 client: api,
                 noteRepository: self.repoNoteRepository
@@ -1241,7 +1244,8 @@ final class AppDependencies {
             verifier: GitHubRepositoryVerifier(client: api),
             ranker: DynamicSearchDiscoveryRanker(
                 settings: self.settings,
-                keychain: KeychainManager.shared
+                keychain: KeychainManager.shared,
+                entitlementGate: self.entitlementGate
             ),
             webEvidenceAllowed: webEvidenceAllowed
         )

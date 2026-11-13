@@ -12,6 +12,570 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("只有介绍文章时提取原文项目名，并由 GitHub 结果建立仓库与证据")
+    func articleNameResolvesToRealRepository() async {
+        let extractor = StubArticleExtractor { evidence in
+            #expect(evidence.map(\.id) == ["web-0-0"])
+            return [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])]
+        }
+        let github = RecordingSearchProvider(source: .github) { request in
+            guard request.query == "Omarchy in:name" else { return .empty }
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "basecamp", name: "omarchy"))],
+                references: [], totalCount: 1, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(candidates.map(\.id) == ["basecamp/omarchy"])
+            #expect(candidates.first?.evidenceIDs == ["web-0-0", "github-0-0"])
+            return [SearchDiscoveryRankedItem(
+                id: "basecamp/omarchy", reason: "Named in the introduction", evidenceIDs: ["web-0-0"]
+            )]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor, githubProvider: github,
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(query: "forgotten Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["basecamp/omarchy"])
+        #expect(result.repositories.first?.discovery?.evidenceIDs == ["web-0-0"])
+        #expect(result.session.usedLLMCalls == 3)
+        #expect(github.requests.map(\.query) == ["Omarchy in:name", "linux distribution"])
+        #expect(result.steps.contains { $0.stage == .extraction && $0.state == .completed })
+    }
+
+    @Test("虚构名称、无效引用及搜索语法不能产生文章仓库查询", arguments: [
+        SearchArticleCandidate(name: "InventedProject", evidenceIDs: ["web-0-0"]),
+        SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-9-9"]),
+        SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0", "unknown"]),
+        SearchArticleCandidate(name: "Omarchy stars:>0", evidenceIDs: ["web-0-0"]),
+        SearchArticleCandidate(name: "march", evidenceIDs: ["web-0-0"]),
+        SearchArticleCandidate(name: "Omarchy", evidenceIDs: [])
+    ])
+    func ungroundedArticleNamesDoNotReachGitHub(_ candidate: SearchArticleCandidate) async {
+        let github = RecordingSearchProvider(source: .github) { _ in .empty }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: StubArticleExtractor { _ in [candidate] }, githubProvider: github,
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in true }
+        ).discover(query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(github.requests.map(\.query) == ["linux distribution"])
+        #expect(result.repositories.isEmpty)
+    }
+
+    @Test("GitHub 没有同名仓库时保留文章，不能把相似名字当成核验成功", arguments: [false, true])
+    func articleNameRequiresGitHubMatch(returnsSimilarName: Bool) async {
+        let result = await RepositoryDiscoveryService(
+            planner: nil,
+            articleExtractor: StubArticleExtractor { _ in [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])] },
+            githubProvider: RecordingSearchProvider(source: .github) { request in
+                guard returnsSimilarName, request.query == "Omarchy in:name" else { return .empty }
+                return SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "other", name: "omarchy-docs"))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in true }
+        ).discover(query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(result.repositories.isEmpty)
+        #expect(result.references.count == 1)
+    }
+
+    @Test("文章标题或片段中的明确 GitHub 链接直接核验，不额外调用模型", arguments: [false, true])
+    func articleExplicitURLSkipsExtraction(inTitle: Bool) async {
+        let extractor = StubArticleExtractor { _ in Issue.record("Explicit URLs must skip extraction"); return [] }
+        let verifier = StubRepositoryVerifier { owner, name in
+            #expect(owner == "basecamp" && name == "omarchy")
+            return Self.makeRepoDTO(id: 1, owner: owner, name: name)
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in
+                Self.makeArticlePage(
+                    title: inTitle ? "Introducing https://github.com/basecamp/omarchy" : "Linux introduction",
+                    snippet: inTitle ? nil : "Source: https://github.com/basecamp/omarchy."
+                )
+            },
+            verifier: verifier, webEvidenceAllowed: { _ in true }
+        ).discover(query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["basecamp/omarchy"])
+        #expect(result.repositories.first?.discovery?.evidenceIDs == ["web-0-0"])
+        #expect(verifier.calls.count == 1)
+        #expect(extractor.calls == 0)
+        #expect(result.session.usedLLMCalls == 1)
+    }
+
+    @Test("AI 联网关闭时网页展示开关不能授权文章提取")
+    func disabledWebContextStopsArticleExtraction() async {
+        let extractor = StubArticleExtractor { _ in Issue.record("Web context is disabled"); return [] }
+        let web = RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() }
+        _ = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty }, webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in false }
+        ).discover(
+            query: "Linux distribution", request: SearchRequest(query: "Linux", includeWebInAll: true),
+            initialPlan: Self.makePlan()
+        )
+        #expect(web.requests.isEmpty)
+        #expect(extractor.calls == 0)
+    }
+
+    @Test("文章提取不能占用 Chat 重排预留的最后一次调用")
+    func articleExtractionReservesRankingBudget() async {
+        let extractor = StubArticleExtractor { _ in Issue.record("No extraction budget remains"); return [] }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker { _, _, _, _, _ in [] }, webEvidenceAllowed: { _ in true }
+        ).discover(
+            query: "Linux distribution", request: SearchRequest(query: "Linux"),
+            initialPlan: Self.makePlan(), initialLLMCalls: 2
+        )
+        #expect(extractor.calls == 0)
+        #expect(result.session.usedLLMCalls == 2)
+        #expect(result.diagnostics.contains { $0.stage == .extraction && $0.kind == .limit })
+    }
+
+    @Test("文章提取共享整轮截止时间，用户取消不记为失败", arguments: [false, true])
+    func articleExtractionDeadlineAndCancellation(cancel: Bool) async throws {
+        let extractor = StubArticleExtractor { _ in
+            try await Task.sleep(for: .seconds(5))
+            return []
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in true }
+        )
+        let task = Task {
+            await service.discover(
+                query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan(),
+                deadline: Date().addingTimeInterval(cancel ? 15 : 0.2)
+            )
+        }
+        try await Self.waitUntil { extractor.calls == 1 }
+        if cancel { task.cancel() }
+        let result = await task.value
+        if cancel {
+            #expect(result.session.phase == .cancelled)
+            #expect(result.diagnostics.isEmpty)
+        } else {
+            let expected = UserFacingError.map(
+                URLError(.timedOut), operation: String.l10n("search.discovery.phase.extracting"), service: "AI"
+            )
+            #expect(result.diagnostics.first { $0.stage == .extraction }?.message == expected.message)
+            #expect(result.session.usedLLMCalls == 2)
+        }
+    }
+
+    @Test("文章定位到私仓后仍遵守远程重排隐私边界", arguments: [false, true])
+    func articlePrivateRepositoriesKeepRankingBoundary(usesLocalOnly: Bool) async {
+        let ranker = StubDiscoveryRanker(usesLocalOnly: usesLocalOnly) { _, _, candidates, evidence, _ in
+            #expect(candidates.contains { $0.id == "team/omarchy" } == usesLocalOnly)
+            #expect(evidence.contains { $0.repositoryFullName == "team/omarchy" } == usesLocalOnly)
+            return candidates.map { SearchDiscoveryRankedItem(id: $0.id, reason: "Relevant", evidenceIDs: $0.evidenceIDs) }
+        }
+        _ = await RepositoryDiscoveryService(
+            planner: nil,
+            articleExtractor: StubArticleExtractor { _ in [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])] },
+            githubProvider: RecordingSearchProvider(source: .github) { request in
+                guard request.query == "Omarchy in:name" else { return .empty }
+                return SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "team", name: "omarchy", isPrivate: true))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(
+            query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan(),
+            seedRepositories: [Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "public", name: "safe"))]
+        )
+    }
+
+    @Test("基础候选和新增发现共用重排池与证据，保留知识库事实")
+    func baseAndDiscoveredRepositoriesShareRanking() async {
+        let repo = Self.makeRepo(id: 1, owner: "local", name: "favorite")
+        var favorite = Self.makeCandidate(repo: repo)
+        favorite.card = repo.asCardData(isInLibrary: true)
+        favorite.sources = [.localKeyword]
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: repo),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "external", name: "better"))
+                ], references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(Set(candidates.map(\.id)) == ["local/favorite", "external/better"])
+            #expect(candidates.first { $0.id == "local/favorite" }?.isInLibrary == true)
+            #expect(candidates.first { $0.id == "local/favorite" }?.evidenceIDs.contains("base-0") == true)
+            return [
+                SearchDiscoveryRankedItem(id: "external/better", reason: "Best intent match", evidenceIDs: ["github-0-1"]),
+                SearchDiscoveryRankedItem(id: "local/favorite", reason: "Related fallback", evidenceIDs: ["base-0"])
+            ]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan(),
+            seedRepositories: [favorite]
+        )
+        #expect(result.repositories.map(\.card.fullName) == ["external/better", "local/favorite"])
+        #expect(result.repositories.last?.card.isInLibrary == true)
+        #expect(result.repositories.last?.sources == [.localKeyword, .github])
+    }
+
+    @Test("统一重排预算内基础与新增来源均有名额")
+    func sharedRankingPoolBalancesBaseAndNewCandidates() async {
+        let base = (0..<20).map {
+            Self.makeCandidate(repo: Self.makeRepo(id: Int64($0 + 1), owner: "base", name: "tool-\($0)"))
+        }
+        let discovered = (0..<20).map {
+            Self.makeCandidate(repo: Self.makeRepo(id: Int64($0 + 100), owner: "new", name: "tool-\($0)"))
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(candidates.count == 2)
+            #expect(candidates.contains { $0.id.hasPrefix("base/") })
+            #expect(candidates.contains { $0.id.hasPrefix("new/") })
+            return candidates.map { SearchDiscoveryRankedItem(id: $0.id, reason: "Relevant", evidenceIDs: $0.evidenceIDs) }
+        }
+        _ = await RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: discovered, references: [], totalCount: 20, hasNextPage: false)
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan(),
+            budget: SearchDiscoveryBudget(
+                timeoutSeconds: 15, maxWebQueries: 0, maxGitHubQueries: 1, maxLLMCalls: 3,
+                maxVerifiedRepositories: 5, maxRankedCandidates: 2
+            ),
+            seedRepositories: base
+        )
+    }
+
+    @Test("专用重排只在同分时优先收藏，更相关的外部项目仍在前", arguments: [false, true])
+    func dedicatedRankerUsesLibraryOnlyForTies(equalRelevance: Bool) throws {
+        let candidates = [
+            SearchDiscoveryRankingCandidate(
+                id: "external/better", fullName: "external/better", description: nil, stars: 1, evidenceIDs: []
+            ),
+            SearchDiscoveryRankingCandidate(
+                id: "local/favorite", fullName: "local/favorite", description: nil, stars: 1, evidenceIDs: [], isInLibrary: true
+            )
+        ]
+        let ranked = try SearchDiscoveryRerankRanker.rankedItems(
+            from: [
+                ("external/better", 0.9),
+                ("local/favorite", equalRelevance ? 0.9 : 0.8)
+            ], candidates: candidates
+        )
+        #expect(ranked.first?.id == (equalRelevance ? "local/favorite" : "external/better"))
+    }
+
+    @Test("GitHub 候选满额时仍保留网页核验名额，重排降级也不丢失", arguments: [false, true], [1, 2])
+    func verifiedWebCandidatesHaveReservedRankingSlots(rankerFails: Bool, limit: Int) async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: (0..<20).map {
+                    Self.makeCandidate(repo: Self.makeRepo(id: Int64($0 + 1), owner: "github", name: "tool-\($0)"))
+                }, references: [], totalCount: 20, hasNextPage: false
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: [Self.makeReference(url: "https://github.com/web/desired")],
+                totalCount: 1, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(candidates.count == limit)
+            #expect(candidates.contains { $0.id == "web/desired" })
+            if rankerFails { throw TestError.failed }
+            return candidates.reversed().map {
+                SearchDiscoveryRankedItem(id: $0.id, reason: "Relevant match", evidenceIDs: $0.evidenceIDs)
+            }
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web,
+            verifier: StubRepositoryVerifier { owner, name in Self.makeRepoDTO(id: 99, owner: owner, name: name) },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan(),
+            budget: SearchDiscoveryBudget(
+                timeoutSeconds: 15, maxWebQueries: 1, maxGitHubQueries: 1, maxLLMCalls: 3,
+                maxVerifiedRepositories: 5, maxRankedCandidates: limit
+            )
+        )
+        #expect(result.repositories.count == limit)
+        #expect(result.repositories.contains { $0.card.fullName == "web/desired" })
+    }
+
+    @Test("续查复用计划和未核验线索，只取下一页 GitHub 结果")
+    func continuationReusesPlanAndPendingVerification() async {
+        let github = RecordingSearchProvider(source: .github) { request in
+            let name = request.page == 1 ? "first" : "second"
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: Int64(request.page), owner: "owner", name: name))],
+                references: [], totalCount: 2, hasNextPage: request.page == 1
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: (0..<7).map {
+                    Self.makeReference(url: "https://github.com/web/repo-\($0)")
+                }, totalCount: 7, hasNextPage: false
+            )
+        }
+        let verifier = StubRepositoryVerifier { owner, name in
+            Self.makeRepoDTO(id: 100 + (Int64(name.suffix(1)) ?? 0), owner: owner, name: name)
+        }
+        let planner = StubQueryPlanner(plan: Self.makePlan())
+        let service = RepositoryDiscoveryService(
+            planner: planner, githubProvider: github, webProvider: web,
+            verifier: verifier, webEvidenceAllowed: { _ in true }
+        )
+        let first = await service.discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan()
+        )
+        let second = await service.discover(
+            query: "tool", request: SearchRequest(query: "tool"),
+            round: 2, initialLLMCalls: 0, previousResult: first
+        )
+        #expect(planner.calls == 0)
+        #expect(web.requests.count == 1)
+        #expect(github.requests.map(\.page) == [1, 2])
+        #expect(verifier.calls.count == 7)
+        #expect(Set(second.repositories.map(\.card.fullName)) == ["owner/second", "web/repo-5", "web/repo-6"])
+        #expect(second.session.usedLLMCalls == 0)
+        #expect(second.session.evidence.contains { $0.id == "round-2-github-0-0" })
+        #expect(Set(second.session.evidence.map(\.id)).count == second.session.evidence.count)
+    }
+
+    @Test("续查复用线索时仍排除前轮私仓的远程证据")
+    func continuationFiltersPreviousPrivateEvidence() async {
+        let privateRepo = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "internal", name: "secret", isPrivate: true))
+        let previous = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: UUID(), round: 1, phase: .completed, plan: Self.makePlan(),
+                evidence: [SearchEvidence(
+                    id: "private", kind: .github, title: "internal/secret",
+                    snippet: "private details", repositoryFullName: "internal/secret"
+                )]
+            ),
+            repositories: [privateRepo], references: [], diagnostics: []
+        )
+        let ranker = StubDiscoveryRanker { _, _, _, evidence, _ in
+            #expect(evidence.allSatisfy { $0.repositoryFullName != "internal/secret" })
+            return []
+        }
+        _ = await RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "public", name: "tool"))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"),
+            round: 2, initialLLMCalls: 0, previousResult: previous
+        )
+    }
+
+    @Test("规划与 Chat 重排共用 Pro 门控，本地模型免费", arguments: [false, true], [false, true])
+    func chatEntitlementsAreCheckedBeforeClientCreation(isPro: Bool, usesLocalOnly: Bool) async {
+        let settings = Self.entitlementSettings(usesLocalOnly: usesLocalOnly)
+        let gate = EntitlementGate(
+            entitlementProvider: SearchDiscoveryEntitlementProvider(isPro: isPro), userIDProvider: { nil }
+        )
+        let planner = SearchLLMQueryPlanner(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        let ranker = SearchLLMDiscoveryRanker(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        #expect(ranker.usesLocalOnly == usesLocalOnly)
+
+        // 已获准的调用在零预算处停止，覆盖实际入口且不下载模型或发出网络请求。
+        if !isPro && !usesLocalOnly {
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await planner.plan(query: "tool", allowWebEvidence: false, maxSeconds: 0)
+            }
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await planner.extract(query: "tool", evidence: [], maxSeconds: 0)
+            }
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        } else {
+            await #expect(throws: URLError(.timedOut)) {
+                try await planner.plan(query: "tool", allowWebEvidence: false, maxSeconds: 0)
+            }
+            await #expect(throws: URLError(.timedOut)) {
+                try await planner.extract(query: "tool", evidence: [], maxSeconds: 0)
+            }
+            await #expect(throws: URLError(.timedOut)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        }
+    }
+
+    @Test("专用 Rerank 的动态入口遵守远程 Pro 与本地免费规则", arguments: [false, true], [false, true])
+    func dedicatedRerankEntitlementsAreEnforced(isPro: Bool, usesLocalOnly: Bool) async {
+        let settings = Self.entitlementSettings(usesLocalOnly: false)
+        settings.ragRerankConfiguration = RAGRerankConfiguration(
+            isEnabled: true, provider: usesLocalOnly ? .localMLX : .huggingFaceTEI
+        )
+        let gate = EntitlementGate(
+            entitlementProvider: SearchDiscoveryEntitlementProvider(isPro: isPro), userIDProvider: { nil }
+        )
+        let ranker = DynamicSearchDiscoveryRanker(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        #expect(ranker.usesLocalOnly == usesLocalOnly)
+        if !isPro && !usesLocalOnly {
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        } else {
+            await #expect(throws: URLError(.timedOut)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        }
+    }
+
+    @Test("远程重排被 Pro 门控阻止后仍保留基础候选")
+    func deniedRemoteRankerKeepsSearchResults() async {
+        let settings = Self.entitlementSettings(usesLocalOnly: false)
+        let gate = EntitlementGate(
+            entitlementProvider: SearchDiscoveryEntitlementProvider(isPro: false), userIDProvider: { nil }
+        )
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let result = await RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: DynamicSearchDiscoveryRanker(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["apple/swift"])
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.diagnostics.contains { $0.stage == .ranking && $0.isFailure })
+    }
+
+    @Test("重排输入只携带当前仓库的 GitHub 和网页证据")
+    func rankingEvidenceIsAssociatedWithRepository() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift")),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "other", name: "tool"))
+                ], references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: [
+                    Self.makeReference(url: "https://github.com/Apple/Swift/"),
+                    Self.makeReference(url: "https://github.com/old/alias/?tab=readme"),
+                    Self.makeReference(url: "https://example.org/unrelated")
+                ], totalCount: 3, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            let byID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+            #expect(Set(byID["apple/swift"]?.evidenceIDs ?? []) == ["github-0-0", "web-0-0"])
+            #expect(byID["other/tool"]?.evidenceIDs == ["github-0-1"])
+            #expect(byID["new/renamed"]?.evidenceIDs == ["web-0-1"])
+            return candidates.map {
+                SearchDiscoveryRankedItem(id: $0.id, reason: "Repository-specific match", evidenceIDs: $0.evidenceIDs)
+            }
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in Self.makeRepoDTO(id: 3, owner: "new", name: "renamed") },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 3)
+        #expect(result.repositories.allSatisfy { $0.discovery?.kind == .modelMatch })
+    }
+
+    @Test("模型引用其它仓库证据时拒绝该理由并保留原候选")
+    func crossRepositoryEvidenceIsRejected() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift")),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "other", name: "tool"))
+                ], references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, _, _, _ in
+            [SearchDiscoveryRankedItem(id: "apple/swift", reason: "Unrelated project claim", evidenceIDs: ["github-0-1"])]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 2)
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.repositories.first?.discovery?.evidenceIDs == ["github-0-0"])
+        #expect(result.repositories.first?.discovery?.reason.isEmpty == true)
+    }
+
+    @Test("远程重排同时排除私仓候选和证据，本地重排可使用私仓", arguments: [false, true])
+    func privateRepositoriesRespectRankerBoundary(usesLocalOnly: Bool) async {
+        let publicRepo = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "public", name: "tool"))
+        let privateRepo = Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "internal", name: "secret", isPrivate: true))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [publicRepo, privateRepo], references: [], totalCount: 2, hasNextPage: false)
+        }
+        let ranker = StubDiscoveryRanker(usesLocalOnly: usesLocalOnly) { _, _, candidates, evidence, _ in
+            #expect(candidates.contains { $0.fullName == "internal/secret" } == usesLocalOnly)
+            #expect(evidence.contains { $0.repositoryFullName == "internal/secret" } == usesLocalOnly)
+            #expect(evidence.contains { $0.snippet == "secret repository" } == usesLocalOnly)
+            return [
+                SearchDiscoveryRankedItem(id: "internal/secret", reason: "Private match", evidenceIDs: []),
+                SearchDiscoveryRankedItem(id: " PUBLIC/TOOL ", reason: "Public match", evidenceIDs: [])
+            ]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 2)
+        #expect(result.repositories.first { !$0.card.isPrivate }?.discovery?.kind == .modelMatch)
+        let privateResult = result.repositories.first { $0.card.isPrivate }
+        #expect(privateResult?.discovery?.kind == (usesLocalOnly ? .modelMatch : .githubSearch))
+    }
+
+    @Test("仅有私仓时保留卡片且不调用远程重排")
+    func privateOnlyResultsSkipRemoteRanker() async {
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "internal", name: "secret", isPrivate: true))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+        }
+        let ranker = StubDiscoveryRanker { _, _, _, _, _ in
+            Issue.record("Private-only results must not invoke remote ranking")
+            return []
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["internal/secret"])
+        #expect(result.diagnostics.isEmpty)
+    }
+
     @Test("隐藏候选不进入网页身份提取、证据或重排输入")
     func filteredContentNeverReachesRanker() async {
         let safe = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
@@ -885,6 +1449,15 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.count == 1)
     }
 
+    private static func entitlementSettings(usesLocalOnly: Bool) -> AppSettings {
+        let defaults = UserDefaults(suiteName: "SearchDiscoveryEntitlements-\(UUID().uuidString)")!
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        let profile = AIProviderProfile(id: "search-test", provider: usesLocalOnly ? .localAI : .openAICompatible)
+        settings.aiProviderProfiles = [profile]
+        settings.aiChatTask.providerID = profile.id
+        return settings
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",
@@ -903,7 +1476,7 @@ struct RepositoryDiscoveryServiceTests {
         guard condition() else { throw TestError.failed }
     }
 
-    private nonisolated static func makeRepo(id: Int64, owner: String, name: String) -> Repo {
+    private nonisolated static func makeRepo(id: Int64, owner: String, name: String, isPrivate: Bool = false) -> Repo {
         Repo(
             id: id,
             owner: owner,
@@ -920,7 +1493,7 @@ struct RepositoryDiscoveryServiceTests {
             htmlUrl: "https://github.com/\(owner)/\(name)",
             cloneUrl: nil,
             sshUrl: nil,
-            isPrivate: false,
+            isPrivate: isPrivate,
             isFork: false,
             isArchived: false,
             isStarred: false,
@@ -940,6 +1513,22 @@ struct RepositoryDiscoveryServiceTests {
             localRepo: nil,
             remoteRepo: repo,
             semanticScore: nil
+        )
+    }
+
+    /// 普通文章 URL 不包含仓库路径，迫使发现链路使用原文线索。
+    private nonisolated static func makeArticlePage(
+        title: String = "Introducing Omarchy",
+        snippet: String? = "A Linux distribution for developers"
+    ) -> SearchProviderPage {
+        let url = URL(string: "https://news.example.org/linux-introduction")!
+        return SearchProviderPage(
+            repositories: [],
+            references: [ReferenceCandidate(
+                normalizedURL: url, originalURL: url, title: title, snippet: snippet,
+                domain: "news.example.org", source: .web
+            )],
+            totalCount: 1, hasNextPage: false
         )
     }
 
@@ -1002,6 +1591,16 @@ struct RepositoryDiscoveryServiceTests {
     }
 }
 
+/// 使用真实 EntitlementGate 的轻量权益快照，避免测试依赖 StoreKit 或全局调试开关。
+@MainActor
+private final class SearchDiscoveryEntitlementProvider: ProEntitlementProviding {
+    let entitlement: ProEntitlement
+
+    init(isPro: Bool) {
+        entitlement = isPro ? .testEnvironment : .inactive
+    }
+}
+
 @MainActor
 private final class DiscoveryWebPermission {
     var aiEnabled = true
@@ -1010,6 +1609,23 @@ private final class DiscoveryWebPermission {
 
 private enum TestError: Error {
     case failed
+}
+
+/// 注入提取响应或挂起操作，用于验证服务边界而非真实联网模型。
+@MainActor
+private final class StubArticleExtractor: SearchArticleCandidateExtracting {
+    let modelDisplayName: String? = "Test extraction model"
+    private(set) var calls = 0
+    private let handler: ([SearchEvidence]) async throws -> [SearchArticleCandidate]
+
+    init(handler: @escaping ([SearchEvidence]) async throws -> [SearchArticleCandidate]) {
+        self.handler = handler
+    }
+
+    func extract(query: String, evidence: [SearchEvidence], maxSeconds: TimeInterval) async throws -> [SearchArticleCandidate] {
+        calls += 1
+        return try await handler(evidence)
+    }
 }
 
 @MainActor
@@ -1081,6 +1697,7 @@ private final class StubRepositoryVerifier: RepositoryVerificationProviding, @un
 @MainActor
 private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
     let kind: SearchDiscoveryRankerKind
+    let usesLocalOnly: Bool
     private let handler: @Sendable (
         String,
         SearchDiscoveryPlan,
@@ -1091,6 +1708,7 @@ private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
 
     init(
         kind: SearchDiscoveryRankerKind = .chat,
+        usesLocalOnly: Bool = false,
         handler: @escaping @Sendable (
             String,
             SearchDiscoveryPlan,
@@ -1100,6 +1718,7 @@ private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
         ) async throws -> [SearchDiscoveryRankedItem]
     ) {
         self.kind = kind
+        self.usesLocalOnly = usesLocalOnly
         self.handler = handler
     }
 

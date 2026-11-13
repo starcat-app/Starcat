@@ -13,6 +13,154 @@ import Testing
 @Suite("Search Center ViewModel")
 @MainActor
 struct SearchCenterViewModelTests {
+    @Test("GitHub 筛选空页仍能手动取得后续可见结果", arguments: [SearchScope.all, .github])
+    func filteredGitHubEmptyPageCanContinue(_ scope: SearchScope) async throws {
+        let blocked = Self.makeCandidate(id: 900, owner: "cirosantilli", name: "china-dictatorship")
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            blocked, blocked, Self.makeCandidate(id: 3, owner: "swiftlang", name: "swift")
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.scope = scope
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.github))
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.currentGitHubPage == 2)
+        #expect(viewModel.filteredLoadMoreSource == .github)
+        await viewModel.loadMoreGitHub()
+        #expect(viewModel.candidates.map(\.id) == ["repo:swiftlang/swift"])
+        #expect(viewModel.filteredLoadMoreSource == nil)
+        #expect(await provider.requests.map(\.page) == [1, 2, 3])
+    }
+
+    @Test("全部范围内的网页筛选空态可增加检索上限")
+    func filteredWebEmptyPageCanContinueInAllScope() async throws {
+        let provider = SearchCenterFilteredWebPagingProvider()
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            includeWebInAll: { true }
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        viewModel.toggleResultFilter(.source(.web))
+        #expect(viewModel.candidates.isEmpty)
+        #expect(viewModel.filteredLoadMoreSource == .web)
+        await viewModel.loadMoreWeb()
+        #expect(viewModel.candidates.count == 1)
+        #expect(await provider.maxResultsRequests == [10, 20, 30])
+        #expect(viewModel.filteredLoadMoreSource == nil)
+    }
+
+    @Test("本地与智能发现筛选不显示其他来源的分页入口")
+    func nonRemoteFiltersDoNotOfferUnrelatedPagination() async throws {
+        let provider = SearchCenterRecordingPagingProvider(candidates: [
+            Self.makeCandidate(id: 1), Self.makeCandidate(id: 2)
+        ])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: [provider]),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
+        )
+        viewModel.query = "swift"
+        await viewModel.submit()
+        #expect(viewModel.canLoadMoreGitHub)
+        #expect(viewModel.filteredLoadMoreSource == nil)
+        for filter in [SearchResultFilter.source(.localKeyword), .source(.localSemantic), .discovery] {
+            viewModel.toggleResultFilter(filter)
+            #expect(viewModel.candidates.isEmpty)
+            #expect(viewModel.filteredLoadMoreSource == nil)
+        }
+        #expect(await provider.requests.count == 1)
+    }
+
+    @Test("发现专属卡片的知识库状态同步刷新当前结果、重开及缓存")
+    func discoveryLibraryChangesUpdateSnapshotsAndCache() async throws {
+        let candidate = Self.makeCandidate(id: 9, owner: "web", name: "tool")
+        let discovery = SearchCenterStubDiscoveryService(results: [Self.makeDiscoveryResult(candidate: candidate)])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        let persisted = Repo(
+            id: 9, owner: "web", name: "tool", fullName: "web/tool", description: nil, language: nil,
+            starsCount: 10, forksCount: 1, watchersCount: 1, topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://github.com/web/tool", cloneUrl: nil, sshUrl: nil, isPrivate: false, isFork: false, isArchived: false,
+            isStarred: false, pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil, cachedAt: nil
+        )
+        viewModel.query = "find a project"
+        await viewModel.submit()
+        viewModel.updateRepositoryLibraryState(identity: candidate.identity, state: .inLibrary, persistedRepo: persisted)
+        viewModel.dismiss()
+        viewModel.present()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == true)
+        await viewModel.submit()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == true)
+        #expect(try Self.firstRepository(in: viewModel).localRepo?.id == 9)
+
+        viewModel.updateRepositoryLibraryState(identity: candidate.identity, state: .outsideLibrary, persistedRepo: nil)
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == false)
+        await viewModel.submit()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == false)
+        #expect(try Self.firstRepository(in: viewModel).localRepo?.id == 9)
+        #expect(discovery.requests.count == 1)
+    }
+
+    @Test("知识库操作后迟到的发现卡片不能覆盖已确认状态")
+    func lateDiscoveryResultKeepsConfirmedLibraryState() async throws {
+        let candidate = Self.makeCandidate(id: 9, owner: "web", name: "tool")
+        let discovery = SearchCenterStubDiscoveryService(results: [Self.makeDiscoveryResult(candidate: candidate)])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        discovery.onDiscover = {
+            viewModel.updateRepositoryLibraryState(identity: candidate.identity, state: .inLibrary, persistedRepo: nil)
+        }
+        viewModel.query = "find a project"
+        await viewModel.submit()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == true)
+    }
+
+    @Test("发现网页资料卡遵守展示开关，仓库证据与缓存仍保留", arguments: [false, true])
+    func discoveryReferencesRespectDisplaySetting(includeWeb: Bool) async throws {
+        let initial = Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "web", name: "tool"))
+        let url = URL(string: "https://example.org/article")!
+        let result = RepositoryDiscoveryResult(
+            session: initial.session, repositories: initial.repositories,
+            references: [ReferenceCandidate(
+                normalizedURL: url, originalURL: url, title: "Project introduction",
+                snippet: "Public project evidence", domain: "example.org", source: .web
+            )],
+            diagnostics: []
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [result])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            includeWebInAll: { includeWeb },
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "find a project"
+        await viewModel.submit()
+        #expect(viewModel.candidates.count == (includeWeb ? 2 : 1))
+        if case .repository(let candidate) = viewModel.candidates.first {
+            #expect(viewModel.evidence(for: candidate).map(\.id) == ["web-0-0"])
+        } else {
+            Issue.record("Expected the discovered repository and its evidence")
+        }
+        await viewModel.submit()
+        #expect(viewModel.candidates.count == (includeWeb ? 2 : 1))
+        #expect(discovery.requests.count == 1)
+    }
+
     @Test("底部来源筛选保留重叠命中且与计数一致", arguments: [
         SearchSource.localKeyword, .localSemantic, .github, .web
     ])
@@ -986,12 +1134,12 @@ struct SearchCenterViewModelTests {
         #expect(!viewModel.isSearching)
     }
 
-    @Test("All 范围自然语言查询自动合并智能发现结果")
+    @Test("All 范围按智能相关性合并，外部高相关项目可领先收藏")
     func allScopeRoutesNaturalLanguageToDiscovery() async throws {
         let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
         let local = SearchCenterCountingStubProvider(
             source: .localKeyword,
-            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift", isInLibrary: true)
         )
         let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
         let discovery = SearchCenterStubDiscoveryService(
@@ -1009,7 +1157,9 @@ struct SearchCenterViewModelTests {
         await viewModel.submit()
 
         #expect(router.routeQueries == ["github 最近比较火的 linux 发行版"])
-        #expect(viewModel.candidates.map(\.id) == ["repo:apple/swift", "repo:omarchy/omarchy"])
+        #expect(viewModel.candidates.map(\.id) == ["repo:omarchy/omarchy", "repo:apple/swift"])
+        #expect(discovery.seedRepositorySnapshots.first?.first?.card.fullName == "apple/swift")
+        #expect(discovery.seedRepositorySnapshots.first?.first?.card.isInLibrary == true)
         #expect(viewModel.discoverySession?.phase == .completed)
         #expect(viewModel.discoveryResultCount == 1)
         #expect(viewModel.canContinueDiscovery)
@@ -1468,17 +1618,58 @@ struct SearchCenterViewModelTests {
         #expect(discovery.requestRounds == [1, 2])
         #expect(router.routeQueries.count == 1)
         #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+        #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
+        #expect(discovery.previousResults.compactMap { $0 }.last?.repositories.count == 1)
         #expect(viewModel.discoverySession?.round == 2)
         #expect(viewModel.canContinueDiscovery)
 
         await viewModel.submit()
         #expect(viewModel.candidates.contains { $0.id == "repo:linux/os" })
+        #expect(viewModel.candidates.contains { $0.id == "repo:omarchy/omarchy" })
+    }
+
+    @Test("续查等待、零命中或失败都保留前轮结果及证据", arguments: [false, true])
+    func continuationKeepsPreviousResultsOnEmptyOrFailure(fails: Bool) async throws {
+        let first = Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "omarchy", name: "omarchy"))
+        let next = RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: UUID(), round: 2, phase: fails ? .failed("offline") : .noResults
+            ),
+            repositories: [], references: [],
+            diagnostics: fails ? [.failure(stage: .githubSearch, error: URLError(.notConnectedToInternet))] : []
+        )
+        let discovery = SearchCenterStubDiscoveryService(results: [first, next])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        viewModel.query = "find linux distribution"
+        await viewModel.submit()
+        discovery.onDiscover = {
+            #expect(viewModel.candidates.map(\.id) == ["repo:omarchy/omarchy"])
+        }
+        await viewModel.continueDiscovery()
+        #expect(viewModel.candidates.map(\.id) == ["repo:omarchy/omarchy"])
+        #expect(viewModel.discoverySession?.evidence == first.session.evidence)
+        #expect(viewModel.discoverySession?.phase == (fails ? .partialFailure : .completed))
+        #expect(viewModel.canContinueDiscovery)
+    }
+
+    /// 每次读取当前列表快照，避免断言复用操作前捕获的卡片。
+    private static func firstRepository(in viewModel: SearchCenterViewModel) throws -> RepositoryCandidate {
+        try #require(viewModel.candidates.compactMap { candidate -> RepositoryCandidate? in
+            if case .repository(let repository) = candidate { return repository }
+            return nil
+        }.first)
     }
 
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
-        name: String = "swift"
+        name: String = "swift",
+        isInLibrary: Bool = false
     ) -> RepositoryCandidate {
         let fullName = "\(owner)/\(name)"
         let card = RepoCardViewData(
@@ -1495,7 +1686,7 @@ struct SearchCenterViewModelTests {
             isFork: false,
             isPrivate: false,
             isStarred: false,
-            isInLibrary: false,
+            isInLibrary: isInLibrary,
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -1542,10 +1733,11 @@ struct SearchCenterViewModelTests {
         candidate: RepositoryCandidate,
         round: Int = 1
     ) -> RepositoryDiscoveryResult {
+        let evidenceID = round > 1 ? "round-\(round)-web-0-0" : "web-0-0"
         var item = candidate
         item.discovery = SearchDiscoveryAnnotation(
             reason: "Web evidence points to this repository",
-            evidenceIDs: ["web-0-0"],
+            evidenceIDs: [evidenceID],
             rank: 0
         )
         let session = SearchDiscoverySession(
@@ -1555,7 +1747,7 @@ struct SearchCenterViewModelTests {
             plan: makeSmartOutcome().plan,
             evidence: [
                 SearchEvidence(
-                    id: "web-0-0",
+                    id: evidenceID,
                     kind: .web,
                     title: "Trending Linux distribution",
                     url: URL(string: "https://github.com/\(candidate.card.fullName)")
@@ -1693,6 +1885,27 @@ private final class CapturingWebSearchProvider: SearchProvider, @unchecked Senda
     }
 }
 
+/// 连续两个被过滤的网页页，验证自动补页结束后仍有手动入口。
+private actor SearchCenterFilteredWebPagingProvider: SearchProvider {
+    nonisolated let source: SearchSource = .web
+    private(set) var maxResultsRequests: [Int] = []
+
+    func search(_ request: SearchRequest) async throws -> SearchProviderPage {
+        let maximum = request.externalSearchFilters.maxResults
+        maxResultsRequests.append(maximum)
+        let url = URL(string: "https://example.org/\(maximum)")!
+        return SearchProviderPage(
+            repositories: [],
+            references: [ReferenceCandidate(
+                normalizedURL: url, originalURL: url,
+                title: maximum < 30 ? "buy guns" : "Swift guide",
+                snippet: nil, domain: "example.org", source: .web
+            )],
+            totalCount: 3, hasNextPage: maximum < 30
+        )
+    }
+}
+
 private final class WebLoadMoreStubProvider: SearchProvider, @unchecked Sendable {
     let source: SearchSource = .web
     private(set) var maxResultsRequests: [Int] = []
@@ -1826,6 +2039,9 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
     private var results: [RepositoryDiscoveryResult]
     private(set) var requests: [SearchRequest] = []
     private(set) var requestRounds: [Int] = []
+    private(set) var previousResults: [RepositoryDiscoveryResult?] = []
+    private(set) var seedRepositorySnapshots: [[RepositoryCandidate]] = []
+    var onDiscover: (() -> Void)?
 
     init(results: [RepositoryDiscoveryResult]) {
         self.results = results
@@ -1839,10 +2055,15 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
         round: Int,
         budget: SearchDiscoveryBudget,
         initialLLMCalls: Int,
-        deadline: Date?
+        deadline: Date?,
+        previousResult: RepositoryDiscoveryResult?,
+        seedRepositories: [RepositoryCandidate]
     ) async -> RepositoryDiscoveryResult {
         requests.append(baseRequest)
         requestRounds.append(round)
+        previousResults.append(previousResult)
+        seedRepositorySnapshots.append(seedRepositories)
+        onDiscover?()
         let result = results.isEmpty
             ? RepositoryDiscoveryResult(
                 session: SearchDiscoverySession(

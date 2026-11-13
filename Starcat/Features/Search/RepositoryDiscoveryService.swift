@@ -42,6 +42,8 @@ struct SearchDiscoveryRankingCandidate: Equatable, Hashable, Codable, Sendable {
     let description: String?
     let stars: Int?
     let evidenceIDs: [String]
+    /// 收藏只用于相关性相近时的优先级，不能压过更匹配的外部项目。
+    var isInLibrary: Bool = false
 }
 
 /// Ranker 输出的最小结构；服务层负责封闭集合校验与最终排名。
@@ -54,6 +56,8 @@ struct SearchDiscoveryRankedItem: Equatable, Hashable, Codable, Sendable {
 @MainActor
 protocol SearchDiscoveryRankerProviding: AnyObject {
     var kind: SearchDiscoveryRankerKind { get }
+    /// 未明确声明本地执行的实现一律按远程处理，避免替换 Provider 时放宽隐私边界。
+    var usesLocalOnly: Bool { get }
     /// 用于详情面板展示的模型名称；本地/未解析时返回 nil，不影响排序执行。
     var modelDisplayName: String? { get }
 
@@ -68,6 +72,7 @@ protocol SearchDiscoveryRankerProviding: AnyObject {
 
 extension SearchDiscoveryRankerProviding {
     var modelDisplayName: String? { nil }
+    var usesLocalOnly: Bool { false }
 }
 
 /// 搜索重排有两种资源口径：Chat 排序消耗 LLM 预算，专用 Rerank 只消耗独立模型调用。
@@ -90,10 +95,16 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
 
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let entitlementGate: EntitlementGate
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    var usesLocalOnly: Bool {
+        settings.isTaskResolvedToLocalAI(settings.resolvedAITask(settings.aiChatTask))
+    }
+
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
         self.keychain = keychain
+        self.entitlementGate = entitlementGate
     }
 
     var modelDisplayName: String? {
@@ -109,6 +120,8 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
         evidence: [SearchEvidence],
         maxSeconds: TimeInterval
     ) async throws -> [SearchDiscoveryRankedItem] {
+        try entitlementGate.requirePro(.semanticSearch, usesLocalOnly: usesLocalOnly)
+        guard maxSeconds > 0 else { throw URLError(.timedOut) }
         let task = settings.resolvedAITask(settings.aiChatTask)
         let selection = try settings.resolveChatSelection(for: task)
         let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
@@ -140,6 +153,8 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
             Return only a JSON array. Each item must use:
             {"id":"","reason":"","evidence_ids":[""]}
             Use only the supplied candidate ids and evidence ids. Never invent repositories.
+            Rank by relevance to the user's intent across all sources.
+            Prefer isInLibrary only when relevance is comparable; a better external match must rank higher.
             """,
             userPrompt: """
             User query: \(query)
@@ -199,10 +214,16 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
 
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let entitlementGate: EntitlementGate
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    var usesLocalOnly: Bool {
+        settings.ragRerankConfiguration.normalized.provider == .localMLX
+    }
+
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
         self.keychain = keychain
+        self.entitlementGate = entitlementGate
     }
 
     var debugModel: String? {
@@ -230,6 +251,7 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
         guard configuration.isEnabled else {
             throw RepositoryDiscoveryError.dedicatedRerankDisabled
         }
+        try entitlementGate.requirePro(.semanticSearch, usesLocalOnly: usesLocalOnly)
         guard maxSeconds > 0 else { throw URLError(.timedOut) }
 
         let apiKey = try keychain.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)?
@@ -267,7 +289,7 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
         candidates: [SearchDiscoveryRankingCandidate]
     ) throws -> [SearchDiscoveryRankedItem] {
         var usedKeys = Set<String>()
-        var ranked: [SearchDiscoveryRankedItem] = []
+        var ranked: [(item: SearchDiscoveryRankedItem, score: Double, isInLibrary: Bool)] = []
 
         for result in scores {
             let key = result.candidateID.lowercased()
@@ -276,17 +298,29 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
                   usedKeys.insert(key).inserted,
                   let candidate = candidates.first(where: { $0.id.lowercased() == key })
             else { throw RepositoryDiscoveryError.invalidRankerResponse("Invalid scored candidate") }
-            ranked.append(SearchDiscoveryRankedItem(
-                id: candidate.id,
-                reason: String.l10n("search.discovery.rerank.reason"),
-                evidenceIDs: candidate.evidenceIDs
+            ranked.append((
+                item: SearchDiscoveryRankedItem(
+                    id: candidate.id,
+                    reason: String.l10n("search.discovery.rerank.reason"),
+                    evidenceIDs: candidate.evidenceIDs
+                ),
+                score: result.score,
+                isInLibrary: candidate.isInLibrary
             ))
         }
 
         guard !ranked.isEmpty else {
             throw RepositoryDiscoveryError.invalidRankerResponse("No valid scored candidate")
         }
-        return ranked
+        return ranked.enumerated().sorted { left, right in
+            if left.element.score != right.element.score {
+                return left.element.score > right.element.score
+            }
+            if left.element.isInLibrary != right.element.isInLibrary {
+                return left.element.isInLibrary
+            }
+            return left.offset < right.offset
+        }.map(\.element.item)
     }
 
     /// `parentKey` 只存在于本轮函数调用内，用来把 Provider 结果映射回搜索候选 ID。
@@ -342,16 +376,22 @@ final class DynamicSearchDiscoveryRanker: SearchDiscoveryRankerProviding {
     private let chatRanker: SearchLLMDiscoveryRanker
     private let rerankRanker: SearchDiscoveryRerankRanker
 
+    var usesLocalOnly: Bool {
+        settings.ragRerankConfiguration.normalized.isEnabled
+            ? rerankRanker.usesLocalOnly
+            : chatRanker.usesLocalOnly
+    }
+
     var modelDisplayName: String? {
         settings.ragRerankConfiguration.normalized.isEnabled
             ? rerankRanker.modelDisplayName
             : chatRanker.modelDisplayName
     }
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
-        self.chatRanker = SearchLLMDiscoveryRanker(settings: settings, keychain: keychain)
-        self.rerankRanker = SearchDiscoveryRerankRanker(settings: settings, keychain: keychain)
+        self.chatRanker = SearchLLMDiscoveryRanker(settings: settings, keychain: keychain, entitlementGate: entitlementGate)
+        self.rerankRanker = SearchDiscoveryRerankRanker(settings: settings, keychain: keychain, entitlementGate: entitlementGate)
     }
 
     func rank(
@@ -439,7 +479,9 @@ protocol RepositoryDiscoveryProviding: AnyObject {
         round: Int,
         budget: SearchDiscoveryBudget,
         initialLLMCalls: Int,
-        deadline: Date?
+        deadline: Date?,
+        previousResult: RepositoryDiscoveryResult?,
+        seedRepositories: [RepositoryCandidate]
     ) async -> RepositoryDiscoveryResult
 }
 
@@ -448,6 +490,7 @@ extension RepositoryDiscoveryService: RepositoryDiscoveryProviding {}
 @MainActor
 final class RepositoryDiscoveryService {
     private let planner: (any SearchQueryPlannerProviding)?
+    private let articleExtractor: (any SearchArticleCandidateExtracting)?
     private let githubProvider: any SearchProvider
     private let webProvider: (any SearchProvider)?
     private let verifier: any RepositoryVerificationProviding
@@ -457,6 +500,7 @@ final class RepositoryDiscoveryService {
 
     init(
         planner: (any SearchQueryPlannerProviding)?,
+        articleExtractor: (any SearchArticleCandidateExtracting)? = nil,
         githubProvider: any SearchProvider,
         webProvider: (any SearchProvider)? = nil,
         verifier: any RepositoryVerificationProviding,
@@ -465,6 +509,7 @@ final class RepositoryDiscoveryService {
         contentPolicy: SearchContentPolicy = .bundled
     ) {
         self.planner = planner
+        self.articleExtractor = articleExtractor
         self.githubProvider = githubProvider
         self.webProvider = webProvider
         self.verifier = verifier
@@ -483,7 +528,9 @@ final class RepositoryDiscoveryService {
         round: Int = 1,
         budget: SearchDiscoveryBudget = .firstRound,
         initialLLMCalls: Int = 1,
-        deadline: Date? = nil
+        deadline: Date? = nil,
+        previousResult: RepositoryDiscoveryResult? = nil,
+        seedRepositories: [RepositoryCandidate] = []
     ) async -> RepositoryDiscoveryResult {
         var contentSummary = SearchContentSummary()
         for value in [query, baseRequest.query] {
@@ -503,7 +550,7 @@ final class RepositoryDiscoveryService {
             return Self.cancelledResult(generation: generation, round: round)
         }
 
-        var plan = initialPlan?.normalized
+        var plan = (initialPlan ?? previousResult?.session.plan)?.normalized
         if plan == nil {
             guard let planner else {
                 let session = SearchDiscoverySession(
@@ -607,12 +654,30 @@ final class RepositoryDiscoveryService {
             plan: normalizedPlan,
             usedLLMCalls: usedLLMCalls
         )
-        var repositories: [RepositoryCandidate] = []
-        var references: [ReferenceCandidate] = []
-        var evidence: [SearchEvidence] = []
+        // 基础关键词、语义和 GitHub 候选进入同一轮重排；只传公开元数据，私仓另行过滤。
+        var repositories = contentPolicy.filtering(SearchProviderPage(
+            repositories: seedRepositories, references: [], totalCount: seedRepositories.count, hasNextPage: false
+        ), summary: &contentSummary).repositories
+        let seedNames = Set(repositories.map(\.identity.normalizedFullName))
+        let knownRepositoryNames = Set(previousResult?.repositories.map(\.identity.normalizedFullName) ?? [])
+        let canReuseWebEvidence = webEvidenceAllowed(baseRequest.externalSearchProvider)
+        var references = canReuseWebEvidence ? previousResult?.references ?? [] : []
+        var evidence = (previousResult?.session.evidence ?? []).filter {
+            $0.kind != .web || canReuseWebEvidence
+        }
+        let evidencePrefix = round > 1 ? "round-\(round)-" : ""
+        evidence.append(contentsOf: repositories.enumerated().map { index, candidate in
+            SearchEvidence(
+                id: "\(evidencePrefix)base-\(index)", kind: .github, title: candidate.card.fullName,
+                url: URL(string: "https://github.com/\(candidate.card.fullName)"),
+                snippet: candidate.card.description, repositoryFullName: candidate.identity.normalizedFullName
+            )
+        }.filter(\.isValid))
 
         for webQuery in normalizedPlan.webQueries
-        where session.canRunWebQuery(in: budget) && !Task.isCancelled {
+        where session.canRunWebQuery(in: budget) && !Task.isCancelled
+            && (previousResult == nil || previousResult?.diagnostics.contains { $0.stage == .webSearch && $0.isFailure } == true) {
+            // 外部搜索没有统一翻页接口；续查复用已取得的线索，只有失败请求才重试。
             // 首轮计划可能在设置变更前生成；每次请求都重新检查，继续查找也走同一策略。
             guard webEvidenceAllowed(baseRequest.externalSearchProvider) else {
                 steps.append(SearchDiscoveryStep(
@@ -647,7 +712,7 @@ final class RepositoryDiscoveryService {
                 references.append(contentsOf: page.references)
                 evidence.append(contentsOf: page.references.enumerated().map { index, reference in
                     SearchEvidence(
-                        id: "web-\(session.usedWebQueries)-\(index)",
+                        id: "\(evidencePrefix)web-\(session.usedWebQueries)-\(index)",
                         kind: .web,
                         title: reference.title,
                         url: reference.originalURL,
@@ -683,7 +748,58 @@ final class RepositoryDiscoveryService {
             }
         }
 
-        for githubQuery in normalizedPlan.githubQueries
+        // 明确链接直接核验；只有尚无 GitHub 身份的文章才需要一次受预算约束的提取。
+        let webEvidence = evidence.filter { $0.kind == .web && $0.isValid }
+        var linkedEvidence: [String: [String]] = [:]
+        for item in webEvidence {
+            for identity in Self.githubIdentities(from: [item]) {
+                linkedEvidence[identity.normalizedFullName, default: []].append(item.id)
+            }
+        }
+        let articleEvidence = Array(webEvidence.filter {
+            Self.githubIdentities(from: [$0]).isEmpty
+        }.prefix(10))
+        var articleCandidates: [SearchArticleCandidate] = []
+        if !articleEvidence.isEmpty, let articleExtractor,
+           budget.maxGitHubQueries > 0, webEvidenceAllowed(baseRequest.externalSearchProvider) {
+            let extractionStart = Date()
+            let reservedRankingCalls = ranker?.kind.consumesLLMBudget == true ? 1 : 0
+            if Date() >= deadline {
+                diagnostics.append(.failure(stage: .extraction, error: URLError(.timedOut)))
+            } else if session.usedLLMCalls + reservedRankingCalls >= budget.maxLLMCalls {
+                diagnostics.append(.limit(stage: .extraction))
+            } else {
+                // 失败同样消耗一次调用；必须给后续 Chat Ranker 留出一个名额。
+                session = Self.incrementing(session, llmCalls: 1)
+                do {
+                    let extracted = try await Self.withDeadline(to: deadline) {
+                        try await articleExtractor.extract(
+                            query: query, evidence: articleEvidence,
+                            maxSeconds: Self.remainingSeconds(to: deadline)
+                        )
+                    }
+                    articleCandidates = Self.groundedArticleCandidates(extracted, in: articleEvidence, policy: contentPolicy)
+                    steps.append(SearchDiscoveryStep(
+                        id: "extraction", stage: .extraction, state: .completed,
+                        detail: Self.countDetail(articleCandidates.count),
+                        durationSeconds: Self.duration(since: extractionStart), model: articleExtractor.modelDisplayName
+                    ))
+                } catch where DiagnosticFailure.isCancellation(error) {
+                    return Self.cancelledResult(generation: generation, round: round)
+                } catch {
+                    diagnostics.append(Self.failureDiagnostic(stage: .extraction, error: error))
+                    steps.append(SearchDiscoveryStep(
+                        id: "extraction", stage: .extraction, state: .failed,
+                        durationSeconds: Self.duration(since: extractionStart), model: articleExtractor.modelDisplayName
+                    ))
+                }
+            }
+        }
+        // 名称线索优先使用已有 GitHub 查询额度，不能额外放大本轮请求数。
+        var seenQueries = Set<String>()
+        let githubQueries = (articleCandidates.map { "\($0.name) in:name" } + normalizedPlan.githubQueries)
+            .filter { seenQueries.insert($0.lowercased()).inserted }
+        for githubQuery in githubQueries
         where session.canRunGitHubQuery(in: budget) && !Task.isCancelled {
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .githubSearch, error: URLError(.timedOut)))
@@ -701,7 +817,7 @@ final class RepositoryDiscoveryService {
                 anySearchFilters: baseRequest.anySearchFilters,
                 externalSearchFilters: baseRequest.externalSearchFilters,
                 externalSearchProvider: baseRequest.externalSearchProvider,
-                page: 1,
+                page: max(1, round),
                 perPage: min(baseRequest.perPage, budget.maxRankedCandidates),
                 includeWebInAll: false,
                 minimumSemanticScore: baseRequest.minimumSemanticScore
@@ -712,14 +828,29 @@ final class RepositoryDiscoveryService {
                     try await githubProvider.search(request)
                 }
                 let page = contentPolicy.filtering(rawPage, summary: &contentSummary)
-                repositories.append(contentsOf: page.repositories)
-                evidence.append(contentsOf: page.repositories.enumerated().map { index, candidate in
+                let article = articleCandidates.first { "\($0.name) in:name" == githubQuery }
+                let foundRepositories = page.repositories.compactMap { original -> RepositoryCandidate? in
+                    var candidate = original
+                    if let article {
+                        // 搜索结果必须有同名真实仓库；不能用宽泛检索命中替模型猜测背书。
+                        guard candidate.identity.name.caseInsensitiveCompare(article.name) == .orderedSame else { return nil }
+                        candidate.discovery = SearchDiscoveryAnnotation(
+                            reason: "", evidenceIDs: article.evidenceIDs, rank: nil, kind: .githubVerification
+                        )
+                    }
+                    return candidate
+                }
+                repositories.append(contentsOf: foundRepositories.filter {
+                    !knownRepositoryNames.contains($0.identity.normalizedFullName)
+                })
+                evidence.append(contentsOf: foundRepositories.enumerated().map { index, candidate in
                     SearchEvidence(
-                        id: "github-\(session.usedGitHubQueries)-\(index)",
+                        id: "\(evidencePrefix)github-\(session.usedGitHubQueries)-\(index)",
                         kind: .github,
                         title: candidate.card.fullName,
                         url: URL(string: candidate.card.fullName == "" ? "" : "https://github.com/\(candidate.card.fullName)"),
-                        snippet: candidate.card.description
+                        snippet: candidate.card.description,
+                        repositoryFullName: candidate.identity.normalizedFullName
                     )
                 }.filter(\.isValid))
                 session = Self.incrementing(session, githubQueries: 1)
@@ -727,7 +858,7 @@ final class RepositoryDiscoveryService {
                     id: "githubSearch-\(session.usedGitHubQueries - 1)",
                     stage: .githubSearch,
                     state: .completed,
-                    detail: Self.countDetail(page.repositories.count),
+                    detail: Self.countDetail(foundRepositories.count),
                     durationSeconds: Self.duration(since: searchStart)
                 ))
             } catch where DiagnosticFailure.isCancellation(error) {
@@ -755,7 +886,9 @@ final class RepositoryDiscoveryService {
             usedGitHubQueries: session.usedGitHubQueries
         )
 
-        var extractedIdentities = Self.githubIdentities(from: references)
+        var extractedIdentities = Self.githubIdentities(from: webEvidence).filter {
+            !knownRepositoryNames.contains($0.normalizedFullName)
+        }
         let verificationStart = Date()
         let initialVerificationCount = extractedIdentities.count
         var verificationAttempts = 0
@@ -808,7 +941,7 @@ final class RepositoryDiscoveryService {
                 }
                 candidate.discovery = SearchDiscoveryAnnotation(
                     reason: "",
-                    evidenceIDs: evidence.filter { $0.url?.absoluteString.hasSuffix("/\(identity.owner)/\(identity.name)") == true }.map(\.id),
+                    evidenceIDs: linkedEvidence[identity.normalizedFullName] ?? [],
                     rank: nil,
                     kind: .githubVerification
                 )
@@ -887,6 +1020,18 @@ final class RepositoryDiscoveryService {
 
         evidence = contentPolicy.filtering(evidence, summary: &contentSummary)
         repositories = Self.deduplicated(repositories).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
+        repositories = repositories.map { candidate in
+            var candidate = candidate
+            candidate.discovery = SearchDiscoveryAnnotation(
+                reason: candidate.discovery?.reason ?? "",
+                evidenceIDs: Self.associatedEvidenceIDs(for: candidate, in: evidence),
+                rank: candidate.discovery?.rank,
+                kind: candidate.discovery?.kind ?? .githubSearch
+            )
+            return candidate
+        }
+        repositories = Self.interleavingBaseAndDiscovery(repositories, seedNames: seedNames)
+        repositories = Self.reservingVerifiedCandidates(repositories, limit: budget.maxRankedCandidates)
         references = Self.deduplicatedReferences(references).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
 
         session = SearchDiscoverySession(
@@ -901,9 +1046,21 @@ final class RepositoryDiscoveryService {
         )
 
         let rankerConsumesLLMBudget = ranker?.kind.consumesLLMBudget ?? false
+        let privateNames = Set(
+            (repositories + (previousResult?.repositories ?? [])).filter(\.card.isPrivate).map(\.identity.normalizedFullName)
+        )
+        let rankingCandidates = ranker?.usesLocalOnly == true
+            ? repositories
+            : repositories.filter { !privateNames.contains($0.identity.normalizedFullName) }
+        // 私仓描述同时存在于 candidates 和 evidence；两条输入都必须在传输前收口。
+        let rankingEvidence = ranker?.usesLocalOnly == true ? evidence : evidence.filter { item in
+            let repositoryName = item.repositoryFullName
+                ?? item.url.flatMap { SearchContentPolicy.repositoryName(from: $0) }
+            return item.kind != .localNote && !privateNames.contains(repositoryName ?? "")
+        }
         let rankedRepositories: [RepositoryCandidate]
         let rankingStart = Date()
-        if repositories.isEmpty
+        if rankingCandidates.isEmpty
             || (rankerConsumesLLMBudget && !session.canUseLLM(in: budget))
             || Date() >= deadline
             || Task.isCancelled {
@@ -923,17 +1080,18 @@ final class RepositoryDiscoveryService {
                 model: ranker?.modelDisplayName
             ))
         } else if let ranker {
-            let summaries = repositories.prefix(budget.maxRankedCandidates).map { candidate in
+            let summaries = rankingCandidates.prefix(budget.maxRankedCandidates).map { candidate in
                 SearchDiscoveryRankingCandidate(
                     id: candidate.identity.normalizedFullName,
                     fullName: candidate.card.fullName,
                     description: candidate.card.description,
                     stars: candidate.card.starsCount,
-                    evidenceIDs: evidence.map(\.id)
+                    evidenceIDs: Self.associatedEvidenceIDs(for: candidate, in: rankingEvidence),
+                    isInLibrary: candidate.card.isInLibrary
                 )
             }
             do {
-                let rankingEvidence = evidence
+                let allowedCandidateIDs = Set(summaries.map(\.id))
                 let rankedItems = try await SearchDiscoveryDeadline.run(until: deadline) {
                     try await ranker.rank(
                         query: query,
@@ -948,9 +1106,11 @@ final class RepositoryDiscoveryService {
                     llmCalls: rankerConsumesLLMBudget ? 1 : 0
                 )
                 rankedRepositories = Self.applying(
-                    rankedItems,
+                    rankedItems.filter {
+                        allowedCandidateIDs.contains($0.id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+                    },
                     to: repositories,
-                    evidence: evidence,
+                    evidence: rankingEvidence,
                     budget: budget,
                     contentPolicy: contentPolicy
                 )
@@ -1011,7 +1171,7 @@ final class RepositoryDiscoveryService {
             return Self.cancelledResult(generation: generation, round: round)
         }
         let hasFailureDiagnostic = diagnostics.contains { $0.isFailure }
-        let hasSuccessfulSearch = steps.contains {
+        let hasSuccessfulSearch = !seedNames.isEmpty || steps.contains {
             ($0.stage == .webSearch || $0.stage == .githubSearch) && $0.state == .completed
         }
         // 全部实际发出的检索都失败时不能伪装成“零命中”；仍有任一来源成功则保留
@@ -1115,22 +1275,60 @@ final class RepositoryDiscoveryService {
         try await SearchDiscoveryDeadline.run(until: deadline, operation: operation)
     }
 
-    /// 只从 Web URL 提取 GitHub 身份，不从标题猜测 owner/name。
-    private static func githubIdentities(from references: [ReferenceCandidate]) -> [RepoIdentity] {
+    /// 只识别明确 GitHub URL，包括文章片段中的链接；项目名不能被拼成 owner/name。
+    private static func githubIdentities(from evidence: [SearchEvidence]) -> [RepoIdentity] {
         var seen = Set<String>()
         var identities: [RepoIdentity] = []
-        for reference in references {
-            guard let fullName = SearchContentPolicy.repositoryName(from: reference.originalURL) else { continue }
-            let components = fullName.split(separator: "/").map(String.init)
-            let owner = components[0]
-            let name = components[1]
-            guard Self.isValidGitHubName(owner), Self.isValidGitHubName(name) else { continue }
-            let identity = RepoIdentity(ghRepoID: nil, owner: owner, name: name)
-            if seen.insert(identity.normalizedFullName).inserted {
-                identities.append(identity)
+        let pattern = #"https?://(?:www\.)?github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"#
+        let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        for item in evidence {
+            var urls = item.url.map { [$0] } ?? []
+            for text in [item.title, item.snippet ?? ""] {
+                for match in expression?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? [] {
+                    if let range = Range(match.range, in: text),
+                       let url = URL(string: String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: "."))) {
+                        urls.append(url)
+                    }
+                }
+            }
+            for url in urls {
+                guard let fullName = SearchContentPolicy.repositoryName(from: url) else { continue }
+                let components = fullName.split(separator: "/").map(String.init)
+                let owner = components[0]
+                let name = components[1]
+                guard Self.isValidGitHubName(owner), Self.isValidGitHubName(name) else { continue }
+                let identity = RepoIdentity(ghRepoID: nil, owner: owner, name: name)
+                if seen.insert(identity.normalizedFullName).inserted {
+                    identities.append(identity)
+                }
             }
         }
         return identities
+    }
+
+    /// 每个引用都必须在原文中包含该名称，且名称不能携带 GitHub 查询语法。
+    private static func groundedArticleCandidates(
+        _ candidates: [SearchArticleCandidate],
+        in evidence: [SearchEvidence],
+        policy: SearchContentPolicy
+    ) -> [SearchArticleCandidate] {
+        var seen = Set<String>()
+        return Array(candidates.prefix(10).compactMap { candidate -> SearchArticleCandidate? in
+            let name = candidate.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard Self.isValidGitHubName(name),
+                  name.range(of: "^[A-Za-z0-9]", options: .regularExpression) != nil,
+                  policy.match(query: name) == nil,
+                  !candidate.evidenceIDs.isEmpty else { return nil }
+            let pattern = "(?i)(?<![A-Za-z0-9_.-])\(NSRegularExpression.escapedPattern(for: name))(?![A-Za-z0-9_.-])"
+            guard candidate.evidenceIDs.allSatisfy({ id in
+                evidence.contains { item in
+                    item.id == id && [item.title, item.snippet ?? ""].contains {
+                        $0.range(of: pattern, options: .regularExpression) != nil
+                    }
+                }
+            }), seen.insert(name.lowercased()).inserted else { return nil }
+            return SearchArticleCandidate(name: name, evidenceIDs: candidate.evidenceIDs)
+        }.prefix(2))
     }
 
     private static func isValidGitHubName(_ value: String) -> Bool {
@@ -1181,6 +1379,62 @@ final class RepositoryDiscoveryService {
         }
     }
 
+    /// GitHub 检索先返回，不能靠 append 顺序占满全部名额。保留已核验网页候选，
+    /// 其余位置沿用召回顺序；重排失败时也使用同一候选池，避免降级再次丢掉它们。
+    private static func reservingVerifiedCandidates(
+        _ candidates: [RepositoryCandidate],
+        limit: Int
+    ) -> [RepositoryCandidate] {
+        let reserved = Set(candidates.filter {
+            $0.discovery?.kind == .githubVerification
+        }.prefix(max(0, limit)).map(\.identity.normalizedFullName))
+        var remainingSlots = max(0, limit - reserved.count)
+        var selected: [RepositoryCandidate] = []
+        var overflow: [RepositoryCandidate] = []
+        for candidate in candidates {
+            if reserved.contains(candidate.identity.normalizedFullName) {
+                selected.append(candidate)
+            } else if remainingSlots > 0 {
+                selected.append(candidate)
+                remainingSlots -= 1
+            } else {
+                overflow.append(candidate)
+            }
+        }
+        return selected + overflow
+    }
+
+    /// 在同一个重排预算内交替采样基础召回与新增发现，避免任一来源独占输入。
+    /// 不比较 FTS、向量或 GitHub 的原始分数；最终相对顺序由同一个模型决定。
+    private static func interleavingBaseAndDiscovery(
+        _ candidates: [RepositoryCandidate],
+        seedNames: Set<String>
+    ) -> [RepositoryCandidate] {
+        guard !seedNames.isEmpty else { return candidates }
+        let base = candidates.filter { seedNames.contains($0.identity.normalizedFullName) }
+        let discovered = candidates.filter { !seedNames.contains($0.identity.normalizedFullName) }
+        var interleaved: [RepositoryCandidate] = []
+        for index in 0..<max(base.count, discovered.count) {
+            if index < base.count { interleaved.append(base[index]) }
+            if index < discovered.count { interleaved.append(discovered[index]) }
+        }
+        return interleaved
+    }
+
+    /// 仓库身份和核验时建立的关联才是引用依据；相同查询返回的其它证据不能借给当前候选。
+    /// 核验重定向后 URL 可能仍是旧名，因此保留核验阶段已确认的证据 ID。
+    private static func associatedEvidenceIDs(
+        for candidate: RepositoryCandidate,
+        in evidence: [SearchEvidence]
+    ) -> [String] {
+        let verifiedIDs = Set(candidate.discovery?.evidenceIDs ?? [])
+        return evidence.filter { item in
+            let fullName = item.repositoryFullName
+                ?? item.url.flatMap { SearchContentPolicy.repositoryName(from: $0) }
+            return fullName == candidate.identity.normalizedFullName || verifiedIDs.contains(item.id)
+        }.map(\.id)
+    }
+
     private static func applying(
         _ items: [SearchDiscoveryRankedItem],
         to candidates: [RepositoryCandidate],
@@ -1188,7 +1442,6 @@ final class RepositoryDiscoveryService {
         budget: SearchDiscoveryBudget,
         contentPolicy: SearchContentPolicy
     ) -> [RepositoryCandidate] {
-        let availableEvidence = Set(evidence.map(\.id))
         let byID = Dictionary(uniqueKeysWithValues: candidates.map {
             ($0.identity.normalizedFullName, $0)
         })
@@ -1204,7 +1457,7 @@ final class RepositoryDiscoveryService {
                   contentPolicy.match(SearchContentDocument(
                     id: id, fields: [.description: [item.reason]]
                   )) == nil,
-                  Set(item.evidenceIDs).isSubset(of: availableEvidence)
+                  Set(item.evidenceIDs).isSubset(of: Set(Self.associatedEvidenceIDs(for: candidate, in: evidence)))
             else { continue }
             candidate.discovery = SearchDiscoveryAnnotation(
                 reason: item.reason,

@@ -240,10 +240,27 @@ final class SearchCenterViewModel {
                     repositories.append(candidate)
                 }
             }
-            for reference in latestDiscoveryResult.references
-            where seenReferenceIDs.insert(reference.id).inserted {
-                references.append(reference)
+            // AI 取证许可与资料卡展示是两个开关；隐藏网页卡片仍保留仓库的证据链接。
+            if includeWebInAll() {
+                for reference in latestDiscoveryResult.references
+                where seenReferenceIDs.insert(reference.id).inserted {
+                    references.append(reference)
+                }
             }
+            // 只认同一轮模型给出的相对顺序；基础来源的分数没有共同量纲。
+            var ranks: [String: Int] = [:]
+            for (index, candidate) in latestDiscoveryResult.repositories.enumerated()
+            where candidate.discovery?.kind == .modelMatch {
+                ranks[candidate.identity.normalizedFullName] = candidate.discovery?.rank ?? index
+            }
+            repositories = repositories.enumerated().sorted { left, right in
+                let leftRank = ranks[left.element.identity.normalizedFullName]
+                let rightRank = ranks[right.element.identity.normalizedFullName]
+                if leftRank != rightRank {
+                    return (leftRank ?? Int.max) < (rightRank ?? Int.max)
+                }
+                return left.offset < right.offset
+            }.map(\.element)
         }
 
         let blockedIDs = contentSummary.blockedIDs
@@ -405,9 +422,22 @@ final class SearchCenterViewModel {
     }
 
     var canLoadMoreWeb: Bool {
-        externalSearchFilters.maxResults < 100
+        max(externalSearchFilters.maxResults, coordinator.currentWebMaxResults) < 100
             && !isLoadingWeb
             && coordinator.loadedPage(for: .web)?.hasNextPage == true
+    }
+
+    /// 来源筛选可能把当前页全部隐藏，空态仍需保留该来源的分页入口。
+    var filteredLoadMoreSource: SearchSource? {
+        guard !lastSubmittedQuery.isEmpty, case .source(let source) = resultFilter else { return nil }
+        switch source {
+        case .github where (scope == .all || scope == .github) && canLoadMoreGitHub:
+            return .github
+        case .web where (scope == .all || scope == .web) && canLoadMoreWeb:
+            return .web
+        default:
+            return nil
+        }
     }
 
     var isLoadingWeb: Bool {
@@ -687,6 +717,12 @@ final class SearchCenterViewModel {
         }
 
         if routingOutcome?.route == .smartDiscovery {
+            // 基础召回与规划已并行执行；重排前等待同次基础快照，避免只给新增候选排序。
+            await awaitSearchTasks([baseSearchTask])
+            guard isActiveSearch(generation) else {
+                resetIfSearchCancelled(generation)
+                return
+            }
             let discoveryTask = startDiscovery(
                 query: request.query,
                 request: request,
@@ -765,6 +801,7 @@ final class SearchCenterViewModel {
     }
 
     private func performContinueDiscovery(_ request: SearchRequest, round: Int, generation: UUID) async {
+        let previousResult = latestDiscoveryResult
         discoverySession = SearchDiscoverySession(
             generation: generation,
             round: round,
@@ -773,9 +810,10 @@ final class SearchCenterViewModel {
         let discoveryTask = startDiscovery(
             query: request.query,
             request: request,
-            plan: nil,
+            plan: previousResult?.session.plan,
             round: round,
-            generation: generation
+            generation: generation,
+            previousResult: previousResult
         )
         await awaitSearchTasks([discoveryTask])
     }
@@ -859,7 +897,14 @@ final class SearchCenterViewModel {
         let generation = UUID()
         searchGeneration = generation
         requestCacheIdentity = discoveryCacheIdentity()
-        resetDiscoveryState(keepCache: true)
+        if case .continueDiscovery = operation {
+            // 续查是一轮追加；取消任务但保留列表和证据，避免等待或失败时卡片消失。
+            discoveryTask?.cancel()
+            discoveryTask = nil
+            discoveryDiagnostics = []
+        } else {
+            resetDiscoveryState(keepCache: true)
+        }
         discoveryGeneration = generation
 
         let task = Task { [weak self] in
@@ -911,7 +956,8 @@ final class SearchCenterViewModel {
         round: Int,
         initialSteps: [SearchDiscoveryStep] = [],
         deadline: Date? = nil,
-        generation: UUID? = nil
+        generation: UUID? = nil,
+        previousResult: RepositoryDiscoveryResult? = nil
     ) -> Task<Void, Never> {
         guard let discoveryService else {
             discoverySession = SearchDiscoverySession(
@@ -924,6 +970,7 @@ final class SearchCenterViewModel {
         }
         let generation = generation ?? UUID()
         let service = discoveryService
+        let seedRepositories = coordinator.repositories + (previousResult?.repositories ?? [])
         let cacheKey = SearchDiscoveryCacheKey(
             request: request,
             identity: requestCacheIdentity,
@@ -937,7 +984,8 @@ final class SearchCenterViewModel {
             round: round,
             phase: .planning,
             plan: plan,
-            usedLLMCalls: 1,
+            evidence: previousResult?.session.evidence ?? [],
+            usedLLMCalls: previousResult == nil ? 1 : 0,
             steps: initialSteps
         )
         let task = Task { [weak self] in
@@ -949,13 +997,17 @@ final class SearchCenterViewModel {
                 generation: generation,
                 round: round,
                 budget: .firstRound,
-                initialLLMCalls: 1,
-                deadline: deadline
+                initialLLMCalls: previousResult == nil ? 1 : 0,
+                deadline: deadline,
+                previousResult: previousResult,
+                seedRepositories: seedRepositories
             )
             // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
             guard self.discoveryGeneration == generation,
                   self.searchTask?.isCancelled != true else { return }
-            self.applyDiscovery(result, cacheRequest: cacheKey, initialSteps: initialSteps)
+            self.applyDiscovery(
+                result, cacheRequest: cacheKey, initialSteps: initialSteps, previousResult: previousResult
+            )
         }
         discoveryTask = task
         return task
@@ -964,13 +1016,16 @@ final class SearchCenterViewModel {
     private func applyDiscovery(
         _ unfilteredResult: RepositoryDiscoveryResult,
         cacheRequest: SearchDiscoveryCacheKey?,
-        initialSteps: [SearchDiscoveryStep] = []
+        initialSteps: [SearchDiscoveryStep] = [],
+        previousResult: RepositoryDiscoveryResult? = nil
     ) {
-        let result = coordinator.contentPolicy.filtering(unfilteredResult)
-        guard result.session.phase != .cancelled else {
+        guard unfilteredResult.session.phase != .cancelled else {
             resetDiscoveryState(keepCache: true)
             return
         }
+        let result = applyingDiscoveryLibraryUpdates(coordinator.contentPolicy.filtering(
+            previousResult.map { Self.mergingDiscovery($0, with: unfilteredResult) } ?? unfilteredResult
+        ))
         discoverySession = result.session
         latestDiscoveryResult = result
         discoveryDiagnostics = result.diagnostics
@@ -1020,6 +1075,58 @@ final class SearchCenterViewModel {
                 createdAt: discoveryNow()
             )
         }
+    }
+
+    /// 续查只替换同仓库的新事实；空结果或局部失败仍保留前轮成功候选及其可追溯证据。
+    private static func mergingDiscovery(
+        _ previous: RepositoryDiscoveryResult,
+        with current: RepositoryDiscoveryResult
+    ) -> RepositoryDiscoveryResult {
+        var repositories = current.repositories
+        for candidate in previous.repositories {
+            if let index = repositories.firstIndex(where: { $0.id == candidate.id }) {
+                repositories[index].sources.formUnion(candidate.sources)
+            } else {
+                repositories.append(candidate)
+            }
+        }
+        repositories = repositories.enumerated().map { index, candidate in
+            var candidate = candidate
+            if let annotation = candidate.discovery {
+                candidate.discovery = SearchDiscoveryAnnotation(
+                    reason: annotation.reason, evidenceIDs: annotation.evidenceIDs, rank: index, kind: annotation.kind
+                )
+            }
+            return candidate
+        }
+        var referenceIDs = Set(previous.references.map(\.id))
+        let references = previous.references + current.references.filter { referenceIDs.insert($0.id).inserted }
+        var evidenceIDs = Set(previous.session.evidence.map(\.id))
+        let evidence = previous.session.evidence + current.session.evidence.filter { evidenceIDs.insert($0.id).inserted }
+        let steps = previous.steps + current.steps.map {
+            SearchDiscoveryStep(
+                id: "round-\(current.session.round)-\($0.id)",
+                stage: $0.stage, state: $0.state, detail: $0.detail,
+                durationSeconds: $0.durationSeconds, model: $0.model, technicalDetail: $0.technicalDetail
+            )
+        }
+        var phase = current.session.phase
+        if !repositories.isEmpty {
+            if phase == .noResults { phase = .completed }
+            if phase.isFailed { phase = .partialFailure }
+        }
+        var summary = previous.contentSummary
+        summary.formUnion(current.contentSummary)
+        return RepositoryDiscoveryResult(
+            session: SearchDiscoverySession(
+                generation: current.session.generation, round: current.session.round, phase: phase,
+                plan: current.session.plan ?? previous.session.plan, evidence: evidence,
+                usedLLMCalls: current.session.usedLLMCalls, usedWebQueries: current.session.usedWebQueries,
+                usedGitHubQueries: current.session.usedGitHubQueries, steps: steps
+            ),
+            repositories: repositories, references: references,
+            diagnostics: current.diagnostics, contentSummary: summary
+        )
     }
 
     /// 智能发现引用外部长时效信息。15 分钟能在重复搜索与时效性之间取得折中；
@@ -1090,8 +1197,11 @@ final class SearchCenterViewModel {
     /// Web provider 普遍没有统一 cursor/page 协议；“加载更多”通过增大 maxResults
     /// 后重跑 web source 实现，Coordinator 会按 URL 去重合并，避免重复卡片。
     func loadMoreWeb() async {
-        guard canLoadMoreWeb, scope == .web, !lastSubmittedQuery.isEmpty else { return }
-        externalSearchFilters.maxResults = min(externalSearchFilters.maxResults + 10, 100)
+        guard canLoadMoreWeb, scope == .web || scope == .all, !lastSubmittedQuery.isEmpty else { return }
+        // 内容过滤可能已自动补过一页，必须从实际成功上限继续，不能重复请求旧页。
+        externalSearchFilters.maxResults = min(
+            max(externalSearchFilters.maxResults, coordinator.currentWebMaxResults) + 10, 100
+        )
         await coordinator.loadMore(makeRequest(query: lastSubmittedQuery), source: .web)
         clampSelection()
     }
@@ -1105,6 +1215,23 @@ final class SearchCenterViewModel {
             identity: identity,
             state: state,
             persistedRepo: persistedRepo
+        )
+        latestDiscoveryResult = latestDiscoveryResult.map(applyingDiscoveryLibraryUpdates)
+        discoveryCache = discoveryCache.mapValues { entry in
+            SearchDiscoveryCacheEntry(
+                result: applyingDiscoveryLibraryUpdates(entry.result),
+                createdAt: entry.createdAt
+            )
+        }
+    }
+
+    /// 缓存保留原过期时间，只刷新知识库事实；同一操作也覆盖后续落地的发现结果。
+    private func applyingDiscoveryLibraryUpdates(_ result: RepositoryDiscoveryResult) -> RepositoryDiscoveryResult {
+        RepositoryDiscoveryResult(
+            session: result.session,
+            repositories: coordinator.applyingLibraryUpdates(to: result.repositories),
+            references: result.references, diagnostics: result.diagnostics,
+            steps: result.steps, contentSummary: result.contentSummary
         )
     }
 
