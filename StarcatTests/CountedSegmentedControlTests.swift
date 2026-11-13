@@ -94,6 +94,77 @@ struct CountedSegmentedControlTests {
         #expect(changed == baseline)
     }
 
+    @Test("Skill 筛选在窄栏使用图标 Tab，计数与选中项变化不挤占高度",
+          arguments: ["en", "zh-Hans", "zh-Hant", "ja", "ko", "de", "fr", "es", "pt-BR", "it", "ru", "nl", "pl", "uk", "tr", "vi", "id"],
+          InterfaceScale.allCases)
+    func skillFiltersAdaptWithoutResizing(localeID: String, scale: InterfaceScale) throws {
+        let width: CGFloat = 240
+        for colorScheme in [ColorScheme.light, .dark] {
+            let wide = try size(of: skillControl(
+                contentTabs: false, selected: 0, count: 0, localeID: localeID, scale: scale, colorScheme: colorScheme
+            ), width: 1_000)
+            let compact = try size(of: skillControl(
+                contentTabs: false, selected: 0, count: 0, localeID: localeID, scale: scale, colorScheme: colorScheme
+            ), width: width)
+            #expect(compact.width <= width)
+            #expect(compact.width < wide.width)
+            #expect(compact.height == wide.height)
+            for selected in 0..<3 {
+                let updated = try size(of: skillControl(
+                    contentTabs: false, selected: selected, count: 1_495,
+                    localeID: localeID, scale: scale, colorScheme: colorScheme
+                ), width: width)
+                #expect(updated == compact)
+            }
+        }
+    }
+
+    @Test("Skill 正文 Tab 支持仅文件显示数量，宽窄模式保持紧凑高度",
+          arguments: ["en", "zh-Hans", "de", "ja"], InterfaceScale.allCases)
+    func skillContentTabsStayCompact(localeID: String, scale: InterfaceScale) throws {
+        let wide = try size(of: skillControl(
+            contentTabs: true, selected: 0, count: 1_495, localeID: localeID, scale: scale
+        ), width: 1_000)
+        let compact = try size(of: skillControl(
+            contentTabs: true, selected: 0, count: 1_495, localeID: localeID, scale: scale
+        ), width: scale.scaled(180))
+        #expect(compact.width <= scale.scaled(180))
+        #expect(compact.width < wide.width)
+        #expect(compact.height == wide.height)
+        #expect(wide.height == scale.scaled(20) + 4)
+        for selected in 1..<3 {
+            let updated = try size(of: skillControl(
+                contentTabs: true, selected: selected, count: 1_495, localeID: localeID, scale: scale
+            ), width: scale.scaled(180))
+            #expect(updated == compact)
+        }
+    }
+
+    /// 使用真实界面文案和四位计数验证布局，不创建窗口或触发 Skill 会话、扫描与正文加载。
+    private func skillControl(
+        contentTabs: Bool, selected: Int, count: Int, localeID: String,
+        scale: InterfaceScale, colorScheme: ColorScheme = .light
+    ) -> some View {
+        let titles: [LocalizedStringKey] = contentTabs
+            ? ["SKILL.md", "repo.files.tab.files", "repo.skills.content.tree"]
+            : ["repo.skills.list.all", "repo.skills.list.pending", "repo.skills.list.installed"]
+        let symbols = contentTabs
+            ? ["doc.text", "doc.on.doc", "folder"]
+            : ["square.stack.3d.up", "arrow.down.circle", "checkmark.circle"]
+        let colors: [Color] = [.blue, .orange, .green]
+        return CountedSegmentedControl(
+            items: [0, 1, 2], selection: .constant(selected), totalCount: 1_495,
+            title: { titles[$0] },
+            count: { contentTabs && $0 != 1 ? nil : count },
+            accessibilityLabel: "repo.skills.preview.selection",
+            symbol: { symbols[$0] },
+            tint: { colors[$0] }
+        )
+        .environment(\.locale, Locale(identifier: localeID))
+        .environment(\.starcatInterfaceScale, scale)
+        .environment(\.colorScheme, colorScheme)
+    }
+
     /// 两个真实筛选枚举走相同的共享控件，确保没有只修仓库整理而漏掉标签整理。
     private func controlSize<Item: Hashable>(
         items: [Item], selected: Item, title: @escaping (Item) -> LocalizedStringKey,

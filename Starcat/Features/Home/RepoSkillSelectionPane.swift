@@ -31,6 +31,22 @@ struct RepoSkillSelectionPane: View {
             case .installed: isExport ? "repo.skills.install.exported" : "repo.skills.list.installed"
             }
         }
+
+        func symbol(isExport: Bool) -> String {
+            switch self {
+            case .all: "square.stack.3d.up"
+            case .pending: isExport ? "square.and.arrow.up" : "arrow.down.circle"
+            case .installed: "checkmark.circle"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .all: .blue
+            case .pending: .orange
+            case .installed: .green
+            }
+        }
     }
 
     private var query: String { "\(filter.rawValue):\(search)" }
@@ -38,20 +54,14 @@ struct RepoSkillSelectionPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                CountedSegmentedControl(
-                    items: Filter.allCases, selection: $filter, totalCount: session.skills.count,
-                    title: { LocalizedStringKey($0.key(isExport: session.isExport)) },
-                    count: count,
-                    accessibilityLabel: "repo.skills.preview.selection"
-                )
-                Picker("repo.skills.preview.selection", selection: $filter) {
-                    ForEach(Filter.allCases, id: \.self) { option in
-                        Text(LocalizedStringKey(option.key(isExport: session.isExport))).tag(option)
-                    }
-                }
-                .labelsHidden()
-            }
+            CountedSegmentedControl(
+                items: Filter.allCases, selection: $filter, totalCount: session.skills.count,
+                title: { LocalizedStringKey($0.key(isExport: session.isExport)) },
+                count: { count($0) },
+                accessibilityLabel: "repo.skills.preview.selection",
+                symbol: { $0.symbol(isExport: session.isExport) },
+                tint: { $0.tint }
+            )
             .padding(12)
             searchField
                 .padding(.horizontal, 14)

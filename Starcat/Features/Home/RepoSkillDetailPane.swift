@@ -20,32 +20,57 @@ struct RepoSkillDetailPane: View {
     @State private var previewedFile: RepoSkillFile?
     @State private var document: RepoSkillReadingCache.Document?
 
-    private enum Tab: CaseIterable { case manifest, files, tree }
+    private enum Tab: CaseIterable {
+        case manifest, files, tree
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .manifest: "SKILL.md"
+            case .files: "repo.files.tab.files"
+            case .tree: "repo.skills.content.tree"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .manifest: "doc.text"
+            case .files: "doc.on.doc"
+            case .tree: "folder"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .manifest: .blue
+            case .files: .orange
+            case .tree: .purple
+            }
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if isPreviewExpanded {
                     Text(verbatim: "SKILL.md")
                         .font(interfaceScale.font(.caption, weight: .semibold))
-                    Spacer()
                 } else {
-                    HStack(spacing: 3) {
-                        tabButton(.manifest, title: "SKILL.md", symbol: "doc.text")
-                        tabButton(
-                            .files,
-                            title: String.l10n("repo.files.tab.files") + " (\(skill.files.count))",
-                            symbol: "doc.on.doc"
-                        )
-                        tabButton(.tree, title: String.l10n("repo.skills.content.tree"), symbol: "folder")
-                    }
-                    .padding(4)
-                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+                    CountedSegmentedControl(
+                        items: Tab.allCases, selection: $tab, totalCount: skill.files.count,
+                        title: { $0.title },
+                        count: { $0 == .files ? skill.files.count : nil },
+                        accessibilityLabel: "repo.skills.preview.selection",
+                        symbol: { $0.symbol },
+                        tint: { $0.tint }
+                    )
                 }
+                Spacer(minLength: 0)
                 if tab == .manifest {
                     previewSizeButton
                 }
             }
+            // 放大按钮固定在这行，不因切换到文件或目录而让正文上下跳动。
+            .frame(minHeight: 28)
 
             Group {
                 if tab == .manifest {
@@ -73,7 +98,8 @@ struct RepoSkillDetailPane: View {
                     .strokeBorder(Color.primary.opacity(0.09))
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .popover(item: $previewedFile) { file in
             RepoSkillFilePreview(skill: skill, file: file, session: session) { previewedFile = nil }
                 .appLocaleEnvironment()
@@ -110,27 +136,6 @@ struct RepoSkillDetailPane: View {
         .focusEffectDisabled()
         .help(helpKey)
         .accessibilityLabel(Text(helpKey))
-    }
-
-    private func tabButton(_ value: Tab, title: String, symbol: String) -> some View {
-        Button {
-            tab = value
-        } label: {
-            Label(title, systemImage: symbol)
-                .font(interfaceScale.font(.caption, weight: tab == value ? .semibold : .regular))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, minHeight: 30)
-                .foregroundStyle(tab == value ? .primary : .secondary)
-                .background(
-                    tab == value ? Color.accentColor.opacity(0.14) : .clear,
-                    in: RoundedRectangle(cornerRadius: 5)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help(title)
-        .accessibilityAddTraits(tab == value ? .isSelected : [])
     }
 
     /// 只渲染仓库原文，不生成示例命令，也不执行 Markdown 中的安装指令。
