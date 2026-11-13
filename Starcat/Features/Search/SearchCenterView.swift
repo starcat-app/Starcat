@@ -24,6 +24,7 @@ struct SearchCenterView: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     /// SEARCH-RICH 2026-06-14：从 `Repo?` 改为 `RepositoryCandidate?` —— 弹窗
@@ -940,11 +941,7 @@ struct SearchCenterView: View {
             .foregroundStyle(.primary)
             .frame(width: 12, height: 12)
             .padding(4)
-            .background(Color.primary.opacity(0.08), in: Circle())
-            .overlay {
-                Circle()
-                    .stroke(Color.primary.opacity(0.18), lineWidth: 0.5)
-            }
+            .modifier(SearchResultBadgeSurface())
             .help(Text(verbatim: discoveryTooltip(for: repo)))
             .accessibilityLabel(Text(verbatim: discoveryTooltip(for: repo)))
     }
@@ -1019,21 +1016,35 @@ struct SearchCenterView: View {
         case externalProvider(ExternalSearchProviderID)
     }
 
+    /// 来源与发现徽标共用中性底座，避免固定金色背景在深色卡片上形成突兀色块。
+    /// 只改变绘制颜色，不改变 12pt 图标、4pt 内边距和右侧预留空间。
+    private struct SearchResultBadgeSurface: ViewModifier {
+        @Environment(\.colorScheme) private var colorScheme
+
+        func body(content: Content) -> some View {
+            content
+                .background(
+                    Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06),
+                    in: Circle()
+                )
+                .overlay {
+                    Circle().stroke(
+                        Color.primary.opacity(colorScheme == .dark ? 0.26 : 0.16),
+                        lineWidth: 0.5
+                    )
+                }
+        }
+    }
+
     private struct SearchResultSourceIcon: View {
         let source: SearchResultSourceIndicator
 
         var body: some View {
             icon
-                .foregroundStyle(tint)
+                .foregroundStyle(foregroundColor)
                 .frame(width: 12, height: 12)
                 .padding(4)
-                // GitHub 来源使用独立金色底座，避免 primary 同色底在浅色主题下层级不清；
-                // 图标本身仍走动态 primary，确保明暗主题都有足够对比度。
-                .background(backgroundStyle, in: Circle())
-                .overlay {
-                    Circle()
-                        .stroke(borderStyle, lineWidth: 0.5)
-                }
+                .modifier(SearchResultBadgeSurface())
                 .help(helpText)
                 .accessibilityLabel(helpText)
         }
@@ -1060,28 +1071,12 @@ struct SearchCenterView: View {
             }
         }
 
-        private var backgroundStyle: Color {
+        private var foregroundColor: Color {
             switch source {
-            case .github: return Color.orange.opacity(0.24)
-            default: return tint.opacity(0.18)
-            }
-        }
-
-        private var borderStyle: Color {
-            switch source {
-            case .github: return Color.orange.opacity(0.40)
-            default: return tint.opacity(0.18)
-            }
-        }
-
-        private var tint: Color {
-            switch source {
-            case .local: return .secondary
-            case .semantic: return .secondary
-            case .github: return .primary
-            case .web: return .blue
-            case .externalProvider(let provider):
-                return ExternalSearchProviderIcon.tint(for: provider)
+            case .local, .semantic:
+                return .secondary
+            case .github, .web, .externalProvider:
+                return .primary
             }
         }
 
@@ -1420,11 +1415,7 @@ struct SearchCenterView: View {
                     .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
                     .lineLimit(1)
             }
-            .foregroundStyle(chip.isLoading ? Color.secondary : Color.primary.opacity(0.75))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.primary.opacity(chip.isLoading ? 0.05 : 0.08), in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(chip.isLoading ? Color.secondary : Color.primary)
         }
     }
 
@@ -1444,11 +1435,7 @@ struct SearchCenterView: View {
                     .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
                     .lineLimit(1)
             }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.primary.opacity(phase.isFailed ? 0.05 : 0.08), in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(viewModel.isDiscoveryRunning ? Color.secondary : Color.primary)
         }
         .help(discoveryPhaseTooltip(phase))
     }
@@ -1458,21 +1445,42 @@ struct SearchCenterView: View {
         _ filter: SearchResultFilter,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        Button {
+        let isSelected = viewModel.resultFilter == filter
+        let tint = resultFilterTint(filter)
+        // 来源色只用于底色和边框；文字保持语义前景色，选中态在明暗主题下分别增强。
+        let backgroundOpacity = colorScheme == .dark
+            ? (isSelected ? 0.30 : 0.15) : (isSelected ? 0.20 : 0.09)
+        let borderOpacity = colorScheme == .dark
+            ? (isSelected ? 0.70 : 0.32) : (isSelected ? 0.48 : 0.20)
+
+        return Button {
             viewModel.toggleResultFilter(filter)
         } label: {
             content()
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(tint.opacity(backgroundOpacity), in: Capsule())
                 .overlay {
-                    Capsule().strokeBorder(
-                        Color.primary.opacity(viewModel.resultFilter == filter ? 0.35 : 0),
-                        lineWidth: 1
-                    )
+                    Capsule().strokeBorder(tint.opacity(borderOpacity), lineWidth: 1)
                 }
+                .contentShape(Capsule())
+                .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .accessibilityAddTraits(viewModel.resultFilter == filter ? .isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .pointerStyle(.link)
+    }
+
+    private func resultFilterTint(_ filter: SearchResultFilter) -> Color {
+        switch filter {
+        case .source(.localKeyword): return .blue
+        case .source(.localSemantic): return .purple
+        case .source(.github): return .orange
+        case .source(.web): return .green
+        case .discovery: return .accentColor
+        }
     }
 
     private var discoveryWarningChip: some View {
@@ -1747,11 +1755,6 @@ struct SearchCenterView: View {
             .font(interfaceScale.font(.captionSmall, weight: .medium))
             .lineLimit(1)
         }
-        .foregroundStyle(.primary.opacity(0.75))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(.primary.opacity(0.08), in: Capsule())
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 聚合 footer 的单段 chip：source 标签 + 数字。
@@ -1768,11 +1771,6 @@ struct SearchCenterView: View {
                 .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
                 .lineLimit(1)
             }
-            .foregroundStyle(.primary.opacity(0.75))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.primary.opacity(0.08), in: Capsule())
-            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
