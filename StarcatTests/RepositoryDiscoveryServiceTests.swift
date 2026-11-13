@@ -12,6 +12,66 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("重排输入只携带当前仓库的 GitHub 和网页证据")
+    func rankingEvidenceIsAssociatedWithRepository() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift")),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "other", name: "tool"))
+                ], references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: [
+                    Self.makeReference(url: "https://github.com/Apple/Swift/"),
+                    Self.makeReference(url: "https://github.com/old/alias/?tab=readme"),
+                    Self.makeReference(url: "https://example.org/unrelated")
+                ], totalCount: 3, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            let byID = Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0) })
+            #expect(Set(byID["apple/swift"]?.evidenceIDs ?? []) == ["github-0-0", "web-0-0"])
+            #expect(byID["other/tool"]?.evidenceIDs == ["github-0-1"])
+            #expect(byID["new/renamed"]?.evidenceIDs == ["web-0-1"])
+            return candidates.map {
+                SearchDiscoveryRankedItem(id: $0.id, reason: "Repository-specific match", evidenceIDs: $0.evidenceIDs)
+            }
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in Self.makeRepoDTO(id: 3, owner: "new", name: "renamed") },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 3)
+        #expect(result.repositories.allSatisfy { $0.discovery?.kind == .modelMatch })
+    }
+
+    @Test("模型引用其它仓库证据时拒绝该理由并保留原候选")
+    func crossRepositoryEvidenceIsRejected() async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift")),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "other", name: "tool"))
+                ], references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, _, _, _ in
+            [SearchDiscoveryRankedItem(id: "apple/swift", reason: "Unrelated project claim", evidenceIDs: ["github-0-1"])]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 2)
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.repositories.first?.discovery?.evidenceIDs == ["github-0-0"])
+        #expect(result.repositories.first?.discovery?.reason.isEmpty == true)
+    }
+
     @Test("远程重排同时排除私仓候选和证据，本地重排可使用私仓", arguments: [false, true])
     func privateRepositoriesRespectRankerBoundary(usesLocalOnly: Bool) async {
         let publicRepo = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "public", name: "tool"))

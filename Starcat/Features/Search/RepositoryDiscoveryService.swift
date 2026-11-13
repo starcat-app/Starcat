@@ -828,7 +828,9 @@ final class RepositoryDiscoveryService {
                 }
                 candidate.discovery = SearchDiscoveryAnnotation(
                     reason: "",
-                    evidenceIDs: evidence.filter { $0.url?.absoluteString.hasSuffix("/\(identity.owner)/\(identity.name)") == true }.map(\.id),
+                    evidenceIDs: evidence.filter {
+                        $0.url.flatMap { SearchContentPolicy.repositoryName(from: $0) } == identity.normalizedFullName
+                    }.map(\.id),
                     rank: nil,
                     kind: .githubVerification
                 )
@@ -907,6 +909,16 @@ final class RepositoryDiscoveryService {
 
         evidence = contentPolicy.filtering(evidence, summary: &contentSummary)
         repositories = Self.deduplicated(repositories).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
+        repositories = repositories.map { candidate in
+            var candidate = candidate
+            candidate.discovery = SearchDiscoveryAnnotation(
+                reason: candidate.discovery?.reason ?? "",
+                evidenceIDs: Self.associatedEvidenceIDs(for: candidate, in: evidence),
+                rank: candidate.discovery?.rank,
+                kind: candidate.discovery?.kind ?? .githubSearch
+            )
+            return candidate
+        }
         references = Self.deduplicatedReferences(references).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
 
         session = SearchDiscoverySession(
@@ -959,7 +971,7 @@ final class RepositoryDiscoveryService {
                     fullName: candidate.card.fullName,
                     description: candidate.card.description,
                     stars: candidate.card.starsCount,
-                    evidenceIDs: rankingEvidence.map(\.id)
+                    evidenceIDs: Self.associatedEvidenceIDs(for: candidate, in: rankingEvidence)
                 )
             }
             do {
@@ -1213,6 +1225,20 @@ final class RepositoryDiscoveryService {
         }
     }
 
+    /// 仓库身份和核验时建立的关联才是引用依据；相同查询返回的其它证据不能借给当前候选。
+    /// 核验重定向后 URL 可能仍是旧名，因此保留核验阶段已确认的证据 ID。
+    private static func associatedEvidenceIDs(
+        for candidate: RepositoryCandidate,
+        in evidence: [SearchEvidence]
+    ) -> [String] {
+        let verifiedIDs = Set(candidate.discovery?.evidenceIDs ?? [])
+        return evidence.filter { item in
+            let fullName = item.repositoryFullName
+                ?? item.url.flatMap { SearchContentPolicy.repositoryName(from: $0) }
+            return fullName == candidate.identity.normalizedFullName || verifiedIDs.contains(item.id)
+        }.map(\.id)
+    }
+
     private static func applying(
         _ items: [SearchDiscoveryRankedItem],
         to candidates: [RepositoryCandidate],
@@ -1220,7 +1246,6 @@ final class RepositoryDiscoveryService {
         budget: SearchDiscoveryBudget,
         contentPolicy: SearchContentPolicy
     ) -> [RepositoryCandidate] {
-        let availableEvidence = Set(evidence.map(\.id))
         let byID = Dictionary(uniqueKeysWithValues: candidates.map {
             ($0.identity.normalizedFullName, $0)
         })
@@ -1236,7 +1261,7 @@ final class RepositoryDiscoveryService {
                   contentPolicy.match(SearchContentDocument(
                     id: id, fields: [.description: [item.reason]]
                   )) == nil,
-                  Set(item.evidenceIDs).isSubset(of: availableEvidence)
+                  Set(item.evidenceIDs).isSubset(of: Set(Self.associatedEvidenceIDs(for: candidate, in: evidence)))
             else { continue }
             candidate.discovery = SearchDiscoveryAnnotation(
                 reason: item.reason,
