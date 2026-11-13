@@ -102,10 +102,12 @@ extension SearchQueryPlannerProviding {
 final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let entitlementGate: EntitlementGate
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
         self.keychain = keychain
+        self.entitlementGate = entitlementGate
     }
 
     var modelDisplayName: String? {
@@ -119,6 +121,12 @@ final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
         allowWebEvidence: Bool,
         maxSeconds: TimeInterval
     ) async throws -> SearchDiscoveryPlan {
+        // 与语义搜索共用权益；必须早于凭据读取和 Client 创建，本地 MLX 仍免费。
+        try entitlementGate.requirePro(
+            .semanticSearch,
+            usesLocalOnly: settings.isTaskResolvedToLocalAI(settings.resolvedAITask(settings.aiChatTask))
+        )
+        guard maxSeconds > 0 else { throw URLError(.timedOut) }
         let task = settings.resolvedAITask(settings.aiChatTask)
         let selection = try settings.resolveChatSelection(for: task)
         let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?

@@ -12,6 +12,76 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("规划与 Chat 重排共用 Pro 门控，本地模型免费", arguments: [false, true], [false, true])
+    func chatEntitlementsAreCheckedBeforeClientCreation(isPro: Bool, usesLocalOnly: Bool) async {
+        let settings = Self.entitlementSettings(usesLocalOnly: usesLocalOnly)
+        let gate = EntitlementGate(
+            entitlementProvider: SearchDiscoveryEntitlementProvider(isPro: isPro), userIDProvider: { nil }
+        )
+        let planner = SearchLLMQueryPlanner(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        let ranker = SearchLLMDiscoveryRanker(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        #expect(ranker.usesLocalOnly == usesLocalOnly)
+
+        // 已获准的调用在零预算处停止，覆盖实际入口且不下载模型或发出网络请求。
+        if !isPro && !usesLocalOnly {
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await planner.plan(query: "tool", allowWebEvidence: false, maxSeconds: 0)
+            }
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        } else {
+            await #expect(throws: URLError(.timedOut)) {
+                try await planner.plan(query: "tool", allowWebEvidence: false, maxSeconds: 0)
+            }
+            await #expect(throws: URLError(.timedOut)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        }
+    }
+
+    @Test("专用 Rerank 的动态入口遵守远程 Pro 与本地免费规则", arguments: [false, true], [false, true])
+    func dedicatedRerankEntitlementsAreEnforced(isPro: Bool, usesLocalOnly: Bool) async {
+        let settings = Self.entitlementSettings(usesLocalOnly: false)
+        settings.ragRerankConfiguration = RAGRerankConfiguration(
+            isEnabled: true, provider: usesLocalOnly ? .localMLX : .huggingFaceTEI
+        )
+        let gate = EntitlementGate(
+            entitlementProvider: SearchDiscoveryEntitlementProvider(isPro: isPro), userIDProvider: { nil }
+        )
+        let ranker = DynamicSearchDiscoveryRanker(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        #expect(ranker.usesLocalOnly == usesLocalOnly)
+        if !isPro && !usesLocalOnly {
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        } else {
+            await #expect(throws: URLError(.timedOut)) {
+                try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
+            }
+        }
+    }
+
+    @Test("远程重排被 Pro 门控阻止后仍保留基础候选")
+    func deniedRemoteRankerKeepsSearchResults() async {
+        let settings = Self.entitlementSettings(usesLocalOnly: false)
+        let gate = EntitlementGate(
+            entitlementProvider: SearchDiscoveryEntitlementProvider(isPro: false), userIDProvider: { nil }
+        )
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let result = await RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: DynamicSearchDiscoveryRanker(settings: settings, keychain: InMemoryKeychain(), entitlementGate: gate)
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["apple/swift"])
+        #expect(result.repositories.first?.discovery?.kind == .githubSearch)
+        #expect(result.diagnostics.contains { $0.stage == .ranking && $0.isFailure })
+    }
+
     @Test("重排输入只携带当前仓库的 GitHub 和网页证据")
     func rankingEvidenceIsAssociatedWithRepository() async {
         let github = RecordingSearchProvider(source: .github) { _ in
@@ -989,6 +1059,15 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.repositories.count == 1)
     }
 
+    private static func entitlementSettings(usesLocalOnly: Bool) -> AppSettings {
+        let defaults = UserDefaults(suiteName: "SearchDiscoveryEntitlements-\(UUID().uuidString)")!
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        let profile = AIProviderProfile(id: "search-test", provider: usesLocalOnly ? .localAI : .openAICompatible)
+        settings.aiProviderProfiles = [profile]
+        settings.aiChatTask.providerID = profile.id
+        return settings
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",
@@ -1103,6 +1182,16 @@ struct RepositoryDiscoveryServiceTests {
             isTemplate: nil,
             score: nil
         )
+    }
+}
+
+/// 使用真实 EntitlementGate 的轻量权益快照，避免测试依赖 StoreKit 或全局调试开关。
+@MainActor
+private final class SearchDiscoveryEntitlementProvider: ProEntitlementProviding {
+    let entitlement: ProEntitlement
+
+    init(isPro: Bool) {
+        entitlement = isPro ? .testEnvironment : .inactive
     }
 }
 

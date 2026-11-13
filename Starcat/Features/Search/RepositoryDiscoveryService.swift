@@ -93,16 +93,16 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
 
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let entitlementGate: EntitlementGate
 
     var usesLocalOnly: Bool {
-        (try? settings.resolveChatSelection(
-            for: settings.resolvedAITask(settings.aiChatTask)
-        ).profile.provider) == .localAI
+        settings.isTaskResolvedToLocalAI(settings.resolvedAITask(settings.aiChatTask))
     }
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
         self.keychain = keychain
+        self.entitlementGate = entitlementGate
     }
 
     var modelDisplayName: String? {
@@ -118,6 +118,8 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
         evidence: [SearchEvidence],
         maxSeconds: TimeInterval
     ) async throws -> [SearchDiscoveryRankedItem] {
+        try entitlementGate.requirePro(.semanticSearch, usesLocalOnly: usesLocalOnly)
+        guard maxSeconds > 0 else { throw URLError(.timedOut) }
         let task = settings.resolvedAITask(settings.aiChatTask)
         let selection = try settings.resolveChatSelection(for: task)
         let apiKey = try keychain.loadAIKey(forProvider: selection.profile.id)?
@@ -208,14 +210,16 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
 
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+    private let entitlementGate: EntitlementGate
 
     var usesLocalOnly: Bool {
         settings.ragRerankConfiguration.normalized.provider == .localMLX
     }
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
         self.keychain = keychain
+        self.entitlementGate = entitlementGate
     }
 
     var debugModel: String? {
@@ -243,6 +247,7 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
         guard configuration.isEnabled else {
             throw RepositoryDiscoveryError.dedicatedRerankDisabled
         }
+        try entitlementGate.requirePro(.semanticSearch, usesLocalOnly: usesLocalOnly)
         guard maxSeconds > 0 else { throw URLError(.timedOut) }
 
         let apiKey = try keychain.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)?
@@ -367,10 +372,10 @@ final class DynamicSearchDiscoveryRanker: SearchDiscoveryRankerProviding {
             : chatRanker.modelDisplayName
     }
 
-    init(settings: AppSettings, keychain: any KeychainManaging) {
+    init(settings: AppSettings, keychain: any KeychainManaging, entitlementGate: EntitlementGate) {
         self.settings = settings
-        self.chatRanker = SearchLLMDiscoveryRanker(settings: settings, keychain: keychain)
-        self.rerankRanker = SearchDiscoveryRerankRanker(settings: settings, keychain: keychain)
+        self.chatRanker = SearchLLMDiscoveryRanker(settings: settings, keychain: keychain, entitlementGate: entitlementGate)
+        self.rerankRanker = SearchDiscoveryRerankRanker(settings: settings, keychain: keychain, entitlementGate: entitlementGate)
     }
 
     func rank(
