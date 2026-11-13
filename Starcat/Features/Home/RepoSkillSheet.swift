@@ -2,12 +2,12 @@
 //  RepoSkillSheet.swift
 //  Starcat
 //
-//  真实 Skill 三栏安装工作区，窗口尺寸由 AppKit 持有，内容只消费共享会话。
+//  真实 Skill 阅读与浮动安装工作区，窗口尺寸由 AppKit 持有，内容只消费共享会话。
 //
 
 import SwiftUI
 
-/// 窗口持有固定画布；选择、阅读、安装配置独立分栏，主操作根据批次阶段切换。
+/// 窗口持有固定画布；安装配置按需覆盖阅读区，主操作根据批次阶段切换。
 struct RepoSkillSheet: View {
     let session: RepoSkillSession
     let onClose: () -> Void
@@ -16,6 +16,7 @@ struct RepoSkillSheet: View {
     @Environment(AppDependencies.self) private var dependencies
     @State private var previewID = ""
     @State private var isPreviewExpanded = false
+    @State private var isInspectorPresented = false
 
     private var preview: RepoSkill? {
         session.skills.first { $0.id == previewID } ?? session.skills.first
@@ -32,7 +33,7 @@ struct RepoSkillSheet: View {
                             .frame(width: min(280, geometry.size.width * 0.25))
                         Divider()
                     }
-                    // 阅读器始终留在同一个结构位置；放大只移除两侧栏，保留 WebView 与滚动位置。
+                    // 阅读器始终留在同一个结构位置；安装面板不参与分栏，避免正文随开关重新排版。
                     VStack(alignment: .leading, spacing: 8) {
                         if let error = session.error {
                             Text(verbatim: error).foregroundStyle(.secondary).padding(16)
@@ -45,7 +46,8 @@ struct RepoSkillSheet: View {
                                     .font(interfaceScale.font(.caption)).padding(.horizontal, 18)
                             }
                             RepoSkillDetailPane(
-                                skill: preview, session: session, isPreviewExpanded: $isPreviewExpanded
+                                skill: preview, session: session, isPreviewExpanded: $isPreviewExpanded,
+                                isInspectorPresented: $isInspectorPresented
                             )
                         } else {
                             ContentUnavailableView(
@@ -55,10 +57,15 @@ struct RepoSkillSheet: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if !isPreviewExpanded {
-                        Divider()
-                        RepoSkillInspector(session: session)
-                            .frame(width: max(310, geometry.size.width * 0.29))
+                }
+                .overlay(alignment: .topTrailing) {
+                    if isInspectorPresented {
+                        installationPanel
+                            .frame(width: min(420, geometry.size.width * 0.5))
+                            // 顶部避开内容 Tab，底部留出字号、回顶与下载按钮的完整点击区。
+                            .padding(.top, 44)
+                            .padding(.trailing, 26)
+                            .padding(.bottom, 142)
                     }
                 }
             }
@@ -81,7 +88,9 @@ struct RepoSkillSheet: View {
             if ids.isEmpty { isPreviewExpanded = false }
         }
         .onExitCommand {
-            if isPreviewExpanded {
+            if isInspectorPresented {
+                isInspectorPresented = false
+            } else if isPreviewExpanded {
                 isPreviewExpanded = false
             } else {
                 onClose()
@@ -91,6 +100,33 @@ struct RepoSkillSheet: View {
             session.close()
             onClose()
         }
+    }
+
+    /// 浮层只持有展示状态；目录选择、冲突与进度仍由窗口会话持有，收起不会取消安装。
+    private var installationPanel: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("repo.files.inspector.download", systemImage: "arrow.down.to.line")
+                    .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
+                Spacer(minLength: 8)
+                SheetCloseButton { isInspectorPresented = false }
+            }
+            .padding(12)
+            Divider()
+            RepoSkillInspector(session: session)
+            // 放大阅读时窗口底栏隐藏，操作随浮层显示，仍可直接确认安装。
+            if isPreviewExpanded {
+                Divider()
+                footer
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.primary.opacity(0.12))
+        }
+        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
     }
 
     private var header: some View {
@@ -148,7 +184,7 @@ struct RepoSkillSheet: View {
 
             Button(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"), action: onClose)
                 .buttonStyle(.bordered)
-                .keyboardShortcut(.cancelAction)
+                .keyboardShortcut(isInspectorPresented ? nil : .cancelAction)
 
             Button(action: primaryAction) {
                 Text(LocalizedStringKey(primaryKey))
@@ -196,6 +232,7 @@ struct RepoSkillSheet: View {
         } else if session.phase == .finished && !session.hasFailures {
             onClose()
         } else {
+            isInspectorPresented = true
             session.start()
         }
     }
