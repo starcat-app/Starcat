@@ -429404,6 +429404,52 @@
         }
       }
     },
+    "repo.skills.preview.expand" : {
+      "extractionState" : "manual",
+      "comment" : "Skill reader layout control; AI draft translations require review.",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Expand preview" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "放大预览" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "放大預覽" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "プレビューを拡大" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "미리보기 확대" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Vorschau vergrößern" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Agrandir l’aperçu" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Ampliar vista previa" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Ampliar prévia" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ingrandisci anteprima" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Развернуть предпросмотр" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Voorbeeld vergroten" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Powiększ podgląd" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Розгорнути попередній перегляд" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Önizlemeyi büyüt" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Phóng to bản xem trước" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Perbesar pratinjau" } }
+      }
+    },
+    "repo.skills.preview.restore" : {
+      "extractionState" : "manual",
+      "comment" : "Skill reader layout control; AI draft translations require review.",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "needs_review", "value" : "Restore three-column view" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "needs_review", "value" : "恢复三栏布局" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "恢復三欄配置" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "3ペイン表示に戻す" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "3열 보기로 복원" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Dreispaltige Ansicht wiederherstellen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Rétablir la vue à trois colonnes" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Restaurar vista de tres columnas" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Restaurar visualização de três colunas" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Ripristina vista a tre colonne" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Вернуть трёхколоночный вид" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Weergave met drie kolommen herstellen" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Przywróć widok trzech kolumn" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Відновити вигляд із трьома стовпцями" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Üç sütunlu görünümü geri yükle" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Khôi phục bố cục ba cột" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Pulihkan tampilan tiga kolom" } }
+      }
+    },
     "repo.skills.preview.title" : {
       "comment" : "Skill UI preview only. AI translation draft; pending maintainer review.",
       "extractionState" : "manual",

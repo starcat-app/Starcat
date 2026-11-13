@@ -11,6 +11,7 @@ import SwiftUI
 struct RepoSkillDetailPane: View {
     let skill: RepoSkill
     let session: RepoSkillSession
+    @Binding var isPreviewExpanded: Bool
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
@@ -23,17 +24,28 @@ struct RepoSkillDetailPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 3) {
-                tabButton(.manifest, title: "SKILL.md", symbol: "doc.text")
-                tabButton(
-                    .files,
-                    title: String.l10n("repo.files.tab.files") + " (\(skill.files.count))",
-                    symbol: "doc.on.doc"
-                )
-                tabButton(.tree, title: String.l10n("repo.skills.content.tree"), symbol: "folder")
+            HStack(spacing: 8) {
+                if isPreviewExpanded {
+                    Text(verbatim: "SKILL.md")
+                        .font(interfaceScale.font(.caption, weight: .semibold))
+                    Spacer()
+                } else {
+                    HStack(spacing: 3) {
+                        tabButton(.manifest, title: "SKILL.md", symbol: "doc.text")
+                        tabButton(
+                            .files,
+                            title: String.l10n("repo.files.tab.files") + " (\(skill.files.count))",
+                            symbol: "doc.on.doc"
+                        )
+                        tabButton(.tree, title: String.l10n("repo.skills.content.tree"), symbol: "folder")
+                    }
+                    .padding(4)
+                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
+                }
+                if tab == .manifest {
+                    previewSizeButton
+                }
             }
-            .padding(4)
-            .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 8))
 
             Group {
                 if tab == .manifest {
@@ -78,6 +90,26 @@ struct RepoSkillDetailPane: View {
                 // 快速点选会取消旧任务；旧正文不能在新标题下回填。
             }
         }
+    }
+
+    /// 入口位于正文外，避让 WebView 滚动条；切换尺寸不会改变正文身份或触发读取任务。
+    private var previewSizeButton: some View {
+        let helpKey: LocalizedStringKey = isPreviewExpanded
+            ? "repo.skills.preview.restore" : "repo.skills.preview.expand"
+        return Button {
+            isPreviewExpanded.toggle()
+        } label: {
+            Image(systemName: isPreviewExpanded
+                ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                .font(interfaceScale.font(.caption, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(helpKey)
+        .accessibilityLabel(Text(helpKey))
     }
 
     private func tabButton(_ value: Tab, title: String, symbol: String) -> some View {
