@@ -902,10 +902,18 @@ struct SearchCenterView: View {
             }
     }
 
+    /// 与来源徽标保持相同的圆形尺寸，并用动态主色保证明暗主题下的层级一致。
     private func discoveryMarker(_ repo: RepositoryCandidate) -> some View {
         Image(systemName: "sparkles")
-            .font(interfaceScale.font(.captionSmall, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: 12, height: 12)
+            .padding(4)
+            .background(Color.primary.opacity(0.08), in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(Color.primary.opacity(0.18), lineWidth: 0.5)
+            }
             .help(Text(verbatim: discoveryTooltip(for: repo)))
             .accessibilityLabel(Text(verbatim: discoveryTooltip(for: repo)))
     }
@@ -923,8 +931,8 @@ struct SearchCenterView: View {
     ) -> CGFloat {
         let sourceWidth = sourceIndicatorTrailingReserve(for: source)
         guard hasDiscovery else { return sourceWidth }
-        // 12pt trailing + 约 12pt 图标；与来源图标并存时再补 4pt 间距。
-        return sourceWidth == 0 ? 24 : sourceWidth + 20
+        // 20pt 圆形徽标保留 12pt 尾距与 2pt 余量；双徽标再增加 20pt 和 4pt 间距。
+        return sourceWidth == 0 ? 34 : sourceWidth + 24
     }
 
     private func sourceIndicatorTrailingReserve(for source: SearchResultSourceIndicator?) -> CGFloat {
@@ -1195,13 +1203,14 @@ struct SearchCenterView: View {
         }
     }
 
-    /// 向量库存 / 刷新进度。点击即刷新语义索引（原右上角刷新按钮已收进这里）。
+    /// 本地索引覆盖率 / 刷新进度。点击即刷新语义索引（原右上角刷新按钮已收进这里）。
     /// 不要和左侧「语义 1」合成一个数：那是本次查询命中，这是索引覆盖率。
+    /// 列表索引图标用于区分索引状态与智能发现，不改变原有刷新入口。
     private func vectorIndexChip(_ phase: SemanticIndexFooterPhase) -> some View {
         let isDisabled = homeViewModel.isSemanticIndexing || viewModel.isSearching
         return Button(action: refreshSemanticIndex) {
             HStack(spacing: 4) {
-                Image(systemName: "sparkles")
+                Image(systemName: "list.bullet.rectangle")
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 Text(verbatim: vectorIndexChipText(phase))
                     .font(interfaceScale.font(.captionSmall, weight: .medium).monospacedDigit())
@@ -1234,12 +1243,12 @@ struct SearchCenterView: View {
             )
         case .coverage(let indexed, let total):
             return String(
-                format: String.l10n("search.footer.vector.coverageFormat"),
+                format: String.l10n("search.footer.index.coverageFormat"),
                 indexed,
                 total
             )
         case .notReady:
-            return String.l10n("search.footer.vector.notReady")
+            return String.l10n("search.footer.index.notReady")
         }
     }
 

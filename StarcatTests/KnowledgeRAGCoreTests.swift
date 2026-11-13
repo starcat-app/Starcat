@@ -2758,7 +2758,8 @@ struct KnowledgeRAGCoreTests {
                 candidateLimit: 10
             ),
             apiKey: "tei-token",
-            httpClient: client
+            httpClient: client,
+            timeoutSeconds: 0.3
         )
 
         let result = try await reranker.rerank(
@@ -2769,6 +2770,7 @@ struct KnowledgeRAGCoreTests {
         #expect(result.compactMap(\.hit.chunk.id) == [402, 401])
         let request = try #require(await client.lastRequest())
         #expect(request.url?.path == "/rerank")
+        #expect(abs(request.timeoutInterval - 0.3) < 0.001)
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer tei-token")
         let body = try #require(request.httpBody)
         let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])

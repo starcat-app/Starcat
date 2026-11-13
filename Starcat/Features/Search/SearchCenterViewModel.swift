@@ -467,6 +467,7 @@ final class SearchCenterViewModel {
         // 的服务上，但网络等待会让出 actor，因此本地和远端结果可以并行落地。
         let baseSearchTask = Task { await coordinator.search(request) }
         let routingGeneration = discoveryGeneration
+        let deadline = Date().addingTimeInterval(SearchDiscoveryBudget.firstRound.timeoutSeconds)
         let routingOutcome: SearchIntentRoutingOutcome?
         if let intentRouter, request.scope == .all {
             discoverySession = SearchDiscoverySession(
@@ -474,7 +475,9 @@ final class SearchCenterViewModel {
                 round: 1,
                 phase: .routing
             )
-            routingOutcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: false)
+            routingOutcome = await intentRouter.route(
+                query: request.query, explicitSmartDiscovery: false, deadline: deadline
+            )
         } else {
             routingOutcome = nil
         }
@@ -489,7 +492,8 @@ final class SearchCenterViewModel {
                 request: request,
                 plan: routingOutcome?.plan,
                 round: 1,
-                initialSteps: routingOutcome?.steps ?? []
+                initialSteps: routingOutcome?.steps ?? [],
+                deadline: deadline
             )
             await baseSearchTask.value
             await discoveryTask.value
@@ -587,7 +591,10 @@ final class SearchCenterViewModel {
             return
         }
         let routingGeneration = discoveryGeneration
-        let outcome = await intentRouter.route(query: request.query, explicitSmartDiscovery: true)
+        let deadline = Date().addingTimeInterval(SearchDiscoveryBudget.firstRound.timeoutSeconds)
+        let outcome = await intentRouter.route(
+            query: request.query, explicitSmartDiscovery: true, deadline: deadline
+        )
         guard routingGeneration == discoveryGeneration else { return }
         guard outcome.route == .smartDiscovery else {
             if case .failed(let message) = outcome.plannerStatus {
@@ -614,7 +621,8 @@ final class SearchCenterViewModel {
             request: request,
             plan: outcome.plan,
             round: 1,
-            initialSteps: outcome.steps
+            initialSteps: outcome.steps,
+            deadline: deadline
         ).value
     }
 
@@ -623,7 +631,8 @@ final class SearchCenterViewModel {
         request: SearchRequest,
         plan: SearchDiscoveryPlan?,
         round: Int,
-        initialSteps: [SearchDiscoveryStep] = []
+        initialSteps: [SearchDiscoveryStep] = [],
+        deadline: Date? = nil
     ) -> Task<Void, Never> {
         guard let discoveryService else {
             discoverySession = SearchDiscoverySession(
@@ -656,7 +665,8 @@ final class SearchCenterViewModel {
                 generation: generation,
                 round: round,
                 budget: .firstRound,
-                initialLLMCalls: 1
+                initialLLMCalls: 1,
+                deadline: deadline
             )
             // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
             guard self.discoveryGeneration == generation else { return }

@@ -347,17 +347,19 @@ private struct RAGRerankIndexedScore: Sendable {
 private struct RAGRerankTransport: Sendable {
     private let apiKey: String?
     private let httpClient: any RAGHTTPClientProtocol
+    private let timeoutSeconds: TimeInterval
 
-    init(apiKey: String?, httpClient: any RAGHTTPClientProtocol) {
+    init(apiKey: String?, httpClient: any RAGHTTPClientProtocol, timeoutSeconds: TimeInterval) {
         let normalizedAPIKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.apiKey = normalizedAPIKey.isEmpty ? nil : normalizedAPIKey
         self.httpClient = httpClient
+        self.timeoutSeconds = timeoutSeconds
     }
 
     func post<Body: Encodable>(_ body: Body, to url: URL, backend: String) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 20
+        request.timeoutInterval = min(20, timeoutSeconds)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         request.httpBody = try JSONEncoder().encode(body)
@@ -388,10 +390,11 @@ struct HuggingFaceTEIRAGReranker: RAGReranking {
     init(
         configuration: RAGRerankConfiguration,
         apiKey: String? = nil,
-        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient()
+        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
+        timeoutSeconds: TimeInterval = 20
     ) {
         self.configuration = configuration.normalized
-        transport = RAGRerankTransport(apiKey: apiKey, httpClient: httpClient)
+        transport = RAGRerankTransport(apiKey: apiKey, httpClient: httpClient, timeoutSeconds: timeoutSeconds)
     }
 
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
@@ -435,10 +438,11 @@ struct CohereCompatibleRAGReranker: RAGReranking {
     init(
         configuration: RAGRerankConfiguration,
         apiKey: String? = nil,
-        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient()
+        httpClient: any RAGHTTPClientProtocol = URLSessionRAGHTTPClient(),
+        timeoutSeconds: TimeInterval = 20
     ) {
         self.configuration = configuration.normalized
-        transport = RAGRerankTransport(apiKey: apiKey, httpClient: httpClient)
+        transport = RAGRerankTransport(apiKey: apiKey, httpClient: httpClient, timeoutSeconds: timeoutSeconds)
     }
 
     func rerank(query: String, candidates: [RAGChildHit]) async throws -> [(hit: RAGChildHit, score: Double)] {
