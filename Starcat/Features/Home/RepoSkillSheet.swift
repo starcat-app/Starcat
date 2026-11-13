@@ -58,15 +58,6 @@ struct RepoSkillSheet: View {
                                 description: Text(session.scan?.complete == true ? "repo.skills.scan.absent" : "repo.skills.scan.incomplete")
                             )
                         }
-                        if let scan = session.scan, !scan.complete {
-                            DisclosureGroup("repo.skills.scan.incomplete") {
-                                ForEach(Array(scan.diagnostics.enumerated()), id: \.offset) { _, message in
-                                    Text(verbatim: message).textSelection(.enabled)
-                                }
-                            }
-                            .font(interfaceScale.font(.caption))
-                            .padding(12)
-                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     Divider()
@@ -107,6 +98,7 @@ struct RepoSkillSheet: View {
                 .truncationMode(.middle)
                 .help(session.repo.fullName)
             Spacer(minLength: 12)
+            RepoSkillScanNotice(session: session)
             SyncIconButton(isRefreshing: session.isLoading, disabled: session.isInstalling,
                            tooltip: String.l10n("repo.skills.scan.refresh")) {
                 Task { await session.load(force: true) }
