@@ -8,6 +8,7 @@
 
 import Foundation
 import GRDB
+import Observation
 import SwiftUI
 import Synchronization
 import Testing
@@ -123,6 +124,7 @@ struct RepoSkillTests {
             snapshotCounts.withLock { $0.append(partial.skills.count) }
         }
         let observedCounts = snapshotCounts.withLock { $0 }
+        #expect(observedCounts.first == 1)
         #expect(scan.complete && scan.skills.count == 3)
         #expect(scan.manifestTotal == 3 && scan.manifestChecked == 3)
     }
@@ -440,6 +442,204 @@ struct RepoSkillTests {
         #expect(!observedPartialCounts.isEmpty)
         #expect(final.complete && final.skills.count == 5)
         #expect(store.presence(for: source) == .contains && !store.scanningIDs.contains(source.id))
+    }
+
+    @Test("两千个目录按前缀取完整附件；默认仍只探测 200 份 manifest")
+    func largeTreeKeepsBudgetAndDirectoryBoundaries() async throws {
+        let paths = (0..<2_000).map { "skills/skill-\($0)/SKILL.md" }
+        let entries = paths.flatMap { path in
+            let directory = String(path.dropLast("SKILL.md".count))
+            return [
+                skillEntry(path, sha: path),
+                skillEntry(directory + "scripts/check.sh", sha: "script", mode: "100755"),
+                skillEntry(directory + "references/guide.md", sha: "guide")
+            ]
+        }
+        let api = MockGitHubAPIClient()
+        api.repositoryLatestCommitHandler = { _, _, _, _ in
+            GitHubCommitSummaryDTO(sha: "large-tree-budget", commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil))
+        }
+        api.repositoryGitTreeHandler = { _, _, _ in GitHubGitTreeDTO(sha: "tree", truncated: false, tree: entries) }
+        let updates = Mutex<[Int]>([])
+        let result = try await RepoSkillScanner(
+            api: api, downloader: ManifestTestDownloader(paths: paths),
+            cache: RepoFileTreeSessionCache(), cacheScope: "large-tree"
+        ).scan(try await repo()) { partial in updates.withLock { $0.append(partial.skills.count) } }
+        #expect(result.manifestTotal == 2_000 && result.manifestChecked == 200)
+        #expect(result.skills.count == 200 && !result.complete)
+        #expect(updates.withLock { $0.first } == 4)
+        #expect(result.skills.map(\.directory) == result.skills.map(\.directory).sorted())
+        for skill in result.skills {
+            #expect(skill.files.map(\.path) == ["SKILL.md", "references/guide.md", "scripts/check.sh"])
+            #expect(skill.installationIssue == nil)
+        }
+    }
+
+    @MainActor
+    @Test("进行中的 partial 不冒充缓存；一个消费者取消不影响仍在浏览的窗口")
+    func sharedScanConsumerCancellation() async throws {
+        let db = try InMemoryDatabaseManager()
+        let source = try await repo()
+        let api = MockGitHubAPIClient()
+        let paths = (0..<20).map { "skills/skill-\($0)/SKILL.md" }
+        let downloader = ManifestTestDownloader(paths: paths, delay: .milliseconds(50))
+        api.repositoryLatestCommitHandler = { _, _, _, _ in
+            GitHubCommitSummaryDTO(sha: "shared-consumers", commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil))
+        }
+        api.repositoryGitTreeHandler = { _, _, _ in
+            GitHubGitTreeDTO(sha: "tree", truncated: false, tree: paths.map { skillEntry($0, sha: $0) })
+        }
+        let store = RepoSkillStore(database: db, publicAPI: api, privateAPI: api,
+                                  publicDownloader: downloader, privateDownloader: downloader)
+        let firstPartial = Mutex(false)
+        let first = Task { try await store.detect(source) { _ in firstPartial.withLock { $0 = true } } }
+        for _ in 0..<1_000 {
+            if firstPartial.withLock({ $0 }) { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(firstPartial.withLock { $0 })
+        let listInvalidated = Mutex(false)
+        withObservationTracking {
+            _ = store.scans
+        } onChange: {
+            listInvalidated.withLock { $0 = true }
+        }
+        let joined = Mutex(false)
+        let second = Task {
+            try await store.detect(source) { _ in
+                #expect(!listInvalidated.withLock { $0 })
+                joined.withLock { $0 = true }
+            }
+        }
+        for _ in 0..<1_000 {
+            if joined.withLock({ $0 }) { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(joined.withLock { $0 })
+        first.cancel()
+        let final = try await second.value
+        await #expect(throws: CancellationError.self) { try await first.value }
+        #expect(final.complete && final.skills.count == 20)
+        #expect(downloader.statistics.previewCount == 20)
+        #expect(!store.scanningIDs.contains(source.id))
+        #expect(listInvalidated.withLock { $0 })
+        // prepare、unknown -> contains、最终 SQL 落库各一次，manifest 进度不递增全局修订。
+        #expect(store.revision == 3)
+    }
+
+    @MainActor
+    @Test("最后一个窗口取消后停止剩余 manifest 请求，清除未完成证据")
+    func lastConsumerCancelsScan() async throws {
+        let db = try InMemoryDatabaseManager()
+        let source = try await repo()
+        let api = MockGitHubAPIClient()
+        let paths = (0..<100).map { "skills/skill-\($0)/SKILL.md" }
+        let downloader = ManifestTestDownloader(paths: paths, delay: .milliseconds(50))
+        api.repositoryLatestCommitHandler = { _, _, _, _ in
+            GitHubCommitSummaryDTO(sha: "last-consumer", commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil))
+        }
+        api.repositoryGitTreeHandler = { _, _, _ in
+            GitHubGitTreeDTO(sha: "tree", truncated: false, tree: paths.map { skillEntry($0, sha: $0) })
+        }
+        let store = RepoSkillStore(database: db, publicAPI: api, privateAPI: api,
+                                  publicDownloader: downloader, privateDownloader: downloader)
+        let received = Mutex(false)
+        let scanning = Task { try await store.detect(source) { _ in received.withLock { $0 = true } } }
+        for _ in 0..<1_000 {
+            if received.withLock({ $0 }) { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(received.withLock { $0 })
+        scanning.cancel()
+        await #expect(throws: CancellationError.self) { try await scanning.value }
+        #expect(!store.scanningIDs.contains(source.id))
+        #expect(store.scans[source.id] == nil)
+        #expect(store.errors[source.id] == nil)
+        #expect(downloader.statistics.previewCount < 100)
+    }
+
+    @MainActor
+    @Test("五千条缓存 Skill 的覆盖和安装计划只随输入变化重建")
+    func largeSessionSnapshot() async throws {
+        let db = try InMemoryDatabaseManager()
+        let source = try await repo()
+        let skills = (0..<5_000).map { index in
+            RepoSkill(repositoryID: source.id, commitSHA: "large-session", directory: "skills/skill-\(index)/",
+                      name: "skill-\(index)", summary: "Summary", manifest: "# Skill \(index)",
+                      files: installSkill().files, installationIssue: nil)
+        }
+        let scan = RepoSkillScan(
+            repositoryID: source.id, commitSHA: "large-session",
+            sourcePushedAt: source.pushedAt, sourceBranch: source.defaultBranch, checkedAt: .now,
+            complete: true, skills: skills, diagnostics: [], manifestTotal: 5_000, manifestChecked: 5_000,
+            version: RepoSkillScan.rulesVersion
+        )
+        let payload = try JSONEncoder().encode(scan)
+        try await db.writer.write {
+            try $0.execute(
+                sql: """
+                    INSERT INTO repo_skill_scans
+                    (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                arguments: [source.id, scan.commitSHA, source.pushedAt, source.defaultBranch, scan.version,
+                            scan.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, "contains", payload]
+            )
+        }
+        let api = MockGitHubAPIClient()
+        let store = RepoSkillStore(database: db, publicAPI: api, privateAPI: api,
+                                  publicDownloader: SkillTestDownloader(), privateDownloader: SkillTestDownloader())
+        let defaults = try #require(UserDefaults(suiteName: "skills-large-\(UUID().uuidString)"))
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = RepoSkillSession(
+            repo: source, store: store, destinations: [RepoSkillDestination(preset: .agents, url: root)], defaults: defaults
+        )
+        await session.load()
+        session.selectAll(true)
+        #expect(session.skills.count == 5_000 && session.pendingSkills.count == 5_000)
+        #expect(session.plannedItems.count == 5_000 && session.plannedGroups.count == 5_000)
+        let revision = session.listRevision
+        let clock = ContinuousClock()
+        let start = clock.now
+        let installedCount = session.skills.reduce(0) { count, skill in
+            count + session.coverage(of: skill.id) + (session.installedIDs.contains(skill.id) ? 1 : 0)
+        }
+        let duration = start.duration(to: clock.now)
+        print("Skill state benchmark: 5000 coverage + installed queries in \(duration)")
+        #expect(installedCount == 0)
+        // 宽松的算法回归门槛只拦截全量嵌套遍历，不把单元测试时间当作界面帧率。
+        #expect(duration < .milliseconds(250))
+        #expect(session.listRevision == revision)
+        session.selectAll(false)
+        #expect(session.pendingSkills.isEmpty && session.plannedGroups.isEmpty)
+        session.close()
+    }
+
+    @Test("后台正文准备保留围栏和固定提交图片，文件树只分组一次")
+    func readingPreparation() async throws {
+        let cache = RepoSkillReadingCache()
+        let original = installSkill()
+        let skill = RepoSkill(
+            repositoryID: original.repositoryID, commitSHA: original.commitSHA, directory: original.directory,
+            name: original.name, summary: original.summary,
+            manifest: "# Review\n\n```swift\nlet value = 1\n```\n\n![image](assets/example.png)\n\n[guide](references/guide.md)",
+            files: original.files, installationIssue: nil
+        )
+        let prepared = try await cache.prepare(
+            skill, imageBaseURL: URL(string: "https://raw.githubusercontent.com/owner/repo/fixed/skills/review/")
+        )
+        #expect(prepared.html.contains("<pre><code class=\"language-swift\">"))
+        #expect(prepared.html.contains("https://raw.githubusercontent.com/owner/repo/fixed/skills/review/assets/example.png"))
+        #expect(prepared.html.contains("href=\"references/guide.md\""))
+        #expect(prepared.rootFiles.map(\.path) == ["SKILL.md"])
+        #expect(prepared.folders.map(\.id) == ["references", "scripts"])
+        let cancelled = Task {
+            // 自取消后再进入 actor，确定性覆盖命中缓存时的取消，不依赖父子任务调度先后。
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await cache.prepare(skill, imageBaseURL: nil)
+        }
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
     }
 
     @MainActor

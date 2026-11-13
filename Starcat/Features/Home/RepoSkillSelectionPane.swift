@@ -16,8 +16,13 @@ struct RepoSkillSelectionPane: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var filter = Filter.all
     @State private var search = ""
+    @State private var filteredSkills: [RepoSkill] = []
+    @State private var visibleSkills: [RepoSkill] = []
+    @State private var publishedQuery = ""
+    @State private var publishedRevision: UInt64 = 0
+    @State private var isFiltering = false
 
-    private enum Filter: CaseIterable {
+    private enum Filter: String, CaseIterable, Sendable {
         case all, pending, installed
         func key(isExport: Bool) -> String {
             switch self {
@@ -28,18 +33,8 @@ struct RepoSkillSelectionPane: View {
         }
     }
 
-    private var visibleSkills: [RepoSkill] {
-        session.skills.filter { skill in
-            guard search.isEmpty || skill.name.localizedCaseInsensitiveContains(search)
-                || skill.summary.localizedCaseInsensitiveContains(search)
-                || skill.directory.localizedCaseInsensitiveContains(search) else { return false }
-            return switch filter {
-            case .all: true
-            case .pending: !session.installedIDs.contains(skill.id)
-            case .installed: session.installedIDs.contains(skill.id)
-            }
-        }
-    }
+    private var query: String { "\(filter.rawValue):\(search)" }
+    private var hasMore: Bool { visibleSkills.count < filteredSkills.count }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -66,8 +61,16 @@ struct RepoSkillSelectionPane: View {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(visibleSkills.enumerated()), id: \.element.id) { index, skill in
                         skillRow(skill, rowIndex: index)
+                            .automaticListPagination(
+                                appearingIndex: index, visibleItemCount: visibleSkills.count,
+                                loadedItemCount: visibleSkills.count, hasMore: hasMore,
+                                isLoading: isFiltering,
+                                identity: "\(publishedQuery):\(publishedRevision)"
+                            ) { appendPage(appearingIndex: index) }
                     }
-                    if visibleSkills.isEmpty {
+                    if visibleSkills.isEmpty, isFiltering || publishedQuery.isEmpty {
+                        ProgressView().padding(.vertical, 42)
+                    } else if visibleSkills.isEmpty {
                         Label("repo.skills.list.empty", systemImage: "shippingbox")
                             .font(interfaceScale.font(.body))
                             .foregroundStyle(.secondary)
@@ -90,6 +93,25 @@ struct RepoSkillSelectionPane: View {
             .padding(14)
         }
         .background(Color.primary.opacity(0.025))
+        .task(id: "\(query):\(session.listRevision)") {
+            isFiltering = true
+            let requestedQuery = query
+            do {
+                let result = try await Self.filterSkills(
+                    session.skills, installed: session.installedIDs, search: search, filter: filter
+                )
+                try Task.checkCancellation()
+                let count = publishedQuery == requestedQuery ? max(60, visibleSkills.count) : 60
+                filteredSkills = result
+                visibleSkills = Array(result.prefix(count))
+                publishedQuery = requestedQuery
+                isFiltering = false
+                // 加载完成才改变分页身份，补发在筛选准备期间出现的尾部行需求。
+                publishedRevision &+= 1
+            } catch {
+                if !Task.isCancelled { isFiltering = false }
+            }
+        }
     }
 
     private var searchField: some View {
@@ -113,9 +135,38 @@ struct RepoSkillSelectionPane: View {
     private func count(_ filter: Filter) -> Int {
         switch filter {
         case .all: session.skills.count
-        case .pending: session.skills.filter { !session.installedIDs.contains($0.id) }.count
-        case .installed: session.skills.filter { session.installedIDs.contains($0.id) }.count
+        case .pending: session.skills.count - session.installedIDs.count
+        case .installed: session.installedIDs.count
         }
+    }
+
+    /// 搜索只在输入或证据变化时计算；离开 MainActor，不能让大集合搜索阻塞滚动。
+    @concurrent private nonisolated static func filterSkills(
+        _ skills: [RepoSkill], installed: Set<String>, search: String, filter: Filter
+    ) async throws -> [RepoSkill] {
+        try Task.checkCancellation()
+        return try skills.filter { skill in
+            try Task.checkCancellation()
+            guard search.isEmpty || skill.name.localizedCaseInsensitiveContains(search)
+                || skill.summary.localizedCaseInsensitiveContains(search)
+                || skill.directory.localizedCaseInsensitiveContains(search) else { return false }
+            switch filter {
+            case .all: return true
+            case .pending: return !installed.contains(skill.id)
+            case .installed: return installed.contains(skill.id)
+            }
+        }
+    }
+
+    /// 统一预取触发器负责快速滚动；追加成本仅与一页有关。
+    private func appendPage(appearingIndex: Int) {
+        guard !isFiltering, publishedQuery == query,
+              ListPaginationPolicy.shouldPrefetch(
+                  appearingIndex: appearingIndex, itemCount: visibleSkills.count, hasMore: hasMore
+              ) else { return }
+        // 同一帧可能有多行请求预取；按追加后的数量复核，不能把排队的旧请求连续放大成多页。
+        let end = min(visibleSkills.count + 60, filteredSkills.count)
+        visibleSkills.append(contentsOf: filteredSkills[visibleSkills.count..<end])
     }
 
     /// checkbox 只修改安装集合；右侧整块按钮只切换预览，避免误选和误取消。

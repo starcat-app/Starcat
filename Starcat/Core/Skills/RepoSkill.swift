@@ -102,8 +102,16 @@ struct RepoSkillDestination: Identifiable, Hashable, Codable, Sendable {
     let preset: RepoSkillTargetPreset?
     let url: URL
 
-    /// 工具目录本身可能是软链接；解析到真实位置后，安装记录才能跨路径核对同一份文件。
-    var id: String { url.resolvingSymlinksInPath().standardizedFileURL.path }
+    /// 目录身份是一次解析后的快照；SwiftUI 的 diff 和状态查询不能重复访问文件系统。
+    /// 安装仍使用原始授权 URL，并在发布前重新解析实际目录。
+    let id: String
+
+    init(preset: RepoSkillTargetPreset?, url: URL) {
+        self.preset = preset
+        self.url = url
+        self.id = url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
     var displayPath: String { (url.path as NSString).abbreviatingWithTildeInPath }
 }
 
