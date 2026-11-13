@@ -244,6 +244,20 @@ final class SearchCenterViewModel {
             where seenReferenceIDs.insert(reference.id).inserted {
                 references.append(reference)
             }
+            // 只认同一轮模型给出的相对顺序；基础来源的分数没有共同量纲。
+            var ranks: [String: Int] = [:]
+            for (index, candidate) in latestDiscoveryResult.repositories.enumerated()
+            where candidate.discovery?.kind == .modelMatch {
+                ranks[candidate.identity.normalizedFullName] = candidate.discovery?.rank ?? index
+            }
+            repositories = repositories.enumerated().sorted { left, right in
+                let leftRank = ranks[left.element.identity.normalizedFullName]
+                let rightRank = ranks[right.element.identity.normalizedFullName]
+                if leftRank != rightRank {
+                    return (leftRank ?? Int.max) < (rightRank ?? Int.max)
+                }
+                return left.offset < right.offset
+            }.map(\.element)
         }
 
         let blockedIDs = contentSummary.blockedIDs
@@ -687,6 +701,12 @@ final class SearchCenterViewModel {
         }
 
         if routingOutcome?.route == .smartDiscovery {
+            // 基础召回与规划已并行执行；重排前等待同次基础快照，避免只给新增候选排序。
+            await awaitSearchTasks([baseSearchTask])
+            guard isActiveSearch(generation) else {
+                resetIfSearchCancelled(generation)
+                return
+            }
             let discoveryTask = startDiscovery(
                 query: request.query,
                 request: request,
@@ -934,6 +954,7 @@ final class SearchCenterViewModel {
         }
         let generation = generation ?? UUID()
         let service = discoveryService
+        let seedRepositories = coordinator.repositories + (previousResult?.repositories ?? [])
         let cacheKey = SearchDiscoveryCacheKey(
             request: request,
             identity: requestCacheIdentity,
@@ -962,7 +983,8 @@ final class SearchCenterViewModel {
                 budget: .firstRound,
                 initialLLMCalls: previousResult == nil ? 1 : 0,
                 deadline: deadline,
-                previousResult: previousResult
+                previousResult: previousResult,
+                seedRepositories: seedRepositories
             )
             // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
             guard self.discoveryGeneration == generation,
@@ -1044,13 +1066,22 @@ final class SearchCenterViewModel {
         _ previous: RepositoryDiscoveryResult,
         with current: RepositoryDiscoveryResult
     ) -> RepositoryDiscoveryResult {
-        var repositories = previous.repositories
-        for candidate in current.repositories {
+        var repositories = current.repositories
+        for candidate in previous.repositories {
             if let index = repositories.firstIndex(where: { $0.id == candidate.id }) {
-                repositories[index] = candidate
+                repositories[index].sources.formUnion(candidate.sources)
             } else {
                 repositories.append(candidate)
             }
+        }
+        repositories = repositories.enumerated().map { index, candidate in
+            var candidate = candidate
+            if let annotation = candidate.discovery {
+                candidate.discovery = SearchDiscoveryAnnotation(
+                    reason: annotation.reason, evidenceIDs: annotation.evidenceIDs, rank: index, kind: annotation.kind
+                )
+            }
+            return candidate
         }
         var referenceIDs = Set(previous.references.map(\.id))
         let references = previous.references + current.references.filter { referenceIDs.insert($0.id).inserted }

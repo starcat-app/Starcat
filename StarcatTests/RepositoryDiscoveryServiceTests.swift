@@ -12,6 +12,90 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("基础候选和新增发现共用重排池与证据，保留知识库事实")
+    func baseAndDiscoveredRepositoriesShareRanking() async {
+        let repo = Self.makeRepo(id: 1, owner: "local", name: "favorite")
+        var favorite = Self.makeCandidate(repo: repo)
+        favorite.card = repo.asCardData(isInLibrary: true)
+        favorite.sources = [.localKeyword]
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: [
+                    Self.makeCandidate(repo: repo),
+                    Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "external", name: "better"))
+                ], references: [], totalCount: 2, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(Set(candidates.map(\.id)) == ["local/favorite", "external/better"])
+            #expect(candidates.first { $0.id == "local/favorite" }?.isInLibrary == true)
+            #expect(candidates.first { $0.id == "local/favorite" }?.evidenceIDs.contains("base-0") == true)
+            return [
+                SearchDiscoveryRankedItem(id: "external/better", reason: "Best intent match", evidenceIDs: ["github-0-1"]),
+                SearchDiscoveryRankedItem(id: "local/favorite", reason: "Related fallback", evidenceIDs: ["base-0"])
+            ]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan(),
+            seedRepositories: [favorite]
+        )
+        #expect(result.repositories.map(\.card.fullName) == ["external/better", "local/favorite"])
+        #expect(result.repositories.last?.card.isInLibrary == true)
+        #expect(result.repositories.last?.sources == [.localKeyword, .github])
+    }
+
+    @Test("统一重排预算内基础与新增来源均有名额")
+    func sharedRankingPoolBalancesBaseAndNewCandidates() async {
+        let base = (0..<20).map {
+            Self.makeCandidate(repo: Self.makeRepo(id: Int64($0 + 1), owner: "base", name: "tool-\($0)"))
+        }
+        let discovered = (0..<20).map {
+            Self.makeCandidate(repo: Self.makeRepo(id: Int64($0 + 100), owner: "new", name: "tool-\($0)"))
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(candidates.count == 2)
+            #expect(candidates.contains { $0.id.hasPrefix("base/") })
+            #expect(candidates.contains { $0.id.hasPrefix("new/") })
+            return candidates.map { SearchDiscoveryRankedItem(id: $0.id, reason: "Relevant", evidenceIDs: $0.evidenceIDs) }
+        }
+        _ = await RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                SearchProviderPage(repositories: discovered, references: [], totalCount: 20, hasNextPage: false)
+            },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan(),
+            budget: SearchDiscoveryBudget(
+                timeoutSeconds: 15, maxWebQueries: 0, maxGitHubQueries: 1, maxLLMCalls: 3,
+                maxVerifiedRepositories: 5, maxRankedCandidates: 2
+            ),
+            seedRepositories: base
+        )
+    }
+
+    @Test("专用重排只在同分时优先收藏，更相关的外部项目仍在前", arguments: [false, true])
+    func dedicatedRankerUsesLibraryOnlyForTies(equalRelevance: Bool) throws {
+        let candidates = [
+            SearchDiscoveryRankingCandidate(
+                id: "external/better", fullName: "external/better", description: nil, stars: 1, evidenceIDs: []
+            ),
+            SearchDiscoveryRankingCandidate(
+                id: "local/favorite", fullName: "local/favorite", description: nil, stars: 1, evidenceIDs: [], isInLibrary: true
+            )
+        ]
+        let ranked = try SearchDiscoveryRerankRanker.rankedItems(
+            from: [
+                ("external/better", 0.9),
+                ("local/favorite", equalRelevance ? 0.9 : 0.8)
+            ], candidates: candidates
+        )
+        #expect(ranked.first?.id == (equalRelevance ? "local/favorite" : "external/better"))
+    }
+
     @Test("GitHub 候选满额时仍保留网页核验名额，重排降级也不丢失", arguments: [false, true], [1, 2])
     func verifiedWebCandidatesHaveReservedRankingSlots(rankerFails: Bool, limit: Int) async {
         let github = RecordingSearchProvider(source: .github) { _ in

@@ -42,6 +42,8 @@ struct SearchDiscoveryRankingCandidate: Equatable, Hashable, Codable, Sendable {
     let description: String?
     let stars: Int?
     let evidenceIDs: [String]
+    /// 收藏只用于相关性相近时的优先级，不能压过更匹配的外部项目。
+    var isInLibrary: Bool = false
 }
 
 /// Ranker 输出的最小结构；服务层负责封闭集合校验与最终排名。
@@ -151,6 +153,8 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
             Return only a JSON array. Each item must use:
             {"id":"","reason":"","evidence_ids":[""]}
             Use only the supplied candidate ids and evidence ids. Never invent repositories.
+            Rank by relevance to the user's intent across all sources.
+            Prefer isInLibrary only when relevance is comparable; a better external match must rank higher.
             """,
             userPrompt: """
             User query: \(query)
@@ -285,7 +289,7 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
         candidates: [SearchDiscoveryRankingCandidate]
     ) throws -> [SearchDiscoveryRankedItem] {
         var usedKeys = Set<String>()
-        var ranked: [SearchDiscoveryRankedItem] = []
+        var ranked: [(item: SearchDiscoveryRankedItem, score: Double, isInLibrary: Bool)] = []
 
         for result in scores {
             let key = result.candidateID.lowercased()
@@ -294,17 +298,29 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
                   usedKeys.insert(key).inserted,
                   let candidate = candidates.first(where: { $0.id.lowercased() == key })
             else { throw RepositoryDiscoveryError.invalidRankerResponse("Invalid scored candidate") }
-            ranked.append(SearchDiscoveryRankedItem(
-                id: candidate.id,
-                reason: String.l10n("search.discovery.rerank.reason"),
-                evidenceIDs: candidate.evidenceIDs
+            ranked.append((
+                item: SearchDiscoveryRankedItem(
+                    id: candidate.id,
+                    reason: String.l10n("search.discovery.rerank.reason"),
+                    evidenceIDs: candidate.evidenceIDs
+                ),
+                score: result.score,
+                isInLibrary: candidate.isInLibrary
             ))
         }
 
         guard !ranked.isEmpty else {
             throw RepositoryDiscoveryError.invalidRankerResponse("No valid scored candidate")
         }
-        return ranked
+        return ranked.enumerated().sorted { left, right in
+            if left.element.score != right.element.score {
+                return left.element.score > right.element.score
+            }
+            if left.element.isInLibrary != right.element.isInLibrary {
+                return left.element.isInLibrary
+            }
+            return left.offset < right.offset
+        }.map(\.element.item)
     }
 
     /// `parentKey` 只存在于本轮函数调用内，用来把 Provider 结果映射回搜索候选 ID。
@@ -464,7 +480,8 @@ protocol RepositoryDiscoveryProviding: AnyObject {
         budget: SearchDiscoveryBudget,
         initialLLMCalls: Int,
         deadline: Date?,
-        previousResult: RepositoryDiscoveryResult?
+        previousResult: RepositoryDiscoveryResult?,
+        seedRepositories: [RepositoryCandidate]
     ) async -> RepositoryDiscoveryResult
 }
 
@@ -509,7 +526,8 @@ final class RepositoryDiscoveryService {
         budget: SearchDiscoveryBudget = .firstRound,
         initialLLMCalls: Int = 1,
         deadline: Date? = nil,
-        previousResult: RepositoryDiscoveryResult? = nil
+        previousResult: RepositoryDiscoveryResult? = nil,
+        seedRepositories: [RepositoryCandidate] = []
     ) async -> RepositoryDiscoveryResult {
         var contentSummary = SearchContentSummary()
         for value in [query, baseRequest.query] {
@@ -633,7 +651,11 @@ final class RepositoryDiscoveryService {
             plan: normalizedPlan,
             usedLLMCalls: usedLLMCalls
         )
-        var repositories: [RepositoryCandidate] = []
+        // 基础关键词、语义和 GitHub 候选进入同一轮重排；只传公开元数据，私仓另行过滤。
+        var repositories = contentPolicy.filtering(SearchProviderPage(
+            repositories: seedRepositories, references: [], totalCount: seedRepositories.count, hasNextPage: false
+        ), summary: &contentSummary).repositories
+        let seedNames = Set(repositories.map(\.identity.normalizedFullName))
         let knownRepositoryNames = Set(previousResult?.repositories.map(\.identity.normalizedFullName) ?? [])
         let canReuseWebEvidence = webEvidenceAllowed(baseRequest.externalSearchProvider)
         var references = canReuseWebEvidence ? previousResult?.references ?? [] : []
@@ -641,6 +663,13 @@ final class RepositoryDiscoveryService {
             $0.kind != .web || canReuseWebEvidence
         }
         let evidencePrefix = round > 1 ? "round-\(round)-" : ""
+        evidence.append(contentsOf: repositories.enumerated().map { index, candidate in
+            SearchEvidence(
+                id: "\(evidencePrefix)base-\(index)", kind: .github, title: candidate.card.fullName,
+                url: URL(string: "https://github.com/\(candidate.card.fullName)"),
+                snippet: candidate.card.description, repositoryFullName: candidate.identity.normalizedFullName
+            )
+        }.filter(\.isValid))
 
         for webQuery in normalizedPlan.webQueries
         where session.canRunWebQuery(in: budget) && !Task.isCancelled
@@ -937,6 +966,7 @@ final class RepositoryDiscoveryService {
             )
             return candidate
         }
+        repositories = Self.interleavingBaseAndDiscovery(repositories, seedNames: seedNames)
         repositories = Self.reservingVerifiedCandidates(repositories, limit: budget.maxRankedCandidates)
         references = Self.deduplicatedReferences(references).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
 
@@ -992,7 +1022,8 @@ final class RepositoryDiscoveryService {
                     fullName: candidate.card.fullName,
                     description: candidate.card.description,
                     stars: candidate.card.starsCount,
-                    evidenceIDs: Self.associatedEvidenceIDs(for: candidate, in: rankingEvidence)
+                    evidenceIDs: Self.associatedEvidenceIDs(for: candidate, in: rankingEvidence),
+                    isInLibrary: candidate.card.isInLibrary
                 )
             }
             do {
@@ -1076,7 +1107,7 @@ final class RepositoryDiscoveryService {
             return Self.cancelledResult(generation: generation, round: round)
         }
         let hasFailureDiagnostic = diagnostics.contains { $0.isFailure }
-        let hasSuccessfulSearch = steps.contains {
+        let hasSuccessfulSearch = !seedNames.isEmpty || steps.contains {
             ($0.stage == .webSearch || $0.stage == .githubSearch) && $0.state == .completed
         }
         // 全部实际发出的检索都失败时不能伪装成“零命中”；仍有任一来源成功则保留
@@ -1269,6 +1300,23 @@ final class RepositoryDiscoveryService {
             }
         }
         return selected + overflow
+    }
+
+    /// 在同一个重排预算内交替采样基础召回与新增发现，避免任一来源独占输入。
+    /// 不比较 FTS、向量或 GitHub 的原始分数；最终相对顺序由同一个模型决定。
+    private static func interleavingBaseAndDiscovery(
+        _ candidates: [RepositoryCandidate],
+        seedNames: Set<String>
+    ) -> [RepositoryCandidate] {
+        guard !seedNames.isEmpty else { return candidates }
+        let base = candidates.filter { seedNames.contains($0.identity.normalizedFullName) }
+        let discovered = candidates.filter { !seedNames.contains($0.identity.normalizedFullName) }
+        var interleaved: [RepositoryCandidate] = []
+        for index in 0..<max(base.count, discovered.count) {
+            if index < base.count { interleaved.append(base[index]) }
+            if index < discovered.count { interleaved.append(discovered[index]) }
+        }
+        return interleaved
     }
 
     /// 仓库身份和核验时建立的关联才是引用依据；相同查询返回的其它证据不能借给当前候选。

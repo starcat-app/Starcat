@@ -986,12 +986,12 @@ struct SearchCenterViewModelTests {
         #expect(!viewModel.isSearching)
     }
 
-    @Test("All 范围自然语言查询自动合并智能发现结果")
+    @Test("All 范围按智能相关性合并，外部高相关项目可领先收藏")
     func allScopeRoutesNaturalLanguageToDiscovery() async throws {
         let history = GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager())
         let local = SearchCenterCountingStubProvider(
             source: .localKeyword,
-            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift")
+            candidate: Self.makeCandidate(id: 1, owner: "apple", name: "swift", isInLibrary: true)
         )
         let router = SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome())
         let discovery = SearchCenterStubDiscoveryService(
@@ -1009,7 +1009,9 @@ struct SearchCenterViewModelTests {
         await viewModel.submit()
 
         #expect(router.routeQueries == ["github 最近比较火的 linux 发行版"])
-        #expect(viewModel.candidates.map(\.id) == ["repo:apple/swift", "repo:omarchy/omarchy"])
+        #expect(viewModel.candidates.map(\.id) == ["repo:omarchy/omarchy", "repo:apple/swift"])
+        #expect(discovery.seedRepositorySnapshots.first?.first?.card.fullName == "apple/swift")
+        #expect(discovery.seedRepositorySnapshots.first?.first?.card.isInLibrary == true)
         #expect(viewModel.discoverySession?.phase == .completed)
         #expect(viewModel.discoveryResultCount == 1)
         #expect(viewModel.canContinueDiscovery)
@@ -1510,7 +1512,8 @@ struct SearchCenterViewModelTests {
     private nonisolated static func makeCandidate(
         id: Int64 = 1,
         owner: String = "apple",
-        name: String = "swift"
+        name: String = "swift",
+        isInLibrary: Bool = false
     ) -> RepositoryCandidate {
         let fullName = "\(owner)/\(name)"
         let card = RepoCardViewData(
@@ -1527,7 +1530,7 @@ struct SearchCenterViewModelTests {
             isFork: false,
             isPrivate: false,
             isStarred: false,
-            isInLibrary: false,
+            isInLibrary: isInLibrary,
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,
@@ -1860,6 +1863,7 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
     private(set) var requests: [SearchRequest] = []
     private(set) var requestRounds: [Int] = []
     private(set) var previousResults: [RepositoryDiscoveryResult?] = []
+    private(set) var seedRepositorySnapshots: [[RepositoryCandidate]] = []
     var onDiscover: (() -> Void)?
 
     init(results: [RepositoryDiscoveryResult]) {
@@ -1875,11 +1879,13 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
         budget: SearchDiscoveryBudget,
         initialLLMCalls: Int,
         deadline: Date?,
-        previousResult: RepositoryDiscoveryResult?
+        previousResult: RepositoryDiscoveryResult?,
+        seedRepositories: [RepositoryCandidate]
     ) async -> RepositoryDiscoveryResult {
         requests.append(baseRequest)
         requestRounds.append(round)
         previousResults.append(previousResult)
+        seedRepositorySnapshots.append(seedRepositories)
         onDiscover?()
         let result = results.isEmpty
             ? RepositoryDiscoveryResult(
