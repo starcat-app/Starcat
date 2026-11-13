@@ -13,6 +13,7 @@ struct LinuxDoSourceBadge: View {
     var interactive = false
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
     @State private var isOpeningDiscussion = false
     @State private var openingFailed = false
@@ -27,6 +28,8 @@ struct LinuxDoSourceBadge: View {
                     } label: { badge }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
+                        .pressableHover(opacity: 0.8, scale: 1.0)
+                        .clickablePointer()
                         .disabled(isOpeningDiscussion)
                         .task(id: isOpeningDiscussion) {
                             await openDiscussion()
@@ -56,12 +59,25 @@ struct LinuxDoSourceBadge: View {
         openURL(url)
     }
 
+    @ViewBuilder
     private var badge: some View {
-        Text(verbatim: "Linux.do")
-            .font(interfaceScale.font(.captionSmall))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(.quaternary.opacity(0.35), in: Capsule())
-            .fixedSize()
+        if interactive {
+            Text(verbatim: "Linux.do")
+                .foregroundStyle(.primary)
+                // 主文字色随主题反转，深色略加强底色与描边，避免 Hero 色底吞掉灰色胶囊。
+                .modifier(RepoMetadataCapsuleStyle(
+                    background: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                    border: Color.primary.opacity(colorScheme == .dark ? 0.24 : 0.18)
+                ))
+                .fixedSize()
+        } else {
+            Text(verbatim: "Linux.do")
+                .font(interfaceScale.font(.captionSmall))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.quaternary.opacity(0.35), in: Capsule())
+                .fixedSize()
+        }
     }
 }
