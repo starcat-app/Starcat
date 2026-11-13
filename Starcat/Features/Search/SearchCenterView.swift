@@ -1068,7 +1068,8 @@ struct SearchCenterView: View {
                 Image(systemName: "internaldrive")
                     .font(.system(size: 11, weight: .semibold))
             case .semantic:
-                Image(systemName: "sparkles")
+                // 节点连线表达语义关联，避免与智能发现的星光徽标混淆。
+                Image(systemName: "point.3.connected.trianglepath.dotted")
                     .font(.system(size: 11, weight: .semibold))
             case .github:
                 Image("github")
