@@ -45,7 +45,6 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/daily-radar-sharing` | 本地 worktree：`../Starcat-daily-radar-sharing`；sharing-api、聚合 API、starcat-site 各有同名独立 worktree | 基于 `dev@b9cfb3ab` 落地每日热点报告分享正式方案：不可变快照、WebP/PNG 资产、公开页与客户端分享 Sheet。 | `开发中`；2026-11-13 按 dong4j 授权创建，已复制本机 Secrets 配置；后端分别基于 `6e113021` / `8879fbd3`，官网基于 `bbf9e6c5`。 | 在隔离工作区完成代码与本地验证，验收后合回各仓 `dev`；不自动提交、push、部署或清理。 |
 | `codex/github-overview` | 本地 worktree：`../Starcat-github-overview`；无远端分支 | 基于 `dev@b9cfb3ab` 落地 GitHub 概览最终方案：独立窗口、Profile README、原生默认概览、刷新与公开档案。 | `开发中`；2026-11-13 实现、全量测试与双渠道构建通过，待实机及译文验收；主进度总览未改写。 | 保留本 worktree 待人工验收，再整合主线后续并行提交并合回 `dev`；不自动提交、push 或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
@@ -95,6 +94,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| 主仓及三个 supports 仓库的 `codex/daily-radar-sharing` | 已合并；本地分支与四个专项 worktree 保留。 | 2026-11-13 dong4j 确认每日热点报告分享完成并授权合回各仓 `dev`。主仓基于 `dev@b9cfb3ab`，功能提交 `9fcf469d` 经 `96836605` 整合主线后 fast-forward 合回；sharing-api `e98d51a`、聚合 API `db6800e`、starcat-site `1400a7d` 均 fast-forward 合入各自 `dev`。保留 `../Starcat-daily-radar-sharing` 及其三个支持仓 worktree，后续公开页 HTML/CSS 在 sharing-api 迭代；本次不推送或清理。 |
 | `codex/global-search-review-fixes` | 已删除 | 2026-11-13 dong4j 授权清理；分支头 `fd213c5b` 的 10 项独立修复已通过 merge commit `e66c56da` 合入 `dev`。删除前确认是 `dev` 祖先、独有提交为 0、`git cherry` 为空，搜索源码与 `dev` 一致，worktree 干净且 Secrets 配置与主工作区一致。已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-global-search-review-fixes` 与本地分支；本次未操作远端。 |
 | `codex/global-search-optimization` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `d9e9439b` 经 `1b8002c7` 整合后，通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、worktree 干净；已删除 `../Starcat-global-search-optimization` 与本地分支，本次未操作远端。 |
 | `codex/global-search-content-filter` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `1b8002c7` 已通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、内容过滤关键源码一致且 worktree 干净；已删除 `../Starcat-global-search-content-filter` 与本地分支，本次未操作远端。 |
