@@ -1010,9 +1010,9 @@ final class SearchCenterViewModel {
             resetDiscoveryState(keepCache: true)
             return
         }
-        let result = coordinator.contentPolicy.filtering(
+        let result = applyingDiscoveryLibraryUpdates(coordinator.contentPolicy.filtering(
             previousResult.map { Self.mergingDiscovery($0, with: unfilteredResult) } ?? unfilteredResult
-        )
+        ))
         discoverySession = result.session
         latestDiscoveryResult = result
         discoveryDiagnostics = result.diagnostics
@@ -1199,6 +1199,23 @@ final class SearchCenterViewModel {
             identity: identity,
             state: state,
             persistedRepo: persistedRepo
+        )
+        latestDiscoveryResult = latestDiscoveryResult.map(applyingDiscoveryLibraryUpdates)
+        discoveryCache = discoveryCache.mapValues { entry in
+            SearchDiscoveryCacheEntry(
+                result: applyingDiscoveryLibraryUpdates(entry.result),
+                createdAt: entry.createdAt
+            )
+        }
+    }
+
+    /// 缓存保留原过期时间，只刷新知识库事实；同一操作也覆盖后续落地的发现结果。
+    private func applyingDiscoveryLibraryUpdates(_ result: RepositoryDiscoveryResult) -> RepositoryDiscoveryResult {
+        RepositoryDiscoveryResult(
+            session: result.session,
+            repositories: coordinator.applyingLibraryUpdates(to: result.repositories),
+            references: result.references, diagnostics: result.diagnostics,
+            steps: result.steps, contentSummary: result.contentSummary
         )
     }
 

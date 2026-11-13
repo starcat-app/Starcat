@@ -188,7 +188,13 @@ final class SearchCoordinator {
             )
         }
 
-        repositories = mergedRepositories.map { candidate in
+        repositories = applyingLibraryUpdates(to: mergedRepositories)
+        references = mergedReferences
+    }
+
+    /// 基础结果与发现快照共用同一份已落库状态，迟到的网络卡片不能恢复旧心形。
+    func applyingLibraryUpdates(to candidates: [RepositoryCandidate]) -> [RepositoryCandidate] {
+        candidates.map { candidate in
             guard let update = libraryUpdates.first(where: {
                 Self.isSameRepository($0.identity, candidate.identity)
             }) else { return candidate }
@@ -202,7 +208,6 @@ final class SearchCoordinator {
             }
             return updated
         }
-        references = mergedReferences
     }
 
     private func runProviders(

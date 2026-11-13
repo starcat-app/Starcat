@@ -13,6 +13,58 @@ import Testing
 @Suite("Search Center ViewModel")
 @MainActor
 struct SearchCenterViewModelTests {
+    @Test("发现专属卡片的知识库状态同步刷新当前结果、重开及缓存")
+    func discoveryLibraryChangesUpdateSnapshotsAndCache() async throws {
+        let candidate = Self.makeCandidate(id: 9, owner: "web", name: "tool")
+        let discovery = SearchCenterStubDiscoveryService(results: [Self.makeDiscoveryResult(candidate: candidate)])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        let persisted = Repo(
+            id: 9, owner: "web", name: "tool", fullName: "web/tool", description: nil, language: nil,
+            starsCount: 10, forksCount: 1, watchersCount: 1, topics: nil, license: nil, homepage: nil,
+            htmlUrl: "https://github.com/web/tool", cloneUrl: nil, sshUrl: nil, isPrivate: false, isFork: false, isArchived: false,
+            isStarred: false, pushedAt: nil, createdAt: nil, updatedAt: nil, starredAt: nil, cachedAt: nil
+        )
+        viewModel.query = "find a project"
+        await viewModel.submit()
+        viewModel.updateRepositoryLibraryState(identity: candidate.identity, state: .inLibrary, persistedRepo: persisted)
+        viewModel.dismiss()
+        viewModel.present()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == true)
+        await viewModel.submit()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == true)
+        #expect(try Self.firstRepository(in: viewModel).localRepo?.id == 9)
+
+        viewModel.updateRepositoryLibraryState(identity: candidate.identity, state: .outsideLibrary, persistedRepo: nil)
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == false)
+        await viewModel.submit()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == false)
+        #expect(try Self.firstRepository(in: viewModel).localRepo?.id == 9)
+        #expect(discovery.requests.count == 1)
+    }
+
+    @Test("知识库操作后迟到的发现卡片不能覆盖已确认状态")
+    func lateDiscoveryResultKeepsConfirmedLibraryState() async throws {
+        let candidate = Self.makeCandidate(id: 9, owner: "web", name: "tool")
+        let discovery = SearchCenterStubDiscoveryService(results: [Self.makeDiscoveryResult(candidate: candidate)])
+        let viewModel = SearchCenterViewModel(
+            coordinator: SearchCoordinator(providers: []),
+            historyRepository: GRDBSearchHistoryRepository(database: try InMemoryDatabaseManager()),
+            intentRouter: SearchCenterStubIntentRouter(outcome: Self.makeSmartOutcome()),
+            discoveryService: discovery
+        )
+        discovery.onDiscover = {
+            viewModel.updateRepositoryLibraryState(identity: candidate.identity, state: .inLibrary, persistedRepo: nil)
+        }
+        viewModel.query = "find a project"
+        await viewModel.submit()
+        #expect(try Self.firstRepository(in: viewModel).card.isInLibrary == true)
+    }
+
     @Test("发现网页资料卡遵守展示开关，仓库证据与缓存仍保留", arguments: [false, true])
     func discoveryReferencesRespectDisplaySetting(includeWeb: Bool) async throws {
         let initial = Self.makeDiscoveryResult(candidate: Self.makeCandidate(id: 9, owner: "web", name: "tool"))
@@ -1540,6 +1592,14 @@ struct SearchCenterViewModelTests {
         #expect(viewModel.discoverySession?.evidence == first.session.evidence)
         #expect(viewModel.discoverySession?.phase == (fails ? .partialFailure : .completed))
         #expect(viewModel.canContinueDiscovery)
+    }
+
+    /// 每次读取当前列表快照，避免断言复用操作前捕获的卡片。
+    private static func firstRepository(in viewModel: SearchCenterViewModel) throws -> RepositoryCandidate {
+        try #require(viewModel.candidates.compactMap { candidate -> RepositoryCandidate? in
+            if case .repository(let repository) = candidate { return repository }
+            return nil
+        }.first)
     }
 
     private nonisolated static func makeCandidate(
