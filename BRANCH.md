@@ -45,10 +45,9 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/global-search-review-fixes` | 本地 worktree：`../Starcat-global-search-review-fixes`；无远端分支 | 从 `dev@df82542c` 逐项修复全局搜索复审的 10 项问题，每项独立验证并提交。 | `待验收`；2026-11-13 十项修复已分别验证并提交，保留 worktree。 | 验收后合回 `dev`；不自动 push 或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-13 按 dong4j 要求合入 Skill 性能优化 `38e9a6c3`，实机交互待验收；最新 Direct 发布仍为 `1.9.5-beta.1`（`1aab33e6`），每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-13 已合入 Skill 性能优化 `38e9a6c3`，并按 dong4j 要求经 `e66c56da` 合入全局搜索复审的 10 项修复 `fd213c5b`；真实联网与实机交互待验收。最新 Direct 发布仍为 `1.9.5-beta.1`（`1aab33e6`），每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-12 按本次发布收尾要求从 `dev` fast-forward 并推送，本地及远端 `dev/main` 保持一致。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
 
@@ -94,6 +93,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/global-search-review-fixes` | 已合并；本地分支及 worktree 保留。 | 2026-11-13 dong4j 授权合回 `dev`；分支基于 `dev@df82542c`，10 项修复保留独立提交，分支头 `fd213c5b` 通过 merge commit `e66c56da` 合入 `dev`。本地 `../Starcat-global-search-review-fixes` 保留，后续清理另行授权；本次未推送。 |
 | `codex/global-search-optimization` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `d9e9439b` 经 `1b8002c7` 整合后，通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、worktree 干净；已删除 `../Starcat-global-search-optimization` 与本地分支，本次未操作远端。 |
 | `codex/global-search-content-filter` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `1b8002c7` 已通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、内容过滤关键源码一致且 worktree 干净；已删除 `../Starcat-global-search-content-filter` 与本地分支，本次未操作远端。 |
 | `codex/skill-performance` | 已删除 | 2026-11-13 dong4j 授权删除；优化提交 `38e9a6c3` 已通过 merge commit `3c3c328b` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、源码一致且 worktree 干净；已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-skill-performance` 及本地分支，未操作远端。28 项定向回归及双渠道 build-only 已通过，大集合滚动、详情切换及无彩虹圈仍待实机验收。 |
