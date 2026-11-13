@@ -114,6 +114,8 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     /// 2026-06-12 向量索引改进：README Markdown 调用日志，便于断言"按需懒补全是否真的发请求"。
     private let _readmeMarkdownCalls = OSAllocatedUnfairLock<[(owner: String, repo: String, ifNoneMatch: String?, ifModifiedSince: String?)]>(initialState: [])
     private let _starCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
+    /// 记录每次 `getCurrentUser(forceRefresh:)` 的 forceRefresh 值，供 profile 刷新测试断言。
+    private let _getCurrentUserForceRefreshCalls = OSAllocatedUnfairLock<[Bool]>(initialState: [])
     /// W12 PR-3：批量 unstar 测试需要断言 API 调用次数。
     /// 与 starCalls 对称，每次进入 `unstar(owner:repo:)` 都 append（无论 handler 是否抛错）。
     private let _unstarCalls = OSAllocatedUnfairLock<[(owner: String, repo: String)]>(initialState: [])
@@ -143,6 +145,10 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
     }
     var starCalls: [(owner: String, repo: String)] {
         _starCalls.withLock { $0 }
+    }
+    /// `getCurrentUser(forceRefresh:)` 的 forceRefresh 入参序列。
+    var getCurrentUserForceRefreshCalls: [Bool] {
+        _getCurrentUserForceRefreshCalls.withLock { $0 }
     }
     var unstarCalls: [(owner: String, repo: String)] {
         _unstarCalls.withLock { $0 }
@@ -217,6 +223,15 @@ final class MockGitHubAPIClient: GitHubAPIClientProtocol, @unchecked Sendable {
             fatalError("MockGitHubAPIClient.getCurrentUserHandler 未设置")
         }
         return try await handler()
+    }
+
+    /// 覆写协议默认实现，记录调用方是否要求绕过缓存。
+    ///
+    /// 协议默认实现会忽略 `forceRefresh`，那样测试就无法验证
+    /// 「手动刷新个人信息必须强制回源」这条约束，所以这里显式记录再委托给 handler。
+    func getCurrentUser(forceRefresh: Bool) async throws -> GitHubUserDTO {
+        _getCurrentUserForceRefreshCalls.withLock { $0.append(forceRefresh) }
+        return try await getCurrentUser()
     }
 
     func getUser(login: String) async throws -> GitHubUserDTO {

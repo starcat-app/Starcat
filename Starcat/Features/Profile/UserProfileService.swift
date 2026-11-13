@@ -199,7 +199,9 @@ final class UserProfileService {
             }
 
             do {
-                let fetched = try await self.apiClient.getCurrentUser()
+                // force 刷新必须绕过 URLCache：GitHub `/user` 响应带 60 秒 max-age，
+                // 只跳过本地 TTL 仍可能拿到缓存里的旧 followers，用户会以为刷新没生效。
+                let fetched = try await self.apiClient.getCurrentUser(forceRefresh: force)
                 // 防御：网络回来时用户切账号 / 登出了——丢弃过期结果
                 guard !Task.isCancelled else { return }
                 guard fetched.login.lowercased() == login.lowercased() else {

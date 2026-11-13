@@ -13,7 +13,20 @@ extension GitHubAPIClient {
 
     /// 获取当前授权用户。
     func getCurrentUser() async throws -> GitHubUserDTO {
-        let response: APIResponse<GitHubUserDTO> = try await get(path: AppEndpoints.GitHubREST.Paths.currentUser)
+        try await getCurrentUser(forceRefresh: false)
+    }
+
+    /// 获取当前授权用户；`forceRefresh` 决定是否绕过 `URLCache`。
+    ///
+    /// 用户点侧栏「刷新个人信息」时必须传 `true`：GitHub `/user` 返回
+    /// `Cache-Control: private, max-age=60`，只跳过本地 TTL 而不换 cache policy 时，
+    /// 60 秒内的第二次刷新会命中 URLSession 缓存，界面看起来"点了没反应"。
+    /// 启动恢复、token 健康检查等后台路径保持默认的协议缓存策略，避免无谓流量。
+    func getCurrentUser(forceRefresh: Bool) async throws -> GitHubUserDTO {
+        let response: APIResponse<GitHubUserDTO> = try await get(
+            path: AppEndpoints.GitHubREST.Paths.currentUser,
+            cachePolicy: forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+        )
         do {
             let status = try await getCurrentUserStatus()
             return response.value.replacingStatus(status)
