@@ -238,19 +238,22 @@ final class SearchIntentRouter {
     private let planner: (any SearchQueryPlannerProviding)?
     private let thresholds: SearchIntentThresholds
     private let decisionTimeoutSeconds: TimeInterval
+    private let webEvidenceAllowed: (ExternalSearchProviderID) -> Bool
 
     init(
         settings: AppSettings,
         engineRegistry: DecisionEngineRegistry,
         planner: (any SearchQueryPlannerProviding)?,
         thresholds: SearchIntentThresholds = .initial,
-        decisionTimeoutSeconds: TimeInterval = 3
+        decisionTimeoutSeconds: TimeInterval = 3,
+        webEvidenceAllowed: ((ExternalSearchProviderID) -> Bool)? = nil
     ) {
         self.settings = settings
         self.engineRegistry = engineRegistry
         self.planner = planner
         self.thresholds = thresholds
         self.decisionTimeoutSeconds = decisionTimeoutSeconds
+        self.webEvidenceAllowed = webEvidenceAllowed ?? { _ in settings.externalContextEnabled }
     }
 
     /// 显式“智能查找”绕过分类；普通查询先走快路径，再走一次双问题决策。
@@ -329,7 +332,7 @@ final class SearchIntentRouter {
         }
         let planningStart = Date()
         do {
-            let allowWebEvidence = settings.externalContextEnabled
+            let allowWebEvidence = webEvidenceAllowed(settings.externalSearchDefaultProvider)
             let plan = try await SearchDiscoveryDeadline.run(until: deadline) {
                 try await planner.plan(
                     query: query,

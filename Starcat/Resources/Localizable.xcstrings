@@ -460954,6 +460954,113 @@
         "id" : { "stringUnit" : { "state" : "needs-review-translation", "value" : "Gagal" } }
       }
     },
+    "search.discovery.web.skipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KI-Websuche deaktiviert oder ausgewählter Suchdienst nicht verfügbar. Websuche übersprungen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI web access is off or the selected search service is unavailable. Web discovery was skipped."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El acceso web de IA está desactivado o el servicio elegido no está disponible. Se omitió la búsqueda web."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’accès web de l’IA est désactivé ou le service choisi est indisponible. Recherche web ignorée."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Akses web AI nonaktif atau layanan pencarian yang dipilih tidak tersedia. Penemuan web dilewati."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’accesso web IA è disattivato o il servizio scelto non è disponibile. Ricerca web saltata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI のウェブアクセスが無効か、選択した検索サービスを利用できないため、ウェブ検索をスキップしました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 웹 접근이 꺼져 있거나 선택한 검색 서비스를 사용할 수 없어 웹 검색을 건너뛰었습니다."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI-webtoegang is uitgeschakeld of de gekozen zoekdienst is niet beschikbaar. Webzoeken overgeslagen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dostęp AI do sieci jest wyłączony lub wybrana usługa jest niedostępna. Pominięto wyszukiwanie w sieci."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O acesso da IA à web está desativado ou o serviço escolhido está indisponível. A busca na web foi ignorada."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступ ИИ к сети отключён или выбранный сервис недоступен. Веб-поиск пропущен."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ web erişimi kapalı veya seçilen arama hizmeti kullanılamıyor. Web keşfi atlandı."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Доступ ШІ до мережі вимкнено або вибрана служба недоступна. Вебпошук пропущено."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quyền truy cập web của AI đã tắt hoặc dịch vụ đã chọn không khả dụng. Đã bỏ qua tìm kiếm web."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 联网已关闭或所选搜索服务不可用，本轮跳过网页发现。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 連網已關閉或所選搜尋服務無法使用，本輪略過網頁探索。"
+          }
+        }
+      }
+    },
     "search.discovery.step.routing" : {
       "extractionState" : "manual",
       "localizations" : {

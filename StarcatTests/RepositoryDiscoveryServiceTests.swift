@@ -57,7 +57,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: verifier,
-            ranker: ranker
+            ranker: ranker,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -111,7 +112,8 @@ struct RepositoryDiscoveryServiceTests {
             verifier: StubRepositoryVerifier { _, _ in
                 throw TestError.failed
             },
-            ranker: ranker
+            ranker: ranker,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -166,7 +168,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: verifier,
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -201,7 +204,8 @@ struct RepositoryDiscoveryServiceTests {
             verifier: StubRepositoryVerifier { _, _ in
                 throw TestError.failed
             },
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -223,7 +227,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
             webProvider: RecordingSearchProvider(source: .web) { _ in .empty },
             verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
         let result = await service.discover(
             query: "linux distribution",
@@ -255,7 +260,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
             webProvider: web,
             verifier: verifier,
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -293,7 +299,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: verifier,
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -328,7 +335,8 @@ struct RepositoryDiscoveryServiceTests {
                 if name == "missing" { throw NetworkError.notFound }
                 return Self.makeRepoDTO(id: 1, owner: owner, name: name)
             },
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
 
         let result = await service.discover(
@@ -480,7 +488,8 @@ struct RepositoryDiscoveryServiceTests {
             initialPlan: Self.makePlan()
         )
 
-        #expect(result.steps.map(\.stage) == [.githubSearch, .verification, .ranking])
+        #expect(result.steps.map(\.stage) == [.webSearch, .githubSearch, .verification, .ranking])
+        #expect(result.steps.first(where: { $0.stage == .webSearch })?.state == .skipped)
         #expect(result.steps.first(where: { $0.stage == .githubSearch })?.state == .completed)
         #expect(result.steps.first(where: { $0.stage == .verification })?.state == .skipped)
         #expect(result.steps.first(where: { $0.stage == .ranking })?.state == .completed)
@@ -570,7 +579,8 @@ struct RepositoryDiscoveryServiceTests {
             githubProvider: github,
             webProvider: web,
             verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
-            ranker: nil
+            ranker: nil,
+            webEvidenceAllowed: { _ in true }
         )
         let plan = SearchDiscoveryPlan(
             intentSummary: "Cancel discovery",
@@ -599,6 +609,57 @@ struct RepositoryDiscoveryServiceTests {
         #expect(github.requests.isEmpty)
         #expect(result.session.phase == .cancelled)
         #expect(!Task.isCancelled)
+    }
+
+    @Test("AI 联网与网页展示开关四种组合在首轮和继续轮次一致", arguments: [false, true], [false, true])
+    func webPermissionIsIndependentOfPresentation(aiEnabled: Bool, includeWeb: Bool) async {
+        let planner = StubQueryPlanner(plan: Self.makePlan())
+        let web = RecordingSearchProvider(source: .web) { _ in .empty }
+        let service = RepositoryDiscoveryService(
+            planner: planner,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            webEvidenceAllowed: { _ in aiEnabled }
+        )
+        for round in 1...2 {
+            let result = await service.discover(
+                query: "linux", request: SearchRequest(query: "linux", includeWebInAll: includeWeb),
+                round: round, initialLLMCalls: 0
+            )
+            #expect(result.session.usedWebQueries == (aiEnabled ? 1 : 0))
+            #expect(result.diagnostics.isEmpty)
+        }
+        #expect(planner.webPermissions == [aiEnabled, aiEnabled])
+        #expect(web.requests.count == (aiEnabled ? 2 : 0))
+    }
+
+    @Test("执行中关闭 AI 联网或服务商后不再请求下一条网页", arguments: [false, true])
+    func permissionChangesStopLaterWebRequests(disableProvider: Bool) async {
+        let permission = DiscoveryWebPermission()
+        let web = RecordingSearchProvider(source: .web) { _ in
+            await MainActor.run {
+                if disableProvider { permission.providerAvailable = false } else { permission.aiEnabled = false }
+            }
+            return .empty
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            webEvidenceAllowed: { _ in permission.aiEnabled && permission.providerAvailable }
+        )
+        let plan = SearchDiscoveryPlan(
+            intentSummary: "Linux", githubQueries: ["linux"], webQueries: ["first", "second"],
+            prefersFreshEvidence: false, strictConstraints: [], githubFilters: .empty
+        )
+        let result = await service.discover(
+            query: "linux", request: SearchRequest(query: "linux"), initialPlan: plan
+        )
+        #expect(web.requests.map(\.query) == ["first"])
+        #expect(result.steps.contains { $0.stage == .webSearch && $0.state == .skipped })
+        #expect(result.diagnostics.isEmpty)
     }
 
     private static func makePlan() -> SearchDiscoveryPlan {
@@ -718,12 +779,19 @@ struct RepositoryDiscoveryServiceTests {
     }
 }
 
+@MainActor
+private final class DiscoveryWebPermission {
+    var aiEnabled = true
+    var providerAvailable = true
+}
+
 private enum TestError: Error {
     case failed
 }
 
 @MainActor
 private final class StubQueryPlanner: SearchQueryPlannerProviding {
+    var webPermissions: [Bool] = []
     private(set) var calls = 0
     private let planned: SearchDiscoveryPlan
     var error: Error?
@@ -738,6 +806,7 @@ private final class StubQueryPlanner: SearchQueryPlannerProviding {
         maxSeconds: TimeInterval
     ) async throws -> SearchDiscoveryPlan {
         calls += 1
+        webPermissions.append(allowWebEvidence)
         if let error { throw error }
         return planned
     }

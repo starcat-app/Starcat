@@ -263,6 +263,29 @@ struct SearchIntentRouterTests {
         #expect(result.diagnostic?.isFailure == true)
     }
 
+    @Test("首轮规划只受 AI 联网权限影响", arguments: [false, true], [false, true])
+    func initialPlanningUsesAIWebPermission(aiEnabled: Bool, includeWeb: Bool) async {
+        let fixture = makeFixture()
+        fixture.settings.externalContextEnabled = aiEnabled
+        fixture.settings.externalSearchIncludeInAll = includeWeb
+        let outcome = await fixture.router.route(query: "找个 Linux 发行版", explicitSmartDiscovery: true)
+        #expect(outcome.plan?.webQueries.isEmpty == !aiEnabled)
+    }
+
+    @Test("所选服务商不可用时规划不请求网页证据")
+    func unavailableWebProviderDisablesPlanningEvidence() async {
+        let fixture = makeFixture()
+        fixture.settings.externalContextEnabled = true
+        let router = SearchIntentRouter(
+            settings: fixture.settings,
+            engineRegistry: DecisionEngineRegistry(engines: [fixture.engine]),
+            planner: fixture.planner,
+            webEvidenceAllowed: { _ in false }
+        )
+        let outcome = await router.route(query: "Linux", explicitSmartDiscovery: true)
+        #expect(outcome.plan?.webQueries.isEmpty == true)
+    }
+
     private func makeFixture(
         decisionTimeoutSeconds: TimeInterval = 3
     ) -> (router: SearchIntentRouter, settings: AppSettings, engine: FakeDecisionEngine, planner: FakeSearchPlanner) {

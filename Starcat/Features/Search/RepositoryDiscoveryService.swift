@@ -442,19 +442,22 @@ final class RepositoryDiscoveryService {
     private let webProvider: (any SearchProvider)?
     private let verifier: any RepositoryVerificationProviding
     private let ranker: (any SearchDiscoveryRankerProviding)?
+    private let webEvidenceAllowed: (ExternalSearchProviderID) -> Bool
 
     init(
         planner: (any SearchQueryPlannerProviding)?,
         githubProvider: any SearchProvider,
         webProvider: (any SearchProvider)? = nil,
         verifier: any RepositoryVerificationProviding,
-        ranker: (any SearchDiscoveryRankerProviding)? = nil
+        ranker: (any SearchDiscoveryRankerProviding)? = nil,
+        webEvidenceAllowed: @escaping (ExternalSearchProviderID) -> Bool = { _ in false }
     ) {
         self.planner = planner
         self.githubProvider = githubProvider
         self.webProvider = webProvider
         self.verifier = verifier
         self.ranker = ranker
+        self.webEvidenceAllowed = webEvidenceAllowed
     }
 
     /// 执行一轮发现。`initialPlan` 来自 Router 时要传 `initialLLMCalls = 1`；
@@ -500,7 +503,7 @@ final class RepositoryDiscoveryService {
                 let generated = try await SearchDiscoveryDeadline.run(until: deadline) {
                     try await planner.plan(
                         query: query,
-                        allowWebEvidence: baseRequest.includeWebInAll || baseRequest.scope == .web,
+                        allowWebEvidence: self.webEvidenceAllowed(baseRequest.externalSearchProvider),
                         maxSeconds: Self.remainingSeconds(to: deadline)
                     )
                 }
@@ -576,6 +579,14 @@ final class RepositoryDiscoveryService {
 
         for webQuery in normalizedPlan.webQueries
         where session.canRunWebQuery(in: budget) && !Task.isCancelled {
+            // 首轮计划可能在设置变更前生成；每次请求都重新检查，继续查找也走同一策略。
+            guard webEvidenceAllowed(baseRequest.externalSearchProvider) else {
+                steps.append(SearchDiscoveryStep(
+                    id: "web-skipped", stage: .webSearch, state: .skipped,
+                    detail: String.l10n("search.discovery.web.skipped")
+                ))
+                break
+            }
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .webSearch, error: URLError(.timedOut)))
                 break
