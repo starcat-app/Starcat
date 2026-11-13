@@ -12,6 +12,50 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("远程重排同时排除私仓候选和证据，本地重排可使用私仓", arguments: [false, true])
+    func privateRepositoriesRespectRankerBoundary(usesLocalOnly: Bool) async {
+        let publicRepo = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "public", name: "tool"))
+        let privateRepo = Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "internal", name: "secret", isPrivate: true))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [publicRepo, privateRepo], references: [], totalCount: 2, hasNextPage: false)
+        }
+        let ranker = StubDiscoveryRanker(usesLocalOnly: usesLocalOnly) { _, _, candidates, evidence, _ in
+            #expect(candidates.contains { $0.fullName == "internal/secret" } == usesLocalOnly)
+            #expect(evidence.contains { $0.repositoryFullName == "internal/secret" } == usesLocalOnly)
+            #expect(evidence.contains { $0.snippet == "secret repository" } == usesLocalOnly)
+            return [
+                SearchDiscoveryRankedItem(id: "internal/secret", reason: "Private match", evidenceIDs: []),
+                SearchDiscoveryRankedItem(id: " PUBLIC/TOOL ", reason: "Public match", evidenceIDs: [])
+            ]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.count == 2)
+        #expect(result.repositories.first { !$0.card.isPrivate }?.discovery?.kind == .modelMatch)
+        let privateResult = result.repositories.first { $0.card.isPrivate }
+        #expect(privateResult?.discovery?.kind == (usesLocalOnly ? .modelMatch : .githubSearch))
+    }
+
+    @Test("仅有私仓时保留卡片且不调用远程重排")
+    func privateOnlyResultsSkipRemoteRanker() async {
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "internal", name: "secret", isPrivate: true))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+        }
+        let ranker = StubDiscoveryRanker { _, _, _, _, _ in
+            Issue.record("Private-only results must not invoke remote ranking")
+            return []
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, ranker: ranker
+        ).discover(query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["internal/secret"])
+        #expect(result.diagnostics.isEmpty)
+    }
+
     @Test("隐藏候选不进入网页身份提取、证据或重排输入")
     func filteredContentNeverReachesRanker() async {
         let safe = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
@@ -903,7 +947,7 @@ struct RepositoryDiscoveryServiceTests {
         guard condition() else { throw TestError.failed }
     }
 
-    private nonisolated static func makeRepo(id: Int64, owner: String, name: String) -> Repo {
+    private nonisolated static func makeRepo(id: Int64, owner: String, name: String, isPrivate: Bool = false) -> Repo {
         Repo(
             id: id,
             owner: owner,
@@ -920,7 +964,7 @@ struct RepositoryDiscoveryServiceTests {
             htmlUrl: "https://github.com/\(owner)/\(name)",
             cloneUrl: nil,
             sshUrl: nil,
-            isPrivate: false,
+            isPrivate: isPrivate,
             isFork: false,
             isArchived: false,
             isStarred: false,
@@ -1081,6 +1125,7 @@ private final class StubRepositoryVerifier: RepositoryVerificationProviding, @un
 @MainActor
 private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
     let kind: SearchDiscoveryRankerKind
+    let usesLocalOnly: Bool
     private let handler: @Sendable (
         String,
         SearchDiscoveryPlan,
@@ -1091,6 +1136,7 @@ private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
 
     init(
         kind: SearchDiscoveryRankerKind = .chat,
+        usesLocalOnly: Bool = false,
         handler: @escaping @Sendable (
             String,
             SearchDiscoveryPlan,
@@ -1100,6 +1146,7 @@ private final class StubDiscoveryRanker: SearchDiscoveryRankerProviding {
         ) async throws -> [SearchDiscoveryRankedItem]
     ) {
         self.kind = kind
+        self.usesLocalOnly = usesLocalOnly
         self.handler = handler
     }
 

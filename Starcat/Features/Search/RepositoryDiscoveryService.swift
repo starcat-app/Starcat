@@ -54,6 +54,8 @@ struct SearchDiscoveryRankedItem: Equatable, Hashable, Codable, Sendable {
 @MainActor
 protocol SearchDiscoveryRankerProviding: AnyObject {
     var kind: SearchDiscoveryRankerKind { get }
+    /// 未明确声明本地执行的实现一律按远程处理，避免替换 Provider 时放宽隐私边界。
+    var usesLocalOnly: Bool { get }
     /// 用于详情面板展示的模型名称；本地/未解析时返回 nil，不影响排序执行。
     var modelDisplayName: String? { get }
 
@@ -68,6 +70,7 @@ protocol SearchDiscoveryRankerProviding: AnyObject {
 
 extension SearchDiscoveryRankerProviding {
     var modelDisplayName: String? { nil }
+    var usesLocalOnly: Bool { false }
 }
 
 /// 搜索重排有两种资源口径：Chat 排序消耗 LLM 预算，专用 Rerank 只消耗独立模型调用。
@@ -90,6 +93,12 @@ final class SearchLLMDiscoveryRanker: SearchDiscoveryRankerProviding {
 
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+
+    var usesLocalOnly: Bool {
+        (try? settings.resolveChatSelection(
+            for: settings.resolvedAITask(settings.aiChatTask)
+        ).profile.provider) == .localAI
+    }
 
     init(settings: AppSettings, keychain: any KeychainManaging) {
         self.settings = settings
@@ -199,6 +208,10 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
 
     private let settings: AppSettings
     private let keychain: any KeychainManaging
+
+    var usesLocalOnly: Bool {
+        settings.ragRerankConfiguration.normalized.provider == .localMLX
+    }
 
     init(settings: AppSettings, keychain: any KeychainManaging) {
         self.settings = settings
@@ -341,6 +354,12 @@ final class DynamicSearchDiscoveryRanker: SearchDiscoveryRankerProviding {
     private let settings: AppSettings
     private let chatRanker: SearchLLMDiscoveryRanker
     private let rerankRanker: SearchDiscoveryRerankRanker
+
+    var usesLocalOnly: Bool {
+        settings.ragRerankConfiguration.normalized.isEnabled
+            ? rerankRanker.usesLocalOnly
+            : chatRanker.usesLocalOnly
+    }
 
     var modelDisplayName: String? {
         settings.ragRerankConfiguration.normalized.isEnabled
@@ -719,7 +738,8 @@ final class RepositoryDiscoveryService {
                         kind: .github,
                         title: candidate.card.fullName,
                         url: URL(string: candidate.card.fullName == "" ? "" : "https://github.com/\(candidate.card.fullName)"),
-                        snippet: candidate.card.description
+                        snippet: candidate.card.description,
+                        repositoryFullName: candidate.identity.normalizedFullName
                     )
                 }.filter(\.isValid))
                 session = Self.incrementing(session, githubQueries: 1)
@@ -901,9 +921,19 @@ final class RepositoryDiscoveryService {
         )
 
         let rankerConsumesLLMBudget = ranker?.kind.consumesLLMBudget ?? false
+        let privateNames = Set(repositories.filter(\.card.isPrivate).map(\.identity.normalizedFullName))
+        let rankingCandidates = ranker?.usesLocalOnly == true
+            ? repositories
+            : repositories.filter { !privateNames.contains($0.identity.normalizedFullName) }
+        // 私仓描述同时存在于 candidates 和 evidence；两条输入都必须在传输前收口。
+        let rankingEvidence = ranker?.usesLocalOnly == true ? evidence : evidence.filter { item in
+            let repositoryName = item.repositoryFullName
+                ?? item.url.flatMap { SearchContentPolicy.repositoryName(from: $0) }
+            return item.kind != .localNote && !privateNames.contains(repositoryName ?? "")
+        }
         let rankedRepositories: [RepositoryCandidate]
         let rankingStart = Date()
-        if repositories.isEmpty
+        if rankingCandidates.isEmpty
             || (rankerConsumesLLMBudget && !session.canUseLLM(in: budget))
             || Date() >= deadline
             || Task.isCancelled {
@@ -923,17 +953,17 @@ final class RepositoryDiscoveryService {
                 model: ranker?.modelDisplayName
             ))
         } else if let ranker {
-            let summaries = repositories.prefix(budget.maxRankedCandidates).map { candidate in
+            let summaries = rankingCandidates.prefix(budget.maxRankedCandidates).map { candidate in
                 SearchDiscoveryRankingCandidate(
                     id: candidate.identity.normalizedFullName,
                     fullName: candidate.card.fullName,
                     description: candidate.card.description,
                     stars: candidate.card.starsCount,
-                    evidenceIDs: evidence.map(\.id)
+                    evidenceIDs: rankingEvidence.map(\.id)
                 )
             }
             do {
-                let rankingEvidence = evidence
+                let allowedCandidateIDs = Set(summaries.map(\.id))
                 let rankedItems = try await SearchDiscoveryDeadline.run(until: deadline) {
                     try await ranker.rank(
                         query: query,
@@ -948,9 +978,11 @@ final class RepositoryDiscoveryService {
                     llmCalls: rankerConsumesLLMBudget ? 1 : 0
                 )
                 rankedRepositories = Self.applying(
-                    rankedItems,
+                    rankedItems.filter {
+                        allowedCandidateIDs.contains($0.id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+                    },
                     to: repositories,
-                    evidence: evidence,
+                    evidence: rankingEvidence,
                     budget: budget,
                     contentPolicy: contentPolicy
                 )

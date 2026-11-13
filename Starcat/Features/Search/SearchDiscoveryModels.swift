@@ -90,6 +90,8 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
     let url: URL?
     let snippet: String?
     let observedAt: Date
+    /// GitHub 元数据的归属用于远程调用前排除私仓证据，不能仅过滤候选卡片。
+    let repositoryFullName: String?
 
     init(
         id: String,
@@ -97,7 +99,8 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
         title: String,
         url: URL? = nil,
         snippet: String? = nil,
-        observedAt: Date = Date()
+        observedAt: Date = Date(),
+        repositoryFullName: String? = nil
     ) {
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines)
         self.kind = kind
@@ -105,6 +108,7 @@ struct SearchEvidence: Equatable, Hashable, Codable, Identifiable, Sendable {
         self.url = url
         self.snippet = snippet?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.observedAt = observedAt
+        self.repositoryFullName = repositoryFullName?.lowercased()
     }
 
     /// 证据必须有稳定 ID、标题，以及 URL 或原文片段之一；否则不能进入候选解释。

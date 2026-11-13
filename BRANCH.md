@@ -45,6 +45,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/global-search-review-fixes` | 本地 worktree：`../Starcat-global-search-review-fixes`；无远端分支 | 从 `dev@df82542c` 逐项修复全局搜索复审的 10 项问题，每项独立验证并提交。 | `开发中`；2026-11-13 创建并复制本地构建配置。 | 完成后保留待验收，验收后合回 `dev`；不自动 push 或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-13 按 dong4j 要求合入 Skill 性能优化 `38e9a6c3`，实机交互待验收；最新 Direct 发布仍为 `1.9.5-beta.1`（`1aab33e6`），每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
