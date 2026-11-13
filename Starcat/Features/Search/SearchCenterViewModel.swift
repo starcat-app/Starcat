@@ -12,8 +12,102 @@
 //  `SearchHistoryRepositoryProtocol` 与 `docs/2-产品/需求讨论/正式方案/CloudKit数据同步设计.md` §2.x。
 //
 
+import CryptoKit
 import Foundation
 import Observation
+
+/// 智能发现缓存身份只保存配置与密钥指纹。密钥原文绝不能进入内存缓存键或诊断导出。
+struct SearchDiscoveryCacheIdentity: Equatable, Hashable, Sendable {
+    let chatConfiguration: String
+    let rerankConfiguration: String
+    let externalSearchConfiguration: String
+    let credentialFingerprint: String
+
+    static let constant = SearchDiscoveryCacheIdentity(
+        chatConfiguration: "constant-chat",
+        rerankConfiguration: "constant-rerank",
+        externalSearchConfiguration: "constant-external",
+        credentialFingerprint: "constant-credentials"
+    )
+
+    @MainActor static func live(
+        settings: AppSettings,
+        keychain: any KeychainManaging
+    ) -> SearchDiscoveryCacheIdentity {
+        let chatTask = settings.resolvedAITask(settings.aiChatTask)
+        let chatProfile = settings.aiProviderProfiles.first { $0.id == chatTask.providerID }
+        let chatModel = chatProfile?.models.first { $0.name == chatTask.resolvedModelName }
+        let rerank = settings.ragRerankConfiguration.normalized
+        let externalProviders = ExternalSearchProviderID.allCases.sorted { $0.rawValue < $1.rawValue }
+        let externalSettings = externalProviders.map { provider in
+            let value = settings.externalSearchSettings(for: provider)
+            return "\(provider.rawValue):\(value.isEnabled),\(value.anonymousMode),\(value.defaultMaxResults),\(value.fetchFullText),\(String(describing: value.credentialVerifiedAt))"
+        }
+        let chatKey = (try? keychain.loadAIKey(forProvider: chatTask.providerID)) ?? ""
+        let rerankKey = (try? keychain.loadAIKey(
+            forProvider: RAGRerankConfiguration.keychainID
+        )) ?? ""
+        let decisionAccess = JevDecisionEngine.resolveAccess(settings: settings, keychain: keychain)
+        let githubKey = (try? keychain.loadGithubToken()) ?? ""
+        let externalKeys = externalProviders.map { provider in
+            (try? keychain.loadServiceAPIKey(forService: provider.keychainServiceID)) ?? ""
+        }
+        return SearchDiscoveryCacheIdentity(
+            chatConfiguration: fingerprint([
+                chatTask.providerID,
+                chatTask.resolvedModelName,
+                chatTask.useCustomModel ? "custom" : "catalog",
+                String(describing: chatTask.parameters),
+                chatProfile?.provider.rawValue ?? "",
+                chatProfile?.baseURL ?? "",
+                String(describing: chatProfile?.isVerifiedConfiguration),
+                String(describing: chatModel?.isEnabled),
+                String(describing: chatModel?.capability),
+                String(settings.decisionEngineEnabled),
+                String(settings.decisionSearchRoutingEnabled),
+                settings.decisionEngineID.rawValue,
+                settings.typesafeModelID,
+                String(describing: decisionAccess?.source),
+                decisionAccess?.modelID ?? "",
+                String(describing: settings.selectedLocalAIModel(for: .llm))
+            ]),
+            rerankConfiguration: fingerprint([
+                String(rerank.isEnabled),
+                rerank.provider.rawValue,
+                rerank.endpoint,
+                rerank.model,
+                String(rerank.candidateLimit),
+                String(describing: settings.selectedLocalAIModel(for: .reranker))
+            ]),
+            externalSearchConfiguration: fingerprint([
+                String(settings.externalContextEnabled),
+                settings.externalContextProviderSelection.rawValue,
+                settings.externalSearchDefaultProvider.rawValue,
+                String(settings.externalSearchIncludeInAll)
+            ] + externalSettings),
+            credentialFingerprint: fingerprint([
+                chatKey, rerankKey, githubKey, decisionAccess?.apiKey ?? ""
+            ] + externalKeys)
+        )
+    }
+
+    private static func fingerprint(_ values: [String]) -> String {
+        let bytes = values.map { "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(bytes.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
+private struct SearchDiscoveryCacheKey: Hashable {
+    let request: SearchRequest
+    let identity: SearchDiscoveryCacheIdentity
+}
+
+private struct SearchDiscoveryCacheEntry {
+    let result: RepositoryDiscoveryResult
+    let createdAt: Date
+}
 
 @MainActor
 @Observable
@@ -60,12 +154,15 @@ final class SearchCenterViewModel {
     private let telemetryManager: TelemetryManager?
     private let intentRouter: (any SearchIntentRoutingProviding)?
     private let discoveryService: (any RepositoryDiscoveryProviding)?
+    private let discoveryCacheIdentity: () -> SearchDiscoveryCacheIdentity
+    private let discoveryNow: () -> Date
     /// 搜索提交、Router 与 Discovery 共用的请求身份；新提交会先取消旧链路。
     private var searchGeneration = UUID()
     private var searchTask: Task<Void, Never>?
     private var discoveryGeneration = UUID()
     private var discoveryTask: Task<Void, Never>?
-    private var discoveryCache: [SearchRequest: RepositoryDiscoveryResult] = [:]
+    private var discoveryCache: [SearchDiscoveryCacheKey: SearchDiscoveryCacheEntry] = [:]
+    private var requestCacheIdentity = SearchDiscoveryCacheIdentity.constant
 
     /// 智能发现独立于 Coordinator：基础搜索先展示，发现完成后再合并。
     private(set) var discoverySession: SearchDiscoverySession?
@@ -80,7 +177,11 @@ final class SearchCenterViewModel {
         entitlementGate: EntitlementGate? = nil,
         telemetryManager: TelemetryManager? = nil,
         intentRouter: (any SearchIntentRoutingProviding)? = nil,
-        discoveryService: (any RepositoryDiscoveryProviding)? = nil
+        discoveryService: (any RepositoryDiscoveryProviding)? = nil,
+        discoveryCacheIdentity: @escaping () -> SearchDiscoveryCacheIdentity = {
+            .constant
+        },
+        discoveryNow: @escaping () -> Date = { Date() }
     ) {
         self.coordinator = coordinator
         self.historyRepository = historyRepository
@@ -89,6 +190,8 @@ final class SearchCenterViewModel {
         self.telemetryManager = telemetryManager
         self.intentRouter = intentRouter
         self.discoveryService = discoveryService
+        self.discoveryCacheIdentity = discoveryCacheIdentity
+        self.discoveryNow = discoveryNow
         self.webSearchProvider = AppSettings.shared.externalSearchDefaultProvider
 
         // 历史加载放在 `present()` 触发，不在 init 做。
@@ -335,7 +438,7 @@ final class SearchCenterViewModel {
               !isDiscoveryRunning,
               intentRouter != nil,
               discoveryService != nil,
-              discoverySession?.phase == .completed,
+              discoverySession?.phase.canContinue == true,
               currentRound < 3
         else { return false }
         return true
@@ -451,12 +554,21 @@ final class SearchCenterViewModel {
         // Getting Started 清单的“试用一次搜索”对应真实提交行为，而不是只打开搜索面板。
         NotificationCenter.default.post(name: .gettingStartedDidUseSearch, object: nil)
 
-        if let cached = discoveryCache[request] {
+        let cacheKey = SearchDiscoveryCacheKey(
+            request: request,
+            identity: requestCacheIdentity
+        )
+        let now = discoveryNow()
+        discoveryCache = discoveryCache.filter {
+            $0.key.identity == cacheKey.identity
+                && now.timeIntervalSince($0.value.createdAt) < Self.discoveryCacheTTL
+        }
+        if let cached = discoveryCache[cacheKey] {
             let baseSearchTask = Task {
                 guard !Task.isCancelled else { return }
                 await coordinator.search(request)
             }
-            applyDiscovery(cached, cacheRequest: request)
+            applyDiscovery(cached.result, cacheRequest: nil)
             await awaitSearchTasks([baseSearchTask])
             guard isActiveSearch(generation) else {
                 resetIfSearchCancelled(generation)
@@ -654,6 +766,7 @@ final class SearchCenterViewModel {
         searchTask?.cancel()
         let generation = UUID()
         searchGeneration = generation
+        requestCacheIdentity = discoveryCacheIdentity()
         resetDiscoveryState(keepCache: true)
         discoveryGeneration = generation
 
@@ -719,6 +832,10 @@ final class SearchCenterViewModel {
         }
         let generation = generation ?? UUID()
         let service = discoveryService
+        let cacheKey = SearchDiscoveryCacheKey(
+            request: request,
+            identity: requestCacheIdentity
+        )
         discoveryGeneration = generation
         isDiscoveryRunning = true
         discoveryDiagnostics = []
@@ -745,7 +862,7 @@ final class SearchCenterViewModel {
             // 旧轮响应一律丢弃；即使 Provider 未响应取消，也不会覆盖新查询。
             guard self.discoveryGeneration == generation,
                   self.searchTask?.isCancelled != true else { return }
-            self.applyDiscovery(result, cacheRequest: request, initialSteps: initialSteps)
+            self.applyDiscovery(result, cacheRequest: cacheKey, initialSteps: initialSteps)
         }
         discoveryTask = task
         return task
@@ -753,9 +870,13 @@ final class SearchCenterViewModel {
 
     private func applyDiscovery(
         _ result: RepositoryDiscoveryResult,
-        cacheRequest: SearchRequest,
+        cacheRequest: SearchDiscoveryCacheKey?,
         initialSteps: [SearchDiscoveryStep] = []
     ) {
+        guard result.session.phase != .cancelled else {
+            resetDiscoveryState(keepCache: true)
+            return
+        }
         discoverySession = result.session
         latestDiscoveryResult = result
         discoveryDiagnostics = result.diagnostics
@@ -765,7 +886,7 @@ final class SearchCenterViewModel {
         // 不能在服务结果覆盖会话时把前置步骤丢掉，也不能将缓存中的合并步骤重复追加。
         let initialIDs = Set(initialSteps.map(\.id))
         var steps = initialSteps + result.steps.filter { !initialIDs.contains($0.id) }
-        if result.session.phase == .completed, !steps.contains(where: { $0.stage == .merging }) {
+        if result.session.phase.canContinue, !steps.contains(where: { $0.stage == .merging }) {
             let mergeStart = Date()
             let mergedCount = candidates.count
             steps.append(SearchDiscoveryStep(
@@ -795,10 +916,20 @@ final class SearchCenterViewModel {
         )
         discoverySession = session
         latestDiscoveryResult = snapshot
-        if result.session.phase == .completed {
-            discoveryCache[cacheRequest] = snapshot
+        if let cacheRequest,
+           result.session.phase.isCacheable,
+           !result.diagnostics.contains(where: \.isFailure),
+           cacheRequest.identity == discoveryCacheIdentity() {
+            discoveryCache[cacheRequest] = SearchDiscoveryCacheEntry(
+                result: snapshot,
+                createdAt: discoveryNow()
+            )
         }
     }
+
+    /// 智能发现引用外部长时效信息。15 分钟能在重复搜索与时效性之间取得折中；
+    /// 失败、部分失败和取消都不写入缓存，配置变化也通过身份键自然失效。
+    private static let discoveryCacheTTL: TimeInterval = 15 * 60
 
     private func resetDiscoveryState(keepCache: Bool = false) {
         discoveryGeneration = UUID()

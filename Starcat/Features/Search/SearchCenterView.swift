@@ -1597,7 +1597,7 @@ struct SearchCenterView: View {
         case .extractingCandidates: return String.l10n("search.discovery.phase.extracting")
         case .verifyingRepositories: return String.l10n("search.discovery.phase.verifying")
         case .ranking: return String.l10n("search.discovery.phase.ranking")
-        case .completed, .failed:
+        case .completed, .noResults, .partialFailure, .cancelled, .failed:
             return String(
                 format: String.l10n("search.discovery.results.countFormat"),
                 locale: locale,

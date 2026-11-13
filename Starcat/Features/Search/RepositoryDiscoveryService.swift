@@ -929,10 +929,28 @@ final class RepositoryDiscoveryService {
             ))
         }
 
+        guard !Task.isCancelled else {
+            return Self.cancelledResult(generation: generation, round: round)
+        }
+        let hasFailureDiagnostic = diagnostics.contains { $0.isFailure }
+        let hasSuccessfulSearch = steps.contains {
+            ($0.stage == .webSearch || $0.stage == .githubSearch) && $0.state == .completed
+        }
+        // 全部实际发出的检索都失败时不能伪装成“零命中”；仍有任一来源成功则保留
+        // 结果并标记部分失败，让用户可以查看诊断，同时继续使用已核验的候选。
+        let terminalPhase: SearchDiscoveryPhase = if hasFailureDiagnostic && !hasSuccessfulSearch {
+            .failed("Search discovery failed")
+        } else if hasFailureDiagnostic {
+            .partialFailure
+        } else if rankedRepositories.isEmpty {
+            .noResults
+        } else {
+            .completed
+        }
         let completed = SearchDiscoverySession(
             generation: generation,
             round: round,
-            phase: .completed,
+            phase: terminalPhase,
             plan: normalizedPlan,
             evidence: evidence,
             usedLLMCalls: session.usedLLMCalls,
@@ -954,7 +972,7 @@ final class RepositoryDiscoveryService {
             session: SearchDiscoverySession(
                 generation: generation,
                 round: round,
-                phase: .completed
+                phase: .cancelled
             ),
             repositories: [],
             references: [],

@@ -311,7 +311,13 @@ struct HomeView: View {
             entitlementGate: entitlementGate,
             telemetryManager: telemetryManager,
             intentRouter: searchIntentRouter,
-            discoveryService: repositoryDiscoveryService
+            discoveryService: repositoryDiscoveryService,
+            discoveryCacheIdentity: {
+                SearchDiscoveryCacheIdentity.live(
+                    settings: AppSettings.shared,
+                    keychain: KeychainManager.shared
+                )
+            }
         ))
         _myInsightsViewModel = State(initialValue: MyInsightsViewModel(
             provider: myInsightsSnapshotProvider

@@ -335,10 +335,24 @@ enum SearchDiscoveryPhase: Equatable, Hashable, Sendable {
     case verifyingRepositories
     case ranking
     case completed
+    case noResults
+    /// 远端源已有可用结果，但至少一个必要阶段失败；结果可展示，快照不可复用。
+    case partialFailure
+    /// 用户取消或请求身份失效。调用方必须丢弃该结果，不能把取消渲染成搜索失败。
+    case cancelled
     case failed(String)
 }
 
 extension SearchDiscoveryPhase {
+    var canContinue: Bool {
+        switch self {
+        case .completed, .noResults, .partialFailure: true
+        default: false
+        }
+    }
+
+    var isCacheable: Bool { self == .completed || self == .noResults }
+
     /// UI 只需要一个稳定的“是否失败”信号，不暴露错误字符串给状态机判断。
     var isFailed: Bool {
         if case .failed = self { return true }

@@ -131,7 +131,7 @@ struct RepositoryDiscoveryServiceTests {
                 && $0.technicalDetail?.contains("No ranked candidate passed validation") == true
         })
         #expect(result.session.usedLLMCalls == 2)
-        #expect(result.session.phase == .completed)
+        #expect(result.session.phase == .partialFailure)
     }
 
     @Test("预算截断 Planner 查询与 Web 提取仓库核验")
@@ -186,6 +186,53 @@ struct RepositoryDiscoveryServiceTests {
         #expect(result.diagnostics.contains { $0.stage == .verification && $0.kind == .limit })
         #expect(!result.diagnostics.contains { $0.isFailure })
         #expect(result.references.count == 6)
+    }
+
+    @Test("全部检索失败时返回失败而不是零命中")
+    func allSearchFailuresProduceFailureTerminalState() async {
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in
+                throw TestError.failed
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in
+                throw TestError.failed
+            },
+            verifier: StubRepositoryVerifier { _, _ in
+                throw TestError.failed
+            },
+            ranker: nil
+        )
+
+        let result = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux"),
+            initialPlan: Self.makePlan()
+        )
+
+        #expect(result.repositories.isEmpty)
+        #expect(result.session.phase.isFailed)
+        #expect(result.diagnostics.contains { $0.stage == .webSearch && $0.isFailure })
+        #expect(result.diagnostics.contains { $0.stage == .githubSearch && $0.isFailure })
+    }
+
+    @Test("检索成功且没有仓库时保留独立的零命中终态")
+    func successfulEmptySearchHasNoResultsState() async {
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in .empty },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: nil
+        )
+        let result = await service.discover(
+            query: "linux distribution",
+            request: SearchRequest(query: "linux"),
+            initialPlan: Self.makePlan()
+        )
+        #expect(result.session.phase == .noResults)
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.repositories.isEmpty)
     }
 
     @Test("恰好核验完五个仓库时不误报上限")
@@ -546,10 +593,11 @@ struct RepositoryDiscoveryServiceTests {
             web.requests.count == 1
         }
         task.cancel()
-        _ = await task.value
+        let result = await task.value
 
         #expect(web.requests.count == 1)
         #expect(github.requests.isEmpty)
+        #expect(result.session.phase == .cancelled)
         #expect(!Task.isCancelled)
     }
 
