@@ -342,8 +342,8 @@ enum ExternalSearchError: LocalizedError, Equatable, Sendable {
     case paymentRequired(provider: ExternalSearchProviderID, statusCode: Int?, message: String?)
     case rateLimited(provider: ExternalSearchProviderID, retryAfter: TimeInterval?, message: String?)
     case serviceUnavailable(provider: ExternalSearchProviderID, statusCode: Int?, message: String?)
-    case network(provider: ExternalSearchProviderID, message: String)
-    case invalidResponse(provider: ExternalSearchProviderID, message: String)
+    case network(provider: ExternalSearchProviderID, message: String, code: Int? = nil)
+    case invalidResponse(provider: ExternalSearchProviderID, message: String, statusCode: Int? = nil)
 
     var errorDescription: String? {
         friendlyMessage
@@ -358,10 +358,21 @@ enum ExternalSearchError: LocalizedError, Equatable, Sendable {
              .paymentRequired(let provider, _, _),
              .rateLimited(let provider, _, _),
              .serviceUnavailable(let provider, _, _),
-             .network(let provider, _),
-             .invalidResponse(let provider, _):
+             .network(let provider, _, _),
+             .invalidResponse(let provider, _, _):
             return provider
         }
+    }
+
+    /// 保留 URLSession 的分类信号，不能依赖各语言的错误字符串辨别超时或取消。
+    var urlErrorCode: Int? {
+        if case .network(_, _, let code) = self { return code }
+        return nil
+    }
+
+    var retryAfter: TimeInterval? {
+        if case .rateLimited(_, let seconds, _) = self { return seconds }
+        return nil
     }
 
     /// 设置页和 SearchCenter 使用的友好文案。
@@ -377,13 +388,22 @@ enum ExternalSearchError: LocalizedError, Equatable, Sendable {
             return String(format: String.l10n("externalSearch.error.invalidCredentialFormat"), provider.displayName)
         case .paymentRequired(let provider, _, _):
             return String(format: String.l10n("externalSearch.error.paymentRequiredFormat"), provider.displayName)
-        case .rateLimited(let provider, _, _):
+        case .rateLimited(let provider, let retryAfter, _):
+            if let retryAfter, retryAfter.isFinite, retryAfter > 0 {
+                return String(
+                    format: String.l10n("externalSearch.error.rateLimitedRetryFormat"),
+                    provider.displayName, Int(ceil(min(retryAfter, Double(Int.max / 2))))
+                )
+            }
             return String(format: String.l10n("externalSearch.error.rateLimitedFormat"), provider.displayName)
         case .serviceUnavailable(let provider, _, _):
             return String(format: String.l10n("externalSearch.error.serviceUnavailableFormat"), provider.displayName)
-        case .network(let provider, _):
+        case .network(let provider, _, let code):
+            if code == URLError.timedOut.rawValue {
+                return String(format: String.l10n("externalSearch.error.timeoutFormat"), provider.displayName)
+            }
             return String(format: String.l10n("externalSearch.error.networkFormat"), provider.displayName)
-        case .invalidResponse(let provider, _):
+        case .invalidResponse(let provider, _, _):
             return String(format: String.l10n("externalSearch.error.invalidResponseFormat"), provider.displayName)
         }
     }

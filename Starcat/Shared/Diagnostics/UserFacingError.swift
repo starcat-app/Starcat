@@ -283,9 +283,9 @@ struct UserFacingError: Equatable, Sendable {
         case .network:
             kind = .networkUnavailable
             status = nil
-        case .invalidResponse:
+        case .invalidResponse(_, _, let code):
             kind = .decoding
-            status = nil
+            status = code
         }
         var mapped = make(
             kind: kind, operation: operation, service: error.providerID.displayName,

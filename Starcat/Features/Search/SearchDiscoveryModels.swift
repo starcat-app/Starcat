@@ -153,6 +153,9 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
     var technicalDetail: String? = nil
     var statusCode: Int? = nil
     var settingsTarget: String? = nil
+    var provider: ExternalSearchProviderID? = nil
+    var urlErrorCode: Int? = nil
+    var retryAfter: TimeInterval? = nil
 
     var isFailure: Bool { kind == .failure }
 
@@ -207,7 +210,10 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
             recovery: presentation.recovery,
             technicalDetail: technicalDetail,
             statusCode: presentation.statusCode,
-            settingsTarget: settingsTarget
+            settingsTarget: settingsTarget,
+            provider: (error as? ExternalSearchError)?.providerID,
+            urlErrorCode: (error as? ExternalSearchError)?.urlErrorCode,
+            retryAfter: (error as? ExternalSearchError)?.retryAfter
         )
         diagnostic.record()
         return diagnostic
