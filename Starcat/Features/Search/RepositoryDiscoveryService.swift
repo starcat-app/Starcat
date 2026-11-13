@@ -490,6 +490,7 @@ extension RepositoryDiscoveryService: RepositoryDiscoveryProviding {}
 @MainActor
 final class RepositoryDiscoveryService {
     private let planner: (any SearchQueryPlannerProviding)?
+    private let articleExtractor: (any SearchArticleCandidateExtracting)?
     private let githubProvider: any SearchProvider
     private let webProvider: (any SearchProvider)?
     private let verifier: any RepositoryVerificationProviding
@@ -499,6 +500,7 @@ final class RepositoryDiscoveryService {
 
     init(
         planner: (any SearchQueryPlannerProviding)?,
+        articleExtractor: (any SearchArticleCandidateExtracting)? = nil,
         githubProvider: any SearchProvider,
         webProvider: (any SearchProvider)? = nil,
         verifier: any RepositoryVerificationProviding,
@@ -507,6 +509,7 @@ final class RepositoryDiscoveryService {
         contentPolicy: SearchContentPolicy = .bundled
     ) {
         self.planner = planner
+        self.articleExtractor = articleExtractor
         self.githubProvider = githubProvider
         self.webProvider = webProvider
         self.verifier = verifier
@@ -745,7 +748,58 @@ final class RepositoryDiscoveryService {
             }
         }
 
-        for githubQuery in normalizedPlan.githubQueries
+        // 明确链接直接核验；只有尚无 GitHub 身份的文章才需要一次受预算约束的提取。
+        let webEvidence = evidence.filter { $0.kind == .web && $0.isValid }
+        var linkedEvidence: [String: [String]] = [:]
+        for item in webEvidence {
+            for identity in Self.githubIdentities(from: [item]) {
+                linkedEvidence[identity.normalizedFullName, default: []].append(item.id)
+            }
+        }
+        let articleEvidence = Array(webEvidence.filter {
+            Self.githubIdentities(from: [$0]).isEmpty
+        }.prefix(10))
+        var articleCandidates: [SearchArticleCandidate] = []
+        if !articleEvidence.isEmpty, let articleExtractor,
+           budget.maxGitHubQueries > 0, webEvidenceAllowed(baseRequest.externalSearchProvider) {
+            let extractionStart = Date()
+            let reservedRankingCalls = ranker?.kind.consumesLLMBudget == true ? 1 : 0
+            if Date() >= deadline {
+                diagnostics.append(.failure(stage: .extraction, error: URLError(.timedOut)))
+            } else if session.usedLLMCalls + reservedRankingCalls >= budget.maxLLMCalls {
+                diagnostics.append(.limit(stage: .extraction))
+            } else {
+                // 失败同样消耗一次调用；必须给后续 Chat Ranker 留出一个名额。
+                session = Self.incrementing(session, llmCalls: 1)
+                do {
+                    let extracted = try await Self.withDeadline(to: deadline) {
+                        try await articleExtractor.extract(
+                            query: query, evidence: articleEvidence,
+                            maxSeconds: Self.remainingSeconds(to: deadline)
+                        )
+                    }
+                    articleCandidates = Self.groundedArticleCandidates(extracted, in: articleEvidence, policy: contentPolicy)
+                    steps.append(SearchDiscoveryStep(
+                        id: "extraction", stage: .extraction, state: .completed,
+                        detail: Self.countDetail(articleCandidates.count),
+                        durationSeconds: Self.duration(since: extractionStart), model: articleExtractor.modelDisplayName
+                    ))
+                } catch where DiagnosticFailure.isCancellation(error) {
+                    return Self.cancelledResult(generation: generation, round: round)
+                } catch {
+                    diagnostics.append(Self.failureDiagnostic(stage: .extraction, error: error))
+                    steps.append(SearchDiscoveryStep(
+                        id: "extraction", stage: .extraction, state: .failed,
+                        durationSeconds: Self.duration(since: extractionStart), model: articleExtractor.modelDisplayName
+                    ))
+                }
+            }
+        }
+        // 名称线索优先使用已有 GitHub 查询额度，不能额外放大本轮请求数。
+        var seenQueries = Set<String>()
+        let githubQueries = (articleCandidates.map { "\($0.name) in:name" } + normalizedPlan.githubQueries)
+            .filter { seenQueries.insert($0.lowercased()).inserted }
+        for githubQuery in githubQueries
         where session.canRunGitHubQuery(in: budget) && !Task.isCancelled {
             guard Date() < deadline else {
                 diagnostics.append(.failure(stage: .githubSearch, error: URLError(.timedOut)))
@@ -774,10 +828,22 @@ final class RepositoryDiscoveryService {
                     try await githubProvider.search(request)
                 }
                 let page = contentPolicy.filtering(rawPage, summary: &contentSummary)
-                repositories.append(contentsOf: page.repositories.filter {
+                let article = articleCandidates.first { "\($0.name) in:name" == githubQuery }
+                let foundRepositories = page.repositories.compactMap { original -> RepositoryCandidate? in
+                    var candidate = original
+                    if let article {
+                        // 搜索结果必须有同名真实仓库；不能用宽泛检索命中替模型猜测背书。
+                        guard candidate.identity.name.caseInsensitiveCompare(article.name) == .orderedSame else { return nil }
+                        candidate.discovery = SearchDiscoveryAnnotation(
+                            reason: "", evidenceIDs: article.evidenceIDs, rank: nil, kind: .githubVerification
+                        )
+                    }
+                    return candidate
+                }
+                repositories.append(contentsOf: foundRepositories.filter {
                     !knownRepositoryNames.contains($0.identity.normalizedFullName)
                 })
-                evidence.append(contentsOf: page.repositories.enumerated().map { index, candidate in
+                evidence.append(contentsOf: foundRepositories.enumerated().map { index, candidate in
                     SearchEvidence(
                         id: "\(evidencePrefix)github-\(session.usedGitHubQueries)-\(index)",
                         kind: .github,
@@ -792,7 +858,7 @@ final class RepositoryDiscoveryService {
                     id: "githubSearch-\(session.usedGitHubQueries - 1)",
                     stage: .githubSearch,
                     state: .completed,
-                    detail: Self.countDetail(page.repositories.count),
+                    detail: Self.countDetail(foundRepositories.count),
                     durationSeconds: Self.duration(since: searchStart)
                 ))
             } catch where DiagnosticFailure.isCancellation(error) {
@@ -820,7 +886,7 @@ final class RepositoryDiscoveryService {
             usedGitHubQueries: session.usedGitHubQueries
         )
 
-        var extractedIdentities = Self.githubIdentities(from: references).filter {
+        var extractedIdentities = Self.githubIdentities(from: webEvidence).filter {
             !knownRepositoryNames.contains($0.normalizedFullName)
         }
         let verificationStart = Date()
@@ -875,9 +941,7 @@ final class RepositoryDiscoveryService {
                 }
                 candidate.discovery = SearchDiscoveryAnnotation(
                     reason: "",
-                    evidenceIDs: evidence.filter {
-                        $0.url.flatMap { SearchContentPolicy.repositoryName(from: $0) } == identity.normalizedFullName
-                    }.map(\.id),
+                    evidenceIDs: linkedEvidence[identity.normalizedFullName] ?? [],
                     rank: nil,
                     kind: .githubVerification
                 )
@@ -1211,22 +1275,60 @@ final class RepositoryDiscoveryService {
         try await SearchDiscoveryDeadline.run(until: deadline, operation: operation)
     }
 
-    /// 只从 Web URL 提取 GitHub 身份，不从标题猜测 owner/name。
-    private static func githubIdentities(from references: [ReferenceCandidate]) -> [RepoIdentity] {
+    /// 只识别明确 GitHub URL，包括文章片段中的链接；项目名不能被拼成 owner/name。
+    private static func githubIdentities(from evidence: [SearchEvidence]) -> [RepoIdentity] {
         var seen = Set<String>()
         var identities: [RepoIdentity] = []
-        for reference in references {
-            guard let fullName = SearchContentPolicy.repositoryName(from: reference.originalURL) else { continue }
-            let components = fullName.split(separator: "/").map(String.init)
-            let owner = components[0]
-            let name = components[1]
-            guard Self.isValidGitHubName(owner), Self.isValidGitHubName(name) else { continue }
-            let identity = RepoIdentity(ghRepoID: nil, owner: owner, name: name)
-            if seen.insert(identity.normalizedFullName).inserted {
-                identities.append(identity)
+        let pattern = #"https?://(?:www\.)?github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"#
+        let expression = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        for item in evidence {
+            var urls = item.url.map { [$0] } ?? []
+            for text in [item.title, item.snippet ?? ""] {
+                for match in expression?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? [] {
+                    if let range = Range(match.range, in: text),
+                       let url = URL(string: String(text[range]).trimmingCharacters(in: CharacterSet(charactersIn: "."))) {
+                        urls.append(url)
+                    }
+                }
+            }
+            for url in urls {
+                guard let fullName = SearchContentPolicy.repositoryName(from: url) else { continue }
+                let components = fullName.split(separator: "/").map(String.init)
+                let owner = components[0]
+                let name = components[1]
+                guard Self.isValidGitHubName(owner), Self.isValidGitHubName(name) else { continue }
+                let identity = RepoIdentity(ghRepoID: nil, owner: owner, name: name)
+                if seen.insert(identity.normalizedFullName).inserted {
+                    identities.append(identity)
+                }
             }
         }
         return identities
+    }
+
+    /// 每个引用都必须在原文中包含该名称，且名称不能携带 GitHub 查询语法。
+    private static func groundedArticleCandidates(
+        _ candidates: [SearchArticleCandidate],
+        in evidence: [SearchEvidence],
+        policy: SearchContentPolicy
+    ) -> [SearchArticleCandidate] {
+        var seen = Set<String>()
+        return Array(candidates.prefix(10).compactMap { candidate -> SearchArticleCandidate? in
+            let name = candidate.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard Self.isValidGitHubName(name),
+                  name.range(of: "^[A-Za-z0-9]", options: .regularExpression) != nil,
+                  policy.match(query: name) == nil,
+                  !candidate.evidenceIDs.isEmpty else { return nil }
+            let pattern = "(?i)(?<![A-Za-z0-9_.-])\(NSRegularExpression.escapedPattern(for: name))(?![A-Za-z0-9_.-])"
+            guard candidate.evidenceIDs.allSatisfy({ id in
+                evidence.contains { item in
+                    item.id == id && [item.title, item.snippet ?? ""].contains {
+                        $0.range(of: pattern, options: .regularExpression) != nil
+                    }
+                }
+            }), seen.insert(name.lowercased()).inserted else { return nil }
+            return SearchArticleCandidate(name: name, evidenceIDs: candidate.evidenceIDs)
+        }.prefix(2))
     }
 
     private static func isValidGitHubName(_ value: String) -> Bool {

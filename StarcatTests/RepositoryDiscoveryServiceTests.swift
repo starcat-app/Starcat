@@ -12,6 +12,195 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("只有介绍文章时提取原文项目名，并由 GitHub 结果建立仓库与证据")
+    func articleNameResolvesToRealRepository() async {
+        let extractor = StubArticleExtractor { evidence in
+            #expect(evidence.map(\.id) == ["web-0-0"])
+            return [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])]
+        }
+        let github = RecordingSearchProvider(source: .github) { request in
+            guard request.query == "Omarchy in:name" else { return .empty }
+            return SearchProviderPage(
+                repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "basecamp", name: "omarchy"))],
+                references: [], totalCount: 1, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(candidates.map(\.id) == ["basecamp/omarchy"])
+            #expect(candidates.first?.evidenceIDs == ["web-0-0", "github-0-0"])
+            return [SearchDiscoveryRankedItem(
+                id: "basecamp/omarchy", reason: "Named in the introduction", evidenceIDs: ["web-0-0"]
+            )]
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor, githubProvider: github,
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(query: "forgotten Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["basecamp/omarchy"])
+        #expect(result.repositories.first?.discovery?.evidenceIDs == ["web-0-0"])
+        #expect(result.session.usedLLMCalls == 3)
+        #expect(github.requests.map(\.query) == ["Omarchy in:name", "linux distribution"])
+        #expect(result.steps.contains { $0.stage == .extraction && $0.state == .completed })
+    }
+
+    @Test("虚构名称、无效引用及搜索语法不能产生文章仓库查询", arguments: [
+        SearchArticleCandidate(name: "InventedProject", evidenceIDs: ["web-0-0"]),
+        SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-9-9"]),
+        SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0", "unknown"]),
+        SearchArticleCandidate(name: "Omarchy stars:>0", evidenceIDs: ["web-0-0"]),
+        SearchArticleCandidate(name: "march", evidenceIDs: ["web-0-0"]),
+        SearchArticleCandidate(name: "Omarchy", evidenceIDs: [])
+    ])
+    func ungroundedArticleNamesDoNotReachGitHub(_ candidate: SearchArticleCandidate) async {
+        let github = RecordingSearchProvider(source: .github) { _ in .empty }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: StubArticleExtractor { _ in [candidate] }, githubProvider: github,
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in true }
+        ).discover(query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(github.requests.map(\.query) == ["linux distribution"])
+        #expect(result.repositories.isEmpty)
+    }
+
+    @Test("GitHub 没有同名仓库时保留文章，不能把相似名字当成核验成功", arguments: [false, true])
+    func articleNameRequiresGitHubMatch(returnsSimilarName: Bool) async {
+        let result = await RepositoryDiscoveryService(
+            planner: nil,
+            articleExtractor: StubArticleExtractor { _ in [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])] },
+            githubProvider: RecordingSearchProvider(source: .github) { request in
+                guard returnsSimilarName, request.query == "Omarchy in:name" else { return .empty }
+                return SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "other", name: "omarchy-docs"))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in true }
+        ).discover(query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(result.repositories.isEmpty)
+        #expect(result.references.count == 1)
+    }
+
+    @Test("文章标题或片段中的明确 GitHub 链接直接核验，不额外调用模型", arguments: [false, true])
+    func articleExplicitURLSkipsExtraction(inTitle: Bool) async {
+        let extractor = StubArticleExtractor { _ in Issue.record("Explicit URLs must skip extraction"); return [] }
+        let verifier = StubRepositoryVerifier { owner, name in
+            #expect(owner == "basecamp" && name == "omarchy")
+            return Self.makeRepoDTO(id: 1, owner: owner, name: name)
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in
+                Self.makeArticlePage(
+                    title: inTitle ? "Introducing https://github.com/basecamp/omarchy" : "Linux introduction",
+                    snippet: inTitle ? nil : "Source: https://github.com/basecamp/omarchy."
+                )
+            },
+            verifier: verifier, webEvidenceAllowed: { _ in true }
+        ).discover(query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan())
+        #expect(result.repositories.map(\.card.fullName) == ["basecamp/omarchy"])
+        #expect(result.repositories.first?.discovery?.evidenceIDs == ["web-0-0"])
+        #expect(verifier.calls.count == 1)
+        #expect(extractor.calls == 0)
+        #expect(result.session.usedLLMCalls == 1)
+    }
+
+    @Test("AI 联网关闭时网页展示开关不能授权文章提取")
+    func disabledWebContextStopsArticleExtraction() async {
+        let extractor = StubArticleExtractor { _ in Issue.record("Web context is disabled"); return [] }
+        let web = RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() }
+        _ = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty }, webProvider: web,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in false }
+        ).discover(
+            query: "Linux distribution", request: SearchRequest(query: "Linux", includeWebInAll: true),
+            initialPlan: Self.makePlan()
+        )
+        #expect(web.requests.isEmpty)
+        #expect(extractor.calls == 0)
+    }
+
+    @Test("文章提取不能占用 Chat 重排预留的最后一次调用")
+    func articleExtractionReservesRankingBudget() async {
+        let extractor = StubArticleExtractor { _ in Issue.record("No extraction budget remains"); return [] }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: StubDiscoveryRanker { _, _, _, _, _ in [] }, webEvidenceAllowed: { _ in true }
+        ).discover(
+            query: "Linux distribution", request: SearchRequest(query: "Linux"),
+            initialPlan: Self.makePlan(), initialLLMCalls: 2
+        )
+        #expect(extractor.calls == 0)
+        #expect(result.session.usedLLMCalls == 2)
+        #expect(result.diagnostics.contains { $0.stage == .extraction && $0.kind == .limit })
+    }
+
+    @Test("文章提取共享整轮截止时间，用户取消不记为失败", arguments: [false, true])
+    func articleExtractionDeadlineAndCancellation(cancel: Bool) async throws {
+        let extractor = StubArticleExtractor { _ in
+            try await Task.sleep(for: .seconds(5))
+            return []
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil, articleExtractor: extractor,
+            githubProvider: RecordingSearchProvider(source: .github) { _ in .empty },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed }, webEvidenceAllowed: { _ in true }
+        )
+        let task = Task {
+            await service.discover(
+                query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan(),
+                deadline: Date().addingTimeInterval(cancel ? 15 : 0.2)
+            )
+        }
+        try await Self.waitUntil { extractor.calls == 1 }
+        if cancel { task.cancel() }
+        let result = await task.value
+        if cancel {
+            #expect(result.session.phase == .cancelled)
+            #expect(result.diagnostics.isEmpty)
+        } else {
+            let expected = UserFacingError.map(
+                URLError(.timedOut), operation: String.l10n("search.discovery.phase.extracting"), service: "AI"
+            )
+            #expect(result.diagnostics.first { $0.stage == .extraction }?.message == expected.message)
+            #expect(result.session.usedLLMCalls == 2)
+        }
+    }
+
+    @Test("文章定位到私仓后仍遵守远程重排隐私边界", arguments: [false, true])
+    func articlePrivateRepositoriesKeepRankingBoundary(usesLocalOnly: Bool) async {
+        let ranker = StubDiscoveryRanker(usesLocalOnly: usesLocalOnly) { _, _, candidates, evidence, _ in
+            #expect(candidates.contains { $0.id == "team/omarchy" } == usesLocalOnly)
+            #expect(evidence.contains { $0.repositoryFullName == "team/omarchy" } == usesLocalOnly)
+            return candidates.map { SearchDiscoveryRankedItem(id: $0.id, reason: "Relevant", evidenceIDs: $0.evidenceIDs) }
+        }
+        _ = await RepositoryDiscoveryService(
+            planner: nil,
+            articleExtractor: StubArticleExtractor { _ in [SearchArticleCandidate(name: "Omarchy", evidenceIDs: ["web-0-0"])] },
+            githubProvider: RecordingSearchProvider(source: .github) { request in
+                guard request.query == "Omarchy in:name" else { return .empty }
+                return SearchProviderPage(
+                    repositories: [Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "team", name: "omarchy", isPrivate: true))],
+                    references: [], totalCount: 1, hasNextPage: false
+                )
+            },
+            webProvider: RecordingSearchProvider(source: .web) { _ in Self.makeArticlePage() },
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(
+            query: "Linux distribution", request: SearchRequest(query: "Linux"), initialPlan: Self.makePlan(),
+            seedRepositories: [Self.makeCandidate(repo: Self.makeRepo(id: 2, owner: "public", name: "safe"))]
+        )
+    }
+
     @Test("基础候选和新增发现共用重排池与证据，保留知识库事实")
     func baseAndDiscoveredRepositoriesShareRanking() async {
         let repo = Self.makeRepo(id: 1, owner: "local", name: "favorite")
@@ -223,11 +412,17 @@ struct RepositoryDiscoveryServiceTests {
                 try await planner.plan(query: "tool", allowWebEvidence: false, maxSeconds: 0)
             }
             await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
+                try await planner.extract(query: "tool", evidence: [], maxSeconds: 0)
+            }
+            await #expect(throws: EntitlementGateError.requiresPro(feature: .semanticSearch)) {
                 try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
             }
         } else {
             await #expect(throws: URLError(.timedOut)) {
                 try await planner.plan(query: "tool", allowWebEvidence: false, maxSeconds: 0)
+            }
+            await #expect(throws: URLError(.timedOut)) {
+                try await planner.extract(query: "tool", evidence: [], maxSeconds: 0)
             }
             await #expect(throws: URLError(.timedOut)) {
                 try await ranker.rank(query: "tool", plan: Self.makePlan(), candidates: [], evidence: [], maxSeconds: 0)
@@ -1321,6 +1516,22 @@ struct RepositoryDiscoveryServiceTests {
         )
     }
 
+    /// 普通文章 URL 不包含仓库路径，迫使发现链路使用原文线索。
+    private nonisolated static func makeArticlePage(
+        title: String = "Introducing Omarchy",
+        snippet: String? = "A Linux distribution for developers"
+    ) -> SearchProviderPage {
+        let url = URL(string: "https://news.example.org/linux-introduction")!
+        return SearchProviderPage(
+            repositories: [],
+            references: [ReferenceCandidate(
+                normalizedURL: url, originalURL: url, title: title, snippet: snippet,
+                domain: "news.example.org", source: .web
+            )],
+            totalCount: 1, hasNextPage: false
+        )
+    }
+
     private nonisolated static func makeReference(url: String) -> ReferenceCandidate {
         let originalURL = URL(string: url)!
         return ReferenceCandidate(
@@ -1398,6 +1609,23 @@ private final class DiscoveryWebPermission {
 
 private enum TestError: Error {
     case failed
+}
+
+/// 注入提取响应或挂起操作，用于验证服务边界而非真实联网模型。
+@MainActor
+private final class StubArticleExtractor: SearchArticleCandidateExtracting {
+    let modelDisplayName: String? = "Test extraction model"
+    private(set) var calls = 0
+    private let handler: ([SearchEvidence]) async throws -> [SearchArticleCandidate]
+
+    init(handler: @escaping ([SearchEvidence]) async throws -> [SearchArticleCandidate]) {
+        self.handler = handler
+    }
+
+    func extract(query: String, evidence: [SearchEvidence], maxSeconds: TimeInterval) async throws -> [SearchArticleCandidate] {
+        calls += 1
+        return try await handler(evidence)
+    }
 }
 
 @MainActor

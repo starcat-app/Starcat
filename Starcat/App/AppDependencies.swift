@@ -1235,6 +1235,7 @@ final class AppDependencies {
         )
         let repositoryDiscoveryService = RepositoryDiscoveryService(
             planner: searchQueryPlanner,
+            articleExtractor: searchQueryPlanner,
             githubProvider: GitHubRepositorySearchProvider(
                 client: api,
                 noteRepository: self.repoNoteRepository
