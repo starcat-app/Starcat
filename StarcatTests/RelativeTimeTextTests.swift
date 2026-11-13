@@ -39,6 +39,25 @@ struct RelativeTimeTextTests {
         }
     }
 
+    @Test("刷新时间使用分钟、小时和昨天", arguments: [
+        (-300.0, "5分钟前"),
+        (-7_200.0, "2小时前"),
+        (-86_400.0, "昨天")
+    ])
+    func namedPastEventUsesNaturalTime(offset: TimeInterval, expected: String) throws {
+        try withLocaleOverride("zh-Hans") {
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let text = RelativeTimeText.pastEvent(
+                now.addingTimeInterval(offset),
+                relativeTo: now,
+                locale: locale,
+                dateTimeStyle: .named
+            )
+
+            #expect(text == expected)
+        }
+    }
+
     @Test("未来 deadline：只兜底 0 秒边界，保留真实未来语义")
     func futureDeadlineKeepsFutureMeaningExceptZeroBoundary() throws {
         try withLocaleOverride("zh-Hans") {
