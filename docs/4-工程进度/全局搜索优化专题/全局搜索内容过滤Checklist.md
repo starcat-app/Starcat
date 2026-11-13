@@ -1,0 +1,53 @@
+# 全局搜索内容过滤 Checklist
+
+> 状态：本轮实现与自动化检查完成；2026-11-13 dong4j 授权文档先行、随后实施，重点控制性能与误杀。界面与译文人工验收另行记录，不据此关闭整个全局搜索专项。
+> 工作区：`../Starcat-global-search-content-filter`，分支 `codex/global-search-content-filter`。
+> 基线：既有搜索优化 `61e9e9cf`；随后合入本地 dev。独立工作区避让原搜索任务的并行提交。
+> 主关联：GitHub #207 / Multica HOM-239；本轮为新增范围，不改写历史取消记录。
+> 方案：[全局搜索内容过滤方案](全局搜索内容过滤方案.md)。
+> 约定：每项完成后勾选并独立提交；实现、自动化验证、人工验收与发布分开记录。
+
+| 状态 | 编号 | 小功能 | 完成证据 |
+|---|---|---|---|
+| [x] | F0 | 文档、范围与验收集落盘 | 方案、决策入口、分支登记与本清单；本提交只含文档 |
+| [x] | F1 | 同步本地 dev 搜索修复 | 合入 `dev@1755f26f`；自动合并无冲突，保留智能发现、Star 加载反馈与许可证展示 |
+| [x] | F2 | 本地规则库与匹配引擎 | 自有 JSON 规则、精确身份、上下文与局部例外；定向 10 项测试通过，含 53 个参数化样本 |
+| [x] | F3 | 普通搜索过滤与分页 | 四来源接入、跨来源隐藏与可见计数、最多补一页、失败重试游标；48 项搜索回归通过 |
+| [x] | F4 | 智能发现与缓存过滤 | 查询前终止、子查询与证据过滤、核验别名、重排封闭输入、规则版本缓存与回读；45 项回归通过 |
+| [x] | F5 | 筛选反馈与全语言文案 | 详情显示去重数量和规则版本、过滤空态保持分页、正常隐藏无告警；6 个 key 覆盖 17 语言，31 项 ViewModel 回归通过 |
+| [x] | F6 | 性能与完整交付验证 | 57 个参数化正反样本、143 项搜索回归、每百条热态 P95 3.546 ms；双渠道构建与规则/17 语言产物校验通过 |
+
+## 验证记录
+
+实施时记录实际命令、结果与局限；未执行项目不写成通过。
+
+- F2：`make test TEST_ARGS="-only-testing:StarcatTests/SearchContentPolicyTests"` 通过。首轮 Debug 热态每百条 P50 36.32 ms、P95 37.50 ms；性能目标尚未达成，留待 F6 优化及优化构建实测。
+- F3：`make test TEST_ARGS="-only-testing:StarcatTests/SearchCoordinatorTests -only-testing:StarcatTests/SearchCenterViewModelTests"`，48 项通过；包含四来源、过滤空页、补页失败、真实游标与范围往返。
+- F4：`make test TEST_ARGS="-only-testing:StarcatTests/RepositoryDiscoveryServiceTests -only-testing:StarcatTests/SearchCenterViewModelTests"`，45 项通过；新增候选不进模型、禁止子查询不发请求、核验重定向、查询前终止、缓存与继续查找覆盖。
+- F5：`make test TEST_ARGS="-only-testing:StarcatTests/SearchCenterViewModelTests"`，31 项通过，含普通搜索筛选详情。Catalog 只新增 642 行，6 个 key 的 17 种语言和格式占位符校验通过，AI 初稿保持 `needs_review`；详情复用整行展开并自然增高，界面人工验收仍待用户执行。
+- F6 回归：下列定向命令共 143 项、11 个 Suite 通过；规则参数化样本增至 57 个，包含 27 个正常技术/防治项目、6 个相似身份保留样本，以及分隔变体和动作词同时出现时的英文边界。Debug 同批基准 P50 4.481 ms、P95 4.792 ms。
+- F6 性能：`make benchmark-search-content-policy`，Apple M2 Ultra（Mac14,14）、Swift `-O`、每批 100 个带 URL/主题的中英文候选，预热 10 批后测 100 批。正常批次 P50 3.186 ms、P95 3.546 ms；10% 命中批次 P50 2.896 ms、P95 3.056 ms。同一基准优化前正常批次 P95 39.807 ms。
+- F6 产物：`make build-direct`、`make build-appstore` 均通过，未启动 App；两渠道规则 JSON 与源码逐字节一致，各自 6 个 key × 17 语言的编译 `.strings` 均与 Catalog 一致。文档相对链接、脚本 `bash -n` 与最终 `git diff --check` 通过。
+
+最终搜索回归命令：
+
+```bash
+make test TEST_ARGS="\
+-only-testing:StarcatTests/SearchContentPolicyTests \
+-only-testing:StarcatTests/SearchCoordinatorTests \
+-only-testing:StarcatTests/RepositoryDiscoveryServiceTests \
+-only-testing:StarcatTests/SearchCenterViewModelTests \
+-only-testing:StarcatTests/SearchIntentRouterTests \
+-only-testing:StarcatTests/SearchSessionCacheTests \
+-only-testing:StarcatTests/SearchModelsTests \
+-only-testing:StarcatTests/GitHubRepositorySearchTests \
+-only-testing:StarcatTests/AnySearchClientTests \
+-only-testing:StarcatTests/ExternalSearchProviderClientTests \
+-only-testing:StarcatTests/GlobalRepositorySearchServiceTests"
+```
+
+## 交付边界
+
+- 本地按功能提交；合回 dev、push、发布、分发打包与 GUI 操作另行授权。
+- `docs/功能实现总览.md` 与 Changelog 保持原状，写入需要分别获得授权。
+- 第三方词表整库引入、在线规则服务、模型审核、其他搜索入口不属于首版。

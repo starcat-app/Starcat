@@ -41,7 +41,7 @@ APPSTORE_ARCHIVE := $(CURDIR)/dist/appstore/Starcat-AppStore.xcarchive
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build-appstore build-direct run-appstore run-direct test test-build-scripts check-package-lock test-package-lock test-codebase-fetch reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct-debug package-direct-debug-signed package-direct package-direct-notarized release-direct release-direct-development release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
+.PHONY: help build-appstore build-direct run-appstore run-direct test benchmark-search-content-policy test-build-scripts check-package-lock test-package-lock test-codebase-fetch reset-db reset-anysearch-cache reset-chat-cache reset-all show-data clean start-supports build-dmg release-store release-dry-run package-appstore open-appstore-archive package-direct-debug package-direct-debug-signed package-direct package-direct-notarized release-direct release-direct-development release-direct-retry release-direct-unnotarized pr-helper bump-version linguist sync-fly-secrets setup-production-api-keys deploy-pages deploy-pages-test
 
 help: ## 列出所有可用命令
 	@echo "Starcat 常用命令："
@@ -52,6 +52,7 @@ help: ## 列出所有可用命令
 	@echo "  make run-direct             执行 scripts/run-debug-direct.sh（Direct / 非 App Store Debug）"
 	@echo "  make test                   使用稳定版 Xcode 和 build/DerivedData-Tests 跑全量单测"
 	@echo "  make test TEST_ARGS=\"...\"   向 xcodebuild 追加参数，例如 -only-testing:StarcatTests/Foo"
+	@echo "  make benchmark-search-content-policy  用优化构建测量内容筛选热态性能"
 	@echo "  make test-build-scripts     验证 Debug 构建缓存隔离与最终产物版本"
 	@echo "  make check-package-lock     检查生成工程是否使用受控 SwiftPM 版本组合"
 	@echo "  make test-package-lock      验证锁文件恢复与漂移检测"
@@ -96,6 +97,9 @@ build-appstore: ## 构建并校验 App Store / 沙盒 Debug，不启动
 
 build-direct: ## 构建并校验 Direct / 非 App Store Debug，不启动
 	@bash scripts/run-debug-direct.sh --build-only
+
+benchmark-search-content-policy: ## 只编译纯 Foundation 策略并测量，不构建或启动 App
+	@bash scripts/benchmark-search-content-policy.sh
 
 run-appstore: ## App Store / 沙盒 Debug
 	@bash scripts/run-debug-appstore.sh

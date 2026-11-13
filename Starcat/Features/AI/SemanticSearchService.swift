@@ -184,6 +184,11 @@ final class SemanticSearchService {
     private let keychain: any KeychainManaging
     private let batchSize: Int
     private let entitlementGate: EntitlementGate?
+    /// 查询向量客户端注入点。生产路径为 nil 并继续走统一 AI 工厂；
+    /// 单测用它验证查询阶段确实不会补建 repo 索引。
+    private let queryClientOverride: (any AIClientProtocol)?
+    /// 查询模型注入点；仅与 `queryClientOverride` 一起给单测隔离真实设置。
+    private let queryModelOverride: String?
     /// 同一句 + 同一模型的 query 向量只打一次 embedding API。
     private var queryEmbeddingCache = QueryEmbeddingSessionCache()
 
@@ -195,7 +200,9 @@ final class SemanticSearchService {
         summaryRepository: (any AISummaryRepositoryProtocol)? = nil,
         entitlementGate: EntitlementGate? = nil,
         keychain: any KeychainManaging = KeychainManager.shared,
-        batchSize: Int = 32
+        batchSize: Int = 32,
+        queryClientOverride: (any AIClientProtocol)? = nil,
+        queryModelOverride: String? = nil
     ) {
         self.embeddingRepository = embeddingRepository
         self.readmeRepository = readmeRepository
@@ -205,6 +212,8 @@ final class SemanticSearchService {
         self.keychain = keychain
         self.batchSize = batchSize
         self.entitlementGate = entitlementGate
+        self.queryClientOverride = queryClientOverride
+        self.queryModelOverride = queryModelOverride
     }
 
     /// 对传入候选 repo 做语义搜索（2026-06-14 A+B+C 改造）。
@@ -241,8 +250,14 @@ final class SemanticSearchService {
         guard !trimmed.isEmpty else { return [] }
         guard !candidates.isEmpty else { return [] }
 
-        let (client, model) = try makeClient(usageContext: usageContext)
-        try await ensureIndexed(candidates, model: model, client: client)
+        let client: any AIClientProtocol
+        let model: String
+        if let queryClientOverride {
+            client = queryClientOverride
+            model = queryModelOverride ?? ""
+        } else {
+            (client, model) = try makeClient(usageContext: usageContext)
+        }
 
         let stored = try await embeddingRepository.fetchEmbeddingsByRepoID(
             model: model,

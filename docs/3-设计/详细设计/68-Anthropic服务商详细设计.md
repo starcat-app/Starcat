@@ -1,19 +1,21 @@
 # 68 — Anthropic Messages API 服务商详细设计
 
 > 日期：2026-09-13
-> 状态：方案已确认，可直接落地
+> 状态：适配器已接入代码；2026-11-12 核对工厂分流与 Embedding 边界，原实施步骤保留作设计记录
 > 适用版本：dev 后续功能迭代（不改已发布 schema）
 > 关联：`15-AI设置与调用链重构方案.md`、`65-AgentRuntime与AI服务统一路由方案.md`、`69-CC-Switch导入Provider详细设计.md`
 
 ---
 
-## 1. 问题
+## 1. 原问题与当前实现
 
-Starcat 的远端 AI 目前只走 OpenAI Chat Completions。`AIClientFactory` 除 `.localAI` 外一律构造 `OpenAIClient`。设置页注释已写明：Anthropic Messages API（官方 Claude 与各家 `*/anthropic` 中转）未接入。
+2026-09-13 制定方案时，远端 AI 主要走 OpenAI Chat Completions。当前 `AIClientFactory.make` 已把 `.anthropic` 路由到 `AnthropicClient`，`.localAI` 路由到 `LocalMLXClient`，其余类型走 `OpenAIClient`，不能再按“Anthropic 未接入”设计调用链。
 
-CC Switch、Claude Code 以及大量国产中转把 Base URL 指到 `/anthropic`。用户把同一把 Key 填进 Starcat 后，请求会打到 `/chat/completions`，连接测试失败。
+原问题是把 Anthropic Messages 端点当成 OpenAI Chat Completions 使用。当前必须选择与端点协议匹配的 Provider 类型；已有适配器不等于所有中转端点均已验证。
 
 目标：在不改摘要 / Chat / RAG / Agent 业务消息模型的前提下，增加一条 Anthropic Messages adapter，让设置页能新增「Anthropic」类型的 Provider，通过连接测试后进入正式列表。
+
+源码入口：`Starcat/Features/AI/AIClient.swift`、`Starcat/Features/AI/Anthropic/`、`Starcat/Core/Settings/AppSettings.swift`。`supportsEmbeddingEndpoint` 已排除 `.anthropic`，其 `embedding` 方法也明确拒绝调用。下面的原始任务拆分与测试矩阵不作为本次真实 Provider 联调或人工验收通过的证明；65 号统一路由方案的待实施范围不因本适配器存在而自动完成。
 
 ## 2. 已冻结决策
 
@@ -42,7 +44,7 @@ CC Switch、Claude Code 以及大量国产中转把 Base URL 指到 `/anthropic`
 
 ## 4. 当前实现锚点
 
-| 锚点 | 文件 | 落地时怎么动 |
+| 锚点 | 文件 | 实现位置或约束 |
 |---|---|---|
 | 工厂 | `Starcat/Features/AI/AIClient.swift` `AIClientFactory.make` | `.anthropic` → `AnthropicClient` |
 | OpenAI adapter | `Starcat/Features/AI/OpenAIClient.swift` | 不动 |
@@ -93,16 +95,16 @@ CC Switch、Claude Code 以及大量国产中转把 Base URL 指到 `/anthropic`
 | `iconIsMonochromeWhite` | `false`（Claude Spark 是彩色原图） |
 | `userSelectableCases` | 自动包含（只要不是 `localAI`） |
 
-`supportsEmbeddingEndpoint` 当前是：
+`supportsEmbeddingEndpoint` 当前已包含 Anthropic 排除分支：
 
 ```swift
 switch self {
-case .orcaRouter: return false
+case .orcaRouter, .anthropic: return false
 default: return true
 }
 ```
 
-必须改成 `.orcaRouter, .anthropic: return false`，否则设置页会把 Anthropic 放进 Embedding 任务下拉。
+维护时保留该限制，不能把“支持聊天”推导为“支持 Embedding”。
 
 ## 7. URL 归一
 

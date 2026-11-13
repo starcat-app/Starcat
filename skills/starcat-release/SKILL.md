@@ -1,6 +1,6 @@
 ---
 name: starcat-release
-description: Starcat macOS App 的 App Store、Direct 正式版和 Beta 发布、已有 DMG 续传及故障恢复。用于签名公证、GitHub Release、Sparkle 更新源、官网部署和发布入口选择；支持只恢复已有产物而不重新构建。
+description: Starcat macOS App 的 App Store、Direct 正式版和 Beta 发布、已有 DMG 续传及故障恢复。用于签名公证、GitHub Release、Sparkle 更新源、双语更新说明、官网部署和发布入口选择；支持只恢复已有产物而不重新构建。
 ---
 
 # Starcat 发版
@@ -25,8 +25,9 @@ description: Starcat macOS App 的 App Store、Direct 正式版和 Beta 发布�
 |---|---|---|
 | App Store 发布准备、archive、Validate、上传 App Store Connect | `scripts/package-appstore.sh` / `make package-appstore` | 构建并校验 `Starcat` archive；上传继续由 Xcode Organizer / Transporter 完成 |
 | Direct 公开发布、Sparkle 更新、starcat.ink 部署、上传 DMG/appcast | `scripts/release-direct.sh <X.Y.Z>` | Direct 渠道完整编排入口；发布后还要同步 Homebrew Cask |
-| Direct Beta / 预发布 | `scripts/release-direct-development.sh <X.Y.Z-beta.N>` | `dev` 分支新构建；GitHub prerelease，只更新 Beta feed |
-| 已有最终 DMG，上传或更新源中断 | 对应 Direct 脚本追加 `--resume` | 不构建、不改 tag；校验原产物后补 GitHub 附件和更新源 |
+| Direct Beta / 预发布 | `scripts/release-direct-development.sh <X.Y.Z-beta.N>` | `dev` 分支新构建；GitHub prerelease、Beta feed 和官网双语更新日志 |
+| 已有最终 DMG，上传或更新源中断 | 对应 Direct 脚本追加 `--resume` | 不构建、不改 tag；校验原产物后补 GitHub 附件和更新源，Beta 同时补发当次官网日志 |
+| 已发布版本仅缺 appcast 双语说明 | 按 `references/release-map.md` 的“双语发布与更新说明修复”定向修复 | 使用当次快照补正文，核对原版本、下载与签名；不重打包或重发 Release |
 | 只在本地构建 Direct 包 | `scripts/package-direct.sh <X.Y.Z>` | 构建 `StarcatDirect` DMG，可选 notarization/appcast |
 | 历史 ad-hoc 内测 tag + DMG 流程 | `scripts/release-store.sh vX.Y.Z` | legacy 入口；默认禁用，必须显式设置 `STARCAT_ALLOW_LEGACY_RELEASE=1` |
 
@@ -50,6 +51,30 @@ Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App S
    - App Store 没有发布 dry-run；先完成只读门禁，获授权后运行
      `make package-appstore`，该命令只生成 archive、不上传
 6. 执行已确认的命令后，验证产物和 URL，并报告精确路径。
+7. 发布收尾覆盖主仓库及 `supports/` 全部独立 Git 项目：同步、推送 `dev/main` 并回读远端 refs 验证一致；无远端项目核对本地两分支并明确报告。保留未发布的独立功能分支，按仓库分支规范登记结果。
+
+### 更新窗口语言门禁
+
+新构建保留 Sparkle 全部 `.lproj`，不得通过删除非英文资源固定更新窗口语言。
+窗口文案跟随 `AppLocaleOverride`；下次打开窗口使用最新选择，已打开的 AppKit 控件不实时重建。
+更新说明必须来自同次中英文发布快照：标准 `description` 同时包含 `xml:lang="en"` 与
+`xml:lang="zh-Hans"`，并保留 `starcat:releaseNotes-en` 与 `starcat:releaseNotes-zh-Hans`
+正文供客户端按应用语言读取；同一语言的标准说明与扩展字段正文必须一致。
+只增加双语 description 仍不够，因为 Sparkle 默认按进程语言解析，不能替代客户端语言桥接。
+简体中文、繁体中文共用中文日志，其余语言使用英文原文；跟随系统时按有效系统语言选择。
+框架缺少的翻译回退英文。缺少任一种目标正文阻止生成，合并与普通续跑保留原说明，
+不用当前工作稿覆盖快照或改写历史；已发布版本的说明修复按单独授权的元数据范围执行。
+
+正式版和 Beta 均须分别核验官网中英文日志页与目标 appcast 的双语正文。发布完成前，
+回读线上 feed 与本地候选逐字节比较，并解析确认本次条目的两种正文非空、字段完整。
+官网中文页、窗口标题或按钮已中文、HTTP 200 均不能代替正文验收。修复后同步当次
+`appcast-current.xml` 与官网仓库目标 feed，避免后续部署或续跑覆盖回旧说明。
+
+涉及语言桥接或 appcast 生成的修改，运行 `scripts/tests/test_sparkle_localization.py`、
+发布说明与恢复回归，并分别记录资源覆盖、无窗口模型验证、构建及人工 UI 验收结果。
+需要调出窗口时，优先使用现有 `STARCAT_DIRECT_BUILD_NUMBER=1 make run-direct`，
+不为绕过“已是最新版本”新增调试代码。快照路径、定向修复及人工验收见
+[双语发布与更新说明修复](references/release-map.md#双语发布与更新说明修复)。
 
 ## 先判断状态，再选择恢复阶段
 
@@ -59,7 +84,7 @@ Direct；提到 App Store Connect、Organizer、TestFlight 或审核则走 App S
 | 最终产物完整且已公证 | 对应脚本使用 `--resume`，不重打包或 staple |
 | 草稿存在且缺附件 | 复用草稿，只上传缺失附件；已有附件下载核验 |
 | Release 已公开且附件一致 | 只验证 GitHub，继续更新源；不重建 Release |
-| GitHub 已公开、更新源已核验 | 提交发布元数据并按原授权推送，结束该阶段 |
+| GitHub 已公开、更新源已核验 | 核对官网双语日志正文；补齐原发布范围内的网页与渠道收尾后，提交元数据并同步各仓分支 |
 
 GitHub 按 tag 查询返回 404 不能证明草稿不存在。上传器会分页查询草稿列表，
 在首次判断和创建后回读都使用同一规则。出现重复草稿时，先核对 ID、归属和附件；
@@ -153,14 +178,20 @@ STARCAT_NOTARIZE=1 STARCAT_RELEASE_SKIP_TAG=1 ./scripts/release-direct.sh X.Y.Z
 # 新构建；真实发布需已获授权。
 STARCAT_NOTARIZE=1 ./scripts/release-direct-development.sh X.Y.Z-beta.N
 
-# 最终 DMG 已有，只恢复 GitHub prerelease 和 Beta 更新源。
+# 最终 DMG 已有，恢复 GitHub prerelease、Beta 更新源和当次官网双语日志。
 ./scripts/release-direct-development.sh X.Y.Z-beta.N --resume
 ```
 
 App 营销版本与附件名使用 `X.Y.Z`，tag 使用 `vX.Y.Z-beta.N`。
-产物位于 `dist/direct-development/downloads/`；只公布 `appcast-development.xml`，
-不修改正式 feed、官网最新版、Homebrew 或 App Store。Beta 可复用对应版本待发布 Changelog。
+产物位于 `dist/direct-development/downloads/`；公布 `appcast-development.xml`，
+并从 `release-notes-X.Y.Z-beta.N/` 固定快照生成、定向部署官网中英文更新日志。
+两页均须显示本次 `X.Y.Z Beta N`，回读正文与本地逐字节一致，不含未来版本或待发布内容；
+Release/feed 成功或网页 HTTP 200 不能代替此校验。正式 feed、官网默认稳定版下载、
+Homebrew 和 App Store 保持原状。Beta 可复用对应版本待发布 Changelog。
 原 `STARCAT_DEVELOPMENT_RELEASE_REUSE_ARTIFACTS=1` 同样进入产物恢复模式。
+
+仅遗漏官网日志时，复用原说明快照，按 `starcat-public-site-and-promo` 的
+`references/site-promo-map.md` 定向补发两页；无需重打包、重传 DMG 或全站部署。
 
 ## 同步正式版 Homebrew Cask
 
@@ -208,10 +239,13 @@ Direct 发布后验证：
 - SHA 文件存在于 DMG 同目录；
 - 当前版本 appcast 存在：`dist/direct/downloads/appcast-current.xml`；
 - 合并后的 appcast 存在：`supports/starcat-site/direct/appcast.xml`，且引用新 DMG 和新版本号；
+- 本次条目满足“更新窗口语言门禁”，线上 feed 与本地发布内容逐字节一致，不能只查版本号或下载链接；
+- 官网中英文日志页均来自当次双语快照，回读正文与本地生成结果逐字节一致；
 - 线上 URL 可访问：
   - `https://starcat.ink/appcast.xml`
   - `https://github.com/starcat-app/Starcat/releases/download/v<version>/Starcat-<version>-arm64.dmg`
   - `https://starcat.ink/changelog.html`
+  - `https://starcat.ink/changelog-zh.html`
 - `supports/homebrew-starcat` 的 `origin/main` 已声明相同版本和 DMG SHA256；
 - `homebrew-starcat` 的 `Audit Cask` Action 成功。
 

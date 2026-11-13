@@ -5,7 +5,7 @@
 > **状态**：后端已实施并本地接口验收通过（2026-06-12）
 > **影响范围**：`supports/starcat-weekly-api/` 独立 Go 服务
 > **客户端影响**：现有 `WeeklyAPI` 接口由 R-05 一次性切换到聚合接口
-> **数据迁移**：项目未上线，不保留旧 schema；删除本地数据库后重建
+> **历史数据处理**：下面的删库重建只记录 2026-06-12 的开发环境操作，不适用于当前已发布服务或用户数据；现行变更需按独立仓库迁移规则执行
 > **兼容性**：不保留旧列表和详情接口
 
 > **实施记录（2026-06-12）**：`supports/starcat-weekly-api` 已按本文落地 R-04。公开读取接口只保留 `GET /api/v1/repos`、`GET /api/v1/repos/{gh_repo_id}`、`GET /api/v1/repos/languages`；旧 `/api/v1/weekly`、`/api/v1/zread`、`/api/v1/discovery` 已删除并本地验证 404。`go test -timeout 60s ./... -count=1` 为 28 项 / 15 packages 全绿；本地删 `weekly.db` 后通过 `supports/start-all.sh` 启动服务，已验证分页、详情、语言、`source=weekly`、`source=zread`、旧接口 404。
@@ -47,11 +47,11 @@ GET /api/v1/repos/languages
 - GitHub enrich 可以去抖，但来源登记和事件写入绝不能被去抖跳过。
 - Discovery 只保留最新代码中的“收集 + GitHub enrichment”流程，不恢复已删除的 LLM 分类体系。
 - 客户端不做跨源去重、时间归一或排序。
-- 项目尚未上线，R-04 直接替换 schema、DTO 和公开路由；不写数据迁移，不保留老版本兼容逻辑。
+- R-04 当时在上线前替换了 schema、DTO 和路由。此历史策略已不能用于现有生产数据，也不构成删除当前数据库的授权。
 
 ---
 
-## 1. 最新代码现状
+## 1. R-04 实施前代码现状（2026-06-12）
 
 ### 1.1 当前存储模型
 

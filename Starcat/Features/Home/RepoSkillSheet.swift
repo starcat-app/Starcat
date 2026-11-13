@@ -15,6 +15,7 @@ struct RepoSkillSheet: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(AppDependencies.self) private var dependencies
     @State private var previewID = ""
+    @State private var isPreviewExpanded = false
 
     private var preview: RepoSkill? {
         session.skills.first { $0.id == previewID } ?? session.skills.first
@@ -26,9 +27,12 @@ struct RepoSkillSheet: View {
             Divider()
             GeometryReader { geometry in
                 HStack(spacing: 0) {
-                    RepoSkillSelectionPane(session: session, previewID: $previewID)
-                        .frame(width: min(280, geometry.size.width * 0.25))
-                    Divider()
+                    if !isPreviewExpanded {
+                        RepoSkillSelectionPane(session: session, previewID: $previewID)
+                            .frame(width: min(280, geometry.size.width * 0.25))
+                        Divider()
+                    }
+                    // 阅读器始终留在同一个结构位置；放大只移除两侧栏，保留 WebView 与滚动位置。
                     VStack(alignment: .leading, spacing: 8) {
                         if let error = session.error {
                             Text(verbatim: error).foregroundStyle(.secondary).padding(16)
@@ -36,46 +40,32 @@ struct RepoSkillSheet: View {
                         if session.isLoading && preview == nil {
                             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else if let preview {
-                            if let progress = session.scanProgressText {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text(verbatim: progress)
-                                }
-                                .font(interfaceScale.font(.caption))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 18)
-                                .padding(.bottom, 8)
-                            }
                             if let issue = preview.installationIssue {
                                 Label(issue, systemImage: "exclamationmark.triangle")
                                     .font(interfaceScale.font(.caption)).padding(.horizontal, 18)
                             }
-                            RepoSkillDetailPane(skill: preview, session: session)
+                            RepoSkillDetailPane(
+                                skill: preview, session: session, isPreviewExpanded: $isPreviewExpanded
+                            )
                         } else {
                             ContentUnavailableView(
                                 "repo.skills.list.empty", systemImage: "shippingbox",
                                 description: Text(session.scan?.complete == true ? "repo.skills.scan.absent" : "repo.skills.scan.incomplete")
                             )
                         }
-                        if let scan = session.scan, !scan.complete {
-                            DisclosureGroup("repo.skills.scan.incomplete") {
-                                ForEach(Array(scan.diagnostics.enumerated()), id: \.offset) { _, message in
-                                    Text(verbatim: message).textSelection(.enabled)
-                                }
-                            }
-                            .font(interfaceScale.font(.caption))
-                            .padding(12)
-                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    Divider()
-                    RepoSkillInspector(session: session)
-                        .frame(width: max(310, geometry.size.width * 0.29))
+                    if !isPreviewExpanded {
+                        Divider()
+                        RepoSkillInspector(session: session)
+                            .frame(width: max(310, geometry.size.width * 0.29))
+                    }
                 }
             }
-            Divider()
-            footer
+            if !isPreviewExpanded {
+                Divider()
+                footer
+            }
         }
         .foregroundStyle(.primary)
         // macOS 新版 regular/large 按钮可能默认采用胶囊，任务窗口明确遵循 6pt 矩形圆角。
@@ -88,8 +78,15 @@ struct RepoSkillSheet: View {
         }
         .onChange(of: session.skills.map(\.id)) { _, ids in
             if !ids.contains(previewID) { previewID = ids.first ?? "" }
+            if ids.isEmpty { isPreviewExpanded = false }
         }
-        .onExitCommand(perform: onClose)
+        .onExitCommand {
+            if isPreviewExpanded {
+                isPreviewExpanded = false
+            } else {
+                onClose()
+            }
+        }
         .onChange(of: dependencies.databaseScopeRevision) { _, _ in
             session.close()
             onClose()
@@ -107,6 +104,16 @@ struct RepoSkillSheet: View {
                 .truncationMode(.middle)
                 .help(session.repo.fullName)
             Spacer(minLength: 12)
+            RepoSkillScanNotice(session: session)
+            if let progress = session.scanProgressText {
+                Text(verbatim: progress)
+                    .font(interfaceScale.font(.caption))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .accessibilityLabel(Text(verbatim: progress))
+            }
             SyncIconButton(isRefreshing: session.isLoading, disabled: session.isInstalling,
                            tooltip: String.l10n("repo.skills.scan.refresh")) {
                 Task { await session.load(force: true) }

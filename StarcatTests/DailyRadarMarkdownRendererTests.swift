@@ -192,6 +192,23 @@ struct DailyRadarMarkdownRendererTests {
         #expect(!document.contains("IntersectionObserver"))
     }
 
+    /// 正文图片禁用右键和拖拽，但文字 / 链接目标仍保留 WebKit 默认交互。
+    @Test func articleImageInteractionsDisableOnlyImageTargets() throws {
+        let context = try imageScriptContext()
+        context.evaluateScript("""
+        var prevented=[];
+        function event(target){return {target,preventDefault(){prevented.push(target.name)}}}
+        const imageTarget={name:"image",closest(selector){return selector===".article-image"?{}:null}};
+        const textTarget={name:"text",closest(){return null}};
+        events.contextmenu(event(imageTarget));
+        events.contextmenu(event(textTarget));
+        events.dragstart(event(imageTarget));
+        events.dragstart(event(textTarget));
+        """)
+        try #require(context.exception == nil)
+        #expect(context.evaluateScript("prevented.join(',')").toString() == "image,image")
+    }
+
     /// 不创建 WebView；直接验证布局发布边界，确保同高 ready、旧会话失效及回调顺序。
     @Test @MainActor func layoutReadyPublishesHeightBeforeCallbackOncePerSession() {
         var height: CGFloat = 20

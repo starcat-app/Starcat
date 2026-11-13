@@ -7,7 +7,7 @@
 > - [`00-概览-Agent方向讨论与方案.md`](00-概览-Agent方向讨论与方案.md)
 > - [`02-替代品推荐-Agent方案.md`](02-替代品推荐-Agent方案.md):共用 `AgentOrchestrator`
 > - [`../../../../AGENTS.md`](../../../../AGENTS.md):NSBackgroundActivityScheduler 已有规划
-> - [`../概要设计.md`](../概要设计.md):后台任务设计
+> - [概要设计](../../../1-立项/概要设计.md):立项阶段后台任务设计
 
 ---
 

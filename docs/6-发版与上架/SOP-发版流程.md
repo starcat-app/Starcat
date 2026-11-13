@@ -1,12 +1,20 @@
-# 发版流程
+# 旧版发版流程与版本号机制
 
 > 创建：2026-06-07
 > 适用范围：Starcat macOS App
 > 配套实现：`scripts/bump-version.sh` + `project.yml` 中的 `postBuildScripts`
+> 状态更新：2026-11-12。本文的 `release-store.sh` / ad-hoc DMG 流程是历史记录，不能作为当前正式发版操作手册。正式发布以 [SOP-双渠道签名与发布](SOP-双渠道签名与发布.md) 为入口；新机器配置见 [SOP-新Mac开发发布环境搭建](SOP-新Mac开发发布环境搭建.md)。
 
 ---
 
-## TL;DR（一句话答案）
+## 当前入口与本文适用范围
+
+- Direct 正式发布使用 `scripts/release-direct.sh`；App Store 打包使用 `scripts/package-appstore.sh`，具体参数和门禁按双渠道 SOP。
+- `scripts/release-store.sh` 是默认禁用的旧 ad-hoc 入口，下面保留其原始行为以便理解旧提交。
+- 本文的 tag / build 号解释需要结合渠道覆盖规则阅读；打 tag 或推 tag 本身不等于发布完成。
+- 任何打包、签名、公证、上传或推送操作仍须按 `AGENTS.md` 获得明确授权。
+
+## 历史流程概览（2026-06-07）
 
 **版本号字段全自动**，发版一行命令：
 
@@ -66,11 +74,11 @@ Version 0.1.0 (Build 201.f09a499)
 
 ---
 
-## 2. 标准发版 SOP（每次发版都按这个走）
+## 2. 历史 ad-hoc 发版 SOP
 
-### 推荐路径：`scripts/release-store.sh`（一键发版）
+### 旧入口：`scripts/release-store.sh`
 
-`release-store.sh` 是发版总入口，把"打 tag → 出 DMG → 推 tag"串起来，并做完整前置校验。
+以下描述 `release-store.sh` 当时把“打 tag → 出 DMG → 推 tag”串联的行为，不是当前正式发布建议。
 
 ```bash
 ./scripts/release-store.sh v0.1.1                # 标准发版（happy path）
@@ -96,7 +104,7 @@ Version 0.1.0 (Build 201.f09a499)
 - `v` 前缀可省可加，内部归一化（与 `build-dmg.sh` 严格 `X.Y.Z` 接口对齐）
 - 严格 SemVer X.Y.Z 校验（暂不支持 `-beta` / `-rc` 后缀，与 `build-dmg.sh` 限制一致）
 
-> 下面 §2.x 的 5 步 SOP 是脚本背后做的事，理解一下有助于排查问题，但日常用 `release-store.sh` 一行就够。
+> 下面 §2.x 保留旧脚本的操作拆解。当前发布不要从这些步骤拼接命令，应使用双渠道 SOP。
 
 ### 第 1 步：定 marketing 版本号（SemVer）
 
@@ -235,7 +243,7 @@ UI 仍显示「Version 0.1.0 (Build 201.f09a499)」，build 号和 hash 仍正�
 
 - [ ] **`docs/功能实现总览.md`** —— 顶部「最近更新」+「变更日志」追加发版条目（参考已有格式）
 - [ ] **Changelog Markdown** —— 确认日常任务已按授权逐条维护；发版时审计 `supports/starcat-site` 的 `appstore/` 与 `direct/` 中英文 Changelog（共 4 份，2026-11 迁入，见 Starcat#202）是否同步、是否遗漏，并将目标版本从“待发布”改为正式版本
-- [ ] **Changelog HTML** —— 仅在正式发版时运行 `python3 supports/starcat-site/direct/generate-changelog.py` 与 `python3 supports/starcat-site/appstore/generate-changelog.py`，更新并核对两渠道官网中英文更新日志页
+- [ ] **Changelog HTML** —— 按实际渠道生成并部署官网中英文更新日志页；Direct Beta 使用 `direct/generate-changelog.py --source-root dist/direct-development/downloads/release-notes-X.Y.Z-beta.N/` 读取固定快照，回读两页正文核对版本及内容，不公开未来版本或更新 App Store 页面
 - [ ] **测试** —— `xcodebuild test` 全绿，至少跑一次冒烟测
 - [ ] **手动验证** —— Xcode IDE Cmd+R 启动一次，关于页显示正确
 - [ ] **打 tag** —— `git tag vX.Y.Z` + `git push --tags`

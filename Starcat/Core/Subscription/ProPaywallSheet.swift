@@ -172,6 +172,7 @@ struct ProPaywallSheet: View {
                     paywallFooterButton("paywall.button.redeemOfferCode") {
                         isOfferCodeRedemptionPresented = true
                     }
+                    .disabled(isOfferCodeRedemptionPresented)
 
                     paywallFooterButton("paywall.button.manage") {
                         openURL(SubscriptionExternalLinks.manageSubscriptions)
@@ -187,6 +188,7 @@ struct ProPaywallSheet: View {
                     paywallFooterButton("paywall.button.redeemOfferCode") {
                         isOfferCodeRedemptionPresented = true
                     }
+                    .disabled(isOfferCodeRedemptionPresented)
 
                     paywallFooterButton("paywall.button.manage") {
                         openURL(SubscriptionExternalLinks.manageSubscriptions)

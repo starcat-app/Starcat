@@ -15,12 +15,51 @@ import Foundation
 ///
 /// 该类型只负责 URLRequest、JSON 编解码和 HTTP 错误分类；是否启用、是否有 Key、
 /// request purpose 是否允许缓存等业务判断由各 Provider 包装器执行。
+/// 所有搜索入口按 Provider 共用冷却期；重新创建 Registry 或点击继续查找不会绕过 429。
+/// 只阻止新的请求，不占用线程等待，也不替用户自动重试或切换服务商。
+actor ExternalSearchRetryGate {
+    static let shared = ExternalSearchRetryGate()
+    static let defaultRetryAfter: TimeInterval = 30
+
+    private let now: @Sendable () -> Date
+    private var blockedUntil: [ExternalSearchProviderID: Date] = [:]
+
+    init(now: @escaping @Sendable () -> Date = Date.init) {
+        self.now = now
+    }
+
+    func currentDate() -> Date { now() }
+
+    /// 只拦截已收到限流响应的 Provider，其他搜索来源仍可继续使用。
+    func check(provider: ExternalSearchProviderID) throws {
+        try Task.checkCancellation()
+        guard let deadline = blockedUntil[provider] else { return }
+        let remaining = deadline.timeIntervalSince(now())
+        guard remaining > 0 else {
+            blockedUntil.removeValue(forKey: provider)
+            return
+        }
+        throw ExternalSearchError.rateLimited(provider: provider, retryAfter: ceil(remaining), message: nil)
+    }
+
+    func record(provider: ExternalSearchProviderID, retryAfter: TimeInterval?) {
+        let seconds = retryAfter.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } ?? Self.defaultRetryAfter
+        let deadline = now().addingTimeInterval(seconds)
+        blockedUntil[provider] = max(blockedUntil[provider] ?? deadline, deadline)
+    }
+}
+
 struct ExternalSearchHTTPClient: Sendable {
     let session: URLSession
     let timeout: TimeInterval
+    private let retryGate: ExternalSearchRetryGate
 
-    init(session: URLSession? = nil, timeout: TimeInterval = 12) {
+    init(
+        session: URLSession? = nil, timeout: TimeInterval = 12,
+        retryGate: ExternalSearchRetryGate = .shared
+    ) {
         self.timeout = timeout
+        self.retryGate = retryGate
         if let session {
             self.session = session
         } else {
@@ -36,30 +75,45 @@ struct ExternalSearchHTTPClient: Sendable {
         provider: ExternalSearchProviderID,
         decoder: JSONDecoder = .externalSearch
     ) async throws -> Response {
+        try await retryGate.check(provider: provider)
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+        } catch where DiagnosticFailure.isCancellation(error) {
+            throw CancellationError()
         } catch {
-            throw ExternalSearchError.network(provider: provider, message: error.localizedDescription)
+            throw ExternalSearchError.network(
+                provider: provider, message: error.localizedDescription, code: (error as? URLError)?.code.rawValue
+            )
         }
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else {
             throw ExternalSearchError.invalidResponse(provider: provider, message: "Missing HTTP response")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.mapHTTPError(provider: provider, http: http, body: data)
+            let error = Self.mapHTTPError(
+                provider: provider, http: http, body: data, now: await retryGate.currentDate()
+            )
+            if case .rateLimited(_, let retryAfter, _) = error {
+                await retryGate.record(provider: provider, retryAfter: retryAfter)
+            }
+            throw error
         }
         do {
             return try decoder.decode(Response.self, from: data)
         } catch {
-            throw ExternalSearchError.invalidResponse(provider: provider, message: error.localizedDescription)
+            throw ExternalSearchError.invalidResponse(
+                provider: provider, message: error.localizedDescription, statusCode: http.statusCode
+            )
         }
     }
 
     static func mapHTTPError(
         provider: ExternalSearchProviderID,
         http: HTTPURLResponse,
-        body: Data
+        body: Data,
+        now: Date = Date()
     ) -> ExternalSearchError {
         let message = decodeErrorMessage(from: body)
         switch http.statusCode {
@@ -68,14 +122,16 @@ struct ExternalSearchHTTPClient: Sendable {
         case 402:
             return .paymentRequired(provider: provider, statusCode: http.statusCode, message: message)
         case 429:
-            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
+            let retryAfter = HTTPRetryAfter.seconds(from: http.value(forHTTPHeaderField: "Retry-After"), now: now)
+                ?? ExternalSearchRetryGate.defaultRetryAfter
             return .rateLimited(provider: provider, retryAfter: retryAfter, message: message)
         case 500...599:
             return .serviceUnavailable(provider: provider, statusCode: http.statusCode, message: message)
         default:
             return .invalidResponse(
                 provider: provider,
-                message: message ?? "HTTP \(http.statusCode)"
+                message: message ?? "HTTP \(http.statusCode)",
+                statusCode: http.statusCode
             )
         }
     }
@@ -106,11 +162,13 @@ struct AnySearchExternalSearchProvider: ExternalSearchProvider {
     private let anonymous: Bool
     private let isEnabled: Bool
     private let client: @Sendable (String?, Bool) -> any AnySearchClientProtocol
+    private let retryGate: ExternalSearchRetryGate
 
     init(
         apiKey: String?,
         anonymous: Bool,
         isEnabled: Bool,
+        retryGate: ExternalSearchRetryGate = .shared,
         client: @escaping @Sendable (String?, Bool) -> any AnySearchClientProtocol = { apiKey, anonymous in
             AnySearchClient(apiKey: apiKey, anonymous: anonymous)
         }
@@ -119,6 +177,7 @@ struct AnySearchExternalSearchProvider: ExternalSearchProvider {
         self.anonymous = anonymous
         self.isEnabled = isEnabled
         self.client = client
+        self.retryGate = retryGate
     }
 
     func search(_ request: ExternalSearchRequest) async throws -> ExternalSearchResponse {
@@ -126,12 +185,20 @@ struct AnySearchExternalSearchProvider: ExternalSearchProvider {
         guard anonymous || apiKey?.isEmpty == false else {
             throw ExternalSearchError.missingAPIKey(provider: id)
         }
+        try await retryGate.check(provider: id)
         let response: AnySearchResponse
         do {
             response = try await client(apiKey, anonymous).search(anySearchRequest(from: request))
+        } catch where DiagnosticFailure.isCancellation(error) {
+            throw CancellationError()
         } catch {
-            throw Self.mapAnySearchError(error)
+            let mapped = Self.mapAnySearchError(error)
+            if case .rateLimited(_, let retryAfter, _) = mapped {
+                await retryGate.record(provider: id, retryAfter: retryAfter)
+            }
+            throw mapped
         }
+        try Task.checkCancellation()
         return ExternalSearchResponse(
             hits: response.results.map(Self.mapAnySearchResult),
             metadata: ExternalSearchMetadata(
@@ -167,22 +234,43 @@ struct AnySearchExternalSearchProvider: ExternalSearchProvider {
 
     private static func mapAnySearchError(_ error: Error) -> ExternalSearchError {
         guard let anySearch = error as? AnySearchError else {
-            return .network(provider: .anySearch, message: error.localizedDescription)
+            return .network(
+                provider: .anySearch, message: error.localizedDescription, code: (error as? URLError)?.code.rawValue
+            )
         }
         switch anySearch {
         case .disabled:
             return .disabled(provider: .anySearch)
-        case .invalidAPIKey, .accountDisabled, .capabilityNotEnabled:
-            return .invalidCredential(provider: .anySearch, statusCode: nil, message: anySearch.localizedDescription)
+        case .invalidAPIKey(let reason):
+            return .invalidCredential(
+                provider: .anySearch, statusCode: reason == .expired ? 403 : 401,
+                message: anySearch.localizedDescription
+            )
+        case .accountDisabled, .capabilityNotEnabled:
+            return .invalidCredential(provider: .anySearch, statusCode: 403, message: anySearch.localizedDescription)
         case .anonymousQuotaExhausted, .keyQuotaExhausted:
             return .paymentRequired(provider: .anySearch, statusCode: 402, message: anySearch.localizedDescription)
         case .rateLimited(_, let retryAfter):
-            return .rateLimited(provider: .anySearch, retryAfter: retryAfter.map(TimeInterval.init), message: anySearch.localizedDescription)
-        case .serviceUnavailable, .server:
-            return .serviceUnavailable(provider: .anySearch, statusCode: nil, message: anySearch.localizedDescription)
-        case .transport:
-            return .network(provider: .anySearch, message: anySearch.localizedDescription)
-        case .invalidURL, .invalidRequest, .invalidResponse, .api, .decoding:
+            return .rateLimited(
+                provider: .anySearch,
+                retryAfter: retryAfter.flatMap { $0 >= 0 ? TimeInterval($0) : nil }
+                    ?? ExternalSearchRetryGate.defaultRetryAfter,
+                message: anySearch.localizedDescription
+            )
+        case .serviceUnavailable(_, let status):
+            return .serviceUnavailable(provider: .anySearch, statusCode: status, message: anySearch.localizedDescription)
+        case .server(let status):
+            if (500...599).contains(status) {
+                return .serviceUnavailable(provider: .anySearch, statusCode: status, message: anySearch.localizedDescription)
+            }
+            return .invalidResponse(provider: .anySearch, message: anySearch.localizedDescription, statusCode: status)
+        case .transport(let message, let code):
+            return .network(provider: .anySearch, message: message, code: code)
+        case .invalidRequest:
+            return .invalidResponse(provider: .anySearch, message: anySearch.localizedDescription, statusCode: 400)
+        case .decoding(let status), .api(_, _, .some(let status)):
+            return .invalidResponse(provider: .anySearch, message: anySearch.localizedDescription, statusCode: status)
+        case .invalidURL, .invalidResponse, .api(_, _, .none):
             return .invalidResponse(provider: .anySearch, message: anySearch.localizedDescription)
         }
     }

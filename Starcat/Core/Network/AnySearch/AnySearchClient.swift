@@ -79,16 +79,17 @@ actor AnySearchClient: AnySearchClientProtocol {
             // 单独捕获保持向后兼容（理论上 perform 改造后不再抛 .server）。
             AppLog.ai.info("AnySearch.search retry after 5xx: query=\"\(request.query, privacy: .public)\"")
             return try await perform(request)
-        } catch AnySearchError.server {
+        } catch AnySearchError.server(let status) where (500...599).contains(status) {
             AppLog.ai.info("AnySearch.search retry after server error: query=\"\(request.query, privacy: .public)\"")
             return try await perform(request)
-        } catch AnySearchError.transport(let message) where message.contains("timed out") {
+        } catch AnySearchError.transport(_, let code) where code == URLError.timedOut.rawValue {
             AppLog.ai.info("AnySearch.search retry after timeout: query=\"\(request.query, privacy: .public)\"")
             return try await perform(request)
         }
     }
 
     private func perform(_ body: AnySearchRequest) async throws -> AnySearchResponse {
+        try Task.checkCancellation()
         guard let url = URL(string: "/v1/search", relativeTo: baseURL)?.absoluteURL else {
             throw AnySearchError.invalidURL
         }
@@ -106,12 +107,15 @@ actor AnySearchClient: AnySearchClientProtocol {
         let response: URLResponse
         do {
             (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "search")
+        } catch where DiagnosticFailure.isCancellation(error) {
+            throw CancellationError()
         } catch {
             // Y9.3：transport 错误是 timeout / 网络不可达 / DNS 失败 / TLS 握手失败的统称，
             // 单独打 error log 让用户能看到（catch 链上方的 retry 路径不看 transport 异常）。
             AppLog.ai.error("AnySearch.perform transport error: \(error.localizedDescription, privacy: .public)")
-            throw AnySearchError.transport(error.localizedDescription)
+            throw AnySearchError.transport(error.localizedDescription, code: (error as? URLError)?.code.rawValue)
         }
+        try Task.checkCancellation()
         AppLog.ai.info("AnySearch.perform got HTTP response: status=\((response as? HTTPURLResponse)?.statusCode ?? -1, privacy: .public) bytes=\(data.count, privacy: .public)")
         guard let http = response as? HTTPURLResponse else { throw AnySearchError.invalidResponse }
 
@@ -162,11 +166,12 @@ actor AnySearchClient: AnySearchClientProtocol {
             let isAccountScope = envelope?.message.lowercased().contains("user") == true ||
                 envelope?.message.lowercased().contains("account") == true
             let scope: AnySearchError.RateLimitScope = isAccountScope ? .account : .key
-            let retryFromHeader = http.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init)
+            let retryFromHeader = HTTPRetryAfter.seconds(from: http.value(forHTTPHeaderField: "Retry-After"))
+                .map { Int(ceil(min($0, Double(Int.max / 2)))) }
             let retryFromBody = envelope?.data?.retryAfter
             throw AnySearchError.rateLimited(scope: scope, retryAfter: retryFromHeader ?? retryFromBody)
         case 500...599:
-            throw AnySearchError.serviceUnavailable(message: envelope?.message)
+            throw AnySearchError.serviceUnavailable(message: envelope?.message, statusCode: http.statusCode)
         default:
             throw AnySearchError.server(statusCode: http.statusCode)
         }
@@ -181,9 +186,9 @@ actor AnySearchClient: AnySearchClientProtocol {
         http: HTTPURLResponse,
         rawData: Data
     ) throws -> AnySearchResponse {
-        guard let envelope else { throw AnySearchError.decoding }
+        guard let envelope else { throw AnySearchError.decoding(statusCode: http.statusCode) }
         guard envelope.code == 0, let payload = envelope.data else {
-            throw AnySearchError.api(code: envelope.code, message: envelope.message)
+            throw AnySearchError.api(code: envelope.code, message: envelope.message, statusCode: http.statusCode)
         }
         let results = (payload.results ?? []).compactMap { raw -> AnySearchResult? in
             guard let normalized = Self.normalize(raw.url) else { return nil }

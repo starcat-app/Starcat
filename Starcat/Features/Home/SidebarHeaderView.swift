@@ -44,6 +44,8 @@ struct SidebarHeaderView: View {
     /// 2026-06-06 A 方案：accountMenu 中"刷新个人信息"项触发 `load(force: true)`，
     /// 同时让贡献草坪和开发语言也跟着刷一下（用户主动刷新时一并更新）。
     @Environment(UserProfileService.self) private var userProfileService
+    /// 刷新时间的相对文案必须跟随 App 内语言设置，不能退回系统 locale。
+    @Environment(\.locale) private var locale
     /// 分享卡 Top Languages 使用用户自有公开仓库语言统计，不使用 starred 项目语言分布。
     @Environment(DeveloperLanguageService.self) private var developerLanguageService
 
@@ -67,6 +69,9 @@ struct SidebarHeaderView: View {
     /// HOM-173：分享卡 sheet 显示状态。
     /// 点击头像左侧分享图标时打开；sheet 关闭回调置回 false。
     @State private var showShareCardSheet: Bool = false
+
+    /// 原生菜单会复用内容；每次开始显示菜单时更新基准时间，避免相对时间停留在旧值。
+    @State private var accountMenuReferenceDate = Date()
 
     var body: some View {
         VStack(spacing: 6) {
@@ -397,12 +402,6 @@ struct SidebarHeaderView: View {
     @ViewBuilder
     private func accountMenu() -> some View {
         Menu {
-            Button {
-                AppDelegate.openSettingsWindow()
-            } label: {
-                Label("settings.general.title", systemImage: "gearshape")
-            }
-
             // 2026-06-06 A 方案 D5-B：手动刷新个人信息入口。
             // 触发 UserProfileService / ContributionService / DeveloperLanguageService 同时 force refresh。
             // GitHub Stars List 属于当前账号的远端资料；用户主动刷新个人信息时也顺手同步一次。
@@ -414,7 +413,15 @@ struct SidebarHeaderView: View {
                     developerLanguageService.load(login: login, force: true)
                     Task { await refreshGitHubStarLists(login: login) }
                 } label: {
-                    Label("sidebar.account.refreshProfile", systemImage: "arrow.clockwise")
+                    Label("sidebar.account.refresh", systemImage: "arrow.clockwise")
+                }
+
+                // 明确告诉用户"什么时候真的拉过一次"，用来区分「刷新没生效」和
+                // 「GitHub 远端就是这个值」——两者在界面上原本完全无法区分。
+                // 菜单项本身是纯信息展示，用 Text 而非禁用的 Button，避免可点击的空操作。
+                if let fetchedAt = userProfileService.lastFetchedAt {
+                    Text(lastRefreshedText(fetchedAt))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -435,6 +442,10 @@ struct SidebarHeaderView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        // macOS Menu 的点击手势会被内部按钮消费，使用原生通知覆盖鼠标和键盘打开菜单。
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            accountMenuReferenceDate = Date()
+        }
         .help(Text("sidebar.account"))
     }
 
@@ -571,6 +582,20 @@ struct SidebarHeaderView: View {
     private func refreshGitHubStarLists(login: String) async {
         await dependencies.githubStarListSyncService.sync(login: login)
         await viewModel.refreshGitHubStarListData(reloadCurrentList: true)
+    }
+
+    /// 仅展示相对时间；`.named` 让“1 天前”自然显示为“昨天”，并显式跟随 App 语言。
+    private func lastRefreshedText(_ date: Date) -> String {
+        let relativeTime = RelativeTimeText.pastEvent(
+            date,
+            relativeTo: accountMenuReferenceDate,
+            locale: locale,
+            dateTimeStyle: .named
+        )
+        return String(
+            format: String.l10n("sidebar.account.refreshedRelativeFormat"),
+            relativeTime
+        )
     }
 }
 

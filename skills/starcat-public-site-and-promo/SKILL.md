@@ -9,7 +9,7 @@ description: Starcat 官网部署与推广内容同步流程。用于用户要�
 
 ## 硬性规则
 
-- 先说明会改本地文件还是远程服务器，等确认后再执行。
+- 先说明会改本地文件还是远程服务器；尚未授权时等待确认，已授权发布任务的同范围恢复与收尾直接继续。
 - `supports/starcat-site/direct/deploy.sh` 会通过 `ssh`/`rsync` 修改 `aliyun2` 服务器，属于生产副作用。
 - `supports/starcat-site/direct/deploy.sh` 会依次上传 nginx 配置、reload nginx 并同步静态资源，必须确认完整副作用。
 - `sync-starcat-readme-promo.py` 会批量改 supports 多个 README，执行前先说明影响范围。
@@ -22,6 +22,7 @@ description: Starcat 官网部署与推广内容同步流程。用于用户要�
 | 部署 Direct 官网与 nginx | `cd supports/starcat-site/direct && ./deploy.sh` |
 | 部署 Direct 测试站与 nginx | `cd supports/starcat-site/direct-test && ./deploy.sh` |
 | 生成官网 changelog 页面 | `python3 supports/starcat-site/direct/generate-changelog.py` |
+| 补发已发布 Beta 的官网双语日志 | 从原 `release-notes-X.Y.Z-beta.N/` 快照生成并定向上传两页，见 `references/site-promo-map.md` |
 | 同步 README 推广区块 | `supports/scripts/sync-starcat-readme-promo.py` |
 | Direct 发布时全链路官网/appcast | 使用 `starcat-release` skill 的 `release-direct.sh` |
 
@@ -35,10 +36,12 @@ description: Starcat 官网部署与推广内容同步流程。用于用户要�
    - 需要远程操作时先确认 `~/.ssh/config` 有 `aliyun2`。
 3. 对本地生成类任务先执行并检查 diff。
 4. 对远程部署类任务先说明命令、远程目录和可验证 URL。
-5. 等确认后执行。
+5. 在当前任务已授权的范围内执行；仅补日志不调用会重载 nginx、同步全站的 `deploy.sh`。
 6. 验证：
    - 官网：`https://starcat.ink`
    - changelog：`https://starcat.ink/changelog.html`
+   - 中文 changelog：`https://starcat.ink/changelog-zh.html`
+   - 两页回读正文与本地生成结果逐字节一致，目标版本与 Beta 标识正确、无未来版本或待发布内容；只检查 HTTP 200 不算完成。
    - nginx：`ssh aliyun2 "nginx -t"` 或脚本内校验结果。
 
 ## 参考

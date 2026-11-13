@@ -204,6 +204,36 @@ struct GitHubAPIClientTests {
         #expect(graphQLRequest.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 
+    @Test("getCurrentUser(forceRefresh: true) 必须绕过 URLCache")
+    func getCurrentUserForceRefreshBypassesURLCache() async throws {
+        let client = makeClient(token: "force-token")
+        URLProtocolStub.requestHandler = { request in
+            switch request.url?.path {
+            case "/user":
+                let body = #"{"id":42,"login":"alice","followers":55}"#.data(using: .utf8)!
+                return (httpResponse(200, request.url!), body)
+            case "/graphql":
+                let body = #"{"data":{"viewer":{"status":null}}}"#.data(using: .utf8)!
+                return (httpResponse(200, request.url!), body)
+            default:
+                throw URLError(.badURL)
+            }
+        }
+
+        // 必须走协议 existential 调用：生产侧 `UserProfileService` 持有的是
+        // `any GitHubAPIClientProtocol`。若协议扩展的默认实现赢过 actor 的真实实现，
+        // cache policy 会被静默丢弃，这里就是唯一能发现该回归的地方。
+        let protocolClient: any GitHubAPIClientProtocol = client
+        let user = try await protocolClient.getCurrentUser(forceRefresh: true)
+
+        #expect(user.followers == 55)
+        let profileRequest = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(profileRequest.url?.path == "/user")
+        // GitHub `/user` 带 60 秒 max-age；强制刷新必须显式忽略本地缓存，
+        // 否则用户连点两次会拿到同一份旧响应。
+        #expect(profileRequest.cachePolicy == .reloadIgnoringLocalCacheData)
+    }
+
     @Test("getUserSocialAccounts: 使用公开用户端点并解码 X 与通用链接")
     func getUserSocialAccountsDecodesPublicLinks() async throws {
         let client = makeClient(token: nil)

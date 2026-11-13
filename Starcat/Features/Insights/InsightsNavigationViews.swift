@@ -65,7 +65,9 @@ struct InsightsListView: View {
             .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .navigationTitle(Text("insights.title"))
+        // 原生导航标题可能在内容的 locale 环境外解析 Text，
+        // 先按应用选择的语言查表，避免标题回落到系统语言。
+        .navigationTitle(String.l10n("insights.title"))
         .onChange(of: topic) { _, _ in
             restoreValidSelection()
         }

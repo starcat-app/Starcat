@@ -107,6 +107,24 @@ struct AppSettingsTests {
         #expect(settings.decisionEngineID == .jev)
         #expect(!settings.decisionGroupingSuggestionsEnabled)
         #expect(!settings.decisionTagSuggestionsEnabled)
+        #expect(!settings.decisionSearchRoutingEnabled)
+    }
+
+    @Test("决策引擎:搜索分流独立持久化且重置回默认关闭")
+    func decisionSearchRoutingPersistsAndResetsIndependently() throws {
+        let defaults = makeIsolatedDefaults()
+        let keychain = InMemoryKeychain()
+        let settings = AppSettings(defaults: defaults, keychain: keychain)
+
+        settings.decisionSearchRoutingEnabled = true
+        let restored = AppSettings(defaults: defaults, keychain: keychain)
+        #expect(restored.decisionSearchRoutingEnabled)
+        #expect(!restored.decisionGroupingSuggestionsEnabled)
+        #expect(!restored.decisionTagSuggestionsEnabled)
+
+        try settings.resetToDefaults()
+        #expect(!settings.decisionSearchRoutingEnabled)
+        #expect(!AppSettings(defaults: defaults, keychain: keychain).decisionSearchRoutingEnabled)
     }
 
     // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 枚举 + AppSettings.listDensity

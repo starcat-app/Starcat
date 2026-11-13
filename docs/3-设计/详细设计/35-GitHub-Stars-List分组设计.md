@@ -1,8 +1,10 @@
 # GitHub Stars List 仓库分组设计
 
-> 状态：2026-06-26 方案确认，进入实现。  
+> 状态：原方案于 2026-06-26 确认，当前已有分组模型、Repository 与同步实现；2026-11-12 核对并修正颜色默认值和迁移规则。
 > 范围：Manage 侧边栏的「仓库分组」、GitHub Stars List 同步、本地缓存、repo 卡片右键分组操作。  
 > 非范围：Smart Collections 规则系统、CloudKit 同步、旧 token / 旧 schema 兼容。
+
+当前颜色行为由 2026-11-04 的“无图标”决定覆盖初始默认配色方案，见[开发前问题清单](../../1-立项/开发前问题清单.md)。源码入口为 [GitHubStarList](../../../Starcat/Core/Database/Models/GitHubStarList.swift) 与 [GitHubStarListRepository](../../../Starcat/Core/Sync/GitHubStarListRepository.swift)；原方案的“不兼容旧 schema”不能覆盖已发布数据库的迁移要求。
 
 ## 1. 背景与目标
 
@@ -18,7 +20,7 @@ GitHub Stars 页面支持把已 star 的仓库加入 List。这个能力和 Star
 2. 支持创建、编辑、删除分组，并把改动同步到 GitHub。
 3. 支持对 repo 执行添加到分组、移出分组、移动到另一个分组，并把改动同步到 GitHub。
 4. 支持一个本地虚拟分组「未分组」，展示所有没有加入任何 GitHub List 的 starred repo。
-5. 分组颜色只存在本地。GitHub 没有颜色字段；未选择颜色时按 `list.id` 做稳定 hash 得到颜色。
+5. 分组颜色只存在本地。GitHub 没有颜色字段；新建及首次同步默认无颜色图标，已有颜色保留，不再按 `list.id` 自动生成默认颜色。
 
 ## 2. GitHub API 结论
 
@@ -54,7 +56,7 @@ CREATE TABLE github_star_lists (
 关键约束：
 
 - `id` 使用 GitHub GraphQL node id，不能自造本地 id。
-- `color_hex` 是本地字段。创建或首次同步时，如果用户没有选择颜色，用 `list.id` 稳定 hash 到项目现有标签色板。
+- `color_hex` 是本地字段，保留 `NOT NULL`；空字符串明确表示无颜色图标。Repository 的 `nil` 入参表示保留已有颜色，新记录无显式颜色时使用空字符串。
 - `position` 使用远端列表顺序写入，侧边栏按 `position ASC, name ASC` 排序。
 - 不为“未分组”建真实记录；它是查询视图。
 
@@ -139,7 +141,7 @@ Manage 分区顺序：
 - name：必填，trim 后非空。
 - description：可空。
 - private：布尔字段，同 GitHub。
-- color：可选。如果用户不选，创建成功后用返回的 `list.id` hash 得到默认颜色。
+- color：可选。用户可选择“无图标”，新建时默认空字符串；编辑时保留已有选择，不以 hash 自动补色。
 
 编辑已有分组时允许修改 name / description / private / color。颜色只写本地，不上传 GitHub。
 
@@ -191,8 +193,8 @@ Repository 查询：
 - GitHub List 为空：分组仍显示，计数为 0。
 - repo 在多个 list：多个分组都显示该 repo，未分组不显示。
 - GitHub mutation 成功但本地写入失败：显示错误，下一次同步会以 GitHub 为准修复。
-- 本地 list 颜色：远端不会覆盖已有颜色；只有首次见到 list 时生成默认颜色。
-- 产品未上线：直接修改 v1 schema，不写旧字段兼容和迁移分支。
+- 本地 list 颜色：远端不会覆盖已有颜色，首次同步默认无图标；显式空字符串与 `nil` 保留语义不能混用。
+- 项目已经发布：已发布 schema 的后续变更追加 `registerVN` 迁移；“无图标”使用现有字段空字符串，不需要为此删库或放宽非空约束。
 
 ## 8. 测试计划
 

@@ -127,10 +127,13 @@ final class ExternalSearchCredentialTester {
 extension ExternalSearchError {
     var technicalDetails: String {
         let status = httpStatusCode.map { "\($0)" } ?? "n/a"
+        let urlCode = urlErrorCode.map(String.init) ?? "n/a"
         let raw = rawMessage?.replacingOccurrences(of: ExternalSearchCredentialTester.testQuery, with: "[redacted-query]") ?? "n/a"
         return [
             "provider=\(providerID.rawValue)",
             "httpStatus=\(status)",
+            "urlErrorCode=\(urlCode)",
+            "retryAfter=\(retryAfter.map { String($0) } ?? "n/a")",
             "message=\(raw)"
         ].joined(separator: "\n")
     }
@@ -141,9 +144,11 @@ extension ExternalSearchError {
              .paymentRequired(_, let statusCode, _),
              .serviceUnavailable(_, let statusCode, _):
             return statusCode
+        case .invalidResponse(_, _, let statusCode):
+            return statusCode
         case .rateLimited:
             return 429
-        case .disabled, .missingAPIKey, .unverifiedCredential, .network, .invalidResponse:
+        case .disabled, .missingAPIKey, .unverifiedCredential, .network:
             return nil
         }
     }
@@ -155,7 +160,7 @@ extension ExternalSearchError {
              .rateLimited(_, _, let message),
              .serviceUnavailable(_, _, let message):
             return message
-        case .network(_, let message), .invalidResponse(_, let message):
+        case .network(_, let message, _), .invalidResponse(_, let message, _):
             return message
         case .disabled, .missingAPIKey, .unverifiedCredential:
             return nil

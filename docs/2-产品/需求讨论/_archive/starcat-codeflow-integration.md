@@ -2,6 +2,8 @@
 
 > 本文档取代 CodeGraphContext 与 Git clone 方案。最终目标：点击一次，在默认浏览器直接看到代码可视化结果。
 
+> 历史定位（2026-11-12）：本文保留 CodeFlow 初期集成设计。当前集成与资源补丁见 `Starcat/Resources/CodeFlow/STARCAT-INTEGRATION.md`；项目已正式发布，旧文中的开发期缓存处理不能推广为已发布用户数据的迁移规则。
+
 ## 1. 最终链路
 
 ```text
@@ -135,7 +137,7 @@ codeflow/<owner>/<repo>/
 
 自定义目录只存放 CodeFlow 生成物。`repository-snapshots/` 下供 CodeFlow、Repomix 等集成共用的源码 ZIP 仍保存在 App Container，不跟随 CodeFlow 输出目录迁移，避免用户移动或删除可视化页面时误伤共享缓存。
 
-当前 ZIP 下载上限为 100 MB。由于项目尚未上线，不兼容或迁移现有旧目录结构，开发阶段直接清理旧缓存后使用新结构。
+当时设计的 ZIP 下载上限为 100 MB，上线前曾直接清理可重建的源码缓存以切换目录结构。该做法仅记录当时的开发环境；当前下载限制与缓存清理范围以实现为准，不能据此删除已发布用户的数据库、笔记或其他用户数据。
 
 共享 ZIP 的整体统计与清理不属于 CodeFlow 数据管理范围，后续应放到统一「源码快照缓存」管理入口；否则从 CodeFlow 页面删除 ZIP 会误伤 Repomix 等其它使用方。
 

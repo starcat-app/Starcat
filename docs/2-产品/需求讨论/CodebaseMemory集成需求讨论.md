@@ -1,7 +1,7 @@
 # CodebaseMemory 集成需求讨论
 
 > 创建：2026-06-29
-> 状态：讨论稿 → 待 dong4j 拍板后转正式方案
+> 状态：历史需求讨论，已形成正式方案并有实现；当前以[集成详细设计](../../3-设计/详细设计/36-CodebaseMemory集成设计.md)和[正式方案](正式方案/CodebaseMemory集成正式方案.md)的渠道分流为准
 > 关联上游：[https://deusdata.github.io/codebase-memory-mcp/](https://deusdata.github.io/codebase-memory-mcp/)（MIT,DeusData 出品）
 
 ---
@@ -143,6 +143,6 @@ codebase-memory-mcp 采用 **MIT 开源协议**：
 ## 7. 后续动作
 
 1. dong4j 拍板后 → 转 [`docs/2-产品/需求讨论/正式方案/CodebaseMemory集成正式方案.md`](正式方案/CodebaseMemory集成正式方案.md)
-2. 实施前再写 [`docs/3-设计/详细设计/36-CodebaseMemory集成设计.md`](../3-设计/详细设计/36-CodebaseMemory集成设计.md)
-3. 在 [`docs/功能实现总览.md`](../功能实现总览.md) §3 加 `- [ ]` 条目 + 完成后打勾 + `> 实现:` 行
+2. 当前详细设计已存在：[CodebaseMemory 集成设计](../../3-设计/详细设计/36-CodebaseMemory集成设计.md)，不能把本文的统一打包路线作为当前渠道规则
+3. [功能实现总览](../../功能实现总览.md)仍需单独授权后才能写入，本文不构成新增条目或勾选许可
 4. `scripts/fetch-codebase-binary.sh` 由 dong4j 手动跑一次,产物进 `Starcat/Resources/Codebase/`

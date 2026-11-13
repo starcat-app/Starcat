@@ -42,18 +42,26 @@ enum RelativeTimeText {
     ///   - now: 当前时间，默认 `Date()`；测试可注入固定时间。
     ///   - locale: SwiftUI 环境里的 locale，用于跟随 Starcat 内语言切换。
     ///   - unitsStyle: `RelativeDateTimeFormatter` 的单位风格。
+    ///   - dateTimeStyle: 默认保持数字表述；菜单可用 `.named` 显示“昨天”等自然文案。
     /// - Returns: 60 秒内或时间戳意外落到未来时返回“刚刚”，否则返回系统相对时间。
     static func pastEvent(
         _ date: Date,
         relativeTo now: Date = Date(),
         locale: Locale,
-        unitsStyle: RelativeDateTimeFormatter.UnitsStyle = .short
+        unitsStyle: RelativeDateTimeFormatter.UnitsStyle = .short,
+        dateTimeStyle: RelativeDateTimeFormatter.DateTimeStyle = .numeric
     ) -> String {
         let delta = date.timeIntervalSince(now)
         if delta >= -recentPastThreshold {
             return String.l10n("relative.justNow")
         }
-        return formatted(date, relativeTo: now, locale: locale, unitsStyle: unitsStyle)
+        return formatted(
+            date,
+            relativeTo: now,
+            locale: locale,
+            unitsStyle: unitsStyle,
+            dateTimeStyle: dateTimeStyle
+        )
     }
 
     /// 格式化未来 deadline，如“限流，X 后重试”。
@@ -83,10 +91,12 @@ enum RelativeTimeText {
         _ date: Date,
         relativeTo now: Date,
         locale: Locale,
-        unitsStyle: RelativeDateTimeFormatter.UnitsStyle
+        unitsStyle: RelativeDateTimeFormatter.UnitsStyle,
+        dateTimeStyle: RelativeDateTimeFormatter.DateTimeStyle = .numeric
     ) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = unitsStyle
+        formatter.dateTimeStyle = dateTimeStyle
         formatter.locale = locale
         return formatter.localizedString(for: date, relativeTo: now)
     }

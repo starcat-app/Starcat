@@ -388,7 +388,7 @@ struct AnySearchClientTests {
         )
         // 注：search() 顶层会对 serviceUnavailable 重试一次，URLProtocolStub 会
         // 返回同样的 503 → 第二次仍抛 serviceUnavailable，最终对用户可见。
-        await #expect(throws: AnySearchError.serviceUnavailable(message: "quota check failed")) {
+        await #expect(throws: AnySearchError.serviceUnavailable(message: "quota check failed", statusCode: 503)) {
             _ = try await client.search(AnySearchRequest(query: "x"))
         }
     }

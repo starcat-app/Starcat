@@ -22,6 +22,7 @@ final class DailyRadarCoverCompositionTests: XCTestCase {
     }
 
     /// 每个分类均能产生六类构图；偏好不能退化为一分类一模板，日期也不能被忽略。
+    /// 每个分类均能产生全部构图、配色与底场；偏好不能退化为一分类一模板。
     func testEveryCategoryHasAllStylesAndDistinctEditions() {
         let categories: [String?] = DailyRadarCatalog.fallbackCategories.map(\.id) + [nil, "future-category"]
         for category in categories {
@@ -30,6 +31,8 @@ final class DailyRadarCoverCompositionTests: XCTestCase {
             }
             let styles = Set(compositions.map(\.style))
             XCTAssertEqual(styles, Set(DailyRadarCoverStyle.allCases), category ?? "nil")
+            XCTAssertEqual(Set(compositions.map(\.palette)), Set(DailyRadarCoverPalette.allCases), category ?? "nil")
+            XCTAssertEqual(Set(compositions.map(\.background)), Set(DailyRadarCoverBackground.allCases), category ?? "nil")
             XCTAssertEqual(Set(compositions.map(\.geometrySeed)).count, compositions.count)
             for composition in compositions {
                 XCTAssertTrue((0..<1).contains(composition.hue))
@@ -37,6 +40,15 @@ final class DailyRadarCoverCompositionTests: XCTestCase {
                 XCTAssertTrue((0..<1).contains(composition.backgroundHue))
                 XCTAssertNotEqual(composition.hue, composition.accentHue)
             }
+        }
+    }
+
+    /// 历史行底色必须与封面身份一致，且始终落在 SwiftUI 可接受的色相范围内。
+    func testDominantHueIsStableAndBounded() {
+        for (category, seed) in [("ai-cli", "report-a"), ("ai-weekly-events", "weekly"), (nil, "中文身份")] {
+            let hue = DailyRadarCoverComposition.dominantHue(category: category, seed: seed)
+            XCTAssertEqual(hue, DailyRadarCoverComposition.dominantHue(category: category, seed: seed))
+            XCTAssertTrue((0..<1).contains(hue))
         }
     }
 

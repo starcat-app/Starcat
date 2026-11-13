@@ -121,6 +121,47 @@ final class UserProfileServiceTests: XCTestCase {
         XCTAssertEqual(svc.profile?.followers, 60, "force=true 应拉新数据并更新")
     }
 
+    /// 手动刷新必须要求网络层绕过 URLCache。
+    ///
+    /// GitHub `/user` 带 `Cache-Control: private, max-age=60`；如果只跳过本地 TTL
+    /// 而沿用协议缓存策略，用户在 60 秒内连点两次会拿到同一份旧响应，误以为刷新失效。
+    func test_load_forceTrueRequestsCacheBypass() async throws {
+        let svc = UserProfileService(apiClient: mock)
+        svc.acceptFromAuth(makeUser(login: "alice", followers: 50))
+
+        let expectation = expectation(description: "fetched")
+        mock.getCurrentUserHandler = {
+            defer { expectation.fulfill() }
+            return self.makeUser(login: "alice", followers: 60)
+        }
+
+        svc.load(login: "alice", force: true)
+        await fulfillment(of: [expectation], timeout: 2.0)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(mock.getCurrentUserForceRefreshCalls, [true],
+                       "force 刷新必须让网络层忽略本地缓存")
+    }
+
+    /// 后台 TTL 刷新保持默认缓存策略，避免每次自动刷新都强制回源。
+    func test_load_backgroundRefreshKeepsProtocolCachePolicy() async throws {
+        let svc = UserProfileService(apiClient: mock)
+
+        let expectation = expectation(description: "fetched")
+        mock.getCurrentUserHandler = {
+            defer { expectation.fulfill() }
+            return self.makeUser(login: "alice", followers: 61)
+        }
+
+        // 首次加载无缓存 → 走网络（非 force）。
+        svc.load(login: "alice")
+        await fulfillment(of: [expectation], timeout: 2.0)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(mock.getCurrentUserForceRefreshCalls, [false],
+                       "后台刷新不应强制绕过缓存")
+    }
+
     // MARK: - acceptFromAuth
 
     func test_acceptFromAuth_persistsToDiskAndUpdatesLastLogin() throws {

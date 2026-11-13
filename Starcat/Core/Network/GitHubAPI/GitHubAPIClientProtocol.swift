@@ -47,6 +47,16 @@ protocol GitHubAPIClientProtocol: Sendable {
     /// 获取当前授权用户信息（同时充当 token 健康检查 — 401 即代表 token 失效）。
     func getCurrentUser() async throws -> GitHubUserDTO
 
+    /// 获取当前授权用户信息，可显式绕过 `URLCache`。
+    ///
+    /// 为什么需要这个重载：GitHub `/user` 响应带 `Cache-Control: private, max-age=60`，
+    /// 用户点「刷新个人信息」后 60 秒内再点，`URLSession` 会把上一次的 200 响应直接复用，
+    /// 界面看起来"刷新无效"。`forceRefresh: true` 把请求改成
+    /// `.reloadIgnoringLocalCacheData`，保证手动刷新一定打到服务端。
+    ///
+    /// 默认实现委托给 `getCurrentUser()`，让只关心业务行为的测试 Mock 不必额外实现。
+    func getCurrentUser(forceRefresh: Bool) async throws -> GitHubUserDTO
+
     /// 获取任意用户公开 profile（`GET /users/{login}`）。
     ///
     /// 与 `getCurrentUser` 不同：这是「别人」的资料，公开端点无需鉴权，也不含 `status`
@@ -412,6 +422,12 @@ extension GitHubAPIClientProtocol {
 extension GitHubAPIClient: GitHubAPIClientProtocol {}
 
 extension GitHubAPIClientProtocol {
+    /// 默认实现：忽略 `forceRefresh`，退化为普通请求。
+    /// 生产实现（`GitHubAPIClient`）会覆写它并真正切换 cache policy。
+    func getCurrentUser(forceRefresh: Bool) async throws -> GitHubUserDTO {
+        try await getCurrentUser()
+    }
+
     /// 旧 Mock 的兼容默认实现；任何实际搜索调用都会明确失败，不会伪造空结果。
     func searchRepositories(
         query: GitHubRepositorySearchQuery,

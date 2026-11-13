@@ -1,14 +1,26 @@
 # Starcat CodebaseMemory 集成设计
 
-> **状态**：方案设计（2026-06-29 dong4j 拍板）
+> **状态**：已有集成实现；2026-11-12 核对双渠道二进制解析，原始方案日期为 2026-06-29
 > **适用版本**：当前主线（dev 分支）
-> **上游**：[DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)（MIT,静态 C 二进制,darwin-arm64 ~80MB 解压后）
+> **上游**：[DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)；内嵌版本与资源校验记录见 [Codebase 集成说明](../../../Starcat/Resources/Codebase/CODEBASE-INTEGRATION.md)，Direct 版本以本机探测结果为准，不沿用初版二进制体积估计
 > **关联文档**：
 > - [需求讨论：CodebaseMemory 集成](../../2-产品/需求讨论/CodebaseMemory集成需求讨论.md)
 > - [正式方案：CodebaseMemory 集成](../../2-产品/需求讨论/正式方案/CodebaseMemory集成正式方案.md)
-> - [CodeFlowStorage 实现参考](../../Starcat/Features/CodeGraph/CodeFlowStorage.swift)
-> - [RepoContextStorage 实现参考](../../Starcat/Shared/Services/RepoContextStorage.swift)
-> - [StarcatMCPPortAvailability 实现参考](../../Starcat/Features/MCP/StarcatMCPPortAvailability.swift)
+> - [CodeFlowStorage 实现参考](../../../Starcat/Features/CodeGraph/CodeFlowStorage.swift)
+> - [RepoContextStorage 实现参考](../../../Starcat/Shared/Services/RepoContextStorage.swift)
+> - [StarcatMCPPortAvailability 实现参考](../../../Starcat/Features/MCP/StarcatMCPPortAvailability.swift)
+
+## 当前实现与原设计的差异
+
+| 边界 | 当前实现 |
+|---|---|
+| App Store 可执行文件 | Resolver 直接读取 App bundle 资源根的 `codebase.bin`，校验后使用；不再复制到 container 的 `.bin/codebase` |
+| Direct 可执行文件 | 优先用户选择的路径，失效后继续尝试 `~/.local/bin/codebase-memory-mcp`、`PATH` 和常见安装目录；Direct target 排除内置二进制 |
+| 有效性 | 解析符号链接后检查普通可执行文件，并执行带超时的版本探测；路径存在本身不代表可用 |
+| 构建与签名 | `project.yml` 管理渠道资源，App Store 打包脚本单独签名并校验嵌入二进制；Direct 打包脚本拒绝携带 `codebase.bin` |
+| 本次核对范围 | 源码与脚本静态契约；不代表本次已经索引真实仓库、运行图谱、打包或通过商店审核 |
+
+事实入口：[CodebaseMemoryBinaryResolver.swift](../../../Starcat/Features/CodeGraph/CodebaseMemory/CodebaseMemoryBinaryResolver.swift)、[project.yml](../../../project.yml)、[App Store 打包脚本](../../../scripts/package-appstore.sh)、[Direct 打包脚本](../../../scripts/package-direct.sh)。下面保留初版模块、模型和状态机草图；签名示例、旧文件清单与测试计划须按当前实现使用，不能整体复制为新任务。
 
 ---
 
@@ -30,7 +42,7 @@ Starcat 现有两条代码分析管线：
 - **Cypher 图查询** → 任意模式匹配(如「找到所有调用 `send()` 的 export 函数」)
 - **3D force-directed 布局** → 浏览器交互探索
 
-codebase-memory-mcp 刚好把这四条做进了**单文件 C 静态二进制**(tree-sitter + LSP + 图谱布局全内嵌,零运行时依赖)。直接打包进 Starcat 就是当前最快的路线。
+初版因此选择了独立二进制方案。当前二进制供应已经按 App Store / Direct 分流，不能再把“所有渠道直接打包进 Starcat”视为现行路线；上游能力与版本也需以实际安装版本为准。
 
 ### 0.2 前置条件（已经成立）
 
@@ -47,19 +59,19 @@ codebase-memory-mcp 刚好把这四条做进了**单文件 C 静态二进制**(t
 
 ### 1.1 目标
 
-1. **P0**：把 `codebase` 二进制**手动打包**进 `Starcat/Resources/Codebase/`,App 启动时 lazy 拷贝到 sandbox container `+ chmod`
+1. **P0**：按渠道解析可执行文件：App Store 使用 bundle 中的 `codebase.bin`，Direct 使用用户选择或本机安装的外部程序。
 2. **P0**：用户在仓库详情页通过 ExternalLinksMenu 一键进入 3D 图谱 → Sheet 弹出 → 6 步进度 → 浏览器打开
 3. **P0**：同一 repo/SHA 二次进入秒开（跳过解压 + 索引）
 4. **P0**：设置页（IntegrationSettingsTab）显示输出目录 / 版本 / 统计；StorageSettingsTab 加清理行
 5. **P0**：Pro 门控,免费版不可用
-6. **P0**：严格禁用 `codebase update` 命令,版本升级跟随 App Store 主应用更新
+6. **P0**：不从业务 Runner 调用 `codebase update`；App Store 随主应用更新嵌入程序，Direct 外部安装版本由本机环境维护。
 7. **P1**：CLI 子命令查询（`search_graph` / `trace_path` 等）通过命令面板或 AI Chat 入口触达,**本期不实现 UI,只留 Runner API**
 
 ### 1.2 非目标
 
 - ❌ 不内置 WebView（开系统浏览器）
 - ❌ 不暴露 UI 端口给用户配置（随机生成,自动探测冲突）
-- ❌ 不下载二进制（必须手动打包进 bundle）
+- ❌ 不在业务 Runner 中自动下载或更新二进制；App Store 嵌入资源与 Direct 外部安装分开处理。
 - ❌ 不做本地代码库 index（只索引当前 repo 的 source）
 - ❌ 不做远端 server 化、不暴露 LAN host
 - ❌ 不做实时 FS watcher 增量更新
@@ -75,7 +87,7 @@ codebase-memory-mcp 刚好把这四条做进了**单文件 C 静态二进制**(t
 Starcat/Features/CodeGraph/CodebaseMemory/               ← 新增目录
 ├── CodebaseMemoryPortAvailability.swift                 ← POSIX bind() 端口占用探测
 ├── CodebaseMemoryStorage.swift                          ← 存储根 + bookmark + summary
-├── CodebaseMemoryBinaryResolver.swift                   ← bundle → container 拷贝 + chmod
+├── CodebaseMemoryBinaryResolver.swift                   ← 渠道分流、候选路径与版本校验
 ├── CodebaseMemoryExtractor.swift                        ← 持久解压到 source/
 ├── CodebaseMemoryRunner.swift                           ← Process spawn + CLI + UI 进程管理
 ├── CodebaseMemoryViewModel.swift                        ← 6 步状态机
@@ -87,9 +99,8 @@ StarcatTests/CodebaseMemoryRunnerTests.swift             ← 端口探测 + Proc
 scripts/fetch-codebase-binary.sh                         ← 下载脚本(dong4j 手动跑一次)
 
 Starcat/Resources/Codebase/                              ← bundle 资源(脚本产物)
-├── codebase                                             ← 二进制(已 chmod +x,已重命名)
-├── STARCAT-INTEGRATION.md                               ← 版本/校验和/修改日期
-└── UPSTREAM-README.md                                   ← provenance + cosign 验证步骤
+├── codebase.bin                                         ← App Store 嵌入资源；Direct 排除
+└── CODEBASE-INTEGRATION.md                              ← 版本与校验记录
 ```
 
 ### 2.2 改动现有文件（最小化）
@@ -110,36 +121,17 @@ Starcat/Resources/Codebase/                              ← bundle 资源(脚�
 
 ## 3. 沙盒与签名策略（App Store 上架前提）
 
-### 3.1 二进制在 bundle 内的部署
+### 3.1 当前二进制来源
 
-```
-Starcat.app/Contents/Resources/Codebase/codebase → (0 权限被 Xcode strip)
-```
+App Store 通过 `Bundle.main.url(forResource: "codebase", withExtension: "bin", subdirectory: nil)` 定位资源，Resolver 不复制、不修改它的权限。资源缺失或验证失败时报告错误。
 
-`CodebaseMemoryBinaryResolver` **不直接 spawn bundle 内的 `codebase`**,而是首次使用时做两步：
+Direct 不使用 bundle 副本。Resolver 按用户选择、标准安装位置、`PATH` 与常见目录枚举候选；用户选择失效仍会尝试自动检测。两条路径都通过 `validateCandidate`，其返回 URL 才能交给 Runner。
 
-```swift
-// ① 拷贝到 container
-try FileManager.default.copyItem(
-    at: bundleCodebaseURL,          // Resources/Codebase/codebase
-    to: containerCodebaseURL        // <codebasememory-root>/.bin/codebase
-)
-// ② 显式写回可执行权限
-try FileManager.default.setAttributes(
-    [.posixPermissions: 0o755],
-    ofItemAtPath: containerCodebaseURL.path
-)
-```
-
-之后所有 `Process.run()` 都指向 container 副本。为什么需要拷贝：
-
-1. Xcode 打包时会 strip **所有** bundle 资源文件的 `+x` 权限(即使脚本里已设 `chmod 0755`)
-2. `Process` spawn 要求可执行文件带 `+x`,`fileIsNotExecutable` 错误没有 fallback
-3. container 副本只在 .bin/ 下,不占额外目录污染
+旧方案用运行时复制加 `chmod` 修复资源权限，这条机制已经不适用。权限与签名由构建／打包阶段处理，不能通过修改 App bundle 或复制程序来绕过当前校验。
 
 ### 3.2 codesign 要求
 
-> 本节只记录**技术设计**,实际 codesign 在 release archive 流程中由 Xcode 自动执行。开发阶段 ad-hoc 签名即可。
+> 下列片段是初版签名草图，不是当前可执行 SOP。现行 App Store 流程在 `scripts/package-appstore.sh` 中对 `codebase.bin` 和主 App 资源封签进行处理，正式操作遵守[双渠道签名与发布](../../6-发版与上架/SOP-双渠道签名与发布.md)。
 
 上架 App Store 时,`codebase` 必须被独立 codesign：
 
@@ -181,7 +173,7 @@ codesign -s "Apple Distribution: ..." \
 
 ### 3.3 安全约束
 
-- Spawn **只走 container 内 `.bin/codebase` 副本**,绝不 spawn bundle 内未经 chmod 的资源文件
+- Spawn 只使用 Resolver 校验通过的 URL：App Store 为签名嵌入程序，Direct 为选定或自动发现的外部程序。
 - 环境变量 `CBM_CACHE_DIR` 注入为 `<codebasememory-root>/.internal-cache/`（sandbox 容器内）
 - **永远不调用** `codebase update` 子命令（`CodebaseMemoryRunner` 不暴露、不过桥）
 - 子进程生命周期由 `CodebaseMemoryRunner.activeProcesses` 统一管理,App 退出时 `willTerminate` 兜底 kill
@@ -454,65 +446,13 @@ func isCacheHit(existing: CodebaseMemoryStoredProject?, commitSHA: String) -> Bo
 
 ## 6. CodebaseMemoryBinaryResolver — 二进制解析
 
-```swift
-actor CodebaseMemoryBinaryResolver {
-    private let storage: CodebaseMemoryStorage
-    private let fileManager: FileManager
+以 [当前实现](../../../Starcat/Features/CodeGraph/CodebaseMemory/CodebaseMemoryBinaryResolver.swift) 为准，避免在文档中保留第二份可被照抄的过期 Resolver：
 
-    // MARK: - Bundle 内资源路径
-    var bundleCodebaseURL: URL? {
-        Bundle.main.url(forResource: "codebase", withExtension: nil, subdirectory: "Codebase")
-    }
-
-    // MARK: - Container 内副本路径
-    func containerCodebaseURL() throws -> URL {
-        try storage.outputRootURL()
-            .appendingPathComponent(".bin/codebase", isDirectory: false)
-    }
-
-    // MARK: - 首次启动时 lazy 拷贝 + chmod
-    func resolveExecutable() throws -> URL {
-        let containerURL = try containerCodebaseURL()
-
-        // 已存在且可执行 → 直接返回
-        if fileManager.isExecutableFile(atPath: containerURL.path) {
-            return containerURL
-        }
-
-        // 不存在 → 从 bundle 拷贝
-        guard let bundleURL = bundleCodebaseURL else {
-            throw CodebaseMemoryError.binaryMissing
-        }
-        try fileManager.createDirectory(
-            at: containerURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        if fileManager.fileExists(atPath: containerURL.path) {
-            try fileManager.removeItem(at: containerURL)
-        }
-        try fileManager.copyItem(at: bundleURL, to: containerURL)
-
-        // 显式 chmod（bundle 内的资源被 Xcode strip 了 x 权限）
-        let attrs = try fileManager.attributesOfItem(atPath: bundleURL.path)
-        try fileManager.setAttributes(
-            [.posixPermissions: attrs[.posixPermissions] ?? 0o755],
-            ofItemAtPath: containerURL.path
-        )
-
-        /* 最终兜底：直接硬设 0755 */
-        var perms = attrs[.posixPermissions] as? Int ?? 0
-        if perms & 0o111 == 0 {
-            perms = 0o755
-            try fileManager.setAttributes(
-                [.posixPermissions: perms],
-                ofItemAtPath: containerURL.path
-            )
-        }
-
-        return containerURL
-    }
-}
-```
+1. `resolveExecutableInfo()` 按渠道选择 bundled / direct 解析。
+2. App Store 缺资源直接报 `binaryMissing`；不会退回外部程序。
+3. Direct 优先验证用户路径，随后遍历自动候选并按标准化路径去重。
+4. `validateCandidate` 解析符号链接，验证普通文件和可执行权限，再探测版本。
+5. 成功返回 URL、版本与来源；全部失败时报告用户路径错误或 `externalExecutableUnavailable`，不伪造可用状态。
 
 ---
 
@@ -610,7 +550,7 @@ final class CodebaseMemoryRunner {
     private var activeProcesses: [Process: (String, Date)] = [:]
 
     /// 入口 1: index_repository
-    /// - binary: container 内可执行文件路径
+    /// - binary: Resolver 已校验的可执行文件路径
     /// - repoPath: 持久解压后的 <outputDir>/source/<commit-SHA>/
     func runIndex(
         binaryURL: URL,
@@ -1018,7 +958,7 @@ final class AppTerminationHandler {
 | PortAvailability | `CodebaseMemoryRunnerTests` | port 可用返回 nil;port 被占返回描述;out of range 返回描述;SO_REUSEADDR 不会误报 TIME_WAIT |
 | Storage(CRUD) | `CodebaseMemoryStorageTests` | 插入 → existingProject 返回;deleteProject → 不再存在;deleteAll → 0;summary 同步 |
 | Extractor | `CodebaseMemoryRunnerTests` | 幂等(write .sha256 → 二次调用返回 wasCached=true);zipbomb(>500MB → throw);allowUncontainedSymlinks 不可失败 |
-| BinaryResolver | `CodebaseMemoryBinaryResolverTests` | bundle 有文件 → 拷贝 + chmod;bundle 无文件 → binaryMissing;已存在 → 不重新拷贝 |
+| BinaryResolver | `CodebaseMemoryBinaryResolverTests` | 覆盖 bundled / direct 来源、用户路径失效后的自动检测、权限和版本探测；不再验证复制 + chmod |
 | Runner | `CodebaseMemoryRunnerTests` | runIndex 成功 → 正确 node/edge count;startUI → process.isRunning=true;stopAll → 全部 terminate;terminationHandler 回调 |
 | ViewModel | `CodebaseMemoryViewModelTests` | 空 repo → resolveBranch 失败;hit cache → .ready state;miss cache → .indexing→.succeeded;Pro check 失败 → paywallContext |
 | EntitlementGate | `EntitlementGateTests` | codebaseMemory case 正确映射到 Pro tier |

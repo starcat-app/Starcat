@@ -165,6 +165,20 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
             case repo, evidenceURL = "evidence_url", sectionAnchor = "section_anchor"
         }
     }
+    /// 列表摘要里的轻量项目徽标，只承载头像渲染所需字段。
+    struct ProjectBadge: Decodable, Sendable, Identifiable, Hashable {
+        let ghRepoId: Int64
+        let fullName: String
+        let ownerAvatar: String?
+        var id: String { fullName }
+        var initial: String {
+            let owner = fullName.split(separator: "/").first.map(String.init) ?? fullName
+            return String(owner.prefix(1)).uppercased()
+        }
+        enum CodingKeys: String, CodingKey {
+            case ghRepoId = "gh_repo_id", fullName = "full_name", ownerAvatar = "owner_avatar"
+        }
+    }
 
     let id: String
     let revision: String
@@ -176,6 +190,7 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
     let readingMinutes: Int
     let cover: Cover
     let relatedProjectCount: Int
+    let relatedProjectBadges: [ProjectBadge]?
     let contentLanguage: String
     let availableLanguages: [String]
     let source: Source?
@@ -191,11 +206,84 @@ struct DailyRadarReport: Decodable, Sendable, Identifiable {
     }
     var minutes: Int { readingMinutes }
     var contentIdentity: String { "\(id)|\(contentLanguage)|\(revision)" }
+    var presentationMarkdown: String? {
+        // 非结构化报告由原生标题承担 H1；只有开头标题与报告标题一致时才移除，避免误删正文内容。
+        markdown.map {
+            Self.removingGeneratedAttribution(
+                from: Self.removingDuplicatedLeadingTitle(from: $0, title: title)
+            )
+        }
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, revision, editionDate = "edition_date", category, period, title, summary
         case readingMinutes = "reading_minutes", cover, relatedProjectCount = "related_project_count"
+        case relatedProjectBadges = "related_project_badges"
         case contentLanguage = "content_language", availableLanguages = "available_languages"
         case source, markdown, relatedProjects = "related_projects", relatedProjectsStatus = "related_projects_status"
         case generatedAt = "generated_at", updatedAt = "updated_at"
+    }
+
+    /// 正文里的 agents-radar 尾注与“内容来源”重复。只删除文档末尾独立斜体段，
+    /// 不扫描正文普通段落，避免误删正常介绍该仓库的内容。
+    static func removingGeneratedAttribution(from markdown: String) -> String {
+        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        let updated = generatedAttributionPattern.stringByReplacingMatches(
+            in: markdown, range: range, withTemplate: ""
+        )
+        return updated.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 删除正文开头与报告标题相同的 H1。标题不同或标题出现在正文中间时保持原样。
+    static func removingDuplicatedLeadingTitle(from markdown: String, title: String) -> String {
+        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
+        guard let match = leadingTitlePattern.firstMatch(in: markdown, range: range),
+              let fullRange = Range(match.range, in: markdown),
+              let capturedRange = Range(match.range(at: 1), in: markdown)
+        else { return markdown }
+
+        let headingTitle = String(markdown[capturedRange])
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        let normalizedTitle = title
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        guard headingTitle.caseInsensitiveCompare(normalizedTitle) == .orderedSame else { return markdown }
+        return String(markdown[fullRange.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static let generatedAttributionPattern = try! NSRegularExpression(
+        pattern: #"(?:^|\n)\*[^\n]*https://github\.com/duanyytop/agents-radar(?:/[^\s)]*)?[^\n]*\*[ \t]*(?:\n)*\z"#
+    )
+
+    private static let leadingTitlePattern = try! NSRegularExpression(
+        pattern: #"\A[ \t]*#[ \t]+([^\n]+?)[ \t]*#*[ \t]*(?:\r?\n|$)"#
+    )
+}
+
+extension DailyRadarReport.Source {
+    /// GitHub 文档深层链接仍以 owner/repo 作为项目身份；来源文案可能显示栏目名，不适合直接当项目名。
+    var repositoryFullName: String? {
+        guard url.scheme?.lowercased() == "https", url.host?.lowercased() == "github.com" else { return nil }
+        let components = url.pathComponents.filter { $0 != "/" }
+        guard components.count >= 2 else { return nil }
+        let owner = components[0]
+        let repository = components[1].hasSuffix(".git")
+            ? String(components[1].dropLast(4))
+            : components[1]
+        guard !owner.isEmpty, !repository.isEmpty,
+              owner != ".", owner != "..", repository != ".", repository != ".." else { return nil }
+        return "\(owner)/\(repository)"
+    }
+
+    var repositoryOwner: String? {
+        repositoryFullName?.split(separator: "/").first.map(String.init)
+    }
+
+    var ownerAvatarURL: URL? {
+        repositoryOwner.flatMap { owner in
+            URL(string: "https://github.com/\(owner).png?size=64")
+        }
     }
 }

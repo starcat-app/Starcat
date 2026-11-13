@@ -1,7 +1,7 @@
 # CodebaseMemory 集成正式方案
 
 > 创建：2026-06-29
-> 状态：方案稿,待 dong4j 拍板后转实施
+> 状态：集成已有实现；2026-11-12 修正双渠道边界，原始实施拆分保留作历史
 > 上游：[CodebaseMemory 集成需求讨论](../CodebaseMemory集成需求讨论.md)
 > 详细技术设计：[`docs/3-设计/详细设计/36-CodebaseMemory集成设计.md`](../../../3-设计/详细设计/36-CodebaseMemory集成设计.md)
 
@@ -9,19 +9,21 @@
 
 ## 1. 路线选择
 
-采用 **「Starcat App 内置 Process spawn + 二进制打包进 bundle + UI 在系统浏览器打开」** 路线。
+当前采用 **“App 管理 Process，按渠道解析二进制，图谱 UI 在系统浏览器打开”** 的路线。
 
-- **二进制打包进 bundle**:与 CodeFlow 的 `codeflow.html` 资源打包同款形态(`Starcat/Resources/Codebase/`),Xcode 启动时随 `.app/Contents/Resources/Codebase/` 一起发布。
-- **首次使用 lazy 拷贝**:首次进入 `CodebaseMemoryPanel` 时,把 bundle 内 `codebase` 二进制复制到 `<container>/Starcat/codebasememory/.bin/codebase` + `chmod 0755`,**之后所有 Process spawn 都走 container 副本**(避免 Xcode strip 掉 +x 权限,避免 bundle 路径变化导致 Process 句柄漂移)。
+- **App Store**：使用 bundle 资源根的 `codebase.bin`，在打包阶段处理权限和签名，运行时直接校验使用，不复制到 container。
+- **Direct**：使用用户指定或本机安装的 `codebase-memory-mcp`，自动探测标准目录与 `PATH`；target 和打包校验均排除内置二进制。
 - **UI 在系统浏览器**:与 CodeFlow 同款 `NSWorkspace.shared.open(URL)`,打开 `http://127.0.0.1:<port>/`。
 - **不内置 WebView**:WKWebView 显示 localhost 在 sandbox 下需要额外配置同源策略,内存占用也不划算。
-- **不下载二进制**:沙盒不允许下载可执行文件(App Store 审核也明确不允许),必须手动打包。
+- **不由业务 Runner 自动更新二进制**：嵌入资源准备与 Direct 本机安装是不同流程；不能按旧版“一律打包、一律复制”操作。
+
+现行事实与源码入口集中在[详细设计的当前实现差异](../../../3-设计/详细设计/36-CodebaseMemory集成设计.md)。下面 §2—§9 保留 2026-06-29 的文件草图、签名示例和 checklist，不是今天待重新执行的实施计划；其中 `.bin/codebase`、无条件 bundle 打包和“零配置改动”已被当前实现取代。
 
 ### 1.1 拒绝的备选
 
 | 备选 | 不选理由 |
 |---|---|
-| 让用户自己装 `codebase-memory-mcp`,Starcat 通过 CLI 调用 | 增加用户安装步骤;Pro 用户期望开箱即用;与 CodeFlow 的"打包 HTML 资源"形态不一致 |
+| 让用户自己装 `codebase-memory-mcp`,Starcat 通过 CLI 调用 | 初版曾拒绝，后续已成为 Direct 的现行路线；App Store 仍使用嵌入资源 |
 | 走 WebView 显示 3D graph | WKWebView 与 localhost 同源隔离需额外配置;内存常驻 |
 | 让二进制只走 stdio / CLI 子命令,不暴露 UI 端口 | 用户原话:"那索引后拿来干嘛"——必须有可视化 |
 | 端口固定 9749 | 与用户本机可能装的 `codebase-memory-mcp` 冲突 |
@@ -132,7 +134,7 @@ Starcat/Resources/Codebase/                  # bundle 资源(scripts 产物)
 └──────────────────────────────────────────────────────┘
 ```
 
-> 不加 "检查更新/下载" 按钮(二进制手动打包进 bundle,无网络需求)。
+> 此处是初版内置资源 UI 的设计记录；当前设置需按渠道展示外部程序路径／版本，不能从该旧说明推导 Direct 必须内置。
 > 不加 UI 端口输入框(随机生成)。
 
 ### 3.5 StorageSettingsTab 新增行
@@ -387,8 +389,7 @@ MIT License © DeusData
 
 ## 已知约束
 
-- App 内调用走 `Process` spawn,**只 spawn container 内 .bin/codebase 副本**
-  (沙盒限制 + App Store 审核要求"不下载可执行文件")
+- App 内调用走 `Process`，只使用 Resolver 已校验的路径；App Store 嵌入与 Direct 外部程序按渠道区分。
 - 不修改上游二进制,纯打包
 ```
 
@@ -409,7 +410,7 @@ MIT License © DeusData
 | R9 | 持久解压膨胀磁盘(1000 个 repo × 50MB) | 中 | Storage Tab 清理 + 单项目删除(同 CodeFlowStorage) |
 | R10 | binary 启动慢 | 低 | 接受,前台跑,UI 打开后用户继续浏览器交互 |
 | R11 | binary 报告的 14 个 MCP tool 升级破坏 schema | 中 | 我们的 `cli <tool> '<json>'` 用宽松 JSONDecoder,只取需要字段 |
-| R12 | macOS Gatekeeper 拦 bundle 内 binary | 低 | 不走系统路径,Process 直接 spawn container 内 file,Gatekeeper 不查 |
+| R12 | 可执行文件权限或签名不满足运行要求 | 需结合渠道核查 | 按当前 Resolver 与正式打包校验处理；复制进 container 不能作为绕过系统检查的保证 |
 
 ---
 

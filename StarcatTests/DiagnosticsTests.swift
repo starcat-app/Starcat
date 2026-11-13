@@ -12,6 +12,75 @@ import Testing
 @Suite("Diagnostics")
 struct DiagnosticsTests {
 
+    @Test("对话配置错误保留具体原因且不显示类型名", arguments: [
+        AIChatSelectionError.missingProvider,
+        .providerUnavailable, .missingModel, .incompatibleModel("private-model-detail")
+    ])
+    func chatSelectionErrorsHaveConfigurationRecovery(selection: AIChatSelectionError) {
+        let mapped = UserFacingError.map(selection, operation: "Planning")
+        #expect(mapped.title == String.l10n("error.user.aiConfiguration.title"))
+        #expect(mapped.recovery == String.l10n("error.user.aiProvider.recovery.modelsSettings"))
+        #expect(!mapped.message.contains("AIChatSelectionError"))
+        #expect(!mapped.message.contains("private-model-detail"))
+        #expect(!mapped.shouldRecordDiagnostic)
+        let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .planning, error: selection)
+        #expect(diagnostic.settingsTarget == "ai.chat")
+    }
+
+    @Test("外部搜索错误保留状态与搜索设置入口", arguments: [
+        ExternalSearchError.disabled(provider: .exa),
+        .missingAPIKey(provider: .exa), .unverifiedCredential(provider: .exa),
+        .invalidCredential(provider: .exa, statusCode: 401, message: "private-server-body"),
+        .invalidCredential(provider: .exa, statusCode: 403, message: "private-server-body"),
+        .paymentRequired(provider: .exa, statusCode: 402, message: "private-server-body"),
+        .rateLimited(provider: .exa, retryAfter: 12, message: "private-server-body"),
+        .serviceUnavailable(provider: .exa, statusCode: 503, message: "private-server-body"),
+        .invalidResponse(provider: .exa, message: "private-server-body"),
+        .network(provider: .exa, message: "private-server-body")
+    ])
+    func externalSearchErrorsKeepTheirCategory(error: ExternalSearchError) {
+        let mapped = UserFacingError.map(error, operation: "Web search")
+        #expect(mapped.message == error.friendlyMessage)
+        #expect(!mapped.message.contains("private-server-body"))
+        #expect(!mapped.message.contains("ExternalSearchError"))
+        if case .disabled = error { #expect(mapped.diagnosticOutcome == .skipped) }
+        let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .webSearch, error: error)
+        #expect(diagnostic.settingsTarget == "ai.externalSearch")
+        switch error {
+        case .invalidCredential(_, let status, _), .paymentRequired(_, let status, _),
+             .serviceUnavailable(_, let status, _): #expect(diagnostic.statusCode == status)
+        case .rateLimited: #expect(diagnostic.statusCode == 429)
+        default: break
+        }
+    }
+
+    @Test("Rerank HTTP 错误按鉴权余额限流和服务异常分类", arguments: [401, 402, 403, 429, 500, 503])
+    func rerankHTTPFailuresKeepStatusAndSettings(status: Int) {
+        let error = RAGExternalBackendError.http(
+            backend: "Rerank", status: status, message: "private-server-body"
+        )
+        let diagnostic = SearchDiscoveryDiagnostic.failure(stage: .ranking, error: error)
+        #expect(diagnostic.statusCode == status)
+        #expect(diagnostic.settingsTarget == "rag.retrieval")
+        #expect(!diagnostic.message.contains("private-server-body"))
+        #expect(!diagnostic.message.contains("RAGExternalBackendError"))
+        #expect(diagnostic.recovery?.isEmpty == false)
+    }
+
+    @Test("Rerank 配置和无效响应不归为未知错误")
+    func rerankConfigurationAndDecodingHaveSpecificRecovery() {
+        let configuration = UserFacingError.map(
+            RAGExternalBackendError.invalidConfiguration("private-endpoint"),
+            operation: "Rerank"
+        )
+        #expect(configuration.title == String.l10n("error.user.aiConfiguration.title"))
+        #expect(!configuration.message.contains("private-endpoint"))
+        let decoding = UserFacingError.map(
+            RAGExternalBackendError.invalidResponse("Rerank"), operation: "Rerank"
+        )
+        #expect(decoding.title == String.l10n("error.user.decoding.title"))
+    }
+
     @Test("DecodingError 摘要包含 codingPath，而不是只留本地化笼统句")
     func diagnosticEventSummarizesDecodingErrorPath() throws {
         struct Box: Decodable {

@@ -13,8 +13,8 @@
 |----|------|
 | **谁发码** | 你在 **App Store Connect** 创建；Apple 生成/管理码 |
 | **谁验码** | **Apple**（App Store / StoreKit）；Starcat **不**维护自建优惠券 API |
-| **客户端入口** | SwiftUI `offerCodeRedemption` 系统兑换 sheet |
-| **Pro 生效** | 兑换成功后 `Transaction.updates` + `handleOfferCodeRedemptionResult` 刷新权益 |
+| **客户端入口** | 在 SwiftUI 入口所属窗口调用 StoreKit 系统兑换 sheet；macOS 27 使用 `AppStore.presentOfferCodeRedeemSheet(from: NSWindow, options:)`，macOS 15–26 使用控制器接口 |
+| **Pro 生效** | 新接口先验证并 `finish()` 返回的交易，再由 `handleOfferCodeRedemptionResult` 刷新权益；`Transaction.updates` 继续处理后续交易更新 |
 | **与 Promotional Offer 区别** | Offer Code = 发字符串码、App 外也可兑、**无需**服务器签名；见 `docs/2-产品/需求讨论/正式方案/支付对接正式方案.md` 讨论 |
 
 Starcat 内入口：
@@ -118,8 +118,8 @@ Starcat 内入口：
 
 ### 4.2 兑换后 Starcat 行为
 
-1. 系统 sheet 关闭  
-2. `SubscriptionManager` 调用 `refreshEntitlements()`  
+1. 系统 sheet 关闭；用户取消时不显示兑换失败
+2. macOS 27 验证并完成系统返回的交易，随后 `SubscriptionManager` 调用 `refreshEntitlements()`；macOS 15–26 直接重新读取有效权益
 3. `isProUser == true` → 付费墙关闭、Pro 功能解锁  
 4. 若未激活：用户可能取消了 sheet、码无效、或资格不符 — 检查 Connect 资格与 Sandbox 账号
 
@@ -131,17 +131,15 @@ Starcat 内入口：
 
 ### 5.1 配置文件
 
-`Starcat/Resources/Products.storekit` 年订已含示例 Offer：
+`Starcat/Resources/Products.storekit` 当前包含月订、年订和买断商品，但月订、年订的 `codeOffers` 均为空，**没有可直接兑换的本地测试优惠码**。本地测试前需在 Xcode 的 StoreKit 配置编辑器中给目标订阅添加 Offer Code 配置，不要把 App Store Connect 的真实码用于本地 StoreKit Testing。
 
-- **offerID**：`early_bird_yearly`  
-- **referenceName**：`Early Bird Yearly`  
-- **示例价**：$19.99 预付 1 年  
+App Sandbox 只决定 macOS 应用的权限，不能据此判断 StoreKit 使用的环境。Xcode Run 选择 `.storekit` 才会注入本地测试会话；`make run-appstore` 构建并通过 `open` 启动应用，不会注入 Xcode 本地 StoreKit Testing 会话。
 
 ### 5.2 步骤
 
 1. Xcode → Scheme **Starcat** → Edit Scheme → Run → **Options**  
 2. **StoreKit Configuration** = `Products.storekit`  
-3. 运行 App（`scripts/run-debug-appstore.sh` 或 Xcode Run）  
+3. 通过 **Xcode Run** 运行 App，确认本地 StoreKit Testing 会话生效
 4. **Debug → StoreKit → Manage Transactions**  
 5. 使用 StoreKit 测试工具创建 / 复制 **Offer Code** 测试码（Xcode 15+ 支持在 StoreKit 配置里管理）  
 6. App 内 **设置 → Pro → 兑换优惠码**，输入测试码  
@@ -153,6 +151,13 @@ Starcat 内入口：
 2. macOS **设置 → App Store → Sandbox 账户** 登录 Sandbox 账号  
 3. Scheme 的 StoreKit Configuration 设为 **None**  
 4. TestFlight 或 Development 签名包装机测试 Connect 里创建的 **Sandbox Offer Code**
+
+### 5.4 排查面板未出现
+
+- 先确认是在本地 StoreKit Testing 还是 App Store Sandbox；沙盒 Debug 构建本身不能代替这一判断。
+- 设置页和付费墙分别点击测试；系统面板应出现在点击入口所在的窗口。
+- 面板尚未出现就报错时，先检查运行环境、系统面板承载和 StoreKit 服务，不能据此判断用户输入了无效码。
+- 诊断记录中的 `subscription / offerCodeRedemption` 保留结果与系统错误，日志补充错误域和错误码；不记录用户输入的兑换码或交易收据。
 
 ---
 

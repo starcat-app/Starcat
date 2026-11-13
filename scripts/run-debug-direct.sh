@@ -251,10 +251,6 @@ if [ ! -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
   exit 1
 fi
 
-# 更新弹窗标题/按钮来自 Sparkle.framework 本地化；Debug 构建也会带上 zh_CN 等。
-# 产品要求弹窗固定英文，所以启动前剥离非英文 .lproj，再按内→外重签。
-echo "==> 固定 Sparkle 更新 UI 为英文..."
-bash "$SCRIPT_DIR/strip-sparkle-non-english-localizations.sh" "$APP_PATH"
 SPARKLE_FRAMEWORK_PATH="$APP_PATH/Contents/Frameworks/Sparkle.framework"
 SPARKLE_CURRENT_PATH="$SPARKLE_FRAMEWORK_PATH/Versions/Current"
 SPARKLE_NESTED_CODE=(

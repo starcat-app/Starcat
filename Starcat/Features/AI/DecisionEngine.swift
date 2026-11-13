@@ -184,6 +184,7 @@ enum DecisionEvaluationOperation: String, Sendable {
     case githubListGrouping = "github_list_grouping"
     case tagReuse = "tag_reuse"
     case connectionTest = "connection_test"
+    case searchIntent = "search_intent"
 }
 
 struct DecisionEvaluationRequest: Equatable, Sendable {
@@ -214,7 +215,7 @@ enum DecisionEngineAvailability: Equatable, Sendable {
 
 /// 一个结构化决策引擎实现。
 @MainActor
-protocol DecisionEngineProviding: AnyObject {
+protocol DecisionEngineProviding: AnyObject, Sendable {
     var id: DecisionEngineID { get }
     var availability: DecisionEngineAvailability { get }
 

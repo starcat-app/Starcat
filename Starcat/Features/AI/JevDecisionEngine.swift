@@ -194,6 +194,8 @@ private extension DecisionEvaluationOperation {
             return .tagReuse
         case .connectionTest:
             return .connectionTest
+        case .searchIntent:
+            return .searchIntent
         }
     }
 }

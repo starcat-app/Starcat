@@ -259,9 +259,10 @@ make release-direct-development VERSION=1.9.3-beta.1
 3. 生成 Developer ID 签名、公证并 staple 的 Release DMG，App 只内置当前版本与已发布历史。
 4. 从同次快照提取 GitHub 与 Sparkle 正文，创建 prerelease，上传并回读校验 DMG/SHA256。
 5. 合并并发布 `appcast-development.xml`，保留已有 item 的说明，不从当前工作稿重写历史。
-6. GitHub 与线上更新源核验成功后，去掉源目标版本标题的“待发布”；未来版本不变。
+6. 使用同次说明快照生成官网 `changelog.html` 与 `changelog-zh.html`，定向上传后逐页回读正文，与本地结果逐字节核对。
+7. GitHub、线上更新源与官网双语日志全部核验成功后，去掉源目标版本标题的“待发布”；未来版本不变。
 
-它不会更新正式 `appcast.xml`、官网最新版、Homebrew Cask 或 App Store。源 Changelog 只登记本次 Beta 目标节，不把未来版本一起标为已发布。
+官网日志显示本次 `X.Y.Z Beta N`，默认稳定版下载、正式 `appcast.xml`、Homebrew Cask 与 App Store 保持原状。源 Changelog 只登记本次 Beta 目标节，不把未来版本一起标为已发布。
 上传中断且本地最终产物仍完整时，使用：
 
 ```bash
@@ -297,7 +298,7 @@ Gatekeeper 接受状态，以及当前 appcast 的唯一 item、营销版本、�
 它不要求当前 HEAD 等于 tag，也不检查当前源码分支或脏状态，不为上传 commit/stash 并行改动。
 
 新版 Beta 还要求保留 `downloads/release-notes-X.Y.Z-beta.N/` 的双语快照与
-`release-version.txt`。恢复只使用该次快照；旧产物若没有快照，先核对原始发布资料，
+`release-version.txt`。恢复只使用该次快照，并补发、核验官网双语日志；旧产物若没有快照，先核对原始发布资料，
 不能用当前工作稿自动补造。同版本再次准备时只接受内容相同的快照，工作稿变化不得覆盖原快照。
 成功登记时，源目标正文若已被后续修改则停止自动登记，
 保留线上发布结果与本地稿件，待人工核对；不得覆盖后续编辑。

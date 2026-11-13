@@ -75,7 +75,9 @@ struct ContentView: View {
             githubAPIClient: dependencies.apiClient,
             readmeTranslationService: dependencies.readmeTranslationService,
             entitlementGate: dependencies.entitlementGate,
-            telemetryManager: dependencies.telemetryManager
+            telemetryManager: dependencies.telemetryManager,
+            searchIntentRouter: dependencies.searchIntentRouter,
+            repositoryDiscoveryService: dependencies.repositoryDiscoveryService
         )
         // 这里的 SwiftUI root minWidth 会参与系统窗口约束。
         // 旧值 800×600 会在 NavigationSplitView 自动折叠 sidebar 后重新成为窗口下限，

@@ -1,0 +1,123 @@
+{
+  "version": "2026-11-13.1",
+  "source": "Starcat product policy and reviewed regression examples; independently authored, no third-party lexicon imported",
+  "repositories": [
+    {
+      "id": "repository.explicit.001",
+      "category": "displayPolicy",
+      "fullName": "cirosantilli/china-dictatorship",
+      "note": "Repository explicitly excluded by the maintainer; do not block the entire owner"
+    }
+  ],
+  "domains": [],
+  "rules": [
+    {
+      "id": "topic.designatedOrganization",
+      "category": "displayPolicy",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["法轮功", "法輪功", "法轮大法", "法輪大法", "falun gong", "falungong", "falun dafa"],
+      "actions": [],
+      "exceptions": [],
+      "note": "Explicit product topic policy, independent of crime classifications"
+    },
+    {
+      "id": "topic.designatedPropaganda",
+      "category": "displayPolicy",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["反共宣传", "反共宣傳", "反中共政治宣传", "反中共政治宣傳", "anti chinese government propaganda", "anti ccp propaganda", "anti communist propaganda"],
+      "actions": [],
+      "exceptions": [],
+      "note": "Specific propaganda expressions; broad politics or religion terms are deliberately absent"
+    },
+    {
+      "id": "safety.firearms.zh",
+      "category": "dangerousTrade",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["枪支", "槍支", "枪械", "槍械", "枪弹", "槍彈", "炸药", "炸藥"],
+      "actions": ["出售", "售卖", "售賣", "贩卖", "販賣", "购买", "購買", "非法交易", "自制教程", "自製教程"],
+      "exceptions": ["枪支交易检测", "槍支交易檢測", "枪支贩卖检测", "槍支販賣檢測", "研究枪支贩卖", "研究槍支販賣", "打击枪支贩卖", "打擊槍支販賣", "预防枪支贩卖", "預防槍支販賣"],
+      "note": "Object and action must occur in the same short fragment"
+    },
+    {
+      "id": "safety.firearms.en",
+      "category": "dangerousTrade",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["gun", "guns", "firearms", "ammunition", "explosives"],
+      "actions": ["buy", "sell", "selling", "purchase", "trafficking", "homemade tutorial"],
+      "exceptions": ["gun trafficking detection", "detect gun trafficking", "firearms trafficking prevention", "research on gun trafficking", "combat gun trafficking", "buy gun detection", "sell gun detection"],
+      "note": "ASCII word boundaries preserve gunicorn and other unrelated software names"
+    },
+    {
+      "id": "safety.drugs.zh",
+      "category": "dangerousTrade",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["毒品", "海洛因", "可卡因", "冰毒"],
+      "actions": ["出售", "售卖", "售賣", "贩卖", "販賣", "购买", "購買", "交易", "制毒教程", "製毒教程"],
+      "exceptions": ["毒品交易检测", "毒品交易檢測", "检测毒品交易", "檢測毒品交易", "研究毒品交易", "毒品交易研究", "打击毒品交易", "打擊毒品交易", "预防毒品交易", "預防毒品交易", "购买毒品检测", "購買毒品檢測", "出售毒品检测", "出售毒品檢測", "打击贩卖毒品", "打擊販賣毒品"],
+      "note": "Drug discovery and medicine research are not blanket keywords"
+    },
+    {
+      "id": "safety.drugs.en",
+      "category": "dangerousTrade",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["cocaine", "heroin", "methamphetamine"],
+      "actions": ["buy", "sell", "selling", "trafficking", "manufacturing tutorial"],
+      "exceptions": ["cocaine trafficking detection", "detect cocaine trafficking", "heroin trafficking research", "methamphetamine trafficking prevention"],
+      "note": "Do not use the broad terms drug, medication, or pharmacy as trade subjects"
+    },
+    {
+      "id": "safety.humanTrade",
+      "category": "humanExploitation",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["贩卖人口", "販賣人口", "人口买卖", "人口買賣", "人口贩卖", "人口販賣", "buy slaves", "sell slaves", "human trafficking services"],
+      "actions": [],
+      "exceptions": ["反人口贩卖", "反人口販賣", "反贩卖人口", "反販賣人口", "打击人口贩卖", "打擊人口販賣", "打击贩卖人口", "打擊販賣人口", "人口贩卖检测", "人口販賣檢測", "人口贩卖研究", "人口販賣研究", "人口贩卖预防", "人口販賣預防", "预防人口贩卖", "預防人口販賣", "检测人口贩卖", "檢測人口販賣", "防止人口买卖", "防止人口買賣", "research on human trafficking services"],
+      "note": "Prevention exceptions apply only to the matching phrase, not the entire result"
+    },
+    {
+      "id": "safety.organTrade",
+      "category": "humanExploitation",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["人体器官", "人體器官", "人体肾脏", "人體腎臟", "human organs", "human kidneys"],
+      "actions": ["出售", "售卖", "售賣", "贩卖", "販賣", "购买", "購買", "买卖", "買賣", "buy", "sell", "selling", "trafficking"],
+      "exceptions": ["打击人体器官贩卖", "打擊人體器官販賣", "人体器官贩卖研究", "人體器官販賣研究", "人体器官贩卖检测", "人體器官販賣檢測", "human organs trafficking detection", "human organs trafficking research"],
+      "note": "Generic organ, transplantation, and donation are deliberately absent"
+    },
+    {
+      "id": "safety.exploitation",
+      "category": "humanExploitation",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["儿童色情交易", "兒童色情交易", "儿童性剥削招募", "兒童性剝削招募", "sell child sexual abuse material", "性交易招揽", "性交易招攬", "强迫劳动招募", "強迫勞動招募"],
+      "actions": [],
+      "exceptions": ["检测儿童色情交易", "檢測兒童色情交易", "打击儿童色情交易", "打擊兒童色情交易", "detect sex trafficking", "combat forced labor recruitment"],
+      "note": "Concrete exploitation and recruitment expressions"
+    },
+    {
+      "id": "safety.violentRecruitment",
+      "category": "violentRecruitment",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["恐怖组织招募", "恐怖組織招募", "恐怖袭击教程", "恐怖襲擊教程", "邪教组织招募", "邪教組織招募", "terrorist recruitment services", "join a terrorist organization"],
+      "actions": [],
+      "exceptions": ["检测恐怖组织招募", "檢測恐怖組織招募", "打击恐怖组织招募", "打擊恐怖組織招募", "研究恐怖组织招募", "研究恐怖組織招募", "检测邪教组织招募", "檢測邪教組織招募"],
+      "note": "Religion, politics, and historical research are not standalone block terms"
+    },
+    {
+      "id": "safety.privacyTrade",
+      "category": "fraudAndPrivacyTrade",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["出售银行卡资料", "出售銀行卡資料", "出售个人隐私", "出售個人隱私", "售卖盗号凭据", "售賣盜號憑據", "出售被盗账号", "出售被盜帳號", "sell stolen credentials", "buy stolen credentials", "sell stolen credit cards", "洗钱服务招揽", "洗錢服務招攬"],
+      "actions": [],
+      "exceptions": ["检测出售个人隐私", "檢測出售個人隱私", "detect sell stolen credentials", "detect buy stolen credentials"],
+      "note": "Security auditing, credential managers, and fraud detection remain searchable"
+    },
+    {
+      "id": "safety.gamblingPromotion",
+      "category": "gamblingPromotion",
+      "fields": ["query", "title", "description", "topic"],
+      "terms": ["赌博平台代理", "賭博平台代理", "赌博平台招募", "賭博平台招募", "博彩开户注册", "博彩開戶註冊", "赌场充值返佣", "賭場充值返傭", "online casino signup bonus", "casino deposit referral"],
+      "actions": [],
+      "exceptions": ["检测赌博平台代理", "檢測賭博平台代理", "打击赌博平台招募", "打擊賭博平台招募", "online casino signup bonus detection"],
+      "note": "Game theory, probability, and generic games are deliberately absent"
+    }
+  ]
+}

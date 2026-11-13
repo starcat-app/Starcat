@@ -41,6 +41,30 @@ python3 supports/starcat-site/direct/generate-changelog.py
 
 脚本内置页面样式，目标是避免中英文页面样式漂移。
 
+### 已发布 Beta 的日志补发
+
+Beta 发布授权包含官网双语更新日志。输入必须是构建时固定的快照；
+工作稿可能含 `2.0.0-待发布` 等未来版本，不能直接拿来生成公开页面。
+从 Starcat 主仓库运行，版本参数替换为本次已经发布的 Beta：
+
+```bash
+python3 scripts/release_changelog.py check \
+  --source-root dist/direct-development/downloads/release-notes-X.Y.Z-beta.N \
+  --version X.Y.Z-beta.N
+python3 supports/starcat-site/direct/generate-changelog.py \
+  --source-root dist/direct-development/downloads/release-notes-X.Y.Z-beta.N
+rsync -avz --progress \
+  supports/starcat-site/direct/changelog.html \
+  supports/starcat-site/direct/changelog-zh.html \
+  aliyun2:/var/www/starcat/
+ssh aliyun2 "chmod 644 /var/www/starcat/changelog.html /var/www/starcat/changelog-zh.html"
+```
+
+上传前检查两页目标标题为 `X.Y.Z Beta N`、无未来版本和待发布内容；上传后分别
+下载两页，与本地 HTML 逐字节比对。此次只写两份 HTML，不使用 `--delete`，
+不重载 nginx，也不更改默认稳定版下载、正式 feed 或 App Store 页面。
+完成后提交生成页，并按发布收尾约定同步各仓 `dev/main`。
+
 ## README 推广区块同步
 
 ```bash

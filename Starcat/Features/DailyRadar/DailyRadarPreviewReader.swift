@@ -27,6 +27,8 @@ struct DailyRadarPreviewReader: View {
     @Environment(\.locale) private var locale
     @State private var markdownHeight: CGFloat = 100
     @State private var markdownReady = false
+    @State private var heroAppeared = false
+    @State private var headerAppeared = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,12 +58,24 @@ struct DailyRadarPreviewReader: View {
             ScrollView {
                 VStack(spacing: 0) {
                     GeometryReader { geometry in
-                        DailyRadarCoverView(cover: story.cover, category: story.category,
-                                            seed: story.id)
-                            .frame(width: geometry.size.width, height: geometry.size.height)
-                            .clipped()
+                        let scrolledDistance = max(0, -geometry.frame(
+                            in: .named(DailyRadarReaderLayout.scrollCoordinateSpace)
+                        ).minY)
+                        let fadeProgress = min(1, scrolledDistance / DailyRadarReaderLayout.heroHeight)
+                        ZStack {
+                            DailyRadarCoverView(cover: story.cover, category: story.category,
+                                                seed: story.id)
+                                .scaleEffect(heroAppeared || reduceMotion ? 1 : 1.015)
+                                // 图片滞后于滚动容器形成轻视差；只移动位图，不改变 hero 占位高度。
+                                .offset(y: reduceMotion ? 0 : scrolledDistance * DailyRadarReaderLayout.heroParallaxFactor)
+                                .opacity(reduceMotion ? 1 : 1 - fadeProgress * 0.65)
+                        }
+                        .opacity(heroAppeared || reduceMotion ? 1 : 0)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
                     }
-                    .frame(height: 310)
+                    .frame(height: DailyRadarReaderLayout.heroHeight)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.28), value: heroAppeared)
                     .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 28) {
                         VStack(alignment: .leading, spacing: 16) {
@@ -73,10 +87,14 @@ struct DailyRadarPreviewReader: View {
                             .font(scale.font(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                            .opacity(headerAppeared || reduceMotion ? 1 : 0)
+                            .offset(y: headerAppeared || reduceMotion ? 0 : 12)
                             Text(verbatim: (article?.title ?? story.title).replacingOccurrences(of: "\n", with: ""))
                                 .font(scale.font(size: 32, weight: .bold))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .accessibilityAddTraits(.isHeader)
+                                .opacity(headerAppeared || reduceMotion ? 1 : 0)
+                                .offset(y: headerAppeared || reduceMotion ? 0 : 12)
                             Group {
                                 if let article {
                                     DailyRadarArticleSummary(summary: article.summary)
@@ -98,10 +116,13 @@ struct DailyRadarPreviewReader: View {
                             }
                             .font(scale.font(size: 11))
                             .foregroundStyle(.secondary)
+                            .opacity(headerAppeared || reduceMotion ? 1 : 0)
+                            .offset(y: headerAppeared || reduceMotion ? 0 : 12)
                         }
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.24), value: headerAppeared)
                         Divider()
                         Group {
-                            if let detail, let markdown = detail.markdown {
+                            if let detail, let markdown = detail.presentationMarkdown {
                                 VStack(alignment: .leading, spacing: 28) {
                                     DailyRadarMarkdownView(
                                         markdown: article?.body ?? markdown, identity: detail.contentIdentity,
@@ -114,10 +135,7 @@ struct DailyRadarPreviewReader: View {
                                             Divider()
                                             Text("dailyRadar.source").font(scale.font(size: 12, weight: .semibold))
                                             if let safe = DailyRadarMarkdownRenderer.safeURL(source.url.absoluteString) {
-                                                Link(destination: safe) {
-                                                    Label(source.name, systemImage: "arrow.up.right")
-                                                }
-                                                .help("dailyRadar.openSource")
+                                                DailyRadarSourceLink(source: source, destination: safe, scale: scale)
                                             }
                                             Text("dailyRadar.generatedNotice")
                                                 .font(scale.font(size: 11))
@@ -177,6 +195,10 @@ struct DailyRadarPreviewReader: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+            .coordinateSpace(name: DailyRadarReaderLayout.scrollCoordinateSpace)
+            .task(id: story.contentIdentity) {
+                await playEntrance()
+            }
         }
         .foregroundStyle(.primary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -184,7 +206,30 @@ struct DailyRadarPreviewReader: View {
     }
 
     private var article: DailyRadarArticle? {
-        detail?.markdown.flatMap(DailyRadarArticle.parse)
+        // 结构化文章的 body 也必须来自展示版 markdown，否则尾注会绕过内容来源去重。
+        detail?.presentationMarkdown.flatMap(DailyRadarArticle.parse)
+    }
+
+    /// 头图先稳定，标题和元信息再短延迟入场；正文与摘要仍沿用原有加载/逐字节奏。
+    private func playEntrance() async {
+        heroAppeared = false
+        headerAppeared = false
+        guard !reduceMotion else {
+            heroAppeared = true
+            headerAppeared = true
+            return
+        }
+        // 先让初始帧完成一次状态提交，避免切换报告时 false→true 被合并成直接显示终态。
+        try? await Task.sleep(for: .milliseconds(16))
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: 0.28)) {
+            heroAppeared = true
+        }
+        try? await Task.sleep(for: .milliseconds(60))
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: 0.24)) {
+            headerAppeared = true
+        }
     }
 
     /// 仅已核验仓库首页接入项目面板；Issue/PR/Release 与新闻保持原链接含义。
@@ -197,6 +242,45 @@ struct DailyRadarPreviewReader: View {
         } else {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// 内容来源本质是文档深层链接；用项目头像和胶囊状态明确“可点击”，而不是伪装成普通 metadata。
+private struct DailyRadarSourceLink: View {
+    let source: DailyRadarReport.Source
+    let destination: URL
+    let scale: InterfaceScale
+
+    private var title: String {
+        source.repositoryFullName ?? source.name
+    }
+
+    var body: some View {
+        Link(destination: destination) {
+            HStack(spacing: 8) {
+                RemoteAvatar(urlString: source.ownerAvatarURL?.absoluteString, size: 22, showBorder: false)
+                Text(verbatim: title)
+                    .font(scale.font(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                Image(systemName: "arrow.up.right")
+                    .font(scale.font(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background {
+                Capsule().fill(Color.primary.opacity(0.06))
+            }
+            .overlay {
+                Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("dailyRadar.openSource")
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityHint(Text("dailyRadar.openSource"))
     }
 }
 
@@ -272,6 +356,10 @@ private struct DailyRadarReaderSkeleton: View {
 
 /// 阅读区布局统一管理，保证项目面板避让横条，并锁定正文的自适应宽度。
 enum DailyRadarReaderLayout {
+    /// 供 hero 视差读取滚动偏移；命名常量避免视图重构后误指向其它 ScrollView。
+    static let scrollCoordinateSpace = "dailyRadarReaderScroll"
+    static let heroHeight: CGFloat = 310
+    static let heroParallaxFactor: CGFloat = 0.35
     /// 横条与分隔线共用固定尺寸，工作区据此限制项目面板及遮罩的上边缘。
     static let headerHeight: CGFloat = 52
     static let headerDividerHeight: CGFloat = 1

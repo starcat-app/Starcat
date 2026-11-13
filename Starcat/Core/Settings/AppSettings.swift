@@ -1307,6 +1307,19 @@ final class AppSettings {
         }
     }
 
+    /// 所选决策引擎接管全局搜索的自然语言查询分流（默认 false）。
+    ///
+    /// 搜索会把原始查询发给远端模型或触发本地推理，风险面与仓库内分组 / 标签不同；
+    /// 因此不借用既有业务作用范围，必须由用户单独授权。
+    var decisionSearchRoutingEnabled: Bool {
+        didSet {
+            persistBool(
+                key: Keys.decisionSearchRoutingEnabled,
+                value: decisionSearchRoutingEnabled
+            )
+        }
+    }
+
     /// 原生 TypeSafe Key 最近一次显式连接测试是否失败（默认 false）。
     ///
     /// 这里只记录设置页的明确测试结果，不把普通业务请求错误当作永久失效：失败时保留
@@ -2177,6 +2190,9 @@ final class AppSettings {
             self.decisionTagSuggestionsEnabled = defaults.object(
                 forKey: Keys.decisionTagSuggestionsEnabled
             ) as? Bool ?? false
+            self.decisionSearchRoutingEnabled = defaults.object(
+                forKey: Keys.decisionSearchRoutingEnabled
+            ) as? Bool ?? false
         } else {
             let migratedEnabled = defaults.object(
                 forKey: Keys.legacyTypesafeDecisionEnabled
@@ -2191,6 +2207,7 @@ final class AppSettings {
             self.decisionEngineID = .jev
             self.decisionGroupingSuggestionsEnabled = migratedGrouping
             self.decisionTagSuggestionsEnabled = migratedTags
+            self.decisionSearchRoutingEnabled = false
             defaults.set(migratedEnabled, forKey: Keys.decisionEngineEnabled)
             defaults.set(DecisionEngineID.jev.rawValue, forKey: Keys.decisionEngineID)
             defaults.set(
@@ -2201,6 +2218,7 @@ final class AppSettings {
                 migratedTags,
                 forKey: Keys.decisionTagSuggestionsEnabled
             )
+            defaults.set(false, forKey: Keys.decisionSearchRoutingEnabled)
         }
         self.typesafeNativeKeyTestFailed = defaults.object(forKey: Keys.typesafeNativeKeyTestFailed) as? Bool ?? false
         self.typesafeModelID = defaults.string(forKey: Keys.typesafeModelID) ?? JevDecisionEngine.defaultModelID
@@ -2520,6 +2538,7 @@ final class AppSettings {
         decisionEngineID = .jev
         decisionGroupingSuggestionsEnabled = false
         decisionTagSuggestionsEnabled = false
+        decisionSearchRoutingEnabled = false
         typesafeNativeKeyTestFailed = false
         typesafeModelID = JevDecisionEngine.defaultModelID
         externalSearchAllowPrivateRepos = false
@@ -3149,6 +3168,7 @@ final class AppSettings {
         static let decisionEngineID = "settings.labs.decision.engine.v1"
         static let decisionGroupingSuggestionsEnabled = "settings.labs.decision.grouping.v1"
         static let decisionTagSuggestionsEnabled = "settings.labs.decision.tags.v1"
+        static let decisionSearchRoutingEnabled = "settings.labs.decision.searchRouting.v1"
         /// 仅供一次性 UserDefaults 迁移读取；应用层不再写回这些 POC key。
         static let legacyTypesafeDecisionEnabled = "settings.labs.typesafe.enabled.v1"
         static let legacyTypesafeGroupingSuggestionsEnabled = "settings.labs.typesafe.grouping.v1"

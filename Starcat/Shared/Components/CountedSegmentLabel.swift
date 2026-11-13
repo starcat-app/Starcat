@@ -13,13 +13,18 @@ struct CountedSegmentLabel: View {
     let title: LocalizedStringKey
     let count: Int
     let totalCount: Int
+    var symbol: String? = nil
     @Environment(\.locale) private var locale
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .lineLimit(1)
-                .truncationMode(.tail)
+        HStack(spacing: symbol == nil ? 6 : 4) {
+            if let symbol {
+                Image(systemName: symbol)
+            } else {
+                Text(title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             Text(verbatim: totalCount.formatted(.number.locale(locale)))
                 .monospacedDigit()
                 .fixedSize()

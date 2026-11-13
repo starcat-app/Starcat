@@ -13,9 +13,13 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+STARCAT_NS = "https://starcat.ink/xml-namespaces/starcat"
 _PLACEHOLDER_PREFIX = "__STARCAT_APPCAST_DESC__"
 
 ET.register_namespace("sparkle", SPARKLE_NS)
+# Sparkle 将非自身命名空间的字段按前缀存进 propertiesDictionary；
+# 注入与合并必须使用同一前缀，客户端才能读取应用语言的完整说明。
+ET.register_namespace("starcat", STARCAT_NS)
 
 
 def write_appcast_xml(path: Path, root: ET.Element) -> None:

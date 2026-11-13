@@ -15,7 +15,7 @@ struct RepoSkillScanner: Sendable {
     let cacheScope: String
 
     /// 文件树截断时有界遍历。较大仓库可以通过显式重新检测提高预算，而不宣称查全。
-    func scan(
+    @concurrent func scan(
         _ repo: Repo,
         treeBudget: Int = 64,
         manifestBudget: Int = 200,
@@ -89,12 +89,15 @@ struct RepoSkillScanner: Sendable {
             // 用递归树已有的证据补充预算尚未到达的子目录，绝不重复计数。
             entries = Array(Dictionary((entries + recovered).map { ($0.path, $0) }, uniquingKeysWith: { _, new in new }).values)
         }
+        // 路径只排序一次；每份 manifest 用二分区间取得目录，避免 N 份 Skill 扫 N 次整棵树。
+        entries.sort { $0.path < $1.path }
         let manifests = entries.filter { $0.path == "SKILL.md" || $0.path.hasSuffix("/SKILL.md") }
-            .sorted { $0.path < $1.path }
         let candidates = Array(manifests.prefix(manifestBudget))
         let concurrency = max(1, min(8, manifestConcurrency))
         var skills: [RepoSkill] = []
         var checked = 0
+        let clock = ContinuousClock()
+        var lastPublication: ContinuousClock.Instant?
         for start in stride(from: candidates.startIndex, to: candidates.endIndex, by: concurrency) {
             let batch = candidates[start..<min(start + concurrency, candidates.endIndex)]
             do {
@@ -138,16 +141,15 @@ struct RepoSkillScanner: Sendable {
                         diagnostics.append(entry.path + ": " + RepoSkillError.invalidManifest.localizedDescription)
                         continue
                     }
-                    let contents = entries.filter { directory.isEmpty || $0.path.hasPrefix(directory) }
+                    let contents = Self.contents(in: entries, directory: directory)
                     let unsupported = contents.contains {
                         $0.type == "commit" || $0.mode == "120000"
                             || !RepoFileTreeBuilder.isSafeRelativePath($0.path)
                     }
-                    let nested = manifests.contains { $0.path != entry.path && $0.path.hasPrefix(directory) }
+                    let nested = Self.contents(in: manifests, directory: directory).contains { $0.path != entry.path }
                     let externalReferences = Self.hasReferencesOutsideDirectory(markdown, directory: directory)
                     let files = contents.filter { $0.type == "blob" && ($0.mode == "100644" || $0.mode == "100755") }
                         .map { RepoSkillFile(path: String($0.path.dropFirst(directory.count)), sha: $0.sha, size: $0.size, mode: $0.mode) }
-                        .sorted { $0.path < $1.path }
                     skills.append(RepoSkill(
                         repositoryID: repo.id, commitSHA: commit.sha, directory: directory,
                         name: metadata.name, summary: metadata.description,
@@ -162,18 +164,20 @@ struct RepoSkillScanner: Sendable {
                 throw error
             }
             checked += batch.count
-            skills.sort { $0.directory < $1.directory }
-            if !skills.isEmpty {
+            // 首批立即反馈；后续合并到最多每 150ms 一份，终态始终由返回值完整交付。
+            if !skills.isEmpty, lastPublication == nil || lastPublication!.duration(to: clock.now) >= .milliseconds(150) {
+                lastPublication = clock.now
                 onUpdate?(RepoSkillScan(
                     repositoryID: repo.id, commitSHA: commit.sha,
                     sourcePushedAt: repo.pushedAt, sourceBranch: repo.defaultBranch,
-                    checkedAt: .now, complete: false, skills: skills, diagnostics: diagnostics,
+                    checkedAt: .now, complete: false, skills: skills.sorted { $0.directory < $1.directory }, diagnostics: diagnostics,
                     manifestTotal: manifests.count, manifestChecked: checked,
                     version: RepoSkillScan.rulesVersion
                 ))
             }
         }
         if manifests.count > manifestBudget { complete = false }
+        skills.sort { $0.directory < $1.directory }
         return RepoSkillScan(
             repositoryID: repo.id, commitSHA: commit.sha,
             sourcePushedAt: repo.pushedAt, sourceBranch: repo.defaultBranch,
@@ -182,6 +186,26 @@ struct RepoSkillScanner: Sendable {
             manifestTotal: manifests.count, manifestChecked: candidates.count,
             version: RepoSkillScan.rulesVersion
         )
+    }
+
+    /// Git 路径按相同字典序排列，前缀范围连续；根 Skill 仍覆盖整棵树，安装边界保持不变。
+    private static func contents(
+        in entries: [GitHubGitTreeEntryDTO], directory: String
+    ) -> ArraySlice<GitHubGitTreeEntryDTO> {
+        guard !directory.isEmpty else { return entries[...] }
+        var lower = 0
+        var upper = entries.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if entries[middle].path < directory { lower = middle + 1 } else { upper = middle }
+        }
+        let start = lower
+        upper = entries.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if entries[middle].path.hasPrefix(directory) { lower = middle + 1 } else { upper = middle }
+        }
+        return entries[start..<lower]
     }
 
     /// 明确指向目录外的 Markdown 附件不能随单个 Skill 交付；保留预览并说明打包限制。

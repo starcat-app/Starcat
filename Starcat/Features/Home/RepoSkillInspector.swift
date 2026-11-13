@@ -16,7 +16,7 @@ struct RepoSkillInspector: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            LazyVStack(spacing: 12) {
                 configuration
                 progress
                 if !session.conflicts.isEmpty { conflict }
@@ -181,12 +181,12 @@ struct RepoSkillInspector: View {
                     .padding(.trailing, 12)
             }
             Divider()
-            VStack(spacing: 12) {
-                ForEach(session.skills.filter { skill in session.displayedQueue.contains { $0.skill.id == skill.id } }) { skill in
-                    let items = session.displayedQueue.filter { $0.skill.id == skill.id }
+            LazyVStack(spacing: 12) {
+                ForEach(session.displayedGroups) { group in
+                    let items = group.items
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text(verbatim: skill.name)
+                            Text(verbatim: group.skill.name)
                                 .font(interfaceScale.font(.body, weight: .semibold))
                                 .lineLimit(1)
                             Spacer(minLength: 4)
@@ -229,16 +229,11 @@ struct RepoSkillInspector: View {
                         .help(item.destination.url.path)
                     Spacer(minLength: 0)
                     if item.status == .copying {
-                        Text(verbatim: "\(Int(item.progress * 100))%")
-                            .font(interfaceScale.font(.caption))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
+                        RepoSkillItemProgress(item: item, showsBar: false)
                     }
                 }
                 if item.status == .copying {
-                    ProgressView(value: item.progress)
-                        .progressViewStyle(.linear)
-                        .tint(.accentColor)
+                    RepoSkillItemProgress(item: item, showsBar: true)
                 } else if let error = item.error {
                     Text(verbatim: error)
                         .font(interfaceScale.font(.captionSmall))
@@ -324,6 +319,26 @@ struct RepoSkillInspector: View {
         case .copying: .accentColor
         case .succeeded: .green
         case .failed, .cancelled: .orange
+        }
+    }
+}
+
+/// 逐字节进度只使这段视图失效，不把整份安装队列重新布局。
+private struct RepoSkillItemProgress: View {
+    let item: RepoSkillSession.Item
+    let showsBar: Bool
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    var body: some View {
+        if showsBar {
+            ProgressView(value: item.progress)
+                .progressViewStyle(.linear)
+                .tint(.accentColor)
+        } else {
+            Text(verbatim: "\(Int(item.progress * 100))%")
+                .font(interfaceScale.font(.caption))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
         }
     }
 }

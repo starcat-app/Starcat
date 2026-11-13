@@ -69,6 +69,28 @@ struct UserFacingError: Equatable, Sendable {
         if let ai = error as? AIClientError {
             return mapAI(ai, operation: operation, service: service)
         }
+        if let selection = error as? AIChatSelectionError {
+            let message: String = switch selection {
+            case .missingProvider:
+                String(format: String.l10n("ai.insight.error.missingTaskProviderFormat.modelsSettings"), operation)
+            case .providerUnavailable: String.l10n("search.discovery.configuration.providerUnavailable")
+            case .missingModel: String.l10n("search.discovery.configuration.missingModel")
+            case .incompatibleModel: String.l10n("search.discovery.configuration.incompatibleModel")
+            }
+            return UserFacingError(
+                title: String.l10n("error.user.aiConfiguration.title"),
+                message: message,
+                recovery: String.l10n("error.user.aiProvider.recovery.modelsSettings"),
+                diagnosticSummary: DiagnosticEvent.redact(String(describing: selection)),
+                shouldRecordDiagnostic: false
+            )
+        }
+        if let external = error as? ExternalSearchError {
+            return mapExternalSearch(external, operation: operation)
+        }
+        if let backend = error as? RAGExternalBackendError {
+            return mapRAGBackend(backend, operation: operation, service: service ?? "Rerank")
+        }
         if let insight = error as? RepoAIInsightError {
             return mapRepoAIInsight(insight, operation: operation, service: service)
         }
@@ -232,6 +254,89 @@ struct UserFacingError: Equatable, Sendable {
             service: service,
             diagnostic: error.errorDescription ?? String(describing: error)
         )
+    }
+
+    /// 外部搜索已有逐 Provider 的友好文案；这里只补齐分类、HTTP 与设置恢复方向，
+    /// 原始服务正文只能进入脱敏后的技术详情。
+    private static func mapExternalSearch(
+        _ error: ExternalSearchError,
+        operation: String
+    ) -> UserFacingError {
+        let kind: Kind
+        let status: Int?
+        switch error {
+        case .disabled, .missingAPIKey, .unverifiedCredential:
+            kind = .aiConfiguration
+            status = nil
+        case .invalidCredential(_, let code, _):
+            kind = .unauthorized
+            status = code
+        case .paymentRequired(_, let code, _):
+            kind = .aiProvider
+            status = code ?? 402
+        case .rateLimited:
+            kind = .rateLimited
+            status = 429
+        case .serviceUnavailable(_, let code, _):
+            kind = .serverUnavailable
+            status = code
+        case .network:
+            kind = .networkUnavailable
+            status = nil
+        case .invalidResponse(_, _, let code):
+            kind = .decoding
+            status = code
+        }
+        var mapped = make(
+            kind: kind, operation: operation, service: error.providerID.displayName,
+            diagnostic: String(describing: error), statusCode: status
+        )
+        mapped.message = error.friendlyMessage
+        switch error {
+        case .disabled, .missingAPIKey, .unverifiedCredential, .invalidCredential:
+            mapped.recovery = String.l10n("settings.externalSearch.copy.verifyBeforeEnabling")
+        default: break
+        }
+        if case .disabled = error { mapped.diagnosticOutcome = .skipped }
+        return mapped
+    }
+
+    /// Rerank 与 Chat 同样区分鉴权、余额、限流和响应错误，不显示服务原始正文。
+    private static func mapRAGBackend(
+        _ error: RAGExternalBackendError,
+        operation: String,
+        service: String
+    ) -> UserFacingError {
+        let kind: Kind
+        var statusCode: Int?
+        switch error {
+        case .invalidConfiguration:
+            kind = .aiConfiguration
+        case .invalidResponse:
+            kind = .decoding
+        case .operationFailed:
+            kind = .serverUnavailable
+        case .http(_, let status, _):
+            statusCode = status
+            switch status {
+            case 401, 403: kind = .unauthorized
+            case 402:
+                return mapAI(
+                    .paymentRequired(detail: String(describing: error)),
+                    operation: operation, service: service
+                )
+            case 429: kind = .rateLimited
+            default: kind = .serverUnavailable
+            }
+        }
+        var mapped = make(
+            kind: kind, operation: operation, service: service,
+            diagnostic: String(describing: error), statusCode: statusCode
+        )
+        if kind == .aiConfiguration {
+            mapped.recovery = String.l10n("error.user.aiProvider.recovery.modelsSettings")
+        }
+        return mapped
     }
 
     private static func mapAI(
