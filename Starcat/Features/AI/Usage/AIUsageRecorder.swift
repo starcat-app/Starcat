@@ -30,7 +30,7 @@ final class AIUsageRecorder: AIUsageRecording, @unchecked Sendable {
 
     func record(_ event: AIUsageEvent) async {
         // Provider、功能和统计字段来自内部枚举；不导出模型名、提问、回答或用量库全文。
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: event.status == "failed" ? .warning : .info,
             category: "ai", operation: "usageResult", message: "AI operation result",
             errorCode: event.errorCategory,

@@ -156,8 +156,10 @@ final class CompanionLocalServer {
             category: "browser-plugin",
             operation: "browserPlugin.listener",
             message: "Browser Plugin local listener failed unexpectedly",
+            summary: .serviceUnavailable,
+            impact: .blocked,
             underlying: DiagnosticEvent.summarize(error),
-            context: ["port": String(port)]
+            context: ["port": String(port)], error: error
         )
     }
 
@@ -492,8 +494,10 @@ final class CompanionLocalServer {
             category: "browser-plugin",
             operation: "browserPlugin.internalRequest",
             message: "Browser Plugin local API returned an internal error",
+            summary: .serviceUnavailable,
+            impact: .blocked,
             underlying: DiagnosticEvent.summarize(error),
-            context: ["endpoint": endpoint]
+            context: ["endpoint": endpoint], error: error
         )
     }
 
@@ -504,6 +508,8 @@ final class CompanionLocalServer {
             category: "browser-plugin",
             operation: "browserPlugin.missingHandler",
             message: "Browser Plugin local API handler was not assembled",
+            summary: .serviceUnavailable,
+            impact: .blocked,
             context: ["endpoint": endpoint]
         )
     }
@@ -539,7 +545,7 @@ final class CompanionLocalServer {
     }
 
     private func response(status: Int, bodyData: Data, origin: String?) -> Data {
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: status >= 400 ? .warning : .info,
             category: "extension", operation: "localResponse", message: "Extension connection result",
             statusCode: status, phase: "responded", outcome: status >= 400 ? .failed : .succeeded,

@@ -52,15 +52,14 @@ enum DiagnosticSessionLifecycle {
     @MainActor
     static func start() {
         guard !TestEnvironment.isRunning, terminationObserver == nil else { return }
-        DiagnosticLogStore.record(level: .info, category: "startup", operation: "session",
-                                  message: "Session started")
+        DiagnosticLogStore.shared.startSession()
         terminationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: nil
         ) { _ in DiagnosticLogStore.shared.endSession() }
     }
 }
 
-/// 增强模式只允许额外安全 debug 阶段，自动到期或达到 20MB 后停止。
+/// 增强模式只增加操作内安全阶段，仍不允许普通事件独立落盘。
 /// 锁内只处理值，通知和日志在解锁后发送，避免递归入队死锁。
 final class DiagnosticRecording: @unchecked Sendable {
     static let shared = DiagnosticRecording()
@@ -94,8 +93,6 @@ final class DiagnosticRecording: @unchecked Sendable {
         bytes = 0
         lock.unlock()
         if lifecycleEvents {
-            DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "reproduction.start",
-                                      message: "Enhanced safe recording started")
             notify()
         }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + duration) { [self] in
@@ -112,8 +109,6 @@ final class DiagnosticRecording: @unchecked Sendable {
         deadline = nil
         lock.unlock()
         if lifecycleEvents {
-            DiagnosticLogStore.record(level: .info, category: "diagnostics", operation: "reproduction.end",
-                                      message: "Enhanced safe recording ended")
             notify()
         }
     }

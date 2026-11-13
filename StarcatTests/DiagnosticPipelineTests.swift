@@ -15,6 +15,14 @@ struct DiagnosticPipelineTests {
         FileManager.default.temporaryDirectory.appendingPathComponent("diagnostic-\(UUID())")
     }
 
+    /// 队列/轮转测试只投递符合业务准入的独立失败；阶段和成功记录另测拒绝路径。
+    private static func fault(_ operation: String, count: Int = 0, timestamp: Date = Date()) -> DiagnosticEvent {
+        DiagnosticEvent(timestamp: timestamp, level: .error, visibility: .issue,
+            category: "test", operation: operation, message: "Feature request failed",
+            summaryKey: DiagnosticIssue.generic.rawValue, phase: "finished",
+            outcome: .failed, impact: .blocked, fields: ["count": .integer(count)])
+    }
+
     @Test("新事件保留身份、类型字段和任务关联")
     func identity() async throws {
         let directory = root()
@@ -28,7 +36,7 @@ struct DiagnosticPipelineTests {
                                      "arbitraryPrivateField": .integer(7), "cacheAgeSeconds": .decimal(.infinity)])
         }
         let decoded = try JSONDecoder().decode(DiagnosticEvent.self, from: JSONEncoder().encode(event))
-        #expect(decoded.schemaVersion == 2)
+        #expect(decoded.schemaVersion == 3)
         #expect(decoded.operationID == span.id)
         #expect(decoded.sessionID != nil)
         #expect(decoded.fields["count"] == .integer(87))
@@ -48,13 +56,12 @@ struct DiagnosticPipelineTests {
         await withTaskGroup(of: Void.self) { group in
             for n in 0..<500 {
                 group.addTask {
-                    store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "parallel",
-                        message: "safe", phase: "progress", fields: ["count": .integer(n)]))
+                    store.enqueue(Self.fault("parallel", count: n))
                 }
             }
         }
         let snapshot = await store.snapshot()
-        store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "after", message: "safe"))
+        store.enqueue(Self.fault("after"))
         let events = snapshot.text.split(separator: "\n").compactMap {
             try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8))
         }
@@ -71,10 +78,11 @@ struct DiagnosticPipelineTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try Data("file".utf8).write(to: directory)
         let store = DiagnosticLogStore(directoryURL: directory)
-        await store.record(DiagnosticEvent(level: .error, category: "test", operation: "failure", message: "safe"))
+        await store.record(Self.fault("failure"))
         let snapshot = await store.snapshot()
         #expect(snapshot.health["writeFailures"] == 1)
         #expect(snapshot.text.isEmpty)
+        #expect(await store.issueSummary().storageUnavailable)
     }
 
     @Test("轮转保持磁盘预算，事件仍可逐行解析")
@@ -83,8 +91,7 @@ struct DiagnosticPipelineTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DiagnosticLogStore(directoryURL: directory, queueLimit: 5000, segmentBytes: 2048, segmentCount: 2)
         for n in 0..<100 {
-            store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "rotate",
-                message: "safe", phase: "progress", fields: ["count": .integer(n)]))
+            store.enqueue(Self.fault("rotate", count: n))
         }
         let snapshot = await store.snapshot()
         let files = await store.exportableFiles()
@@ -119,17 +126,19 @@ struct DiagnosticPipelineTests {
         let error = NSError(domain: "fixture", code: 1, userInfo: [
             NSUnderlyingErrorKey: URLError(.timedOut), NSLocalizedDescriptionKey: "customer-private-body"
         ])
-        child.finish(.failed, error: error)
+        child.finish(.failed, error: error, impact: .blocked, summary: .databaseUnavailable)
         child.finish()
         root.finish(.partial)
         let snapshot = await store.snapshot()
         let events = try snapshot.text.split(separator: "\n").map {
             try JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8))
         }
-        let terminal = try #require(events.first { $0.operationID == child.id && $0.outcome != nil })
-        #expect(terminal.parentOperationID == root.id)
+        let terminal = try #require(events.first)
+        #expect(terminal.operationID == root.id)
+        #expect(terminal.parentOperationID == nil)
         #expect(terminal.errorChain.count == 2)
-        #expect(events.filter { $0.operationID == child.id && $0.outcome != nil }.count == 1)
+        #expect(events.count == 1)
+        #expect(terminal.breadcrumbs.contains { $0.operationID == child.id && $0.outcome == .failed })
         #expect(!snapshot.text.contains("customer-private-body"))
     }
 
@@ -145,8 +154,7 @@ struct DiagnosticPipelineTests {
         try JSONEncoder().encode([previous]).write(to: directory.appendingPathComponent("sessions.json"))
         let store = DiagnosticLogStore(directoryURL: directory)
         for n in 0..<40 {
-            store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "end",
-                message: "safe", phase: "progress", fields: ["count": .integer(n)]))
+            store.enqueue(Self.fault("end", count: n))
         }
         store.endSession()
         let snapshot = await store.snapshot()
@@ -182,10 +190,12 @@ struct DiagnosticPipelineTests {
         let directory = root()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = DiagnosticLogStore(directoryURL: directory)
-        store.enqueue(DiagnosticEvent(level: .error, category: "test", operation: "same",
-            message: "Failure A", underlying: "Swift.CancellationError code=1"))
-        store.enqueue(DiagnosticEvent(level: .error, category: "test", operation: "same",
-            message: "Failure B", underlying: "Foundation.URLError code=-1001"))
+        store.enqueue(DiagnosticEvent(level: .error, visibility: .issue, category: "test", operation: "same",
+            message: "Failure A", summaryKey: DiagnosticIssue.databaseUnavailable.rawValue,
+            underlying: "GRDB.DatabaseError code=11", outcome: .failed, impact: .blocked))
+        store.enqueue(DiagnosticEvent(level: .error, visibility: .issue, category: "test", operation: "same",
+            message: "Failure B", summaryKey: DiagnosticIssue.contentUnavailable.rawValue,
+            underlying: "Foundation.URLError code=-1001", outcome: .failed, impact: .blocked))
         let snapshot = await store.snapshot()
         #expect(snapshot.text.split(separator: "\n").count == 2)
         #expect(!snapshot.text.contains("\"phase\":\"repeated\""))
@@ -199,12 +209,17 @@ struct DiagnosticPipelineTests {
         let initial = Date().addingTimeInterval(-10)
         for offset in 0..<3 {
             store.enqueue(DiagnosticEvent(timestamp: initial.addingTimeInterval(Double(offset)),
-                level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure"))
+                level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure",
+                summaryKey: DiagnosticIssue.generic.rawValue, outcome: .failed, impact: .blocked))
         }
+        let initialSummary = await store.issueSummary()
+        #expect(initialSummary.issueCount == 1)
+        #expect(initialSummary.occurrenceCount == 3)
         await store.markIssuesAcknowledged()
         #expect(await store.issueSummary().issueCount == 0)
         store.enqueue(DiagnosticEvent(timestamp: Date().addingTimeInterval(1),
-            level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure"))
+            level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure",
+            summaryKey: DiagnosticIssue.generic.rawValue, outcome: .failed, impact: .blocked))
         #expect(await store.issueSummary().issueCount == 1)
     }
 
@@ -218,8 +233,7 @@ struct DiagnosticPipelineTests {
             for worker in 0..<8 {
                 group.addTask {
                     for n in 0..<625 {
-                        store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "storm",
-                            message: "safe", phase: "progress", fields: ["count": .integer(worker * 625 + n)]))
+                        store.enqueue(Self.fault("storm", count: worker * 625 + n))
                     }
                 }
             }
@@ -238,7 +252,7 @@ struct DiagnosticPipelineTests {
         let directory = root()
         defer { try? FileManager.default.removeItem(at: directory) }
         let constrained = DiagnosticLogStore(directoryURL: directory, queueByteLimit: 1024)
-        constrained.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "oversized", message: "safe"))
+        constrained.enqueue(Self.fault("oversized"))
         let dropped = await constrained.snapshot()
         #expect(dropped.health["droppedEvents"] == 1)
         #expect(dropped.text.isEmpty)
@@ -262,7 +276,7 @@ struct DiagnosticPipelineTests {
         try (text + "\ndamaged-line\n").write(to: file, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.creationDate: oldDate, .modificationDate: Date()], ofItemAtPath: file.path)
         let store = DiagnosticLogStore(directoryURL: directory)
-        store.enqueue(DiagnosticEvent(level: .info, category: "test", operation: "next", message: "safe"))
+        store.enqueue(Self.fault("next"))
         let snapshot = await store.snapshot()
         #expect(!snapshot.text.contains("\"operation\":\"expired\""))
         #expect(snapshot.text.contains("\"operation\":\"recent\""))

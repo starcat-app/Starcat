@@ -42,7 +42,7 @@ struct DiagnosticHTTPRequest: Sendable {
         let trace = ["x-request-id", "x-github-request-id", "x-trace-id", "trace-id"]
             .compactMap { http?.value(forHTTPHeaderField: $0) }
             .compactMap(DiagnosticEvent.safeTrace).first
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        operation.capture(DiagnosticEvent(
             level: failed && !cancelled ? .warning : .info,
             category: "network", operation: service, message: "HTTP attempt completed",
             service: service, statusCode: status,
@@ -64,12 +64,15 @@ enum DiagnosticHTTP {
         let attempt = DiagnosticHTTPRequest(service: service, method: request.httpMethod ?? "GET",
                                             route: DiagnosticHTTPRequest.route(request.url))
         if DiagnosticRecording.shared.expiresAt != nil {
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            let shape = DiagnosticEvent(
                 level: .debug, category: "network", operation: service, message: "Enhanced request shape",
                 operationID: attempt.operation.id, parentOperationID: attempt.operation.parentID,
                 requestID: attempt.id, phase: "requestShape",
                 fields: ["headerCount": .integer(request.allHTTPHeaderFields?.count ?? 0),
-                         "uploadBytes": .integer(request.httpBody?.count ?? 0)]))
+                         "uploadBytes": .integer(request.httpBody?.count ?? 0)])
+            if DiagnosticRecording.shared.consume(shape.estimatedQueuedBytes) {
+                attempt.operation.capture(shape)
+            }
         }
         do {
             let result = try await session.data(for: request)

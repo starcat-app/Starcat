@@ -299,15 +299,22 @@ final class SemanticIndexBuilder {
     private func run(force: Bool) {
         status = .running
         runningTask = Task { @MainActor [weak self] in
-            await self?.execute(force: force)
+            guard let self else { return }
+            let diagnostic = DiagnosticOperation(category: "semantic-index", name: "rebuild")
+            await DiagnosticContext.$current.withValue(diagnostic) {
+                await self.execute(force: force, diagnostic: diagnostic)
+            }
+            diagnostic.finish(Task.isCancelled ? .cancelled : .succeeded)
         }
     }
 
-    private func execute(force: Bool) async {
+    private func execute(force: Bool, diagnostic: DiagnosticOperation) async {
         // `status = .running` 已在 `run()` 同步设过；这里不再重复设置，
         // 避免抹掉 pause() 在 fetchAllStarred 期间设的 .paused（边界 case：
         // pause() 在 await 期间触发 → Task.isCancelled 命中 → catch 块或下方
         // 提前 return 路径，详见循环里两处 `Task.isCancelled` 兜底）。
+        var requestedIDs: [Int64] = []
+        var lastFailure: (any Error)?
         do {
             let repos: [Repo]
             if total == 0 {
@@ -326,6 +333,7 @@ final class SemanticIndexBuilder {
                 // 一次 diff 判定（diff 未超阈值会立即跳过，不烧 embedding API）。
             }
 
+            requestedIDs = repos.map(\.id)
             let toProcess = Array(repos.dropFirst(processed))
             for chunk in toProcess.chunked(into: embeddingChunkSize) {
                 if Task.isCancelled { break }
@@ -347,7 +355,7 @@ final class SemanticIndexBuilder {
                 }
 
                 guard !indexCandidates.isEmpty, !Task.isCancelled else { continue }
-                await rebuildIndexChunk(indexCandidates, force: force)
+                if let error = await rebuildIndexChunk(indexCandidates, force: force) { lastFailure = error }
             }
 
             if Task.isCancelled {
@@ -378,25 +386,32 @@ final class SemanticIndexBuilder {
                 status = .completed(processed: processed, total: total)
                 persistLastRun(outcome: .completed)
             }
+            if let lastFailure, !requestedIDs.isEmpty {
+                let existingCount = try? await semanticSearchService.indexedCount(repoIDs: requestedIDs)
+                // 读取旧索引也失败时不能声称有效回退；配置和权益仍由错误映射排除。
+                UserFacingError.map(lastFailure, operation: "semanticIndex.rebuild", service: "Starcat",
+                    impact: existingCount == nil || existingCount == 0 ? .blocked : .none,
+                    summary: .searchUnavailable)
+                    .record(category: "semantic-index", operation: "rebuild",
+                            fields: ["errorCount": .integer(failures)])
+                diagnostic.finish(.partial, error: lastFailure)
+            }
         } catch {
             AppLog.ai.error("SemanticIndexBuilder failed: \(error.localizedDescription, privacy: .public)")
             status = .failed(message: error.localizedDescription)
             persistLastRun(outcome: .failed, failureMessage: error.localizedDescription)
+            let existingCount = try? await semanticSearchService.indexedCount(repoIDs: requestedIDs)
             let friendly = UserFacingError.map(
                 error,
                 operation: "semanticIndex.rebuild",
-                service: "Starcat"
+                service: "Starcat",
+                impact: requestedIDs.isEmpty || existingCount == nil || existingCount == 0 ? .blocked : .none,
+                summary: .searchUnavailable
             )
             if friendly.shouldRecordDiagnostic {
-                DiagnosticLogStore.record(
-                    level: .error,
-                    visibility: .issue,
-                    category: "semantic-index",
-                    operation: "semanticIndex.rebuild",
-                    message: "Semantic search index rebuild failed because of a local or contract error",
-                    underlying: friendly.diagnosticSummary
-                )
+                friendly.record(category: "semantic-index", operation: "rebuild")
             }
+            diagnostic.finish(.failed, error: error)
         }
     }
 
@@ -451,8 +466,8 @@ final class SemanticIndexBuilder {
     /// 这里把 README 限速与 embedding 批处理拆开：前者保护 GitHub rate limit，后者降低
     /// OpenAI-compatible embedding endpoint 的请求次数。`processed` 已在 README 阶段递增，
     /// 本方法只维护 `skipped` 与 `failures`。
-    private func rebuildIndexChunk(_ repos: [Repo], force: Bool) async {
-        guard !repos.isEmpty else { return }
+    private func rebuildIndexChunk(_ repos: [Repo], force: Bool) async -> (any Error)? {
+        guard !repos.isEmpty else { return nil }
 
         if force {
             do {
@@ -460,11 +475,24 @@ final class SemanticIndexBuilder {
             } catch {
                 failures += repos.count
                 AppLog.ai.warning("rebuild vector chunk failed count=\(repos.count, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                return error
             }
         } else {
-            let rebuilt = await semanticSearchService.refreshIndexIfChanged(for: repos)
-            skipped += max(0, repos.count - rebuilt)
+            do {
+                // 复用同一 diff 路径，但保留真实错误供本轮最终准入；界面跳过计数沿用原行为。
+                let rebuilt = try await semanticSearchService.refreshIndex(for: repos, force: false)
+                skipped += max(0, repos.count - rebuilt)
+            } catch EntitlementGateError.requiresPro {
+                skipped += repos.count
+            } catch let error as AIEmbeddingError where error.isConfigurationIssue {
+                skipped += repos.count
+            } catch {
+                skipped += repos.count
+                AppLog.ai.error("refreshIndexIfChanged batch failed: \(error.localizedDescription, privacy: .public)")
+                return error
+            }
         }
+        return nil
     }
 }
 

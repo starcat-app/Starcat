@@ -25,16 +25,60 @@ struct UserFacingError: Equatable, Sendable {
     var diagnosticSummary: String
     var statusCode: Int?
     var errorCode: String?
-    /// 是否需要提醒开发者协助；不再作为证据采集开关，保留字段名避免影响调用方。
+    /// 持久化准入开关：默认映射只负责用户提示，业务确认功能影响后才允许记录。
     var shouldRecordDiagnostic: Bool
     var diagnosticOutcome: DiagnosticEvent.Outcome = .failed
-    var operationID: String? = DiagnosticContext.current?.id
+    var operationID: String? = DiagnosticContext.active?.id
+    var diagnosticImpact: DiagnosticEvent.Impact = .none
+    var diagnosticIssue: DiagnosticIssue?
+    var diagnosticUnderlying: String?
+    var diagnosticErrorChain: [DiagnosticErrorCause] = []
 
     static func map(
         _ error: Error,
         operation: String,
-        service: String? = nil
+        service: String? = nil,
+        impact: DiagnosticEvent.Impact = .none,
+        summary: DiagnosticIssue? = nil
     ) -> UserFacingError {
+        var result = presentation(error, operation: operation, service: service)
+        result.diagnosticImpact = impact
+        result.diagnosticIssue = summary
+        result.diagnosticUnderlying = DiagnosticEvent.summarize(error)
+        result.diagnosticErrorChain = DiagnosticFailure.causes(error)
+        result.errorCode = result.errorCode ?? DiagnosticFailure.code(error)
+        result.shouldRecordDiagnostic = summary != nil && [.blocked, .dataRisk].contains(impact)
+            && result.diagnosticOutcome == .failed
+        return result
+    }
+
+    /// 提示分类与严重故障准入分开；错误类型不能证明缓存、重试或回退是否有效。
+    private static func presentation(
+        _ error: Error,
+        operation: String,
+        service: String?
+    ) -> UserFacingError {
+        if let runtime = error as? ExternalAgentRuntimeError {
+            switch runtime {
+            case .directOnly, .executableNotFound, .executableNotRunnable, .unsupportedArchitecture, .missingConfiguration:
+                return make(kind: .recoverable, operation: operation, service: service,
+                            diagnostic: DiagnosticEvent.summarize(error))
+            default: break
+            }
+        }
+        if let session = error as? AgentRunSessionError {
+            switch session {
+            case .terminal, .waitingForConfirmation, .iterationLimit, .toolCallLimit, .tokenLimit, .durationLimit:
+                return make(kind: .recoverable, operation: operation, service: service,
+                            diagnostic: DiagnosticEvent.summarize(error))
+            case .invalidRunID: break
+            }
+        }
+        if let loop = error as? LoopAgentRuntimeError,
+           case .approvalRequired = loop {
+            return make(kind: .recoverable, operation: operation, service: service,
+                        diagnostic: DiagnosticEvent.summarize(error))
+        }
         if DiagnosticFailure.isCancellation(error) || error is EntitlementGateError {
             var mapped = make(
                 kind: .recoverable,
@@ -82,7 +126,8 @@ struct UserFacingError: Equatable, Sendable {
                 message: message,
                 recovery: String.l10n("error.user.aiProvider.recovery.modelsSettings"),
                 diagnosticSummary: DiagnosticEvent.redact(String(describing: selection)),
-                shouldRecordDiagnostic: false
+                shouldRecordDiagnostic: false,
+                diagnosticOutcome: .skipped
             )
         }
         if let external = error as? ExternalSearchError {
@@ -96,13 +141,20 @@ struct UserFacingError: Equatable, Sendable {
         }
         if let localAI = error as? LocalAIError {
             // 本地模型超上下文 / 重复输出等已有专用文案，不能再套「访问 AI 失败」。
-            return UserFacingError(
+            var result = UserFacingError(
                 title: String.l10n("error.user.aiProvider.title"),
                 message: localAI.localizedDescription,
                 recovery: String.l10n("error.user.aiProvider.recovery.modelsSettings"),
                 diagnosticSummary: DiagnosticEvent.redact(String(describing: localAI)),
                 shouldRecordDiagnostic: false
             )
+            switch localAI {
+            case .hardwareUnsupported, .unavailableInTests, .modelNotInstalled, .toolsUnsupported,
+                 .contextTooLong, .memoryBudgetExceeded:
+                result.diagnosticOutcome = .skipped
+            case .repetitiveOutput, .embeddingDimensionMismatch: break
+            }
+            return result
         }
         if let translation = error as? ReadmeTranslationError {
             return mapReadmeTranslation(translation, operation: operation, service: service)
@@ -144,21 +196,31 @@ struct UserFacingError: Equatable, Sendable {
         )
     }
 
-    func record(level: DiagnosticEvent.Level = .error, category: String, operation: String, service: String? = nil) {
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
-            level: diagnosticOutcome == .cancelled || diagnosticOutcome == .skipped ? .info : level,
-            visibility: shouldRecordDiagnostic ? .issue : .context,
+    func record(level: DiagnosticEvent.Level = .error, category: String, operation: String,
+                service: String? = nil, context: [String: String] = [:],
+                fields: [String: DiagnosticValue] = [:], store: DiagnosticLogStore = .shared,
+                sourceFile: String = #fileID, sourceFunction: String = #function, sourceLine: Int = #line) {
+        guard shouldRecordDiagnostic else { return }
+        let event = DiagnosticEvent(
+            level: level,
+            visibility: .issue,
             category: category,
             operation: operation,
             message: "User operation result",
+            summaryKey: diagnosticIssue?.rawValue,
             service: service,
             statusCode: statusCode,
             errorCode: errorCode ?? "userOperation.\(diagnosticOutcome.rawValue)",
+            underlying: diagnosticUnderlying,
+            context: context,
             operationID: operationID,
             phase: "finished",
             outcome: diagnosticOutcome,
-            impact: diagnosticOutcome == .failed ? .blocked : .none
-        ))
+            impact: diagnosticImpact,
+            fields: fields,
+            errorChain: diagnosticErrorChain,
+            sourceFile: sourceFile, sourceFunction: sourceFunction, sourceLine: sourceLine)
+        if DiagnosticContext.current?.capture(event) != true { store.enqueue(event) }
     }
 
     private enum Kind {
@@ -352,7 +414,8 @@ struct UserFacingError: Equatable, Sendable {
                 message: error.localizedDescription,
                 recovery: String.l10n("error.user.aiConfiguration.recovery"),
                 diagnosticSummary: DiagnosticEvent.redact(error.localizedDescription),
-                shouldRecordDiagnostic: false
+                shouldRecordDiagnostic: false,
+                diagnosticOutcome: .skipped
             )
         case .authenticationRejected:
             return make(
@@ -608,13 +671,13 @@ struct UserFacingError: Equatable, Sendable {
         if let context {
             diagnostic += " (\(context))"
         }
-        let shouldRecordDiagnostic: Bool
+        let expected: Bool
         switch kind {
-        case .decoding, .localData, .secureStorage:
-            shouldRecordDiagnostic = true
-        case .networkUnavailable, .unauthorized, .rateLimited, .notFound,
-             .serverUnavailable, .aiConfiguration, .aiProvider, .recoverable, .unknown:
-            shouldRecordDiagnostic = false
+        case .unauthorized, .aiConfiguration, .recoverable:
+            expected = true
+        case .decoding, .localData, .secureStorage, .networkUnavailable,
+             .rateLimited, .notFound, .serverUnavailable, .aiProvider, .unknown:
+            expected = false
         }
         return UserFacingError(
             title: String.l10n(titleKey),
@@ -623,7 +686,8 @@ struct UserFacingError: Equatable, Sendable {
             diagnosticSummary: diagnostic,
             statusCode: statusCode,
             errorCode: errorCode,
-            shouldRecordDiagnostic: shouldRecordDiagnostic
+            shouldRecordDiagnostic: false,
+            diagnosticOutcome: expected ? .skipped : .failed
         )
     }
 }

@@ -251,7 +251,7 @@ struct SearchDiscoveryDiagnostic: Equatable, Identifiable, Sendable {
 
     /// 每次真实失败只记一次；缓存结果重复展示时不会生成新的失败证据。
     private func record() {
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: .warning,
             category: "search",
             operation: "search.discovery.\(stage.rawValue)",

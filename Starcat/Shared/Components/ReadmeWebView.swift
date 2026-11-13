@@ -1850,17 +1850,18 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         // 渲染失败日志，方便后续排查（沙箱、CSS、HTML 片段异常都会落在这里）
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            diagnosticOperation?.finish(.failed, error: error)
+            diagnosticOperation?.finish(.failed, error: error, impact: .blocked, summary: .readmeUnavailable)
             AppLog.ui.error("ReadmeWebView didFail: \(error.localizedDescription, privacy: .public)")
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            diagnosticOperation?.finish(.failed, error: error)
+            diagnosticOperation?.finish(.failed, error: error, impact: .blocked, summary: .readmeUnavailable)
             AppLog.ui.error("ReadmeWebView didFailProvisional: \(error.localizedDescription, privacy: .public)")
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard webView.window != nil else { return }
             let diagnostic = DiagnosticOperation(category: "readme", name: "contentProcessTerminated")
-            diagnostic.finish(.failed)
+            diagnostic.finish(.failed, impact: .blocked, summary: .readmeUnavailable)
         }
     }
 }

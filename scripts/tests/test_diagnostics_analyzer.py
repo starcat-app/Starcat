@@ -39,6 +39,36 @@ class DiagnosticAnalyzerTests(unittest.TestCase):
         self.assertTrue(any("2 行" in gap for gap in gaps))
         self.assertTrue(any("历史事件" in gap for gap in gaps))
 
+    def test_schema_three_admission_breadcrumbs_and_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "events.jsonl"
+            failure = self.event(schemaVersion=3, visibility="issue", impact="blocked", outcome="failed",
+                summaryKey="diagnostics.issue.aiUnavailable", operationID="root", occurrenceCount=2,
+                breadcrumbs=[dict(phase="response", requestID="request", operationID="child",
+                    serverTraceID="trace", elapsedMs=12, fields=dict(attempt=2, token="private"))],
+                breadcrumbsTruncated=True, context=dict(repoID="ref:0000000000000001"))
+            excluded = dict(failure, visibility="context")
+            other_scope = dict(failure, context=dict(repoID="ref:0000000000000002"))
+            source.write_text("\n".join(map(json.dumps, [failure, excluded, other_scope])))
+            report = self.analyze(source, request_id="request")
+            self.assertEqual(len(report["incidents"]), 2)
+            self.assertEqual([item["count"] for item in report["incidents"]], [2, 2])
+            self.assertTrue(all(item["severe"] for item in report["incidents"]))
+            self.assertEqual(report["incidents"][0]["actualAttempts"], 1)
+            self.assertEqual(report["incidents"][0]["serverTraceIDs"], ["trace"])
+            self.assertEqual(self.analyze(source, operation_id="child")["selectedEvents"], 3)
+            stage = report["timeline"][0]["breadcrumbs"][0]
+            self.assertEqual(stage["elapsedMs"], 12)
+            self.assertEqual(stage["fields"], dict(attempt=2))
+            self.assertNotIn("private", json.dumps(report))
+            self.assertTrue(any("截断" in gap for gap in report["evidenceGaps"]))
+            self.assertFalse(any("更高格式" in gap for gap in report["evidenceGaps"]))
+            failure.pop("summaryKey")
+            source.write_text(json.dumps(failure))
+            missing_summary = self.analyze(source)
+            self.assertTrue(missing_summary["incidents"][0]["severe"])
+            self.assertEqual(missing_summary["incidents"][0]["summaryKey"], "diagnostics.issue.generic")
+
     def test_bundle_counts_correlation_and_privacy(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
@@ -79,9 +109,12 @@ class DiagnosticAnalyzerTests(unittest.TestCase):
     def test_manifest_missing_and_checksum(self):
         _, _, gaps = ANALYZER.collect({"manifest.json": json.dumps(dict(files=[
             dict(path="missing.json"), dict(path="events.jsonl", sha256="wrong")
-        ])).encode(), "events.jsonl": json.dumps(self.event()).encode()})
+        ], health=dict(readFailures=1, droppedEvents=2))).encode(),
+            "events.jsonl": json.dumps(self.event()).encode()})
         self.assertTrue(any("文件缺失" in gap for gap in gaps))
         self.assertTrue(any("校验失败" in gap for gap in gaps))
+        self.assertTrue(any("readFailures=1" in gap for gap in gaps))
+        self.assertTrue(any("droppedEvents=2" in gap for gap in gaps))
 
     def test_zip_traversal_and_duplicates_rejected(self):
         for names in [("../events.jsonl",), ("/events.jsonl",), ("events.jsonl", "events.jsonl")]:
@@ -142,7 +175,7 @@ class DiagnosticAnalyzerTests(unittest.TestCase):
     def test_newer_schema_and_unlisted_files_report_gaps(self):
         _, _, gaps = ANALYZER.collect({
             "manifest.json": json.dumps(dict(files=[])).encode(),
-            "events.jsonl": json.dumps(self.event(schemaVersion=3)).encode()
+            "events.jsonl": json.dumps(self.event(schemaVersion=4)).encode()
         })
         self.assertTrue(any("更高格式" in gap for gap in gaps))
         self.assertTrue(any("未列出" in gap for gap in gaps))

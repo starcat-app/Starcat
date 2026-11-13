@@ -130,7 +130,7 @@ final class ReadmeViewModel {
         case .requiresLogin: phase = "requiresLogin"; outcome = .skipped
         case .idle: return
         }
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: outcome == .failed ? .warning : .info,
             category: "readme", operation: "content", message: "README content state",
             phase: phase, outcome: outcome, fields: fields))
@@ -283,6 +283,9 @@ final class ReadmeViewModel {
 
         currentTask = Task { [weak self] in
             guard let self else { return }
+            let diagnostic = DiagnosticOperation(category: "readme", name: "loadTrending")
+            await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish(self.diagnosticOutcome) }
 
             self.isRefreshing = true
             defer { self.isRefreshing = false }
@@ -366,7 +369,11 @@ final class ReadmeViewModel {
                 } else {
                     AppLog.network.error("Trending README 加载失败 owner=\(owner, privacy: .public) repo=\(repo, privacy: .public): \(error.localizedDescription, privacy: .public)")
                     self.state = .error(message: error.localizedDescription)
+                    UserFacingError.map(error, operation: "readme.loadTrending",
+                        impact: .blocked, summary: .readmeUnavailable)
+                        .record(category: "readme", operation: "loadTrending")
                 }
+            }
             }
         }
     }
@@ -438,6 +445,9 @@ final class ReadmeViewModel {
 
         currentTask = Task { [weak self] in
             guard let self else { return }
+            let diagnostic = DiagnosticOperation(category: "readme", name: "load")
+            await DiagnosticContext.$current.withValue(diagnostic) {
+            defer { diagnostic.finish(self.diagnosticOutcome) }
             // Private 仓库绝不回退主 OAuth API。GitHub App 未连接时 provider 返回 nil，
             // 请求会失败并保留旧本地缓存，不会把仓库名发送到公共 Trending/Discovery。
             let selectedAPI = repo.isPrivate ? self.privateAPI : self.api
@@ -574,12 +584,23 @@ final class ReadmeViewModel {
                 } else {
                     AppLog.network.error("README 加载失败 repoId=\(repo.id) force=\(forceRefresh, privacy: .public): \(error.localizedDescription, privacy: .public)")
                     self.state = .error(message: error.localizedDescription)
+                    UserFacingError.map(error, operation: "readme.load",
+                        impact: .blocked, summary: .readmeUnavailable)
+                        .record(category: "readme", operation: "load")
                 }
+            }
             }
         }
     }
 
     // MARK: - Helpers
+
+    /// 缓存有效、空结果和登录指引都不能把请求异常升级为严重故障。
+    private var diagnosticOutcome: DiagnosticEvent.Outcome {
+        if Task.isCancelled { return .cancelled }
+        if case .error = state { return .failed }
+        return .succeeded
+    }
 
     /// 派发 README 加载完成事件（阅读状态 v2，2026-06-12）。
     ///

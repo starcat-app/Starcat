@@ -193,6 +193,7 @@ struct AppStatusToolbarButton: View {
 
     private var hasIssue: Bool {
         diagnosticSummary.issueCount > 0
+            || diagnosticSummary.storageUnavailable
             || isMCPFailed
             || isBrowserPluginFailed
             || dependencies.githubStatusMonitor.hasRelevantIssue
@@ -565,6 +566,7 @@ private struct AppStatusPanel: View {
         ) {
             diagnosticAccessory
         }
+        .help(diagnosticSubtitle)
     }
 
     private var undoStarRow: some View {
@@ -614,6 +616,7 @@ private struct AppStatusPanel: View {
 
     private var panelHasIssue: Bool {
         if diagnosticSummary.issueCount > 0 { return true }
+        if diagnosticSummary.storageUnavailable { return true }
         if githubStatusMonitor.hasRelevantIssue { return true }
         if serviceSummary.hasIssue { return true }
         if initialWarmupCoordinator.job?.phase == .paused { return true }
@@ -875,19 +878,28 @@ private struct AppStatusPanel: View {
     }
 
     private var diagnosticIcon: String {
-        diagnosticSummary.issueCount > 0 ? "stethoscope" : "checkmark.seal.fill"
+        if diagnosticSummary.issueCount > 0 { return "stethoscope" }
+        return diagnosticSummary.storageUnavailable ? "externaldrive.badge.exclamationmark" : "checkmark.seal"
     }
 
     private var diagnosticTint: Color {
-        diagnosticSummary.issueCount > 0 ? .orange : .green
+        diagnosticSummary.issueCount > 0 || diagnosticSummary.storageUnavailable ? .orange : .secondary
     }
 
     private var diagnosticSubtitle: String {
         guard diagnosticSummary.issueCount > 0 else {
-            return String.l10n("toolbar.status.diagnostics.clean")
+            if diagnosticSummary.storageUnavailable {
+                return String.l10n("toolbar.status.diagnostics.storageUnavailable")
+            }
+            return String.l10n("toolbar.status.diagnostics.noRecords")
         }
         if let latest = diagnosticSummary.latestIssue {
-            return String(format: String.l10n("toolbar.status.diagnostics.issueFormat"), diagnosticSummary.issueCount, latest.message)
+            let summary = String.l10n(DiagnosticIssue.summaryKey(for: latest.summaryKey))
+            let occurredAt = latest.date.formatted(.dateTime.locale(locale).month().day().hour().minute())
+            let detail = String(format: String.l10n("toolbar.status.diagnostics.summaryFormat"), locale: locale,
+                          diagnosticSummary.issueCount, diagnosticSummary.latestOccurrenceCount, summary, occurredAt)
+            return diagnosticSummary.storageUnavailable
+                ? String.l10n("toolbar.status.diagnostics.storageUnavailable") + "\n" + detail : detail
         }
         return String(format: String.l10n("toolbar.status.diagnostics.countFormat"), diagnosticSummary.issueCount)
     }
