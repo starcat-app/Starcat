@@ -94,7 +94,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| 主仓及三个 supports 仓库的 `codex/daily-radar-sharing` | 已合并；本地分支与四个专项 worktree 保留。 | 2026-11-13 dong4j 确认每日热点报告分享完成并授权合回各仓 `dev`。主仓基于 `dev@b9cfb3ab`，功能提交 `9fcf469d` 经 `96836605` 整合主线后 fast-forward 合回；sharing-api `e98d51a`、聚合 API `db6800e`、starcat-site `1400a7d` 均 fast-forward 合入各自 `dev`。保留 `../Starcat-daily-radar-sharing` 及其三个支持仓 worktree，后续公开页 HTML/CSS 在 sharing-api 迭代；本次不推送或清理。 |
+| 主仓及三个 supports 仓库的 `codex/daily-radar-sharing` | 已删除四仓本地专项分支及 worktree。 | 2026-11-13 dong4j 确认功能完成并授权清理。主仓功能提交 `9fcf469d` 经 `96836605` 整合后合回 `dev`；sharing-api `e98d51a`、聚合 API `db6800e`、starcat-site `1400a7d` 均已合入各自 `dev`。删除前逐仓确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、专项 worktree 干净；生产备份与含 `/d/` 路由的本机私有配置已保留到主工作区。先清理三个嵌套支持仓，再以非强制 `git worktree remove` 和 `git branch -d` 清理主专项；四仓主工作区仍在 `dev`，其他 worktree 保留，未操作远端。后续公开页 HTML/CSS 在 sharing-api 迭代。 |
 | `codex/global-search-review-fixes` | 已删除 | 2026-11-13 dong4j 授权清理；分支头 `fd213c5b` 的 10 项独立修复已通过 merge commit `e66c56da` 合入 `dev`。删除前确认是 `dev` 祖先、独有提交为 0、`git cherry` 为空，搜索源码与 `dev` 一致，worktree 干净且 Secrets 配置与主工作区一致。已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-global-search-review-fixes` 与本地分支；本次未操作远端。 |
 | `codex/global-search-optimization` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `d9e9439b` 经 `1b8002c7` 整合后，通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、worktree 干净；已删除 `../Starcat-global-search-optimization` 与本地分支，本次未操作远端。 |
 | `codex/global-search-content-filter` | 已删除 | 2026-11-13 dong4j 授权删除；分支头 `1b8002c7` 已通过 `f6d4c194` 合入 `dev`。删除前确认独有提交为 0、`git cherry` 为空、内容过滤关键源码一致且 worktree 干净；已删除 `../Starcat-global-search-content-filter` 与本地分支，本次未操作远端。 |
