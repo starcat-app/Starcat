@@ -157,6 +157,7 @@ struct DailyRadarPreviewWorkspace: View {
         // 分享任务与翻译付费墙属于整个热点工作区，关闭一个项目不会销毁分享宿主。
         .environment(translationVM)
         .modifier(RepoShareHost())
+        .modifier(DailyRadarShareHost())
         .sheet(item: Binding(
             get: { translationVM.paywallContext },
             set: { if $0 == nil { translationVM.dismissPaywall() } }

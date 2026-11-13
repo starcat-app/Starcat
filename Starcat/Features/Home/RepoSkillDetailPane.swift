@@ -12,6 +12,7 @@ struct RepoSkillDetailPane: View {
     let skill: RepoSkill
     let session: RepoSkillSession
     @Binding var isPreviewExpanded: Bool
+    @Binding var isInspectorPresented: Bool
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
@@ -92,6 +93,11 @@ struct RepoSkillDetailPane: View {
                     .id("\(skill.id)-\(tab)")
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                downloadButton
+                    .padding(.trailing, 10)
+                    .padding(.bottom, 14)
+            }
             .background(RepoSkillPanelStyle.panelColor(colorScheme), in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -121,7 +127,7 @@ struct RepoSkillDetailPane: View {
     /// 入口位于正文外，避让 WebView 滚动条；切换尺寸不会改变正文身份或触发读取任务。
     private var previewSizeButton: some View {
         let helpKey: LocalizedStringKey = isPreviewExpanded
-            ? "repo.skills.preview.restore" : "repo.skills.preview.expand"
+            ? "repo.skills.preview.restoreLayout" : "repo.skills.preview.expand"
         return Button {
             isPreviewExpanded.toggle()
         } label: {
@@ -138,12 +144,39 @@ struct RepoSkillDetailPane: View {
         .accessibilityLabel(Text(helpKey))
     }
 
+    /// 下载入口常驻三个内容 Tab；这里只切换浮层，实际写入仍需用户确认开始安装。
+    private var downloadButton: some View {
+        Button {
+            isInspectorPresented.toggle()
+        } label: {
+            Label("repo.files.inspector.download", systemImage: "arrow.down.to.line")
+                .labelStyle(.iconOnly)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30, height: 30)
+                .starcatInteractiveGlassSurface(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(isInspectorPresented ? 0.5 : 0.2))
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help("repo.files.inspector.download")
+        .accessibilityValue(Text(LocalizedStringKey(
+            isInspectorPresented ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"
+        )))
+        .shadow(color: .black.opacity(0.09), radius: 8, x: 0, y: 4)
+    }
+
     /// 只渲染仓库原文，不生成示例命令，也不执行 Markdown 中的安装指令。
     @ViewBuilder
     private var manifest: some View {
         if let document {
             ReadmeWebView(
-                htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL
+                htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
+                floatingToolbarBottomInset: 40
             )
             // 保持渲染器身份稳定；准备新文档时隐藏旧内容，不能销毁并重建 WKWebView。
             .opacity(document.skillID == skill.id ? 1 : 0)

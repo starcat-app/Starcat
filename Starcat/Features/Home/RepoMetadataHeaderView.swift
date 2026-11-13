@@ -180,7 +180,6 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
                     if let headerSourceBadge, headerSourceBadge.isVisible {
                         RepoDetailHeaderSourceBadgeView(badge: headerSourceBadge)
                     }
-                    LinuxDoSourceBadge(repoID: repo.id, interactive: true)
                 }
                 badgeRow
                 inlineTopicsRow
@@ -216,20 +215,28 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        // 窄面板放不下时 Skill 胶囊折到第二行，License 胶囊始终保持完整文案。
+        // 窄面板放不下时来源与 Skill 一起折行，保持 Linux.do 始终在 Skills 前面。
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 primaryBadges
-                RepoSkillBadge(repo: repo)
+                sourceAndSkillBadges
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) { primaryBadges }
-                RepoSkillBadge(repo: repo)
+                sourceAndSkillBadges
             }
         }
         .lineLimit(1)
-        // License 胶囊固定 24pt（设计稿 24-26pt），折行时第二行也算入行高。
+        // 保留元信息行的最小高度，胶囊自身使用与 Skills 一致的紧凑尺寸。
         .frame(minHeight: 24, alignment: .leading)
+    }
+
+    /// 将来源与技能入口作为一组换行，避免窄面板把 Linux.do 留在许可证行。
+    private var sourceAndSkillBadges: some View {
+        HStack(spacing: 10) {
+            LinuxDoSourceBadge(repoID: repo.id, interactive: true)
+            RepoSkillBadge(repo: repo)
+        }
     }
 
     @ViewBuilder
@@ -247,7 +254,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         LicenseKnowledgeCapsule(
             rawLicense: repo.license,
             owner: repo.owner,
-            repoName: repo.name
+            repoName: repo.name,
+            isCompact: true
         )
         .layoutPriority(1)
         // fork 来源不再单独占第三行，也不再用灰色 Fork 胶囊占位。

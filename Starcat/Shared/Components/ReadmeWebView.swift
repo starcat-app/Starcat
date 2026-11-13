@@ -115,6 +115,9 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮。
     var onExportMarkdown: (() -> Void)? = nil
 
+    /// 为调用方附加的底部操作预留空间；只移动浮动工具条，不改变 WebView 的尺寸与身份。
+    var floatingToolbarBottomInset: CGFloat = 0
+
     /// 当前 README 所属仓库。有值且设置打开「应用内打开仓库文档」时，
     /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
     var markdownLinkRepositoryOwner: String? = nil
@@ -193,13 +196,13 @@ struct ReadmeWebView: View {
                 onExportMarkdown: onExportMarkdown
             )
             .padding(.trailing, 10)
-            .padding(.bottom, 54)
+            .padding(.bottom, 54 + floatingToolbarBottomInset)
         }
         // 回到顶部是独立常驻操作，固定贴在 README 渲染区右下角。
         .overlay(alignment: .bottomTrailing) {
             ReadmeBackToTopButton(action: scrollToTop)
                 .padding(.trailing, 10)
-                .padding(.bottom, 14)
+                .padding(.bottom, 14 + floatingToolbarBottomInset)
         }
         .onReceive(NotificationCenter.default.publisher(for: .repoDetailScrollToTopRequested)) { _ in
             scrollToTop()

@@ -11,7 +11,6 @@ import SwiftUI
 struct RepoSkillBadge: View {
     let repo: Repo
     @Environment(AppDependencies.self) private var dependencies
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         let store = dependencies.repoSkillStore
@@ -31,16 +30,16 @@ struct RepoSkillBadge: View {
                         }
                         label
                     }
-                    .font(interfaceScale.font(.captionSmall, weight: .medium))
                     .foregroundStyle(.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-                    .overlay(Capsule().stroke(Color.accentColor.opacity(0.25), lineWidth: 1))
+                    .modifier(RepoMetadataCapsuleStyle(
+                        background: Color.accentColor.opacity(0.12),
+                        border: Color.accentColor.opacity(0.25)
+                    ))
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
-                .pressableHover()
+                .pressableHover(opacity: 0.8, scale: 1.0)
+                .clickablePointer()
                 .disabled(!canOpen)
                 .opacity(canOpen ? 1 : 0.6)
                 .help(store.errors[repo.id] ?? String.l10n("repo.skills.preview.title"))
