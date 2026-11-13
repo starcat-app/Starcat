@@ -12,6 +12,44 @@ import Testing
 @Suite("Repository Discovery Service")
 @MainActor
 struct RepositoryDiscoveryServiceTests {
+    @Test("GitHub 候选满额时仍保留网页核验名额，重排降级也不丢失", arguments: [false, true], [1, 2])
+    func verifiedWebCandidatesHaveReservedRankingSlots(rankerFails: Bool, limit: Int) async {
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(
+                repositories: (0..<20).map {
+                    Self.makeCandidate(repo: Self.makeRepo(id: Int64($0 + 1), owner: "github", name: "tool-\($0)"))
+                }, references: [], totalCount: 20, hasNextPage: false
+            )
+        }
+        let web = RecordingSearchProvider(source: .web) { _ in
+            SearchProviderPage(
+                repositories: [], references: [Self.makeReference(url: "https://github.com/web/desired")],
+                totalCount: 1, hasNextPage: false
+            )
+        }
+        let ranker = StubDiscoveryRanker { _, _, candidates, _, _ in
+            #expect(candidates.count == limit)
+            #expect(candidates.contains { $0.id == "web/desired" })
+            if rankerFails { throw TestError.failed }
+            return candidates.reversed().map {
+                SearchDiscoveryRankedItem(id: $0.id, reason: "Relevant match", evidenceIDs: $0.evidenceIDs)
+            }
+        }
+        let result = await RepositoryDiscoveryService(
+            planner: nil, githubProvider: github, webProvider: web,
+            verifier: StubRepositoryVerifier { owner, name in Self.makeRepoDTO(id: 99, owner: owner, name: name) },
+            ranker: ranker, webEvidenceAllowed: { _ in true }
+        ).discover(
+            query: "tool", request: SearchRequest(query: "tool"), initialPlan: Self.makePlan(),
+            budget: SearchDiscoveryBudget(
+                timeoutSeconds: 15, maxWebQueries: 1, maxGitHubQueries: 1, maxLLMCalls: 3,
+                maxVerifiedRepositories: 5, maxRankedCandidates: limit
+            )
+        )
+        #expect(result.repositories.count == limit)
+        #expect(result.repositories.contains { $0.card.fullName == "web/desired" })
+    }
+
     @Test("续查复用计划和未核验线索，只取下一页 GitHub 结果")
     func continuationReusesPlanAndPendingVerification() async {
         let github = RecordingSearchProvider(source: .github) { request in

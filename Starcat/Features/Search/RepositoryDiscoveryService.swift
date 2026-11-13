@@ -937,6 +937,7 @@ final class RepositoryDiscoveryService {
             )
             return candidate
         }
+        repositories = Self.reservingVerifiedCandidates(repositories, limit: budget.maxRankedCandidates)
         references = Self.deduplicatedReferences(references).filter { !contentSummary.blockedIDs.contains($0.contentKey) }
 
         session = SearchDiscoverySession(
@@ -1243,6 +1244,31 @@ final class RepositoryDiscoveryService {
             )
             return ranked
         }
+    }
+
+    /// GitHub 检索先返回，不能靠 append 顺序占满全部名额。保留已核验网页候选，
+    /// 其余位置沿用召回顺序；重排失败时也使用同一候选池，避免降级再次丢掉它们。
+    private static func reservingVerifiedCandidates(
+        _ candidates: [RepositoryCandidate],
+        limit: Int
+    ) -> [RepositoryCandidate] {
+        let reserved = Set(candidates.filter {
+            $0.discovery?.kind == .githubVerification
+        }.prefix(max(0, limit)).map(\.identity.normalizedFullName))
+        var remainingSlots = max(0, limit - reserved.count)
+        var selected: [RepositoryCandidate] = []
+        var overflow: [RepositoryCandidate] = []
+        for candidate in candidates {
+            if reserved.contains(candidate.identity.normalizedFullName) {
+                selected.append(candidate)
+            } else if remainingSlots > 0 {
+                selected.append(candidate)
+                remainingSlots -= 1
+            } else {
+                overflow.append(candidate)
+            }
+        }
+        return selected + overflow
     }
 
     /// 仓库身份和核验时建立的关联才是引用依据；相同查询返回的其它证据不能借给当前候选。
