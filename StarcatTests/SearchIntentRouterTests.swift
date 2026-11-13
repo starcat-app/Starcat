@@ -245,6 +245,24 @@ struct SearchIntentRouterTests {
         #expect(outcome.diagnostic?.recovery?.isEmpty == false)
     }
 
+    @Test("决策和 Planner 共享同一截止时间")
+    func routingAndPlanningShareDeadline() async {
+        let fixture = makeFixture()
+        fixture.settings.decisionEngineEnabled = true
+        fixture.settings.decisionSearchRoutingEnabled = true
+        fixture.engine.delay = 0.02
+        fixture.planner.delay = 0.3
+        let start = Date()
+        let result = await fixture.router.route(
+            query: "找一个管理 GitHub stars 的开源项目",
+            deadline: start.addingTimeInterval(0.06)
+        )
+        #expect(fixture.planner.callCount == 1)
+        #expect(fixture.planner.remainingSeconds.last.map { $0 < 0.06 } == true)
+        #expect(Date().timeIntervalSince(start) < 0.25)
+        #expect(result.diagnostic?.isFailure == true)
+    }
+
     private func makeFixture(
         decisionTimeoutSeconds: TimeInterval = 3
     ) -> (router: SearchIntentRouter, settings: AppSettings, engine: FakeDecisionEngine, planner: FakeSearchPlanner) {
@@ -286,6 +304,8 @@ private final class FakeDecisionEngine: DecisionEngineProviding {
 @MainActor
 private final class FakeSearchPlanner: SearchQueryPlannerProviding {
     var error: Error?
+    var delay: TimeInterval = 0
+    private(set) var remainingSeconds: [TimeInterval] = []
     private(set) var callCount = 0
 
     func plan(
@@ -294,6 +314,8 @@ private final class FakeSearchPlanner: SearchQueryPlannerProviding {
         maxSeconds: TimeInterval
     ) async throws -> SearchDiscoveryPlan {
         callCount += 1
+        remainingSeconds.append(maxSeconds)
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
         if let error { throw error }
         return SearchDiscoveryPlan(
             intentSummary: "查找热门 Linux 发行版",

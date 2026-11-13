@@ -482,6 +482,35 @@ struct RepositoryDiscoveryServiceTests {
         #expect(failure.session.phase.isFailed)
     }
 
+    @Test("重排使用剩余时限，超时保留已有候选")
+    func rankingUsesSharedDeadline() async {
+        let candidate = Self.makeCandidate(repo: Self.makeRepo(id: 1, owner: "apple", name: "swift"))
+        let github = RecordingSearchProvider(source: .github) { _ in
+            SearchProviderPage(repositories: [candidate], references: [], totalCount: 1, hasNextPage: false)
+        }
+        let ranker = StubDiscoveryRanker(kind: .dedicatedRerank) { _, _, _, _, seconds in
+            #expect(seconds > 0 && seconds <= 0.05)
+            try await Task.sleep(for: .seconds(0.4))
+            return []
+        }
+        let service = RepositoryDiscoveryService(
+            planner: nil,
+            githubProvider: github,
+            verifier: StubRepositoryVerifier { _, _ in throw TestError.failed },
+            ranker: ranker
+        )
+        let start = Date()
+        let result = await service.discover(
+            query: "swift",
+            request: SearchRequest(query: "swift"),
+            initialPlan: Self.makePlan(),
+            deadline: start.addingTimeInterval(0.05)
+        )
+        #expect(Date().timeIntervalSince(start) < 0.3)
+        #expect(result.repositories.map(\.card.fullName) == ["apple/swift"])
+        #expect(result.steps.contains { $0.stage == .ranking && $0.state == .failed })
+    }
+
     private static func makePlan() -> SearchDiscoveryPlan {
         SearchDiscoveryPlan(
             intentSummary: "Find trending Linux distributions",

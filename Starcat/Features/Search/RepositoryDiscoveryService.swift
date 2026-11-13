@@ -230,15 +230,20 @@ final class SearchDiscoveryRerankRanker: SearchDiscoveryRankerProviding {
         guard configuration.isEnabled else {
             throw RepositoryDiscoveryError.dedicatedRerankDisabled
         }
+        guard maxSeconds > 0 else { throw URLError(.timedOut) }
 
         let apiKey = try keychain.loadAIKey(forProvider: RAGRerankConfiguration.keychainID)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let reranker: any RAGReranking
         switch configuration.provider {
         case .huggingFaceTEI:
-            reranker = HuggingFaceTEIRAGReranker(configuration: configuration, apiKey: apiKey)
+            reranker = HuggingFaceTEIRAGReranker(
+                configuration: configuration, apiKey: apiKey, timeoutSeconds: maxSeconds
+            )
         case .cohereCompatible:
-            reranker = CohereCompatibleRAGReranker(configuration: configuration, apiKey: apiKey)
+            reranker = CohereCompatibleRAGReranker(
+                configuration: configuration, apiKey: apiKey, timeoutSeconds: maxSeconds
+            )
         case .localMLX:
             reranker = LocalMLXRAGReranker(
                 configuration: configuration,
@@ -423,7 +428,8 @@ protocol RepositoryDiscoveryProviding: AnyObject {
         generation: UUID,
         round: Int,
         budget: SearchDiscoveryBudget,
-        initialLLMCalls: Int
+        initialLLMCalls: Int,
+        deadline: Date?
     ) async -> RepositoryDiscoveryResult
 }
 
@@ -460,12 +466,13 @@ final class RepositoryDiscoveryService {
         generation: UUID = UUID(),
         round: Int = 1,
         budget: SearchDiscoveryBudget = .firstRound,
-        initialLLMCalls: Int = 1
+        initialLLMCalls: Int = 1,
+        deadline: Date? = nil
     ) async -> RepositoryDiscoveryResult {
         var diagnostics: [SearchDiscoveryDiagnostic] = []
         var steps: [SearchDiscoveryStep] = []
         var usedLLMCalls = max(0, initialLLMCalls)
-        let deadline = Date().addingTimeInterval(budget.timeoutSeconds)
+        let deadline = deadline ?? Date().addingTimeInterval(budget.timeoutSeconds)
 
         var plan = initialPlan?.normalized
         if plan == nil {
@@ -487,11 +494,13 @@ final class RepositoryDiscoveryService {
             }
             let planStart = Date()
             do {
-                let generated = try await planner.plan(
-                    query: query,
-                    allowWebEvidence: baseRequest.includeWebInAll || baseRequest.scope == .web,
-                    maxSeconds: Self.remainingSeconds(to: deadline)
-                )
+                let generated = try await SearchDiscoveryDeadline.run(until: deadline) {
+                    try await planner.plan(
+                        query: query,
+                        allowWebEvidence: baseRequest.includeWebInAll || baseRequest.scope == .web,
+                        maxSeconds: Self.remainingSeconds(to: deadline)
+                    )
+                }
                 plan = generated.normalized
                 usedLLMCalls += 1
                 steps.append(SearchDiscoveryStep(
@@ -839,13 +848,16 @@ final class RepositoryDiscoveryService {
                 )
             }
             do {
-                let rankedItems = try await ranker.rank(
-                    query: query,
-                    plan: normalizedPlan,
-                    candidates: Array(summaries),
-                    evidence: evidence,
-                    maxSeconds: Self.remainingSeconds(to: deadline)
-                )
+                let rankingEvidence = evidence
+                let rankedItems = try await SearchDiscoveryDeadline.run(until: deadline) {
+                    try await ranker.rank(
+                        query: query,
+                        plan: normalizedPlan,
+                        candidates: Array(summaries),
+                        evidence: rankingEvidence,
+                        maxSeconds: Self.remainingSeconds(to: deadline)
+                    )
+                }
                 session = Self.incrementing(
                     session,
                     llmCalls: rankerConsumesLLMBudget ? 1 : 0
@@ -951,7 +963,7 @@ final class RepositoryDiscoveryService {
     }
 
     private static func remainingSeconds(to deadline: Date) -> TimeInterval {
-        max(0.05, deadline.timeIntervalSinceNow)
+        max(0, deadline.timeIntervalSinceNow)
     }
 
     /// 步骤保留实际耗时，UI 决定显示精度；本地同步结果会得到接近 0 的值。
@@ -964,48 +976,15 @@ final class RepositoryDiscoveryService {
         String(format: String.l10n("search.discovery.step.countFormat"), count)
     }
 
-    private enum DeadlineOutcome<Value: Sendable>: Sendable {
-        case value(Value)
-        case failure(any Error)
-        case timedOut
-    }
-
     /// 对 Sendable 的远端调用施加同轮共享 deadline；LLM 客户端自身也收到剩余时间。
     ///
     /// 超时竞争必须保留真实 Error。转成字符串再抛占位错误会丢失 401 / 404 等状态，
     /// 让统一错误映射只能给出“未知失败”，也无法解释为何某个候选被排除。
     private static func withDeadline<Value: Sendable>(
         to deadline: Date,
-        operation: @escaping @Sendable () async throws -> Value
+        operation: @escaping @MainActor @Sendable () async throws -> Value
     ) async throws -> Value {
-        let outcome = await withTaskGroup(of: DeadlineOutcome<Value>.self) { group -> DeadlineOutcome<Value> in
-            group.addTask { () -> DeadlineOutcome<Value> in
-                do {
-                    return .value(try await operation())
-                } catch is CancellationError {
-                    return .timedOut
-                } catch {
-                    return .failure(error)
-                }
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)), clock: .continuous)
-                return .timedOut
-            }
-            guard let first = await group.next() else {
-                return .timedOut
-            }
-            group.cancelAll()
-            return first
-        }
-        switch outcome {
-        case .value(let value):
-            return value
-        case .failure(let error):
-            throw error
-        case .timedOut:
-            throw RepositoryDiscoveryTimeout()
-        }
+        try await SearchDiscoveryDeadline.run(until: deadline, operation: operation)
     }
 
     /// 只从 Web URL 提取 GitHub 身份，不从标题猜测 owner/name。

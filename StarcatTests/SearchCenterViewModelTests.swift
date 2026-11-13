@@ -1236,7 +1236,7 @@ private final class SearchCenterStubIntentRouter: SearchIntentRoutingProviding {
         self.outcome = outcome
     }
 
-    func route(query: String, explicitSmartDiscovery: Bool) async -> SearchIntentRoutingOutcome {
+    func route(query: String, explicitSmartDiscovery: Bool, deadline: Date) async -> SearchIntentRoutingOutcome {
         routeQueries.append(query)
         return outcome
     }
@@ -1259,7 +1259,8 @@ private final class SearchCenterStubDiscoveryService: RepositoryDiscoveryProvidi
         generation: UUID,
         round: Int,
         budget: SearchDiscoveryBudget,
-        initialLLMCalls: Int
+        initialLLMCalls: Int,
+        deadline: Date?
     ) async -> RepositoryDiscoveryResult {
         requests.append(baseRequest)
         requestRounds.append(round)

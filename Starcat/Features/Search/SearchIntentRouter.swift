@@ -137,7 +137,7 @@ final class SearchLLMQueryPlanner: SearchQueryPlannerProviding {
                 settings.aiEmbeddingTask,
                 type: .embedding
             ).resolvedModelName,
-            timeoutInterval: task.parameters.timeoutSeconds,
+            timeoutInterval: min(task.parameters.timeoutSeconds, maxSeconds),
             usageContext: AIUsageContext(feature: .semanticSearch, phase: "discovery_planning")
         ))
         let response = try await client.chat(request: AIChatRequest(
@@ -226,7 +226,7 @@ private struct RawPlan: Decodable {
 
 @MainActor
 protocol SearchIntentRoutingProviding: AnyObject {
-    func route(query: String, explicitSmartDiscovery: Bool) async -> SearchIntentRoutingOutcome
+    func route(query: String, explicitSmartDiscovery: Bool, deadline: Date) async -> SearchIntentRoutingOutcome
 }
 
 extension SearchIntentRouter: SearchIntentRoutingProviding {}
@@ -254,7 +254,11 @@ final class SearchIntentRouter {
     }
 
     /// 显式“智能查找”绕过分类；普通查询先走快路径，再走一次双问题决策。
-    func route(query: String, explicitSmartDiscovery: Bool = false) async -> SearchIntentRoutingOutcome {
+    func route(
+        query: String,
+        explicitSmartDiscovery: Bool = false,
+        deadline: Date = Date().addingTimeInterval(SearchDiscoveryBudget.firstRound.timeoutSeconds)
+    ) async -> SearchIntentRoutingOutcome {
         if Self.deterministicRoute(for: query) == .fastPath {
             return SearchIntentRoutingOutcome(
                 route: .fastPath,
@@ -273,7 +277,7 @@ final class SearchIntentRouter {
                 status: .skipped
             )
         } else {
-            decision = await classify(query: query)
+            decision = await classify(query: query, deadline: deadline)
         }
         let routingState: SearchDiscoveryStepState = switch decision.status {
         case .completed: .completed
@@ -324,11 +328,13 @@ final class SearchIntentRouter {
         let planningStart = Date()
         do {
             let allowWebEvidence = settings.externalContextEnabled
-            let plan = try await planner.plan(
-                query: query,
-                allowWebEvidence: allowWebEvidence,
-                maxSeconds: 15
-            )
+            let plan = try await SearchDiscoveryDeadline.run(until: deadline) {
+                try await planner.plan(
+                    query: query,
+                    allowWebEvidence: allowWebEvidence,
+                    maxSeconds: max(0, deadline.timeIntervalSinceNow)
+                )
+            }
             guard plan.isValid else {
                 throw SearchIntentRouterError.invalidPlan
             }
@@ -366,7 +372,7 @@ final class SearchIntentRouter {
     }
 
     /// 调用前固定所选引擎；一旦开始执行，任何错误都转为 Planner 接管，不重试分类。
-    private func classify(query: String) async -> SearchIntentDecision {
+    private func classify(query: String, deadline: Date) async -> SearchIntentDecision {
         guard settings.decisionSearchRoutingEnabled, settings.decisionEngineEnabled else {
             if Self.looksLikeNaturalLanguage(query: query) {
                 return SearchIntentDecision(
@@ -406,7 +412,11 @@ final class SearchIntentRouter {
             operation: .searchIntent
         )
         do {
-            let response = try await evaluateWithTimeout(engine: engine, request: request)
+            let response = try await SearchDiscoveryDeadline.run(
+                until: min(deadline, Date().addingTimeInterval(decisionTimeoutSeconds))
+            ) {
+                try await engine.evaluate(request)
+            }
             let planning = try validatedProbability(in: response, questionID: Self.needsPlanningQuestionID)
             let freshEvidence = try validatedProbability(in: response, questionID: Self.needsFreshEvidenceQuestionID)
             return SearchIntentDecision(
@@ -416,7 +426,7 @@ final class SearchIntentRouter {
                 planningProbability: planning,
                 freshEvidenceProbability: freshEvidence
             )
-        } catch SearchIntentRouterError.timeout {
+        } catch where (error as? URLError)?.code == .timedOut {
             return SearchIntentDecision(
                 needsPlanning: true,
                 needsFreshEvidence: false,
@@ -428,26 +438,6 @@ final class SearchIntentRouter {
                 needsFreshEvidence: false,
                 status: .failed(error.localizedDescription)
             )
-        }
-    }
-
-    private func evaluateWithTimeout(
-        engine: any DecisionEngineProviding,
-        request: DecisionEvaluationRequest
-    ) async throws -> DecisionEvaluationResponse {
-        try await withThrowingTaskGroup(
-            of: DecisionEvaluationResponse.self
-        ) { group in
-            group.addTask {
-                try await engine.evaluate(request)
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(self.decisionTimeoutSeconds))
-                throw SearchIntentRouterError.timeout
-            }
-            let first = try await group.next()!
-            group.cancelAll()
-            return first
         }
     }
 
