@@ -24,6 +24,7 @@ struct RepoSkillDetailPane: View {
     @State private var renderedDocumentID: String?
     @State private var presentedSkill: RepoSkill?
     @State private var isContentVisible = false
+    @State private var isSkeletonVisible = true
 
     private var contentAnimation: Animation {
         .easeOut(duration: reduceMotion ? 0.06 : 0.12)
@@ -116,10 +117,10 @@ struct RepoSkillDetailPane: View {
             .allowsHitTesting(isContentReady && isContentVisible)
             .accessibilityHidden(!isContentReady || !isContentVisible)
             .overlay {
-                if !isContentReady {
-                    ProgressView()
-                        .opacity(isContentVisible ? 0 : 1)
-                        .allowsHitTesting(false)
+                if isSkeletonVisible {
+                    RepoSkillSkeletonView(layout: skeletonLayout)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .transition(.opacity)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -142,9 +143,7 @@ struct RepoSkillDetailPane: View {
         .onChange(of: skill.id) { _, _ in previewedFile = nil }
         .onChange(of: tab) { _, _ in
             renderedDocumentID = nil
-            withAnimation(contentAnimation) {
-                isContentVisible = isContentReady
-            }
+            updateContentVisibility()
         }
         .task(id: skill.id) {
             do {
@@ -158,6 +157,11 @@ struct RepoSkillDetailPane: View {
                     requestedSkill, imageBaseURL: imageBaseURL, contentBaseURL: baseURL
                 )
                 await fadeOutContent()
+                try Task.checkCancellation()
+                // 旧页退场完成才让骨架入场；缓存已就绪时不强制插入等待或最短展示时间。
+                withAnimation(contentAnimation) {
+                    isSkeletonVisible = !isContentReady
+                }
                 let prepared = try await preparation
                 try Task.checkCancellation()
                 // 实际换文档才清除就绪身份；快速切回仍在 WebView 中的缓存页不会再触发导航完成。
@@ -167,12 +171,27 @@ struct RepoSkillDetailPane: View {
                 presentedSkill = requestedSkill
                 document = prepared
                 // 文件和目录已就绪；Markdown 继续等待当前文档的 WebKit 回调。
-                withAnimation(contentAnimation) {
-                    isContentVisible = isContentReady
-                }
+                updateContentVisibility()
             } catch {
                 // 快速点选会取消旧任务；旧正文不能在新标题下回填。
             }
+        }
+    }
+
+    /// 占位布局跟随当前 Tab，文件与目录不会在等待期间显示成正文段落。
+    private var skeletonLayout: RepoSkillSkeletonView.Layout {
+        switch tab {
+        case .manifest: .manifest
+        case .files: .files
+        case .tree: .tree
+        }
+    }
+
+    /// 骨架和内容共用一次淡化事务；正文仍须等当前 WebView 的就绪回调，不能以 HTML 准备完成代替。
+    private func updateContentVisibility() {
+        withAnimation(contentAnimation) {
+            isContentVisible = isContentReady
+            isSkeletonVisible = !isContentReady
         }
     }
 
@@ -252,9 +271,7 @@ struct RepoSkillDetailPane: View {
     private func revealManifest(_ documentID: String) {
         guard documentID == skill.id, document?.skillID == documentID else { return }
         renderedDocumentID = documentID
-        withAnimation(contentAnimation) {
-            isContentVisible = true
-        }
+        updateContentVisibility()
     }
 
     /// 相对链接指向扫描时的提交与目录，分支后续更新不会改变预览中的附件版本。
