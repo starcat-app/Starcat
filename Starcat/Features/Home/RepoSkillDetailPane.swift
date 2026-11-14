@@ -16,10 +16,12 @@ struct RepoSkillDetailPane: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var tab = Tab.manifest
     @State private var expandedFolders: Set<String> = ["references", "templates", "assets", "scripts"]
     @State private var previewedFile: RepoSkillFile?
     @State private var document: RepoSkillReadingCache.Document?
+    @State private var renderedDocumentID: String?
 
     private enum Tab: CaseIterable {
         case manifest, files, tree
@@ -91,6 +93,7 @@ struct RepoSkillDetailPane: View {
                         .padding(18)
                     }
                     .id("\(skill.id)-\(tab)")
+                    .transition(.opacity)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -111,13 +114,21 @@ struct RepoSkillDetailPane: View {
                 .appLocaleEnvironment()
         }
         .onChange(of: skill.id) { _, _ in previewedFile = nil }
+        .onChange(of: tab) { _, _ in renderedDocumentID = nil }
         .task(id: skill.id) {
             do {
                 let prepared = try await session.readingCache.prepare(
                     skill, imageBaseURL: contentBaseURL(raw: true), contentBaseURL: contentBaseURL(raw: false)
                 )
                 try Task.checkCancellation()
-                document = prepared
+                // 实际换文档才清除就绪身份；快速切回仍在 WebView 中的缓存页不会再触发导航完成。
+                if document?.skillID != prepared.skillID {
+                    renderedDocumentID = nil
+                }
+                // 文件和目录准备后直接淡入；Markdown 仍等待 WebKit 完成本次导航，避免淡入旧 DOM。
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                    document = prepared
+                }
             } catch {
                 // 快速点选会取消旧任务；旧正文不能在新标题下回填。
             }
@@ -174,18 +185,28 @@ struct RepoSkillDetailPane: View {
     @ViewBuilder
     private var manifest: some View {
         if let document {
+            let isReady = document.skillID == skill.id && renderedDocumentID == skill.id
             ReadmeWebView(
                 htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
-                floatingToolbarBottomInset: 40
+                floatingToolbarBottomInset: 40,
+                onDocumentReady: revealManifest
             )
             // 保持渲染器身份稳定；准备新文档时隐藏旧内容，不能销毁并重建 WKWebView。
-            .opacity(document.skillID == skill.id ? 1 : 0)
-            .allowsHitTesting(document.skillID == skill.id)
+            .opacity(isReady ? 1 : 0)
+            .allowsHitTesting(isReady)
             .overlay {
-                if document.skillID != skill.id { ProgressView() }
+                if !isReady { ProgressView() }
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// 只让当前 Skill 的已加载正文淡入；快速切换后到达的旧文档回调不能显示过期内容。
+    private func revealManifest(_ documentID: String) {
+        guard documentID == skill.id, document?.skillID == documentID else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+            renderedDocumentID = documentID
         }
     }
 

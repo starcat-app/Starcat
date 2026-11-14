@@ -139,6 +139,9 @@ struct ReadmeWebView: View {
     /// 文档距离底部不超过两个 viewport 时触发。Coordinator 对每份文档只回调一次。
     var onApproachingBottom: () -> Void = {}
 
+    /// 当前导航完成后回传实际文档身份，供阅读区衔接淡入；HTML 准备好不代表 WebKit 已替换旧 DOM。
+    var onDocumentReady: (String) -> Void = { _ in }
+
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
     @State private var scrollToTopRequestID = 0
@@ -164,6 +167,7 @@ struct ReadmeWebView: View {
             onTranslationSourceChange: onTranslationSourceChange,
             starHistoryRenderState: starHistoryRenderState,
             onApproachingBottom: onApproachingBottom,
+            onDocumentReady: onDocumentReady,
             openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
@@ -332,6 +336,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
     let starHistoryRenderState: ReadmeStarHistoryRenderState
     var onApproachingBottom: () -> Void
+    var onDocumentReady: (String) -> Void
     var openRepositoryMarkdownInApp: Bool
     var markdownLinkRepositoryOwner: String?
     var markdownLinkRepositoryName: String?
@@ -373,6 +378,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.onApproachingBottom = onApproachingBottom
+        context.coordinator.onDocumentReady = onDocumentReady
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -393,6 +399,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.onApproachingBottom = onApproachingBottom
+        context.coordinator.onDocumentReady = onDocumentReady
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -470,7 +477,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 readmeFontSizeAdjustment: readmeFontSizeAdjustment
             )
             context.coordinator.expectsInitialLoad = true
-            webView.loadHTMLString(fullHTML, baseURL: baseURL)
+            context.coordinator.documentNavigation = webView.loadHTMLString(fullHTML, baseURL: baseURL)
             return
         }
 
@@ -550,10 +557,13 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
+        /// 用导航对象识别当前加载，避免快速切换时把旧导航完成事件当成新文档就绪。
+        var documentNavigation: WKNavigation?
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
         var onApproachingBottom: () -> Void = {}
+        var onDocumentReady: (String) -> Void = { _ in }
         var onFindResult: (Bool?) -> Void = { _ in }
         var openRepositoryMarkdownInApp = false
         var markdownLinkRepositoryOwner: String?
@@ -1766,6 +1776,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             applyTranslationRenderStateIfNeeded()
             lastAppliedStarHistoryRevision = nil
             applyStarHistoryRenderStateIfNeeded()
+            if navigation === documentNavigation, let documentID = lastLoadedKey?.documentID {
+                onDocumentReady(documentID)
+            }
         }
 
         func webView(
