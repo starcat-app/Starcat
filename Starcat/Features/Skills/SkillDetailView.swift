@@ -22,6 +22,7 @@ enum SkillDetailTab: String, CaseIterable, Identifiable {
 /// 消费稳定条目快照，切换选择时不会保留上一条目的正文。
 struct SkillDetailView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AppDependencies.self) private var dependencies: AppDependencies?
     @AppStorage("skillWorkspace.selectedTab") private var selectedTab = SkillDetailTab.overview
     @Bindable var viewModel: SkillWorkspaceViewModel
 
@@ -118,10 +119,28 @@ struct SkillDetailView: View {
         case .assignments:
             SkillAssignmentsView(item: item, viewModel: viewModel).id(item.id)
         case .versions:
+            if item.managementKind == .managed, viewModel.libraryEnvironment != nil {
+                HStack {
+                    Button("skills.update.review") { review(item.id, rollback: false) }
+                    Button("skills.update.rollback") { review(item.id, rollback: true) }
+                }
+            }
             if let revision = item.revision {
                 Text(verbatim: revision).font(interfaceScale.font(.code))
             } else {
                 Text("skills.detail.version.unknown").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func review(_ entryID: UUID, rollback: Bool) {
+        SkillReviewWindowController.present(titleKey: "skills.update.review", size: NSSize(width: 760, height: 680)) { close in
+            if let dependencies {
+                SkillUpdateReviewSheet(viewModel: viewModel, entryID: entryID, rollback: rollback, close: close)
+                    .appHostEnvironment(dependencies)
+            } else {
+                SkillUpdateReviewSheet(viewModel: viewModel, entryID: entryID, rollback: rollback, close: close)
+                    .appLocaleEnvironment()
             }
         }
     }

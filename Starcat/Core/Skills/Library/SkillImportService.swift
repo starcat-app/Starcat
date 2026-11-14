@@ -68,6 +68,7 @@ actor SkillImportService {
     private let operations: SkillOperationCoordinator
     private let tokenProvider: any GitHubTokenProviding
     private let makeClients: ClientFactory
+    private let updateRequests: SkillUpdateRequests
     private var temporaryRoots: Set<URL> = []
     private var retainedRoots: Set<URL> = []
     private var executingSources: Set<String> = []
@@ -77,6 +78,7 @@ actor SkillImportService {
         operations: SkillOperationCoordinator,
         distributionGate: DistributionGate = DistributionGate(),
         tokenProvider: any GitHubTokenProviding = KeychainTokenProvider(),
+        updateRequests: SkillUpdateRequests = SkillUpdateRequests(),
         makeClients: @escaping ClientFactory = SkillImportService.defaultClients
     ) throws {
         try distributionGate.requireDirect(.skillManagement)
@@ -84,6 +86,7 @@ actor SkillImportService {
         self.operations = operations
         self.tokenProvider = tokenProvider
         self.makeClients = makeClients
+        self.updateRequests = updateRequests
     }
 
     /// 导入与更新共用冻结授权的客户端构造，真实凭据不进入持久模型。
@@ -117,6 +120,46 @@ actor SkillImportService {
         return try await download(snapshot, clients: clients, authorizationID: authorizationID)
     }
 
+    /// 比较来源时保留条目身份与安装基线；明确 commit 时绝不重新解析默认分支。
+    func prepareUpdate(entryID: UUID, commit: String? = nil) async throws -> PreparedSkillImport {
+        let stored = try await store.snapshot()
+        guard let entry = stored.entries.first(where: { $0.id == entryID && $0.managementKind == .managed }),
+              let source = stored.sources.first(where: { $0.id == entry.sourceID }),
+              try await store.receipt(for: entryID)?.revisionID == entry.currentRevisionID
+        else { throw SkillOperationError.ownership }
+        if source.kind == .local {
+            return try await makePreview(
+                directory: URL(fileURLWithPath: source.canonicalLocator), source: source,
+                trackingRef: entry.trackingRef, commit: nil, temporaryRoot: nil, authorizationID: nil,
+                expectedDirectory: entry.manifestName, previous: entry
+            )
+        }
+        let token = await tokenProvider.currentToken()
+        let authorizationID = Self.authorizationID(token)
+        let clients = makeClients(token)
+        let parts = source.canonicalLocator.split(separator: "/").map(String.init)
+        guard parts.count == 2 else { throw SkillImportError.source }
+        let fixed: String
+        if let commit { fixed = commit }
+        else {
+            fixed = try await updateRequests.head(
+                locator: source.canonicalLocator, ref: entry.trackingRef ?? source.defaultRef ?? "HEAD",
+                authorizationID: authorizationID, api: clients.api
+            )
+        }
+        guard fixed.range(of: #"^[a-fA-F0-9]{40}$"#, options: .regularExpression) != nil else { throw SkillImportError.ref }
+        let files = try await updateRequests.files(
+            locator: source.canonicalLocator, directory: source.subdirectory,
+            commit: fixed, authorizationID: authorizationID, api: clients.api
+        )
+        let snapshot = SkillGitHubSnapshot(
+            selection: .init(owner: parts[0], repository: parts[1], ref: entry.trackingRef ?? "HEAD", directory: source.subdirectory),
+            commit: fixed, files: files
+        )
+        try await validateAuthorization(authorizationID)
+        return try await download(snapshot, clients: clients, authorizationID: authorizationID, previous: entry)
+    }
+
     /// 确认前再检查授权；已下载的私有预览不能在换账号后静默入库。
     func execute(_ preview: PreparedSkillImport) async -> SkillOperationResult {
         let source = preview.plan.source
@@ -137,7 +180,7 @@ actor SkillImportService {
             let existingSource = snapshot.sources.first {
                 $0.kind == source.kind && $0.canonicalLocator == source.canonicalLocator && $0.subdirectory == source.subdirectory
             }
-            if let existingSource, let existing = snapshot.entries.first(where: {
+            if preview.plan.previousEntry == nil, let existingSource, let existing = snapshot.entries.first(where: {
                 $0.sourceID == existingSource.id && $0.managementKind == .managed
             }) {
                 result = SkillOperationResult(id: preview.id, entryID: existing.id, status: .alreadySatisfied, message: nil)
@@ -165,7 +208,8 @@ actor SkillImportService {
 
     private func makePreview(
         directory: URL, source: SkillLibrarySource, trackingRef: String?, commit: String?,
-        temporaryRoot: URL?, authorizationID: String?, expectedDirectory: String
+        temporaryRoot: URL?, authorizationID: String?, expectedDirectory: String,
+        previous: SkillLibraryEntry? = nil
     ) async throws -> PreparedSkillImport {
         let fingerprint = try await SkillFilePrimitives.fingerprint(directory)
         let bytes = try await Self.manifestBytes(directory)
@@ -178,22 +222,28 @@ actor SkillImportService {
         let existing = snapshot.sources.first {
             $0.kind == source.kind && $0.canonicalLocator == source.canonicalLocator && $0.subdirectory == source.subdirectory
         }
-        if let existing, snapshot.entries.contains(where: { $0.sourceID == existing.id && $0.managementKind == .managed }) {
+        if previous == nil, let existing, snapshot.entries.contains(where: { $0.sourceID == existing.id && $0.managementKind == .managed }) {
             throw SkillImportError.existing
         }
         let source = existing ?? source
-        let entry = SkillLibraryEntry(
+        var entry = previous ?? SkillLibraryEntry(
             sourceID: source.id, manifestName: metadata.name, summary: metadata.description,
             managementKind: .managed, trackingRef: trackingRef
         )
-        let revision = SkillLibraryRevision(
+        guard previous == nil || metadata.name == previous?.manifestName else { throw SkillOperationError.planChanged }
+        entry.summary = metadata.description
+        entry.updatedAt = Date().timeIntervalSince1970
+        let revision = snapshot.revisions.first { $0.entryID == entry.id && $0.contentDigest == fingerprint.digest } ?? SkillLibraryRevision(
             entryID: entry.id, contentDigest: fingerprint.digest, manifestDigest: SkillFilePrimitives.digest(bytes),
             upstreamCommit: commit
         )
+        let receipt: SkillLibraryReceipt?
+        if let previous { receipt = try await store.receipt(for: previous.id) }
+        else { receipt = nil }
         return PreparedSkillImport(
             plan: SkillContentOperationPlan(
                 source: source, entry: entry, revision: revision, incomingDirectory: directory.path,
-                fingerprint: fingerprint, previousEntry: nil, previousReceipt: nil
+                fingerprint: fingerprint, previousEntry: previous, previousReceipt: receipt
             ),
             temporaryRoot: temporaryRoot, authorizationID: authorizationID
         )
@@ -249,11 +299,16 @@ actor SkillImportService {
         _ selection: SkillGitHubSelection, api: any GitHubAPIClientProtocol
     ) async throws -> SkillGitHubSnapshot {
         try Task.checkCancellation()
-        guard let commit = try await api.repositoryLatestCommit(
-            owner: selection.owner, repo: selection.repository, path: "", ref: selection.ref
-        ), commit.sha.range(of: #"^[a-fA-F0-9]{40}$"#, options: .regularExpression) != nil
-        else { throw RepoSkillError.emptyRepository }
-        var treeRef = commit.sha
+        let commit: String
+        if selection.ref.range(of: #"^[a-fA-F0-9]{40}$"#, options: .regularExpression) != nil { commit = selection.ref }
+        else {
+            guard let resolved = try await api.repositoryLatestCommit(
+                owner: selection.owner, repo: selection.repository, path: "", ref: selection.ref
+            ), resolved.sha.range(of: #"^[a-fA-F0-9]{40}$"#, options: .regularExpression) != nil
+            else { throw RepoSkillError.emptyRepository }
+            commit = resolved.sha
+        }
+        var treeRef = commit
         for component in selection.directory.split(separator: "/") {
             let level = try await api.repositoryGitTreeLevel(owner: selection.owner, repo: selection.repository, ref: treeRef)
             guard !level.truncated, let child = level.tree.first(where: { $0.type == "tree" && $0.path == component })
@@ -272,11 +327,12 @@ actor SkillImportService {
               files.allSatisfy({ ($0.size ?? -1) >= 0 && ($0.size ?? Int.max) <= 67_108_864 }),
               files.reduce(Int64(0), { $0 + Int64($1.size ?? 0) }) <= 67_108_864
         else { throw RepoSkillError.incomplete }
-        return SkillGitHubSnapshot(selection: selection, commit: commit.sha, files: files)
+        return SkillGitHubSnapshot(selection: selection, commit: commit, files: files)
     }
 
     private func download(
-        _ snapshot: SkillGitHubSnapshot, clients: SkillGitHubClients, authorizationID: String
+        _ snapshot: SkillGitHubSnapshot, clients: SkillGitHubClients, authorizationID: String,
+        previous: SkillLibraryEntry? = nil
     ) async throws -> PreparedSkillImport {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("StarcatSkillImport-\(UUID().uuidString)")
@@ -314,7 +370,8 @@ actor SkillImportService {
                     defaultRef: snapshot.selection.ref
                 ),
                 trackingRef: snapshot.selection.ref, commit: snapshot.commit, temporaryRoot: root,
-                authorizationID: authorizationID, expectedDirectory: snapshot.selection.directory
+                authorizationID: authorizationID, expectedDirectory: previous?.manifestName ?? snapshot.selection.directory,
+                previous: previous
             )
         } catch {
             try? manager.removeItem(at: root)
@@ -332,7 +389,7 @@ actor SkillImportService {
     }
 
     /// 单独限制 manifest，完整目录预算不意味着允许一次解码数十 MiB 的 YAML。
-    @concurrent private static func manifestBytes(_ directory: URL) async throws -> Data {
+    @concurrent static func manifestBytes(_ directory: URL) async throws -> Data {
         let handle = try FileHandle(forReadingFrom: directory.appendingPathComponent("SKILL.md"))
         defer { try? handle.close() }
         let bytes = try handle.read(upToCount: 1_048_577) ?? Data()

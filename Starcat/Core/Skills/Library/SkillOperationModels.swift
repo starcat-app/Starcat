@@ -19,7 +19,9 @@ struct SkillContentOperationPlan: Codable, Sendable, Identifiable {
     let fingerprint: SkillDirectoryFingerprint
     let previousEntry: SkillLibraryEntry?
     let previousReceipt: SkillLibraryReceipt?
+    var approvedLocalFingerprint: SkillDirectoryFingerprint? = nil
     var kind: String { previousEntry == nil ? "importContent" : "updateContent" }
+    var expectedCurrentFingerprint: SkillDirectoryFingerprint? { approvedLocalFingerprint ?? previousReceipt?.fingerprint }
 
     var receipt: SkillLibraryReceipt {
         SkillLibraryReceipt(
@@ -27,6 +29,16 @@ struct SkillContentOperationPlan: Codable, Sendable, Identifiable {
             installedAt: revision.createdAt, fingerprint: fingerprint
         )
     }
+}
+
+/// 每条目仅保留一个有完整指纹证据的上一版本；未知备份不会因命名相似被清理。
+struct SkillRollbackRecord: Codable, Sendable {
+    var formatVersion = 1
+    let operationID: UUID
+    let currentRevisionID: UUID
+    let previousEntry: SkillLibraryEntry
+    let previousReceipt: SkillLibraryReceipt
+    let fingerprint: SkillDirectoryFingerprint
 }
 
 enum SkillOperationStatus: String, Codable, Sendable {

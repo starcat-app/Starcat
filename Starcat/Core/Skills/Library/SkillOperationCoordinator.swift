@@ -62,6 +62,36 @@ actor SkillOperationCoordinator {
         await enqueue(work)
     }
 
+    /// 回退也生成普通内容事务，确认时再次核对当前内容，分配仍指向稳定 canonical 路径。
+    func prepareRollback(entryID: UUID) async throws -> SkillContentOperationPlan {
+        let snapshot = try await store.snapshot()
+        let rollback = try readRollback(entryID)
+        guard let entry = snapshot.entries.first(where: { $0.id == entryID && $0.managementKind == .managed }),
+              entry.currentRevisionID == rollback.currentRevisionID,
+              let source = snapshot.sources.first(where: { $0.id == entry.sourceID }),
+              let receipt = try await store.receipt(for: entryID),
+              receipt.revisionID == entry.currentRevisionID
+        else { throw SkillOperationError.planChanged }
+        let directory = backupPath(rollback)
+        try validateLibraryPath(directory)
+        let fingerprint = try await SkillFilePrimitives.fingerprint(directory)
+        guard fingerprint == rollback.fingerprint else { throw SkillOperationError.ownership }
+        let manifest = try await SkillImportService.manifestBytes(directory)
+        let metadata = try SkillFrontmatter.parse(String(decoding: manifest, as: UTF8.self), directory: entry.manifestName)
+        var restored = entry
+        restored.summary = metadata.description
+        restored.updatedAt = Date().timeIntervalSince1970
+        let revision = snapshot.revisions.first { $0.entryID == entryID && $0.contentDigest == fingerprint.digest }
+            ?? SkillLibraryRevision(
+                entryID: entryID, contentDigest: fingerprint.digest, manifestDigest: SkillFilePrimitives.digest(manifest),
+                upstreamCommit: nil
+            )
+        return SkillContentOperationPlan(
+            source: source, entry: restored, revision: revision, incomingDirectory: directory.path,
+            fingerprint: fingerprint, previousEntry: entry, previousReceipt: receipt
+        )
+    }
+
     /// Task 的 predecessor 链约束整个异步操作，不把 actor 的方法互斥误当作事务互斥。
     private func enqueue<Value: Sendable>(
         _ work: @escaping @Sendable () async -> Value
@@ -104,6 +134,11 @@ actor SkillOperationCoordinator {
                 throw SkillOperationError.planChanged
             }
             try Task.checkCancellation()
+            // 无变化也要先完成当前内容、来源与所有权复核，不能用旧预览假报成功。
+            if plan.previousEntry?.currentRevisionID == plan.revision.id,
+               plan.expectedCurrentFingerprint == plan.fingerprint {
+                return result(plan, .alreadySatisfied)
+            }
             try write(journal)
             journalCreated = true
             try await store.save(record(plan, state: "running"))
@@ -202,7 +237,7 @@ actor SkillOperationCoordinator {
             try validate(plan)
             let paths = transactionPaths(plan)
             let current = try await fingerprintIfPresent(destination(plan))
-            let previous = plan.previousReceipt?.fingerprint
+            let previous = plan.expectedCurrentFingerprint
             if journal.phase == .preparing || journal.phase == .staged {
                 guard current == previous, !SkillFilePrimitives.exists(paths.backup) else {
                     throw SkillOperationError.recovery
@@ -245,6 +280,7 @@ actor SkillOperationCoordinator {
     ) async -> SkillOperationResult {
         let plan = journal.plan
         do {
+            if status == .succeeded { try await retainRollback(plan) }
             try cleanStage(plan)
             let outcome = result(plan, status, error)
             try await saveResult(plan, outcome)
@@ -279,7 +315,7 @@ actor SkillOperationCoordinator {
         if let previous = plan.previousEntry, let receipt = plan.previousReceipt {
             guard current == previous, current?.managementKind == .managed,
                   try await store.receipt(for: plan.entry.id) == receipt else { throw SkillOperationError.ownership }
-            guard try await fingerprintIfPresent(destination(plan)) == receipt.fingerprint else {
+            guard try await fingerprintIfPresent(destination(plan)) == plan.expectedCurrentFingerprint else {
                 throw SkillOperationError.localChanges
             }
         } else {
@@ -377,5 +413,55 @@ actor SkillOperationCoordinator {
         let paths = transactionPaths(plan)
         try validateLibraryPath(paths.stage)
         if SkillFilePrimitives.exists(paths.stage) { try FileManager.default.removeItem(at: paths.stage) }
+    }
+
+    /// 新内容及其备份已提交后才回收旧备份；journal 留存到新索引落盘，中断可重入。
+    private func retainRollback(_ plan: SkillContentOperationPlan) async throws {
+        guard let entry = plan.previousEntry, let receipt = plan.previousReceipt,
+              let fingerprint = plan.expectedCurrentFingerprint else { return }
+        let backup = transactionPaths(plan).backup
+        guard try await fingerprintIfPresent(backup) == fingerprint else { throw SkillOperationError.recovery }
+        let record = SkillRollbackRecord(
+            operationID: plan.id, currentRevisionID: plan.revision.id,
+            previousEntry: entry, previousReceipt: receipt, fingerprint: fingerprint
+        )
+        let file = rollbackFile(entry.id)
+        try validateLibraryPath(file)
+        if SkillFilePrimitives.exists(file) {
+            let previous = try readRollback(entry.id)
+            if previous.operationID != plan.id {
+                let previousPath = backupPath(previous)
+                try validateLibraryPath(previousPath)
+                if let existing = try await fingerprintIfPresent(previousPath) {
+                    guard existing == previous.fingerprint else { throw SkillOperationError.ownership }
+                    try FileManager.default.removeItem(at: previousPath)
+                }
+            }
+        }
+        let bytes = try JSONEncoder().encode(record)
+        guard bytes.count <= 8_388_608 else { throw SkillOperationError.journal }
+        try bytes.write(to: file, options: .atomic)
+    }
+
+    private func readRollback(_ entryID: UUID) throws -> SkillRollbackRecord {
+        let file = rollbackFile(entryID)
+        try validateLibraryPath(file)
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        let bytes = try handle.read(upToCount: 8_388_609) ?? Data()
+        guard bytes.count <= 8_388_608 else { throw SkillOperationError.journal }
+        let record = try JSONDecoder().decode(SkillRollbackRecord.self, from: bytes)
+        guard record.formatVersion == 1, record.previousEntry.id == entryID,
+              record.previousReceipt.entryID == entryID else { throw SkillOperationError.journal }
+        return record
+    }
+
+    private func rollbackFile(_ entryID: UUID) -> URL {
+        store.paths.entryDirectory(entryID).appendingPathComponent("rollback.json")
+    }
+
+    private func backupPath(_ record: SkillRollbackRecord) -> URL {
+        store.paths.entryDirectory(record.previousEntry.id).appendingPathComponent("content")
+            .appendingPathComponent(".starcat-backup-\(record.operationID.uuidString)")
     }
 }
