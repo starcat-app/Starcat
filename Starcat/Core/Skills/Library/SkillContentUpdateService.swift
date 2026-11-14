@@ -45,8 +45,10 @@ actor SkillContentUpdateService {
         self.operations = operations
     }
 
-    func prepare(entryID: UUID, commit: String? = nil) async throws -> PreparedSkillUpdate {
-        let content = try await imports.prepareUpdate(entryID: entryID, commit: commit)
+    func prepare(
+        entryID: UUID, commit: String? = nil, payloadCache: SkillImportPayloadCache? = nil
+    ) async throws -> PreparedSkillUpdate {
+        let content = try await imports.prepareUpdate(entryID: entryID, commit: commit, payloadCache: payloadCache)
         do {
             let update = try await compare(content, fetchBaseline: true)
             try Task.checkCancellation()

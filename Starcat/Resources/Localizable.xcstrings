@@ -657893,6 +657893,330 @@
         }
       }
     },
+    "skills.update.batch.title" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Batch Update"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "批量更新"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "批次更新"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "一括アップデート"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "일괄 업데이트"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Stapelaktualisierung"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mise à jour groupée"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualización por lotes"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiornamento in blocco"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Atualização em lote"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пакетное обновление"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Пакетне оновлення"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizacja zbiorcza"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Toplu Güncelleme"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cập nhật hàng loạt"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pembaruan Massal"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Groepsupdate"
+          }
+        }
+      }
+    },
+    "skills.update.batch.notice" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Update reviewed items without local changes. Each item keeps its own result."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "仅更新已审核且无本地修改的项目；每项分别保留结果。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "僅更新已審核且沒有本機修改的項目；各項分別保留結果。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "確認済みでローカル変更のない項目を更新します。結果は項目ごとに保持されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "검토를 마쳤고 로컬 변경이 없는 항목을 업데이트합니다. 결과는 항목별로 유지됩니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geprüfte Einträge ohne lokale Änderungen aktualisieren. Jeder Eintrag behält sein eigenes Ergebnis."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mettre à jour les éléments vérifiés sans modifications locales. Chaque élément conserve son propre résultat."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Actualiza los elementos revisados sin cambios locales. Cada elemento conserva su propio resultado."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aggiorna gli elementi verificati senza modifiche locali. Ogni elemento conserva il proprio risultato."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Atualize os itens revisados sem alterações locais. Cada item mantém seu próprio resultado."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обновляются проверенные элементы без локальных изменений. Для каждого элемента сохраняется свой результат."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Оновлюються перевірені елементи без локальних змін. Кожен елемент зберігає власний результат."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aktualizuj sprawdzone elementy bez zmian lokalnych. Każdy element zachowuje własny wynik."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yerel değişiklik içermeyen, incelenmiş öğeleri güncelleyin. Her öğenin sonucu ayrı tutulur."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cập nhật các mục đã xem xét và không có thay đổi cục bộ. Mỗi mục giữ kết quả riêng."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Perbarui item yang telah ditinjau tanpa perubahan lokal. Setiap item menyimpan hasilnya sendiri."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Werk gecontroleerde items zonder lokale wijzigingen bij. Elk item behoudt zijn eigen resultaat."
+          }
+        }
+      }
+    },
+    "skills.update.batch.limit" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This review reached the 256 MiB limit. Select fewer items and try again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "本次审核已达到 256 MiB 上限，请减少选择后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "本次審核已達 256 MiB 上限，請減少選取項目後重試。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "今回の確認は 256 MiB の上限に達しました。選択項目を減らして再試行してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이번 검토가 256 MiB 한도에 도달했습니다. 선택한 항목을 줄이고 다시 시도하세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diese Prüfung hat das Limit von 256 MiB erreicht. Wähle weniger Einträge aus und versuche es erneut."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cette vérification a atteint la limite de 256 MiB. Sélectionnez moins d’éléments et réessayez."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta revisión alcanzó el límite de 256 MiB. Selecciona menos elementos e inténtalo de nuevo."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Questa verifica ha raggiunto il limite di 256 MiB. Seleziona meno elementi e riprova."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta revisão atingiu o limite de 256 MiB. Selecione menos itens e tente novamente."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Проверка достигла лимита 256 МиБ. Выберите меньше элементов и повторите попытку."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ця перевірка досягла ліміту 256 МіБ. Виберіть менше елементів і спробуйте ще раз."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ta weryfikacja osiągnęła limit 256 MiB. Wybierz mniej elementów i spróbuj ponownie."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu inceleme 256 MiB sınırına ulaştı. Daha az öğe seçip tekrar deneyin."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lần xem xét này đã đạt giới hạn 256 MiB. Hãy chọn ít mục hơn rồi thử lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Peninjauan ini mencapai batas 256 MiB. Pilih lebih sedikit item lalu coba lagi."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze controle heeft de limiet van 256 MiB bereikt. Selecteer minder items en probeer het opnieuw."
+          }
+        }
+      }
+    },
     "skills.operation.error.planChanged" : {
       "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
       "extractionState" : "manual",

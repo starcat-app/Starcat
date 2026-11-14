@@ -121,7 +121,9 @@ actor SkillImportService {
     }
 
     /// 比较来源时保留条目身份与安装基线；明确 commit 时绝不重新解析默认分支。
-    func prepareUpdate(entryID: UUID, commit: String? = nil) async throws -> PreparedSkillImport {
+    func prepareUpdate(
+        entryID: UUID, commit: String? = nil, payloadCache: SkillImportPayloadCache? = nil
+    ) async throws -> PreparedSkillImport {
         let stored = try await store.snapshot()
         guard let entry = stored.entries.first(where: { $0.id == entryID && $0.managementKind == .managed }),
               let source = stored.sources.first(where: { $0.id == entry.sourceID }),
@@ -157,7 +159,9 @@ actor SkillImportService {
             commit: fixed, files: files
         )
         try await validateAuthorization(authorizationID)
-        return try await download(snapshot, clients: clients, authorizationID: authorizationID, previous: entry)
+        return try await download(
+            snapshot, clients: clients, authorizationID: authorizationID, previous: entry, payloadCache: payloadCache
+        )
     }
 
     /// 确认前再检查授权；已下载的私有预览不能在换账号后静默入库。
@@ -332,7 +336,7 @@ actor SkillImportService {
 
     private func download(
         _ snapshot: SkillGitHubSnapshot, clients: SkillGitHubClients, authorizationID: String,
-        previous: SkillLibraryEntry? = nil
+        previous: SkillLibraryEntry? = nil, payloadCache: SkillImportPayloadCache? = nil
     ) async throws -> PreparedSkillImport {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("StarcatSkillImport-\(UUID().uuidString)")
@@ -345,10 +349,19 @@ actor SkillImportService {
             for file in snapshot.files {
                 try Task.checkCancellation()
                 try await validateAuthorization(authorizationID)
-                let fileURL = try await clients.downloader.download(
-                    owner: snapshot.selection.owner, repo: snapshot.selection.repository, sha: file.sha,
-                    relativePath: file.path, toRoot: downloads
-                )
+                let fileURL: URL
+                if let payloadCache {
+                    fileURL = downloads.appendingPathComponent(file.path)
+                    try await payloadCache.copy(
+                        file: file, selection: snapshot.selection, authorizationID: authorizationID,
+                        downloader: clients.downloader, destination: fileURL
+                    )
+                } else {
+                    fileURL = try await clients.downloader.download(
+                        owner: snapshot.selection.owner, repo: snapshot.selection.repository, sha: file.sha,
+                        relativePath: file.path, toRoot: downloads
+                    )
+                }
                 guard fileURL.resolvingSymlinksInPath().path.hasPrefix(downloads.resolvingSymlinksInPath().path + "/"),
                       !SkillFilePrimitives.isSymbolicLink(fileURL),
                       try await clients.downloader.verifyDownloadedFile(

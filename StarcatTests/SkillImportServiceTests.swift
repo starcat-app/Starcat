@@ -225,6 +225,7 @@ struct SkillImportServiceTests {
 actor ImportTestDownloader: RepoFileDownloading {
     let corrupt: Bool
     private(set) var lastRoot: URL?
+    private(set) var downloadCount = 0
     init(corrupt: Bool = false) { self.corrupt = corrupt }
 
     func download(
@@ -232,6 +233,7 @@ actor ImportTestDownloader: RepoFileDownloading {
         onProgress: (@Sendable (Double) -> Void)?
     ) throws -> URL {
         lastRoot = root
+        downloadCount += 1
         let destination = root.appendingPathComponent(relativePath)
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         try (corrupt ? Data("corrupt".utf8) : SkillImportServiceTests.contents[relativePath] ?? Data())

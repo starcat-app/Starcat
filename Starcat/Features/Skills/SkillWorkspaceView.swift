@@ -126,6 +126,17 @@ private struct SkillLibraryList: View {
                 .accessibilityLabel(Text("repo.skills.search"))
 
             HStack {
+                Button("skills.update.batch.title") {
+                    let ids = viewModel.visibleItems.filter { viewModel.selectedIDs.contains($0.id) }.map(\.id)
+                    SkillReviewWindowController.present(titleKey: "skills.update.batch.title", size: CGSize(width: 760, height: 740)) { close in
+                        if let dependencies {
+                            SkillBatchUpdateSheet(viewModel: viewModel, entryIDs: ids, close: close).appHostEnvironment(dependencies)
+                        } else {
+                            SkillBatchUpdateSheet(viewModel: viewModel, entryIDs: ids, close: close).appLocaleEnvironment()
+                        }
+                    }
+                }
+                .disabled(viewModel.selectedIDs.isEmpty || viewModel.libraryEnvironment == nil)
                 Button("skills.update.check") {
                     guard let service = viewModel.libraryEnvironment?.updates else { return }
                     isCheckingUpdates = true
