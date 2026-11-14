@@ -85,16 +85,24 @@ struct RepoSkillScan: Codable, Equatable, Sendable {
     }
 }
 
-/// 预设安装目录。Codex 等大多数 Agent 工具默认读取通用 Agents 目录，Claude Code 使用专属目录。
+/// 已核对用户级 Skill 目录的工具；展示信息与本机检测集中在 RepoSkillAgentCatalog。
 enum RepoSkillTargetPreset: String, CaseIterable, Codable, Identifiable, Sendable {
     case agents
     case claudeCode
+    case codex, cursor, githubCopilot, geminiCLI, windsurf, cline, rooCode, kiloCode
+    case continueAgent, openCode, amp, goose, droid, trae, traeCN, qwenCode, kimiCode
+    case iFlow, pi, augment, antigravity, antigravityCLI, junie, kiro, qoder, qoderCN
+    case codeBuddy, lingma, warp, zed, mistralVibe, openHands, openClaw, miniMax
+    case grok, hermes, cortex, crush, devin, deepAgents, firebender, mux, ona
+    case commandCode, tabnine, aiderDesk, astrBot, autohand, bob, codeArts
+    case codeMaker, codeStudio, dexto, forgeCode, fx, inference, jazz, kimchi, kode
+    case loaf, mcpJam, moxby, posit, replit, reasonix, rovoDev, sarvam, terramind
+    case tinycloud, zcode, zencoder, zenflow, neovate, pochi, adal
 
     var id: Self { self }
-    var directory: String { self == .agents ? "~/.agents/skills/" : "~/.claude/skills/" }
-    var defaultURL: URL {
-        URL(fileURLWithPath: (directory as NSString).expandingTildeInPath, isDirectory: true)
-    }
+    var directory: String { (defaultURL.path as NSString).abbreviatingWithTildeInPath + "/" }
+    var defaultURL: URL { agent.directoryURL() }
+    var agent: RepoSkillAgent { RepoSkillAgentCatalog.entries[self]! }
 }
 
 /// 一个安装目标目录；身份使用实际路径，预设目录与自选目录不能重复发布同一份文件。

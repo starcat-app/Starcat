@@ -15,20 +15,23 @@ import Observation
 final class RepoSkillSession {
     enum Phase { case ready, running, finished, cancelled }
     enum Status { case waiting, copying, succeeded, failed, cancelled }
+    enum Operation { case install, uninstall }
 
     /// 同一个 Skill 的各目录独立完成、失败或重试，避免一处成功掩盖另一处失败。
     @Observable
     final class Item: Identifiable {
         let skill: RepoSkill
         let destination: RepoSkillDestination
+        let operation: Operation
         var status: Status = .waiting
         var progress = 0.0
         var error: String?
         let id: String
 
-        init(skill: RepoSkill, destination: RepoSkillDestination) {
+        init(skill: RepoSkill, destination: RepoSkillDestination, operation: Operation = .install) {
             self.skill = skill
             self.destination = destination
+            self.operation = operation
             self.id = skill.id + "|" + destination.id
         }
     }
@@ -53,6 +56,7 @@ final class RepoSkillSession {
     private let accountRevision: UInt64
     @ObservationIgnored private let defaults: UserDefaults
     private(set) var destinations: [RepoSkillDestination]
+    private(set) var agentTargets: [RepoSkillAgentTarget] = []
     private(set) var selectedDestinationIDs: Set<String> = []
     private(set) var checks: [String: DestinationCheck] = [:]
     private(set) var scan: RepoSkillScan?
@@ -73,6 +77,8 @@ final class RepoSkillSession {
     private(set) var plannedGroups: [ItemGroup] = []
     private(set) var queueGroups: [ItemGroup] = []
     private(set) var coverageCounts: [String: Int] = [:]
+    private(set) var activeSkillIDs: Set<String> = []
+    private(set) var previewSkillID: String?
     /// 列表只随目录覆盖或扫描成员变化更新，下载进度不使搜索结果失效。
     private(set) var listRevision: UInt64 = 0
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -82,6 +88,7 @@ final class RepoSkillSession {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var hasAppliedSingleSkillDefault = false
     @ObservationIgnored private var directoriesPrepared: Bool
+    @ObservationIgnored private var directDestinationID: String?
     private var isManualScan = false
 
     private static let selectedKey = "skills.install.destinations.selected"
@@ -97,6 +104,9 @@ final class RepoSkillSession {
         self.defaults = defaults
         self.destinations = destinations ?? []
         self.directoriesPrepared = destinations != nil
+        self.agentTargets = (destinations ?? []).compactMap { destination in
+            destination.preset.map { RepoSkillAgentTarget(preset: $0, destinationID: destination.id, applicationPath: nil) }
+        }
         restoreSelection()
         rebuildCoverage()
     }
@@ -114,11 +124,15 @@ final class RepoSkillSession {
             || (!selectedDestinations.isEmpty && selectedDestinations.allSatisfy { $0.preset == nil })
     }
     var isInstalling: Bool { phase == .running }
+    var isUninstalling: Bool { queue.first?.operation == .uninstall }
     var hasFailures: Bool { queue.contains { $0.status == .failed } }
     var canStart: Bool {
-        !isClosed && store.accountRevision == accountRevision && !store.isChangingAccount
-            && !isInstalling && !isLoading && !isCheckingDestination && scan != nil
-            && !plannedItems.isEmpty && conflicts.isEmpty && !hasDuplicateNames
+        guard !isClosed, store.accountRevision == accountRevision, !store.isChangingAccount,
+              !isInstalling, !isLoading, !isCheckingDestination, scan != nil else { return false }
+        if isUninstalling, phase == .cancelled || hasFailures {
+            return queue.contains { $0.status == .failed || $0.status == .cancelled }
+        }
+        return !plannedItems.isEmpty && conflicts.isEmpty && !hasDuplicateNames
             && selectedDestinations.allSatisfy { checks[$0.id] != nil && checks[$0.id]?.error == nil }
             && pendingSkills.allSatisfy { $0.installationIssue == nil }
     }
@@ -189,13 +203,72 @@ final class RepoSkillSession {
 
     func toggleDestination(_ id: String) {
         guard !isInstalling, directoriesPrepared else { return }
+        directDestinationID = nil
         if selectedDestinationIDs.contains(id) { selectedDestinationIDs.remove(id) } else { selectedDestinationIDs.insert(id) }
         destinationsChanged()
     }
 
     func selectAllDestinations(_ selected: Bool) {
         guard !isInstalling, directoriesPrepared else { return }
+        directDestinationID = nil
         selectedDestinationIDs = selected ? Set(destinations.map(\.id)) : []
+        destinationsChanged()
+    }
+
+    /// 阅读对象只为“未勾选 Skill 时直接点击胶囊”提供默认值，不改变批量安装集合。
+    func focusSkill(_ id: String?) {
+        guard previewSkillID != id else { return }
+        previewSkillID = id
+        rebuildPlan()
+    }
+
+    func isInstalled(at destinationID: String) -> Bool {
+        !activeSkillIDs.isEmpty && activeSkillIDs.isSubset(of: checks[destinationID]?.installed ?? [])
+    }
+
+    func canToggleAgent(_ destinationID: String) -> Bool {
+        !isClosed && store.accountRevision == accountRevision && !store.isChangingAccount
+            && directoriesPrepared && !isInstalling && !isLoading && !isCheckingDestination
+            && !activeSkillIDs.isEmpty && checks[destinationID] != nil && checks[destinationID]?.error == nil
+            && skills.filter { activeSkillIDs.contains($0.id) }.allSatisfy { $0.installationIssue == nil }
+    }
+
+    /// 单个胶囊立即执行；全选/清空仍只配置批量目标。共用目录通过 destinationID 同步状态。
+    /// 未勾选 Skill 时使用当前阅读项；同名冲突继续交给原冲突面板明确确认。
+    func toggleAgent(_ destinationID: String) {
+        guard canToggleAgent(destinationID),
+              let destination = destinations.first(where: { $0.id == destinationID }) else { return }
+        if selectedIDs.isEmpty { selectedIDs = activeSkillIDs }
+        let selectedSkills = skills.filter { selectedIDs.contains($0.id) }
+        guard Set(selectedSkills.map(\.name)).count == selectedSkills.count else {
+            resetPlan()
+            return
+        }
+        error = nil
+        if isInstalled(at: destinationID) {
+            directDestinationID = nil
+            resetPlan()
+            run(selectedSkills.map { Item(skill: $0, destination: destination, operation: .uninstall) })
+        } else {
+            selectedDestinationIDs.insert(destinationID)
+            defaults.set(Array(selectedDestinationIDs).sorted(), forKey: Self.selectedKey)
+            directDestinationID = destinationID
+            rebuildCoverage()
+            resetPlan()
+            start()
+        }
+    }
+
+    /// 未自动检测到的工具允许显式加入，菜单选择只添加批量目标，不提前创建或写入工具目录。
+    func addAgent(_ preset: RepoSkillTargetPreset) async {
+        guard DistributionChannel.current.isDirect, !isInstalling, directoriesPrepared,
+              !agentTargets.contains(where: { $0.preset == preset }) else { return }
+        let destination = await Self.resolveDirectory(preset.defaultURL, preset: preset)
+        guard !isClosed, !isInstalling, store.accountRevision == accountRevision else { return }
+        if !destinations.contains(where: { $0.id == destination.id }) { destinations.append(destination) }
+        agentTargets.append(RepoSkillAgentTarget(preset: preset, destinationID: destination.id, applicationPath: nil))
+        selectedDestinationIDs.insert(destination.id)
+        directDestinationID = nil
         destinationsChanged()
     }
 
@@ -238,15 +311,16 @@ final class RepoSkillSession {
     }
 
     func toggleSelection(_ id: String) {
-        guard !isInstalling, !installedIDs.contains(id) else { return }
+        guard !isInstalling else { return }
+        directDestinationID = nil
         if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
         resetPlan()
     }
 
     func selectAll(_ selected: Bool) {
         guard !isInstalling else { return }
-        let installed = installedIDs
-        selectedIDs = selected ? Set(skills.filter { !installed.contains($0.id) && $0.installationIssue == nil }.map(\.id)) : []
+        directDestinationID = nil
+        selectedIDs = selected ? Set(skills.filter { $0.installationIssue == nil }.map(\.id)) : []
         resetPlan()
     }
 
@@ -255,16 +329,28 @@ final class RepoSkillSession {
         guard !isInstalling else { return }
         if replacing { replacements.insert(id) } else { skipped.insert(id) }
         resetPlan()
+        if directDestinationID != nil && conflicts.isEmpty { start() }
     }
 
     /// 批次冻结目录；部分失败只重试失败组合，取消后继续只发布尚未完成的目录。
     func start() {
         guard canStart else { return }
+        // 卸载的失败/取消重试沿用原操作；不能使用安装计划把刚删掉的文件重新装回去。
+        if isUninstalling, phase == .cancelled || hasFailures {
+            run(queue.filter { $0.status == .failed || $0.status == .cancelled })
+            return
+        }
         let failedIDs = Set(queue.filter { $0.status == .failed }.map(\.id))
         let items = plannedItems.filter { phase != .finished || !hasFailures || failedIDs.contains($0.id) }
         guard !items.isEmpty else { return }
-        if phase == .finished && hasFailures {
-            for index in queue.indices where failedIDs.contains(queue[index].id) {
+        run(items)
+    }
+
+    /// 安装与卸载共用冻结批次、账号屏障、取消和逐项结果；只有成功操作才改变磁盘覆盖状态。
+    private func run(_ items: [Item]) {
+        if (phase == .finished && hasFailures) || (phase == .cancelled && isUninstalling) {
+            let retryIDs = Set(items.map(\.id))
+            for index in queue.indices where retryIDs.contains(queue[index].id) {
                 queue[index].status = .waiting
                 queue[index].progress = 0
                 queue[index].error = nil
@@ -284,26 +370,32 @@ final class RepoSkillSession {
                 self.update(item.id, status: .copying)
                 let itemID = item.id
                 do {
-                    try await self.installer.install(
-                        item.skill, repo: self.repo, destination: item.destination,
-                        replacing: self.replacements.contains(item.id),
-                        onProgress: { [weak self] progress in
-                            Task { @MainActor in
-                                guard let self, self.isInstalling, self.destinationRevision == revision,
-                                      let index = self.queue.firstIndex(where: { $0.id == itemID }),
-                                      self.queue[index].status == .copying else { return }
-                                self.queue[index].progress = progress
+                    switch item.operation {
+                    case .install:
+                        try await self.installer.install(
+                            item.skill, repo: self.repo, destination: item.destination,
+                            replacing: self.replacements.contains(item.id),
+                            onProgress: { [weak self] progress in
+                                Task { @MainActor in
+                                    guard let self, self.isInstalling, self.destinationRevision == revision,
+                                          let index = self.queue.firstIndex(where: { $0.id == itemID }),
+                                          self.queue[index].status == .copying else { return }
+                                    self.queue[index].progress = progress
+                                }
                             }
-                        }
-                    )
+                        )
+                        self.checks[item.destination.id, default: DestinationCheck()].installed.insert(item.skill.id)
+                    case .uninstall:
+                        try await self.installer.uninstall(item.skill, destination: item.destination)
+                        self.checks[item.destination.id]?.installed.remove(item.skill.id)
+                    }
                     // 同卷发布已完成就保留成功事实，不让稍后到达的取消信号把它改成失败。
-                    self.checks[item.destination.id, default: DestinationCheck()].installed.insert(item.skill.id)
                     self.checks[item.destination.id]?.conflicts.remove(item.skill.id)
                     self.replacements.remove(item.id)
                     self.update(item.id, status: .succeeded)
                     self.rebuildCoverage()
                 } catch {
-                    if case RepoSkillError.conflict = error {
+                    if item.operation == .install, case RepoSkillError.conflict = error {
                         self.checks[item.destination.id, default: DestinationCheck()].conflicts.insert(item.skill.id)
                     }
                     self.update(item.id, status: Task.isCancelled ? .cancelled : .failed, error: error.localizedDescription)
@@ -313,6 +405,14 @@ final class RepoSkillSession {
                 self.queue[index].status = .cancelled
             }
             self.phase = Task.isCancelled ? .cancelled : .finished
+            if items.first?.operation == .uninstall,
+               self.queue.allSatisfy({ $0.status == .succeeded }),
+               let destinationID = items.first?.destination.id {
+                self.selectedDestinationIDs.remove(destinationID)
+                self.defaults.set(Array(self.selectedDestinationIDs).sorted(), forKey: Self.selectedKey)
+            }
+            self.directDestinationID = nil
+            self.rebuildCoverage()
             self.rebuildPlan()
             self.task = nil
             if self.isClosed { self.stopAccessingDirectories() }
@@ -406,11 +506,13 @@ final class RepoSkillSession {
 
     /// 选择、目录或冲突变化才重建计划；进度回调不参与队列推导。
     private func rebuildPlan() {
+        activeSkillIDs = selectedIDs.isEmpty ? Set([previewSkillID ?? skills.first?.id].compactMap { $0 }) : selectedIDs
         pendingSkills = skills.filter { selectedIDs.contains($0.id) && !installedIDs.contains($0.id) }
         hasDuplicateNames = Set(pendingSkills.map(\.name)).count != pendingSkills.count
         plannedItems = pendingSkills.flatMap { skill in
             selectedDestinations.compactMap { destination -> Item? in
                 let item = Item(skill: skill, destination: destination)
+                guard directDestinationID == nil || directDestinationID == destination.id else { return nil }
                 guard !skipped.contains(item.id), checks[destination.id]?.installed.contains(skill.id) != true else { return nil }
                 return item
             }
@@ -457,7 +559,7 @@ final class RepoSkillSession {
     private func prepareDirectories() async {
         guard !directoriesPrepared else { return }
         let setup = await Self.resolveDirectories(
-            presets: DistributionChannel.current.isDirect ? RepoSkillTargetPreset.allCases : [],
+            agents: DistributionChannel.current.isDirect ? await RepoSkillAgentCatalog.detect() : [],
             bookmarks: defaults.array(forKey: Self.bookmarksKey) as? [Data] ?? []
         )
         guard !isClosed, !Task.isCancelled, store.accountRevision == accountRevision else {
@@ -465,21 +567,28 @@ final class RepoSkillSession {
             return
         }
         destinations = setup.destinations
+        agentTargets = setup.agents
         scopedURLs = setup.scoped
         directoriesPrepared = true
         restoreSelection()
         rebuildCoverage()
     }
 
-    @concurrent private nonisolated static func resolveDirectory(_ url: URL) async -> RepoSkillDestination {
-        RepoSkillDestination(preset: nil, url: url)
+    @concurrent private nonisolated static func resolveDirectory(
+        _ url: URL, preset: RepoSkillTargetPreset? = nil
+    ) async -> RepoSkillDestination {
+        RepoSkillDestination(preset: preset, url: url)
     }
 
     /// 授权 URL 和物理目录身份分别保存：前者维持沙盒授权，后者用于别名去重。
     @concurrent private nonisolated static func resolveDirectories(
-        presets: [RepoSkillTargetPreset], bookmarks: [Data]
-    ) async -> (destinations: [RepoSkillDestination], scoped: [String: URL]) {
-        var destinations = presets.map { RepoSkillDestination(preset: $0, url: $0.defaultURL) }
+        agents: [RepoSkillAgentTarget], bookmarks: [Data]
+    ) async -> (destinations: [RepoSkillDestination], agents: [RepoSkillAgentTarget], scoped: [String: URL]) {
+        var identities: Set<String> = []
+        var destinations = agents.compactMap { target -> RepoSkillDestination? in
+            let destination = RepoSkillDestination(preset: target.preset, url: target.preset.defaultURL)
+            return identities.insert(destination.id).inserted ? destination : nil
+        }
         var scoped: [String: URL] = [:]
         for data in bookmarks {
             var stale = false
@@ -490,7 +599,7 @@ final class RepoSkillSession {
             destinations.append(destination)
             if url.startAccessingSecurityScopedResource() { scoped[destination.id] = url }
         }
-        return (destinations, scoped)
+        return (destinations, agents, scoped)
     }
 
     private func persistDirectories() {

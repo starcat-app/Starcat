@@ -79,6 +79,7 @@ struct RepoSkillSheet: View {
         .buttonBorderShape(.roundedRectangle(radius: 6))
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await session.load() }
+        .onChange(of: preview?.id, initial: true) { _, id in session.focusSkill(id) }
         .onDisappear { session.close() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await session.refreshDestination() }
@@ -201,6 +202,9 @@ struct RepoSkillSheet: View {
     }
 
     private var footerText: String {
+        if session.isUninstalling && session.phase == .finished && !session.hasFailures {
+            return String.l10n("repo.skills.uninstall.succeeded")
+        }
         let items = session.displayedQueue
         let selected = Set(items.map { $0.skill.id })
         let directories = Set(items.map { $0.destination.id })
@@ -212,16 +216,19 @@ struct RepoSkillSheet: View {
 
     private var primaryKey: String {
         if session.isInstalling { return "repo.skills.install.cancel" }
+        if session.isUninstalling && session.hasFailures { return "repo.skills.install.retry" }
+        if session.isUninstalling && session.phase == .cancelled { return "repo.skills.install.resume" }
         if !session.conflicts.isEmpty { return "repo.skills.install.resolve" }
         if session.phase == .finished {
-            return session.hasFailures ? "repo.skills.install.retry" : "repo.skills.install.done"
+            if session.hasFailures { return "repo.skills.install.retry" }
+            if session.plannedItems.isEmpty { return "repo.skills.install.done" }
         }
         if session.isExport { return "repo.skills.install.export" }
         return session.phase == .cancelled ? "repo.skills.install.resume" : "repo.skills.install.start"
     }
 
     private var primaryDisabled: Bool {
-        if session.isInstalling || (session.phase == .finished && !session.hasFailures) { return false }
+        if session.isInstalling || (session.phase == .finished && !session.hasFailures && session.plannedItems.isEmpty) { return false }
         return !session.canStart
     }
 
@@ -229,7 +236,7 @@ struct RepoSkillSheet: View {
     private func primaryAction() {
         if session.isInstalling {
             session.cancel()
-        } else if session.phase == .finished && !session.hasFailures {
+        } else if session.phase == .finished && !session.hasFailures && session.plannedItems.isEmpty {
             onClose()
         } else {
             isInspectorPresented = true

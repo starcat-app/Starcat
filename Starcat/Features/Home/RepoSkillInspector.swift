@@ -2,7 +2,7 @@
 //  RepoSkillInspector.swift
 //  Starcat
 //
-//  安装工作区右栏：目录多选、逐目录覆盖状态与逐 Skill 的安装队列。
+//  安装工作区右栏：Agent 胶囊直接操作、批量目标、授权目录与逐 Skill 的任务队列。
 //
 
 import SwiftUI
@@ -19,9 +19,15 @@ struct RepoSkillInspector: View {
             LazyVStack(spacing: 12) {
                 configuration
                 progress
-                if !session.conflicts.isEmpty { conflict }
+                if !session.conflicts.isEmpty
+                    && !(session.isUninstalling && (session.isInstalling || session.hasFailures || session.phase == .cancelled)) {
+                    conflict
+                }
             }
-            .padding(14)
+            // 始终显示滚动条时，尾侧保留避让，不让胶囊或操作按钮进入滚动条覆盖区。
+            .padding(.leading, 14)
+            .padding(.trailing, 20)
+            .padding(.vertical, 14)
         }
         .background(Color.primary.opacity(0.02))
     }
@@ -40,12 +46,23 @@ struct RepoSkillInspector: View {
                 .padding(.trailing, 12)
             }
             Divider()
-            VStack(spacing: 0) {
-                ForEach(session.destinations) { destination in
-                    destinationRow(destination)
-                    if destination.id != session.destinations.last?.id {
-                        Divider().padding(.leading, 30)
+            if !session.agentTargets.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    TagChipFlowLayout(spacing: 8, constrainsItemWidth: true) {
+                        ForEach(session.agentTargets) { target in
+                            RepoSkillAgentChip(session: session, target: target)
+                        }
                     }
+                    Text("repo.skills.agents.hint")
+                        .font(interfaceScale.font(.captionSmall))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+            }
+            VStack(spacing: 0) {
+                ForEach(session.destinations.filter { $0.preset == nil }) { destination in
+                    destinationRow(destination)
                 }
                 if session.destinations.isEmpty {
                     Text("repo.skills.destination.choose")
@@ -56,6 +73,17 @@ struct RepoSkillInspector: View {
                 }
             }
             HStack {
+                if DistributionChannel.current.isDirect {
+                    Menu("repo.skills.agents.more") {
+                        ForEach(RepoSkillTargetPreset.allCases.filter { preset in
+                            !session.agentTargets.contains { $0.preset == preset }
+                        }) { preset in
+                            Button(preset.agent.name) { Task { await session.addAgent(preset) } }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
                 Spacer()
                 Button("repo.skills.destination.choose") { session.chooseDirectory() }
                     .controlSize(.small)
@@ -132,6 +160,7 @@ struct RepoSkillInspector: View {
         switch destination.preset {
         case .agents: "repo.skills.target.agents"
         case .claudeCode: "repo.skills.target.claude"
+        case .some(let preset): preset.agent.name
         case nil: "repo.skills.target.custom"
         }
     }
@@ -172,7 +201,8 @@ struct RepoSkillInspector: View {
     private var progress: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                sectionTitle("repo.skills.progress.title", symbol: "arrow.down.to.line")
+                sectionTitle(session.isUninstalling ? "repo.skills.uninstall.progress" : "repo.skills.progress.title",
+                             symbol: session.isUninstalling ? "trash" : "arrow.down.to.line")
                 Spacer(minLength: 2)
                 Text(verbatim: "\(session.displayedQueue.filter { $0.status == .succeeded }.count) / \(session.displayedQueue.count)")
                     .font(interfaceScale.font(.caption))
@@ -215,7 +245,7 @@ struct RepoSkillInspector: View {
     /// 状态图例不再是圆形底，只保留系统符号与语义色，弱化装饰感。
     private func progressRow(_ item: RepoSkillSession.Item) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: statusSymbol(item.status))
+            Image(systemName: item.operation == .uninstall && item.status == .copying ? "trash" : statusSymbol(item.status))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(statusColor(item.status))
                 .frame(width: 22, height: 20, alignment: .center)
@@ -241,7 +271,7 @@ struct RepoSkillInspector: View {
                         .lineLimit(2)
                 } else {
                     Text(LocalizedStringKey(session.conflicts.contains { $0.id == item.id }
-                                             ? "repo.skills.status.blocked" : statusKey(item.status)))
+                                             ? "repo.skills.status.blocked" : statusKey(item)))
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -293,8 +323,16 @@ struct RepoSkillInspector: View {
             .padding(12)
     }
 
-    private func statusKey(_ status: RepoSkillSession.Status) -> String {
-        switch status {
+    private func statusKey(_ item: RepoSkillSession.Item) -> String {
+        if item.operation == .uninstall {
+            switch item.status {
+            case .copying: return "repo.skills.uninstall.running"
+            case .succeeded: return "repo.skills.uninstall.succeeded"
+            case .failed: return "repo.skills.uninstall.failed"
+            case .waiting, .cancelled: break
+            }
+        }
+        return switch item.status {
         case .waiting: "repo.skills.status.waiting"
         case .copying: "repo.skills.install.running"
         case .succeeded: session.isExport ? "repo.skills.install.exported" : "repo.skills.install.succeeded"

@@ -214,7 +214,7 @@ private struct SkillRow: View {
             }
             .toggleStyle(.checkbox)
             .labelsHidden()
-            .disabled(session.isInstalling || isInstalled || skill.installationIssue != nil)
+            .disabled(session.isInstalling || skill.installationIssue != nil)
 
             Button {
                 selectPreview(skill.id)
