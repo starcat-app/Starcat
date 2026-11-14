@@ -41,6 +41,7 @@ struct SkillOperationResult: Codable, Sendable, Identifiable {
     let entryID: UUID?
     let status: SkillOperationStatus
     let message: String?
+    var isSuccess: Bool { status.isSuccess }
     var canRetry: Bool { status == .failed || status == .conflict || status == .cancelled }
 }
 

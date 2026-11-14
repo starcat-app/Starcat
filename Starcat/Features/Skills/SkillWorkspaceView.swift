@@ -83,12 +83,21 @@ private struct SkillLibrarySidebar: View {
 private struct SkillLibraryList: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Bindable var viewModel: SkillWorkspaceViewModel
+    @State private var showsImport = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 title.font(interfaceScale.font(.panelTitle))
                 Spacer(minLength: 8)
+                Button {
+                    showsImport = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.plain).focusEffectDisabled()
+                .help("skills.import.title").accessibilityLabel(Text("skills.import.title"))
+                .disabled(viewModel.libraryEnvironment == nil)
                 SyncIconButton(
                     isRefreshing: viewModel.loadState == .loading,
                     tooltip: String.l10n("repo.skills.scan.refresh"),
@@ -141,6 +150,9 @@ private struct SkillLibraryList: View {
             }
         }
         .padding(16)
+        .sheet(isPresented: $showsImport) {
+            SkillImportSheet(viewModel: viewModel).appLocaleEnvironment()
+        }
     }
 
     private var title: Text {

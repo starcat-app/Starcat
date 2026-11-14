@@ -17,6 +17,7 @@ final class SkillLibraryEnvironment {
 
     let store: SkillLibraryStore
     let operations: SkillOperationCoordinator
+    let imports: SkillImportService
     private weak var viewModel: SkillWorkspaceViewModel?
     private let scan: Scanner
     private let roots: Roots
@@ -50,7 +51,11 @@ final class SkillLibraryEnvironment {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let environment = ProcessInfo.processInfo.environment
         self.store = store
-        self.operations = try SkillOperationCoordinator(store: store, distributionGate: distributionGate)
+        let operations = try SkillOperationCoordinator(store: store, distributionGate: distributionGate)
+        self.operations = operations
+        self.imports = try SkillImportService(
+            store: store, operations: operations, distributionGate: distributionGate
+        )
         self.viewModel = viewModel
         self.scan = scan ?? { await scanner.scan($0) }
         self.roots = roots ?? { previous in

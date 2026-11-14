@@ -66,7 +66,7 @@ enum SkillWorkspaceLoadState: Equatable, Sendable {
 @MainActor
 @Observable
 final class SkillWorkspaceViewModel {
-    @ObservationIgnored private var libraryEnvironment: SkillLibraryEnvironment?
+    @ObservationIgnored private(set) var libraryEnvironment: SkillLibraryEnvironment?
     /// List 的单选绑定允许系统短暂清空选择；读取时回退到全部条目。
     var navigation: SkillWorkspaceNavigation? = .library(.all) {
         didSet { rebuildVisibleItems() }
