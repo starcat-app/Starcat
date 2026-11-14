@@ -227,7 +227,7 @@ and before the first existing `## <version>` section.
 
 ### Rules
 - Categories with no entries → omit the section entirely
-- Blank line between sections and between bullets
+- Blank line between sections only; never between list items inside one section
 - Bullets start with `- ` (dash + space)
 - Bullets use `短标题：说明`（中文全角冒号）或 `Short title: detail`（英文冒号+空格）；不要句首分类动词、不要用 em dash
 - The version link reference goes at the bottom of the file（主仓库 releases 若在用）
@@ -258,6 +258,7 @@ Before touching any file, present the complete proposed changelog to the user:
 
 After writing, verify:
 - Both files have identical bullet counts per category
+- No blank lines between bullets in the same section
 - Version number matches across both files
 - Format matches existing entries exactly
 - Version link references are present and in correct order
