@@ -76,8 +76,6 @@ struct RepoSkillSheet: View {
             }
         }
         .foregroundStyle(.primary)
-        // macOS 新版 regular/large 按钮可能默认采用胶囊，任务窗口明确遵循 6pt 矩形圆角。
-        .buttonBorderShape(.roundedRectangle(radius: 6))
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await session.load() }
         .onChange(of: preview?.id, initial: true) { _, id in session.focusSkill(id) }
@@ -176,27 +174,19 @@ struct RepoSkillSheet: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button(action: onClose) {
-                Text(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"))
-                    .lineLimit(1)
-                    .frame(width: 64)
-            }
-            .buttonStyle(.bordered)
-            .help(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"))
-            .keyboardShortcut(isInspectorPresented ? nil : .cancelAction)
+            Button(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"), action: onClose)
+                .lineLimit(1)
+                .help(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"))
+                .keyboardShortcut(isInspectorPresented ? nil : .cancelAction)
 
-            Button(action: primaryAction) {
-                Text(LocalizedStringKey(primaryKey))
-                    .lineLimit(1)
-                    .frame(width: 112)
-            }
-            .buttonStyle(.borderedProminent)
-            .help(LocalizedStringKey(primaryKey))
-            .keyboardShortcut(.defaultAction)
-            .disabled(primaryDisabled)
+            Button(LocalizedStringKey(primaryKey), action: primaryAction)
+                .lineLimit(1)
+                .help(LocalizedStringKey(primaryKey))
+                .keyboardShortcut(.defaultAction)
+                .disabled(primaryDisabled)
         }
-        .controlSize(.regular)
-        // 状态、重载提示和按钮始终只占一行，防止点击 Agent 后挤压正文并移动阅读工具栏。
+        .buttonStyle(.automatic)
+        // 只固定底栏高度以避免正文跳动；按钮尺寸、内边距和外形交给系统决定。
         .frame(height: max(32, interfaceScale.scaled(28)))
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
