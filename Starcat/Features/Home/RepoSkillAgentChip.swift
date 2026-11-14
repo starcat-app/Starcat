@@ -35,6 +35,8 @@ struct RepoSkillAgentChip: View {
         } label: {
             HStack(spacing: 6) {
                 logo
+                    // Command Code 的轮廓铺满画布，留出光学校正，避免比其他品牌标识显大。
+                    .padding(target.preset == .commandCode ? interfaceScale.scaled(1) : 0)
                     .frame(width: interfaceScale.scaled(17), height: interfaceScale.scaled(17))
                     .accessibilityHidden(true)
                 Text(verbatim: title)
@@ -78,11 +80,15 @@ struct RepoSkillAgentChip: View {
     @ViewBuilder
     private var logo: some View {
         if let name = target.preset.agent.logo, let image = NSImage(named: "SkillAgent-\(name)") {
-            Image(nsImage: image).resizable().scaledToFit()
+            // 彩色资源按原色显示；品牌本身的单色标识才随 primary 适配明暗主题。
+            Image(nsImage: image)
+                .renderingMode(image.isTemplate ? .template : .original)
+                .resizable()
+                .scaledToFit()
         } else if target.preset == .iFlow {
-            Image("iflow").resizable().scaledToFit()
+            Image("iflow").renderingMode(.original).resizable().scaledToFit()
         } else if let applicationIcon {
-            Image(nsImage: applicationIcon).resizable().scaledToFit()
+            Image(nsImage: applicationIcon).renderingMode(.original).resizable().scaledToFit()
         } else {
             Image(systemName: target.preset == .agents ? "folder" : "terminal")
                 .resizable().scaledToFit().padding(1)
