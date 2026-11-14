@@ -21,10 +21,7 @@ struct DailyRadarShareSheet: View {
                     header(job)
                     coverPreview(job)
                     stateContent(job)
-                    Text("dailyRadar.share.privacy")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    sharingFooter(job)
                     actions(job)
                 }
             }
@@ -49,9 +46,38 @@ struct DailyRadarShareSheet: View {
     private func coverPreview(_ job: DailyRadarShareJob) -> some View {
         Group {
             if let image = job.coverImage {
+                let article = job.report.presentationMarkdown.flatMap(DailyRadarArticle.parse)
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    // 文字只叠在预览层；上传 PNG 保持原样，避免网页重复叠字与快照 hash 冲突。
+                    .overlay {
+                        LinearGradient(
+                            colors: [.clear, .black.opacity(0.85)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(verbatim: (article?.title ?? job.report.title)
+                                .replacingOccurrences(of: "\n", with: " "))
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                            let summary = article?.summary ?? job.report.summary
+                            if !summary.isEmpty {
+                                Text(verbatim: summary)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                        // 封面始终是深色画面，局部语义色跟随深色环境以保证浅色主题下可读。
+                        .environment(\.colorScheme, .dark)
+                    }
             } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.primary.opacity(0.04))
@@ -75,26 +101,40 @@ struct DailyRadarShareSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("dailyRadar.share.ready")
                     .font(.callout.weight(.medium))
-                CopyFeedbackButton(
-                    providesContent: { response.shareURL.absoluteString },
-                    tooltip: "repo.share.success.copyLink"
-                ) { didCopy in
-                    HStack(spacing: 10) {
-                        Text(verbatim: response.shareURL.absoluteString)
-                            .font(.callout.monospaced())
-                            .lineLimit(2)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                HStack(spacing: 8) {
+                    CopyFeedbackButton(
+                        providesContent: { response.shareURL.absoluteString },
+                        tooltip: "repo.share.success.copyLink"
+                    ) { didCopy in
+                        HStack(spacing: 10) {
+                            Text(verbatim: response.shareURL.absoluteString)
+                                .font(.callout.monospaced())
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                                .frame(width: 18, height: 18)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(Text("repo.share.success.copyLink"))
+                    Button {
+                        NSWorkspace.shared.open(response.shareURL)
+                    } label: {
+                        Label("repo.share.success.openInBrowser", systemImage: "arrow.up.right.square")
+                            .labelStyle(.iconOnly)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(didCopy ? Color.green : Color.secondary)
                             .frame(width: 18, height: 18)
                     }
-                    .padding(10)
-                    .contentShape(Rectangle())
-                    .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .foregroundStyle(.secondary)
+                    .help("repo.share.success.openInBrowser")
                 }
-                .accessibilityLabel(Text("repo.share.success.copyLink"))
+                .padding(10)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
         case .failure(let error):
             Label(LocalizedStringKey(error.localizationKey), systemImage: "exclamationmark.triangle")
@@ -104,29 +144,35 @@ struct DailyRadarShareSheet: View {
         }
     }
 
-    /// 操作逐行右对齐，为 17 种语言保留单行完整标签，不靠压缩字号适配。
-    private func actions(_ job: DailyRadarShareJob) -> some View {
-        VStack(alignment: .trailing, spacing: 10) {
-            switch job.state {
-            case .creating:
-                EmptyView()
-            case .success(let response):
-                Button {
-                    NSWorkspace.shared.open(response.shareURL)
-                } label: {
-                    Label("repo.share.success.openInBrowser", systemImage: "arrow.up.right.square")
-                }
+    /// 说明允许换行，分享按钮保留完整标签，避免长语言把操作挤到下一行。
+    private func sharingFooter(_ job: DailyRadarShareJob) -> some View {
+        HStack(spacing: 12) {
+            Text("dailyRadar.share.privacy")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if case .success(let response) = job.state {
                 ShareLink(item: response.shareURL) {
                     Label("dailyRadar.share.system", systemImage: "square.and.arrow.up")
                 }
-            case .failure:
+                .fixedSize()
+            }
+        }
+    }
+
+    /// 失败操作仍逐行右对齐，为 17 种语言保留完整标签。
+    @ViewBuilder
+    private func actions(_ job: DailyRadarShareJob) -> some View {
+        if case .failure = job.state {
+            VStack(alignment: .trailing, spacing: 10) {
                 Button("settings.navigation.item.customServices") {
                     dismiss()
                     AppDelegate.openSettingsWindow(target: "services")
                 }
                 Button("action.retry", action: onRetry)
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
