@@ -90,7 +90,7 @@ struct RepoSkillSelectionPane: View {
                             .padding(.vertical, 42)
                     }
                 }
-                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.82), value: previewID)
+                .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: previewID)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
             }
@@ -260,7 +260,7 @@ private struct SkillRow: View {
                     .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: false, isHovered: isHovered))
                     .opacity(isPreviewSelected ? 0 : 1)
                 if isPreviewSelected {
-                    // 背景与描边共享几何身份，切换预览时一起滑动，不移动整行或勾选框。
+                    // 背景与描边共享几何身份并保留默认过渡，让同一块高亮跨行滑动。
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: true, isHovered: isHovered))
                         .overlay {
@@ -268,7 +268,6 @@ private struct SkillRow: View {
                                 .strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 1)
                         }
                         .matchedGeometryEffect(id: "repo.skills.preview.selection", in: selectionSpace)
-                        .transition(.identity)
                 }
             }
         }
