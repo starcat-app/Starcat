@@ -264,35 +264,29 @@ struct SettingsView: View {
     ]
 
     var body: some View {
-        // 关键帧绘制闭包是 Sendable；在主线程读取环境，闭包只捕获 Bool 快照。
-        let shouldReduceMotion = reduceMotion
         // 保留原生分栏、材质和分隔线，导航行单独绘制跨分类移动的选中背景。
         // 固定 columnVisibility 可避免设置分类被误折叠，也不会再出现自绘窗口留下的底栏。
         NavigationSplitView(columnVisibility: .constant(.all)) {
             settingsSidebar
         } detail: {
-            settingsPage(selectedTab)
-                .contentMargins(.top, 8, for: .scrollContent)
-                // 只动画绘制属性，不添加 .id(selectedTab)，避免为过渡重建页面草稿，
-                // 或让搜索、深链的区块定位遇到新旧两份页面同时订阅通知。
-                .keyframeAnimator(initialValue: SettingsPageAnimationValues(), trigger: selectedTab) { content, value in
-                    content
-                        .blur(radius: shouldReduceMotion ? 0 : value.blurRadius)
-                        .opacity(shouldReduceMotion ? 1 : value.opacity)
-                } keyframes: { _ in
-                    KeyframeTrack(\.blurRadius) {
-                        MoveKeyframe(6)
-                        CubicKeyframe(0, duration: 0.24)
-                    }
-                    KeyframeTrack(\.opacity) {
-                        MoveKeyframe(0.72)
-                        CubicKeyframe(1, duration: 0.24)
-                    }
-                }
-                // `navigationTitle(LocalizedStringKey)` 由系统 toolbar 单独解析，曾绕过
-                // App 内 LocaleStore，导致侧栏已是英文而这里仍显示中文。先通过
-                // LocalizedBundle 解析成当前应用语言的 String，toolbar 就不会回退系统语言。
-                .navigationTitle(String.l10n(selectedTab.titleKeyString))
+            // 固定容器让离场页与入场页在同一区域交接，不让两份 Form 参与并排布局。
+            // 分类身份只作用于详情；历史、搜索与提示词弹框状态仍由外层持有。
+            ZStack {
+                settingsPage(selectedTab)
+                    .contentMargins(.top, 8, for: .scrollContent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(selectedTab)
+                    .transition(reduceMotion ? .opacity : SettingsPageBlurFade.transition)
+                    // 显式层级避免离场内容被 ZStack 的默认排序提前移到背景后面。
+                    .zIndex(1)
+            }
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: selectedTab)
+            // 模糊只绘制在详情边界内，避免过渡期间盖住侧栏和工具栏。
+            .clipped()
+            // `navigationTitle(LocalizedStringKey)` 由系统 toolbar 单独解析，曾绕过
+            // App 内 LocaleStore，导致侧栏已是英文而这里仍显示中文。先通过
+            // LocalizedBundle 解析成当前应用语言的 String，toolbar 就不会回退系统语言。
+            .navigationTitle(String.l10n(selectedTab.titleKeyString))
         }
         .navigationSplitViewStyle(.balanced)
         // Window scene 的 defaultSize 负责初始尺寸；内容只填满已分配 bounds，不再把
@@ -521,13 +515,28 @@ struct SettingsView: View {
         }
     }
 
-    /// 页面在原位置由轻微模糊与半透明恢复清晰，保持内容视图的生命周期。
-    private struct SettingsPageAnimationValues {
-        var blurRadius: CGFloat = 0
-        var opacity: Double = 1
+    /// 新旧页面使用相同的绘制过渡：离场时模糊淡出，入场时恢复清晰。
+    /// 只改变绘制属性，不缩放或移动表单；减少动态效果时由调用方改用纯淡化。
+    private struct SettingsPageBlurFade: ViewModifier {
+        let blurRadius: CGFloat
+        let opacity: Double
+
+        /// active 同时描述入场起点与离场终点，让两页在同一时段完成交接。
+        static var transition: AnyTransition {
+            .modifier(
+                active: Self(blurRadius: 10, opacity: 0),
+                identity: Self(blurRadius: 0, opacity: 1)
+            )
+        }
+
+        func body(content: Content) -> some View {
+            content
+                .blur(radius: blurRadius)
+                .opacity(opacity)
+        }
     }
 
-    /// 只构造当前页，避免旧版 ZStack 让所有访问过的重型 Form 一直参与布局与刷新。
+    /// 只构造当前页；离场页仅在过渡期间暂留，避免访问过的重型 Form 长期参与刷新。
     @ViewBuilder
     private func settingsPage(_ tab: SettingsTab) -> some View {
         switch tab {

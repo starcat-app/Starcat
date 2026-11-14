@@ -45,6 +45,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/shared-selection-motion` | 本地 worktree：`../Starcat-shared-selection-motion`；无远端分支 | 基于 `77fc5b25` 补齐设置页右侧模糊交叉淡化；原共享组件抽离与主窗口动效扩展仍已废弃。 | `待界面验收`；2026-11-14 已补齐 240ms 新旧页面过渡与减少动态效果时的 120ms 纯淡化，设置布局与图标相关 14 项定向测试通过。 | 在本 worktree 验证设置页；验收后按 dong4j 授权合回 `dev`，不自动提交、推送或清理。 |
 | `codex/skill-management` | 本地 worktree：`../Starcat-skill-management`；无远端分支 | 基于 `dev@ed8d689c` 研究并实现 Direct 独有的 Skill 管理主窗口，采用 Starcat 原生三栏 UI；研究报告与实施方案仅在专项 worktree 维护。 | `开发中`；2026-11-14 已创建 worktree、复制本机 Secrets 配置并迁入 12 篇分析报告；尚未实施应用代码，未带入主工作区其他任务的未提交修改。 | 后续研究、方案细化与开发均在本 worktree 进行；完成开发与验收后合回 `dev`，不自动提交、推送或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
