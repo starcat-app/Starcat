@@ -125,6 +125,16 @@ make run-direct
 - **禁止**裸 `xcodebuild build` 写入这三个固定目录，也禁止把其他 scheme、Xcode Beta 或一次性诊断构建指向它们。
 - 需要新增构建场景时，先补 Makefile / 脚本标准入口；一次性裸 `xcodebuild` 必须使用独立的 `/tmp` DerivedData，不能借用项目固定缓存。
 
+### 简单 UI 改动免构建（2026-11-14 起生效）
+
+单个任务如果**只**改 UI 组件（间距、颜色、字号、图标、文案、对齐、局部布局等纯展示层调整），验证口径为：
+
+- **有对应单测就跑**：`make test TEST_ARGS="-only-testing:StarcatTests/XXX"`；确认没有相关测试则跳过测试，直接说明「无相关测试」。
+- **不要额外编译**：不跑 `make build-appstore` / `make build-direct` / `make run-*`，也不裸跑 `xcodebuild build`。
+- `make test` 自身会编译测试目标，属于允许范围；本条约束的是额外的产物构建。
+
+以下情况**不适用**本豁免，仍需按上文完整构建：改动涉及非 UI 逻辑（数据层、网络、并发、状态管理）、新增或删除 Swift 文件（需 `xcodegen generate`）、修改 `project.yml` / 构建配置 / 签名，或改动同时跨越 UI 与业务边界。
+
 ---
 
 ## 🧪 如何跑单测（必读，2026-05-31 起生效）
