@@ -652817,6 +652817,546 @@
         }
       }
     },
+    "skills.operation.error.planChanged" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "The operation conditions have changed. Review a new preview."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "操作前提已变化，请重新预览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "操作條件已變更，請重新預覽。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "操作の条件が変わりました。もう一度プレビューを確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "작업 조건이 변경되었습니다. 새 미리보기를 확인하세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Voraussetzungen haben sich geändert. Prüfen Sie eine neue Vorschau."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les conditions de l’opération ont changé. Consultez un nouvel aperçu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Las condiciones de la operación han cambiado. Revisa una nueva vista previa."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "As condições da operação mudaram. Confira uma nova prévia."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Le condizioni dell’operazione sono cambiate. Controlla una nuova anteprima."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Условия операции изменились. Просмотрите новое предварительное представление."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De voorwaarden zijn gewijzigd. Bekijk een nieuw voorbeeld."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Warunki operacji uległy zmianie. Sprawdź nowy podgląd."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Умови операції змінилися. Перегляньте новий попередній перегляд."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "İşlem koşulları değişti. Yeni bir önizlemeyi inceleyin."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Điều kiện thao tác đã thay đổi. Hãy xem lại bản xem trước mới."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kondisi operasi telah berubah. Tinjau pratinjau baru."
+          }
+        }
+      }
+    },
+    "skills.operation.error.localChanges" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Local changes were found. The content has been preserved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "内容含本地修改，已保留现状。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "內容含本機修改，已保留現狀。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ローカルの変更が見つかりました。内容は保持されています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "로컬 변경 사항이 발견되었습니다. 콘텐츠는 보존되었습니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lokale Änderungen gefunden. Der Inhalt wurde beibehalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Des modifications locales ont été détectées. Le contenu a été conservé."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se encontraron cambios locales. Se ha conservado el contenido."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Foram encontradas alterações locais. O conteúdo foi preservado."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sono state trovate modifiche locali. Il contenuto è stato conservato."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обнаружены локальные изменения. Содержимое сохранено."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Er zijn lokale wijzigingen gevonden. De inhoud is behouden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wykryto lokalne zmiany. Zawartość została zachowana."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Виявлено локальні зміни. Вміст збережено."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yerel değişiklikler bulundu. İçerik korundu."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã phát hiện thay đổi cục bộ. Nội dung được giữ nguyên."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Perubahan lokal ditemukan. Konten telah dipertahankan."
+          }
+        }
+      }
+    },
+    "skills.operation.error.ownership" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ownership of this location could not be verified. The operation was stopped."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "无法确认此位置的所有权，已停止操作。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "無法確認此位置的所有權，已停止操作。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "この場所の所有権を確認できないため、操作を停止しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 위치의 소유권을 확인할 수 없어 작업을 중단했습니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Eigentümerschaft dieses Speicherorts konnte nicht bestätigt werden. Der Vorgang wurde gestoppt."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossible de vérifier la propriété de cet emplacement. L’opération a été arrêtée."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "No se pudo verificar la propiedad de esta ubicación. La operación se ha detenido."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Não foi possível verificar a propriedade deste local. A operação foi interrompida."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Impossibile verificare la proprietà di questa posizione. L’operazione è stata interrotta."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не удалось подтвердить принадлежность этого расположения. Операция остановлена."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Het eigendom van deze locatie kon niet worden bevestigd. De bewerking is gestopt."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nie można potwierdzić własności tej lokalizacji. Operacja została zatrzymana."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Не вдалося підтвердити належність цього розташування. Операцію зупинено."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu konumun sahipliği doğrulanamadı. İşlem durduruldu."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Không thể xác minh quyền sở hữu vị trí này. Thao tác đã dừng."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kepemilikan lokasi ini tidak dapat diverifikasi. Operasi dihentikan."
+          }
+        }
+      }
+    },
+    "skills.operation.error.recovery" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "This operation needs recovery. Files and records have been preserved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此操作需要恢复，已保留文件与记录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "此操作需要復原，已保留檔案與記錄。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "この操作には復旧が必要です。ファイルと記録は保持されています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "이 작업은 복구가 필요합니다. 파일과 기록은 보존되었습니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dieser Vorgang muss wiederhergestellt werden. Dateien und Einträge wurden beibehalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cette opération nécessite une récupération. Les fichiers et les enregistrements ont été conservés."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta operación necesita recuperación. Se han conservado los archivos y los registros."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Esta operação precisa de recuperação. Os arquivos e registros foram preservados."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Questa operazione richiede un ripristino. I file e i record sono stati conservati."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Для этой операции требуется восстановление. Файлы и записи сохранены."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Deze bewerking moet worden hersteld. Bestanden en records zijn behouden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ta operacja wymaga odzyskiwania. Pliki i rekordy zostały zachowane."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ця операція потребує відновлення. Файли та записи збережено."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bu işlem kurtarma gerektiriyor. Dosyalar ve kayıtlar korundu."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Thao tác này cần khôi phục. Các tệp và bản ghi đã được giữ lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Operasi ini memerlukan pemulihan. Berkas dan catatan telah dipertahankan."
+          }
+        }
+      }
+    },
+    "skills.operation.error.journal" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "The recovery record is invalid. Existing files have been preserved."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "恢复记录无效，已保留现场文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "復原記錄無效，已保留現場檔案。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "復旧記録が無効です。既存のファイルは保持されています。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "복구 기록이 유효하지 않습니다. 기존 파일은 보존되었습니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Wiederherstellungseintrag ist ungültig. Vorhandene Dateien wurden beibehalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’enregistrement de récupération est invalide. Les fichiers existants ont été conservés."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El registro de recuperación no es válido. Se han conservado los archivos existentes."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O registro de recuperação é inválido. Os arquivos existentes foram preservados."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Il record di ripristino non è valido. I file esistenti sono stati conservati."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запись восстановления недействительна. Существующие файлы сохранены."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Het herstelrecord is ongeldig. Bestaande bestanden zijn behouden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rekord odzyskiwania jest nieprawidłowy. Istniejące pliki zostały zachowane."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запис відновлення недійсний. Наявні файли збережено."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kurtarma kaydı geçersiz. Mevcut dosyalar korundu."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bản ghi khôi phục không hợp lệ. Các tệp hiện có đã được giữ lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Catatan pemulihan tidak valid. Berkas yang ada telah dipertahankan."
+          }
+        }
+      }
+    },
     "skills.workspace.agents" : {
       "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
       "extractionState" : "manual",

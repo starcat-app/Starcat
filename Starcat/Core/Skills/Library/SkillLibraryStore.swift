@@ -77,6 +77,38 @@ actor SkillLibraryStore {
         try writer().write { try location.save($0) }
     }
 
+    func operations() throws -> [SkillOperationRecord] {
+        try writer().read { try SkillOperationRecord.order(Column("created_at").desc).fetchAll($0) }
+    }
+
+    func save(_ operation: SkillOperationRecord) throws {
+        try writer().write { try operation.save($0) }
+    }
+
+    /// 来源唯一键可能已被前一个导入创建；只复用来源身份，不合并两个受管条目。
+    func commitContent(_ plan: SkillContentOperationPlan) throws {
+        currentScanGeneration = nil
+        try writer().write { db in
+            let source = try SkillLibrarySource
+                .filter(Column("kind") == plan.source.kind.rawValue)
+                .filter(Column("canonical_locator") == plan.source.canonicalLocator)
+                .filter(Column("subdirectory") == plan.source.subdirectory)
+                .fetchOne(db) ?? plan.source
+            try source.save(db)
+            var entry = plan.entry
+            entry.sourceID = source.id
+            entry.currentRevisionID = plan.revision.id
+            try entry.save(db)
+            try plan.revision.save(db)
+        }
+    }
+
+    /// 旧 revision 仍在历史表中；回滚只恢复旧指针和条目元数据，不删除历史版本。
+    func restoreEntry(_ entry: SkillLibraryEntry) throws {
+        currentScanGeneration = nil
+        try writer().write { try entry.save($0) }
+    }
+
     /// 发放新的扫描代次；数据库提交前再次比较，旧扫描即使晚返回也不能污染索引。
     func beginScan() -> UUID {
         let generation = UUID()
@@ -112,6 +144,19 @@ actor SkillLibraryStore {
                 physicalEntries[content.path] = entry.id
             }
             let grouped = Dictionary(grouping: report.results.flatMap(\.candidates), by: \.resolvedPath)
+            // 发布后、元数据补写前可能触发扫描。使用已批准操作的 entryID 保持只读身份，
+            // 避免恢复后留下另一条“外部副本”；操作记录本身不授予受管写权限。
+            let pending = try SkillOperationRecord
+                .filter(Column("state") == "running" || Column("state") == "needsRecovery").fetchAll(db)
+            for operation in pending {
+                guard let entryID = operation.entryID else { continue }
+                let prefix = paths.entryDirectory(entryID).appendingPathComponent("content")
+                    .resolvingSymlinksInPath().path + "/"
+                for path in grouped.keys where path.hasPrefix(prefix)
+                    && !path.dropFirst(prefix.count).contains("/") {
+                    physicalEntries[path] = entryID
+                }
+            }
             for (path, candidates) in grouped {
                 let entryID = physicalEntries[path] ?? UUID()
                 let previous = entriesByID[entryID]
@@ -180,8 +225,10 @@ actor SkillLibraryStore {
     func receipt(for entryID: UUID) throws -> SkillLibraryReceipt? {
         let url = paths.entryDirectory(entryID).appendingPathComponent("receipt.json")
         do {
+            guard !SkillFilePrimitives.isSymbolicLink(url) else { throw CocoaError(.fileReadCorruptFile) }
             let receipt = try JSONDecoder().decode(SkillLibraryReceipt.self, from: Data(contentsOf: url))
-            guard receipt.formatVersion == 1, receipt.entryID == entryID else {
+            guard receipt.formatVersion == 1, receipt.entryID == entryID,
+                  receipt.contentDigest == receipt.fingerprint.digest else {
                 throw CocoaError(.fileReadCorruptFile)
             }
             return receipt
@@ -268,6 +315,23 @@ actor SkillLibraryStore {
                 );
                 CREATE INDEX idx_skill_locations_entry ON skill_locations(entry_id);
                 CREATE INDEX idx_skill_locations_resolved ON skill_locations(resolved_path);
+                """)
+        }
+        migrator.registerMigration("v2-skill-operations") { db in
+            // 导入的 operation 早于 entry 存在，因此 entry_id 有意不建立外键。
+            try db.execute(sql: """
+                ALTER TABLE skill_entries ADD COLUMN tracking_ref TEXT;
+                CREATE TABLE skill_operations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    entry_id TEXT,
+                    kind TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    journal_path TEXT NOT NULL,
+                    result_json TEXT,
+                    created_at DOUBLE NOT NULL,
+                    updated_at DOUBLE NOT NULL
+                );
+                CREATE INDEX idx_skill_operations_entry ON skill_operations(entry_id);
                 """)
         }
         try migrator.migrate(writer)

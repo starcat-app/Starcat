@@ -128,13 +128,14 @@ struct SkillLibraryDatabaseTests {
         let directory = store.paths.entryDirectory(entryID)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent("receipt.json")
+        let fingerprint = SkillDirectoryFingerprint(digest: "digest", rootMode: 0o755, members: [])
         let receipt = SkillLibraryReceipt(
-            entryID: entryID, revisionID: UUID(), contentDigest: "digest", installedAt: 123
+            entryID: entryID, revisionID: UUID(), contentDigest: "digest", installedAt: 123, fingerprint: fingerprint
         )
         try JSONEncoder().encode(receipt).write(to: url)
         #expect(try await store.receipt(for: entryID) == receipt)
         let foreign = SkillLibraryReceipt(
-            entryID: UUID(), revisionID: UUID(), contentDigest: "digest", installedAt: 123
+            entryID: UUID(), revisionID: UUID(), contentDigest: "digest", installedAt: 123, fingerprint: fingerprint
         )
         try JSONEncoder().encode(foreign).write(to: url)
         await #expect(throws: CocoaError.self) { try await store.receipt(for: entryID) }

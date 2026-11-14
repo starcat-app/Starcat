@@ -16,6 +16,7 @@ final class SkillLibraryEnvironment {
     typealias Roots = @Sendable ([SkillLibraryRoot]) async -> [SkillLibraryRoot]
 
     let store: SkillLibraryStore
+    let operations: SkillOperationCoordinator
     private weak var viewModel: SkillWorkspaceViewModel?
     private let scan: Scanner
     private let roots: Roots
@@ -49,6 +50,7 @@ final class SkillLibraryEnvironment {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let environment = ProcessInfo.processInfo.environment
         self.store = store
+        self.operations = try SkillOperationCoordinator(store: store, distributionGate: distributionGate)
         self.viewModel = viewModel
         self.scan = scan ?? { await scanner.scan($0) }
         self.roots = roots ?? { previous in
@@ -124,6 +126,8 @@ final class SkillLibraryEnvironment {
             }
         }
         do {
+            let recovery = await operations.recover()
+            guard accepts(run) else { return }
             let cached = try await store.snapshot()
             guard accepts(run) else { return }
             viewModel?.applySnapshot(cached.workspaceItems, state: .loading)
@@ -140,7 +144,10 @@ final class SkillLibraryEnvironment {
                 await store.invalidateScan(generation: generation)
                 return
             }
-            guard try await store.apply(report), accepts(run) else { return }
+            guard try await store.apply(report), accepts(run) else {
+                if accepts(run) { dirty = true }
+                return
+            }
             let snapshot = try await store.snapshot()
             guard accepts(run) else { return }
             let activeRoots = Set(configured.map(\.id))
@@ -165,6 +172,7 @@ final class SkillLibraryEnvironment {
             let problems = snapshot.roots.filter { !$0.coverage.confirmsAbsence }.map {
                 "\($0.configuredPath): \($0.diagnostic ?? $0.coverage.rawValue)"
             } + [watcherFailure].compactMap { $0 }
+                + recovery.filter { $0.status == .needsRecovery }.compactMap(\.message)
             let state: SkillWorkspaceLoadState = if problems.isEmpty { .ready }
                 else if snapshot.entries.isEmpty { .failed(problems.joined(separator: "\n")) }
                 else { .partial(problems.joined(separator: "\n")) }

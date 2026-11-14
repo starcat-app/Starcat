@@ -47,6 +47,7 @@ struct SkillLibraryEntry: SkillLibraryPersistedRecord, Equatable, Identifiable {
     var summary: String
     var managementKind: SkillLibraryManagementKind
     var currentRevisionID: UUID? = nil
+    var trackingRef: String? = nil
     var diagnostic: String? = nil
     var createdAt: TimeInterval = Date().timeIntervalSince1970
     var updatedAt: TimeInterval = Date().timeIntervalSince1970
@@ -57,6 +58,7 @@ struct SkillLibraryEntry: SkillLibraryPersistedRecord, Equatable, Identifiable {
         case manifestName = "manifest_name"
         case managementKind = "management_kind"
         case currentRevisionID = "current_revision_id"
+        case trackingRef = "tracking_ref"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -161,4 +163,5 @@ struct SkillLibraryReceipt: Codable, Equatable, Sendable {
     let revisionID: UUID
     let contentDigest: String
     let installedAt: TimeInterval
+    let fingerprint: SkillDirectoryFingerprint
 }
