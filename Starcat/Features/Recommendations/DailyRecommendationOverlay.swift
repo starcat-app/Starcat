@@ -189,15 +189,15 @@ private final class CardPanel: NSPanel {
     override func performClose(_ sender: Any?) { onEscape() }
 }
 
-/// 子窗口透明材质采样其后方主界面，保留三栏可辨识轮廓。
-struct DailyRecommendationBackdrop: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let effect = NSVisualEffectView()
-        effect.blendingMode = .behindWindow
-        effect.material = .hudWindow
-        effect.state = .active
-        return effect
-    }
+/// 透明子窗口直接透出主界面；只轻微调节明暗，不用 HUD 材质把整窗覆盖成灰幕。
+struct DailyRecommendationBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+    var body: some View {
+        // 主窗口的真实内容保留至少 76% 可见度；文字可读性由页头和操作区的局部表面负责。
+        Rectangle()
+            .fill(colorScheme == .dark ? Color.black.opacity(0.18) : Color.white.opacity(0.24))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
 }
