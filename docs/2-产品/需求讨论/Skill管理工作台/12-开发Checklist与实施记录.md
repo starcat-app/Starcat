@@ -27,7 +27,7 @@
 
 ### M1：本机库与真实内容读取
 
-- [ ] **T04 独立库与读模型**：账号外路径、追加迁移、来源／条目／位置／回执读取；重开与账号切换保持数据。
+- [x] **T04 独立库与读模型**：账号外路径、独立迁移账本、来源／条目／版本／根／位置与回执读取；重开与真实账号主库切换回归通过。
 - [ ] **T05 根目录与受控扫描**：Agent profiles、逻辑与物理身份、解析诊断、扫描预算与逐根 coverage。
 - [ ] **T06 监听与一致快照**：事件合并、generation、取消、漏事件补扫、窗口显示生命周期。
 - [ ] **T07 真实列表与详情**：搜索、筛选、Markdown、文件、位置；错误／过期状态与安全预览。
@@ -57,7 +57,8 @@
 | T00 | 研究报告、实施基线与开发清单 | Git 基线／worktree 核对；`git diff --check` | `08ab8d4e` |
 | T01a | `skillManagement` 渠道门控；全部渠道能力双向回归 | `DistributionGateTests` 3 项通过；惰性组合点随 T02、库副作用随 T04 继续验证 | `2a9d2a7a` |
 | T01b／T02 | 应用级惰性会话、单例 Scene、原生三栏与独立栏宽；11 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests` 共 7 项通过；`make build-direct`／`make build-appstore` 通过；187 项编译文案与源文案一致 | `116bf6f7` |
-| T03 | 快照筛选／搜索／选择收敛、只读详情四页签和 8 个 Preview；15 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests`／`SkillWorkspaceSnapshotTests` 共 15 项通过；双渠道标准 build-only 通过；26 个累计 key × 17 语言的双渠道编译资源一致 | 当前功能提交 |
+| T03 | 快照筛选／搜索／选择收敛、只读详情四页签和 8 个 Preview；15 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests`／`SkillWorkspaceSnapshotTests` 共 15 项通过；双渠道标准 build-only 通过；26 个累计 key × 17 语言的双渠道编译资源一致 | `4f69a486` |
+| T04 | actor 内惰性打开独立 SQLite、5 类关系记录、来源唯一键、版本化回执读取 | `SkillLibraryDatabaseTests` 6 项及快照／渠道共 17 项通过；真实账号主库先后登录 101／202／登出后本机条目保留；双渠道标准 build-only 通过 | 当前功能提交 |
 
 新窗口入口为 Direct 的“显示 → Skill 管理”。此阶段生产会话展示真实空态，尚未扫描用户目录；关闭主窗口、重复打开 Skill 窗口不重新创建本机会话。Scene 禁止启动自动恢复，以免未明确打开时初始化后续扫描能力。
 
