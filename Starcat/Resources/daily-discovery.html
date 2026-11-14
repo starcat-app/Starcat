@@ -83,11 +83,11 @@
       background: radial-gradient(ellipse at var(--sd-mx, 30%) var(--sd-my, 10%), light-dark(rgb(255 255 255 / 20%), rgb(255 248 236 / 8%)), transparent 58%);
       opacity: var(--sd-luster);
     }
-    #starcat-refined .sd-card-top { display: grid; grid-template-columns: 39% minmax(0, 61%); min-height: 264px; border-bottom: 1px solid var(--sd-line); }
+    #starcat-refined .sd-card-top { display: grid; grid-template-columns: minmax(150px, 24%) minmax(0, 1fr); min-height: 220px; border-bottom: 1px solid var(--sd-line); }
     #starcat-refined .sd-cover {
       position: relative;
       overflow: hidden;
-      min-height: 264px;
+      min-height: 220px;
       isolation: isolate;
       border-right: 1px solid var(--sd-line);
       --sd-art-top: light-dark(#dae7ec, #364a57);
@@ -118,15 +118,14 @@
       border-radius: 7px;
       pointer-events: none;
     }
-    #starcat-refined .sd-art-label, #starcat-refined .sd-art-caption { position: absolute; z-index: 4; left: 22px; font-size: calc(11px * var(--sd-scale)); letter-spacing: 1.5px; }
-    #starcat-refined .sd-art-label { top: 19px; opacity: .85; }
-    #starcat-refined .sd-art-caption { bottom: 17px; right: 22px; display: flex; justify-content: space-between; gap: 10px; letter-spacing: .5px; }
-    #starcat-refined .sd-art-caption span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    #starcat-refined .sd-art-label, #starcat-refined .sd-art-caption { position: absolute; z-index: 4; left: 16px; font-size: calc(11px * var(--sd-scale)); letter-spacing: 1.5px; }
+    #starcat-refined .sd-art-label { top: 14px; opacity: .85; }
+    #starcat-refined .sd-art-caption { bottom: 14px; right: 16px; display: flex; justify-content: flex-end; letter-spacing: .5px; }
     #starcat-refined .sd-art-caption span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
     #starcat-refined .sd-scene {
       position: absolute;
-      width: 232px;
-      height: 182px;
+      width: 172px;
+      height: 148px;
       left: 50%;
       top: 51%;
       transform: translate(calc(-50% + var(--sd-art-x, 0px)), calc(-50% + var(--sd-art-y, 0px)));
@@ -137,7 +136,7 @@
     /* 所有仓库共享一套封面结构；初始字与配色仅来自名称，不要求后端提供图片或用途分类。 */
     #starcat-refined .sd-identity-plate {
       position: absolute;
-      left: 47px; top: 30px; width: 132px; height: 125px;
+      left: 32px; top: 23px; width: 108px; height: 102px;
       border: 1px solid light-dark(rgb(255 255 255 / 85%), rgb(239 235 228 / 42%));
       border-radius: 14px;
       background: linear-gradient(140deg, light-dark(#f3f2ef, #74787a), var(--sd-art-top) 52%, var(--sd-art-bottom));
@@ -153,23 +152,23 @@
     #starcat-refined .sd-identity-plate:last-child::before {
       content: ""; position: absolute; inset: 7px; border: 1px solid light-dark(rgb(255 255 255 / 75%), rgb(255 255 255 / 18%)); border-radius: 9px;
     }
-    #starcat-refined .sd-monogram { font-size: calc(40px * var(--sd-scale)); line-height: 1; font-weight: 500; letter-spacing: -2px; text-shadow: 0 1px light-dark(#ffffffb3, #ffffff21); }
+    #starcat-refined .sd-monogram { font-size: calc(32px * var(--sd-scale)); line-height: 1; font-weight: 500; letter-spacing: -2px; text-shadow: 0 1px light-dark(#ffffffb3, #ffffff21); }
     #starcat-refined .sd-identity-line { position: absolute; left: 19px; bottom: 17px; width: 27px; height: 2px; border-radius: 2px; background: currentColor; opacity: .4; box-shadow: 32px 0 currentColor; }
-    #starcat-refined .sd-project-info { min-width: 0; display: flex; flex-direction: column; padding: 26px 30px 24px; }
+    #starcat-refined .sd-project-info { min-width: 0; display: flex; flex-direction: column; padding: 22px 24px; }
     #starcat-refined .sd-owner { display: flex; align-items: center; gap: 9px; color: var(--sd-secondary); font-size: calc(12px * var(--sd-scale)); overflow-wrap: anywhere; }
     #starcat-refined .sd-avatar { display: grid; place-items: center; width: 25px; height: 25px; flex: 0 0 auto; border: 1px solid var(--sd-line); border-radius: 7px; background: var(--sd-accent-soft); color: var(--sd-text); font-weight: 600; }
-    #starcat-refined .sd-project-name { margin: 15px 0 12px; font-size: calc(20px * var(--sd-scale)); line-height: 1.4; font-weight: 600; }
+    #starcat-refined .sd-project-name { margin: 12px 0 10px; font-size: calc(20px * var(--sd-scale)); line-height: 1.4; font-weight: 600; }
     #starcat-refined .sd-project-name span:first-child { color: var(--sd-secondary); font-weight: 400; }
-    #starcat-refined .sd-description { font-size: calc(14px * var(--sd-scale)); line-height: 1.85; }
-    #starcat-refined .sd-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding-top: 20px; margin-top: auto; color: var(--sd-secondary); font-size: calc(12px * var(--sd-scale)); }
+    #starcat-refined .sd-description { font-size: calc(14px * var(--sd-scale)); line-height: 1.7; }
+    #starcat-refined .sd-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding-top: 12px; color: var(--sd-secondary); font-size: calc(12px * var(--sd-scale)); }
     #starcat-refined .sd-language { display: flex; align-items: center; gap: 7px; }
     #starcat-refined .sd-language::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--sd-lang, var(--sd-secondary)); }
-    #starcat-refined .sd-recommend { padding: 23px 30px 0; }
+    #starcat-refined .sd-recommend { padding: 18px 24px 0; }
     #starcat-refined .sd-reason-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; }
     #starcat-refined .sd-reason-heading h3 { font-size: calc(14px * var(--sd-scale)); font-weight: 600; }
     #starcat-refined .sd-basis { color: var(--sd-accent); background: var(--sd-accent-soft); border-radius: 5px; padding: 2px 7px; font-size: calc(11px * var(--sd-scale)); }
     #starcat-refined .sd-reason { font-size: calc(14px * var(--sd-scale)); line-height: 1.9; }
-    #starcat-refined .sd-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 23px 30px 25px; }
+    #starcat-refined .sd-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 18px 24px 22px; }
     #starcat-refined .sd-button {
       position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
       min-height: 36px; padding: 8px 15px; border: 1px solid var(--sd-line); border-radius: 8px;
@@ -206,7 +205,7 @@
     #starcat-refined .sd-progress-track { display: flex; gap: 5px; }
     @media (max-width: 800px) {
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: calc(100% - 54px); }
-      #starcat-refined .sd-card-top { grid-template-columns: 37% minmax(0, 63%); }
+      #starcat-refined .sd-card-top { grid-template-columns: 150px minmax(0, 1fr); }
       #starcat-refined .sd-project-info { padding: 23px 24px; }
       #starcat-refined .sd-scene { scale: .88; }
       #starcat-refined .sd-recommend { padding: 22px 24px 0; }
@@ -217,8 +216,8 @@
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: 100%; }
       #starcat-refined .sd-peek { display: none; }
       #starcat-refined .sd-card-top { grid-template-columns: 1fr; }
-      #starcat-refined .sd-cover { min-height: 218px; border-right: 0; border-bottom: 1px solid var(--sd-line); }
-      #starcat-refined .sd-scene { scale: .92; }
+      /* Compact windows keep the full reading area instead of stacking a decorative cover above it. */
+      #starcat-refined .sd-cover { display: none; }
       #starcat-refined .sd-project-info { padding: 21px 23px 22px; }
       #starcat-refined .sd-description { font-size: calc(14px * var(--sd-scale)); }
       #starcat-refined .sd-recommend { padding: 20px 23px 0; }
@@ -284,7 +283,6 @@
     @keyframes sd-spin { to { transform: rotate(360deg); } }
     @media (max-width: 620px) {
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: 100%; }
-      #starcat-refined .sd-cover { min-height: 180px; }
     }
 </style></head>
 <body><div id="starcat-refined"><div class="sd-window"><main class="sd-page" aria-busy="true">
@@ -294,7 +292,7 @@
     <button type="button" class="sd-peek sd-peek-left" data-action="previous"></button>
     <div class="sd-main"><div class="sd-tilt"><article class="sd-card" aria-labelledby="project-name">
       <div class="sd-card-top">
-        <div class="sd-cover" data-tone="0" aria-hidden="true"><span class="sd-art-label">STARCAT</span><div class="sd-scene"><div class="sd-identity-plate"></div><div class="sd-identity-plate"></div><div class="sd-identity-plate"><span class="sd-monogram" data-field="cover-monogram"></span><span class="sd-identity-line"></span></div></div><div class="sd-art-caption"><span data-field="cover-name"></span><span data-field="edition"></span></div></div>
+        <div class="sd-cover" data-tone="0" aria-hidden="true"><span class="sd-art-label">STARCAT</span><div class="sd-scene"><div class="sd-identity-plate"></div><div class="sd-identity-plate"></div><div class="sd-identity-plate"><span class="sd-monogram" data-field="cover-monogram"></span><span class="sd-identity-line"></span></div></div><div class="sd-art-caption"><span data-field="edition"></span></div></div>
         <div class="sd-project-info"><div class="sd-owner"><span class="sd-avatar" data-field="avatar" aria-hidden="true"></span><span data-field="owner"></span><span aria-hidden="true">·</span><span>GitHub</span></div>
           <h2 class="sd-project-name" id="project-name"><span data-field="owner-path"></span><span data-field="repo"></span></h2>
           <p class="sd-description" data-field="description"></p>
@@ -434,7 +432,6 @@
     field("owner").textContent = display.owner;
     field("owner-path").textContent = `${display.owner} / `;
     field("repo").textContent = display.repo;
-    field("cover-name").textContent = display.repo;
     field("cover-monogram").textContent = display.monogram;
     q(".sd-cover").dataset.tone = display.tone;
     field("description").textContent = item.description || snapshot.labels.noDescription;
