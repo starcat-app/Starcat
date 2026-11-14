@@ -1020,7 +1020,9 @@ private final class SQLiteChatHistoryStorageBackend: ChatHistoryStorageBackend {
                 category: "database",
                 operation: "chatHistory.openDatabase",
                 message: "Chat history database could not be opened or migrated",
-                underlying: DiagnosticEvent.summarize(error)
+                summary: .chatHistoryUnavailable,
+                impact: .blocked,
+                underlying: DiagnosticEvent.summarize(error), error: error
             )
             self.dbURL = nil
             self.dbQueue = nil

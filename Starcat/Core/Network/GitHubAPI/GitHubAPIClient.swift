@@ -293,7 +293,7 @@ actor GitHubAPIClient {
            !errs.isEmpty {
             let combined = errs.map(\.message).joined(separator: "; ")
             AppLog.network.error("GraphQL errors: \(combined, privacy: .public)")
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+            DiagnosticContext.current?.capture(DiagnosticEvent(
                 level: .warning, category: "network", operation: "github.graphql",
                 message: "GraphQL returned business errors", statusCode: 200,
                 errorCode: "graphql.errors", phase: "business",
@@ -491,7 +491,7 @@ actor GitHubAPIClient {
                 return APIResponse(value: decoded, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode, etag: etag)
             } catch {
                 AppLog.network.error("Decoding failed for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)")
-                DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+                DiagnosticContext.current?.capture(DiagnosticEvent(
                     level: .error, category: "network", operation: "github.decode",
                     message: "GitHub decoding failed", statusCode: http.statusCode,
                     errorCode: "response.decoding", underlying: DiagnosticEvent.summarize(error),

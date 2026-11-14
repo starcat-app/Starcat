@@ -12,6 +12,22 @@ import Foundation
 @Suite("GitHub DTO 解码")
 struct GitHubDTOsTests {
 
+    /// 已发布的资料缓存没有组织字段，不能因为新增头像入口丢失整个登录快照。
+    @Test("旧用户资料不含组织字段仍可解码")
+    func decodeUserWithoutOrganizations() throws {
+        let user = try decoder.decode(GitHubUserDTO.self, from: Data(#"{"id":42,"login":"alice"}"#.utf8))
+        #expect(user.organizations == nil)
+    }
+
+    @Test("组织随资料缓存往返编码，状态更新保留组织")
+    func userOrganizationsSurviveCacheRoundTripAndStatusUpdate() throws {
+        var user = GitHubUserDTO(id: 42, login: "alice", name: nil, avatarUrl: nil)
+        user.organizations = [GitHubOrganizationDTO(id: 101, login: "example-org", avatarUrl: nil, description: nil)]
+        let cached = try JSONDecoder().decode(GitHubUserDTO.self, from: JSONEncoder().encode(user))
+        #expect(cached.organizations == user.organizations)
+        #expect(cached.replacingStatus(nil).organizations == user.organizations)
+    }
+
     private var decoder: JSONDecoder {
         let d = JSONDecoder()
         d.keyDecodingStrategy = .convertFromSnakeCase

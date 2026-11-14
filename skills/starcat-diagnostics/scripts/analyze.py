@@ -17,13 +17,15 @@ MAX_FILES, MAX_FILE, MAX_TOTAL, MAX_EVENTS = 2048, 48 << 20, 64 << 20, 100_000
 PUBLIC_KEYS = set(("schemaVersion eventID sequence sessionID environmentID operationID "
                    "parentOperationID requestID serverTraceID timestamp firstSeen lastSeen "
                    "occurrenceCount level visibility category operation phase outcome "
-                   "durationMs statusCode errorCode service sourceFile sourceFunction sourceLine").split())
+                   "durationMs statusCode errorCode service sourceFile sourceFunction sourceLine "
+                   "summaryKey impact breadcrumbsTruncated").split())
 SAFE_FIELDS = set(("count available complete totalCount fetchedCount uniquePageCount cachedCount "
                    "displayedCount renderedCount canLoadMore hasProgress budget snapshotVersion "
                    "rendererVersion selectionVersion nodeCount edgeCount hasNextPage hasCursor "
                    "refresh requestCount nodeLimit edgeLimit preservesLocalEntitlement mergedCount "
                    "page incremental force receivedBytes itemCount outputAvailable authenticated "
-                   "credentialRetained errorCount allowPartial").split())
+                   "credentialRetained errorCount allowPartial attempt cacheFallback "
+                   "processedCount iteration toolCount migrationCount exitCode exists executable").split())
 SAFE_ENUM_FIELDS = set(("reason source stage method route runtimeState provider relation feature").split())
 
 
@@ -140,6 +142,14 @@ def collect(files):
             gaps.append("文件清单缺少完整摘要，不能确认附件完整性")
     else:
         gaps.append("没有 manifest，可能是历史 JSONL 或部分附件，无法核验完整性")
+    if isinstance(manifest.get("damagedLines"), int) and manifest["damagedLines"] > 0:
+        gaps.append(f"源日志有 {manifest['damagedLines']} 行损坏，导出无法恢复这些证据")
+    health = manifest.get("health")
+    if isinstance(health, dict):
+        for key in ("readFailures", "writeFailures", "rotationFailures", "droppedEvents", "captureUnavailable"):
+            count = health.get(key)
+            if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+                gaps.append(f"诊断存储证据缺口：{key}={count}")
     bad = 0
     for name, payload in files.items():
         base = PurePosixPath(name).name
@@ -164,8 +174,12 @@ def collect(files):
         gaps.append(f"{bad} 行损坏或缺少必要字段")
     if any(e.get("schemaVersion", 1) == 1 for e in events):
         gaps.append("包含历史事件，缺少的会话、操作和版本信息不能补造")
-    if any(isinstance(e.get("schemaVersion"), int) and e["schemaVersion"] > 2 for e in events):
+    if any(isinstance(e.get("schemaVersion"), int) and e["schemaVersion"] > 3 for e in events):
         gaps.append("包含更高格式版本，只解析已知字段")
+    if any(e.get("breadcrumbsTruncated") is True for e in events):
+        gaps.append("故障阶段已截断，仅保留最近至多 16 条；更早过程未知")
+    if any(e.get("schemaVersion") == 3 for e in events):
+        gaps.append("严重故障日志不保存成功和在途操作；没有后续故障不能证明功能恢复")
     if not events:
         gaps.append("没有可解析事件，不能认定应用没有问题")
     collectors = manifest.get("collectors", [])
@@ -184,6 +198,10 @@ def public_event(event):
             for key, value in event.items() if key in PUBLIC_KEYS
             and isinstance(value, (str, int, float, bool, type(None)))
             and (not isinstance(value, float) or math.isfinite(value))}
+    if is_severe_failure(event):
+        key = event.get("summaryKey")
+        result["summaryKey"] = key if isinstance(key, str) and re.fullmatch(
+            r"diagnostics\.issue\.[A-Za-z0-9_.-]{1,100}", key) else "diagnostics.issue.generic"
     fields = event.get("fields")
     if isinstance(fields, dict):
         result["fields"] = {key: value for key, value in fields.items()
@@ -200,7 +218,34 @@ def public_event(event):
             and re.fullmatch(r"[A-Za-z0-9_.<>-]{1,160}", cause["type"])
             and isinstance(cause.get("code"), int)
         ]
+    stages = event.get("breadcrumbs")
+    if isinstance(stages, list):
+        result["breadcrumbs"] = []
+        for stage in stages[-16:]:
+            if not isinstance(stage, dict):
+                continue
+            # 阶段只投影一次，既保留请求关联，也不递归复制手工构造的嵌套正文。
+            projected = public_event({key: value for key, value in stage.items()
+                                      if key in PUBLIC_KEYS or key == "fields"})
+            if isinstance(stage.get("elapsedMs"), (int, float)) and math.isfinite(stage["elapsedMs"]):
+                projected["elapsedMs"] = max(0, stage["elapsedMs"])
+            result["breadcrumbs"].append(projected)
     return result
+
+
+def is_severe_failure(event):
+    """格式 3 必须同时满足业务准入；历史警告仍可分析，但不能冒充新严重故障。"""
+    return (isinstance(event.get("schemaVersion"), int) and event["schemaVersion"] >= 3
+            and event.get("visibility") == "issue" and event.get("level") in ("error", "critical")
+            and event.get("outcome") in ("failed", "partial") and event.get("impact") in ("blocked", "dataRisk"))
+
+
+def associated_ids(event, key):
+    """只认显式类型相同的 ID，不按时间邻近合并请求。"""
+    values = [event]
+    if isinstance(event.get("breadcrumbs"), list):
+        values += [stage for stage in event["breadcrumbs"][-16:] if isinstance(stage, dict)]
+    return {value[key] for value in values if isinstance(value.get(key), str)}
 
 
 def analyze(source, args):
@@ -219,10 +264,10 @@ def analyze(source, args):
     for event in events:
         if args.module and args.module not in (event.get("category"), event.get("service"), event.get("operation")):
             continue
-        if any(wanted and event.get(key) != wanted for key, wanted in [
+        if any(wanted and wanted not in associated_ids(event, key) for key, wanted in [
                 ("requestID", args.request_id), ("errorCode", args.error_code)]):
             continue
-        if related_ids and (not isinstance(event.get("operationID"), str) or event["operationID"] not in related_ids):
+        if related_ids and not (associated_ids(event, "operationID") & related_ids):
             continue
         when = timestamp(event.get("timestamp"))
         if args.since and (not when or when < args.since):
@@ -235,9 +280,16 @@ def analyze(source, args):
     for event in selected:
         if event.get("outcome") == "cancelled" or "CancellationError" in str(event.get("underlying", "")):
             cancelled += 1
-        elif event.get("outcome") not in ("succeeded", "skipped") and (
-                event.get("level") in ("warning", "error", "critical") or event.get("outcome") == "failed"):
-            groups[tuple(str(event.get(k, "")) for k in ("category", "operation", "errorCode", "statusCode"))].append(event)
+        elif is_severe_failure(event) or (event.get("schemaVersion", 1) in (1, 2)
+                and event.get("outcome") not in ("succeeded", "skipped") and (
+                event.get("level") in ("warning", "error", "critical") or event.get("outcome") == "failed")):
+            context = event.get("context")
+            scope = tuple(sorted((key, value) for key, value in context.items()
+                                 if isinstance(key, str) and isinstance(value, str)
+                                 and re.fullmatch(r"ref:[a-f0-9]{16}", value))) if isinstance(context, dict) else ()
+            groups[tuple(str(event.get(k, "")) for k in
+                         ("category", "operation", "errorCode", "statusCode", "service"))
+                   + (scope, "severe" if is_severe_failure(event) else "historical")].append(event)
     incidents = []
     for key, group in groups.items():
         operation_ids = {e["operationID"] for e in group if isinstance(e.get("operationID"), str)}
@@ -252,15 +304,17 @@ def analyze(source, args):
             and (timestamp(e.get("timestamp")) or minimum) > last for e in events)
         count = sum(c if isinstance(c := e.get("occurrenceCount", 1), int) and not isinstance(c, bool) and c > 0
                     else 1 for e in group)
-        request_ids = {e["requestID"] for e in group if isinstance(e.get("requestID"), str)}
+        request_ids = set().union(*(associated_ids(event, "requestID") for event in group))
         incidents.append(dict(module=redact(key[0]), operation=redact(key[1]), errorCode=redact(key[2]),
                               statusCode=redact(key[3]), count=count,
+                              severe=is_severe_failure(group[-1]),
+                              summaryKey=public_event(group[-1]).get("summaryKey", "unknown"),
                               actualAttempts=len(request_ids) if request_ids else None,
                               firstSeen=redact(group[0].get("firstSeen", group[0].get("timestamp"))),
                               lastSeen=redact(group[-1].get("lastSeen", group[-1].get("timestamp"))),
                               operationIDs=sorted(redact(s) for s in operation_ids)[:20],
-                              serverTraceIDs=sorted({redact(e["serverTraceID"]) for e in group
-                                                     if e.get("serverTraceID")})[:20],
+                              serverTraceIDs=sorted(redact(value) for value in
+                                  set().union(*(associated_ids(event, "serverTraceID") for event in group)))[:20],
                               recovery="后续同一操作成功" if recovered else "未找到关联恢复证据"))
     if any(e.get("operation") in ("metricPayload", "diagnosticPayload") for e in selected):
         gaps.append("MetricKit 通知不等于附件已保存，需核对系统采集项")
@@ -304,7 +358,7 @@ def markdown(report):
     lines = ["# Starcat 诊断分析", "", f"报告：{report['reportID']}",
              f"可用事件：{report['availableEvents']}；筛选事件：{report['selectedEvents']}",
              f"时间范围：{report['actualRange']}", f"取消相关：{report['cancelledEvents']}", "", "## 故障证据", ""]
-    lines.append("次数为各层观察次数；同一故障可能被多层记录，有请求 ID 时另列实际尝试数。")
+    lines.append("次数为新增发生次数之和；旧格式可能存在多层观察，不能与格式 3 的根故障重复相加。")
     for item in report["incidents"]:
         lines.append(f"- {item['module']} / {item['operation']}：{item['count']} 次，"
                      f"HTTP={item['statusCode'] or 'unknown'}，错误码={item['errorCode'] or 'unknown'}；{item['recovery']}")

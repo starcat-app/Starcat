@@ -13,7 +13,9 @@ struct LinuxDoSourceBadge: View {
     var interactive = false
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 13
     @State private var isOpeningDiscussion = false
     @State private var openingFailed = false
 
@@ -27,6 +29,8 @@ struct LinuxDoSourceBadge: View {
                     } label: { badge }
                         .buttonStyle(.plain)
                         .focusEffectDisabled()
+                        .pressableHover(opacity: 0.8, scale: 1.0)
+                        .clickablePointer()
                         .disabled(isOpeningDiscussion)
                         .task(id: isOpeningDiscussion) {
                             await openDiscussion()
@@ -56,12 +60,38 @@ struct LinuxDoSourceBadge: View {
         openURL(url)
     }
 
+    @ViewBuilder
     private var badge: some View {
-        Text(verbatim: "Linux.do")
-            .font(interfaceScale.font(.captionSmall))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(.quaternary.opacity(0.35), in: Capsule())
+        if interactive {
+            HStack(spacing: 4) {
+                // 品牌三色不能走模板染色；明暗外圈由 Asset Catalog 自动选取。
+                Image("LinuxDoLogo")
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: interfaceScale.scaled(iconSize), height: interfaceScale.scaled(iconSize))
+                    .accessibilityHidden(true)
+                Text(verbatim: "Linux.do")
+            }
+            .foregroundStyle(.primary)
+            // 主文字色随主题反转，深色略加强底色与描边，避免 Hero 色底吞掉灰色胶囊。
+            .modifier(RepoMetadataCapsuleStyle(
+                background: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                border: Color.primary.opacity(colorScheme == .dark ? 0.24 : 0.18)
+            ))
             .fixedSize()
+        } else {
+            // 品牌 SVG 保留原色并自动切换明暗资源；图标高度贴合同排徽章的文字行高。
+            Image("LinuxDoLogo")
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: interfaceScale.scaled(iconSize), height: interfaceScale.scaled(iconSize))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                // 与 Stars 使用同一档中性底色，避免浅色或深色卡片吞掉胶囊边界。
+                .background(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), in: Capsule())
+                .fixedSize()
+        }
     }
 }

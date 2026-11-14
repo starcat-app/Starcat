@@ -515,7 +515,8 @@ final class SyncManager {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.syncStars"),
-                service: "GitHub"
+                service: "GitHub",
+                impact: .blocked, summary: .syncFailed
             )
             state = .failed(message: friendly.message)
             telemetryManager?.track(.syncFailed, properties: [.result: .string("failed")])
@@ -527,7 +528,8 @@ final class SyncManager {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.syncStars"),
-                service: "GitHub"
+                service: "GitHub",
+                impact: .blocked, summary: .syncFailed
             )
             state = .failed(message: friendly.message)
             telemetryManager?.track(.syncFailed, properties: [.result: .string("failed")])

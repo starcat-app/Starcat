@@ -41,6 +41,7 @@ class DiagnosticEmergencyTests(unittest.TestCase):
             events, manifest, gaps = ANALYZER.collect(ANALYZER.load_files(target))
             self.assertEqual(events[0]["fields"]["totalCount"], 87)
             self.assertFalse(any("校验失败" in gap for gap in gaps))
+            self.assertTrue(any("损坏" in gap for gap in gaps))
             self.assertEqual(manifest["mode"], "emergency")
 
     def test_failure_does_not_replace_existing_target(self):
@@ -51,6 +52,28 @@ class DiagnosticEmergencyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 EMERGENCY.export(root, target)
             self.assertEqual(target.read_bytes(), b"keep")
+
+    def test_schema_three_stages_survive_emergency_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "diagnostics"
+            source.mkdir()
+            failure = dict(schemaVersion=3, timestamp="2026-11-13T00:00:00Z", category="ai",
+                operation="chat", level="error", visibility="issue", impact="blocked", outcome="failed",
+                summaryKey="diagnostics.issue.aiUnavailable",
+                breadcrumbs=[dict(phase="response", requestID="request", elapsedMs=10,
+                    message="customer private text", fields=dict(attempt=2, token="secret"))],
+                errorChain=[dict(type="URLError", code=-1004)])
+            (source / "diagnostic-log.jsonl").write_text(json.dumps(failure))
+            target = root / "bundle.zip"
+            EMERGENCY.export(source, target)
+            events, manifest, _ = ANALYZER.collect(ANALYZER.load_files(target))
+            self.assertEqual(manifest["schemaVersion"], 3)
+            self.assertTrue(ANALYZER.is_severe_failure(events[0]))
+            self.assertEqual(events[0]["breadcrumbs"][0]["fields"], dict(attempt=2))
+            self.assertEqual(events[0]["errorChain"][0]["code"], -1004)
+            self.assertNotIn("customer", json.dumps(events))
+            self.assertNotIn("secret", json.dumps(events))
 
 
 if __name__ == "__main__":

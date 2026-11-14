@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- 手绘品牌三色；圆形外径与相邻业务图标的可见边界一致，浅色外圈分隔黑黄圆弧。 -->
+  <circle cx="12" cy="12" r="10.5" fill="#e5e5e7"/>
+  <circle cx="12" cy="12" r="9.75" fill="#f0f0f0"/>
+  <path d="M3.225 7.75a9.75 9.75 0 0 1 17.55 0Z" fill="#1e1e1e"/>
+  <path d="M3.225 16.25H20.775a9.75 9.75 0 0 1-17.55 0Z" fill="#ffb000"/>
+</svg>

@@ -114,16 +114,30 @@ enum DiagnosticArchiveBuilder {
         }
         // 模块状态取已有证据；没有活动时明确标记未采集，绝不主动探测网络或数据库。
         for module in modules {
-            let evidence = all.filter { $0.category == module || $0.service == module || $0.operation == module }
+            let evidence = events.filter { $0.category == module || $0.service == module || $0.operation == module }
             let state = DiagnosticModuleState(module: module, capturedAt: input.snapshot.capturedAt,
-                source: "retainedEvents", observed: Array(evidence.suffix(8)),
-                activeOperations: activeOperations(in: evidence))
+                source: "historicalObservations", currentState: "unknown",
+                observed: Array(evidence.suffix(8)), activeOperations: [])
             payloads["state/\(module).json"] = try json(state)
             collectors.append(.init(name: module, status: evidence.isEmpty ? .notCollected : .collected,
                                     detail: evidence.isEmpty ? "No retained module evidence" : nil))
         }
-        if !input.localAI.isEmpty {
-            payloads["attachments/local-ai/events.jsonl"] = Data(try input.localAI.map {
+        let severeEvents = events.filter(\.isSevereFailure)
+        let requestIDs = Set(severeEvents.flatMap { event -> [String] in
+            [event.requestID].compactMap { $0 } + event.breadcrumbs.compactMap(\.requestID)
+        })
+        let operationIDs = Set(severeEvents.flatMap { event -> [String] in
+            [event.operationID].compactMap { $0 } + event.breadcrumbs.compactMap(\.operationID)
+        })
+        let correlatedLocalAI = input.localAI.filter {
+            $0.operationID.map(operationIDs.contains) == true || $0.requestID.map(requestIDs.contains) == true
+        }
+        if !input.localAI.isEmpty && correlatedLocalAI.isEmpty {
+            collectors.append(.init(name: "localAICorrelation", status: .notCollected,
+                detail: "No reliable operation or request correlation in selected failures"))
+        }
+        if !correlatedLocalAI.isEmpty {
+            payloads["attachments/local-ai/events.jsonl"] = Data(try correlatedLocalAI.map {
                 String(decoding: try encoder.encode(safeExport($0)), as: UTF8.self)
             }.joined(separator: "\n").appending("\n").utf8)
         }
@@ -135,18 +149,19 @@ enum DiagnosticArchiveBuilder {
             payloads["user-feedback.json"] = try json(feedback)
         }
         let report = report(id: exportID, events: events, all: all, health: input.snapshot.health,
-                            damaged: damaged, collectors: collectors, options: input.options)
+                            damaged: damaged, collectors: collectors, options: input.options,
+                            capturedAt: input.snapshot.capturedAt)
         payloads["report.md"] = Data(report.utf8)
         let files = payloads.sorted { $0.key < $1.key }.map { item in
             DiagnosticManifest.File(path: item.key, bytes: item.value.count,
                 sha256: SHA256.hash(data: item.value).map { String(format: "%02x", $0) }.joined())
         }
-        let manifest = DiagnosticManifest(schemaVersion: 2, exportID: exportID,
+        let manifest = DiagnosticManifest(schemaVersion: 3, exportID: exportID,
             createdAt: input.snapshot.capturedAt, cutoffSequence: input.snapshot.cutoffSequence,
             snapshotSessionID: DiagnosticContext.sessionID,
             requestedSince: input.options.since.map { ISO8601DateFormatter.shared.string(from: $0) },
             actualFirstEvent: events.first?.timestamp, actualLastEvent: events.last?.timestamp,
-            damagedLines: damaged, historicalEvents: all.filter { $0.schemaVersion == 1 }.count,
+            damagedLines: damaged, historicalEvents: all.filter { $0.schemaVersion < 3 }.count,
             health: input.snapshot.health, collectors: collectors, files: files)
         payloads["manifest.json"] = try json(manifest)
         for (name, data) in payloads {
@@ -162,12 +177,14 @@ enum DiagnosticArchiveBuilder {
     private static func safeExport(_ value: DiagnosticEvent) -> DiagnosticEvent {
         var event = DiagnosticEvent(level: value.level, visibility: value.visibility,
             category: value.category, operation: value.operation, message: "Diagnostic evidence",
+            summaryKey: value.summaryKey,
             service: value.service, statusCode: value.statusCode, errorCode: value.errorCode,
             underlying: value.underlying,
             operationID: value.operationID, parentOperationID: value.parentOperationID,
             requestID: value.requestID, serverTraceID: value.serverTraceID,
             phase: value.phase, outcome: value.outcome, durationMs: value.durationMs,
-            impact: value.impact, fields: value.fields, errorChain: value.errorChain)
+            impact: value.impact, fields: value.fields, errorChain: value.errorChain,
+            breadcrumbs: value.breadcrumbs, breadcrumbsTruncated: value.breadcrumbsTruncated)
         event.timestamp = value.timestamp
         event.schemaVersion = value.schemaVersion
         event.eventID = value.eventID
@@ -179,6 +196,14 @@ enum DiagnosticArchiveBuilder {
         event.occurrenceCount = max(1, value.occurrenceCount)
         event.firstSeen = value.firstSeen
         event.lastSeen = value.lastSeen
+        // 已匿名化的作用范围保持稳定，不能在导出时合并不同仓库或账号的故障。
+        event.context = value.context.filter {
+            DiagnosticEvent.isSafeKey($0.key)
+                && ($0.value.range(of: #"^ref:[a-f0-9]{16}$"#, options: .regularExpression) != nil
+                    || ["true", "false"].contains($0.value)
+                    || ($0.value.count <= 24
+                        && $0.value.range(of: #"^-?[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil))
+        }
         event.sourceFile = value.sourceFile.map { String(DiagnosticEvent.redact($0, includeURLs: true).suffix(160)) }
         event.sourceFunction = value.sourceFunction.map { String(DiagnosticEvent.redact($0, includeURLs: true).prefix(160)) }
         event.sourceLine = value.sourceLine
@@ -189,27 +214,14 @@ enum DiagnosticArchiveBuilder {
         let module: String
         let capturedAt: String
         let source: String
+        let currentState: String
         let observed: [DiagnosticEvent]
         let activeOperations: [DiagnosticEvent]
     }
 
-    /// 未闭合操作仅列最后阶段；不应用统一超时阈值把合法长任务判成故障。
-    private static func activeOperations(in events: [DiagnosticEvent]) -> [DiagnosticEvent] {
-        var latest: [String: DiagnosticEvent] = [:]
-        var terminated: Set<String> = []
-        for event in events {
-            if let id = event.operationID {
-                latest[id] = event
-                if event.outcome != nil { terminated.insert(id) }
-            }
-        }
-        return Array(latest.values.filter { $0.operationID.map { !terminated.contains($0) } ?? false }
-            .sorted { $0.timestamp < $1.timestamp }.suffix(64))
-    }
-
     private static func report(id: String, events: [DiagnosticEvent], all: [DiagnosticEvent],
                                health: [String: Int], damaged: Int, collectors: [DiagnosticCollectorResult],
-                               options: DiagnosticExportOptions) -> String {
+                               options: DiagnosticExportOptions, capturedAt: String) -> String {
         let environment = DiagnosticEnvironment.current()
         var lines = ["# Starcat diagnostic report", "", "Report ID: \(id) (local export; not uploaded)",
             "Version: \(environment.version) (\(environment.build)), channel: \(environment.channel)",
@@ -222,51 +234,67 @@ enum DiagnosticArchiveBuilder {
             "- Missing terminal or session-end events do not prove a crash",
             "- Exporting or dismissing a notification does not prove recovery",
             "- Correlation or system diagnostics may be unavailable for older records",
+            "- Recovery is unknown without reliably correlated business evidence; suggestions are not executed recovery",
+            "- Current configuration is in state/settings.json; fields below describe the failure time",
             "- Damaged lines: \(damaged)", "- Storage health: \(health)", "", "## Collector results", ""]
         lines += collectors.map { "- \($0.name): \($0.status.rawValue)\($0.detail.map { " (\($0))" } ?? "")" }
-        lines += ["", "## Failure evidence", ""]
-        let failures = events.filter { $0.outcome != .cancelled && $0.outcome != .succeeded &&
-            $0.outcome != .skipped && ($0.outcome == .failed || [.warning, .error, .critical].contains($0.level)) }
-        let groups = Dictionary(grouping: failures) { "\($0.category) / \($0.operation) / \($0.errorCode ?? "unknown") / HTTP \($0.statusCode.map(String.init) ?? "unknown")" }
+        lines += ["", "## Severe failure evidence", "",
+            "Occurred-at evidence is retained below; export snapshot time is \(capturedAt).", ""]
+        let failures = events.filter(\.isSevereFailure)
+        let groups = Dictionary(grouping: failures, by: \.issueFingerprint)
         for key in groups.keys.sorted().prefix(100) {
-            let values = groups[key] ?? []
-            let count = values.reduce(0) { $0 + $1.occurrenceCount }
-            lines.append("- \(key): \(count) occurrences; \(values.first?.timestamp ?? "unknown") .. \(values.last?.timestamp ?? "unknown")")
-            let failedIDs = Set(values.compactMap(\.operationID))
-            let recovered = events.contains { event in
-                event.outcome == .succeeded && event.operationID.map(failedIDs.contains) == true &&
-                    event.date > (values.last?.date ?? .distantFuture)
+            let values = (groups[key] ?? []).sorted { $0.date < $1.date }
+            let count = values.reduce(0) { $0 + max(1, $1.occurrenceCount) }
+            lines.append("- Group \(values.count) records: \(count) occurrences; latest \(values.last?.timestamp ?? "unknown")")
+            if let latest = values.last {
+                let fields = latest.fields.sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value.reportValue)" }.joined(separator: ", ")
+                lines.append("  Summary: \(latest.summaryKey ?? "diagnostics.issue.generic"); impact=\(latest.impact.rawValue); outcome=\(latest.outcome?.rawValue ?? "unknown"); durationMs=\(latest.durationMs.map { String(format: "%.0f", $0) } ?? "unknown")")
+                lines.append("  Layer: \(latest.category)/\(latest.operation); error=\(latest.errorCode ?? "unknown"); service=\(latest.service ?? "unknown"); HTTP=\(latest.statusCode.map(String.init) ?? "unknown"); source=\(latest.sourceFile ?? "unknown"):\(latest.sourceLine.map(String.init) ?? "-") \(latest.sourceFunction ?? "")")
+                if !fields.isEmpty { lines.append("  Fields at failure: \(fields)") }
+                for cause in latest.errorChain.prefix(8) {
+                    lines.append("  Cause: \(cause.type) code=\(cause.code)")
+                }
+                for stage in latest.breadcrumbs {
+                    let stageFields = stage.fields.sorted { $0.key < $1.key }
+                        .map { "\($0.key)=\($0.value.reportValue)" }.joined(separator: ", ")
+                    let identity = [stage.operationID, stage.parentOperationID, stage.requestID]
+                        .compactMap { $0 }.joined(separator: "/")
+                    lines.append("  Stage: \(stage.phase) outcome=\(stage.outcome?.rawValue ?? "-") elapsedMs=\(String(format: "%.0f", stage.elapsedMs)) identity=\(identity.isEmpty ? "unknown" : identity) service=\(stage.service ?? "unknown") HTTP=\(stage.statusCode.map(String.init) ?? "unknown") error=\(stage.errorCode ?? "unknown")")
+                    if !stageFields.isEmpty { lines.append("    Fields at stage: \(stageFields)") }
+                }
+                if latest.breadcrumbsTruncated { lines.append("  Stages truncated: yes; only the latest 16 are retained") }
             }
-            lines.append("  Recovery: \(recovered ? "later success in the same operation" : "no correlated recovery evidence"); layer observations may describe the same failure")
-            let traces = Set(values.compactMap(\.serverTraceID)).sorted().prefix(8)
+            let traces = Set(values.flatMap { event in
+                [event.serverTraceID].compactMap { $0 } + event.breadcrumbs.compactMap(\.serverTraceID)
+            }).sorted().prefix(8)
             if !traces.isEmpty { lines.append("  Server trace: " + traces.joined(separator: ", ")) }
-            for detail in values.suffix(3) {
-                if let underlying = detail.underlying { lines.append("  Error: \(underlying)") }
+        }
+        if failures.isEmpty { lines.append("No severe failures in selected evidence; check collector gaps before concluding healthy") }
+        let historical = events.filter { $0.schemaVersion < 3 }
+        if !historical.isEmpty {
+            lines += ["", "## Historical evidence", "",
+                "Schema 1/2 records are retained for investigation; they do not satisfy schema 3 admission or imply current impairment."]
+            for event in historical.filter({ $0.visibility == .issue || $0.level == .error || $0.level == .critical }).suffix(50) {
+                lines.append("- \(event.timestamp) \(event.category)/\(event.operation): \(event.errorCode ?? "unknown"); underlying=\(event.underlying ?? "unknown"); outcome=\(event.outcome?.rawValue ?? "unknown")")
             }
         }
-        if failures.isEmpty { lines.append("No failures observed in selected evidence; check collector gaps before concluding healthy") }
         if options.operationID == nil, let since = options.since {
-            let older = all.filter { $0.date < since && $0.outcome != .cancelled &&
-                ($0.outcome == .failed || [.warning, .error, .critical].contains($0.level)) }
-            lines += ["", "## Retained failure observations before requested window", ""]
-            let groups = Dictionary(grouping: older, by: \.category)
+            let older = all.filter { $0.date < since && $0.isSevereFailure }
+            lines += ["", "## Retained severe failures before requested window", ""]
+            let groups = Dictionary(grouping: older, by: \.issueFingerprint)
             lines += groups.keys.sorted().map { key in
-                "- \(key): \((groups[key] ?? []).reduce(0) { $0 + $1.occurrenceCount }) observations"
+                "- group: \((groups[key] ?? []).reduce(0) { $0 + max(1, $1.occurrenceCount) }) occurrences"
             }
-            if older.isEmpty { lines.append("No older failure observations retained; retention is bounded") }
+            if older.isEmpty { lines.append("No older severe failures retained; this does not prove none occurred") }
         }
         lines += ["", "## Graph observations", ""]
         for event in events.filter({ $0.category == "followGraph" }).suffix(20) {
             let fields = event.fields.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value.reportValue)" }.joined(separator: " ")
             lines.append("- \(event.timestamp) \(event.phase ?? "unknown"): \(fields)")
         }
-        lines += ["", "## Open operations (end reason unknown)", ""]
-        let reportTime = Date()
-        lines += activeOperations(in: events).map { event in
-            let start = events.first { $0.operationID == event.operationID && $0.phase == "started" }
-            let elapsed = start.map { String(format: "%.0f", max(0, reportTime.timeIntervalSince($0.date) * 1000)) } ?? "unknown"
-            return "- \(event.operationID ?? "unknown") \(event.category)/\(event.operation) last=\(event.phase ?? "unknown") at \(event.timestamp); elapsedMs=\(elapsed), idleMs=\(Int(max(0, reportTime.timeIntervalSince(event.date) * 1000)))"
-        }
+        lines += ["", "## Active operations", "",
+            "Unknown; severe-failure logs do not retain successful or in-flight operations."]
         lines += ["", "## Timeline (last 100 events)", ""]
         lines += events.suffix(100).map {
             "- \($0.timestamp) \($0.category)/\($0.operation) \($0.phase ?? "-") \($0.outcome?.rawValue ?? "-") operation=\($0.operationID ?? "unknown") request=\($0.requestID ?? "unknown")"

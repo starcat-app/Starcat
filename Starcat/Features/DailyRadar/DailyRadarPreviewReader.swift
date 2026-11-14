@@ -25,6 +25,8 @@ struct DailyRadarPreviewReader: View {
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.locale) private var locale
+    @Environment(\.presentDailyRadarShare) private var presentShare
+    @Environment(DailyRadarShareTaskStore.self) private var shareTaskStore
     @State private var markdownHeight: CGFloat = 100
     @State private var markdownReady = false
     @State private var heroAppeared = false
@@ -41,6 +43,7 @@ struct DailyRadarPreviewReader: View {
                     .font(scale.font(size: 13, weight: .medium))
                     .lineLimit(1)
                 Spacer(minLength: 8)
+                shareButton
                 SheetCloseButton(action: onClose, helpKey: "dailyRadar.backToHome")
                     .accessibilityLabel(Text("dailyRadar.backToHome"))
             }
@@ -208,6 +211,40 @@ struct DailyRadarPreviewReader: View {
     private var article: DailyRadarArticle? {
         // 结构化文章的 body 也必须来自展示版 markdown，否则尾注会绕过内容来源去重。
         detail?.presentationMarkdown.flatMap(DailyRadarArticle.parse)
+    }
+
+    /// 详情未就绪仍保留固定占位与可聚焦禁态，避免加载完成后工具栏宽度跳动。
+    private var shareButton: some View {
+        let isReady = detail.map {
+            !$0.id.isEmpty && !$0.revision.isEmpty && !$0.contentLanguage.isEmpty &&
+                !$0.title.isEmpty &&
+                $0.presentationMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        } ?? false
+        let isRunning = shareTaskStore.isRunning(identity: story.contentIdentity)
+        return Button {
+            guard isReady, !isRunning, let detail else { return }
+            presentShare.present(detail)
+        } label: {
+            ZStack {
+                if isRunning {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
+            .font(scale.font(size: 14, weight: .medium))
+            .foregroundStyle(.secondary)
+            .opacity(isReady ? 1 : 0.5)
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        // 不用 .disabled：方案要求加载时仍可通过键盘与 VoiceOver 找到此入口。
+        // 动作门控承担禁用语义，固定 Button 与占位避免进入/离开加载态时丢焦点。
+        .help(isReady ? "dailyRadar.share.action" : "dailyRadar.share.unavailable")
+        .accessibilityLabel(Text(isReady ? "dailyRadar.share.action" : "dailyRadar.share.unavailable"))
+        .accessibilityValue(Text(isRunning ? "dailyRadar.share.creating" : ""))
     }
 
     /// 头图先稳定，标题和元信息再短延迟入场；正文与摘要仍沿用原有加载/逐字节奏。

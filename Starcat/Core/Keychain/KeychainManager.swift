@@ -151,7 +151,9 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
                 category: "secure-storage",
                 operation: "credentials.decode",
                 message: "Encrypted credentials file could not be decoded",
-                underlying: DiagnosticEvent.summarize(error)
+                summary: .credentialsUnavailable,
+                impact: .dataRisk,
+                underlying: DiagnosticEvent.summarize(error), error: error
             )
             return [:]
         }
@@ -181,7 +183,9 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
                 category: "secure-storage",
                 operation: "credentials.write",
                 message: "Encrypted credentials could not be persisted",
-                underlying: DiagnosticEvent.summarize(error)
+                summary: .credentialsUnavailable,
+                impact: .dataRisk,
+                underlying: DiagnosticEvent.summarize(error), error: error
             )
             if error is KeychainError {
                 throw error
@@ -300,7 +304,9 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
                 category: "secure-storage",
                 operation: "credentials.deleteAll",
                 message: "Encrypted credentials file could not be deleted",
-                underlying: DiagnosticEvent.summarize(error)
+                summary: .dataCleanupFailed,
+                impact: .dataRisk,
+                underlying: DiagnosticEvent.summarize(error), error: error
             )
             if error is KeychainError {
                 throw error
@@ -321,7 +327,9 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
                 visibility: .issue,
                 category: "secure-storage",
                 operation: "credentials.selfCheck",
-                message: "Secure storage self-check returned mismatched data"
+                message: "Secure storage self-check returned mismatched data",
+                summary: .credentialsUnavailable,
+                impact: .dataRisk
             )
             throw KeychainError.selfCheckMismatch
         }

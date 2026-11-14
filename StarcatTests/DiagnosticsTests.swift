@@ -217,12 +217,12 @@ struct DiagnosticsTests {
         #expect(!error.shouldRecordDiagnostic)
     }
 
-    @Test("本地数据库错误会进入开发者诊断")
+    @Test("业务确认数据库不可用后才进入开发者诊断")
     func userFacingDatabaseErrorRequiresDiagnostic() {
         let error = UserFacingError.map(
             DatabaseError.applicationSupportNotFound,
             operation: "loading local data",
-            service: "Starcat"
+            service: "Starcat", impact: .blocked, summary: .databaseUnavailable
         )
 
         #expect(error.shouldRecordDiagnostic)
@@ -257,10 +257,13 @@ struct DiagnosticsTests {
 
         let store = DiagnosticLogStore(directoryURL: root)
         await store.record(DiagnosticEvent(
-            level: .warning,
+            level: .error,
+            visibility: .issue,
             category: "sync",
             operation: "test",
-            message: "hello token: secret"
+            message: "hello token: secret",
+            summaryKey: DiagnosticIssue.syncFailed.rawValue,
+            outcome: .failed, impact: .blocked
         ))
 
         let text = await store.readAllText()
@@ -336,7 +339,8 @@ struct DiagnosticsTests {
             category: "ai",
             operation: "same",
             message: "same failure",
-            underlying: "response pointer 0x1"
+            summaryKey: DiagnosticIssue.aiUnavailable.rawValue,
+            underlying: "response pointer 0x1", outcome: .failed, impact: .blocked
         ))
         await store.record(DiagnosticEvent(
             timestamp: base.addingTimeInterval(1),
@@ -345,7 +349,8 @@ struct DiagnosticsTests {
             category: "ai",
             operation: "same",
             message: "same failure",
-            underlying: "response pointer 0x2"
+            summaryKey: DiagnosticIssue.aiUnavailable.rawValue,
+            underlying: "response pointer 0x2", outcome: .failed, impact: .blocked
         ))
 
         let lines = await diagnosticLogLines(in: store)
@@ -363,11 +368,12 @@ struct DiagnosticsTests {
         let base = Date(timeIntervalSince1970: 1_800_000_000)
         await store.record(DiagnosticEvent(
             timestamp: base,
-            level: .warning,
+            level: .error,
             visibility: .issue,
             category: "activity",
             operation: "old",
-            message: "old warning"
+            message: "Old failure",
+            summaryKey: DiagnosticIssue.contentUnavailable.rawValue, outcome: .failed, impact: .blocked
         ))
 
         let beforeAcknowledgement = await store.issueSummary(since: base.addingTimeInterval(-1))
@@ -380,11 +386,12 @@ struct DiagnosticsTests {
 
         await store.record(DiagnosticEvent(
             timestamp: base.addingTimeInterval(2),
-            level: .warning,
+            level: .error,
             visibility: .issue,
             category: "activity",
             operation: "new",
-            message: "new warning"
+            message: "New failure",
+            summaryKey: DiagnosticIssue.contentUnavailable.rawValue, outcome: .failed, impact: .blocked
         ))
 
         let afterNewIssue = await store.issueSummary(since: base.addingTimeInterval(-1))
@@ -392,7 +399,7 @@ struct DiagnosticsTests {
         #expect(afterNewIssue.latestIssue?.operation == "new")
     }
 
-    @Test("上下文事件写入导出日志但不计入问题摘要")
+    @Test("普通上下文事件既不落盘也不计入问题摘要")
     func diagnosticContextEventDoesNotBecomeIssue() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("starcat-diagnostics-test-\(UUID().uuidString)", isDirectory: true)
@@ -411,7 +418,7 @@ struct DiagnosticsTests {
 
         let text = await store.readAllText()
         let summary = await store.issueSummary(since: now.addingTimeInterval(-1))
-        #expect(text.contains("\"operation\":\"recoverable\""))
+        #expect(text.isEmpty)
         #expect(summary.issueCount == 0)
     }
 
@@ -422,14 +429,15 @@ struct DiagnosticsTests {
     ) -> DiagnosticEvent {
         DiagnosticEvent(
             timestamp: timestamp,
-            level: .warning,
+            level: .error,
+            visibility: .issue,
             category: "activity",
             operation: "securityAdvisories.fetch",
-            message: "加载安全公告 在访问 GitHub 时失败。",
+            message: "Security advisories unavailable without usable cache",
+            summaryKey: DiagnosticIssue.contentUnavailable.rawValue,
             service: "github",
             statusCode: statusCode,
-            underlying: "已取消",
-            context: context
+            context: context, outcome: .failed, impact: .blocked
         )
     }
 

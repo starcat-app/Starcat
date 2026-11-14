@@ -145,7 +145,7 @@ struct LicenseKnowledgeCapsule: View {
     let rawLicense: String?
     let owner: String
     let repoName: String
-    /// 搜索详情沿用原匹配度胶囊的上下各 3pt 留白，其他详情仍使用默认 24pt 高度。
+    /// Hero 与搜索详情使用统一紧凑高度，其他调用仍可使用默认 24pt 基准高度。
     var isCompact = false
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -163,27 +163,24 @@ struct LicenseKnowledgeCapsule: View {
             HStack(spacing: 4) {
                 BusinessIcon(.license, pointSize: 11 * interfaceScale.multiplier)
                 Text(verbatim: Self.displayName(of: resolution))
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .lineLimit(1)
                 Text(verbatim: String.l10n(category.shortLabelKey))
-                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
                     .lineLimit(1)
                 Image(systemName: "info.circle")
                     .font(interfaceScale.font(.captionSmall))
                     .imageScale(.small)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, isCompact ? 3 : 0)
-            .frame(height: isCompact ? nil : 24)
-            .background(showsDetails ? palette.backgroundSelected : palette.background, in: Capsule())
-            .overlay {
-                Capsule().strokeBorder(palette.border, lineWidth: 0.5)
-            }
+            .modifier(RepoMetadataCapsuleStyle(
+                background: showsDetails ? palette.backgroundSelected : palette.background,
+                border: palette.border,
+                height: isCompact ? 20 : 24
+            ))
             .foregroundStyle(palette.foreground)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .pressableHover(opacity: 0.8, scale: 1.0)
+        .clickablePointer()
         .help("license.capsule.help")
         .popover(isPresented: $showsDetails, arrowEdge: .bottom) {
             LicenseKnowledgePopoverContent(

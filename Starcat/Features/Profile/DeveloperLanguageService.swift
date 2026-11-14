@@ -19,7 +19,7 @@
 import Foundation
 import Observation
 
-/// 分享卡使用的开发语言快照。
+/// 侧栏与分享卡共用的开发语言快照。
 ///
 /// `languages` 保留完整排序列表，View 层再决定显示前 5 还是折叠为 Other。
 struct DeveloperLanguageSnapshot: Codable, Equatable {
@@ -68,8 +68,8 @@ final class DeveloperLanguageService {
 
     private let cacheKeyPrefix = "developer.languages.snapshot."
 
-    /// TTL：12 小时。开发语言画像变化频率低，而 `/languages` 是逐仓库请求，适合长缓存。
-    private let ttl: TimeInterval = 12 * 60 * 60
+    /// TTL：7 天。开发语言只需近似画像，避免频繁遍历所有公开仓库请求 `/languages`。
+    private let ttl: TimeInterval = 7 * 24 * 60 * 60
 
     private var inflightTask: Task<Void, Never>?
     private var inflightLogin: String?
@@ -80,15 +80,12 @@ final class DeveloperLanguageService {
 
     // MARK: - 公开 API
 
-    /// 加载当前用户开发语言快照。
+    /// 仅从本地恢复指定账号的快照，不触发网络，也不因过期丢弃数据。
     ///
-    /// - Parameters:
-    ///   - login: 当前登录用户 login。
-    ///   - force: true = 跳过 TTL 强制刷新；false = 命中 TTL 直接复用。
-    func load(login: String, force: Bool = false) {
-        let normalizedLogin = login.lowercased()
-
-        if snapshot?.login.lowercased() != normalizedLogin {
+    /// 启动时要与缓存的用户资料一起恢复，不能等 `/user` 校验成功后才显示语言条；
+    /// 联网更新仍由 `load` 在会话验证成功后按 TTL 触发。
+    func primeFromCache(login: String) {
+        if snapshot?.login.lowercased() != login.lowercased() {
             snapshot = nil
             lastFetchedAt = nil
         }
@@ -96,6 +93,16 @@ final class DeveloperLanguageService {
         if snapshot == nil {
             restoreFromDisk(login: login)
         }
+    }
+
+    /// 加载当前用户开发语言快照，过期时保留旧值并在后台刷新。
+    ///
+    /// - Parameters:
+    ///   - login: 当前登录用户 login。
+    ///   - force: true = 跳过 TTL 强制刷新；false = 命中 TTL 直接复用。
+    func load(login: String, force: Bool = false) {
+        let normalizedLogin = login.lowercased()
+        primeFromCache(login: login)
 
         if !force, let last = lastFetchedAt, Date().timeIntervalSince(last) < ttl {
             return

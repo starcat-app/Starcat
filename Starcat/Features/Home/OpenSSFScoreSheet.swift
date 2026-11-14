@@ -120,6 +120,8 @@ struct OpenSSFScoreSheet: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
+    // 与健康度窗口共用字号倍率，图表的显式点值也必须走同一缩放入口。
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     private var store: OpenSSFScoreStore { dependencies.openSSFScoreStore }
     private var record: OpenSSFScoreRecord? { store.record(for: repo.id) }
@@ -161,12 +163,16 @@ struct OpenSSFScoreSheet: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("openssf.sheet.title")
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                Text("openssf.sheet.securityTitle")
+                    .font(interfaceScale.font(.workspaceTitle))
+                    .lineLimit(1)
+                    .help(String.l10n("openssf.sheet.securityTitle"))
                 Text(verbatim: repo.fullName)
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(repo.fullName)
             }
 
             Spacer()
@@ -174,7 +180,7 @@ struct OpenSSFScoreSheet: View {
             SyncIconButton(
                 isRefreshing: store.isLoading(repoId: repo.id),
                 disabled: store.isLoading(repoId: repo.id),
-                font: .system(size: 14, weight: .medium),
+                font: interfaceScale.font(.iconMedium),
                 frameSize: 24,
                 tooltip: store.isLoading(repoId: repo.id)
                     ? String.l10n("openssf.action.refreshing")
@@ -186,9 +192,10 @@ struct OpenSSFScoreSheet: View {
                 store.isLoading(repoId: repo.id) ? "openssf.action.refreshing" : "openssf.action.refresh"
             )
 
-            SheetCloseButton {
-                dismiss()
-            }
+            SheetCloseButton(
+                action: { dismiss() },
+                iconFont: interfaceScale.font(.iconLarge)
+            )
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -225,12 +232,14 @@ struct OpenSSFScoreSheet: View {
                         .frame(height: 400)
                         .frame(maxWidth: .infinity)
                     Text("openssf.chart.hint")
-                        .font(.caption)
+                        .font(interfaceScale.font(.caption))
                         .foregroundStyle(.secondary)
                 }
                 checksList(payload.checks)
             }
             .padding(.horizontal, 16)
+            // 明细分数不能进入滚动条的覆盖区，尤其是系统始终显示滚动条时。
+            .padding(.trailing, 6)
             .padding(.vertical, 14)
         }
     }
@@ -238,15 +247,16 @@ struct OpenSSFScoreSheet: View {
     private func scoreSummary(record: OpenSSFScoreRecord) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(record.aggregateScore.map { String(format: "%.1f", $0) } ?? "N/A")
-                .font(.system(size: 38, weight: .semibold, design: .rounded))
+                .font(interfaceScale.font(size: 28, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .fixedSize()
             VStack(alignment: .leading, spacing: 3) {
                 Text("openssf.score.aggregate")
-                    .font(.headline)
+                    .font(interfaceScale.font(.panelTitle))
                 if let scoreDate = record.scoreDate,
                    let parsed = Self.parseScoreDate(scoreDate) {
                     Text(String(format: String.l10n("openssf.score.dateFormat"), formattedScoreDate(parsed)))
-                        .font(.caption)
+                        .font(interfaceScale.font(.caption))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
@@ -255,30 +265,48 @@ struct OpenSSFScoreSheet: View {
             Link(destination: URL(string: "https://scorecard.dev/viewer/?uri=github.com/\(repo.owner)/\(repo.name)")!) {
                 Label("openssf.action.openViewer", systemImage: "safari")
             }
+            .font(interfaceScale.font(.body))
         }
     }
 
     private func checksList(_ checks: [OpenSSFScoreCheck]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("openssf.checks.title")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle))
 
             ForEach(checks) { check in
+                let reason = OpenSSFCheckLocalization.reason(for: check)
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(verbatim: check.name)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: OpenSSFCheckLocalization.name(check.name))
+                            .font(interfaceScale.font(.rowTitle))
+                            .lineLimit(1)
+                            .help(OpenSSFCheckLocalization.name(check.name))
                         Spacer()
-                        Text(check.isEvaluated ? String(format: "%.1f", check.score) : String.l10n("openssf.check.unavailable"))
-                            .font(.subheadline)
+                        Text(reason == .unavailable
+                             ? String.l10n("openssf.check.temporarilyUnavailable")
+                             : check.isEvaluated ? String(format: "%.1f", check.score) : String.l10n("openssf.check.unavailable"))
+                            .font(interfaceScale.font(.bodyEmphasis))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
-                    if let reason = check.reason, !reason.isEmpty {
-                        Text(verbatim: reason)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    if let reason {
+                        Group {
+                            switch reason {
+                            case .unavailable:
+                                Text("openssf.reason.readFailure")
+                            case .localized(let text):
+                                Text(verbatim: text)
+                            case .original(let text):
+                                Text("openssf.reason.original")
+                                    .font(interfaceScale.font(.caption))
+                                Text(verbatim: text)
+                            }
+                        }
+                        .font(interfaceScale.font(.body))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(8)
@@ -290,17 +318,15 @@ struct OpenSSFScoreSheet: View {
     private func statusContent(record: OpenSSFScoreRecord) -> some View {
         VStack(spacing: 10) {
             Image(systemName: "checkmark.shield")
-                .font(.system(size: 34, weight: .semibold))
+                .font(interfaceScale.font(size: 28, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(statusTitle(record.fetchStatus))
-                .font(.headline)
-            if let lastError = record.lastError, !lastError.isEmpty {
-                Text(verbatim: lastError)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-            }
+                .font(interfaceScale.font(.panelTitle))
+            Text(verbatim: OpenSSFCheckLocalization.statusReason(record.fetchStatus))
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
@@ -311,9 +337,9 @@ struct OpenSSFScoreSheet: View {
             ProgressView()
                 .controlSize(.large)
             Text("openssf.loading")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle))
             Text("openssf.loading.hint")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -322,10 +348,8 @@ struct OpenSSFScoreSheet: View {
 
     private func statusTitle(_ status: OpenSSFScoreFetchStatus) -> LocalizedStringKey {
         switch status {
-        case .success: return "openssf.status.success"
         case .notIndexed: return "openssf.status.notIndexed"
-        case .networkError: return "openssf.status.networkError"
-        case .parseError: return "openssf.status.parseError"
+        case .success, .networkError, .parseError: return "openssf.status.unavailable"
         }
     }
 
@@ -435,16 +459,16 @@ struct OpenSSFScoreSheet: View {
 /// 延迟的 .help() 反而不如即时 chip 实用。
 ///
 /// ──────────────────────────────────────────────────────────────────────────
-/// 视觉规格（v4.1 沿用 v4 不变）：
+/// 视觉规格（保留原有图形，字号随界面档位缩放）：
 /// 1. **背景径向光晕**：accent 色 0.06 opacity 从中心衰减到外圈。
 /// 2. **网格分层**：5 层同心环透明度从内到外 0.16/0.22/0.28/0.32/0.45,最外环
 ///    加粗到 1.5px。
 /// 3. **数据多边形**：径向渐变填充（accent 0.45 → 0.10）+ 描边 2.5px。
 /// 4. **顶点圆点**：默认 3pt 半径,hover 时 4.5pt + 18pt 直径径向发光环。
-/// 5. **顶点标签**：默认 9pt/medium/secondary,hover 时 10pt/semibold/primary。
+/// 5. **顶点标签**：11pt/medium/secondary，hover 只改为 semibold/primary，不改变字号。
 /// 6. **轴线**：默认 secondary 0.20/1px,hover 时 accent 0.65/1.5px。
 /// 7. **中心 chip**：仅 hover 时显示,Capsule.regularMaterial + accent 描边,
-///    17pt rounded bold 分数 + 9pt medium secondary 简称。
+///    17pt rounded semibold 分数 + 12pt secondary 完整名称，必要时分两行。
 ///
 /// 架构与关键约束：
 /// - Canvas 无法对自身内部局部 hit-test → 必须用 `GeometryReader` + `ZStack`
@@ -453,8 +477,8 @@ struct OpenSSFScoreSheet: View {
 /// - **角度变换公式必须与 `point(...)` 同源**: `point()` 内顶点 i 的极角是
 ///   `(i/N) × 2π - π/2`（顶点 0 在 12 点钟,顺时针递增）。反向算角度时
 ///   `atan2(dy, dx) + π/2` 把 atan2 默认的"3 点钟为 0"基准转到"12 点钟为 0"。
-/// - **内外圈 deadzone**: 内 8pt 避免中心 chip 区域抖动;外 `radius + 30pt`
-///   避免标签 buffer 之外的 hover 错觉。
+/// - **内外圈 deadzone**：内 8pt 避免中心 chip 区域抖动；外圈以画布边界为界，
+///   覆盖为缩放后标签预留的区域。
 /// - 中心 chip `.allowsHitTesting(false)`：否则 chip 会拦截光标,用户跨越中心
 ///   时光标先离开 chart contentShape 再进入 chip,触发 .ended → 闪烁。
 /// - `.contentShape(Rectangle())` 必须显式声明,否则 GeometryReader 内的 ZStack
@@ -467,6 +491,8 @@ struct OpenSSFScoreSheet: View {
 ///   imperative 不参与 implicit animation,圆点 / 标签 / 轴线高亮是瞬切（可接受）。
 private struct OpenSSFRadarChart: View {
     let checks: [OpenSSFScoreCheck]
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     /// 当前 hover 的 check 索引;nil 表示无 hover,所有元素恢复默认样式。
     @State private var hoveredIndex: Int? = nil
@@ -494,7 +520,7 @@ private struct OpenSSFRadarChart: View {
             }
         } else {
             Text("openssf.chart.notEnoughData")
-                .font(.callout)
+                .font(interfaceScale.font(.body))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -505,9 +531,7 @@ private struct OpenSSFRadarChart: View {
     private var radarCanvas: some View {
         Canvas { context, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            // v3.2 调过的系数,沿用：雷达图直径占 frame 短边 84%,顶点标签在
-            // radius+14 处仍有 44pt 安全 buffer 不裁。
-            let radius = min(size.width, size.height) * 0.42
+            let radius = radarRadius(in: size, context: context)
             let count = checks.count
 
             drawBackgroundGlow(context: context, center: center, radius: radius)
@@ -515,8 +539,28 @@ private struct OpenSSFRadarChart: View {
             drawAxes(context: context, count: count, center: center, radius: radius)
             let valuePoints = drawValuePolygon(context: context, count: count, center: center, radius: radius)
             drawVertexDots(context: context, valuePoints: valuePoints)
-            drawLabels(context: context, count: count, center: center, radius: radius)
+            drawLabels(context: context, size: size, count: count, center: center, radius: radius)
         }
+    }
+
+    /// 用标签实际尺寸预留边缘，360pt popover 和大字档不能沿用 9pt 标签的固定余量。
+    /// 按较宽的 semibold 测量，保证 hover 改变字重时不会突然裁字或改变图形半径。
+    private func radarRadius(in size: CGSize, context: GraphicsContext) -> CGFloat {
+        // CGSize 有 CGFloat / Double 重载，测量上限显式指定 CGFloat，避免类型推断歧义。
+        let labelSizes = checks.map { check in
+            let label = shortLabel(OpenSSFCheckLocalization.name(check.name), fitting: .infinity, context: context)
+            return context.resolve(
+                Text(verbatim: label)
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            ).measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity))
+        }
+        let labelGap = interfaceScale.scaled(14)
+        let horizontalInset = (labelSizes.map(\.width).max() ?? 0) / 2 + labelGap + 4
+        let verticalInset = (labelSizes.map(\.height).max() ?? 0) / 2 + labelGap + 4
+        return max(0, min(
+            min(size.width, size.height) * 0.42,
+            min(size.width / 2 - horizontalInset, size.height / 2 - verticalInset)
+        ))
     }
 
     /// 背景径向光晕：accent 0.06 → clear,半径 1.15×radius,营造发光氛围。
@@ -616,14 +660,32 @@ private struct OpenSSFRadarChart: View {
         }
     }
 
-    /// 顶点标签（外环 +14pt）;hovered 时 9pt/medium/secondary → 10pt/semibold/primary。
-    private func drawLabels(context: GraphicsContext, count: Int, center: CGPoint, radius: CGFloat) {
+    /// 保持 11pt 辅助字号；同一高度附近的标签按水平间距截短，完整名称由中心提示承载。
+    /// 只改变字重与颜色，避免光标移动时标签忽大忽小，也不以缩小字体解决重叠。
+    private func drawLabels(context: GraphicsContext, size: CGSize, count: Int, center: CGPoint, radius: CGFloat) {
+        let labelPoints = checks.indices.map {
+            point(index: $0, count: count, center: center, radius: radius + interfaceScale.scaled(14))
+        }
+        let labelHeight = context.resolve(
+            Text(verbatim: "Ag")
+                .font(interfaceScale.font(.captionSmall, weight: .semibold))
+        ).measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity)).height
+        let spacing = interfaceScale.scaled(4)
+
         for (index, check) in checks.enumerated() {
-            let labelPoint = point(index: index, count: count, center: center, radius: radius + 14)
+            let labelPoint = labelPoints[index]
+            let availableWidth = labelPoints.enumerated().compactMap { neighborIndex, neighbor -> CGFloat? in
+                guard neighborIndex != index,
+                      abs(neighbor.y - labelPoint.y) < labelHeight + spacing else { return nil }
+                return abs(neighbor.x - labelPoint.x) - spacing
+            }.min() ?? size.width
             let isHovered = (hoveredIndex == index)
-            let text = Text(verbatim: shortLabel(check.name))
-                .font(.system(size: isHovered ? 10 : 9,
-                              weight: isHovered ? .semibold : .medium))
+            let text = Text(verbatim: shortLabel(
+                OpenSSFCheckLocalization.name(check.name),
+                fitting: availableWidth,
+                context: context
+            ))
+                .font(interfaceScale.font(.captionSmall, weight: isHovered ? .semibold : .medium))
                 .foregroundStyle(isHovered ? Color.primary : Color.secondary)
             context.draw(context.resolve(text), at: labelPoint, anchor: .center)
         }
@@ -646,19 +708,18 @@ private struct OpenSSFRadarChart: View {
     /// 范围保护：
     /// - 离中心 < 8pt → 返回 nil（中心 chip 区域 ≈ 32pt 半径; 8pt 保留是为了
     ///   即使没显示 chip 时,光标微小晃动也不会因 angle 在 0/2π 边界跳变反复切轴）。
-    /// - 距离 > radius + 30pt → 返回 nil（标签在 radius+14 处,30pt 给了 16pt 余量,
-    ///   避开标签外大量空白区被误识别)。
+    /// - 超过画布边界 → 返回 nil；外圈文字也属于命中区，不用内接圆排除左右标签。
     /// - `phase == .ended` → 返回 nil（光标离开整个 chart frame 时清空 hover）。
     private func nearestAxis(for phase: HoverPhase, in size: CGSize) -> Int? {
         guard case .active(let location) = phase else { return nil }
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        let radius = Double(min(size.width, size.height)) * 0.42
         let dx = Double(location.x - center.x)
         let dy = Double(location.y - center.y)
         let distance = (dx * dx + dy * dy).squareRoot()
 
         guard distance > 8 else { return nil }
-        guard distance < radius + 30 else { return nil }
+        guard abs(dx) < Double(size.width) / 2,
+              abs(dy) < Double(size.height) / 2 else { return nil }
 
         // atan2 默认: 0 弧度 = 3 点钟, 顺时针为正(SwiftUI 屏幕坐标 y 向下,
         // dy>0 对应屏幕下方,等价于数学坐标系下的顺时针)。加 π/2 把基准转到 12 点钟。
@@ -672,7 +733,7 @@ private struct OpenSSFRadarChart: View {
     }
 
     /// 中心 chip：仅 hover 时显示。胶囊背景 `.regularMaterial` + accent 描边,
-    /// 内含 17pt rounded bold 分数（无评估时显示 N/A 本地化文案）+ 9pt 简称。
+    /// 内含 17pt rounded semibold 分数 + 12pt 完整名称；外圈截短后仍能即时核对检查项。
     ///
     /// `.allowsHitTesting(false)` 强制,否则 chip 会拦截光标,用户跨中心移动时
     /// hover 闪烁。`.transition(.scale + .opacity)` 配合外层 ZStack 的
@@ -685,13 +746,16 @@ private struct OpenSSFRadarChart: View {
                 Text(verbatim: check.isEvaluated
                      ? String(format: "%.1f", check.score)
                      : String.l10n("openssf.check.unavailable"))
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .font(interfaceScale.font(.panelTitle, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
-                Text(verbatim: shortLabel(check.name))
-                    .font(.system(size: 9, weight: .medium))
+                Text(verbatim: OpenSSFCheckLocalization.name(check.name))
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: min(size.width - 48, interfaceScale.scaled(180)))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -716,11 +780,20 @@ private struct OpenSSFRadarChart: View {
         )
     }
 
-    /// 雷达图顶点标签简称。OpenSSF check 名最长约 22 字符（如 `Pinned-Dependencies`），
-    /// 14 字符截断 + `…` 能覆盖大多数情况；用户要看完整名字看下方 checksList。
-    private func shortLabel(_ name: String) -> String {
-        guard name.count > 14 else { return name }
-        return name.prefix(13) + "…"
+    /// 外圈最多保留 14 个字符，再按可用宽度测量截短；用完整文字测量而非字符数猜宽度。
+    /// 固定按 hover 字重测量，悬停不会改变同一标签的截断位置。
+    private func shortLabel(_ name: String, fitting width: CGFloat, context: GraphicsContext) -> String {
+        var length = min(name.count, 14)
+        while length > 0 {
+            let label = length < name.count ? String(name.prefix(length - 1)) + "…" : name
+            let measured = context.resolve(
+                Text(verbatim: label)
+                    .font(interfaceScale.font(.captionSmall, weight: .semibold))
+            ).measure(in: CGSize(width: CGFloat.infinity, height: CGFloat.infinity))
+            if measured.width <= width { return label }
+            length -= 1
+        }
+        return ""
     }
 }
 
@@ -746,12 +819,14 @@ private struct OpenSSFRadarChart: View {
 struct OpenSSFChartPopover: View {
     let checks: [OpenSSFScoreCheck]
 
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
     var body: some View {
         VStack(spacing: 6) {
             OpenSSFRadarChart(checks: checks)
                 .frame(width: 360, height: 360)
             Text("openssf.chart.hint")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         }
         .padding(14)

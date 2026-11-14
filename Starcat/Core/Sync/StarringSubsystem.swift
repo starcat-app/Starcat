@@ -304,15 +304,7 @@ final class StarActionService {
             )
         } catch {
             AppLog.sync.error("UndoStar remove failed: \(error.localizedDescription, privacy: .public)")
-            DiagnosticLogStore.record(
-                level: .error,
-                visibility: .issue,
-                category: "database",
-                operation: "undoStar.remove",
-                message: "Undo Star history could not remove a restored repository",
-                underlying: DiagnosticEvent.summarize(error),
-                context: ["repoID": String(saved.id)]
-            )
+            // 重新 Star 已成功，旧撤销记录清理失败不等于 Star 或撤销能力不可用。
         }
 
         // 6. 通知时间线账本。失败不影响 star 本身。
@@ -460,8 +452,10 @@ final class StarActionService {
                 category: "database",
                 operation: "undoStar.record",
                 message: "Undo Star history could not persist an unstarred repository",
+                summary: .dataSaveFailed,
+                impact: .dataRisk,
                 underlying: DiagnosticEvent.summarize(error),
-                context: ["repoID": String(ghRepoId)]
+                context: ["repoID": String(ghRepoId)], error: error
             )
         }
 

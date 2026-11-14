@@ -3115,7 +3115,8 @@ final class HomeViewModel {
                 let friendly = UserFacingError.map(
                     error,
                     operation: String.l10n("diagnostics.operation.loadStars"),
-                    service: "Starcat"
+                    service: "Starcat",
+                    impact: self.rawItems.isEmpty ? .blocked : .none, summary: .databaseUnavailable
                 )
                 self.loadError = friendly.message
                 // 缓存加载已展示过的数据，失败不清理
@@ -3379,7 +3380,8 @@ final class HomeViewModel {
                 let friendly = UserFacingError.map(
                     error,
                     operation: String.l10n("diagnostics.operation.loadStars"),
-                    service: "Starcat"
+                    service: "Starcat",
+                    impact: self.items.isEmpty ? .blocked : .none, summary: .databaseUnavailable
                 )
                 self.loadError = friendly.message
                 if self.items.isEmpty {
@@ -3448,8 +3450,10 @@ final class HomeViewModel {
             isSemanticIndexing = false
             semanticIndexProgress = nil
         }
+        var requestedIDs: [Int64] = []
         do {
             let repos = try await fetchSearchCandidates(scope: .all)
+            requestedIDs = repos.map(\.id)
             semanticIndexProgress = (processed: 0, total: repos.count)
             try await semanticSearchService.refreshIndex(for: repos, force: false) { [weak self] processed, total in
                 self?.semanticIndexProgress = (processed: processed, total: total)
@@ -3461,7 +3465,9 @@ final class HomeViewModel {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.refreshSemanticIndex"),
-                service: "Starcat"
+                service: "Starcat",
+                impact: (try? await semanticSearchService.indexedCount(repoIDs: requestedIDs)) == 0 ? .blocked : .none,
+                summary: .searchUnavailable
             )
             loadError = friendly.message
             AppLog.database.error("refreshSemanticIndex failed: \(error.localizedDescription, privacy: .public)")

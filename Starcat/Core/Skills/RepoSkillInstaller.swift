@@ -39,6 +39,19 @@ actor RepoSkillInstaller {
         return .installed
     }
 
+    /// 卸载前复用完整来源与内容核对；同名外部目录、本地修改和 Skill 软链接都不能被误删。
+    /// 校验到删除之间没有 await，取消只在操作开始前生效，已完成删除仍报告成功。
+    func uninstall(_ skill: RepoSkill, destination: RepoSkillDestination) throws {
+        guard SkillFrontmatter.isValidName(skill.name) else { throw RepoSkillError.invalidManifest }
+        try Task.checkCancellation()
+        switch try existing(skill, destination: destination) {
+        case .missing: return
+        case .conflict: throw RepoSkillError.conflict
+        case .installed:
+            try FileManager.default.removeItem(at: destination.url.appendingPathComponent(skill.name, isDirectory: true))
+        }
+    }
+
     /// 同名替换只在显式确认后发生，发布失败回滚旧目录。取消点只在事务发布之前。
     func install(
         _ skill: RepoSkill, repo: Repo, destination: RepoSkillDestination, replacing: Bool,

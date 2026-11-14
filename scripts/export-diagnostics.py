@@ -17,7 +17,7 @@ MAX_EVENTS = 100_000
 EVENT_KEYS = set(("schemaVersion eventID sequence sessionID environmentID operationID "
                   "parentOperationID requestID serverTraceID timestamp level visibility "
                   "category operation phase outcome durationMs impact occurrenceCount firstSeen lastSeen "
-                  "statusCode errorCode").split())
+                  "statusCode errorCode summaryKey breadcrumbsTruncated sourceLine").split())
 
 
 def safe_scalar(value):
@@ -55,6 +55,29 @@ def export(source, destination):
                                   if re.fullmatch(r"[A-Za-z]{1,80}", k)
                                   and isinstance(v, (int, float, bool))
                                   and (not isinstance(v, float) or math.isfinite(v))}
+                stages = event.get("breadcrumbs")
+                if isinstance(stages, list):
+                    safe["breadcrumbs"] = []
+                    for stage in stages[-16:]:
+                        if not isinstance(stage, dict):
+                            continue
+                        projected = {key: safe_scalar(value) for key, value in stage.items()
+                                     if key in EVENT_KEYS or key in ("elapsedMs", "service")}
+                        stage_fields = stage.get("fields")
+                        if isinstance(stage_fields, dict):
+                            projected["fields"] = {key: value for key, value in stage_fields.items()
+                                if re.fullmatch(r"[A-Za-z]{1,80}", key)
+                                and isinstance(value, (int, float, bool))
+                                and (not isinstance(value, float) or math.isfinite(value))}
+                        safe["breadcrumbs"].append(projected)
+                    safe["breadcrumbsTruncated"] = event.get("breadcrumbsTruncated") is True or len(stages) > 16
+                chain = event.get("errorChain")
+                if isinstance(chain, list):
+                    safe["errorChain"] = [
+                        dict(type=safe_scalar(cause["type"]), code=cause["code"])
+                        for cause in chain[:4] if isinstance(cause, dict)
+                        and isinstance(cause.get("type"), str) and isinstance(cause.get("code"), int)
+                    ]
                 events.append(safe)
                 if len(events) >= MAX_EVENTS:
                     missing.append("事件数量达到读取上限，后续记录未采集")
@@ -75,9 +98,9 @@ def export(source, destination):
             "应急导出过滤了历史自由文本与字符串上下文，分析时须保留此证据限制。\n"
         ).encode(),
     }
-    manifest = dict(schemaVersion=2, exportID=identifier, mode="emergency",
+    manifest = dict(schemaVersion=3, exportID=identifier, mode="emergency",
                     damagedLines=damaged, limitations=missing,
-                    collectors=[dict(name="events", status="truncated" if missing else "collected" if files_read else "notCollected"),
+                    collectors=[dict(name="events", status="failed" if damaged else "truncated" if missing else "collected" if files_read else "notCollected"),
                                 dict(name="runtime", status="notCollected"),
                                 dict(name="system", status="notCollected")],
                     files=[dict(path=k, bytes=len(v), sha256=hashlib.sha256(v).hexdigest())

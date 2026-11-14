@@ -2715,8 +2715,10 @@ final class AppSettings {
                 category: "settings",
                 operation: "settings.persistJSON",
                 message: "A settings value could not be encoded",
+                summary: .settingsUnavailable,
+                impact: .dataRisk,
                 underlying: DiagnosticEvent.summarize(error),
-                context: ["key": key]
+                context: ["key": key], error: error
             )
         }
     }
@@ -2743,8 +2745,10 @@ final class AppSettings {
                 category: "settings",
                 operation: "settings.persistJSON",
                 message: "A settings value could not be encoded",
+                summary: .settingsUnavailable,
+                impact: .dataRisk,
                 underlying: DiagnosticEvent.summarize(error),
-                context: ["key": Keys.aiProviderProfiles]
+                context: ["key": Keys.aiProviderProfiles], error: error
             )
         }
     }
@@ -2895,8 +2899,10 @@ final class AppSettings {
                 category: "settings",
                 operation: "settings.decodeJSON",
                 message: "A persisted settings value could not be decoded",
+                summary: .settingsUnavailable,
+                impact: .dataRisk,
                 underlying: DiagnosticEvent.summarize(error),
-                context: ["key": Keys.aiProviderProfiles]
+                context: ["key": Keys.aiProviderProfiles], error: error
             )
             return outcome
         }

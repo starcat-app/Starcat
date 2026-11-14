@@ -99,7 +99,9 @@ actor ReleaseMonitor {
                 category: "database",
                 operation: "releaseMonitor.loadSubscriptions",
                 message: "Release Monitor could not load local subscriptions",
-                underlying: DiagnosticEvent.summarize(error)
+                summary: .contentUnavailable,
+                impact: .blocked,
+                underlying: DiagnosticEvent.summarize(error), error: error
             )
             return ReleaseMonitorReport(
                 newReleasesByRepo: [:],

@@ -504,7 +504,7 @@ final class DirectLicenseManager: ProEntitlementProviding {
         if let success = validationRecord.lastSuccessAt {
             fields["lastSuccessAgeSeconds"] = .decimal(max(0, nowProvider().timeIntervalSince(success)))
         }
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: .info, category: "license", operation: "entitlement", message: "Local entitlement observed",
             phase: phase, fields: fields))
     }

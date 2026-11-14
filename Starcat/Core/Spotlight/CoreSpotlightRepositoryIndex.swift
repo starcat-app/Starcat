@@ -13,6 +13,12 @@ import Foundation
 /// 而是把删除、批量写入和单项更新收敛成严格顺序；否则同步完成、笔记保存与设置切换
 /// 可能交错，留下已关闭功能仍可搜索的条目。
 actor CoreSpotlightRepositoryIndex: RepositorySpotlightIndexing {
+    /// 清空后写入失败必须携带已完成批次，旧指纹不能证明系统中仍有可用索引。
+    struct ReplacementFailure: Error {
+        let underlying: any Error
+        let indexedCount: Int
+    }
+
     static let indexName = "StarcatRepositories"
     private static let batchSize = 500
 
@@ -28,10 +34,16 @@ actor CoreSpotlightRepositoryIndex: RepositorySpotlightIndexing {
     func replaceAll(with entities: [RepositorySpotlightEntity]) async throws {
         try await enqueue { client in
             try await client.deleteAll()
-            for start in stride(from: 0, to: entities.count, by: Self.batchSize) {
-                let end = min(start + Self.batchSize, entities.count)
-                try Task.checkCancellation()
-                try await client.index(Array(entities[start..<end]))
+            var indexedCount = 0
+            do {
+                for start in stride(from: 0, to: entities.count, by: Self.batchSize) {
+                    let end = min(start + Self.batchSize, entities.count)
+                    try Task.checkCancellation()
+                    try await client.index(Array(entities[start..<end]))
+                    indexedCount += end - start
+                }
+            } catch {
+                throw ReplacementFailure(underlying: error, indexedCount: indexedCount)
             }
         }
     }

@@ -35,6 +35,7 @@
 //
 
 import Foundation
+import CryptoKit
 
 /// 分享 API 客户端。
 actor ShareAPI {
@@ -52,6 +53,9 @@ actor ShareAPI {
     private let session: URLSession
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let dailyRadarCacheDirectory: URL
+    private var dailyRadarShares: [String: DailyRadarShareResponse] = [:]
+    private var dailyRadarShareTasks: [String: Task<DailyRadarShareResponse, Error>] = [:]
 
     /// - Parameters:
     ///   - baseURL: 后端裸 host（**不含** `/api` 后缀，R-03.1 起与其它自建后端对齐）；
@@ -62,10 +66,14 @@ actor ShareAPI {
     init(
         baseURL: URL,
         apiKey: String? = nil,
-        session: URLSession? = nil
+        session: URLSession? = nil,
+        dailyRadarCacheDirectory: URL? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.dailyRadarCacheDirectory = dailyRadarCacheDirectory ??
+            FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Starcat/DailyRadarShares", isDirectory: true)
         if let session {
             self.session = session
         } else {
@@ -87,11 +95,13 @@ actor ShareAPI {
     /// actor 串行化让 URL 切换无需重启 App。
     func updateBaseURL(_ url: URL) {
         self.baseURL = url
+        dailyRadarShares.removeAll()
     }
 
     /// 热更新 API Key（用户在设置页改 key 后由 `AppDependencies` 推送进来）。
     func updateAPIKey(_ key: String?) {
         self.apiKey = key
+        dailyRadarShares.removeAll()
     }
 
     /// 创建分享链接。
@@ -132,5 +142,63 @@ actor ShareAPI {
             response: response,
             decoder: decoder
         )
+    }
+
+    /// 以服务地址、完整公开快照和原图 hash 为缓存身份，避免把新 revision 或另一个服务的链接复用。
+    ///
+    /// actor 在 await 期间允许重入，所以运行中请求也按相同身份合并；Sheet 关闭不会取消另一位
+    /// 等待者的网络请求。完成后只缓存公开响应，重新打开或重启 App 均无需再次创建。
+    func shareDailyRadar(request: DailyRadarShareRequest, heroPNG: Data) async throws -> DailyRadarShareResponse {
+        let canonicalEncoder = JSONEncoder()
+        canonicalEncoder.outputFormatting = [.sortedKeys]
+        let snapshot = try canonicalEncoder.encode(request)
+        let identity = [
+            baseURL.absoluteString,
+            SHA256.hash(data: snapshot).map { String(format: "%02x", $0) }.joined(),
+            SHA256.hash(data: heroPNG).map { String(format: "%02x", $0) }.joined()
+        ].joined(separator: "|")
+        let cacheKey = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+        if let cached = dailyRadarShares[cacheKey] { return cached }
+        let cacheFile = dailyRadarCacheDirectory.appendingPathComponent(cacheKey + ".json")
+        if let bytes = try? Data(contentsOf: cacheFile),
+           let cached = try? decoder.decode(DailyRadarShareResponse.self, from: bytes).validated() {
+            dailyRadarShares[cacheKey] = cached
+            return cached
+        }
+        if let pending = dailyRadarShareTasks[cacheKey] { return try await pending.value }
+
+        let boundary = "StarcatDailyRadar-" + UUID().uuidString
+        var body = Data()
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"request\"\r\nContent-Type: application/json\r\n\r\n".utf8))
+        body.append(snapshot)
+        body.append(Data("\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"hero\"; filename=\"hero.png\"\r\nContent-Type: image/png\r\n\r\n".utf8))
+        body.append(heroPNG)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        guard heroPNG.count <= 3_145_728, body.count <= 5_242_880 else { throw DailyRadarShareError.tooLarge }
+        var upload = URLRequest(url: AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.dailyRadarShares, to: baseURL))
+        upload.httpMethod = "POST"
+        upload.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        upload.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let apiKey, !apiKey.isEmpty {
+            upload.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        StarcatGatewayRouting.applyServiceHeader(to: &upload, service: .sharing)
+        upload.httpBody = body
+        let pending = Task {
+            let (data, response) = try await DiagnosticHTTP.data(for: upload, using: session, service: "sharing")
+            return try StarcatEnvelopeDecoder.decode(
+                DailyRadarShareResponse.self, data: data, response: response, decoder: decoder
+            ).validated()
+        }
+        dailyRadarShareTasks[cacheKey] = pending
+        defer { dailyRadarShareTasks[cacheKey] = nil }
+        let result = try await pending.value
+        dailyRadarShares[cacheKey] = result
+        // 缓存失败不影响已创建的公开链接；服务端仍提供持久幂等兜底。
+        if let encoded = try? encoder.encode(result) {
+            try? FileManager.default.createDirectory(at: dailyRadarCacheDirectory, withIntermediateDirectories: true)
+            try? encoded.write(to: cacheFile, options: .atomic)
+        }
+        return result
     }
 }

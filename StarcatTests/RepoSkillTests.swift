@@ -22,6 +22,38 @@ struct RepoSkillTests {
         return try #require(try await GRDBRepoRepository(database: db).findById(1))
     }
 
+    /// 使用独立提交与临时目录跑完整会话，避免进程级 Git tree 缓存或真实工具目录影响测试。
+    @MainActor
+    private func agentSession(destinations: [RepoSkillDestination]) async throws -> RepoSkillSession {
+        let database = try InMemoryDatabaseManager()
+        let api = MockGitHubAPIClient()
+        let commit = UUID().uuidString
+        api.repositoryLatestCommitHandler = { _, _, _, _ in
+            GitHubCommitSummaryDTO(sha: commit, commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil))
+        }
+        api.repositoryGitTreeHandler = { _, _, _ in
+            GitHubGitTreeDTO(sha: "tree", truncated: false, tree: [
+                skillEntry("SKILL.md", sha: RepoFileDownloader.gitBlobSHA(Data("SKILL.md".utf8)))
+            ])
+        }
+        let store = RepoSkillStore(database: database, publicAPI: api, privateAPI: api,
+                                   publicDownloader: SkillTestDownloader(), privateDownloader: SkillTestDownloader())
+        let defaults = try #require(UserDefaults(suiteName: "skills-agents-\(UUID().uuidString)"))
+        let session = RepoSkillSession(repo: try await repo(), store: store, destinations: destinations, defaults: defaults)
+        await session.load()
+        try #require(session.skills.count == 1)
+        return session
+    }
+
+    @MainActor
+    private func waitForAgentOperation(_ session: RepoSkillSession) async throws {
+        for _ in 0..<400 {
+            if !session.isInstalling && !session.isCheckingDestination { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!session.isInstalling && !session.isCheckingDestination)
+    }
+
     @Test("frontmatter 支持引号、折叠、根目录；拒绝无效名称、重复字段与目录不符")
     func frontmatter() throws {
         let folded = """
@@ -223,6 +255,223 @@ struct RepoSkillTests {
                                     replacing: false, onProgress: { _ in })
         #expect(try await installer.existing(skill, destination: RepoSkillDestination(preset: .agents, url: alias)) == .installed)
         #expect(try await installer.existing(skill, destination: RepoSkillDestination(preset: .agents, url: actual)) == .installed)
+    }
+
+    @Test("卸载完整 Skill 并保留其它目录；重复卸载可安全完成")
+    func uninstallOwnedSkill() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = RepoSkillDestination(preset: .codex, url: root)
+        let installer = RepoSkillInstaller(downloader: SkillTestDownloader())
+        let skill = installSkill()
+        try await installer.install(skill, repo: try await repo(), destination: destination, replacing: false, onProgress: { _ in })
+        let sibling = root.appendingPathComponent("other.txt")
+        try Data("preserve".utf8).write(to: sibling)
+        try await installer.uninstall(skill, destination: destination)
+        #expect(try await installer.existing(skill, destination: destination) == .missing)
+        #expect(try String(contentsOf: sibling, encoding: .utf8) == "preserve")
+        try await installer.uninstall(skill, destination: destination)
+    }
+
+    @Test("卸载拒绝外部安装、本地修改、额外文件与软链接", arguments: ["external", "modified", "extra", "symlink"])
+    func uninstallPreservesUnownedChanges(_ change: String) async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installer = RepoSkillInstaller(downloader: SkillTestDownloader())
+        let destination = RepoSkillDestination(preset: .agents, url: root)
+        let skill = installSkill()
+        try await installer.install(skill, repo: try await repo(), destination: destination, replacing: false, onProgress: { _ in })
+        let folder = root.appendingPathComponent(skill.name)
+        switch change {
+        case "external":
+            try FileManager.default.removeItem(at: folder.appendingPathComponent(".starcat-install.json"))
+        case "modified":
+            try Data("local edit".utf8).write(to: folder.appendingPathComponent("SKILL.md"))
+        case "extra":
+            try Data("user data".utf8).write(to: folder.appendingPathComponent("notes.txt"))
+        default:
+            let actual = root.appendingPathComponent("actual")
+            try FileManager.default.moveItem(at: folder, to: actual)
+            try FileManager.default.createSymbolicLink(at: folder, withDestinationURL: actual)
+        }
+        let before = try Data(contentsOf: folder.appendingPathComponent("SKILL.md"))
+        await #expect(throws: (any Error).self) { try await installer.uninstall(skill, destination: destination) }
+        #expect(try Data(contentsOf: folder.appendingPathComponent("SKILL.md")) == before)
+        if change == "extra" { #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("notes.txt").path)) }
+    }
+
+    @Test("卸载开始前取消保留完整安装")
+    func cancelledUninstallPreservesInstallation() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installer = RepoSkillInstaller(downloader: SkillTestDownloader())
+        let destination = RepoSkillDestination(preset: .agents, url: root)
+        let skill = installSkill()
+        try await installer.install(skill, repo: try await repo(), destination: destination, replacing: false, onProgress: { _ in })
+        let operation = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await installer.uninstall(skill, destination: destination)
+        }
+        await #expect(throws: CancellationError.self) { try await operation.value }
+        #expect(try await installer.existing(skill, destination: destination) == .installed)
+    }
+
+    @Test("工具检测只读应用、可执行文件、配置和扩展；导出过 skills 不等于安装工具")
+    func detectLocalAgentsWithoutLaunchingTools() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let applications = root.appendingPathComponent("Applications")
+        let binaries = root.appendingPathComponent("bin")
+        for path in [".claude", ".cursor/skills", ".vscode/extensions/rooveterinaryinc.roo-cline-1.0",
+                     "Applications/Windsurf.app", "bin"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
+        try Data("{}".utf8).write(to: root.appendingPathComponent(".claude/settings.json"))
+        let binary = binaries.appendingPathComponent("gemini")
+        try Data("This file must never be executed.".utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        let targets = await RepoSkillAgentCatalog.detect(home: root, environment: [:],
+                                                        applicationDirectories: [applications], executableDirectories: [binaries])
+        #expect(Set(targets.map(\.preset)) == [.agents, .claudeCode, .geminiCLI, .windsurf, .rooCode])
+        #expect(targets.first { $0.preset == .windsurf }?.applicationPath == applications.appendingPathComponent("Windsurf.app").path)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent(".gemini/skills").path))
+    }
+
+    @Test("工具目录尊重配置环境变量；共用目录使用相同身份")
+    func agentDirectoryOverridesAndSharedIdentity() {
+        let home = URL(fileURLWithPath: "/tmp/starcat-agent-home")
+        let environment = ["CLAUDE_CONFIG_DIR": "/tmp/starcat-custom-claude", "XDG_CONFIG_HOME": "/tmp/starcat-custom-xdg",
+                           "CODEX_HOME": "/tmp/starcat-custom-codex"]
+        #expect(RepoSkillTargetPreset.claudeCode.agent.directoryURL(home: home, environment: environment).path
+                == "/tmp/starcat-custom-claude/skills")
+        #expect(RepoSkillTargetPreset.openCode.agent.directoryURL(home: home, environment: environment).path
+                == "/tmp/starcat-custom-xdg/opencode/skills")
+        #expect(RepoSkillTargetPreset.codex.agent.configurationURL(home: home, environment: environment).path
+                == "/tmp/starcat-custom-codex")
+        let agents = RepoSkillTargetPreset.agents.agent.directoryURL(home: home, environment: environment)
+        for preset in [RepoSkillTargetPreset.codex, .cline, .kimiCode, .pi, .warp, .zed] {
+            #expect(preset.agent.directoryURL(home: home, environment: environment) == agents)
+        }
+    }
+
+    @MainActor
+    @Test("胶囊立即安装/卸载，共用目录去重；全选/清空只配置批量目标")
+    func directAndBatchAgentOperations() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let shared = RepoSkillDestination(preset: .agents, url: root.appendingPathComponent("shared"))
+        let codex = RepoSkillDestination(preset: .codex, url: shared.url)
+        let claude = RepoSkillDestination(preset: .claudeCode, url: root.appendingPathComponent("claude"))
+        let session = try await agentSession(destinations: [shared, codex, claude])
+        defer { session.close() }
+        session.selectAllDestinations(true)
+        try await waitForAgentOperation(session)
+        #expect(session.agentTargets.count == 3 && session.plannedItems.count == 2)
+        #expect(!FileManager.default.fileExists(atPath: shared.url.path))
+        session.toggleAgent(codex.id)
+        try await waitForAgentOperation(session)
+        #expect(session.queue.count == 1 && !session.hasFailures)
+        #expect(session.isInstalled(at: shared.id) && session.isInstalled(at: codex.id))
+        #expect(!session.isInstalled(at: claude.id))
+        #expect(session.canStart && session.plannedItems.count == 1)
+        session.start()
+        try await waitForAgentOperation(session)
+        #expect(session.isInstalled(at: claude.id))
+        session.selectAllDestinations(false)
+        try await waitForAgentOperation(session)
+        #expect(session.selectedDestinationIDs.isEmpty)
+        #expect(session.isInstalled(at: shared.id) && session.isInstalled(at: claude.id))
+        session.toggleAgent(shared.id)
+        try await waitForAgentOperation(session)
+        #expect(!session.isInstalled(at: codex.id) && session.isInstalled(at: claude.id))
+        #expect(session.queue.allSatisfy { $0.operation == .uninstall && $0.status == .succeeded })
+        session.toggleAgent(codex.id)
+        try await waitForAgentOperation(session)
+        #expect(session.isInstalled(at: shared.id))
+        #expect(session.queue.allSatisfy { $0.operation == .install && $0.status == .succeeded })
+    }
+
+    @MainActor
+    @Test("未勾选 Skill 时胶囊安装当前阅读项；失败队列不污染下一个直接操作")
+    func directAgentOperationAfterFailure() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let blocked = root.appendingPathComponent("blocked")
+        try Data("not a directory".utf8).write(to: blocked)
+        let first = RepoSkillDestination(preset: .agents, url: blocked)
+        let second = RepoSkillDestination(preset: .claudeCode, url: root.appendingPathComponent("claude"))
+        let session = try await agentSession(destinations: [first, second])
+        defer { session.close() }
+        session.selectAll(false)
+        session.focusSkill(session.skills.first?.id)
+        #expect(session.selectedIDs.isEmpty)
+        session.toggleAgent(first.id)
+        try await waitForAgentOperation(session)
+        #expect(session.hasFailures)
+        session.toggleAgent(second.id)
+        try await waitForAgentOperation(session)
+        #expect(session.isInstalled(at: second.id) && !session.hasFailures)
+        #expect(session.queue.count == 1 && session.queue.first?.destination.id == second.id)
+        session.toggleAgent(second.id)
+        try await waitForAgentOperation(session)
+        #expect(!session.isInstalled(at: second.id) && !session.hasFailures)
+        #expect(session.queue.first?.operation == .uninstall)
+    }
+
+    @MainActor
+    @Test("直接安装遇到同名目录先等待替换决定，确认后继续原操作")
+    func directAgentInstallationResumesAfterConflict() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = RepoSkillDestination(preset: .agents, url: root)
+        let folder = root.appendingPathComponent("review")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let manifest = folder.appendingPathComponent("SKILL.md")
+        try Data("external content".utf8).write(to: manifest)
+        let session = try await agentSession(destinations: [destination])
+        defer { session.close() }
+        session.toggleAgent(destination.id)
+        #expect(session.phase == .ready && session.conflicts.count == 1)
+        #expect(try String(contentsOf: manifest, encoding: .utf8) == "external content")
+        let conflict = try #require(session.conflicts.first)
+        session.resolveConflict(conflict.id, replacing: true)
+        try await waitForAgentOperation(session)
+        #expect(session.isInstalled(at: destination.id))
+        #expect(try String(contentsOf: manifest, encoding: .utf8) == "SKILL.md")
+    }
+
+    @MainActor
+    @Test("卸载失败或取消后重试继续卸载，不启动其它目录的安装", arguments: [false, true])
+    func retryUninstallKeepsItsOperation(_ cancel: Bool) async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = RepoSkillDestination(preset: .agents, url: root.appendingPathComponent("shared"))
+        let second = RepoSkillDestination(preset: .claudeCode, url: root.appendingPathComponent("claude"))
+        let session = try await agentSession(destinations: [first, second])
+        defer { session.close() }
+        session.selectAllDestinations(true)
+        try await waitForAgentOperation(session)
+        session.toggleAgent(first.id)
+        try await waitForAgentOperation(session)
+        let manifest = first.url.appendingPathComponent("review/SKILL.md")
+        if !cancel { try Data("local edit".utf8).write(to: manifest) }
+        session.toggleAgent(first.id)
+        if cancel { session.cancel() }
+        try await waitForAgentOperation(session)
+        #expect(session.isUninstalling && session.canStart)
+        #expect(FileManager.default.fileExists(atPath: manifest.path))
+        if !cancel {
+            #expect(session.hasFailures)
+            #expect(try String(contentsOf: manifest, encoding: .utf8) == "local edit")
+            try Data("SKILL.md".utf8).write(to: manifest)
+        }
+        session.start()
+        try await waitForAgentOperation(session)
+        #expect(!session.hasFailures && session.phase == .finished)
+        #expect(session.queue.allSatisfy { $0.operation == .uninstall && $0.status == .succeeded })
+        #expect(!FileManager.default.fileExists(atPath: manifest.path))
+        #expect(!FileManager.default.fileExists(atPath: second.url.path))
     }
 
     @MainActor

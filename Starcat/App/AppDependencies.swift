@@ -453,8 +453,8 @@ final class AppDependencies {
     /// 分享卡开发语言统计服务（当前用户拥有的公开、非 fork 仓库语言聚合）。
     ///
     /// 与 `HomeViewModel.languageStats` 刻意分离：后者统计 starred 项目的语言，表达兴趣；
-    /// 这里统计用户自己的公开仓库，表达开发画像。服务内部有 12h TTL + UserDefaults 快照，
-    /// 登录后异步预热，分享卡打开时直接消费已缓存数据。
+    /// 这里统计用户自己的公开仓库，表达开发画像。服务内部有 7 天 TTL + UserDefaults 快照，
+    /// 启动先恢复本地统计，登录验证后按需刷新；侧栏与分享卡共用同一快照。
     let developerLanguageService: DeveloperLanguageService
 
     // MARK: - R-01 三场景共用架构（2026-06-09）
@@ -1930,8 +1930,10 @@ final class AppDependencies {
                     category: "database",
                     operation: "database.switchUser",
                     message: "Failed to switch the active user database",
+                    summary: .databaseUnavailable,
+                    impact: .blocked,
                     underlying: DiagnosticEvent.summarize(error),
-                    context: ["targetUser": userId.map(String.init) ?? "anonymous"]
+                    context: ["targetUser": userId.map(String.init) ?? "anonymous"], error: error
                 )
                 self.widgetRefreshCoordinator.publishEmpty(state: .unavailable)
             }
@@ -2142,8 +2144,10 @@ final class AppDependencies {
             category: "factory-reset",
             operation: "factoryReset.cleanup",
             message: "Factory reset left generated user data on disk",
+            summary: .dataCleanupFailed,
+            impact: .dataRisk,
             underlying: DiagnosticEvent.summarize(error),
-            context: ["component": component]
+            context: ["component": component], error: error
         )
     }
 

@@ -115,6 +115,9 @@ struct ReadmeWebView: View {
     /// nil 时浮动工具栏不显示该按钮。
     var onExportMarkdown: (() -> Void)? = nil
 
+    /// 为调用方附加的底部操作预留空间；只移动浮动工具条，不改变 WebView 的尺寸与身份。
+    var floatingToolbarBottomInset: CGFloat = 0
+
     /// 当前 README 所属仓库。有值且设置打开「应用内打开仓库文档」时，
     /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
     var markdownLinkRepositoryOwner: String? = nil
@@ -135,6 +138,9 @@ struct ReadmeWebView: View {
 
     /// 文档距离底部不超过两个 viewport 时触发。Coordinator 对每份文档只回调一次。
     var onApproachingBottom: () -> Void = {}
+
+    /// 当前导航完成后回传实际文档身份，供阅读区衔接淡入；HTML 准备好不代表 WebKit 已替换旧 DOM。
+    var onDocumentReady: (String) -> Void = { _ in }
 
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
@@ -161,6 +167,7 @@ struct ReadmeWebView: View {
             onTranslationSourceChange: onTranslationSourceChange,
             starHistoryRenderState: starHistoryRenderState,
             onApproachingBottom: onApproachingBottom,
+            onDocumentReady: onDocumentReady,
             openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
@@ -193,13 +200,13 @@ struct ReadmeWebView: View {
                 onExportMarkdown: onExportMarkdown
             )
             .padding(.trailing, 10)
-            .padding(.bottom, 54)
+            .padding(.bottom, 54 + floatingToolbarBottomInset)
         }
         // 回到顶部是独立常驻操作，固定贴在 README 渲染区右下角。
         .overlay(alignment: .bottomTrailing) {
             ReadmeBackToTopButton(action: scrollToTop)
                 .padding(.trailing, 10)
-                .padding(.bottom, 14)
+                .padding(.bottom, 14 + floatingToolbarBottomInset)
         }
         .onReceive(NotificationCenter.default.publisher(for: .repoDetailScrollToTopRequested)) { _ in
             scrollToTop()
@@ -329,6 +336,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void
     let starHistoryRenderState: ReadmeStarHistoryRenderState
     var onApproachingBottom: () -> Void
+    var onDocumentReady: (String) -> Void
     var openRepositoryMarkdownInApp: Bool
     var markdownLinkRepositoryOwner: String?
     var markdownLinkRepositoryName: String?
@@ -370,6 +378,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.onApproachingBottom = onApproachingBottom
+        context.coordinator.onDocumentReady = onDocumentReady
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -390,6 +399,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.onScrollReportChange = onScrollReportChange
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.onApproachingBottom = onApproachingBottom
+        context.coordinator.onDocumentReady = onDocumentReady
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -467,7 +477,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 readmeFontSizeAdjustment: readmeFontSizeAdjustment
             )
             context.coordinator.expectsInitialLoad = true
-            webView.loadHTMLString(fullHTML, baseURL: baseURL)
+            context.coordinator.documentNavigation = webView.loadHTMLString(fullHTML, baseURL: baseURL)
             return
         }
 
@@ -547,10 +557,13 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
+        /// 用导航对象识别当前加载，避免快速切换时把旧导航完成事件当成新文档就绪。
+        var documentNavigation: WKNavigation?
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
         var onApproachingBottom: () -> Void = {}
+        var onDocumentReady: (String) -> Void = { _ in }
         var onFindResult: (Bool?) -> Void = { _ in }
         var openRepositoryMarkdownInApp = false
         var markdownLinkRepositoryOwner: String?
@@ -1705,9 +1718,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                         limit: 8_000
                     )
                 )
-                Task { @MainActor in
-                    self.onTranslationSourceChange(snapshot)
-                }
+                // 捕获收到消息时的文档回调；主线程任务排队期间可能已切到另一个 Skill。
+                let onSourceChange = onTranslationSourceChange
+                Task { @MainActor in onSourceChange(snapshot) }
                 return
             }
 
@@ -1763,6 +1776,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             applyTranslationRenderStateIfNeeded()
             lastAppliedStarHistoryRevision = nil
             applyStarHistoryRenderStateIfNeeded()
+            if navigation === documentNavigation, let documentID = lastLoadedKey?.documentID {
+                onDocumentReady(documentID)
+            }
         }
 
         func webView(
@@ -1850,17 +1866,18 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         // 渲染失败日志，方便后续排查（沙箱、CSS、HTML 片段异常都会落在这里）
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            diagnosticOperation?.finish(.failed, error: error)
+            diagnosticOperation?.finish(.failed, error: error, impact: .blocked, summary: .readmeUnavailable)
             AppLog.ui.error("ReadmeWebView didFail: \(error.localizedDescription, privacy: .public)")
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            diagnosticOperation?.finish(.failed, error: error)
+            diagnosticOperation?.finish(.failed, error: error, impact: .blocked, summary: .readmeUnavailable)
             AppLog.ui.error("ReadmeWebView didFailProvisional: \(error.localizedDescription, privacy: .public)")
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard webView.window != nil else { return }
             let diagnostic = DiagnosticOperation(category: "readme", name: "contentProcessTerminated")
-            diagnostic.finish(.failed)
+            diagnostic.finish(.failed, impact: .blocked, summary: .readmeUnavailable)
         }
     }
 }

@@ -1227,6 +1227,18 @@ private struct AboutDependency: Identifiable {
             url: URL(string: "https://github.com/simple-icons/simple-icons")
         ),
         AboutDependency(
+            name: "Lobe Icons",
+            license: "MIT",
+            copyright: "Copyright (c) 2023 LobeHub",
+            url: URL(string: "https://github.com/lobehub/lobe-icons")
+        ),
+        AboutDependency(
+            name: "Vercel Skills",
+            license: "MIT",
+            copyright: "Copyright (c) 2026 Vercel, Inc.",
+            url: URL(string: "https://github.com/vercel-labs/skills")
+        ),
+        AboutDependency(
             name: "GitHub Linguist",
             license: "MIT",
             copyright: "Copyright (c) 2017 GitHub, Inc.",
@@ -1355,6 +1367,54 @@ private struct AboutDependency: Identifiable {
         // license 字段标记为 "Brand Asset"。
         // 严格按 CLAUDE.md「开源致谢同步规则」第 2 条「嵌入式资源」登记。
 
+        AboutDependency(
+            name: "Augment Code Logo",
+            license: "Brand Asset",
+            copyright: "Augment Code — used for agent identification only",
+            url: URL(string: "https://www.augmentcode.com")
+        ),
+        AboutDependency(
+            name: "Factory Logo",
+            license: "Brand Asset",
+            copyright: "Factory — used for agent identification only",
+            url: URL(string: "https://factory.ai")
+        ),
+        AboutDependency(
+            name: "Firebender Logo",
+            license: "Brand Asset",
+            copyright: "Firebender — used for agent identification only",
+            url: URL(string: "https://firebender.com")
+        ),
+        AboutDependency(
+            name: "Ona Logo",
+            license: "Brand Asset",
+            copyright: "Ona — used for agent identification only",
+            url: URL(string: "https://ona.com")
+        ),
+        AboutDependency(
+            name: "Autohand Logo",
+            license: "Brand Asset",
+            copyright: "Autohand — used for agent identification only",
+            url: URL(string: "https://autohand.ai")
+        ),
+        AboutDependency(
+            name: "Continue Logo",
+            license: "Brand Asset",
+            copyright: "Continue — used for agent identification only",
+            url: URL(string: "https://www.continue.dev")
+        ),
+        AboutDependency(
+            name: "Lingma Logo",
+            license: "Brand Asset",
+            copyright: "Alibaba Cloud — used for agent identification only",
+            url: URL(string: "https://lingma.aliyun.com")
+        ),
+        AboutDependency(
+            name: "Mux Logo",
+            license: "Brand Asset",
+            copyright: "Coder — used for agent identification only",
+            url: URL(string: "https://mux.coder.com")
+        ),
         AboutDependency(
             name: "Claude Spark Logo",
             license: "Brand Asset",

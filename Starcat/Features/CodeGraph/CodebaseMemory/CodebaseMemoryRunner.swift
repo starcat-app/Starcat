@@ -195,8 +195,10 @@ final class CodebaseMemoryRunner {
             category: "codebase-memory",
             operation: "codebaseMemory.startUI",
             message: "CodebaseMemory UI process failed to start",
+            summary: .codeAnalysisUnavailable,
+            impact: .blocked,
             underlying: DiagnosticEvent.summarize(error),
-            context: ["repo": repositoryFullName, "port": String(port)]
+            context: ["repo": repositoryFullName, "port": String(port)], error: error
         )
     }
 

@@ -381,7 +381,7 @@ actor AgentRunSession {
         case .cancelled: outcome = .cancelled
         case .running, .waitingForConfirmation: outcome = nil
         }
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: outcome == .failed ? .error : .info,
             category: "agent", operation: "run", message: "Agent execution state",
             operationID: runID.uuidString, phase: phase, outcome: outcome,

@@ -94,7 +94,7 @@ final class RecommendationContextService {
         AppLog.ui.debug(
             "Recommend cache load repo=\(repoID, privacy: .public) hit=\(snapshot != nil, privacy: .public) elapsed=\(String(describing: elapsed), privacy: .public)"
         )
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: .info, category: "recommend", operation: "cache", message: "Recommendation cache observed",
             phase: "loaded", fields: ["available": .boolean(snapshot != nil),
                 "scopeMatches": .boolean(snapshot?.serviceScope == serviceScope),
@@ -142,7 +142,12 @@ final class RecommendationContextService {
                     return .modified(refreshed)
                 }
             } catch {
-                diagnostic.finish(.failed, error: error)
+                // 旧快照仍能完成内容浏览时只保留原回退；不存在可用快照才确认功能阻断。
+                let outputAvailable = await cachedSnapshot(repoID: repoID, serviceScope: serviceScope) != nil
+                UserFacingError.map(error, operation: "recommend.refresh", service: "Recommend",
+                    impact: outputAvailable ? .none : .blocked, summary: .contentUnavailable)
+                    .record(category: "recommend", operation: "refresh")
+                diagnostic.finish(.failed, error: error, fields: ["cacheFallback": .boolean(outputAvailable)])
                 throw error
             }
         }

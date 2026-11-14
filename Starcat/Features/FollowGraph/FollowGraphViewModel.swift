@@ -634,7 +634,7 @@ final class FollowGraphViewModel {
             "edgeCount": .integer(displayedSnapshot?.edges.count ?? 0)
         ]
         if let total = progress?.totalCount ?? fallbackTotal { fields["totalCount"] = .integer(total) }
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: .info, category: "followGraph", operation: "presentation",
             message: "Graph relation evidence", context: ["user": id], phase: stage, fields: fields
         ))

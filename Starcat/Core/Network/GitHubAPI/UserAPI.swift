@@ -27,15 +27,23 @@ extension GitHubAPIClient {
             path: AppEndpoints.GitHubREST.Paths.currentUser,
             cachePolicy: forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
         )
+        var user = response.value
         do {
             let status = try await getCurrentUserStatus()
-            return response.value.replacingStatus(status)
+            user = user.replacingStatus(status)
         } catch {
             // status 是个人资料的展示增强，不参与 token 健康检查。GraphQL 临时失败时保留登录态，
             // 让头像降级为无 status，避免一个非关键 badge 把启动恢复 / 登录流程打断。
             AppLog.network.warning("GitHub user status fetch failed: \(error.localizedDescription, privacy: .public)")
-            return response.value
         }
+        do {
+            user.organizations = try await getUserOrganizations(login: user.login, forceRefresh: forceRefresh)
+        } catch {
+            // 组织头像也是资料展示增强；失败保持 nil，由资料服务保留同账号旧缓存。
+            // 与 status 分别处理，避免其中一个端点失败时丢掉另一个已取得的结果。
+            AppLog.network.warning("GitHub user organizations fetch failed: \(error.localizedDescription, privacy: .public)")
+        }
+        return user
     }
 
     private func getCurrentUserStatus() async throws -> GitHubUserStatusDTO? {
@@ -78,6 +86,27 @@ extension GitHubAPIClient {
             path: AppEndpoints.GitHubREST.Paths.userSocialAccounts(login: login)
         )
         return response.value
+    }
+
+    /// 读取用户的全部公开组织；沿用 Link 分页，保证头像溢出计数包含后续页。
+    /// 使用公开用户端点，避免为个人卡片展示增加私密组织授权。
+    func getUserOrganizations(login: String, forceRefresh: Bool = false) async throws -> [GitHubOrganizationDTO] {
+        var organizations: [GitHubOrganizationDTO] = []
+        var page = 1
+        while true {
+            try Task.checkCancellation()
+            let response: APIResponse<[GitHubOrganizationDTO]> = try await get(
+                path: AppEndpoints.GitHubREST.Paths.userOrganizations(login: login),
+                queryItems: [
+                    URLQueryItem(name: "page", value: String(page)),
+                    URLQueryItem(name: "per_page", value: "100")
+                ],
+                cachePolicy: forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+            )
+            organizations.append(contentsOf: response.value)
+            guard let nextPage = response.linkHeader.nextPage else { return organizations }
+            page = nextPage
+        }
     }
 
     /// 当前用户是否已关注 `login`。

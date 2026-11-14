@@ -1210,6 +1210,11 @@ final class WeeklyContentViewModel {
             )
             if usesLocalOnlyFilters {
                 if items.isEmpty {
+                    UserFacingError.map(error, operation: "weekly.reloadBulkForFilters", service: "Weekly",
+                        impact: .blocked, summary: .contentUnavailable)
+                        .record(category: "network", operation: "weekly.reloadBulkForFilters", service: "weekly")
+                }
+                if items.isEmpty {
                     loadError = friendly.message
                     total = 0
                     hasMore = false
@@ -1515,7 +1520,9 @@ final class WeeklyContentViewModel {
                 total = 0
                 hasMore = false
             }
-            friendly.record(category: "network", operation: "weekly.loadRemotePage", service: "weekly")
+            UserFacingError.map(error, operation: "weekly.loadRemotePage", service: "Weekly",
+                impact: items.isEmpty ? .blocked : .none, summary: .contentUnavailable)
+                .record(category: "network", operation: "weekly.loadRemotePage", service: "weekly")
         }
     }
 
@@ -1580,7 +1587,7 @@ final class WeeklyContentViewModel {
         if let lastBulkFetchedAt {
             fields["cacheAgeSeconds"] = .decimal(max(0, Date().timeIntervalSince(lastBulkFetchedAt)))
         }
-        DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
+        DiagnosticContext.current?.capture(DiagnosticEvent(
             level: .info, category: "weekly", operation: "presentation", message: "Weekly list state",
             phase: phase, fields: fields))
     }

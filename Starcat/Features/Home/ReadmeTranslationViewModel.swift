@@ -580,7 +580,8 @@ final class ReadmeTranslationViewModel {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.translateReadme"),
-                service: translationService
+                service: translationService,
+                impact: .blocked, summary: .readmeUnavailable
             )
             errorMessage = friendly.message
             translationErrorKind = classifyError(error)

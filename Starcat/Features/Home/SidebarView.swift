@@ -866,6 +866,8 @@ struct SidebarView: View {
                 trendingRepo: currentTrendingRepo,
                 activityTintColor: currentActivityTintColor
             )
+            // 语言提示向下浮出资料区，需要绘制在相邻贡献草坪上方。
+            .zIndex(1)
 
             // 贡献草坪：与 Activity 选中/tint 完全解耦；固定 id 保持 TimelineView identity。
             SidebarContributionGraphSection()

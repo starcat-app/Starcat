@@ -122,10 +122,6 @@ final class StarcatMCPLoopbackHTTPServer {
     private func handleListenerState(_ state: NWListener.State, diagnosticPort: Int) {
         switch state {
         case .ready:
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
-                level: .info, category: "mcp", operation: "listener",
-                message: "Listener ready", phase: "ready", outcome: .succeeded,
-                fields: ["port": .integer(diagnosticPort)]))
             guard let startupContinuation else { return }
             self.startupContinuation = nil
             guard let boundPort = listener?.port?.rawValue, boundPort != 0 else {
@@ -136,15 +132,12 @@ final class StarcatMCPLoopbackHTTPServer {
             }
             startupContinuation.resume(returning: Int(boundPort))
         case .failed(let error):
-            DiagnosticLogStore.shared.enqueue(DiagnosticEvent(
-                level: .error, category: "mcp", operation: "listener",
-                message: "Listener failed", errorCode: DiagnosticFailure.code(error),
-                underlying: DiagnosticEvent.summarize(error), phase: "finished", outcome: .failed,
-                fields: ["port": .integer(diagnosticPort)]))
             AppLog.network.error("MCP HTTP listener failed: \(error.localizedDescription, privacy: .public)")
             if let startupContinuation {
                 self.startupContinuation = nil
                 startupContinuation.resume(throwing: error)
+                // 启动失败交由 MCPService 记录，避免同一失败跨层重复提醒。
+                return
             }
             if case .posix(.EADDRINUSE) = error { return }
             DiagnosticLogStore.record(
@@ -153,8 +146,10 @@ final class StarcatMCPLoopbackHTTPServer {
                 category: "mcp",
                 operation: "mcp.listenerRuntime",
                 message: "MCP HTTP listener failed after startup",
+                summary: .serviceUnavailable,
+                impact: .blocked,
                 underlying: DiagnosticEvent.summarize(error),
-                context: ["port": String(diagnosticPort)]
+                context: ["port": String(diagnosticPort)], error: error
             )
         case .cancelled:
             if let startupContinuation {

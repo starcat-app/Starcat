@@ -267,6 +267,22 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
         )
     }
 
+    /// nil 让 Hero 隐藏入口；显式闭包类型也避免把条件方法引用塞进大型 ViewBuilder。
+    private var issuesEntryAction: (() -> Void)? {
+        guard showsIssuesEntry, !repo.isPrivate, !repo.owner.isEmpty, !repo.name.isEmpty else { return nil }
+        return { openIssuesWorkspace() }
+    }
+
+    /// 工作台继续由 Scaffold 持有，避免胶囊因换行重建时重置列表或登录状态。
+    private func openIssuesWorkspace() {
+        guard dependencies.authSession.state.isAuthenticated else {
+            dependencies.authSession.requestLoginSheet()
+            return
+        }
+        ensureRepoIssuesVMIfNeeded()
+        showsIssuesWorkspace = true
+    }
+
     /// Issues 工作台（左列表 + 右详情/新建 大模态）展示状态（`showsIssuesEntry` 开启时入口才可见）。
     @State private var showsIssuesWorkspace = false
     /// Issues 工作台数据层。挂载时预创建（`.task`，Environment 在 task 阶段可靠），
@@ -827,9 +843,25 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                     libraryState: libraryState,
                     onLanguageTapped: onLanguageTapped,
                     showsContributorsStat: showsContributorsStat,
+                    // 工作台加载后优先使用不含 PR 的精确计数，尚未加载时沿用本地元数据。
+                    openIssuesCount: repoIssuesVM?.openCount ?? repo.openIssuesCount,
+                    onIssuesTapped: issuesEntryAction,
                     onStarTapped: handleStarTapped
                 ) {
                     trailingActionsView
+                }
+                .sheet(isPresented: $showsIssuesWorkspace) {
+                    if let issuesVM = repoIssuesVM {
+                        RepoIssuesWorkspaceView(
+                            repo: repo,
+                            listViewModel: issuesVM,
+                            inbox: dependencies.githubNotificationInboxService,
+                            threadRepository: dependencies.githubNotificationThreadRepository,
+                            apiClient: dependencies.apiClient,
+                            aiService: dependencies.repoAIInsightService
+                        )
+                        .appLocaleEnvironment()
+                    }
                 }
                 heroExtension_()
                 // v1.5（2026-06-10）：RepoLocalSections 内置渲染,跟随面板整段折叠。
@@ -964,36 +996,6 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                         }
                     )
                     .appLocaleEnvironment()
-                }
-            }
-            // Issues 工作台入口（2026-11-01）：仅星标详情（showsIssuesEntry）且公开仓库显示。
-            // 角标计数：工作台打开过一次后用 Search API 精确值（不含 PR）——本地
-            // `openIssuesCount` 含 PR，会出现「角标 1、面板 0 条」的口径错位（PR-only 仓库）；
-            // 未打开过工作台时仍用本地值兜底。
-            if showsIssuesEntry,
-               !repo.isPrivate,
-               !repo.owner.isEmpty,
-               !repo.name.isEmpty {
-                RepoIssuesEntryButton(openIssuesCount: repoIssuesVM?.openCount ?? repo.openIssuesCount) {
-                    guard dependencies.authSession.state.isAuthenticated else {
-                        dependencies.authSession.requestLoginSheet()
-                        return
-                    }
-                    ensureRepoIssuesVMIfNeeded()
-                    showsIssuesWorkspace = true
-                }
-                .sheet(isPresented: $showsIssuesWorkspace) {
-                    if let issuesVM = repoIssuesVM {
-                        RepoIssuesWorkspaceView(
-                            repo: repo,
-                            listViewModel: issuesVM,
-                            inbox: dependencies.githubNotificationInboxService,
-                            threadRepository: dependencies.githubNotificationThreadRepository,
-                            apiClient: dependencies.apiClient,
-                            aiService: dependencies.repoAIInsightService
-                        )
-                        .appLocaleEnvironment()
-                    }
                 }
             }
             if canShowLibraryToggle(for: repo) {

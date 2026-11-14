@@ -2674,7 +2674,8 @@ private struct GitHubNotificationCommentComposer: View {
         let friendly = UserFacingError.map(
             error,
             operation: String.l10n("diagnostics.operation.aiChat"),
-            service: "AI"
+            service: "AI",
+            impact: .blocked, summary: .aiUnavailable
         )
         friendly.record(
             category: "ai",

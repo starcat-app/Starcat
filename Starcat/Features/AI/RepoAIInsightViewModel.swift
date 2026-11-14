@@ -231,7 +231,8 @@ final class RepoAIInsightViewModel {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.loadAIInsight"),
-                service: "AI"
+                service: "AI",
+                impact: .blocked, summary: .aiUnavailable
             )
             errorMessage = friendly.message
             friendly.record(category: "ai", operation: "insight.load", service: "ai-provider")
@@ -451,7 +452,8 @@ final class RepoAIInsightViewModel {
         let friendly = UserFacingError.map(
             error,
             operation: String.l10n("diagnostics.operation.generateAIInsight"),
-            service: "AI"
+            service: "AI",
+            impact: .blocked, summary: .aiUnavailable
         )
         errorMessage = Self.userVisibleGenerateFailureMessage(for: error)
         friendly.record(category: "ai", operation: "insight.generate", service: "ai-provider")
@@ -498,7 +500,8 @@ final class RepoAIInsightViewModel {
             let friendly = UserFacingError.map(
                 error,
                 operation: String.l10n("diagnostics.operation.applyAITag"),
-                service: "Starcat"
+                service: "Starcat",
+                impact: .dataRisk, summary: .dataSaveFailed
             )
             errorMessage = friendly.message
             friendly.record(category: "ai", operation: "tag.apply", service: "local-database")

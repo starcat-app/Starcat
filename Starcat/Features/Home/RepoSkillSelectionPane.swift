@@ -14,6 +14,8 @@ struct RepoSkillSelectionPane: View {
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Namespace private var selectionSpace
     @State private var filter = Filter.all
     @State private var search = ""
     @State private var filteredSkills: [RepoSkill] = []
@@ -52,6 +54,14 @@ struct RepoSkillSelectionPane: View {
     private var query: String { "\(filter.rawValue):\(search)" }
     private var hasMore: Bool { visibleSkills.count < filteredSkills.count }
 
+    /// 首次扫描与筛选都可能暂时没有行；已有结果刷新时继续展示，最终空结果才显示空状态。
+    private var showsLoadingSkeleton: Bool {
+        visibleSkills.isEmpty && (
+            isFiltering || publishedQuery != query
+                || (session.skills.isEmpty && (session.isLoading || (session.scan == nil && session.error == nil)))
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             CountedSegmentedControl(
@@ -78,9 +88,7 @@ struct RepoSkillSelectionPane: View {
                                 identity: "\(publishedQuery):\(publishedRevision)"
                             ) { appendPage(appearingIndex: index) }
                     }
-                    if visibleSkills.isEmpty, isFiltering || publishedQuery.isEmpty {
-                        ProgressView().padding(.vertical, 42)
-                    } else if visibleSkills.isEmpty {
+                    if visibleSkills.isEmpty, !showsLoadingSkeleton {
                         Label("repo.skills.list.empty", systemImage: "shippingbox")
                             .font(interfaceScale.font(.body))
                             .foregroundStyle(.secondary)
@@ -88,9 +96,22 @@ struct RepoSkillSelectionPane: View {
                             .padding(.vertical, 42)
                     }
                 }
+                .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: previewID)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
             }
+            .opacity(showsLoadingSkeleton ? 0 : 1)
+            .allowsHitTesting(!showsLoadingSkeleton)
+            .accessibilityHidden(showsLoadingSkeleton)
+            .overlay(alignment: .topLeading) {
+                if showsLoadingSkeleton {
+                    RepoSkillSkeletonView(layout: .selection)
+                        .padding(.horizontal, 14)
+                        .transition(.opacity)
+                }
+            }
+            .clipped()
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: showsLoadingSkeleton)
 
             HStack {
                 Button("repo.skills.selection.all") { session.selectAll(true) }
@@ -185,7 +206,8 @@ struct RepoSkillSelectionPane: View {
             skill: skill,
             rowIndex: rowIndex,
             session: session,
-            isPreviewSelected: previewID == skill.id
+            isPreviewSelected: previewID == skill.id,
+            selectionSpace: selectionSpace
         ) { previewID = $0 }
     }
 
@@ -197,9 +219,11 @@ private struct SkillRow: View {
     let rowIndex: Int
     let session: RepoSkillSession
     let isPreviewSelected: Bool
+    let selectionSpace: Namespace.ID
     let selectPreview: (String) -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     private var isInstalled: Bool { session.installedIDs.contains(skill.id) }
@@ -214,7 +238,7 @@ private struct SkillRow: View {
             }
             .toggleStyle(.checkbox)
             .labelsHidden()
-            .disabled(session.isInstalling || isInstalled || skill.installationIssue != nil)
+            .disabled(session.isInstalling || skill.installationIssue != nil)
 
             Button {
                 selectPreview(skill.id)
@@ -235,6 +259,8 @@ private struct SkillRow: View {
                             .monospacedDigit()
                     }
                 }
+                // 只移动名称区，复选框保留原位置与独立的批量勾选语义。
+                .offset(x: isHovered && !isPreviewSelected && !reduceMotion ? 1.5 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -246,16 +272,26 @@ private struct SkillRow: View {
         .frame(height: interfaceScale.scaled(32))
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .background(
-            RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: isPreviewSelected, isHovered: isHovered),
-            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .strokeBorder(isPreviewSelected ? Color.accentColor.opacity(0.4) : .clear, lineWidth: 1)
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: false, isHovered: isHovered))
+                    .opacity(isPreviewSelected ? 0 : 1)
+                if isPreviewSelected {
+                    // 背景与描边共享几何身份并保留默认过渡，让同一块高亮跨行滑动。
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: true, isHovered: isHovered))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 1)
+                        }
+                        .matchedGeometryEffect(id: "repo.skills.preview.selection", in: selectionSpace)
+                }
+            }
         }
         .onHover { isHovered = $0 }
         .help(skill.summary + "\n" + skill.manifestPath)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
     }
 }
 

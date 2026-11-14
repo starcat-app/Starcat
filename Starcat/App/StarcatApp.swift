@@ -65,14 +65,19 @@ struct StarcatApp: App {
         Self.bootstrap()
 
         // 注意：AppDependencies 是 @MainActor，App init 已在 main thread。
+        let startupDiagnostic = DiagnosticOperation(category: "startup", name: "appDependencies")
         do {
-            let resolvedDependencies = try AppDependencies()
+            let resolvedDependencies = try DiagnosticContext.$current.withValue(startupDiagnostic) {
+                try AppDependencies()
+            }
+            startupDiagnostic.finish()
             _dependencies = State(initialValue: resolvedDependencies)
             _startupError = State(initialValue: nil)
             CompanionServiceBootstrapper.startFromStoredConfiguration(dependencies: resolvedDependencies)
         } catch {
-            let friendly = UserFacingError.map(error, operation: String.l10n("diagnostics.operation.startup"), service: "Starcat")
-            friendly.record(level: .critical, category: "startup", operation: "appDependencies")
+            let friendly = UserFacingError.map(error, operation: String.l10n("diagnostics.operation.startup"),
+                service: "Starcat", impact: .blocked, summary: .databaseUnavailable)
+            startupDiagnostic.finish(.failed, error: error, impact: .blocked, summary: .databaseUnavailable)
             _dependencies = State(initialValue: nil)
             _startupError = State(initialValue: friendly)
         }
@@ -492,9 +497,7 @@ struct StarcatApp: App {
             do {
                 try KeychainManager.shared.ping()
             } catch {
-                DiagnosticLogStore.record(level: .error, visibility: .issue, category: "keychain",
-                    operation: "startup.ping", message: "Keychain self-check failed",
-                    underlying: DiagnosticEvent.summarize(error))
+                // 凭据层已记录实际读写或完整性故障，自检失败不再重复生成同一问题。
                 AppLog.keychain.error("Keychain self-check failed: \(error.localizedDescription, privacy: .public)")
             }
         }

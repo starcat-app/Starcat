@@ -16,6 +16,57 @@ struct DiagnosticArchiveTests {
         FileManager.default.temporaryDirectory.appendingPathComponent("diagnostic-archive-\(UUID())")
     }
 
+    @Test("故障报告保留安全阶段和匿名范围，LocalAI仅按选中故障的同类型ID关联")
+    func severeEvidenceAndLocalAICorrelation() throws {
+        let root = directory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stage = DiagnosticEvent(level: .info, category: "network", operation: "request", message: "stage",
+            operationID: "child", requestID: "request-a", serverTraceID: "trace-a",
+            phase: "response", fields: ["attempt": .integer(2), "token": .string("private-secret")])
+        let first = DiagnosticEvent(level: .error, visibility: .issue, category: "ai", operation: "chat",
+            message: "private customer text", summaryKey: DiagnosticIssue.aiUnavailable.rawValue,
+            context: ["repoID": "private/repository"], operationID: "root-a", outcome: .failed,
+            durationMs: 1e30, impact: .blocked,
+            breadcrumbs: [DiagnosticBreadcrumb(event: stage, elapsedMs: 12)], breadcrumbsTruncated: true,
+            sourceFile: "Starcat/Features/AI/Fixture.swift", sourceFunction: "send", sourceLine: 42)
+        let second = DiagnosticEvent(level: .error, visibility: .issue, category: "ai", operation: "chat",
+            message: "failure", summaryKey: DiagnosticIssue.aiUnavailable.rawValue,
+            context: ["repoID": "different/repository"], operationID: "root-b",
+            requestID: "request-b", outcome: .failed, impact: .blocked)
+        let attached = DiagnosticEvent(level: .info, category: "localAI", operation: "runtime",
+            message: "stage", requestID: "request-a", phase: "inference")
+        let unrelated = DiagnosticEvent(level: .info, category: "localAI", operation: "runtime",
+            message: "stage", requestID: "request-b", phase: "unrelated")
+        let wrongKind = DiagnosticEvent(level: .info, category: "localAI", operation: "runtime",
+            message: "stage", operationID: "request-a", phase: "wrongKind")
+        let text = try [first, second].map { String(decoding: try JSONEncoder().encode($0), as: UTF8.self) }
+            .joined(separator: "\n")
+        let input = DiagnosticArchiveBuilder.Input(
+            snapshot: .init(text: text, cutoffSequence: 2, capturedAt: "2026-11-13T00:00:00Z", health: [:]),
+            settings: ["hasSettings": "true"], options: .init(operationID: "root-a", since: nil),
+            sessions: nil, localAI: [attached, unrelated, wrongKind], collectors: [], system: nil)
+        let manifest = try DiagnosticArchiveBuilder.writePayload(input: input, to: root, exportID: "correlation")
+        #expect(manifest.schemaVersion == 3)
+        let attachment = try String(contentsOf: root.appendingPathComponent("attachments/local-ai/events.jsonl"), encoding: .utf8)
+        #expect(attachment.contains("inference"))
+        #expect(!attachment.contains("unrelated"))
+        #expect(!attachment.contains("wrongKind"))
+        let exported = try String(contentsOf: root.appendingPathComponent("events.jsonl"), encoding: .utf8)
+        let event = try JSONDecoder().decode(DiagnosticEvent.self, from: Data(exported.trimmingCharacters(in: .whitespacesAndNewlines).utf8))
+        #expect(event.context == first.context)
+        #expect(event.breadcrumbs.first?.fields["attempt"] == .integer(2))
+        #expect(!exported.contains("private"))
+        let report = try String(contentsOf: root.appendingPathComponent("report.md"), encoding: .utf8)
+        #expect(report.contains("Fields at stage: attempt=2"))
+        #expect(report.contains("Fixture.swift:42"))
+        #expect(report.contains("2026-11-13T00:00:00Z"))
+        #expect(report.contains("Stages truncated"))
+        #expect(report.contains("Recovery is unknown"))
+        let target = root.appendingPathComponent("severe.zip")
+        _ = try DiagnosticBundleExporter.archive(input: input, destination: target)
+        Attachment.record(Array(try Data(contentsOf: target)), named: "starcat-severe-diagnostics-validation.zip")
+    }
+
     @Test("图谱87/78与授权502生成可验证且安全的报告")
     func reportContract() throws {
         let root = directory()
@@ -24,10 +75,11 @@ struct DiagnosticArchiveTests {
             message: "customer private prompt", context: ["token": "sensitive"],
             phase: "renderConfirmed", fields: ["totalCount": .integer(87),
                                              "renderedCount": .integer(78), "canLoadMore": .boolean(false)])
-        let failure = DiagnosticEvent(level: .warning, category: "license", operation: "validate",
-            message: "request failed", statusCode: 502, errorCode: "provider_error",
+        let failure = DiagnosticEvent(level: .error, visibility: .issue, category: "license", operation: "validate",
+            message: "request failed", summaryKey: DiagnosticIssue.serviceUnavailable.rawValue,
+            statusCode: 502, errorCode: "provider_error",
             operationID: "sample-operation", serverTraceID: "00000000-0000-0000-0000-000000000001",
-            phase: "business", outcome: .failed)
+            phase: "business", outcome: .failed, impact: .blocked)
         let encoder = JSONEncoder()
         let text = try [graph, failure].map {
             String(decoding: try encoder.encode($0), as: UTF8.self)
@@ -206,7 +258,8 @@ struct DiagnosticArchiveTests {
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let store = DiagnosticLogStore(directoryURL: parent.appendingPathComponent("diagnostics"))
         await store.record(DiagnosticEvent(level: .error, visibility: .issue, category: "database",
-                                           operation: "sample", message: "Database operation failed"))
+            operation: "sample", message: "Database operation failed",
+            summaryKey: DiagnosticIssue.databaseUnavailable.rawValue, outcome: .failed, impact: .blocked))
         let target = parent.appendingPathComponent("bundle.zip")
         try Data("old".utf8).write(to: target)
         let result = try await DiagnosticBundleExporter.export(to: target, store: store,

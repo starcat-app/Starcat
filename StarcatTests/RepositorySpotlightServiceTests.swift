@@ -14,6 +14,33 @@ import Testing
 @MainActor
 @Suite("Repository Spotlight")
 struct RepositorySpotlightServiceTests {
+    @Test("重建清空后的失败按实际可用批次准入，不能仅信任旧指纹", arguments: [0, 1])
+    func replacementFailureUsesActualIndexEvidence(indexedCount: Int) async throws {
+        let database = try InMemoryDatabaseManager(userId: 42)
+        try await insertRepository(database: database, id: 88, name: "fixture",
+            isPrivate: false, isStarred: true, accessState: .accessible)
+        let index = RecordingRepositorySpotlightIndex()
+        await index.failReplacement(with: CoreSpotlightRepositoryIndex.ReplacementFailure(
+            underlying: URLError(.cannotWriteToFile), indexedCount: indexedCount))
+        let indexState = makeIndexState()
+        defer { indexState.cleanup() }
+        indexState.state.record(accountID: 42, fingerprint: "old-index")
+        let service = RepositorySpotlightService(database: database, settings: makeSettings(enabled: true),
+            index: index, indexState: indexState.state)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory)
+        let operation = DiagnosticOperation(category: "spotlight", name: "rebuild", store: store)
+        await DiagnosticContext.$current.withValue(operation) { await service.rebuild() }
+        operation.finish(.failed)
+        let summary = await store.issueSummary()
+        #expect(summary.issueCount == (indexedCount == 0 ? 1 : 0))
+        #expect(!indexState.state.belongs(to: 42))
+        if indexedCount == 0 {
+            #expect(summary.latestIssue?.errorChain.first?.code == URLError.cannotWriteToFile.rawValue)
+        }
+    }
+
     @Test("Spotlight 默认关闭，明确开启后持久化")
     func preferenceRequiresExplicitOptInAndPersists() {
         let suiteName = "test.starcat.spotlight.preference.\(UUID().uuidString)"

@@ -108,7 +108,8 @@ final class GitHubNotificationIssueSummarySession {
                 let friendly = UserFacingError.map(
                     error,
                     operation: String.l10n("activity.issueSummary.action"),
-                    service: "AI"
+                    service: "AI",
+                    impact: .blocked, summary: .aiUnavailable
                 )
                 friendly.record(category: "ai", operation: "notification.issue.summary", service: "ai-provider")
                 errorMessage = friendly.message
