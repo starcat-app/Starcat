@@ -387,7 +387,8 @@ struct SidebarContributionGraphSection: View {
                 localeID: locale.identifier
             )
             .padding(.horizontal, 14)
-            .padding(.top, 4)
+            // 语言条下方热区已留 6pt，这里只补 2pt，保持两区紧凑衔接。
+            .padding(.top, 2)
             // 2026-06-05 v3 follow-up：dong4j 反馈"管理/趋势/活动 再上移 1/3"。
             // 原 .bottom 8 + rootNavigationBar.top 10 = 18pt 间距，减 1/3 → 12pt。
             // 拆成 bottom 4 + top 8 = 12pt，对称收缩、视觉更聚拢。

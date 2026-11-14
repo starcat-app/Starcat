@@ -46,7 +46,7 @@ struct SidebarHeaderView: View {
     @Environment(UserProfileService.self) private var userProfileService
     /// 刷新时间的相对文案必须跟随 App 内语言设置，不能退回系统 locale。
     @Environment(\.locale) private var locale
-    /// 分享卡 Top Languages 使用用户自有公开仓库语言统计，不使用 starred 项目语言分布。
+    /// 个人语言条与分享卡共用自有公开仓库的统计，不使用 starred 项目语言分布。
     @Environment(DeveloperLanguageService.self) private var developerLanguageService
 
     /// 当前在 Trending 页面选中的 repo（仅在 Trending 页面有效，Manage 页面为 nil）。
@@ -82,7 +82,11 @@ struct SidebarHeaderView: View {
                 // HOM-PROFILE 2026-06-05：bio + 个人主页快捷链接图标行；
                 // 全部字段为空时该 view 自身不渲染内容，不会浪费垂直空间。
                 ProfileLinksRow(user: user)
-                statsRow(user: user)
+                // 15pt 热区在 3pt 色条上下各留 6pt，组内不再叠加外层间距。
+                VStack(spacing: 0) {
+                    statsRow(user: user)
+                    developerLanguageBar
+                }
             case .unauthenticated, .awaitingUserCode, .awaitingWebCallback:
                 // 2026-06-29：把 .awaitingWebCallback 也归到 unauthenticated 显示分支
                 // ——sidebar 头像卡不需要区分"正在走哪个 flow"，反正都是未登录态
@@ -92,7 +96,8 @@ struct SidebarHeaderView: View {
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
-        .padding(.bottom, 12)
+        // 登录态由色条下方 6pt 热区与草坪顶部 2pt 组成 8pt 间距。
+        .padding(.bottom, authSession.state.isAuthenticated ? 0 : 12)
         .background(alignment: .top) { sidebarTintBackground }
         // HOM-175：防御性兜底，强制整张头像卡严格按内容尺寸（垂直方向不被拉伸）。
         // 即便未来子视图（avatarRow / ProfileLinksRow / statsRow）再次引入垂直
@@ -134,6 +139,22 @@ struct SidebarHeaderView: View {
                 showShareCardSheet = false
             }
         }
+    }
+
+    /// 直接消费现有快照，以详情页相同的 Top 5 + Other 规则展示完整比例。
+    /// 只增加展示入口，加载、缓存与手动刷新仍由现有开发语言服务负责。
+    private var developerLanguageBar: some View {
+        let bytesByLanguage = developerLanguageService.snapshot?.languages.reduce(
+            into: [String: Int]()
+        ) { result, entry in
+            result[entry.name] = entry.bytes
+        } ?? [:]
+
+        return LanguageDistributionBar(
+            segments: RepositoryLanguageDistributionViewModel.makeSegments(from: bytesByLanguage),
+            barHeight: 3,
+            hoverHeight: 15
+        )
     }
 
     // MARK: - 选中 repo 语言色背景
