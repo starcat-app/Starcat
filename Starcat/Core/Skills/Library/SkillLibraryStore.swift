@@ -89,12 +89,14 @@ actor SkillLibraryStore {
         try writer().write { try operation.save($0) }
     }
 
-    /// 检查期间安装指针可能变化；旧 revision 的响应直接忽略，避免恢复旧更新角标。
+    /// 检查期间安装指针可能变化；旧 revision 直接忽略。
+    /// 在同一次事务中读取当前证据后合并，不能用请求发起时的旧快照最后写入获胜。
     func save(_ check: SkillUpdateCheck) throws {
         try writer().write { db in
             guard let entry = try SkillLibraryEntry.fetchOne(db, key: check.entryID.uuidString),
                   entry.currentRevisionID == check.revisionID else { return }
-            try check.save(db)
+            let previous = try SkillUpdateCheck.fetchOne(db, key: check.entryID.uuidString)
+            try check.merging(previous: previous).save(db)
         }
     }
 
@@ -406,6 +408,17 @@ actor SkillLibraryStore {
                     succeeded_at DOUBLE,
                     message TEXT
                 );
+                """)
+        }
+        migrator.registerMigration("v5-skill-update-evidence") { db in
+            // 旧失败记录只有成功完成时间，无法还原原始成功请求的发起时间。
+            // 仅为存量证据建立保守基线；升级后每次成功都写入准确的发起时间。
+            try db.execute(sql: """
+                ALTER TABLE skill_update_checks ADD COLUMN evidence_attempted_at DOUBLE;
+                UPDATE skill_update_checks SET evidence_attempted_at =
+                    CASE WHEN state IN ('available', 'upToDate') THEN attempted_at
+                         WHEN succeeded_at IS NOT NULL THEN MIN(attempted_at, succeeded_at)
+                         ELSE NULL END;
                 """)
         }
         try migrator.migrate(writer)

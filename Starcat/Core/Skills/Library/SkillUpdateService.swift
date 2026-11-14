@@ -22,6 +22,7 @@ struct SkillUpdateCheck: SkillLibraryPersistedRecord, Equatable, Identifiable {
     var hasUpdate = false
     var availableCommit: String?
     var attemptedAt = Date().timeIntervalSince1970
+    var evidenceAttemptedAt: TimeInterval?
     var succeededAt: TimeInterval?
     var message: String?
     var id: UUID { entryID }
@@ -33,7 +34,37 @@ struct SkillUpdateCheck: SkillLibraryPersistedRecord, Equatable, Identifiable {
         case hasUpdate = "has_update"
         case availableCommit = "available_commit"
         case attemptedAt = "attempted_at"
+        case evidenceAttemptedAt = "evidence_attempted_at"
         case succeededAt = "succeeded_at"
+    }
+
+    /// 请求完成顺序不代表新旧：状态跟随最新发起的尝试，内容证据跟随最新成功的尝试。
+    /// 失败携带的旧快照不能覆盖数据库中更近的证据；较早的成功晚到时仍可补齐证据，
+    /// 但不能清除更新请求的错误状态，也不能胜过发起时间更晚的成功结果。
+    func merging(previous: Self?) -> Self {
+        var incoming = self
+        if incoming.state == .available || incoming.state == .upToDate {
+            incoming.evidenceAttemptedAt = incoming.attemptedAt
+        }
+        let previous = previous.flatMap { $0.revisionID == revisionID ? $0 : nil }
+        var merged = if let previous, previous.attemptedAt > incoming.attemptedAt { previous } else { incoming }
+        if merged.state == .unsupported {
+            merged.hasUpdate = false
+            merged.availableCommit = nil
+            merged.evidenceAttemptedAt = nil
+            merged.succeededAt = nil
+        } else if let evidence = ([incoming] + [previous].compactMap { $0 })
+            .filter({ $0.evidenceAttemptedAt != nil })
+            .max(by: { ($0.evidenceAttemptedAt ?? 0) < ($1.evidenceAttemptedAt ?? 0) }) {
+            merged.hasUpdate = evidence.hasUpdate
+            merged.availableCommit = evidence.availableCommit
+            merged.evidenceAttemptedAt = evidence.evidenceAttemptedAt
+            merged.succeededAt = evidence.succeededAt
+        }
+        if merged.state == .stale || merged.state == .unavailable {
+            merged.state = merged.hasUpdate ? .stale : .unavailable
+        }
+        return merged
     }
 }
 
