@@ -78,6 +78,7 @@ final class SkillWorkspaceViewModel {
     private(set) var items: [SkillLibraryItem] = []
     private(set) var visibleItems: [SkillLibraryItem] = []
     private(set) var loadState: SkillWorkspaceLoadState = .ready
+    private(set) var contentRefreshID = UUID()
     private(set) var agentNames: [String] = []
     private(set) var sources: [String] = []
     private(set) var filterCounts: [SkillWorkspaceFilter: Int] = [:]
@@ -91,6 +92,7 @@ final class SkillWorkspaceViewModel {
     func applySnapshot(_ items: [SkillLibraryItem], state: SkillWorkspaceLoadState = .ready) {
         self.items = items
         loadState = state
+        if state != .loading { contentRefreshID = UUID() }
         agentNames = Set(items.flatMap { $0.locations.flatMap(\.agentNames) }).sorted()
         sources = Set(items.compactMap(\.source)).sorted()
         filterCounts = Dictionary(uniqueKeysWithValues: SkillWorkspaceFilter.allCases.map { filter in

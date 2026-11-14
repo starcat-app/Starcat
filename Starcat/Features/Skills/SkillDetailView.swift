@@ -6,11 +6,10 @@
 //  外部条目只展示事实，尚未实现的写操作不生成占位按钮或乐观开关。
 //
 
-import MarkdownUI
 import SwiftUI
 
 /// Tab 是本机窗口偏好，不随条目或 GitHub 账号变化。
-private enum SkillDetailTab: String, CaseIterable, Identifiable {
+enum SkillDetailTab: String, CaseIterable, Identifiable {
     case overview
     case files
     case assignments
@@ -69,6 +68,7 @@ struct SkillDetailView: View {
             Text(verbatim: item.summary)
                 .font(interfaceScale.font(.body))
                 .foregroundStyle(.secondary)
+                .lineLimit(3)
             HStack(spacing: 12) {
                 Label(
                     LocalizedStringKey(item.managementKind == .managed
@@ -93,6 +93,8 @@ struct SkillDetailView: View {
                 .font(interfaceScale.font(.body))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+                .lineLimit(3)
+                .help(diagnostic)
             }
         }
     }
@@ -100,19 +102,9 @@ struct SkillDetailView: View {
     @ViewBuilder
     private func detail(_ item: SkillLibraryItem) -> some View {
         switch selectedTab {
-        case .overview:
-            Markdown(item.markdown.map(SkillFrontmatter.stripFrontmatter) ?? item.summary)
-                .markdownTextStyle {
-                    FontSize(interfaceScale.scaled(StarcatTypography.body.pointSize))
-                    ForegroundColor(.primary)
-                }
-        case .files:
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(item.files, id: \.self) { path in
-                    Label(path, systemImage: "doc")
-                        .font(interfaceScale.font(.code))
-                }
-            }
+        case .overview, .files:
+            SkillContentView(item: item, tab: selectedTab, refreshID: viewModel.contentRefreshID)
+                .id(item.id)
         case .assignments:
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(item.locations) { location in
@@ -122,6 +114,12 @@ struct SkillDetailView: View {
                         Text(verbatim: location.path)
                             .font(interfaceScale.font(.code))
                             .textSelection(.enabled)
+                        if location.resolvedPath != location.path, let resolved = location.resolvedPath {
+                            Text(verbatim: resolved).font(interfaceScale.font(.code))
+                        }
+                        Text(LocalizedStringKey("skills.detail.location.\(location.state.rawValue)"))
+                            .font(interfaceScale.font(.caption))
+                            .foregroundStyle(.secondary)
                         Text(LocalizedStringKey(location.isShared
                             ? "skills.detail.shared"
                             : "skills.detail.visibility.unverified"))
