@@ -45,6 +45,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
+| `codex/shared-selection-motion` | 本地 worktree：`../Starcat-shared-selection-motion`；无远端分支 | 基于 `dev@2cf4ff68` 先排查并修复编译错误，再抽离设置页选择与悬停动效，接入主窗口侧栏分类。 | `开发中`；2026-11-14 已创建独立 worktree 并复制本机 Secrets 配置，编译复现与组件实施进行中。 | 在本 worktree 验证双渠道构建、导航交互与图标配色；验收后合回 `dev`，不自动提交、推送或清理。 |
 | `codex/skill-management` | 本地 worktree：`../Starcat-skill-management`；无远端分支 | 基于 `dev@ed8d689c` 研究并实现 Direct 独有的 Skill 管理主窗口，采用 Starcat 原生三栏 UI；研究报告与实施方案仅在专项 worktree 维护。 | `开发中`；2026-11-14 已创建 worktree、复制本机 Secrets 配置并迁入 12 篇分析报告；尚未实施应用代码，未带入主工作区其他任务的未提交修改。 | 后续研究、方案细化与开发均在本 worktree 进行；完成开发与验收后合回 `dev`，不自动提交、推送或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
@@ -94,7 +95,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| `codex/severe-diagnostics` | 已合并；本地分支与 worktree 保留。 | 2026-11-13 dong4j 授权合回 `dev`。功能提交 `d2b710f6` 经 `7b0a6d8e` 整合主线后合入本地 `dev`，保留同期主线文档清理。174 项定向测试、16 项 Python 测试、双渠道 build-only 及 17 语言编译资源校验通过。保留 `../Starcat-severe-diagnostics`，界面与译文后续在 `dev` 验收；本次未推送或清理。 |
+| `codex/severe-diagnostics` | 已删除本地分支及 worktree。 | 2026-11-13 功能提交 `d2b710f6` 经 `7b0a6d8e` 整合主线后，通过 `c42b5e6c` 合入 `dev`；当时 174 项定向测试、16 项 Python 测试、双渠道 build-only 及 17 语言编译资源校验通过。2026-11-14 dong4j 授权清理，删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净，Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-severe-diagnostics` 及本地分支；界面与译文后续在 `dev` 验收，本次未操作远端。 |
 | `codex/github-overview` | 已删除（方案废弃） | 2026-11-13 dong4j 查看效果后明确永久取消，不再安排后续开发。删除前确认分支独有提交为 0，全部实现仍为 worktree 内的未提交改动；按授权通过 `git worktree remove --force` 丢弃实现、测试、本地化改动与构建产物，随后通过 `git branch -d` 删除本地分支。最终方案与设计图一并删除，未合入 `dev`，未操作远端。 |
 | 主仓及三个 supports 仓库的 `codex/daily-radar-sharing` | 已删除四仓本地专项分支及 worktree。 | 2026-11-13 dong4j 确认功能完成并授权清理。主仓功能提交 `9fcf469d` 经 `96836605` 整合后合回 `dev`；sharing-api `e98d51a`、聚合 API `db6800e`、starcat-site `1400a7d` 均已合入各自 `dev`。删除前逐仓确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、专项 worktree 干净；生产备份与含 `/d/` 路由的本机私有配置已保留到主工作区。先清理三个嵌套支持仓，再以非强制 `git worktree remove` 和 `git branch -d` 清理主专项；四仓主工作区仍在 `dev`，其他 worktree 保留，未操作远端。后续公开页 HTML/CSS 在 sharing-api 迭代。 |
 | `codex/global-search-review-fixes` | 已删除 | 2026-11-13 dong4j 授权清理；分支头 `fd213c5b` 的 10 项独立修复已通过 merge commit `e66c56da` 合入 `dev`。删除前确认是 `dev` 祖先、独有提交为 0、`git cherry` 为空，搜索源码与 `dev` 一致，worktree 干净且 Secrets 配置与主工作区一致。已通过 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-global-search-review-fixes` 与本地分支；本次未操作远端。 |
