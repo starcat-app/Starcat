@@ -84,6 +84,9 @@ struct ContributionGraphView: View {
     /// 调色板只影响后台位图渲染，不改变草坪的动态固有高度。
     var style: ContributionGraphStyle = .standard
 
+    /// 仅侧栏提供切换入口，资料卡中的贡献图继续作为只读内容。
+    var allowsStyleCycling: Bool = false
+
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     /// Sheet 不会让宿主窗口失去前台状态，不能依赖 TimelineView 自动停表。
@@ -237,7 +240,26 @@ struct ContributionGraphView: View {
     private var gridContent: some View {
         // 只有这个叶子 View 读取 `frameImage`。把 Observation 依赖隔离在这里后，
         // 每帧发布不会让上方标题、相对时间和整张贡献卡片一起重算。
-        SnakeFrameImageView(renderService: renderService)
+        if allowsStyleCycling {
+            Button {
+                // 与设置页共用枚举顺序，末项回到关闭；直接写设置以同步并保存选择。
+                let nextStyle = SnakeStyle.allCases
+                    .drop(while: { $0 != settings.snakeStyle })
+                    .dropFirst()
+                    .first ?? .off
+                settings.snakeStyle = nextStyle
+            } label: {
+                SnakeFrameImageView(renderService: renderService)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .accessibilityLabel(Text("settings.snakeStyle.title"))
+            .accessibilityValue(Text(LocalizedStringKey(settings.snakeStyle.displayNameKey)))
+            .help(Text(LocalizedStringKey(settings.snakeStyle.displayNameKey)))
+        } else {
+            SnakeFrameImageView(renderService: renderService)
+        }
     }
 }
 
@@ -419,7 +441,8 @@ private struct EquatableContributionGraphHost: View {
             payload: payload,
             isLoading: isLoading,
             lastFetchedAt: lastFetchedAt,
-            login: login
+            login: login,
+            allowsStyleCycling: true
         )
     }
 }
