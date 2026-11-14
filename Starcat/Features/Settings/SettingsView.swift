@@ -13,7 +13,7 @@
 //  - About 标签：版本、许可、致谢
 //
 //  设计约束：
-//  - 用原生 NavigationSplitView + Sidebar List + Form 组成系统设置式左右布局
+//  - 用原生 NavigationSplitView + 侧栏导航 + Form 组成系统设置式左右布局
 //  - 控件直接绑定到 AppSettings 的 @Observable 属性，写入即落盘
 //
 
@@ -63,6 +63,9 @@ struct SettingsView: View {
 
     @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Namespace private var sidebarSelectionSpace
+    @FocusState private var focusedSidebarTab: SettingsTab?
     @State private var selectedTab: SettingsTab = .general
     @State private var currentLocation = SettingsLocation(tab: .general)
     @State private var backwardHistory: [SettingsLocation] = []
@@ -247,18 +250,43 @@ struct SettingsView: View {
     private static let sidebarWidth: (minimum: CGFloat, ideal: CGFloat, maximum: CGFloat) =
         (220, 240, 260)
 
+    /// 导航行和方向键共用显示顺序，保留既有分类、搜索标识与深链身份。
+    private static let sidebarGroups: [(title: LocalizedStringKey, tabs: [SettingsTab])] = [
+        ("settings.sidebar.group.application", [.general, .notifications, .shortcuts]),
+        ("settings.sidebar.group.account", [.pro, .privacy]),
+        ("settings.navigation.group.ai", [.aiModels, .translation, .aiAutomation]),
+        ("settings.navigation.group.retrieval", [.aiIndexContext, .externalSearch]),
+        // 提示词继续通过推理页的编辑弹窗进入，不新增侧栏分类。
+        ("RAG", [.ragInference, .ragRetrieval]),
+        ("settings.navigation.group.extensionsConnections", [.browserExtensions, .mcp, .localTools, .services]),
+        // Labs 仍位于末尾，与稳定功能分组。
+        ("settings.navigation.group.support", [.storage, .diagnostics, .labs])
+    ]
+
     var body: some View {
-        // NavigationSplitView + sidebar List 使用 macOS 原生选中态、材质和分隔线。
+        // 保留原生分栏、材质和分隔线，导航行单独绘制跨分类移动的选中背景。
         // 固定 columnVisibility 可避免设置分类被误折叠，也不会再出现自绘窗口留下的底栏。
         NavigationSplitView(columnVisibility: .constant(.all)) {
             settingsSidebar
         } detail: {
-            settingsPage(selectedTab)
-                .contentMargins(.top, 8, for: .scrollContent)
-                // `navigationTitle(LocalizedStringKey)` 由系统 toolbar 单独解析，曾绕过
-                // App 内 LocaleStore，导致侧栏已是英文而这里仍显示中文。先通过
-                // LocalizedBundle 解析成当前应用语言的 String，toolbar 就不会回退系统语言。
-                .navigationTitle(String.l10n(selectedTab.titleKeyString))
+            // 固定容器让离场页与入场页在同一区域交接，不让两份 Form 参与并排布局。
+            // 分类身份只作用于详情；历史、搜索与提示词弹框状态仍由外层持有。
+            ZStack {
+                settingsPage(selectedTab)
+                    .contentMargins(.top, 8, for: .scrollContent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .id(selectedTab)
+                    .transition(reduceMotion ? .opacity : SettingsPageBlurFade.transition)
+                    // 显式层级避免离场内容被 ZStack 的默认排序提前移到背景后面。
+                    .zIndex(1)
+            }
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: selectedTab)
+            // 模糊只绘制在详情边界内，避免过渡期间盖住侧栏和工具栏。
+            .clipped()
+            // `navigationTitle(LocalizedStringKey)` 由系统 toolbar 单独解析，曾绕过
+            // App 内 LocaleStore，导致侧栏已是英文而这里仍显示中文。先通过
+            // LocalizedBundle 解析成当前应用语言的 String，toolbar 就不会回退系统语言。
+            .navigationTitle(String.l10n(selectedTab.titleKeyString))
         }
         .navigationSplitViewStyle(.balanced)
         // Window scene 的 defaultSize 负责初始尺寸；内容只填满已分配 bounds，不再把
@@ -325,7 +353,7 @@ struct SettingsView: View {
         }
     }
 
-    /// 把系统 Sidebar List 的选择写入历史，而不是另做一套选中态。
+    /// 导航行与方向键都通过现有路由写入历史，选中背景只读取当前分类。
     private var settingsTabSelection: Binding<SettingsTab> {
         Binding(
             get: { selectedTab },
@@ -334,52 +362,47 @@ struct SettingsView: View {
     }
 
     private var settingsSidebar: some View {
-        List(selection: settingsTabSelection) {
-            Section("settings.sidebar.group.application") {
-                settingsSidebarRow(.general)
-                settingsSidebarRow(.notifications)
-                settingsSidebarRow(.shortcuts)
+        ScrollViewReader { proxy in
+            ScrollView {
+                // 分类数量很少，完整保留导航行，选中背景在各行间共享几何身份。
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(Self.sidebarGroups.indices, id: \.self) { index in
+                        let group = Self.sidebarGroups[index]
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(group.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 2)
+                                .accessibilityAddTraits(.isHeader)
+                            ForEach(group.tabs) { tab in
+                                settingsSidebarRow(tab)
+                                    .focused($focusedSidebarTab, equals: tab)
+                                    .id(tab)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 12)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82),
+                    value: selectedTab
+                )
             }
-
-            // 账户相关入口独立归类，继续复用原 tab 身份，保留搜索、深链和历史导航。
-            Section("settings.sidebar.group.account") {
-                settingsSidebarRow(.pro)
-                settingsSidebarRow(.privacy)
-            }
-
-            Section("settings.navigation.group.ai") {
-                settingsSidebarRow(.aiModels)
-                settingsSidebarRow(.translation)
-                settingsSidebarRow(.aiAutomation)
-            }
-
-            // 仅按职责拆分侧栏分组，保留 tab 身份，确保深链、搜索和导航历史仍定位原页面。
-            Section("settings.navigation.group.retrieval") {
-                settingsSidebarRow(.aiIndexContext)
-                settingsSidebarRow(.externalSearch)
-            }
-
-            // 提示词属于推理配置，通过页内编辑弹窗进入，不再占用独立侧栏分类。
-            Section("RAG") {
-                settingsSidebarRow(.ragInference)
-                settingsSidebarRow(.ragRetrieval)
-            }
-
-            Section("settings.navigation.group.extensionsConnections") {
-                settingsSidebarRow(.browserExtensions)
-                settingsSidebarRow(.mcp)
-                settingsSidebarRow(.localTools)
-                settingsSidebarRow(.services)
-            }
-
-            Section("settings.navigation.group.support") {
-                settingsSidebarRow(.storage)
-                settingsSidebarRow(.diagnostics)
-                // Labs 放侧栏末尾:实验性入口不与稳定功能混排,下线时删除这一行即可。
-                settingsSidebarRow(.labs)
+            .onChange(of: selectedTab) { _, tab in
+                // 搜索、深链及历史导航也要让当前分类进入可见区域。
+                proxy.scrollTo(tab)
             }
         }
-        .listStyle(.sidebar)
+        .onKeyPress(.upArrow) {
+            moveSidebarSelection(by: -1)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            moveSidebarSelection(by: 1)
+            return .handled
+        }
         // Apple 要求把默认项移除声明挂在产生它的 Sidebar column 上；挂在 SplitView
         // 根部时 macOS 26 仍可能在窗口重建 Toolbar 后重新注入折叠按钮。
         .toolbar(removing: .sidebarToggle)
@@ -419,19 +442,101 @@ struct SettingsView: View {
     }
 
     private func settingsSidebarRow(_ tab: SettingsTab) -> some View {
-        Label {
-            Text(tab.titleKey)
-                .lineLimit(1)
-                .help(Text(tab.titleKey))
-        } icon: {
-            // SF 与资产共用原生 Label 图标列；换图不能改变导航行的宽高。
-            BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 16 : 13)
-                .frame(width: 16, height: 16)
+        SettingsSidebarRow(
+            tab: tab,
+            isSelected: selectedTab == tab,
+            selectionSpace: sidebarSelectionSpace
+        ) {
+            settingsTabSelection.wrappedValue = tab
         }
-        .tag(tab)
     }
 
-    /// 只构造当前页，避免旧版 ZStack 让所有访问过的重型 Form 一直参与布局与刷新。
+    /// 自绘导航行保留方向键浏览，始终按实际显示顺序选择且不越过首尾。
+    private func moveSidebarSelection(by offset: Int) {
+        let tabs = Self.sidebarGroups.flatMap(\.tabs)
+        guard let index = tabs.firstIndex(of: focusedSidebarTab ?? selectedTab) else { return }
+        let destination = index + offset
+        guard tabs.indices.contains(destination) else { return }
+        focusedSidebarTab = tabs[destination]
+        settingsTabSelection.wrappedValue = tabs[destination]
+    }
+
+    /// 共享选中背景负责移动；悬停只改变绘制属性，不挤动相邻文字与导航行。
+    private struct SettingsSidebarRow: View {
+        let tab: SettingsTab
+        let isSelected: Bool
+        let selectionSpace: Namespace.ID
+        let select: () -> Void
+
+        @Environment(\.starcatReduceMotion) private var reduceMotion
+        @State private var isHovered = false
+
+        var body: some View {
+            Button(action: select) {
+                HStack(spacing: 8) {
+                    BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 16 : 13)
+                        .frame(width: 16, height: 16)
+                        // 保留侧栏图标的强调色；悬停通过背景和位移反馈，避免模板图标被染成灰色。
+                        .foregroundStyle(.tint)
+                        .offset(x: isHovered && !isSelected && !reduceMotion ? 1.5 : 0)
+                        .accessibilityHidden(true)
+                    Text(tab.titleKey)
+                        .font(.body.weight(isSelected ? .medium : .regular))
+                        .foregroundStyle(.primary)
+                        .opacity(isSelected || isHovered ? 1 : 0.85)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                .background {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.primary.opacity(isHovered && !isSelected ? 0.05 : 0))
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.accentColor.opacity(0.12))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 0.5)
+                                }
+                                .matchedGeometryEffect(id: "settings.sidebar.selection", in: selectionSpace)
+                        }
+                    }
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text(tab.titleKey))
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .onHover { isHovered = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+        }
+    }
+
+    /// 新旧页面使用相同的绘制过渡：离场时模糊淡出，入场时恢复清晰。
+    /// 只改变绘制属性，不缩放或移动表单；减少动态效果时由调用方改用纯淡化。
+    private struct SettingsPageBlurFade: ViewModifier {
+        let blurRadius: CGFloat
+        let opacity: Double
+
+        /// active 同时描述入场起点与离场终点，让两页在同一时段完成交接。
+        static var transition: AnyTransition {
+            .modifier(
+                active: Self(blurRadius: 10, opacity: 0),
+                identity: Self(blurRadius: 0, opacity: 1)
+            )
+        }
+
+        func body(content: Content) -> some View {
+            content
+                .blur(radius: blurRadius)
+                .opacity(opacity)
+        }
+    }
+
+    /// 只构造当前页；离场页仅在过渡期间暂留，避免访问过的重型 Form 长期参与刷新。
     @ViewBuilder
     private func settingsPage(_ tab: SettingsTab) -> some View {
         switch tab {

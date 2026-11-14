@@ -6,7 +6,9 @@
 
 - 分支：`codex/skill-management`。
 - 工作目录：`/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-skill-management`。
-- 开发基线：`dev@e2f255167fe3e0af12eab9ec567cac5b0fe6d4a6`，已包含最新安装胶囊、安全卸载与品牌资源改动。
+- 当前集成基线：`dev@485be65d02dfd5ab6e2589840144cf47966351f0`。2026-11-15 按 dong4j 要求通过 merge 合入 `dev` 的 18 个后续提交，保留本专项原有 20 个提交；原开发基线为 `dev@e2f255167fe3e0af12eab9ec567cac5b0fe6d4a6`。
+- 翻译复用约束：dong4j 于 2026-11-15 指明沿用 Starcat 已有 README 翻译组件。此次基线已包含仓库 Skill 阅读区复用 `ReadmeTranslationViewModel`／`ReadmeTranslationService` 的实现；独立工作台后续接入应共享服务与设置、独立持有阅读状态并隔离缓存身份，不另建 SkillDeck 式翻译引擎。本次仅同步基线，未给独立工作台新增翻译入口。
+- 本次基线同步验证：117 项定向测试、15 个 Suite 通过（首轮 80 项，补充翻译服务子套件与列表状态 37 项）；`make build-direct`／`make build-appstore` 均为 build-only 并通过产物校验；121 key × 17 语言与两个编译 bundle 一致，2057 个翻译单元仍为 `needs_review`。日志统一位于 `/tmp/starcat-skill-dev-merge-20261115-*.log`，未做 GUI 或真实翻译服务验收。
 - 主关联：Multica `HOM-240`，GitHub `starcat-app/Starcat#208`；两端范围为 M0–M3，保持开放直至对应验收完成。创建前已核对 Multica 全部 196 项与 GitHub 任务，未复用旧安装功能或已取消频道任务。
 - 本目录全部研究报告、细案与此清单只在功能 worktree 维护；主工作区 `dev` 不保留副本。
 - 按 [00 的 D01–D10](00-阅读导航与决策摘要.md#5-待评审的默认建议) 作为实施默认值：Direct 独有、独立本机库、Starcat 原生三栏、私有受管副本、外部只读、暂停受管分配。

@@ -13,6 +13,8 @@ struct RepoSkillSheet: View {
     let onClose: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.openWindow) private var openWindow
     @State private var previewID = ""
@@ -39,15 +41,27 @@ struct RepoSkillSheet: View {
                         if let error = session.error {
                             Text(verbatim: error).foregroundStyle(.secondary).padding(16)
                         }
-                        if session.isLoading && preview == nil {
-                            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if preview == nil, session.isLoading || (session.scan == nil && session.error == nil) {
+                            RepoSkillSkeletonView(layout: .manifest)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .background(RepoSkillPanelStyle.panelColor(colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(Color.primary.opacity(0.09))
+                                }
+                                // 预留与详情工具栏一致的高度，首个 Skill 到达时正文起点保持稳定。
+                                .padding(.top, 44)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
                         } else if let preview {
                             if let issue = preview.installationIssue {
                                 Label(issue, systemImage: "exclamationmark.triangle")
                                     .font(interfaceScale.font(.caption)).padding(.horizontal, 18)
                             }
                             RepoSkillDetailPane(
-                                skill: preview, session: session, isPreviewExpanded: $isPreviewExpanded,
+                                skill: preview, session: session,
+                                translationService: dependencies.readmeTranslationService,
+                                isPreviewExpanded: $isPreviewExpanded,
                                 isInspectorPresented: $isInspectorPresented
                             )
                         } else {
@@ -59,16 +73,16 @@ struct RepoSkillSheet: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .overlay(alignment: .topTrailing) {
+                .overlay(alignment: .trailing) {
                     if isInspectorPresented {
                         installationPanel
-                            .frame(width: min(420, geometry.size.width * 0.5))
-                            // 顶部避开内容 Tab，底部留出字号、回顶与下载按钮的完整点击区。
-                            .padding(.top, 44)
-                            .padding(.trailing, 26)
-                            .padding(.bottom, 142)
+                            // 浮层覆盖内容区全高，包含阅读工具栏，不改变正文或底栏的可用尺寸。
+                            .frame(width: min(420, geometry.size.width * 0.5), height: geometry.size.height)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
+                .clipped()
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isInspectorPresented)
             }
             if !isPreviewExpanded {
                 Divider()
@@ -76,8 +90,6 @@ struct RepoSkillSheet: View {
             }
         }
         .foregroundStyle(.primary)
-        // macOS 新版 regular/large 按钮可能默认采用胶囊，任务窗口明确遵循 6pt 矩形圆角。
-        .buttonBorderShape(.roundedRectangle(radius: 6))
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await session.load() }
         .onChange(of: preview?.id, initial: true) { _, id in session.focusSkill(id) }
@@ -123,12 +135,9 @@ struct RepoSkillSheet: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.primary.opacity(0.12))
+        .overlay(alignment: .leading) {
+            Divider()
         }
-        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
     }
 
     private var header: some View {
@@ -173,47 +182,66 @@ struct RepoSkillSheet: View {
 
     private var footer: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label {
-                    Text(footerText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } icon: {
-                    Image(systemName: session.phase == .finished && !session.hasFailures ? "checkmark.circle" : "info.circle")
-                        .help("repo.skills.install.safety")
-                }
-                .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
-                if session.phase == .finished || session.phase == .cancelled {
-                    Text(LocalizedStringKey(session.isExport ? "repo.skills.install.exportNotice" : "repo.skills.install.reload"))
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+            Label {
+                Text(verbatim: footerText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(footerText)
+            } icon: {
+                Image(systemName: footerStatus.symbol)
+                    .foregroundStyle(footerStatus.color)
+                    .help("repo.skills.install.safety")
+                    .accessibilityHidden(true)
             }
+            .font(interfaceScale.font(.caption))
+            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"), action: onClose)
-                .buttonStyle(.bordered)
+                .lineLimit(1)
+                .help(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"))
                 .keyboardShortcut(isInspectorPresented ? nil : .cancelAction)
 
-            Button(action: primaryAction) {
-                Text(LocalizedStringKey(primaryKey))
-                    .frame(minWidth: 84)
-                    .lineLimit(1)
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .disabled(primaryDisabled)
+            Button(LocalizedStringKey(primaryKey), action: primaryAction)
+                .lineLimit(1)
+                .help(LocalizedStringKey(primaryKey))
+                .keyboardShortcut(.defaultAction)
+                .disabled(primaryDisabled)
         }
-        .controlSize(.regular)
+        .buttonStyle(.automatic)
+        // 只固定底栏高度以避免正文跳动；按钮尺寸、内边距和外形交给系统决定。
+        .frame(height: max(32, interfaceScale.scaled(28)))
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
     }
 
+    /// 图标同时使用形状与状态色区分结果，品牌图标和正文不随此状态染色。
+    private var footerStatus: (symbol: String, color: Color) {
+        if session.isInstalling {
+            return (session.isUninstalling ? "trash.circle" : "arrow.down.circle", .accentColor)
+        }
+        if session.hasFailures { return ("exclamationmark.circle.fill", .red) }
+        if session.phase == .cancelled { return ("stop.circle.fill", .orange) }
+        if session.phase == .finished { return ("checkmark.circle.fill", .green) }
+        if session.hasDuplicateNames || session.scan?.complete == false {
+            return ("exclamationmark.triangle.fill", .orange)
+        }
+        return ("info.circle.fill", .accentColor)
+    }
+
     private var footerText: String {
-        if session.isUninstalling && session.phase == .finished && !session.hasFailures {
-            return String.l10n("repo.skills.uninstall.succeeded")
+        if session.isInstalling {
+            return String.l10n(session.isUninstalling ? "repo.skills.uninstall.running" : "repo.skills.install.running")
+        }
+        if session.hasFailures {
+            return String.l10n(session.isUninstalling ? "repo.skills.uninstall.failed" : "repo.skills.install.failed")
+        }
+        if session.phase == .cancelled { return String.l10n("repo.skills.install.cancelled") }
+        if session.phase == .finished {
+            let status = session.isUninstalling ? "repo.skills.uninstall.succeeded"
+                : session.isExport ? "repo.skills.install.exported" : "repo.skills.install.installed"
+            let notice = session.isExport ? "repo.skills.install.exportNotice" : "repo.skills.install.reloadHint"
+            return [String.l10n(status), String.l10n(notice)].joined(separator: " · ")
         }
         let items = session.displayedQueue
         let selected = Set(items.map { $0.skill.id })

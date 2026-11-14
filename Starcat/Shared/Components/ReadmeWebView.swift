@@ -1718,9 +1718,9 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                         limit: 8_000
                     )
                 )
-                Task { @MainActor in
-                    self.onTranslationSourceChange(snapshot)
-                }
+                // 捕获收到消息时的文档回调；主线程任务排队期间可能已切到另一个 Skill。
+                let onSourceChange = onTranslationSourceChange
+                Task { @MainActor in onSourceChange(snapshot) }
                 return
             }
 
