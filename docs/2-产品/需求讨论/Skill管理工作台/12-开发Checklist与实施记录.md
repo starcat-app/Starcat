@@ -7,6 +7,7 @@
 - 分支：`codex/skill-management`。
 - 工作目录：`/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-skill-management`。
 - 开发基线：`dev@e2f255167fe3e0af12eab9ec567cac5b0fe6d4a6`，已包含最新安装胶囊、安全卸载与品牌资源改动。
+- 主关联：Multica `HOM-240`，GitHub `starcat-app/Starcat#208`；两端范围为 M0–M3，保持开放直至对应验收完成。创建前已核对 Multica 全部 196 项与 GitHub 任务，未复用旧安装功能或已取消频道任务。
 - 本目录全部研究报告、细案与此清单只在功能 worktree 维护；主工作区 `dev` 不保留副本。
 - 按 [00 的 D01–D10](00-阅读导航与决策摘要.md#5-待评审的默认建议) 作为实施默认值：Direct 独有、独立本机库、Starcat 原生三栏、私有受管副本、外部只读、暂停受管分配。
 - 首版范围为 M0–M3。M4/M5 的编辑、使用统计、市场、项目同步、规则同步不在本轮实现。
@@ -20,8 +21,8 @@
 ### M0：渠道、独立窗口与界面骨架
 
 - [x] **T00 实施基线与范围**：保留 12 篇研究报告，登记本轮实施及逐功能提交授权，建立此清单。
-- [ ] **T01 Direct 能力与惰性组合点**：新增 `ChannelFeature.skillManagement`；App Store 拒绝真实操作，且不创建本机库或 watcher。
-- [ ] **T02 单例原生三栏窗口**：新增菜单与独立 Scene，复用工作台组件，独立列宽偏好，注入语言、主题、字号与减少动态效果。
+- [x] **T01 Direct 能力与惰性组合点**：新增 `ChannelFeature.skillManagement`；先渠道检查后惰性创建会话，App Store 不调用会话工厂；实际本机库／watcher 的执行层门控随 T04–T06 持续覆盖。
+- [x] **T02 单例原生三栏窗口**：新增“显示 → Skill 管理”与独立 Scene，复用工作台组件和环境链，独立列宽偏好；初始化与重复打开的自动化检查完成，原生 GUI 待人工验收。
 - [ ] **T03 界面状态与样例**：受管、外部、共享、冲突、空态与错误状态；样例限定 Preview／测试，不进入真实库。
 
 ### M1：本机库与真实内容读取
@@ -54,7 +55,12 @@
 | 任务 | 交付内容 | 自动化验证 | 本地提交 |
 |---|---|---|---|
 | T00 | 研究报告、实施基线与开发清单 | Git 基线／worktree 核对；`git diff --check` | `08ab8d4e` |
-| T01a | `skillManagement` 渠道门控；全部渠道能力双向回归 | `DistributionGateTests` 3 项通过；惰性组合点随 T02、库副作用随 T04 继续验证 | 当前功能提交 |
+| T01a | `skillManagement` 渠道门控；全部渠道能力双向回归 | `DistributionGateTests` 3 项通过；惰性组合点随 T02、库副作用随 T04 继续验证 | `2a9d2a7a` |
+| T01b／T02 | 应用级惰性会话、单例 Scene、原生三栏与独立栏宽；11 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests` 共 7 项通过；`make build-direct`／`make build-appstore` 通过；187 项编译文案与源文案一致 | 当前功能提交 |
+
+新窗口入口为 Direct 的“显示 → Skill 管理”。此阶段生产会话展示真实空态，尚未扫描用户目录；关闭主窗口、重复打开 Skill 窗口不重新创建本机会话。Scene 禁止启动自动恢复，以免未明确打开时初始化后续扫描能力。
+
+T02 新增文案 11 个 key × 17 语言均已配置并核对编译资源；全部保留 `needs_review`，不宣称人工翻译或 GUI／RTL 验收完成。
 
 ## 4. 人工验收与审核
 

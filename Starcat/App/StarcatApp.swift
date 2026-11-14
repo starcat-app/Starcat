@@ -211,6 +211,30 @@ struct StarcatApp: App {
         )
         .defaultLaunchBehavior(.suppressed)
 
+        // Skill 会话在明确打开时才初始化；Scene 注册与 App Store 恢复路径均不得开库或扫描。
+        Window("skills.workspace.title", id: SkillWorkspaceSceneCoordinator.sceneID) {
+            if let dependencies,
+               SkillWorkspaceSceneCoordinator.shared.isAvailable,
+               let viewModel = SkillWorkspaceSceneCoordinator.shared.viewModel {
+                SkillWorkspaceSceneRoot(viewModel: viewModel)
+                    .appHostEnvironment(dependencies)
+            } else {
+                ContentUnavailableView(
+                    "skills.workspace.unavailable.title",
+                    systemImage: "lock",
+                    description: Text("skills.workspace.unavailable.description")
+                )
+                .appLocaleEnvironment()
+            }
+        }
+        .commandsRemoved()
+        .defaultSize(
+            width: SkillWorkspaceWindowMetrics.defaultContentSize.width,
+            height: SkillWorkspaceWindowMetrics.defaultContentSize.height
+        )
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
         Window("localai.logs.title", id: LocalAILogWindowSelection.sceneID) {
             LocalAILogWindowView()
                 .environment(dependencies?.settings ?? AppSettings.shared)
@@ -649,6 +673,14 @@ private struct StarcatAppCommands: Commands {
                     }
                 }
                 .disabled(dependencies == nil)
+            }
+
+            if dependencies?.distributionGate.isAvailable(.skillManagement) == true {
+                Button("skills.workspace.title") {
+                    try? SkillWorkspaceSceneCoordinator.shared.openWindow { sceneID in
+                        openWindow(id: sceneID)
+                    }
+                }
             }
 
             Button("localai.logs.title") {
