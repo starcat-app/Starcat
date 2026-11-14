@@ -53,7 +53,8 @@
 
 | 任务 | 交付内容 | 自动化验证 | 本地提交 |
 |---|---|---|---|
-| T00 | 研究报告、实施基线与开发清单 | Git 基线／worktree 核对；`git diff --check` | 当前文档提交 |
+| T00 | 研究报告、实施基线与开发清单 | Git 基线／worktree 核对；`git diff --check` | `08ab8d4e` |
+| T01a | `skillManagement` 渠道门控；全部渠道能力双向回归 | `DistributionGateTests` 3 项通过；惰性组合点随 T02、库副作用随 T04 继续验证 | 当前功能提交 |
 
 ## 4. 人工验收与审核
 
