@@ -22,6 +22,19 @@ struct RepoSkillDetailPane: View {
     @State private var previewedFile: RepoSkillFile?
     @State private var document: RepoSkillReadingCache.Document?
     @State private var renderedDocumentID: String?
+    @State private var presentedSkill: RepoSkill?
+    @State private var isContentVisible = false
+
+    private var contentAnimation: Animation {
+        .easeOut(duration: reduceMotion ? 0.06 : 0.12)
+    }
+
+    private var isContentReady: Bool {
+        document?.skillID == skill.id && (tab != .manifest || renderedDocumentID == skill.id)
+    }
+
+    /// 文件清单与正文保留同一份展示快照，避免旧页尚未退场时先换成新 Skill 的附件。
+    private var contentSkill: RepoSkill { presentedSkill ?? skill }
 
     private enum Tab: CaseIterable {
         case manifest, files, tree
@@ -78,8 +91,8 @@ struct RepoSkillDetailPane: View {
             Group {
                 if tab == .manifest {
                     manifest
-                } else if document?.skillID != skill.id {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if document == nil {
+                    Color.clear
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 18) {
@@ -92,8 +105,21 @@ struct RepoSkillDetailPane: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
                     }
-                    .id("\(skill.id)-\(tab)")
+                    .id("\(contentSkill.id)-\(tab)")
                     .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .blur(radius: reduceMotion || isContentVisible ? 0 : 10)
+            .opacity(isContentVisible ? 1 : 0)
+            .clipped()
+            .allowsHitTesting(isContentReady && isContentVisible)
+            .accessibilityHidden(!isContentReady || !isContentVisible)
+            .overlay {
+                if !isContentReady {
+                    ProgressView()
+                        .opacity(isContentVisible ? 0 : 1)
+                        .allowsHitTesting(false)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -110,27 +136,53 @@ struct RepoSkillDetailPane: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .popover(item: $previewedFile) { file in
-            RepoSkillFilePreview(skill: skill, file: file, session: session) { previewedFile = nil }
+            RepoSkillFilePreview(skill: contentSkill, file: file, session: session) { previewedFile = nil }
                 .appLocaleEnvironment()
         }
         .onChange(of: skill.id) { _, _ in previewedFile = nil }
-        .onChange(of: tab) { _, _ in renderedDocumentID = nil }
+        .onChange(of: tab) { _, _ in
+            renderedDocumentID = nil
+            withAnimation(contentAnimation) {
+                isContentVisible = isContentReady
+            }
+        }
         .task(id: skill.id) {
             do {
-                let prepared = try await session.readingCache.prepare(
-                    skill, imageBaseURL: contentBaseURL(raw: true), contentBaseURL: contentBaseURL(raw: false)
+                try Task.checkCancellation()
+                let requestedSkill = skill
+                let readingCache = session.readingCache
+                let imageBaseURL = contentBaseURL(raw: true)
+                let baseURL = contentBaseURL(raw: false)
+                // 缓存准备与退场并行；等动画完成才更新 HTML，防止复用的 WebView 提前换掉旧 DOM。
+                async let preparation = readingCache.prepare(
+                    requestedSkill, imageBaseURL: imageBaseURL, contentBaseURL: baseURL
                 )
+                await fadeOutContent()
+                let prepared = try await preparation
                 try Task.checkCancellation()
                 // 实际换文档才清除就绪身份；快速切回仍在 WebView 中的缓存页不会再触发导航完成。
                 if document?.skillID != prepared.skillID {
                     renderedDocumentID = nil
                 }
-                // 文件和目录准备后直接淡入；Markdown 仍等待 WebKit 完成本次导航，避免淡入旧 DOM。
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-                    document = prepared
+                presentedSkill = requestedSkill
+                document = prepared
+                // 文件和目录已就绪；Markdown 继续等待当前文档的 WebKit 回调。
+                withAnimation(contentAnimation) {
+                    isContentVisible = isContentReady
                 }
             } catch {
                 // 快速点选会取消旧任务；旧正文不能在新标题下回填。
+            }
+        }
+    }
+
+    /// 使用动画完成回调安排换页，不猜测渲染时间；读取任务恢复后仍需检查取消，防止旧页回填。
+    private func fadeOutContent() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            withAnimation(contentAnimation, completionCriteria: .removed) {
+                isContentVisible = false
+            } completion: {
+                continuation.resume()
             }
         }
     }
@@ -185,28 +237,23 @@ struct RepoSkillDetailPane: View {
     @ViewBuilder
     private var manifest: some View {
         if let document {
-            let isReady = document.skillID == skill.id && renderedDocumentID == skill.id
             ReadmeWebView(
                 htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
                 floatingToolbarBottomInset: 40,
                 onDocumentReady: revealManifest
             )
-            // 保持渲染器身份稳定；准备新文档时隐藏旧内容，不能销毁并重建 WKWebView。
-            .opacity(isReady ? 1 : 0)
-            .allowsHitTesting(isReady)
-            .overlay {
-                if !isReady { ProgressView() }
-            }
+            // 由外层统一淡化，保持 WKWebView 身份稳定，不能用 Skill 的 .id 重建阅读器。
         } else {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            Color.clear
         }
     }
 
     /// 只让当前 Skill 的已加载正文淡入；快速切换后到达的旧文档回调不能显示过期内容。
     private func revealManifest(_ documentID: String) {
         guard documentID == skill.id, document?.skillID == documentID else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-            renderedDocumentID = documentID
+        renderedDocumentID = documentID
+        withAnimation(contentAnimation) {
+            isContentVisible = true
         }
     }
 
@@ -224,7 +271,7 @@ struct RepoSkillDetailPane: View {
 
     private var fileList: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(skill.files) { file in
+            ForEach(contentSkill.files) { file in
                 Button {
                     previewedFile = file
                 } label: {
@@ -258,7 +305,7 @@ struct RepoSkillDetailPane: View {
     /// 标题整行是折叠触发区，目录只表达完整复制范围，不支持把 Skill 拆散安装。
     private var fileTree: some View {
         return LazyVStack(alignment: .leading, spacing: 10) {
-            Label(skill.directory.isEmpty ? "/" : skill.directory, systemImage: "folder")
+            Label(contentSkill.directory.isEmpty ? "/" : contentSkill.directory, systemImage: "folder")
                 .font(interfaceScale.font(.code, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
