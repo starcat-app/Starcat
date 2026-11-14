@@ -84,7 +84,6 @@ private struct SkillLibraryList: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(AppDependencies.self) private var dependencies: AppDependencies?
     @Bindable var viewModel: SkillWorkspaceViewModel
-    @State private var showsImport = false
     @State private var isCheckingUpdates = false
     @State private var updateMessage: String?
 
@@ -107,7 +106,7 @@ private struct SkillLibraryList: View {
                 }
                 .disabled(viewModel.selectedIDs.isEmpty || viewModel.libraryEnvironment == nil)
                 Button {
-                    showsImport = true
+                    viewModel.importPresentation = .manual
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -192,9 +191,6 @@ private struct SkillLibraryList: View {
             }
         }
         .padding(16)
-        .sheet(isPresented: $showsImport) {
-            SkillImportSheet(viewModel: viewModel).appLocaleEnvironment()
-        }
     }
 
     private var title: Text {

@@ -40,4 +40,10 @@ final class SkillWorkspaceSceneCoordinator {
         }
         action(Self.sceneID)
     }
+
+    /// 再次检查渠道；已打开的导入审核保留原请求，重复入口只激活工作台。
+    func openRepositoryImport(_ request: SkillRepositoryImportRequest, using action: (String) -> Void) throws {
+        try openWindow(using: action)
+        if viewModel?.importPresentation == nil { viewModel?.importPresentation = .repository(request) }
+    }
 }

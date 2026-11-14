@@ -27,7 +27,7 @@ enum SkillWorkspaceWindowMetrics {
 
 /// 窗口级 chrome 随窗口释放，内容会话由应用级协调器保留。
 struct SkillWorkspaceSceneRoot: View {
-    let viewModel: SkillWorkspaceViewModel
+    @Bindable var viewModel: SkillWorkspaceViewModel
 
     @State private var chromeState = WorkspaceChromeState()
     @State private var windowReference = WorkspaceSceneWindowReference()
@@ -57,6 +57,9 @@ struct SkillWorkspaceSceneRoot: View {
                 )
             }
             .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
+            .sheet(item: $viewModel.importPresentation) { presentation in
+                SkillImportSheet(viewModel: viewModel, repositoryImport: presentation.repositoryRequest).appLocaleEnvironment()
+            }
             .onAppear { viewModel.startLibrary() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { viewModel.refreshLibrary() }

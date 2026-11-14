@@ -120,6 +120,35 @@ actor SkillImportService {
         return try await download(snapshot, clients: clients, authorizationID: authorizationID)
     }
 
+    /// 仓库详情已展示某个 commit，入库必须使用该版本；来源分支仅用于后续更新发现。
+    func prepareRepositorySkill(_ request: SkillRepositoryImportRequest) async throws -> PreparedSkillImport {
+        let skill = request.skill
+        let directory = skill.directory.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard request.repo.id == skill.repositoryID, skill.installationIssue == nil,
+              skill.commitSHA.range(of: #"^[a-fA-F0-9]{40}$"#, options: .regularExpression) != nil,
+              skill.directory == directory || skill.directory == directory + "/"
+        else { throw SkillImportError.source }
+        let prepared = try await prepareGitHub(.init(
+            repository: "\(request.repo.owner)/\(request.repo.name)", ref: skill.commitSHA, directory: directory
+        ))
+        do {
+            guard prepared.plan.entry.manifestName == skill.name else { throw SkillOperationError.planChanged }
+            var source = prepared.plan.source
+            source.defaultRef = request.trackingRef
+            var entry = prepared.plan.entry
+            entry.trackingRef = request.trackingRef
+            return PreparedSkillImport(
+                plan: SkillContentOperationPlan(
+                    id: prepared.id, createdAt: prepared.plan.createdAt,
+                    source: source, entry: entry, revision: prepared.plan.revision,
+                    incomingDirectory: prepared.plan.incomingDirectory, fingerprint: prepared.plan.fingerprint,
+                    previousEntry: nil, previousReceipt: nil
+                ),
+                temporaryRoot: prepared.temporaryRoot, authorizationID: prepared.authorizationID
+            )
+        } catch { discard(prepared); throw error }
+    }
+
     /// 比较来源时保留条目身份与安装基线；明确 commit 时绝不重新解析默认分支。
     func prepareUpdate(
         entryID: UUID, commit: String? = nil, payloadCache: SkillImportPayloadCache? = nil

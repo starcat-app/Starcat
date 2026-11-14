@@ -14,6 +14,7 @@ struct SkillImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     let viewModel: SkillWorkspaceViewModel
+    var repositoryImport: SkillRepositoryImportRequest? = nil
     @State private var source = 0
     @State private var repository = ""
     @State private var ref = ""
@@ -55,6 +56,11 @@ struct SkillImportSheet: View {
                 if let commit = preview.plan.revision.upstreamCommit {
                     Text(verbatim: commit).font(.caption.monospaced()).textSelection(.enabled)
                 }
+            } else if let repositoryImport {
+                Text(verbatim: repositoryImport.repo.fullName).font(.headline)
+                Text(verbatim: repositoryImport.skill.directory).font(.caption.monospaced()).textSelection(.enabled)
+                Text(verbatim: repositoryImport.skill.commitSHA).font(.caption.monospaced()).textSelection(.enabled)
+                Text("skills.import.repositoryNotice").font(.caption).foregroundStyle(.secondary)
             } else {
                 Picker("skills.import.title", selection: $source) {
                     Text("skills.import.local").tag(0)
@@ -104,7 +110,7 @@ struct SkillImportSheet: View {
                     } else {
                         Button("skills.import.preview", action: prepare)
                             .keyboardShortcut(.defaultAction)
-                            .disabled(isBusy || (source == 0 ? localDirectory == nil : repository.isEmpty))
+                            .disabled(isBusy || (repositoryImport == nil && (source == 0 ? localDirectory == nil : repository.isEmpty)))
                     }
                 }
             }
@@ -112,6 +118,7 @@ struct SkillImportSheet: View {
         .textFieldStyle(.roundedBorder)
         .padding(20)
         .frame(width: 520)
+        .task { if repositoryImport != nil { prepare() } }
         .fileImporter(isPresented: $showsFolderPicker, allowedContentTypes: [.folder]) { selection in
             switch selection {
             case .success(let url): localDirectory = url
@@ -130,6 +137,7 @@ struct SkillImportSheet: View {
 
     /// 请求参数先取值，异步返回时不混入用户在另一来源表单中的新输入。
     private func prepare() {
+        if viewModel.libraryEnvironment == nil { viewModel.startLibrary() }
         guard !isBusy, let service = viewModel.libraryEnvironment?.imports else { return }
         let request = SkillGitHubImportRequest(repository: repository, ref: ref, directory: directory)
         let local = localDirectory
@@ -140,7 +148,9 @@ struct SkillImportSheet: View {
             defer { isBusy = false }
             do {
                 let prepared: PreparedSkillImport
-                if useLocal {
+                if let repositoryImport {
+                    prepared = try await service.prepareRepositorySkill(repositoryImport)
+                } else if useLocal {
                     guard let local else { throw SkillImportError.source }
                     prepared = try await service.prepareLocal(local)
                 } else { prepared = try await service.prepareGitHub(request) }

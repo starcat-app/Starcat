@@ -75,6 +75,7 @@ final class SkillWorkspaceViewModel {
         didSet { rebuildVisibleItems() }
     }
     var selectedIDs: Set<UUID> = []
+    var importPresentation: SkillImportPresentation?
     private(set) var items: [SkillLibraryItem] = []
     private(set) var visibleItems: [SkillLibraryItem] = []
     private(set) var loadState: SkillWorkspaceLoadState = .ready
