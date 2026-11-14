@@ -1053,6 +1053,25 @@ struct ReadmeTranslationControl {
     let repo: Repo
     let translationVM: ReadmeTranslationViewModel
     let settings: AppSettings
+
+    /// nil 表示仓库 README；Skill 传入仓库内路径，复用控件时不能覆盖 README 的缓存。
+    var documentPath: String? = nil
+
+    var identity: String {
+        if let documentPath {
+            return "document:\(repo.fullName):\(documentPath)"
+        }
+        return ReadmeTranslationViewModel.readmeIdentity(for: repo)
+    }
+
+    var cacheOwner: String {
+        documentPath == nil ? repo.owner : "_starcat-documents"
+    }
+
+    /// 路径哈希是合法的单层目录名；不含 commit，让正文小改动继续复用已翻译段落。
+    var cacheRepo: String {
+        documentPath == nil ? repo.name : ReadmeTranslationService.hash(identity)
+    }
 }
 
 /// README cacheFooter 区域的翻译入口按钮。
@@ -1091,30 +1110,29 @@ struct ReadmeTranslationFooterButton: View {
     }
 
     /// 判断当前是否展示译文，用于按钮文字 / icon 切换。
-    /// 必须绑当前仓：共享 VM 在探索 / 活动切条目后，displayMode 可能还停在上一仓。
+    /// 必须绑定文档：同一仓库的 README 和多个 Skill 各自持有独立译文。
     private var isShowingTranslation: Bool {
-        translationVM.isShowingTranslation(matching: currentRepoIdentity)
+        translationVM.isShowingTranslation(matching: control.identity)
     }
 
-    private var isTranslatingCurrentRepo: Bool {
-        translationVM.isActivelyTranslating(matching: currentRepoIdentity)
-    }
-
-    private var currentRepoIdentity: String {
-        ReadmeTranslationViewModel.readmeIdentity(for: control.repo)
+    private var isTranslatingCurrentDocument: Bool {
+        translationVM.isActivelyTranslating(matching: control.identity)
     }
 
     var body: some View {
         HStack(spacing: 4) {
             Button {
-                if isTranslatingCurrentRepo {
+                if isTranslatingCurrentDocument {
                     // 翻译中点击 = 用户主动停止：调 VM.cancelTranslation 取消正在跑的
                     // Task + 复位 isTranslating + 不弹错误。下方 onHover 会在按钮失焦后
                     // 把 isHoveringWhileTranslating 复位，恢复默认 icon 形态。
                     translationVM.cancelTranslation()
                 } else {
                     translationVM.toggleTranslation(
-                        repo: control.repo,
+                        identity: control.identity,
+                        cacheOwner: control.cacheOwner,
+                        cacheRepo: control.cacheRepo,
+                        repoId: control.repo.id,
                         sourceHtml: sourceHtml,
                         sourceSegments: selectedSourceSegments,
                         targetLanguage: settings.effectiveReadmeTranslationLanguage,
@@ -1136,7 +1154,7 @@ struct ReadmeTranslationFooterButton: View {
             //   - 翻译中：永远可点（点击 = 取消）；
             //   - 非翻译中 + sourceHtml 为空：disabled（无内容可翻译 / 切换）。
             .disabled(
-                !isTranslatingCurrentRepo
+                !isTranslatingCurrentDocument
                     && (sourceHtml.isEmpty || selectedSourceSegments.isEmpty)
             )
             .help(buttonTooltip)
@@ -1145,7 +1163,7 @@ struct ReadmeTranslationFooterButton: View {
                 // 普通态时 isHoveringWhileTranslating 也被复位，防止下次进入翻译时
                 // 因残留 true 直接显示 stop 图标（虽然实际 hover 离开会立刻 false，
                 // 但额外守门更稳）。
-                if isTranslatingCurrentRepo {
+                if isTranslatingCurrentDocument {
                     isHoveringWhileTranslating = hovering
                 } else if isHoveringWhileTranslating {
                     isHoveringWhileTranslating = false
@@ -1170,7 +1188,7 @@ struct ReadmeTranslationFooterButton: View {
     /// 让 hover 切换有淡入淡出，避免硬切。
     @ViewBuilder
     private var iconView: some View {
-        if isTranslatingCurrentRepo {
+        if isTranslatingCurrentDocument {
             ZStack {
                 // 翻译中用 AI 标签整理行（BatchAITagReviewRow.statusIcon）同款思考球
                 // 替代系统菊花，统一「AI 在跑」的视觉语言；displaySize 12 适配本按钮
@@ -1204,16 +1222,21 @@ struct ReadmeTranslationFooterButton: View {
     /// 翻译中也保持"翻译"文字不变（仅图标 hover 切 stop），避免按钮宽度抖动。
     private var buttonTitle: LocalizedStringKey {
         if isShowingTranslation { return "readme.translate.showOriginal" }
-        if translationVM.cacheIsStale { return "readme.translate.staleAction" }
+        if translationVM.cacheIsStale {
+            // 文档入口复用通用的“重新翻译”，不能把 Skill 更新显示成“README 已更新”。
+            return control.documentPath == nil ? "readme.translate.staleAction" : "readme.translate.menu.regenerate"
+        }
         return "readme.translate.action"
     }
 
     private var buttonTooltip: LocalizedStringKey {
         // 翻译中 + hover → "停止翻译"，明确点击会取消而非其它操作。
-        if isTranslatingCurrentRepo && isHoveringWhileTranslating {
+        if isTranslatingCurrentDocument && isHoveringWhileTranslating {
             return "readme.translate.tooltip.stop"
         }
-        if isShowingTranslation { return "readme.translate.tooltip.showOriginal" }
+        if isShowingTranslation {
+            return control.documentPath == nil ? "readme.translate.tooltip.showOriginal" : "readme.translate.showOriginal"
+        }
         // 引擎可变后文案不再写死 AI，统一指向「所选翻译服务」。
         return "readme.translate.tooltip.translateService"
     }
@@ -1278,7 +1301,10 @@ struct ReadmeTranslationFooterButton: View {
 
             Button {
                 translationVM.regenerate(
-                    repo: control.repo,
+                    identity: control.identity,
+                    cacheOwner: control.cacheOwner,
+                    cacheRepo: control.cacheRepo,
+                    repoId: control.repo.id,
                     sourceHtml: sourceHtml,
                     sourceSegments: selectedSourceSegments,
                     targetLanguage: settings.effectiveReadmeTranslationLanguage,
@@ -1289,7 +1315,7 @@ struct ReadmeTranslationFooterButton: View {
                 Label("readme.translate.menu.regenerate", systemImage: "arrow.clockwise")
             }
             .disabled(
-                isTranslatingCurrentRepo
+                isTranslatingCurrentDocument
                     || sourceHtml.isEmpty
                     || selectedSourceSegments.isEmpty
             )

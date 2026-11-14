@@ -47,7 +47,9 @@ struct RepoSkillSheet: View {
                                     .font(interfaceScale.font(.caption)).padding(.horizontal, 18)
                             }
                             RepoSkillDetailPane(
-                                skill: preview, session: session, isPreviewExpanded: $isPreviewExpanded,
+                                skill: preview, session: session,
+                                translationService: dependencies.readmeTranslationService,
+                                isPreviewExpanded: $isPreviewExpanded,
                                 isInspectorPresented: $isInspectorPresented
                             )
                         } else {
