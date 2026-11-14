@@ -26,8 +26,9 @@ struct ExploreCatalogPreferences: Codable, Equatable, Sendable {
         return visible.isEmpty ? ["discover"] : visible
     }
 
+    /// 推荐历史是固定入口，不加入设置页的可隐藏目录；导航校验必须允许进入和恢复它。
     func isGroupEnabled(_ id: String) -> Bool {
-        visibleGroupIDs.contains(id)
+        id == "recommendations" || visibleGroupIDs.contains(id)
     }
 
     /// 日报分类来自服务端 catalog；偏好只保存隐藏项，后端新增分类默认可见。
