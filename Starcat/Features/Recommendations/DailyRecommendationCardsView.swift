@@ -131,10 +131,14 @@ struct DailyRecommendationCardsView: View {
             Spacer(minLength: 16)
             Text(verbatim: snapshot.date)
                 .font(interfaceScale.font(.caption))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
             SheetCloseButton(action: onClose)
         }
+        // 局部材质为品牌、日期和系统关闭按钮提供稳定底色，不再依赖整窗灰幕衬托。
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
     }
 
     /// 浏览确认来自实际渲染的卡片；读取进度不等待整个批次浏览完成才落盘。
