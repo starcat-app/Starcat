@@ -123,6 +123,30 @@ enum DatabaseMigrations {
         registerV23(into: &migrator)
         registerV24(into: &migrator)
         registerV25(into: &migrator)
+        registerV26(into: &migrator)
+    }
+
+    /// 推荐历史属于用户数据，不外键关联可清理的 repos；旧 JSON 导入标记与历史同事务提交。
+    private static func registerV26(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v26-recommendation-history") { db in
+            try db.execute(sql: """
+                CREATE TABLE recommendation_history (
+                    repo_id INTEGER PRIMARY KEY NOT NULL,
+                    snapshot BLOB,
+                    recommended_at REAL,
+                    recommended_day TEXT,
+                    sort_day INTEGER NOT NULL DEFAULT 0,
+                    batch_id TEXT,
+                    dismissed INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX idx_recommendation_history_time
+                    ON recommendation_history(sort_day DESC, recommended_at DESC, repo_id DESC);
+                CREATE TABLE recommendation_history_state (
+                    id INTEGER PRIMARY KEY NOT NULL CHECK(id = 1),
+                    legacy_imported INTEGER NOT NULL
+                );
+                """)
+        }
     }
 
     /// Skill 是可重建的仓库证据，独立于 repos，允许探索结果扫描而不改变 Star / 知识库归属。

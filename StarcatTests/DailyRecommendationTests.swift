@@ -106,7 +106,8 @@ struct DailyRecommendationTests {
     func preferencesWithoutRecommendations() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await store.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(store.hasLoadedState)
         await store.setShowsOnLaunch(false)
@@ -114,15 +115,19 @@ struct DailyRecommendationTests {
         #expect(store.visibleItems.isEmpty)
         #expect(!store.isLoading)
 
+        await switchHistoryAccount(99, root: root)
         await store.loadPreferences(accountID: 99, scopeRevision: 2)
         #expect(store.state.showsOnLaunch)
         await store.setShowsOnLaunch(true)
+        await switchHistoryAccount(42, root: root)
         await store.loadPreferences(accountID: 42, scopeRevision: 3)
         #expect(!store.state.showsOnLaunch)
 
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await restored.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(!restored.state.showsOnLaunch)
+        await switchHistoryAccount(99, root: root)
         await restored.loadPreferences(accountID: 99, scopeRevision: 2)
         #expect(restored.state.showsOnLaunch)
     }
@@ -131,7 +136,7 @@ struct DailyRecommendationTests {
     func preferencesWhileRequestIsPending() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var continuation: CheckedContinuation<DailyRecommendationResponse, Error>?
         let request = Task {
             await store.load(
@@ -152,7 +157,8 @@ struct DailyRecommendationTests {
         #expect(!store.state.showsOnLaunch)
         #expect(store.errorKey == "recommendations.daily.failed")
 
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await restored.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(!restored.state.showsOnLaunch)
     }
@@ -161,7 +167,7 @@ struct DailyRecommendationTests {
     func restoreFrozenBatch() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let date = Date()
         await store.load(
             accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
@@ -178,7 +184,7 @@ struct DailyRecommendationTests {
         await store.markPresented(date: date)
         #expect(!store.canAutomaticallyPresent(date: date))
         await store.setShowsOnLaunch(false)
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
         await restored.load(
             accountID: 42, scopeRevision: 2, date: date, serviceScope: "test",
             fetchStars: { [repo(1)] },
@@ -198,7 +204,7 @@ struct DailyRecommendationTests {
     func nextDayKeepsFeedback() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let today = Date()
         await store.load(
             accountID: 42, scopeRevision: 1, date: today, serviceScope: "test",
@@ -218,7 +224,7 @@ struct DailyRecommendationTests {
     func emptyRemoteBatchIsFrozen() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let date = Date()
         await store.load(
             accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
@@ -241,7 +247,7 @@ struct DailyRecommendationTests {
     func staleResponse() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var continuation: CheckedContinuation<DailyRecommendationResponse, Never>?
         let task = Task {
             await store.load(
@@ -252,6 +258,7 @@ struct DailyRecommendationTests {
             )
         }
         while continuation == nil { await Task.yield() }
+        await switchHistoryAccount(99, root: root)
         store.activate(accountID: 99, scopeRevision: 2)
         continuation?.resume(returning: response([item(100)]))
         _ = await task.value
@@ -264,7 +271,7 @@ struct DailyRecommendationTests {
     func offlineKeepsActualDay() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
         await store.load(
             accountID: 42, scopeRevision: 1, date: yesterday, serviceScope: "test",
@@ -287,7 +294,7 @@ struct DailyRecommendationTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let file = root.appendingPathComponent("42.json")
         try Data("invalid".utf8).write(to: file)
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
             fetchStars: { [] }, fetchCandidates: { _, _ in response([]) }
@@ -301,7 +308,7 @@ struct DailyRecommendationTests {
     func historyKeepsDailyBatchesFresh() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
         let candidates = (100...199).map { item(Int64($0)) }
@@ -329,7 +336,7 @@ struct DailyRecommendationTests {
         let secondIDs = store.visibleItems.map(\.repoID)
         #expect(secondIDs == Array(110...119).map(Int64.init))
         await store.markPresented(date: tomorrow)
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
         await restored.load(accountID: 42, scopeRevision: 2, date: tomorrow, serviceScope: "test",
                             fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
             Issue.record("重启后仍应恢复当天批次")
@@ -337,6 +344,7 @@ struct DailyRecommendationTests {
         })
         #expect(restored.visibleItems.map(\.repoID) == secondIDs)
         #expect(restored.state.recommendedDays.count == 20)
+        await switchHistoryAccount(99, root: root)
         await restored.loadPreferences(accountID: 99, scopeRevision: 3)
         #expect(restored.state.recommendedDays.isEmpty)
     }
@@ -345,7 +353,7 @@ struct DailyRecommendationTests {
     func prefetchDoesNotConsumeHistory() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
         for date in [today, tomorrow] {
@@ -364,8 +372,8 @@ struct DailyRecommendationTests {
         var saved = DailyRecommendationState()
         for id in 101...200 { saved.recommendedDays[String(id)] = "2026-1-1" }
         saved.dismissedIDs = [201]
-        try await disk.save(saved, accountID: 42, revision: 0)
-        let store = DailyRecommendationStore(disk: disk)
+        try saveLegacy(saved, root: root)
+        let store = makeStore(root: root, disk: disk)
         var cursors: [String?] = []
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { (1...100).map { repo(Int64($0)) } }, fetchCandidates: { _, cursor in
@@ -381,14 +389,14 @@ struct DailyRecommendationTests {
         })
         #expect(cursors == [nil, "second", "third"])
         #expect(store.visibleItems.map(\.repoID) == Array(202...211).map(Int64.init))
-        #expect(store.state.recommendedDays.count == 100)
+        #expect(store.state.recommendedDays.count == 101)
     }
 
     @Test("补页预算耗尽后保存位置，重试继续后续页而不是回到第一页")
     func pageBudgetResumesCursor() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var cursors: [String?] = []
         func page(_ seeds: [Int64], _ cursor: String?) async throws -> DailyRecommendationResponse {
             cursors.append(cursor)
@@ -414,8 +422,8 @@ struct DailyRecommendationTests {
         let disk = DailyRecommendationDiskStore(root: root)
         var saved = DailyRecommendationState()
         for id in 100...399 { saved.recommendedDays[String(id)] = "2026-1-1" }
-        try await disk.save(saved, accountID: 42, revision: 0)
-        let store = DailyRecommendationStore(disk: disk)
+        try saveLegacy(saved, root: root)
+        let store = makeStore(root: root, disk: disk)
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
         var cursors: [String?] = []
@@ -455,8 +463,8 @@ struct DailyRecommendationTests {
             seedIDs: [1], serviceScope: "test", modelVersion: "old", checkedDay: day,
             items: [], hasMore: true, nextCursor: "old-cursor"
         )
-        try await disk.save(saved, accountID: 42, revision: 0)
-        let store = DailyRecommendationStore(disk: disk)
+        try saveLegacy(saved, root: root)
+        let store = makeStore(root: root, disk: disk)
         var cursors: [String?] = []
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1)] }, fetchCandidates: { _, cursor in
@@ -474,7 +482,7 @@ struct DailyRecommendationTests {
     func exhaustedPoolDoesNotRepeat() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let today = Date()
         await store.load(accountID: 42, scopeRevision: 1, date: today, serviceScope: "test",
                          fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) })
@@ -496,35 +504,39 @@ struct DailyRecommendationTests {
         saved.dismissedIDs = [101]
         saved.showsOnLaunch = false
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        json["dismissedIDs"] = Array(saved.dismissedIDs)
         json.removeValue(forKey: "recommendedDays")
         json.removeValue(forKey: "candidatePool")
         json.removeValue(forKey: "hasGeneratedBatch")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("42.json"))
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await store.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(store.hasLoadedState)
         #expect(!store.state.showsOnLaunch)
         #expect(store.state.revealedIDs == [100])
         #expect(store.state.dismissedIDs == [101])
         #expect(store.state.hasGeneratedBatch)
-        #expect(store.state.recommendedDays.isEmpty)
+        #expect(store.state.recommendedDays == ["101": ""])
         #expect(store.state.candidatePool == nil)
     }
 
     @Test("主动换批使用未消费池，排除当前批次、完整 Stars 和反馈，成功才重置翻牌")
-    func nextBatchUsesUnconsumedCandidates() async {
+    func nextBatchUsesUnconsumedCandidates() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var legacy = DailyRecommendationState()
+        legacy.dismissedIDs = [111]
+        try saveLegacy(legacy, root: root)
+        let store = makeStore(root: root)
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1), repo(110)] },
                          fetchCandidates: { _, _ in response((100...129).map { item(Int64($0)) }) })
         await store.reveal(100)
-        await store.dismiss(111)
         await store.setShowsOnLaunch(false)
         // 不先登记历史，也必须排除当前整批，防止把重排当作换批。
-        #expect(store.state.recommendedDays.isEmpty)
+        #expect(store.state.recommendedDays == ["111": ""])
         let replaced = await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
             fetchStars: { [repo(1), repo(110)] },
@@ -538,16 +550,19 @@ struct DailyRecommendationTests {
         #expect(store.state.revealedIDs.isEmpty)
         #expect(store.state.dismissedIDs == [111])
         #expect(!store.state.showsOnLaunch)
-        #expect(store.state.recommendedDays.isEmpty)
+        #expect(store.state.recommendedDays == ["111": ""])
         await store.markPresented()
-        #expect(store.state.recommendedIDs == Set(store.visibleItems.map(\.repoID)))
+        #expect(store.state.recommendedIDs == Set(store.visibleItems.map(\.repoID)).union([111]))
     }
 
     @Test("换批沿 cursor 补取，历史和重复项目不回流，不足十张按实际数量展示")
-    func nextBatchContinuesCursor() async {
+    func nextBatchContinuesCursor() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var legacy = DailyRecommendationState()
+        legacy.dismissedIDs = [901]
+        try saveLegacy(legacy, root: root)
+        let store = makeStore(root: root)
         var cursors: [String?] = []
         func page(_ seeds: [Int64], _ cursor: String?) async throws -> DailyRecommendationResponse {
             cursors.append(cursor)
@@ -562,7 +577,6 @@ struct DailyRecommendationTests {
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1)] }, fetchCandidates: page)
         await store.markPresented()
-        await store.dismiss(901)
         let replaced = await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
             fetchStars: { [repo(1)] }, fetchCandidates: page
@@ -570,14 +584,14 @@ struct DailyRecommendationTests {
         #expect(replaced)
         #expect(cursors == [nil, "second"])
         #expect(store.visibleItems.map(\.repoID) == [110, 111])
-        #expect(store.state.recommendedDays.count == 10)
+        #expect(store.state.recommendedDays.count == 11)
     }
 
     @Test("整批都不感兴趣后仍能从未消费池换出新项目")
     func nextBatchAfterDismissingEveryCard() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1)] },
                          fetchCandidates: { _, _ in response((100...119).map { item(Int64($0)) }) })
@@ -600,7 +614,7 @@ struct DailyRecommendationTests {
     func failedNextBatchPreservesProgress() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
             DailyRecommendationResponse(
@@ -642,7 +656,7 @@ struct DailyRecommendationTests {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let disk = DailyRecommendationDiskStore(root: root)
-        let store = DailyRecommendationStore(disk: disk)
+        let store = makeStore(root: root, disk: disk)
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) })
         await store.reveal(100)
@@ -661,7 +675,8 @@ struct DailyRecommendationTests {
             #expect(store.state.generatedAt == previousDate)
             #expect(store.batchMessageKey == "recommendations.daily.noNew")
         }
-        let restored = DailyRecommendationStore(disk: disk)
+        let restored = makeStore(root: root, disk: disk)
+        await switchHistoryAccount(42, root: root)
         await restored.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(restored.visibleItems.map(\.repoID) == [100])
         #expect(restored.state.revealedIDs == [100])
@@ -671,7 +686,7 @@ struct DailyRecommendationTests {
     func nextBatchPageBudgetResumes() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var cursors: [String?] = []
         func page(_ seeds: [Int64], _ cursor: String?) async throws -> DailyRecommendationResponse {
             cursors.append(cursor)
@@ -708,7 +723,7 @@ struct DailyRecommendationTests {
     func nextBatchIgnoresPreviousAccount() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
             DailyRecommendationResponse(modelVersion: "v20", items: (100...109).map { item(Int64($0)) },
@@ -725,6 +740,7 @@ struct DailyRecommendationTests {
             )
         }
         while continuation == nil { await Task.yield() }
+        await switchHistoryAccount(99, root: root)
         store.activate(accountID: 99, scopeRevision: 2)
         continuation?.resume(returning: response([item(120)]))
         #expect(await request.value == false)
@@ -754,7 +770,7 @@ struct DailyRecommendationTests {
     func starredBatchRemainsFrozen(restarting: Bool) async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let date = Date()
         await store.load(
             accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
@@ -765,7 +781,7 @@ struct DailyRecommendationTests {
             }
         )
         await store.excludeStarred([100])
-        let reopened = restarting ? DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root)) : store
+        let reopened = restarting ? makeStore(root: root) : store
         await reopened.load(
             accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
             fetchStars: { [repo(1), repo(100)] }, fetchCandidates: { _, _ in
@@ -783,7 +799,7 @@ struct DailyRecommendationTests {
     func failedRefreshFiltersOldBatch() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
         await store.load(
             accountID: 42, scopeRevision: 1, date: yesterday, serviceScope: "test",
@@ -798,7 +814,8 @@ struct DailyRecommendationTests {
         #expect(store.visibleItems.map(\.repoID) == [101])
         #expect(store.state.generatedAt == yesterday)
         #expect(store.errorKey == "recommendations.daily.failed")
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await restored.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(restored.visibleItems.map(\.repoID) == [101])
     }
@@ -807,7 +824,7 @@ struct DailyRecommendationTests {
     func partialFailurePreservesCursorAndCandidates() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var cursors: [String?] = []
         await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
@@ -827,7 +844,7 @@ struct DailyRecommendationTests {
         #expect(store.visibleItems.isEmpty)
 
         // 用新实例证明断点已落盘，而不是只保留在本次请求的局部变量里。
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
         let retried = await restored.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
             fetchStars: { [repo(1)] }, fetchCandidates: { _, cursor in
@@ -845,7 +862,7 @@ struct DailyRecommendationTests {
     func starWhileLoadingIsExcluded() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var continuation: CheckedContinuation<DailyRecommendationResponse, Never>?
         let request = Task {
             await store.load(
@@ -866,7 +883,7 @@ struct DailyRecommendationTests {
     func manualPresentationConsumesDailyDisplay(autoShowEnabled: Bool) async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let date = Date()
         await store.load(
             accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
@@ -877,7 +894,8 @@ struct DailyRecommendationTests {
         await store.setShowsOnLaunch(true)
         #expect(!store.canAutomaticallyPresent(date: date))
         #expect(store.state.recommendedIDs == [100])
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await restored.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(!restored.canAutomaticallyPresent(date: date))
     }
@@ -886,7 +904,7 @@ struct DailyRecommendationTests {
     func failedSaveCanRetryWithoutLosingChoices() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
             fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100), item(101)]) }
@@ -904,7 +922,8 @@ struct DailyRecommendationTests {
         try FileManager.default.removeItem(at: root)
         await store.retrySaving()
         #expect(store.errorKey == nil)
-        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let restored = makeStore(root: root)
+        await switchHistoryAccount(42, root: root)
         await restored.loadPreferences(accountID: 42, scopeRevision: 1)
         #expect(!restored.state.showsOnLaunch)
         #expect(restored.state.dismissedIDs == [101])
@@ -917,7 +936,7 @@ struct DailyRecommendationTests {
     func liveExclusionIsAccountScoped() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         var continuation: CheckedContinuation<DailyRecommendationResponse, Never>?
         let request = Task {
             await store.load(
@@ -929,6 +948,7 @@ struct DailyRecommendationTests {
         }
         while continuation == nil { await Task.yield() }
         await store.excludeStarred([1, 100])
+        await switchHistoryAccount(99, root: root)
         store.activate(accountID: 99, scopeRevision: 2)
         await store.load(
             accountID: 99, scopeRevision: 2, serviceScope: "test",
@@ -945,7 +965,7 @@ struct DailyRecommendationTests {
     func presentingOldCacheDoesNotConsumeToday() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         let today = Date()
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
         await store.load(
@@ -967,7 +987,7 @@ struct DailyRecommendationTests {
     func coldStartRecoversAfterStarring() async {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let store = makeStore(root: root)
         await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
             fetchStars: { [] }, fetchCandidates: { _, _ in
@@ -989,6 +1009,60 @@ struct DailyRecommendationTests {
         #expect(store.state.hasGeneratedBatch)
         #expect(store.visibleItems.map(\.repoID) == [100])
         #expect(store.canAutomaticallyPresent())
+    }
+
+    /// 同一测试重启 Store 时复用磁盘库；切账号显式模拟 AppDependencies 的数据库切换。
+    private let historyDatabases = HistoryTestDatabases()
+
+    private func makeStore(root: URL, disk: DailyRecommendationDiskStore? = nil) -> DailyRecommendationStore {
+        let database: HistoryTestDatabase
+        if let existing = historyDatabases.values[root] {
+            database = existing
+        } else {
+            database = try! HistoryTestDatabase()
+            historyDatabases.values[root] = database
+        }
+        return DailyRecommendationStore(disk: disk ?? DailyRecommendationDiskStore(root: root),
+                                        history: RecommendationHistoryRepository(database: database))
+    }
+
+    private func switchHistoryAccount(_ id: Int64, root: URL) async {
+        try! await historyDatabases.values[root]?.reopen(userId: id)
+    }
+
+    /// 构造旧版本文件，生产编码器已不再输出长期历史字段。
+    private func saveLegacy(_ state: DailyRecommendationState, root: URL) throws {
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        json["recommendedDays"] = state.recommendedDays
+        json["dismissedIDs"] = Array(state.dismissedIDs)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("42.json"))
+    }
+
+    @MainActor
+    private final class HistoryTestDatabases {
+        var values: [URL: HistoryTestDatabase] = [:]
+    }
+
+    /// 各账号拥有独立队列，测试重新创建 Store 时保留同一数据库，避免删除仍打开的 WAL 文件。
+    private final class HistoryTestDatabase: DatabaseManaging, @unchecked Sendable {
+        private var current: InMemoryDatabaseManager
+        private var accounts: [Int64?: InMemoryDatabaseManager]
+        var currentUserId: Int64? { current.currentUserId }
+        var databasePath: String? { nil }
+        var writer: any DatabaseWriter { current.writer }
+        init() throws {
+            let initial = try InMemoryDatabaseManager(userId: 42)
+            current = initial
+            accounts = [42: initial]
+        }
+        @MainActor
+        func reopen(userId: Int64?) async throws {
+            if let existing = accounts[userId] { current = existing; return }
+            let next = try InMemoryDatabaseManager(userId: userId)
+            accounts[userId] = next
+            current = next
+        }
     }
 
     private func temporaryRoot() -> URL {

@@ -68,7 +68,7 @@ struct DailyRecommendationCandidatePool: Codable, Sendable {
     var nextCursor: String?
 }
 
-/// 账号级每日快照；不将屏蔽项目视为负向种子上传。
+/// 账号级每日快照；历史字段仅解码旧文件或承载数据库投影，不再双写到 JSON。
 struct DailyRecommendationState: Codable, Sendable {
     var day = ""
     var serviceScope = ""
@@ -102,13 +102,28 @@ struct DailyRecommendationState: Codable, Sendable {
         generatedAt = try values.decodeIfPresent(Date.self, forKey: .generatedAt)
         items = try values.decode([RepoRecommendationItem].self, forKey: .items)
         revealedIDs = try values.decode(Set<Int64>.self, forKey: .revealedIDs)
-        dismissedIDs = try values.decode(Set<Int64>.self, forKey: .dismissedIDs)
+        dismissedIDs = try values.decodeIfPresent(Set<Int64>.self, forKey: .dismissedIDs) ?? []
         autoPresentedDay = try values.decode(String.self, forKey: .autoPresentedDay)
         showsOnLaunch = try values.decode(Bool.self, forKey: .showsOnLaunch)
         recommendedDays = try values.decodeIfPresent([String: String].self, forKey: .recommendedDays) ?? [:]
         candidatePool = try values.decodeIfPresent(DailyRecommendationCandidatePool.self, forKey: .candidatePool)
         hasGeneratedBatch = try values.decodeIfPresent(Bool.self, forKey: .hasGeneratedBatch)
             ?? (!items.isEmpty || !revealedIDs.isEmpty || recommendedDays.values.contains(day))
+    }
+
+    /// 长期历史和反馈的唯一持久化来源已迁到 SQLite；本文件仅保留批次、进度与偏好。
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(day, forKey: .day)
+        try values.encode(serviceScope, forKey: .serviceScope)
+        try values.encode(modelVersion, forKey: .modelVersion)
+        try values.encodeIfPresent(generatedAt, forKey: .generatedAt)
+        try values.encode(items, forKey: .items)
+        try values.encode(hasGeneratedBatch, forKey: .hasGeneratedBatch)
+        try values.encode(revealedIDs, forKey: .revealedIDs)
+        try values.encode(autoPresentedDay, forKey: .autoPresentedDay)
+        try values.encode(showsOnLaunch, forKey: .showsOnLaunch)
+        try values.encodeIfPresent(candidatePool, forKey: .candidatePool)
     }
 
     var recommendedIDs: Set<Int64> { Set(recommendedDays.keys.compactMap(Int64.init)) }

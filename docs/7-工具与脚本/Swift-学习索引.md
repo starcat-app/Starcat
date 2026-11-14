@@ -260,6 +260,7 @@
 | `StatementArguments` | 同上，参数化 | "GRDB StatementArguments" |
 | `upsert(_ db:)` | `ReadmeRepository.upsert` | "GRDB upsert mutating" |
 | `Migration` / `DatabaseMigrator` | `DatabaseMigrationsV1` | "GRDB DatabaseMigrator" |
+| 事务内一次性导入 / `ON CONFLICT` | `RecommendationHistoryRepository.importLegacy`：历史与导入标记一起提交；`record` 冻结首次推荐时间；`DailyRecommendationStore.persist` 串行保存反馈 | "GRDB transactions DatabaseWriter write SQLite ON CONFLICT" |
 | FTS5 全文搜索 | `repos_fts MATCH ?` | "GRDB FTS5 full text search" |
 | Triggers / `CREATE TRIGGER` | Migration v1 里同步 repos ↔ repos_fts | "SQLite triggers FTS" |
 

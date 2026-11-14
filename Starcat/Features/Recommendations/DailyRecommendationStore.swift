@@ -23,6 +23,13 @@ final class DailyRecommendationStore {
     private(set) var batchMessageKey: String?
     private(set) var emptyKey = "recommendations.daily.empty"
     private let disk: DailyRecommendationDiskStore
+    private let history: RecommendationHistoryRepository
+    /// 卡片与历史列表共用同一份账号快照；Star 始终从注册表派生。
+    private(set) var historyEntries: [RecommendationHistoryEntry] = []
+    private var pendingHistory: [Int64: RecommendationHistoryEntry] = [:]
+    private var pendingFeedback: [Int64: Bool] = [:]
+    /// 连续点击和多个窗口可能同时保存；串行写入，避免旧反馈在较新操作之后落库。
+    private var persistenceTask: Task<Bool, Never>?
     private var generation: UInt64 = 0
     private var revision: UInt64 = 0
     private var scopeRevision: UInt64?
@@ -33,8 +40,9 @@ final class DailyRecommendationStore {
     /// 完整数据库快照之外，合并请求等待期间注册表收到的新 Star，防止迟到候选重新露出。
     private var observedStarredIDs: Set<Int64> = []
 
-    init(disk: DailyRecommendationDiskStore = DailyRecommendationDiskStore()) {
+    init(disk: DailyRecommendationDiskStore = DailyRecommendationDiskStore(), history: RecommendationHistoryRepository) {
         self.disk = disk
+        self.history = history
     }
 
     var visibleItems: [RepoRecommendationItem] {
@@ -52,6 +60,9 @@ final class DailyRecommendationStore {
         self.accountID = accountID
         self.scopeRevision = scopeRevision
         state = DailyRecommendationState()
+        historyEntries = []
+        pendingHistory = [:]
+        pendingFeedback = [:]
         hasLoadedState = false
         isLoading = false
         errorKey = nil
@@ -73,9 +84,15 @@ final class DailyRecommendationStore {
         do {
             let saved = try await disk.load(accountID: accountID)
             guard token == generation, !Task.isCancelled else { return false }
+            try await history.importLegacy(saved, accountID: accountID)
+            let entries = try await history.fetchAll(accountID: accountID)
+            guard token == generation, !Task.isCancelled else { return false }
             if !hasLoadedState {
                 state = saved
+                historyEntries = entries
+                updateHistoryProjection()
                 hasLoadedState = true
+                await excludeStarred(observedStarredIDs)
             }
             return true
         } catch {
@@ -114,6 +131,8 @@ final class DailyRecommendationStore {
             let repos = try await fetchStars()
             guard token == generation, !Task.isCancelled else { return false }
             let starred = Set(repos.map(\.id))
+            await excludeStarred(starred.union(observedStarredIDs))
+            guard token == generation, !Task.isCancelled else { return false }
             let excluded = starred.union(observedStarredIDs).union(state.dismissedIDs)
             // 先过滤可读旧卡，再请求新数据；离线回退也不能显示刚 Star 的项目。
             state.items.removeAll { excluded.contains($0.repoID) }
@@ -232,11 +251,7 @@ final class DailyRecommendationStore {
     func markPresented(date: Date = Date()) async {
         guard accountID != nil, hasLoadedState, !visibleItems.isEmpty else { return }
         let day = DailyRecommendationState.dayKey(date)
-        var changed = false
-        for item in visibleItems where state.recommendedDays[String(item.repoID)] != day {
-            state.recommendedDays[String(item.repoID)] = day
-            changed = true
-        }
+        var changed = recordHistory(visibleItems, date: date)
         // 手动入口已让用户看到今日批次，随后启用开关或回到前台也不应再次自动打扰。
         // 昨日离线缓存不消费今日资格，仍按快照真实日期处理。
         if state.day == day, state.autoPresentedDay != day {
@@ -266,7 +281,22 @@ final class DailyRecommendationStore {
     }
 
     func dismiss(_ id: Int64) async {
+        guard hasLoadedState, !observedStarredIDs.contains(id),
+              historyEntries.contains(where: { $0.id == id }) || visibleItems.contains(where: { $0.repoID == id }) else { return }
+        // 用户能操作这张卡就已实际看到它；即使页面的 presented 回调尚在排队也不能丢反馈。
+        if let item = visibleItems.first(where: { $0.repoID == id }) { _ = recordHistory([item], date: Date()) }
         state.dismissedIDs.insert(id)
+        pendingFeedback[id] = true
+        updateFeedback(id: id, dismissed: true)
+        await persist()
+    }
+
+    /// 撤销负反馈不会删除历史，后续新批次仍按完整历史去重。
+    func restoreInterest(_ id: Int64) async {
+        guard hasLoadedState, state.dismissedIDs.contains(id) else { return }
+        state.dismissedIDs.remove(id)
+        pendingFeedback[id] = false
+        updateFeedback(id: id, dismissed: false)
         await persist()
     }
 
@@ -280,7 +310,14 @@ final class DailyRecommendationStore {
     /// 现存批次中的已 Star 卡片移除，不自动换入新项目扰动卡槽顺序。
     func excludeStarred(_ ids: Set<Int64>) async {
         observedStarredIDs = ids
-        guard state.items.contains(where: { ids.contains($0.repoID) }) else { return }
+        guard hasLoadedState else { return }
+        let cleared = state.dismissedIDs.intersection(ids)
+        for id in cleared {
+            state.dismissedIDs.remove(id)
+            pendingFeedback[id] = false
+            updateFeedback(id: id, dismissed: false)
+        }
+        guard !cleared.isEmpty || state.items.contains(where: { ids.contains($0.repoID) }) else { return }
         state.items.removeAll { ids.contains($0.repoID) }
         await persist()
     }
@@ -295,13 +332,79 @@ final class DailyRecommendationStore {
         revision &+= 1
         let writeRevision = revision
         let token = generation
-        do {
-            try await disk.save(state, accountID: accountID, revision: writeRevision)
-            if token == generation, writeRevision == revision, errorKey == "recommendations.daily.saveFailed" {
-                errorKey = nil
+        let snapshot = state
+        let records = Array(pendingHistory.values)
+        let feedback = pendingFeedback
+        let previous = persistenceTask
+        let history = self.history
+        let disk = self.disk
+        let task = Task { @MainActor in
+            _ = await previous?.value
+            do {
+                // 历史先提交，JSON 才能省去历史字段；失败保留内存意图供 retrySaving 重试。
+                for entry in records {
+                    if let item = entry.item, let date = entry.recommendedAt, let day = entry.recommendedDay {
+                        try await history.record([item], day: day, date: date, batchID: entry.batchID ?? "", accountID: accountID)
+                    }
+                }
+                for (id, dismissed) in feedback {
+                    try await history.setDismissed(dismissed, id: id, accountID: accountID)
+                }
+                try await disk.save(snapshot, accountID: accountID, revision: writeRevision)
+                return true
+            } catch {
+                return false
             }
-        } catch {
-            if token == generation, writeRevision == revision { errorKey = "recommendations.daily.saveFailed" }
         }
+        persistenceTask = task
+        let saved = await task.value
+        guard token == generation, writeRevision == revision else { return }
+        if saved {
+            pendingHistory = [:]
+            pendingFeedback = [:]
+            if errorKey == "recommendations.daily.saveFailed" { errorKey = nil }
+        } else {
+            errorKey = "recommendations.daily.saveFailed"
+        }
+    }
+
+    /// 第一次真实展示的时间冻结；旧记录未知的时间保持未知。
+    @discardableResult
+    private func recordHistory(_ items: [RepoRecommendationItem], date: Date) -> Bool {
+        let existing = Set(historyEntries.map(\.id))
+        let entries = items.filter { !existing.contains($0.repoID) }.map {
+            RecommendationHistoryEntry(id: $0.repoID, item: $0, recommendedAt: date,
+                                       recommendedDay: DailyRecommendationState.dayKey(date),
+                                       batchID: "\(state.day)|\(state.modelVersion)|\(state.generatedAt?.timeIntervalSince1970 ?? 0)",
+                                       isDismissed: false)
+        }
+        for entry in entries { pendingHistory[entry.id] = entry }
+        historyEntries.append(contentsOf: entries)
+        // 同一批展示时间相同，按 ID 稳定倒序，与重新读库后的顺序一致。
+        historyEntries.sort {
+            let leftDay = RecommendationHistoryRepository.sortDay($0.recommendedDay)
+            let rightDay = RecommendationHistoryRepository.sortDay($1.recommendedDay)
+            if leftDay != rightDay { return leftDay > rightDay }
+            if $0.recommendedAt != $1.recommendedAt {
+                return ($0.recommendedAt ?? .distantPast) > ($1.recommendedAt ?? .distantPast)
+            }
+            return $0.id > $1.id
+        }
+        updateHistoryProjection()
+        return !entries.isEmpty
+    }
+
+    private func updateHistoryProjection() {
+        state.recommendedDays = Dictionary(uniqueKeysWithValues: historyEntries.map { (String($0.id), $0.recommendedDay ?? "") })
+        state.dismissedIDs = Set(historyEntries.filter(\.isDismissed).map(\.id))
+    }
+
+    private func updateFeedback(id: Int64, dismissed: Bool) {
+        guard let index = historyEntries.firstIndex(where: { $0.id == id }) else { return }
+        let entry = historyEntries[index]
+        historyEntries[index] = RecommendationHistoryEntry(
+            id: entry.id, item: entry.item, recommendedAt: entry.recommendedAt,
+            recommendedDay: entry.recommendedDay, batchID: entry.batchID, isDismissed: dismissed
+        )
     }
 }
