@@ -47,7 +47,7 @@ struct ProfileLinksRowTests {
         }
     }
 
-    /// 比较新增组织前后的真实像素：只有居中社交入口右方应变化，且变化一直到内容区右边缘。
+    /// 12pt 头像在 20pt 点击区域内居中，贴右时保留 4pt 留白，不要求绘制像素贴边。
     @Test("组织贴右展示且社交图标位置不变", arguments: [212.0, 252.0, 292.0])
     func organizationsStayAtTrailingEdge(width: Double) throws {
         let baseline = NSBitmapImageRep(cgImage: try render(user(linkCount: 2, organizationCount: 0), width: width))
@@ -62,6 +62,8 @@ struct ProfileLinksRowTests {
         let firstChangedColumn = try #require(changedColumns.first)
         let lastChangedColumn = try #require(changedColumns.last)
         #expect(firstChangedColumn >= Int(width / 2) + 25 + 8)
-        #expect(lastChangedColumn >= Int(width) - 2)
+        let trailingInset = result.pixelsWide - 1 - lastChangedColumn
+        // 允许一像素光栅化误差，同时约束组织仍贴右且图标未贴到点击区域边缘。
+        #expect((3...5).contains(trailingInset))
     }
 }

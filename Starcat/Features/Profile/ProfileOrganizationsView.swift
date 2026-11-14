@@ -13,6 +13,8 @@ import SwiftUI
 struct ProfileOrganizationsView: View {
     let organizations: [GitHubOrganizationDTO]
 
+    @Environment(\.displayScale) private var displayScale
+
     var body: some View {
         ViewThatFits(in: .horizontal) {
             organizationButtons(maximumSlots: 3)
@@ -31,6 +33,8 @@ struct ProfileOrganizationsView: View {
                     NSWorkspace.shared.open(GitHubURLs.userProfile(login: organization.login))
                 } label: {
                     organizationAvatar(organization)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
@@ -67,24 +71,27 @@ struct ProfileOrganizationsView: View {
         .fixedSize()
     }
 
-    /// GitHub 组织标识保留圆角方形，避免圆形裁切损失 logo 四角。
+    /// 12pt 圆形头像与同排社交图标保持一致，按钮外层保留 20pt 点击区域。
+    /// 至少请求 64px 图源后高质量缩小，避免小尺寸头像细节因低分辨率取图而模糊。
     private func organizationAvatar(_ organization: GitHubOrganizationDTO) -> some View {
-        KFImage(GitHubAvatarURL.imageURL(from: organization.avatarUrl, displayDiameter: 20))
+        KFImage(GitHubAvatarURL.imageURL(
+            from: organization.avatarUrl,
+            displayDiameter: 12,
+            displayScale: displayScale,
+            minimumPixelSize: 64
+        ))
             .resizable()
+            .interpolation(.high)
             .cancelOnDisappear(true)
             .placeholder {
                 Image(systemName: "building.2")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
             }
             .fade(duration: 0.15)
             .scaledToFill()
-            .frame(width: 20, height: 20)
-            .background(.secondary.opacity(0.12))
-            .clipShape(.rect(cornerRadius: 4))
-            .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(.secondary.opacity(0.18), lineWidth: 0.5)
-            }
+            .frame(width: 12, height: 12)
+            .clipShape(Circle())
     }
 
     /// 使用组织原文作为提示，保留账号和 GitHub 简介，不生成额外显示名称。
