@@ -19,6 +19,8 @@ final class DailyRecommendationStore {
     private(set) var accountID: Int64?
     private(set) var isLoading = false
     private(set) var errorKey: String?
+    /// 换批未找到新项目时保留原牌，用独立提示区说明原因，不把有效卡片切成空态。
+    private(set) var batchMessageKey: String?
     private(set) var emptyKey = "recommendations.daily.empty"
     private let disk: DailyRecommendationDiskStore
     private var generation: UInt64 = 0
@@ -26,6 +28,10 @@ final class DailyRecommendationStore {
     private var scopeRevision: UInt64?
     /// 偏好读盘完成即可编辑开关，不必等待推荐网络请求完成
     private(set) var hasLoadedState = false
+    /// 重试延续失败操作；重开入口始终恢复当前批次，不顺带执行上次失败的换批。
+    private(set) var retryReplacesCurrentBatch = false
+    /// 完整数据库快照之外，合并请求等待期间注册表收到的新 Star，防止迟到候选重新露出。
+    private var observedStarredIDs: Set<Int64> = []
 
     init(disk: DailyRecommendationDiskStore = DailyRecommendationDiskStore()) {
         self.disk = disk
@@ -49,6 +55,10 @@ final class DailyRecommendationStore {
         hasLoadedState = false
         isLoading = false
         errorKey = nil
+        batchMessageKey = nil
+        emptyKey = "recommendations.daily.empty"
+        retryReplacesCurrentBatch = false
+        observedStarredIDs = []
     }
 
     /// 设置页只读取账号文件，不取 Stars 或推荐候选；两处开关继续共享原有快照
@@ -76,53 +86,72 @@ final class DailyRecommendationStore {
 
     /// 从跨天候选池选出未推荐项目，不足时在请求预算内补页，再冻结当天最多 10 张
     /// 推荐历史仅参与新批次筛选；当天重看只排除已 Star 和不感兴趣，不能清空自己的牌
+    /// 主动换批在找到新项目后才替换快照；失败和耗尽都保留上一批及翻牌进度。
+    @discardableResult
     func load(
         accountID: Int64,
         scopeRevision: UInt64,
         date: Date = Date(),
         serviceScope: String,
+        replacingCurrentBatch: Bool = false,
         fetchStars: () async throws -> [Repo],
         fetchCandidates: ([Int64], String?) async throws -> DailyRecommendationResponse
-    ) async {
+    ) async -> Bool {
         activate(accountID: accountID, scopeRevision: scopeRevision)
-        guard !isLoading else { return }
+        guard !isLoading, !Task.isCancelled else { return false }
         let token = generation
         let day = DailyRecommendationState.dayKey(date)
         isLoading = true
         errorKey = nil
+        batchMessageKey = nil
+        retryReplacesCurrentBatch = replacingCurrentBatch
         defer { if token == generation { isLoading = false } }
-        guard await loadPreferences(accountID: accountID, scopeRevision: scopeRevision) else { return }
+        guard await loadPreferences(accountID: accountID, scopeRevision: scopeRevision) else { return false }
+        // 候选池留在 catch 可见的作用域，后续页失败也能保存前面已成功取得的位置。
+        var pool = state.candidatePool
         do {
             // 昨日快照不伪装成今日推荐；离线时错误态仍可保留上一批及其真实日期。
             let repos = try await fetchStars()
-            guard token == generation, !Task.isCancelled else { return }
+            guard token == generation, !Task.isCancelled else { return false }
             let starred = Set(repos.map(\.id))
-            let excluded = starred.union(state.dismissedIDs)
-            if state.serviceScope != serviceScope {
+            let excluded = starred.union(observedStarredIDs).union(state.dismissedIDs)
+            // 先过滤可读旧卡，再请求新数据；离线回退也不能显示刚 Star 的项目。
+            state.items.removeAll { excluded.contains($0.repoID) }
+            // 即使原批次尚未登记展示历史，主动换批也不能把同一组项目重新排列后交回去。
+            let replacingIDs: Set<Int64> = replacingCurrentBatch ? Set(state.items.map(\.repoID)) : []
+            if state.serviceScope != serviceScope, !replacingCurrentBatch {
                 state.items = []
+                state.hasGeneratedBatch = false
                 state.revealedIDs = []
                 // 服务作用域代表推荐语料身份；变化后当日旧批次也不能继续冒充新批次。
                 state.modelVersion = ""
             }
-            if state.day == day, state.serviceScope == serviceScope, !state.modelVersion.isEmpty,
-               !state.items.isEmpty || state.candidatePool?.hasMore != true {
-                state.items.removeAll { excluded.contains($0.repoID) }
+            if !replacingCurrentBatch, state.day == day, state.serviceScope == serviceScope, !state.modelVersion.isEmpty,
+               state.hasGeneratedBatch || state.candidatePool?.hasMore != true {
                 if state.items.isEmpty { emptyKey = "recommendations.daily.noNew" }
                 await persist()
-                return
+                return token == generation && !Task.isCancelled
             }
             let seeds = DailyRecommendationState.seeds(from: repos).sorted()
             guard !seeds.isEmpty else {
                 emptyKey = "recommendations.daily.coldStart"
-                state.items = []
-                return
+                if replacingCurrentBatch {
+                    batchMessageKey = emptyKey
+                } else {
+                    state.items = []
+                    state.hasGeneratedBatch = false
+                    state.revealedIDs = []
+                    state.candidatePool = nil
+                    await persist()
+                }
+                return false
             }
-            var pool = state.candidatePool
             if pool?.seedIDs != seeds || pool?.serviceScope != serviceScope { pool = nil }
             var requests = 0
             while requests < Self.pageBudget {
                 let needsProbe = pool == nil || pool?.checkedDay != day
-                let exclusions = starred.union(state.dismissedIDs).union(state.recommendedIDs)
+                let exclusions = starred.union(observedStarredIDs).union(state.dismissedIDs)
+                    .union(state.recommendedIDs).union(replacingIDs)
                 if let current = pool, !needsProbe {
                     pool?.items = DailyRecommendationState.candidates(current.items, excluding: exclusions, limit: .max)
                     if (pool?.items.count ?? 0) >= 10 || !current.hasMore { break }
@@ -134,13 +163,13 @@ final class DailyRecommendationStore {
                     page = try await fetchCandidates(seeds, cursor)
                 } catch let error as StarcatEnvelopeNetworkError {
                     if case .serverError(_, let code, _) = error, code == "CURSOR_EXPIRED", cursor != nil {
-                        guard token == generation, !Task.isCancelled else { return }
+                        guard token == generation, !Task.isCancelled else { return false }
                         pool = nil
                         continue
                     }
                     throw error
                 }
-                guard token == generation, !Task.isCancelled else { return }
+                guard token == generation, !Task.isCancelled else { return false }
                 // 只探测第一页确认当天活动模型；版本不变时保留已推进的位置，不能每天回到前 100 条
                 if cursor == nil, var current = pool, current.modelVersion == page.modelVersion {
                     current.items = page.items + current.items
@@ -160,7 +189,8 @@ final class DailyRecommendationStore {
                 // 等待网络期间用户仍可屏蔽项目或修改偏好，筛选必须读取当前内存中的反馈和历史
                 let remaining = DailyRecommendationState.candidates(
                     pool?.items ?? [],
-                    excluding: starred.union(state.dismissedIDs).union(state.recommendedIDs), limit: .max
+                    excluding: starred.union(observedStarredIDs).union(state.dismissedIDs)
+                        .union(state.recommendedIDs).union(replacingIDs), limit: .max
                 )
                 pool?.items = remaining
             }
@@ -168,20 +198,32 @@ final class DailyRecommendationStore {
                 throw StarcatEnvelopeNetworkError.serverError(status: 409, code: "CURSOR_EXPIRED", message: "Recommendation model changed")
             }
             let items = DailyRecommendationState.candidates(
-                pool.items, excluding: starred.union(state.dismissedIDs).union(state.recommendedIDs)
+                pool.items, excluding: starred.union(observedStarredIDs).union(state.dismissedIDs)
+                    .union(state.recommendedIDs).union(replacingIDs)
             )
+            state.candidatePool = pool
+            emptyKey = pool.hasMore ? "recommendations.daily.continueSearch" : "recommendations.daily.noNew"
+            if replacingCurrentBatch, items.isEmpty {
+                // 保留已推进的 cursor，重试能继续；原批次的日期、模型与揭示状态保持一致。
+                batchMessageKey = emptyKey
+                await persist()
+                return false
+            }
             state.day = day
             state.serviceScope = serviceScope
             state.modelVersion = pool.modelVersion
             state.generatedAt = date
             state.items = items
+            state.hasGeneratedBatch = !items.isEmpty
             state.revealedIDs = []
-            state.candidatePool = pool
-            emptyKey = pool.hasMore ? "recommendations.daily.continueSearch" : "recommendations.daily.noNew"
             await persist()
+            return token == generation && !Task.isCancelled
         } catch {
-            guard token == generation, !Task.isCancelled else { return }
+            guard token == generation, !Task.isCancelled else { return false }
+            state.candidatePool = pool
             errorKey = "recommendations.daily.failed"
+            await persist()
+            return false
         }
     }
 
@@ -195,6 +237,12 @@ final class DailyRecommendationStore {
             state.recommendedDays[String(item.repoID)] = day
             changed = true
         }
+        // 手动入口已让用户看到今日批次，随后启用开关或回到前台也不应再次自动打扰。
+        // 昨日离线缓存不消费今日资格，仍按快照真实日期处理。
+        if state.day == day, state.autoPresentedDay != day {
+            state.autoPresentedDay = day
+            changed = true
+        }
         if changed { await persist() }
     }
 
@@ -203,14 +251,6 @@ final class DailyRecommendationStore {
         let day = DailyRecommendationState.dayKey(date)
         return hasLoadedState && state.showsOnLaunch && state.day == day
             && !visibleItems.isEmpty && state.autoPresentedDay != day
-    }
-
-    func claimAutomaticPresentation(date: Date = Date()) async -> Bool {
-        let day = DailyRecommendationState.dayKey(date)
-        guard canAutomaticallyPresent(date: date) else { return false }
-        state.autoPresentedDay = day
-        await persist()
-        return true
     }
 
     /// 翻开仅改变查看进度，不执行远程写入。
@@ -239,19 +279,29 @@ final class DailyRecommendationStore {
 
     /// 现存批次中的已 Star 卡片移除，不自动换入新项目扰动卡槽顺序。
     func excludeStarred(_ ids: Set<Int64>) async {
+        observedStarredIDs = ids
         guard state.items.contains(where: { ids.contains($0.repoID) }) else { return }
         state.items.removeAll { ids.contains($0.repoID) }
+        await persist()
+    }
+
+    /// 重试内存中的最新选择，不读盘回滚反馈，也不为保存失败重新请求推荐。
+    func retrySaving() async {
         await persist()
     }
 
     private func persist() async {
         guard let accountID, hasLoadedState else { return }
         revision &+= 1
+        let writeRevision = revision
         let token = generation
         do {
-            try await disk.save(state, accountID: accountID, revision: revision)
+            try await disk.save(state, accountID: accountID, revision: writeRevision)
+            if token == generation, writeRevision == revision, errorKey == "recommendations.daily.saveFailed" {
+                errorKey = nil
+            }
         } catch {
-            if token == generation { errorKey = "recommendations.daily.saveFailed" }
+            if token == generation, writeRevision == revision { errorKey = "recommendations.daily.saveFailed" }
         }
     }
 }

@@ -195,6 +195,9 @@
 | `decidePolicyFor navigationAction` | 拦截链接 / 主框架 reload | "WKNavigationActionPolicy decidePolicy" |
 | `WKNavigationAction.navigationType == .linkActivated` | 区分用户点链接 vs 程序加载 | "WKNavigationType cases" |
 | `loadHTMLString(_:baseURL:)` | 加载 README HTML 片段 | "WKWebView loadHTMLString baseURL" |
+| `loadFileURL(_:allowingReadAccessTo:)` / `.nonPersistent()` | `DailyRecommendationWebView.makeNSView` 加载本地发现页，限定文件读取范围，不另存网页业务状态 | "WKWebView loadFileURL allowingReadAccessTo WKWebsiteDataStore nonPersistent" |
+| `WKScriptMessageHandler` / `removeScriptMessageHandler` | `DailyRecommendationWebView.Coordinator` 接收动作；销毁时移除 handler，`DailyRecommendationWebAction` 验证批次与候选 ID | "WKScriptMessageHandler WKUserContentController removeScriptMessageHandler retain cycle" |
+| `callAsyncJavaScript(_:arguments:in:contentWorld:)` | `DailyRecommendationWebView.Coordinator.flush` 用结构化参数串行发送展示快照，不拼接仓库文本为脚本 | "WKWebView callAsyncJavaScript arguments WKContentWorld" |
 | `webView.reload()` 的副作用 | 触发 baseURL 真实请求（**坑**，见 `ReadmeWebView` 第 232-256 行注释） | "WKWebView reload behavior" |
 | WebContent 进程 + Sandbox 噪音 | `Failed to change to usage state 2` 等无害 log | "WKWebView WebContent process sandbox logs" |
 

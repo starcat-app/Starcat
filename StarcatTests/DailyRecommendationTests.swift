@@ -148,7 +148,7 @@ struct DailyRecommendationTests {
         #expect(store.hasLoadedState)
         await store.setShowsOnLaunch(false)
         continuation?.resume(throwing: URLError(.notConnectedToInternet))
-        await request.value
+        _ = await request.value
         #expect(!store.state.showsOnLaunch)
         #expect(store.errorKey == "recommendations.daily.failed")
 
@@ -174,10 +174,9 @@ struct DailyRecommendationTests {
         #expect(!store.canAutomaticallyPresent(date: date))
         #expect(store.visibleItems.map(\.repoID) == [100])
         await store.setShowsOnLaunch(true)
-        let firstClaim = await store.claimAutomaticPresentation(date: date)
-        #expect(firstClaim)
-        let secondClaim = await store.claimAutomaticPresentation(date: date)
-        #expect(!secondClaim)
+        #expect(store.canAutomaticallyPresent(date: date))
+        await store.markPresented(date: date)
+        #expect(!store.canAutomaticallyPresent(date: date))
         await store.setShowsOnLaunch(false)
         let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
         await restored.load(
@@ -192,8 +191,7 @@ struct DailyRecommendationTests {
         #expect(restored.visibleItems.map(\.repoID) == [100])
         #expect(restored.state.dismissedIDs == [101])
         #expect(!restored.state.showsOnLaunch)
-        let restoredClaim = await restored.claimAutomaticPresentation(date: date)
-        #expect(!restoredClaim)
+        #expect(!restored.canAutomaticallyPresent(date: date))
     }
 
     @Test("新的一天更新批次，屏蔽反馈继续保留")
@@ -256,7 +254,7 @@ struct DailyRecommendationTests {
         while continuation == nil { await Task.yield() }
         store.activate(accountID: 99, scopeRevision: 2)
         continuation?.resume(returning: response([item(100)]))
-        await task.value
+        _ = await task.value
         #expect(store.accountID == 99)
         #expect(store.visibleItems.isEmpty)
         #expect(!store.isLoading)
@@ -279,8 +277,7 @@ struct DailyRecommendationTests {
         #expect(store.visibleItems.map(\.repoID) == [100])
         #expect(store.state.generatedAt == yesterday)
         #expect(store.errorKey == "recommendations.daily.failed")
-        let claimed = await store.claimAutomaticPresentation()
-        #expect(!claimed)
+        #expect(!store.canAutomaticallyPresent())
     }
 
     @Test("损坏状态文件不可用空反馈覆盖")
@@ -501,6 +498,7 @@ struct DailyRecommendationTests {
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
         json.removeValue(forKey: "recommendedDays")
         json.removeValue(forKey: "candidatePool")
+        json.removeValue(forKey: "hasGeneratedBatch")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("42.json"))
         let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
@@ -509,8 +507,488 @@ struct DailyRecommendationTests {
         #expect(!store.state.showsOnLaunch)
         #expect(store.state.revealedIDs == [100])
         #expect(store.state.dismissedIDs == [101])
+        #expect(store.state.hasGeneratedBatch)
         #expect(store.state.recommendedDays.isEmpty)
         #expect(store.state.candidatePool == nil)
+    }
+
+    @Test("主动换批使用未消费池，排除当前批次、完整 Stars 和反馈，成功才重置翻牌")
+    func nextBatchUsesUnconsumedCandidates() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1), repo(110)] },
+                         fetchCandidates: { _, _ in response((100...129).map { item(Int64($0)) }) })
+        await store.reveal(100)
+        await store.dismiss(111)
+        await store.setShowsOnLaunch(false)
+        // 不先登记历史，也必须排除当前整批，防止把重排当作换批。
+        #expect(store.state.recommendedDays.isEmpty)
+        let replaced = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1), repo(110)] },
+            fetchCandidates: { _, _ in
+                Issue.record("未消费池足够时无需联网")
+                return response([])
+            }
+        )
+        #expect(replaced)
+        #expect(store.visibleItems.map(\.repoID) == Array(112...121).map(Int64.init))
+        #expect(store.state.revealedIDs.isEmpty)
+        #expect(store.state.dismissedIDs == [111])
+        #expect(!store.state.showsOnLaunch)
+        #expect(store.state.recommendedDays.isEmpty)
+        await store.markPresented()
+        #expect(store.state.recommendedIDs == Set(store.visibleItems.map(\.repoID)))
+    }
+
+    @Test("换批沿 cursor 补取，历史和重复项目不回流，不足十张按实际数量展示")
+    func nextBatchContinuesCursor() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var cursors: [String?] = []
+        func page(_ seeds: [Int64], _ cursor: String?) async throws -> DailyRecommendationResponse {
+            cursors.append(cursor)
+            if cursor == nil {
+                return DailyRecommendationResponse(
+                    modelVersion: "v20", items: (100...109).map { item(Int64($0)) },
+                    hasMore: true, nextCursor: "second"
+                )
+            }
+            return response([item(100), item(1), item(901), item(110), item(110), item(111)])
+        }
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: page)
+        await store.markPresented()
+        await store.dismiss(901)
+        let replaced = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1)] }, fetchCandidates: page
+        )
+        #expect(replaced)
+        #expect(cursors == [nil, "second"])
+        #expect(store.visibleItems.map(\.repoID) == [110, 111])
+        #expect(store.state.recommendedDays.count == 10)
+    }
+
+    @Test("整批都不感兴趣后仍能从未消费池换出新项目")
+    func nextBatchAfterDismissingEveryCard() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] },
+                         fetchCandidates: { _, _ in response((100...119).map { item(Int64($0)) }) })
+        await store.markPresented()
+        for id in 100...109 { await store.dismiss(Int64(id)) }
+        #expect(store.visibleItems.isEmpty)
+        let replaced = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                Issue.record("池中仍有未展示项目")
+                return response([])
+            }
+        )
+        #expect(replaced)
+        #expect(store.visibleItems.map(\.repoID) == Array(110...119).map(Int64.init))
+        #expect(store.state.dismissedIDs == Set((100...109).map(Int64.init)))
+    }
+
+    @Test("换批失败保留原卡与进度，重试仍从原 cursor 继续")
+    func failedNextBatchPreservesProgress() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+            DailyRecommendationResponse(
+                modelVersion: "v20", items: (100...109).map { item(Int64($0)) },
+                hasMore: true, nextCursor: "second"
+            )
+        })
+        await store.reveal(100)
+        await store.markPresented()
+        let previousDate = store.state.generatedAt
+        let replaced = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, cursor in
+                #expect(cursor == "second")
+                throw URLError(.notConnectedToInternet)
+            }
+        )
+        #expect(!replaced)
+        #expect(store.visibleItems.map(\.repoID) == Array(100...109).map(Int64.init))
+        #expect(store.state.revealedIDs == [100])
+        #expect(store.state.generatedAt == previousDate)
+        #expect(store.state.candidatePool?.nextCursor == "second")
+        #expect(store.errorKey == "recommendations.daily.failed")
+        #expect(store.retryReplacesCurrentBatch)
+        let retried = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, cursor in
+                #expect(cursor == "second")
+                return response([item(120)])
+            }
+        )
+        #expect(retried)
+        #expect(store.visibleItems.map(\.repoID) == [120])
+        #expect(store.errorKey == nil)
+    }
+
+    @Test("换批耗尽保留原卡，重复操作不从第一页伪造新批次")
+    func exhaustedNextBatchPreservesCards() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let disk = DailyRecommendationDiskStore(root: root)
+        let store = DailyRecommendationStore(disk: disk)
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) })
+        await store.reveal(100)
+        let previousDate = store.state.generatedAt
+        for _ in 0..<2 {
+            let replaced = await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                    Issue.record("已耗尽的池不能反复回到第一页")
+                    return response([item(100)])
+                }
+            )
+            #expect(!replaced)
+            #expect(store.visibleItems.map(\.repoID) == [100])
+            #expect(store.state.revealedIDs == [100])
+            #expect(store.state.generatedAt == previousDate)
+            #expect(store.batchMessageKey == "recommendations.daily.noNew")
+        }
+        let restored = DailyRecommendationStore(disk: disk)
+        await restored.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(restored.visibleItems.map(\.repoID) == [100])
+        #expect(restored.state.revealedIDs == [100])
+    }
+
+    @Test("换批补页预算耗尽保留旧批次，重试继续已保存的位置")
+    func nextBatchPageBudgetResumes() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var cursors: [String?] = []
+        func page(_ seeds: [Int64], _ cursor: String?) async throws -> DailyRecommendationResponse {
+            cursors.append(cursor)
+            if cursor == "page-5" { return response([item(120)]) }
+            return DailyRecommendationResponse(
+                modelVersion: "v20", items: (100...109).map { item(Int64($0)) },
+                hasMore: true, nextCursor: "page-\(cursors.count + 1)"
+            )
+        }
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: page)
+        await store.markPresented()
+        await store.reveal(100)
+        let replaced = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1)] }, fetchCandidates: page
+        )
+        #expect(!replaced)
+        #expect(store.state.revealedIDs == [100])
+        #expect(store.visibleItems.map(\.repoID) == Array(100...109).map(Int64.init))
+        #expect(store.batchMessageKey == "recommendations.daily.continueSearch")
+        #expect(store.state.candidatePool?.nextCursor == "page-5")
+        let retried = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+            fetchStars: { [repo(1)] }, fetchCandidates: page
+        )
+        #expect(retried)
+        #expect(cursors == [nil, "page-2", "page-3", "page-4", "page-5"])
+        #expect(store.visibleItems.map(\.repoID) == [120])
+        #expect(store.batchMessageKey == nil)
+    }
+
+    @Test("换批中切账号后丢弃旧响应")
+    func nextBatchIgnoresPreviousAccount() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+            DailyRecommendationResponse(modelVersion: "v20", items: (100...109).map { item(Int64($0)) },
+                                        hasMore: true, nextCursor: "second")
+        })
+        // 当前池仅有已展示的一批，换批必须等待下一页的真实网络边界。
+        var continuation: CheckedContinuation<DailyRecommendationResponse, Never>?
+        let request = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                    await withCheckedContinuation { continuation = $0 }
+                }
+            )
+        }
+        while continuation == nil { await Task.yield() }
+        store.activate(accountID: 99, scopeRevision: 2)
+        continuation?.resume(returning: response([item(120)]))
+        #expect(await request.value == false)
+        #expect(store.accountID == 99)
+        #expect(store.visibleItems.isEmpty)
+        #expect(!store.isLoading)
+    }
+
+    @Test("推荐依据只映射已知事实，不展示内部代码或伪造具体种子")
+    func reasonPresentationUsesKnownEvidence() {
+        let examples: [([String], DailyRecommendationReason)] = [
+            (["基于公开 Star 共现关系"], .coStar),
+            (["costar", "source_repo_id:42"], .coStar),
+            (["基于仓库协同相似度"], .collaborative),
+            (["基于公开 Star 热度"], .popularity),
+            (["metadata_similarity"], .metadata),
+            (["基于自研推荐模型"], .model),
+            (["source_repo_id:42", "unknown-model:v2"], .unspecified),
+            ([], .unspecified)
+        ]
+        for (reasons, expected) in examples {
+            #expect(DailyRecommendationReason(reasons: reasons) == expected)
+        }
+    }
+
+    @Test("整批都被 Star 后重开或重启仍是本批完成，不自动补换另一批", arguments: [false, true])
+    func starredBatchRemainsFrozen(restarting: Bool) async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let date = Date()
+        await store.load(
+            accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                DailyRecommendationResponse(
+                    modelVersion: "v20", items: [item(100)], hasMore: true, nextCursor: "second"
+                )
+            }
+        )
+        await store.excludeStarred([100])
+        let reopened = restarting ? DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root)) : store
+        await reopened.load(
+            accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
+            fetchStars: { [repo(1), repo(100)] }, fetchCandidates: { _, _ in
+                Issue.record("当前批次已完成，重开不能自动生成新牌")
+                return response([item(101)])
+            }
+        )
+        #expect(reopened.visibleItems.isEmpty)
+        #expect(reopened.state.hasGeneratedBatch)
+        #expect(reopened.state.generatedAt == date)
+        #expect(reopened.state.candidatePool?.nextCursor == "second")
+    }
+
+    @Test("次日请求失败也先移除旧缓存中已 Star 的项目")
+    func failedRefreshFiltersOldBatch() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        await store.load(
+            accountID: 42, scopeRevision: 1, date: yesterday, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100), item(101)]) }
+        )
+        await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [repo(1), repo(100)] }, fetchCandidates: { _, _ in
+                throw URLError(.notConnectedToInternet)
+            }
+        )
+        #expect(store.visibleItems.map(\.repoID) == [101])
+        #expect(store.state.generatedAt == yesterday)
+        #expect(store.errorKey == "recommendations.daily.failed")
+        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await restored.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(restored.visibleItems.map(\.repoID) == [101])
+    }
+
+    @Test("补页中途失败保存已取候选，重试从失败页继续")
+    func partialFailurePreservesCursorAndCandidates() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var cursors: [String?] = []
+        await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, cursor in
+                cursors.append(cursor)
+                if cursor == nil {
+                    return DailyRecommendationResponse(
+                        modelVersion: "v20", items: (100...105).map { item(Int64($0)) },
+                        hasMore: true, nextCursor: "second"
+                    )
+                }
+                throw URLError(.networkConnectionLost)
+            }
+        )
+        #expect(store.state.candidatePool?.nextCursor == "second")
+        #expect(store.state.candidatePool?.items.count == 6)
+        #expect(store.visibleItems.isEmpty)
+
+        // 用新实例证明断点已落盘，而不是只保留在本次请求的局部变量里。
+        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let retried = await restored.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, cursor in
+                cursors.append(cursor)
+                #expect(cursor == "second")
+                return response((106...109).map { item(Int64($0)) })
+            }
+        )
+        #expect(retried)
+        #expect(cursors == [nil, "second", "second"])
+        #expect(restored.visibleItems.map(\.repoID) == Array(100...109).map(Int64.init))
+    }
+
+    @Test("候选返回前刚 Star 的项目不能重新进入卡片")
+    func starWhileLoadingIsExcluded() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var continuation: CheckedContinuation<DailyRecommendationResponse, Never>?
+        let request = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test",
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                    await withCheckedContinuation { continuation = $0 }
+                }
+            )
+        }
+        while continuation == nil { await Task.yield() }
+        await store.excludeStarred([1, 100])
+        continuation?.resume(returning: response([item(100), item(101)]))
+        _ = await request.value
+        #expect(store.visibleItems.map(\.repoID) == [101])
+    }
+
+    @Test("手动看过今日批次后也不再自动展示，关闭开关不影响历史记录", arguments: [false, true])
+    func manualPresentationConsumesDailyDisplay(autoShowEnabled: Bool) async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let date = Date()
+        await store.load(
+            accountID: 42, scopeRevision: 1, date: date, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) }
+        )
+        await store.setShowsOnLaunch(autoShowEnabled)
+        await store.markPresented(date: date)
+        await store.setShowsOnLaunch(true)
+        #expect(!store.canAutomaticallyPresent(date: date))
+        #expect(store.state.recommendedIDs == [100])
+        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await restored.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(!restored.canAutomaticallyPresent(date: date))
+    }
+
+    @Test("保存失败后重试最新内存选择，恢复翻牌、屏蔽和偏好")
+    func failedSaveCanRetryWithoutLosingChoices() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100), item(101)]) }
+        )
+        await store.markPresented()
+        // 仅在独立临时目录制造可复现写入失败，不依赖权限设置或真实账号文件。
+        try FileManager.default.removeItem(at: root)
+        try Data("blocked".utf8).write(to: root)
+        await store.setShowsOnLaunch(false)
+        await store.dismiss(101)
+        await store.reveal(100)
+        #expect(store.errorKey == "recommendations.daily.saveFailed")
+        #expect(store.visibleItems.map(\.repoID) == [100])
+
+        try FileManager.default.removeItem(at: root)
+        await store.retrySaving()
+        #expect(store.errorKey == nil)
+        let restored = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await restored.loadPreferences(accountID: 42, scopeRevision: 1)
+        #expect(!restored.state.showsOnLaunch)
+        #expect(restored.state.dismissedIDs == [101])
+        #expect(restored.state.revealedIDs == [100])
+        #expect(restored.state.recommendedIDs == [100, 101])
+        #expect(restored.visibleItems.map(\.repoID) == [100])
+    }
+
+    @Test("请求期间新增 Star 的排除快照不跨账号泄漏")
+    func liveExclusionIsAccountScoped() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        var continuation: CheckedContinuation<DailyRecommendationResponse, Never>?
+        let request = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test",
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                    await withCheckedContinuation { continuation = $0 }
+                }
+            )
+        }
+        while continuation == nil { await Task.yield() }
+        await store.excludeStarred([1, 100])
+        store.activate(accountID: 99, scopeRevision: 2)
+        await store.load(
+            accountID: 99, scopeRevision: 2, serviceScope: "test",
+            fetchStars: { [repo(2)] }, fetchCandidates: { _, _ in response([item(100)]) }
+        )
+        continuation?.resume(returning: response([item(101)]))
+        _ = await request.value
+        #expect(store.accountID == 99)
+        #expect(store.visibleItems.map(\.repoID) == [100])
+        #expect(store.errorKey == nil)
+    }
+
+    @Test("今日手动读昨日缓存不消费新批次的自动展示资格")
+    func presentingOldCacheDoesNotConsumeToday() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        let today = Date()
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+        await store.load(
+            accountID: 42, scopeRevision: 1, date: yesterday, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) }
+        )
+        await store.markPresented(date: today)
+        #expect(store.state.autoPresentedDay.isEmpty)
+        #expect(!store.canAutomaticallyPresent(date: today))
+        await store.load(
+            accountID: 42, scopeRevision: 1, date: today, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100), item(101)]) }
+        )
+        #expect(store.visibleItems.map(\.repoID) == [101])
+        #expect(store.canAutomaticallyPresent(date: today))
+    }
+
+    @Test("无公开种子时不发请求，补 Star 后重试可以生成真实批次")
+    func coldStartRecoversAfterStarring() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationStore(disk: DailyRecommendationDiskStore(root: root))
+        await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [] }, fetchCandidates: { _, _ in
+                Issue.record("没有公开种子不应请求个性化推荐")
+                return response([])
+            }
+        )
+        #expect(store.emptyKey == "recommendations.daily.coldStart")
+        #expect(!store.state.hasGeneratedBatch)
+        #expect(!store.canAutomaticallyPresent())
+        let prepared = await store.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { seeds, _ in
+                #expect(seeds == [1])
+                return response([item(100)])
+            }
+        )
+        #expect(prepared)
+        #expect(store.state.hasGeneratedBatch)
+        #expect(store.visibleItems.map(\.repoID) == [100])
+        #expect(store.canAutomaticallyPresent())
     }
 
     private func temporaryRoot() -> URL {

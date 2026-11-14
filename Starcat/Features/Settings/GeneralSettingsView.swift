@@ -239,16 +239,41 @@ struct GeneralSettingsView: View {
         return Section {
             Toggle("recommendations.daily.autoShow", isOn: Binding(
                 get: { store.state.showsOnLaunch },
-                set: { enabled in Task { await store.setShowsOnLaunch(enabled) } }
+                set: { enabled in
+                    Task {
+                        guard accountID == dailyRecommendationAccountID,
+                              revision == dependencies.databaseScopeRevision,
+                              store.accountID == accountID else { return }
+                        await store.setShowsOnLaunch(enabled)
+                    }
+                }
             ))
             .toggleStyle(.switch)
             .disabled(accountID == nil || store.accountID != accountID || !store.hasLoadedState)
 
             if let error = store.errorKey,
                !store.hasLoadedState || error == "recommendations.daily.saveFailed" {
-                Text(LocalizedStringKey(error))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Text(LocalizedStringKey(error))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("recommendations.daily.retry") {
+                        Task {
+                            guard let accountID, accountID == dailyRecommendationAccountID,
+                                  revision == dependencies.databaseScopeRevision else { return }
+                            // 保存失败保留当前选择；只有尚未成功读盘时才重新读取账号偏好。
+                            if store.hasLoadedState, store.accountID == accountID {
+                                await store.retrySaving()
+                            } else {
+                                await store.loadPreferences(accountID: accountID, scopeRevision: revision)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(accountID == nil || store.isLoading)
+                }
             }
         } header: {
             SettingsSectionHeader("recommendations.daily.title", systemImage: "sparkles")

@@ -75,6 +75,8 @@ struct DailyRecommendationState: Codable, Sendable {
     var modelVersion = ""
     var generatedAt: Date?
     var items: [RepoRecommendationItem] = []
+    /// 区分“真实牌组已全部处理”和“补页暂未找到项目”，前者重开不能自动补牌。
+    var hasGeneratedBatch = false
     var revealedIDs: Set<Int64> = []
     var dismissedIDs: Set<Int64> = []
     var autoPresentedDay = ""
@@ -86,7 +88,7 @@ struct DailyRecommendationState: Codable, Sendable {
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case day, serviceScope, modelVersion, generatedAt, items, revealedIDs, dismissedIDs
+        case day, serviceScope, modelVersion, generatedAt, items, hasGeneratedBatch, revealedIDs, dismissedIDs
         case autoPresentedDay, showsOnLaunch, recommendedDays, candidatePool
     }
 
@@ -105,6 +107,8 @@ struct DailyRecommendationState: Codable, Sendable {
         showsOnLaunch = try values.decode(Bool.self, forKey: .showsOnLaunch)
         recommendedDays = try values.decodeIfPresent([String: String].self, forKey: .recommendedDays) ?? [:]
         candidatePool = try values.decodeIfPresent(DailyRecommendationCandidatePool.self, forKey: .candidatePool)
+        hasGeneratedBatch = try values.decodeIfPresent(Bool.self, forKey: .hasGeneratedBatch)
+            ?? (!items.isEmpty || !revealedIDs.isEmpty || recommendedDays.values.contains(day))
     }
 
     var recommendedIDs: Set<Int64> { Set(recommendedDays.keys.compactMap(Int64.init)) }
