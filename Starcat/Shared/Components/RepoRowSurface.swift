@@ -53,6 +53,8 @@ struct RepoRowSurface<Content: View>: View {
     /// Manage / Trending 调用时通常传 `LanguageColor.color(for: repo.language)`，
     /// 其他场景可传 nil 用系统色。
     let accentColor: Color?
+    /// 仅移动选中背景与描边，文字和点击区始终留在自己的行内。
+    let selectionNamespace: Namespace.ID?
 
     private let content: Content
 
@@ -63,10 +65,12 @@ struct RepoRowSurface<Content: View>: View {
     init(
         isSelected: Bool,
         accentColor: Color? = nil,
+        selectionNamespace: Namespace.ID? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.isSelected = isSelected
         self.accentColor = accentColor
+        self.selectionNamespace = selectionNamespace
         self.content = content()
     }
 
@@ -96,17 +100,31 @@ struct RepoRowSurface<Content: View>: View {
         content
             .padding(.vertical, verticalPadding)
             .padding(.horizontal, horizontalPadding)
-            .padding(.leading, isSelected ? 5 : 0)
+            .padding(.leading, selectionNamespace != nil || isSelected ? 5 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(resolvedAccent.opacity(backgroundOpacity))
-                    .background {
-                        // 半透明 controlBackgroundColor 让 selected / hover 状态在
-                        // 浅 / 深背景下都能凸显（参考 macOS 原生 List 的视觉手法）
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
-                    }
+                if isSelected, let selectionNamespace, !reduceMotion {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(resolvedAccent.opacity(backgroundOpacity))
+                        .background {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                        }
+                        .matchedGeometryEffect(id: "repo-history-selection", in: selectionNamespace)
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(resolvedAccent.opacity(backgroundOpacity))
+                        .background {
+                            // 半透明 controlBackgroundColor 让 selected / hover 状态在
+                            // 浅 / 深背景下都能凸显（参考 macOS 原生 List 的视觉手法）
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
+                        }
+                }
             }
             .overlay(alignment: .leading) {
                 // 选中态左侧 3pt accent bar（设计 §3.1.4）
@@ -117,8 +135,10 @@ struct RepoRowSurface<Content: View>: View {
                     .opacity(isSelected ? 1 : 0)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                if !isSelected || selectionNamespace == nil || reduceMotion {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                }
             }
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onHover { hovering in
@@ -138,6 +158,9 @@ struct RepoRowSurface<Content: View>: View {
                     isHovered = false
                 }
             }
-            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
+            .animation(
+                reduceMotion ? nil : .spring(response: selectionNamespace == nil ? 0.22 : 0.34, dampingFraction: 0.82),
+                value: isSelected
+            )
     }
 }

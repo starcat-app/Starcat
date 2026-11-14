@@ -159,6 +159,8 @@ struct HomeView: View {
     @State private var showsDailyRadarPreview = false
     /// 抽卡以独立透明子窗口覆盖整窗，关闭后保留批次与翻牌进度。
     @State private var showsDailyRecommendations = false
+    /// 历史查询与选择由窗口持有，打开卡片或切换分类不重建。
+    @State private var recommendationHistoryModel = RecommendationHistoryListModel()
     /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
     @State private var dailyRadarModel = DailyRadarWorkspaceViewModel()
     /// 新功能圆点由主窗口持有一份，让顶部统计入口和 Explore 侧栏共享同一次“首次点击”记录。
@@ -1423,7 +1425,6 @@ struct HomeView: View {
             // 让 sidebar 头像背景在 weekly 内切换 project 时也能跟着 GitHub 语言色联动,
             // 与 manage / trending / activity-repo-backed 三家行为同构(详见 derivedActivityTintColor doc)。
             currentActivityTintColor: derivedActivityTintColor,
-            onShowDailyRecommendations: { showsDailyRecommendations = true },
             dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
             dailyRadarModel: dailyRadarModel,
             newFeatureBadgeStore: newFeatureBadgeStore,
@@ -1496,6 +1497,8 @@ struct HomeView: View {
                     trendingRepository: trendingRepository,
                     githubAPIClient: githubAPIClient,
                     selectedPage: selectedSidebarPage,
+                    recommendationHistoryModel: recommendationHistoryModel,
+                    onShowDailyRecommendations: { showsDailyRecommendations = true },
                     selectedExploreMode: $selectedExploreMode,
                     selectedTrendingLanguage: $selectedTrendingLanguage,
                     selectedTrendingRepoID: $selectedTrendingRepoID,
@@ -1580,6 +1583,8 @@ struct HomeView: View {
             }
         } else if selectedSidebarPage == .activity {
             ActivityDetailView(item: selectedActivityItem)
+        } else if selectedSidebarPage == .trending, selectedExploreMode == .recommendations {
+            RecommendationHistoryDetailView(entry: recommendationHistoryModel.selectedEntry)
         } else if selectedSidebarPage == .trending, selectedExploreMode == .weekly {
             // Weekly 已迁移到 Explore,右栏仍复用原 WeeklyDetailView；详情选择继续由
             // WeeklySelectionService 管理,不引入 ActivityItem 中间模型。
@@ -1636,6 +1641,9 @@ struct HomeView: View {
     /// 同时覆盖冷启动恢复、首次登录、换号和登出。即使此刻登录态尚未发布，也要先失效
     /// Pin 快照，让紧随其后的认证入口从新数据库读取。
     private func handleDatabaseScopeChange(_ revision: UInt64) async {
+        recommendationHistoryModel.activate(
+            scope: "\(dependencies.database.currentUserId.map(String.init) ?? "anonymous")|\(revision)"
+        )
         guard revision > 0 else { return }
         viewModel.invalidateRepoPinsForDatabaseChange()
         dependencies.awesomeStore.resetForAccountChange()
@@ -2840,7 +2848,7 @@ struct HomeView: View {
             )
         case .weekly:
             selectedWeeklyLanguage = settings.listPreferenceValue(for: ListPreferenceKey.weeklyLanguage, login: login)
-        case .discover, .awesome:
+        case .recommendations, .discover, .awesome:
             break
         }
     }

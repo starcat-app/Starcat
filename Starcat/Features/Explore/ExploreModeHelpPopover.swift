@@ -53,6 +53,8 @@ extension ExploreMode {
                 "explore.help.weekly.rule.inclusion",
                 "explore.help.weekly.rule.priority",
             ]
+        case .recommendations:
+            return ["recommendations.history.emptyDescription"]
         case .awesome:
             return [
                 "explore.help.awesome.rule.subscription",
