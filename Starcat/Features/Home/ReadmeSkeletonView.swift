@@ -17,6 +17,9 @@ import SwiftUI
 /// README WebView 加载中的文档型骨架屏。
 struct ReadmeSkeletonView: View {
 
+    /// 阅读区可指定自己的表面色，避免骨架退场时在窗口底色与面板底色之间闪烁。
+    var backgroundColor = Color(nsColor: .windowBackgroundColor)
+
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -95,7 +98,7 @@ struct ReadmeSkeletonView: View {
             }
             .scrollDisabled(true)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(backgroundColor)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

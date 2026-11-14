@@ -54,6 +54,14 @@ struct RepoSkillSelectionPane: View {
     private var query: String { "\(filter.rawValue):\(search)" }
     private var hasMore: Bool { visibleSkills.count < filteredSkills.count }
 
+    /// 首次扫描与筛选都可能暂时没有行；已有结果刷新时继续展示，最终空结果才显示空状态。
+    private var showsLoadingSkeleton: Bool {
+        visibleSkills.isEmpty && (
+            isFiltering || publishedQuery != query
+                || (session.skills.isEmpty && (session.isLoading || (session.scan == nil && session.error == nil)))
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             CountedSegmentedControl(
@@ -80,9 +88,7 @@ struct RepoSkillSelectionPane: View {
                                 identity: "\(publishedQuery):\(publishedRevision)"
                             ) { appendPage(appearingIndex: index) }
                     }
-                    if visibleSkills.isEmpty, isFiltering || publishedQuery.isEmpty {
-                        ProgressView().padding(.vertical, 42)
-                    } else if visibleSkills.isEmpty {
+                    if visibleSkills.isEmpty, !showsLoadingSkeleton {
                         Label("repo.skills.list.empty", systemImage: "shippingbox")
                             .font(interfaceScale.font(.body))
                             .foregroundStyle(.secondary)
@@ -94,6 +100,18 @@ struct RepoSkillSelectionPane: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
             }
+            .opacity(showsLoadingSkeleton ? 0 : 1)
+            .allowsHitTesting(!showsLoadingSkeleton)
+            .accessibilityHidden(showsLoadingSkeleton)
+            .overlay(alignment: .topLeading) {
+                if showsLoadingSkeleton {
+                    RepoSkillSkeletonView(layout: .selection)
+                        .padding(.horizontal, 14)
+                        .transition(.opacity)
+                }
+            }
+            .clipped()
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: showsLoadingSkeleton)
 
             HStack {
                 Button("repo.skills.selection.all") { session.selectAll(true) }
