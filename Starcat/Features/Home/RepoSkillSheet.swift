@@ -13,6 +13,7 @@ struct RepoSkillSheet: View {
     let onClose: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
     @State private var previewID = ""
@@ -39,8 +40,18 @@ struct RepoSkillSheet: View {
                         if let error = session.error {
                             Text(verbatim: error).foregroundStyle(.secondary).padding(16)
                         }
-                        if session.isLoading && preview == nil {
-                            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if preview == nil, session.isLoading || (session.scan == nil && session.error == nil) {
+                            RepoSkillSkeletonView(layout: .manifest)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .background(RepoSkillPanelStyle.panelColor(colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(Color.primary.opacity(0.09))
+                                }
+                                // 预留与详情工具栏一致的高度，首个 Skill 到达时正文起点保持稳定。
+                                .padding(.top, 44)
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
                         } else if let preview {
                             if let issue = preview.installationIssue {
                                 Label(issue, systemImage: "exclamationmark.triangle")
