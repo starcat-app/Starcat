@@ -183,7 +183,7 @@
     #starcat-refined .sd-star { min-width: 113px; border-color: light-dark(#cb976c, #eac7a5); color: var(--sd-on-button); background: linear-gradient(140deg, light-dark(#f0c59c, #f3caa8), var(--sd-button)); box-shadow: inset 0 1px #fff5e957, 0 3px 10px rgb(150 96 54 / 10%); }
     #starcat-refined .sd-star:hover { background: var(--sd-button); }
     #starcat-refined .sd-star[aria-pressed="true"] { color: light-dark(#285944, #bfe5cf); background: light-dark(#dfede4, #30473b); border-color: light-dark(#b2cdbe, #5d7868); box-shadow: none; }
-    #starcat-refined .sd-next { margin-left: auto; }
+    #starcat-refined .sd-dismiss { margin-inline-start: auto; }
     #starcat-refined .sd-peek {
       position: absolute; z-index: 0; top: 50%; width: 180px; height: calc(100% - 44px); max-height: 360px; padding: 0;
       overflow: hidden; border: 1px solid var(--sd-edge); border-radius: 16px;
@@ -198,12 +198,17 @@
     #starcat-refined .sd-peek-left:hover { transform: translate(-8px, -50%) rotateZ(-4deg) scale(.94); opacity: .9; }
     #starcat-refined .sd-peek-right:hover { transform: translate(8px, -50%) rotateZ(4deg) scale(.94); opacity: .9; }
     #starcat-refined .sd-bottom {
-      width: min(calc(800px * var(--sd-scale)), calc(100% - 100px)); margin: 20px auto 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      width: min(calc(800px * var(--sd-scale)), calc(100% - 100px)); margin: 20px auto 0; display: grid; align-items: center; gap: 12px;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); grid-template-areas: "previous progress next";
       color: var(--sd-secondary); font-size: calc(11px * var(--sd-scale));
     }
+    /* Repository decisions stay on the card; browsing controls share one navigation bar. */
+    #starcat-refined .sd-bottom [data-action="previous"] { grid-area: previous; justify-self: start; }
+    #starcat-refined .sd-bottom .sd-next { grid-area: next; justify-self: end; }
+    #starcat-refined .sd-bottom .sd-text-button { min-width: 0; overflow-wrap: anywhere; }
     #starcat-refined .sd-text-button { padding: 5px 10px; min-height: 30px; border: 1px solid var(--sd-line); border-radius: 6px; background: var(--sd-soft); color: var(--sd-text); font-size: calc(12px * var(--sd-scale)); }
     #starcat-refined .sd-text-button:hover:not(:disabled) { background: var(--sd-line); }
-    #starcat-refined .sd-progress { display: flex; align-items: center; gap: 11px; margin: 0 auto; font-variant-numeric: tabular-nums; }
+    #starcat-refined .sd-progress { grid-area: progress; justify-self: center; min-width: 0; display: flex; align-items: center; gap: 11px; margin: 0; font-variant-numeric: tabular-nums; }
     #starcat-refined .sd-progress-track { display: flex; gap: 5px; }
     @media (max-width: 800px) {
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: calc(100% - 54px); }
@@ -212,7 +217,6 @@
       #starcat-refined .sd-scene { scale: .88; }
       #starcat-refined .sd-recommend { padding: 22px 24px 0; }
       #starcat-refined .sd-actions { padding: 22px 24px; }
-      #starcat-refined .sd-progress { margin-right: 0; }
     }
     @media (max-width: 620px) {
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: 100%; }
@@ -225,7 +229,8 @@
       #starcat-refined .sd-recommend { padding: 20px 23px 0; }
       #starcat-refined .sd-actions { padding: 20px 23px 22px; gap: 8px; }
       #starcat-refined .sd-button { padding-inline: 12px; }
-      #starcat-refined .sd-next { margin-left: 0; }
+      #starcat-refined .sd-dismiss { margin-inline-start: 0; }
+      #starcat-refined .sd-bottom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "progress progress" "previous next"; }
     }
     @media (max-width: 380px) {
       #starcat-refined .sd-project-info, #starcat-refined .sd-recommend, #starcat-refined .sd-actions { padding-left: 18px; padding-right: 18px; }
@@ -288,7 +293,7 @@
 </style></head>
 <body><div id="starcat-refined"><div class="sd-window"><main class="sd-page" aria-busy="true">
   <div class="sd-content"><div class="sd-content-inner">
-  <div class="sd-heading"><h1 data-label="title"></h1><p data-label="subtitle"></p></div>
+  <div class="sd-heading"><h1 id="daily-title" data-label="title"></h1><p data-label="subtitle"></p></div>
   <div class="sd-stage" hidden>
     <button type="button" class="sd-peek sd-peek-left" data-action="previous"></button>
     <div class="sd-main"><div class="sd-tilt"><article class="sd-card" aria-labelledby="project-name">
@@ -301,13 +306,13 @@
         </div>
       </div>
       <section class="sd-recommend" aria-labelledby="reason-title"><div class="sd-reason-heading"><h3 id="reason-title" data-label="reasonTitle"></h3></div><p class="sd-reason" data-field="reason"></p></section>
-      <div class="sd-actions"><button type="button" class="sd-button sd-star" data-action="star"><span aria-hidden="true">☆</span><span data-label="star"></span></button><button type="button" class="sd-button" data-action="details" data-label="details"></button><button type="button" class="sd-button sd-next" data-action="next" data-label="next"></button></div>
+      <div class="sd-actions"><button type="button" class="sd-button sd-star" data-action="star"><span aria-hidden="true">☆</span><span data-label="star"></span></button><button type="button" class="sd-button" data-action="details" data-label="details"></button><button type="button" class="sd-button sd-dismiss" data-action="dismiss" data-label="dismiss"></button></div>
     </article></div></div>
     <button type="button" class="sd-peek sd-peek-right" data-action="next"></button>
   </div>
   <section class="sd-empty" hidden><span class="sd-spinner" aria-hidden="true"></span><h2 data-field="empty"></h2><button class="sd-button" type="button" data-action="retry" data-label="retry"></button></section>
-  <section class="sd-summary" hidden><h2 data-label="done"></h2><div class="sd-summary-list"></div><div class="sd-summary-actions"><button class="sd-button" type="button" data-action="nextBatch" data-label="nextBatch"></button><button class="sd-button" type="button" data-action="close" data-label="done"></button></div></section>
-  <footer class="sd-bottom" hidden><button type="button" class="sd-text-button" data-action="previous" data-label="previous"></button><div class="sd-progress"><span data-field="progress"></span><div class="sd-progress-track" role="group"></div></div><button type="button" class="sd-text-button" data-action="dismiss" data-label="dismiss"></button></footer>
+  <section class="sd-summary" hidden><h2 data-label="done"></h2><div class="sd-summary-list"></div><div class="sd-summary-actions"><button class="sd-button" type="button" data-action="close" data-label="done"></button></div></section>
+  <nav class="sd-bottom" aria-labelledby="daily-title" hidden><button type="button" class="sd-text-button" data-action="previous" data-label="previous"></button><div class="sd-progress"><span data-field="progress"></span><div class="sd-progress-track" role="group"></div></div><button type="button" class="sd-text-button sd-next" data-action="next" data-label="next"></button></nav>
   <div class="sd-status" role="status" aria-live="polite" aria-atomic="true"><span data-field="message"></span><button type="button" class="sd-text-button" data-action="retry" data-label="retry" hidden></button></div>
   </div></div>
   <div class="sd-preferences"><label><input type="checkbox" data-action="autoShow"><span data-label="autoShow"></span></label><div class="sd-preference-actions"><button class="sd-text-button" type="button" data-action="revealAll" data-label="revealAll"></button><button class="sd-text-button" type="button" data-action="nextBatch" data-label="nextBatch"></button></div></div>
