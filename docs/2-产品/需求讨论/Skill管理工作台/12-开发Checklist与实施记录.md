@@ -28,7 +28,7 @@
 ### M1：本机库与真实内容读取
 
 - [x] **T04 独立库与读模型**：账号外路径、独立迁移账本、来源／条目／版本／根／位置与回执读取；重开与真实账号主库切换回归通过。
-- [ ] **T05 根目录与受控扫描**：Agent profiles、逻辑与物理身份、解析诊断、扫描预算与逐根 coverage。
+- [x] **T05 根目录与受控扫描**：复用 Agent profiles，保留逻辑与物理身份、解析诊断、扫描预算和逐根 coverage；权限／取消／截断保留旧位置，过时代次不落库。
 - [ ] **T06 监听与一致快照**：事件合并、generation、取消、漏事件补扫、窗口显示生命周期。
 - [ ] **T07 真实列表与详情**：搜索、筛选、Markdown、文件、位置；错误／过期状态与安全预览。
 
@@ -58,13 +58,16 @@
 | T01a | `skillManagement` 渠道门控；全部渠道能力双向回归 | `DistributionGateTests` 3 项通过；惰性组合点随 T02、库副作用随 T04 继续验证 | `2a9d2a7a` |
 | T01b／T02 | 应用级惰性会话、单例 Scene、原生三栏与独立栏宽；11 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests` 共 7 项通过；`make build-direct`／`make build-appstore` 通过；187 项编译文案与源文案一致 | `116bf6f7` |
 | T03 | 快照筛选／搜索／选择收敛、只读详情四页签和 8 个 Preview；15 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests`／`SkillWorkspaceSnapshotTests` 共 15 项通过；双渠道标准 build-only 通过；26 个累计 key × 17 语言的双渠道编译资源一致 | `4f69a486` |
-| T04 | actor 内惰性打开独立 SQLite、5 类关系记录、来源唯一键、版本化回执读取 | `SkillLibraryDatabaseTests` 6 项及快照／渠道共 17 项通过；真实账号主库先后登录 101／202／登出后本机条目保留；双渠道标准 build-only 通过 | 当前功能提交 |
+| T04 | actor 内惰性打开独立 SQLite、5 类关系记录、来源唯一键、版本化回执读取 | `SkillLibraryDatabaseTests` 6 项及快照／渠道共 17 项通过；真实账号主库先后登录 101／202／登出后本机条目保留；双渠道标准 build-only 通过 | `02cc0f2a` |
+| T05 | 共享根与 Codex 系统根、只读扫描、逐根对账；同名副本独立、物理别名合并、消失后重现保留身份 | `LocalSkillScannerTests` 10 项、独立库 6 项、既有安装器 31 项，共 47 项通过；双渠道标准 build-only 通过 | 当前功能提交 |
 
 新窗口入口为 Direct 的“显示 → Skill 管理”。此阶段生产会话展示真实空态，尚未扫描用户目录；关闭主窗口、重复打开 Skill 窗口不重新创建本机会话。Scene 禁止启动自动恢复，以免未明确打开时初始化后续扫描能力。
 
 T02 新增文案 11 个 key × 17 语言均已配置并核对编译资源；全部保留 `needs_review`，不宣称人工翻译或 GUI／RTL 验收完成。
 
 T03 的 8 项业务测试覆盖同名不同源、共享根多工具可见、五种筛选、来源／变音符号搜索、隐藏选择收敛、失败保留快照、重排／删除后的身份及生产模型无样例。参数化筛选另覆盖 5 组输入。首次失败单独显示错误，不伪装空库；有历史结果时保留列表。生产模型仍无磁盘扫描，真实正文与位置将在 T04–T07 接入。T03 新增译文同样保留 `needs_review`。
+
+T05 的文件系统测试全部使用临时根，未扫描用户 Home。覆盖 App Store 构造拒绝、目录缺失／权限／链接循环、目录／条目／深度／manifest 字节预算及旧 generation。当前 parser 为 YAML 子集，诊断使用“无效或不受支持”；OpenCode 独立 Markdown 格式尚未索引并明确标记 partial。预算限制处理工作量，`contentsOfDirectory` 的数组分配不属于严格的内存上限。生产窗口接线由 T06 完成。
 
 ## 4. 人工验收与审核
 

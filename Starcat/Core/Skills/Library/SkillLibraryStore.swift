@@ -34,6 +34,7 @@ struct SkillLibraryPaths: Sendable {
 actor SkillLibraryStore {
     nonisolated let paths: SkillLibraryPaths
     private var databaseQueue: DatabaseQueue?
+    private var currentScanGeneration: UUID?
 
     init(
         distributionGate: DistributionGate = DistributionGate(),
@@ -76,6 +77,104 @@ actor SkillLibraryStore {
         try writer().write { try location.save($0) }
     }
 
+    /// 发放新的扫描代次；数据库提交前再次比较，旧扫描即使晚返回也不能污染索引。
+    func beginScan() -> UUID {
+        let generation = UUID()
+        currentScanGeneration = generation
+        return generation
+    }
+
+    func invalidateScan() {
+        currentScanGeneration = nil
+    }
+
+    /// 一次事务合并全部根，只有完整覆盖或确认缺失才能把未见位置标为 missing。
+    @discardableResult
+    func apply(_ report: SkillScanReport) throws -> Bool {
+        guard currentScanGeneration == report.generationID else { return false }
+        let paths = paths
+        try writer().write { db in
+            let storedEntries = try SkillLibraryEntry.fetchAll(db)
+            let storedLocations = try SkillLibraryLocation.fetchAll(db)
+            let storedRoots = try SkillLibraryRoot.fetchAll(db)
+            var entriesByID = Dictionary(uniqueKeysWithValues: storedEntries.map { ($0.id, $0) })
+            var physicalEntries: [String: UUID] = [:]
+            var locationsByRoot: [UUID: [String: SkillLibraryLocation]] = [:]
+            for location in storedLocations {
+                physicalEntries[location.resolvedPath] = location.entryID
+                locationsByRoot[location.rootID, default: [:]][location.lexicalPath] = location
+            }
+            // 只有已登记的受管条目能关联私有内容。根名或外部 receipt 不触发自动接管。
+            for entry in storedEntries where entry.managementKind == .managed {
+                let content = paths.entryDirectory(entry.id).appendingPathComponent("content")
+                    .appendingPathComponent(entry.manifestName).resolvingSymlinksInPath()
+                physicalEntries[content.path] = entry.id
+            }
+            let grouped = Dictionary(grouping: report.results.flatMap(\.candidates), by: \.resolvedPath)
+            for (path, candidates) in grouped {
+                let entryID = physicalEntries[path] ?? UUID()
+                let previous = entriesByID[entryID]
+                let metadata = candidates.compactMap(\.metadata).first
+                var entry = previous ?? SkillLibraryEntry(
+                    id: entryID, manifestName: URL(fileURLWithPath: path).lastPathComponent,
+                    summary: "", managementKind: .external
+                )
+                if let metadata {
+                    entry.manifestName = metadata.name
+                    entry.summary = metadata.description
+                }
+                let diagnostics = Set(candidates.compactMap(\.diagnostic)).sorted()
+                entry.diagnostic = diagnostics.isEmpty ? nil : diagnostics.joined(separator: "\n")
+                if previous != entry {
+                    entry.updatedAt = Date().timeIntervalSince1970
+                    try entry.save(db)
+                }
+                entriesByID[entryID] = entry
+                physicalEntries[path] = entryID
+            }
+            for result in report.results {
+                var root = result.root
+                root.resolvedPath = result.resolvedPath
+                root.coverage = result.coverage
+                root.diagnostic = result.diagnostics.isEmpty ? nil : result.diagnostics.joined(separator: "\n")
+                if result.coverage == .complete { root.lastSuccessAt = Date().timeIntervalSince1970 }
+                try root.save(db)
+                let previous = locationsByRoot[root.id, default: [:]]
+                var seen: Set<String> = []
+                for candidate in result.candidates {
+                    guard let entryID = physicalEntries[candidate.resolvedPath] else { continue }
+                    let location = SkillLibraryLocation(
+                        id: previous[candidate.lexicalPath]?.id ?? UUID(),
+                        entryID: entryID, rootID: root.id, lexicalPath: candidate.lexicalPath,
+                        resolvedPath: candidate.resolvedPath, kind: candidate.kind,
+                        lastSeenGeneration: report.generationID
+                    )
+                    try location.save(db)
+                    seen.insert(candidate.lexicalPath)
+                }
+                for var location in previous.values where !seen.contains(location.lexicalPath) {
+                    if result.coverage.confirmsAbsence {
+                        location.scanState = .missing
+                    } else if location.scanState != .missing {
+                        location.scanState = .stale
+                    }
+                    try location.save(db)
+                }
+            }
+            let activeRoots = Set(report.results.map { $0.root.id })
+            for var root in storedRoots where !activeRoots.contains(root.id) {
+                root.coverage = .notScanned
+                root.diagnostic = "Root is no longer configured"
+                try root.save(db)
+                for var location in locationsByRoot[root.id, default: [:]].values where location.scanState != .missing {
+                    location.scanState = .stale
+                    try location.save(db)
+                }
+            }
+        }
+        return true
+    }
+
     /// 缺失与损坏分开处理；权限错误不能被当成“没有回执”而重新接管内容。
     func receipt(for entryID: UUID) throws -> SkillLibraryReceipt? {
         let url = paths.entryDirectory(entryID).appendingPathComponent("receipt.json")
@@ -92,6 +191,7 @@ actor SkillLibraryStore {
 
     /// 用于显式结束会话或重开验证；下一次访问会按同一路径重新打开。
     func close() throws {
+        currentScanGeneration = nil
         try databaseQueue?.close()
         databaseQueue = nil
     }
