@@ -15,6 +15,7 @@ struct LinuxDoSourceBadge: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 13
     @State private var isOpeningDiscussion = false
     @State private var openingFailed = false
 
@@ -62,14 +63,23 @@ struct LinuxDoSourceBadge: View {
     @ViewBuilder
     private var badge: some View {
         if interactive {
-            Text(verbatim: "Linux.do")
-                .foregroundStyle(.primary)
-                // 主文字色随主题反转，深色略加强底色与描边，避免 Hero 色底吞掉灰色胶囊。
-                .modifier(RepoMetadataCapsuleStyle(
-                    background: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
-                    border: Color.primary.opacity(colorScheme == .dark ? 0.24 : 0.18)
-                ))
-                .fixedSize()
+            HStack(spacing: 4) {
+                // 品牌三色不能走模板染色；明暗外圈由 Asset Catalog 自动选取。
+                Image("LinuxDoLogo")
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: interfaceScale.scaled(iconSize), height: interfaceScale.scaled(iconSize))
+                    .accessibilityHidden(true)
+                Text(verbatim: "Linux.do")
+            }
+            .foregroundStyle(.primary)
+            // 主文字色随主题反转，深色略加强底色与描边，避免 Hero 色底吞掉灰色胶囊。
+            .modifier(RepoMetadataCapsuleStyle(
+                background: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                border: Color.primary.opacity(colorScheme == .dark ? 0.24 : 0.18)
+            ))
+            .fixedSize()
         } else {
             Text(verbatim: "Linux.do")
                 .font(interfaceScale.font(.captionSmall))

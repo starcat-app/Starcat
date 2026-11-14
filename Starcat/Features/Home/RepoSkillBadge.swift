@@ -11,6 +11,7 @@ import SwiftUI
 struct RepoSkillBadge: View {
     let repo: Repo
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         let store = dependencies.repoSkillStore
@@ -24,7 +25,7 @@ struct RepoSkillBadge: View {
                 } label: {
                     HStack(spacing: 4) {
                         // 复用现有拼图模板表示可安装的能力模块，不再使用发行包图形。
-                        BusinessIcon(.browserExtensions, pointSize: 13)
+                        BusinessIcon(.browserExtensions, pointSize: interfaceScale.scaled(13))
                         if store.scanningIDs.contains(repo.id) {
                             ProgressView().controlSize(.mini)
                         }
@@ -56,46 +57,11 @@ struct RepoSkillBadge: View {
         if store.presence(for: repo) == .contains, let scan = store.scans[repo.id] {
             HStack(spacing: 0) {
                 Text(verbatim: "Skills · ")
-                RepoSkillCountLabel(count: scan.skills.count, complete: scan.complete)
+                RepoMetadataCountLabel(count: scan.skills.count, complete: scan.complete)
                     .id("\(dependencies.databaseScopeRevision):\(repo.id)")
             }
         } else {
             Text(verbatim: "Skill · " + String.l10n("repo.skills.filter.unknown"))
-        }
-    }
-}
-
-/// 原生数字过渡只更新这个小视图，不逐个递增计数，也不回写扫描 Store。
-private struct RepoSkillCountLabel: View {
-    let count: Int
-    let complete: Bool
-
-    @Environment(\.locale) private var locale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-    @State private var displayedCount = 0
-
-    var body: some View {
-        HStack(spacing: 0) {
-            // 用实际数量预留宽度，动画帧不改变胶囊和详情元信息行的布局。
-            Text(verbatim: count.formatted(.number.locale(locale)))
-                .hidden()
-                .overlay(alignment: .trailing) {
-                    Text(verbatim: displayedCount.formatted(.number.locale(locale)))
-                        .contentTransition(.numericText(value: Double(displayedCount)))
-                }
-            if !complete {
-                Text(verbatim: "+")
-            }
-        }
-        .monospacedDigit()
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: displayedCount)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: count.formatted(.number.locale(locale)) + (complete ? "" : "+")))
-        .task(id: count) {
-            // 首次让 0 先进入视图事务；后续数量变化直接从当前值过渡，离页自动取消。
-            if !reduceMotion { await Task.yield() }
-            guard !Task.isCancelled else { return }
-            displayedCount = count
         }
     }
 }

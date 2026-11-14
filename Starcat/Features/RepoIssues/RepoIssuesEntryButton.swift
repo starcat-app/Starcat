@@ -13,33 +13,36 @@
 import SwiftUI
 
 struct RepoIssuesEntryButton: View {
-    /// 本地已同步的未解决数（含 PR）；nil 时胶囊只显示 "Issues"。
+    /// 工作台精确计数优先、本地元数据兜底；nil 时只显示标题，已知为 0 时仍显示数字。
     let openIssuesCount: Int?
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: "circle.circle")
-                    .font(.system(size: 12, weight: .semibold))
-                Text(String.l10n("repo.issues.entry.title", defaultValue: "Issues"))
-                    .font(.system(size: 12, weight: .semibold))
-                if let openIssuesCount, openIssuesCount > 0 {
-                    Text(openIssuesCount, format: .number)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                BusinessIcon(systemImage: "circle.circle", pointSize: interfaceScale.scaled(13), weight: .semibold)
+                HStack(spacing: 0) {
+                    Text(String.l10n("repo.issues.entry.title", defaultValue: "Issues"))
+                    if let openIssuesCount {
+                        Text(verbatim: " · ")
+                        RepoMetadataCountLabel(count: openIssuesCount)
+                    }
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .heroActionIconSurface(colorScheme: colorScheme)
             .foregroundStyle(.primary)
+            // 中性底色与描边随主题反转；深色提高不透明度，保持 Hero 色底上的可见边界。
+            .modifier(RepoMetadataCapsuleStyle(
+                background: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                border: Color.primary.opacity(colorScheme == .dark ? 0.24 : 0.18)
+            ))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .pressableHover()
+        .pressableHover(opacity: 0.8, scale: 1.0)
+        .clickablePointer()
         .help(String.l10n("repo.issues.entry.help", defaultValue: "查看并新建 Issue"))
         .fixedSize()
     }

@@ -68,6 +68,9 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
     let onLanguageTapped: ((String) -> Void)?
     /// 默认展示 Hero 贡献者列。目前所有详情场景都开。
     let showsContributorsStat: Bool
+    /// 入口是否显示与工作台状态仍由 Scaffold 决定，Hero 只负责胶囊排列。
+    let openIssuesCount: Int?
+    let onIssuesTapped: (() -> Void)?
     private let trailingActions: TrailingActions
 
     /// OpenSSF 与 Repo Health 都放在 `full_name` 同行。
@@ -92,6 +95,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         libraryState: LibraryState = .outsideLibrary,
         onLanguageTapped: ((String) -> Void)? = nil,
         showsContributorsStat: Bool = true,
+        openIssuesCount: Int? = nil,
+        onIssuesTapped: (() -> Void)? = nil,
         onStarTapped: @escaping () async throws -> Void,
         @ViewBuilder trailingActions: () -> TrailingActions
     ) {
@@ -103,6 +108,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         self.libraryState = libraryState
         self.onLanguageTapped = onLanguageTapped
         self.showsContributorsStat = showsContributorsStat
+        self.openIssuesCount = openIssuesCount
+        self.onIssuesTapped = onIssuesTapped
         self.onStarTapped = onStarTapped
         self.trailingActions = trailingActions()
     }
@@ -215,15 +222,15 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        // 窄面板放不下时来源与 Skill 一起折行，保持 Linux.do 始终在 Skills 前面。
+        // 窄面板放不下时入口一起折行，保持 Linux.do → Issues → Skills 的顺序。
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
                 primaryBadges
-                sourceAndSkillBadges
+                sourceAndFeatureBadges
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) { primaryBadges }
-                sourceAndSkillBadges
+                sourceAndFeatureBadges
             }
         }
         .lineLimit(1)
@@ -231,10 +238,15 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
         .frame(minHeight: 24, alignment: .leading)
     }
 
-    /// 将来源与技能入口作为一组换行，避免窄面板把 Linux.do 留在许可证行。
-    private var sourceAndSkillBadges: some View {
+    /// 来源、Issues 与技能入口共用一行紧凑胶囊，窄面板时一起移到许可证下方。
+    private var sourceAndFeatureBadges: some View {
         HStack(spacing: 10) {
             LinuxDoSourceBadge(repoID: repo.id, interactive: true)
+            if let onIssuesTapped {
+                RepoIssuesEntryButton(openIssuesCount: openIssuesCount, action: onIssuesTapped)
+                    // 切仓库或账号时从 0 重新入场；同仓库计数更新保持当前动画状态。
+                    .id("\(dependencies.databaseScopeRevision):\(repo.id)")
+            }
             RepoSkillBadge(repo: repo)
         }
     }
