@@ -23,7 +23,7 @@
 - [x] **T00 实施基线与范围**：保留 12 篇研究报告，登记本轮实施及逐功能提交授权，建立此清单。
 - [x] **T01 Direct 能力与惰性组合点**：新增 `ChannelFeature.skillManagement`；先渠道检查后惰性创建会话，App Store 不调用会话工厂；实际本机库／watcher 的执行层门控随 T04–T06 持续覆盖。
 - [x] **T02 单例原生三栏窗口**：新增“显示 → Skill 管理”与独立 Scene，复用工作台组件和环境链，独立列宽偏好；初始化与重复打开的自动化检查完成，原生 GUI 待人工验收。
-- [ ] **T03 界面状态与样例**：受管、外部、共享、冲突、空态与错误状态；样例限定 Preview／测试，不进入真实库。
+- [x] **T03 界面状态与样例**：原生列表、Agent／来源导航与四个详情页签；受管、外部、共享、冲突、空、失败保留结果、首次失败及加载共 8 个 Preview；样例限定 DEBUG 工厂，不进入真实库。
 
 ### M1：本机库与真实内容读取
 
@@ -56,11 +56,14 @@
 |---|---|---|---|
 | T00 | 研究报告、实施基线与开发清单 | Git 基线／worktree 核对；`git diff --check` | `08ab8d4e` |
 | T01a | `skillManagement` 渠道门控；全部渠道能力双向回归 | `DistributionGateTests` 3 项通过；惰性组合点随 T02、库副作用随 T04 继续验证 | `2a9d2a7a` |
-| T01b／T02 | 应用级惰性会话、单例 Scene、原生三栏与独立栏宽；11 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests` 共 7 项通过；`make build-direct`／`make build-appstore` 通过；187 项编译文案与源文案一致 | 当前功能提交 |
+| T01b／T02 | 应用级惰性会话、单例 Scene、原生三栏与独立栏宽；11 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests` 共 7 项通过；`make build-direct`／`make build-appstore` 通过；187 项编译文案与源文案一致 | `116bf6f7` |
+| T03 | 快照筛选／搜索／选择收敛、只读详情四页签和 8 个 Preview；15 个 key 的全语言初稿 | `DistributionGateTests`／`SkillWorkspaceTests`／`SkillWorkspaceSnapshotTests` 共 15 项通过；双渠道标准 build-only 通过；26 个累计 key × 17 语言的双渠道编译资源一致 | 当前功能提交 |
 
 新窗口入口为 Direct 的“显示 → Skill 管理”。此阶段生产会话展示真实空态，尚未扫描用户目录；关闭主窗口、重复打开 Skill 窗口不重新创建本机会话。Scene 禁止启动自动恢复，以免未明确打开时初始化后续扫描能力。
 
 T02 新增文案 11 个 key × 17 语言均已配置并核对编译资源；全部保留 `needs_review`，不宣称人工翻译或 GUI／RTL 验收完成。
+
+T03 的 8 项业务测试覆盖同名不同源、共享根多工具可见、五种筛选、来源／变音符号搜索、隐藏选择收敛、失败保留快照、重排／删除后的身份及生产模型无样例。参数化筛选另覆盖 5 组输入。首次失败单独显示错误，不伪装空库；有历史结果时保留列表。生产模型仍无磁盘扫描，真实正文与位置将在 T04–T07 接入。T03 新增译文同样保留 `needs_review`。
 
 ## 4. 人工验收与审核
 

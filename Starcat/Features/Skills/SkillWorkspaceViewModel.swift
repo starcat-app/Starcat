@@ -6,6 +6,7 @@
 //  不把演示条目混入生产模型；后续由本机库快照提供内容。
 //
 
+import Foundation
 import Observation
 
 /// 库级筛选不使用仓库详情安装器的“待安装”等状态，避免混淆本机库与下载会话。
@@ -39,15 +40,89 @@ enum SkillWorkspaceFilter: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// 目录树中的库筛选、Agent 与来源互斥，避免多组选择同时生效却无法解释。
+enum SkillWorkspaceNavigation: Hashable, Sendable {
+    case library(SkillWorkspaceFilter)
+    case agent(String)
+    case source(String)
+}
+
+/// 刷新失败不代表旧条目消失；状态与条目快照分别更新。
+enum SkillWorkspaceLoadState: Equatable, Sendable {
+    case ready
+    case loading
+    case failed(String)
+}
+
 /// 应用级协调器持有此会话，关闭主窗口或切换 GitHub 账号不会丢失本机导航。
 @MainActor
 @Observable
 final class SkillWorkspaceViewModel {
     /// List 的单选绑定允许系统短暂清空选择；读取时回退到全部条目。
-    var filter: SkillWorkspaceFilter? = .all
-    var searchText = ""
+    var navigation: SkillWorkspaceNavigation? = .library(.all) {
+        didSet { rebuildVisibleItems() }
+    }
+    var searchText = "" {
+        didSet { rebuildVisibleItems() }
+    }
+    var selectedIDs: Set<UUID> = []
+    private(set) var items: [SkillLibraryItem] = []
+    private(set) var visibleItems: [SkillLibraryItem] = []
+    private(set) var loadState: SkillWorkspaceLoadState = .ready
+    private(set) var agentNames: [String] = []
+    private(set) var sources: [String] = []
+    private(set) var filterCounts: [SkillWorkspaceFilter: Int] = [:]
 
-    var selectedFilter: SkillWorkspaceFilter {
-        filter ?? .all
+    var selectedItem: SkillLibraryItem? {
+        guard selectedIDs.count == 1, let selectedID = selectedIDs.first else { return nil }
+        return visibleItems.first { $0.id == selectedID }
+    }
+
+    /// 接受完整值快照，在 UI body 外集中重建导航计数和可见列表。
+    func applySnapshot(_ items: [SkillLibraryItem], state: SkillWorkspaceLoadState = .ready) {
+        self.items = items
+        loadState = state
+        agentNames = Set(items.flatMap { $0.locations.flatMap(\.agentNames) }).sorted()
+        sources = Set(items.compactMap(\.source)).sorted()
+        filterCounts = Dictionary(uniqueKeysWithValues: SkillWorkspaceFilter.allCases.map { filter in
+            (filter, items.filter { matches($0, filter: filter) }.count)
+        })
+        rebuildVisibleItems()
+    }
+
+    /// 不清空上次成功结果，权限失败或离线仍保留可见的诊断上下文。
+    func setLoadState(_ state: SkillWorkspaceLoadState) {
+        loadState = state
+    }
+
+    /// 筛选变化后收敛选择，后续批量操作不会误处理已离开屏幕的隐藏目标。
+    private func rebuildVisibleItems() {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        visibleItems = items.filter { item in
+            let matchesNavigation: Bool
+            switch navigation ?? .library(.all) {
+            case .library(let filter):
+                matchesNavigation = matches(item, filter: filter)
+            case .agent(let name):
+                matchesNavigation = item.locations.contains { $0.agentNames.contains(name) }
+            case .source(let source):
+                matchesNavigation = item.source == source
+            }
+            let searchable = [item.name, item.summary, item.source ?? ""].joined(separator: "\n")
+            return matchesNavigation && (query.isEmpty || searchable.range(
+                of: query, options: [.caseInsensitive, .diacriticInsensitive]
+            ) != nil)
+        }
+        selectedIDs.formIntersection(Set(visibleItems.map(\.id)))
+    }
+
+    private func matches(_ item: SkillLibraryItem, filter: SkillWorkspaceFilter) -> Bool {
+        switch filter {
+        case .all: true
+        case .managed: item.managementKind == .managed
+        case .external: item.managementKind == .external
+        case .updates: item.hasUpdate
+        case .attention: item.diagnostic != nil
+        }
     }
 }

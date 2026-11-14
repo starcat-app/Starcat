@@ -22,11 +22,7 @@ struct SkillWorkspaceView: View {
         } runSurface: {
             SkillLibraryList(viewModel: viewModel)
         } inspector: {
-            ContentUnavailableView(
-                "skills.workspace.selection.title",
-                systemImage: "doc.text",
-                description: Text("skills.workspace.selection.description")
-            )
+            SkillDetailView(viewModel: viewModel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -34,9 +30,10 @@ struct SkillWorkspaceView: View {
     }
 }
 
-/// Sidebar 仅列库筛选；Agent 和来源从真实扫描结果加入，避免显示未检测工具。
+/// Agent 和来源从快照派生，避免显示尚未检测到的工具或来源。
 private struct SkillLibrarySidebar: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
     @Bindable var viewModel: SkillWorkspaceViewModel
 
     var body: some View {
@@ -45,11 +42,35 @@ private struct SkillLibrarySidebar: View {
                 .font(interfaceScale.font(.workspaceTitle))
                 .padding(16)
 
-            List(selection: $viewModel.filter) {
+            List(selection: $viewModel.navigation) {
                 Section("skills.workspace.library") {
                     ForEach(SkillWorkspaceFilter.allCases) { filter in
-                        Label(LocalizedStringKey(filter.titleKey), systemImage: filter.systemImage)
-                            .tag(filter)
+                        HStack {
+                            Label(LocalizedStringKey(filter.titleKey), systemImage: filter.systemImage)
+                            Spacer(minLength: 8)
+                            Text(viewModel.filterCounts[filter, default: 0], format: .number.locale(locale))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag(SkillWorkspaceNavigation.library(filter))
+                    }
+                }
+                if !viewModel.agentNames.isEmpty {
+                    Section("skills.workspace.agents") {
+                        ForEach(viewModel.agentNames, id: \.self) { name in
+                            Label(name, systemImage: "terminal")
+                                .tag(SkillWorkspaceNavigation.agent(name))
+                        }
+                    }
+                }
+                if !viewModel.sources.isEmpty {
+                    Section("skills.workspace.sources") {
+                        ForEach(viewModel.sources, id: \.self) { source in
+                            Label(source, systemImage: "arrow.triangle.branch")
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .tag(SkillWorkspaceNavigation.source(source))
+                        }
                     }
                 }
             }
@@ -58,15 +79,14 @@ private struct SkillLibrarySidebar: View {
     }
 }
 
-/// 搜索和筛选状态独立于仓库列表；尚未接本机库时展示真实空态。
+/// 搜索和筛选只消费快照；刷新失败时保留列表，不将错误根伪装成空库。
 private struct SkillLibraryList: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Bindable var viewModel: SkillWorkspaceViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(LocalizedStringKey(viewModel.selectedFilter.titleKey))
-                .font(interfaceScale.font(.panelTitle))
+            title.font(interfaceScale.font(.panelTitle))
 
             TextField("repo.skills.search", text: $viewModel.searchText)
                 .textFieldStyle(.roundedBorder)
@@ -74,13 +94,87 @@ private struct SkillLibraryList: View {
 
             Divider()
 
-            ContentUnavailableView(
-                "repo.skills.list.empty",
-                systemImage: "square.stack.3d.up",
-                description: Text("skills.workspace.empty.description")
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if case .failed(let message) = viewModel.loadState, !viewModel.items.isEmpty {
+                Label {
+                    Text(verbatim: message).textSelection(.enabled)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+                .foregroundStyle(.secondary)
+                .font(interfaceScale.font(.caption))
+            }
+            if viewModel.loadState == .loading && viewModel.items.isEmpty {
+                ProgressView("skills.workspace.loading")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if case .failed(let message) = viewModel.loadState, viewModel.items.isEmpty {
+                ContentUnavailableView {
+                    Label("repo.skills.status.failed", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(verbatim: message)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.visibleItems.isEmpty {
+                ContentUnavailableView(
+                    "repo.skills.list.empty",
+                    systemImage: "square.stack.3d.up",
+                    description: Text(LocalizedStringKey(viewModel.searchText.isEmpty
+                        ? "skills.workspace.empty.description"
+                        : "skills.workspace.search.empty"))
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(selection: $viewModel.selectedIDs) {
+                    ForEach(viewModel.visibleItems) { item in
+                        SkillLibraryRow(item: item)
+                            .tag(item.id)
+                    }
+                }
+                .listStyle(.inset)
+            }
         }
         .padding(16)
+    }
+
+    private var title: Text {
+        switch viewModel.navigation ?? .library(.all) {
+        case .library(let filter): Text(LocalizedStringKey(filter.titleKey))
+        case .agent(let name), .source(let name): Text(verbatim: name)
+        }
+    }
+}
+
+/// 行内只展示可扫描的信息；完整路径和共享影响留给详情，避免列表膨胀成卡片。
+private struct SkillLibraryRow: View {
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    let item: SkillLibraryItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(verbatim: item.name)
+                    .font(interfaceScale.font(.rowTitle))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if item.diagnostic != nil {
+                    Image(systemName: "exclamationmark.circle")
+                        .accessibilityLabel(Text("skills.workspace.filter.attention"))
+                        .foregroundStyle(.secondary)
+                } else if item.hasUpdate {
+                    Image(systemName: "arrow.down.circle")
+                        .accessibilityLabel(Text("skills.workspace.filter.updates"))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text(verbatim: item.summary)
+                .font(interfaceScale.font(.body))
+                .lineLimit(2)
+                .foregroundStyle(.secondary)
+            Text(LocalizedStringKey(item.managementKind == .managed
+                ? "skills.workspace.filter.managed"
+                : "skills.detail.external"))
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
     }
 }
