@@ -163,9 +163,10 @@ struct OpenSSFScoreSheet: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("openssf.sheet.title")
+                Text("openssf.sheet.securityTitle")
                     .font(interfaceScale.font(.workspaceTitle))
                     .lineLimit(1)
+                    .help(String.l10n("openssf.sheet.securityTitle"))
                 Text(verbatim: repo.fullName)
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
@@ -274,24 +275,38 @@ struct OpenSSFScoreSheet: View {
                 .font(interfaceScale.font(.panelTitle))
 
             ForEach(checks) { check in
+                let reason = OpenSSFCheckLocalization.reason(for: check)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(verbatim: check.name)
+                        Text(verbatim: OpenSSFCheckLocalization.name(check.name))
                             .font(interfaceScale.font(.rowTitle))
                             .lineLimit(1)
-                            .help(check.name)
+                            .help(OpenSSFCheckLocalization.name(check.name))
                         Spacer()
-                        Text(check.isEvaluated ? String(format: "%.1f", check.score) : String.l10n("openssf.check.unavailable"))
+                        Text(reason == .unavailable
+                             ? String.l10n("openssf.check.temporarilyUnavailable")
+                             : check.isEvaluated ? String(format: "%.1f", check.score) : String.l10n("openssf.check.unavailable"))
                             .font(interfaceScale.font(.bodyEmphasis))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .fixedSize()
                     }
-                    if let reason = check.reason, !reason.isEmpty {
-                        Text(verbatim: reason)
-                            .font(interfaceScale.font(.body))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                    if let reason {
+                        Group {
+                            switch reason {
+                            case .unavailable:
+                                Text("openssf.reason.readFailure")
+                            case .localized(let text):
+                                Text(verbatim: text)
+                            case .original(let text):
+                                Text("openssf.reason.original")
+                                    .font(interfaceScale.font(.caption))
+                                Text(verbatim: text)
+                            }
+                        }
+                        .font(interfaceScale.font(.body))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(8)
@@ -307,13 +322,11 @@ struct OpenSSFScoreSheet: View {
                 .foregroundStyle(.secondary)
             Text(statusTitle(record.fetchStatus))
                 .font(interfaceScale.font(.panelTitle))
-            if let lastError = record.lastError, !lastError.isEmpty {
-                Text(verbatim: lastError)
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 420)
-            }
+            Text(verbatim: OpenSSFCheckLocalization.statusReason(record.fetchStatus))
+                .font(interfaceScale.font(.caption))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
@@ -335,10 +348,8 @@ struct OpenSSFScoreSheet: View {
 
     private func statusTitle(_ status: OpenSSFScoreFetchStatus) -> LocalizedStringKey {
         switch status {
-        case .success: return "openssf.status.success"
         case .notIndexed: return "openssf.status.notIndexed"
-        case .networkError: return "openssf.status.networkError"
-        case .parseError: return "openssf.status.parseError"
+        case .success, .networkError, .parseError: return "openssf.status.unavailable"
         }
     }
 
@@ -537,7 +548,7 @@ private struct OpenSSFRadarChart: View {
     private func radarRadius(in size: CGSize, context: GraphicsContext) -> CGFloat {
         // CGSize 有 CGFloat / Double 重载，测量上限显式指定 CGFloat，避免类型推断歧义。
         let labelSizes = checks.map { check in
-            let label = shortLabel(check.name, fitting: .infinity, context: context)
+            let label = shortLabel(OpenSSFCheckLocalization.name(check.name), fitting: .infinity, context: context)
             return context.resolve(
                 Text(verbatim: label)
                     .font(interfaceScale.font(.captionSmall, weight: .semibold))
@@ -669,7 +680,11 @@ private struct OpenSSFRadarChart: View {
                 return abs(neighbor.x - labelPoint.x) - spacing
             }.min() ?? size.width
             let isHovered = (hoveredIndex == index)
-            let text = Text(verbatim: shortLabel(check.name, fitting: availableWidth, context: context))
+            let text = Text(verbatim: shortLabel(
+                OpenSSFCheckLocalization.name(check.name),
+                fitting: availableWidth,
+                context: context
+            ))
                 .font(interfaceScale.font(.captionSmall, weight: isHovered ? .semibold : .medium))
                 .foregroundStyle(isHovered ? Color.primary : Color.secondary)
             context.draw(context.resolve(text), at: labelPoint, anchor: .center)
@@ -734,7 +749,7 @@ private struct OpenSSFRadarChart: View {
                     .font(interfaceScale.font(.panelTitle, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
-                Text(verbatim: check.name)
+                Text(verbatim: OpenSSFCheckLocalization.name(check.name))
                     .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
