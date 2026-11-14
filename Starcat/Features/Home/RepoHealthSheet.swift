@@ -28,6 +28,8 @@ struct RepoHealthSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    // 与详情页使用同一套字号 token，避免系统样式与固定点值各自缩放。
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var didRequestInitialSnapshot = false
     /// 评分规则 popover（2026-06-21 v5）——与 OpenSSF 行 popover 同一交互模型。
     @State private var isRulesPopoverPresented = false
@@ -65,9 +67,7 @@ struct RepoHealthSheet: View {
         (openSSFPayload?.checks ?? []).filter(\.isEvaluated)
     }
 
-    /// sheet 固定 idealHeight（v5：维度卡含 facts 行,去掉底部折叠 footer）。
-    ///
-    /// 分段估算：… + metadata ≈ 200（含评分来源 3 行 + 分割线 + 评分规则）… 取 730。
+    /// 保留原有 730pt 工作区，放大字号后由正文滚动承载，避免窗口被长译文撑出屏幕。
     private static let sheetIdealHeight: CGFloat = 730
 
     var body: some View {
@@ -79,7 +79,7 @@ struct RepoHealthSheet: View {
         .frame(minWidth: 560, idealWidth: 620, maxWidth: 820,
                minHeight: Self.sheetIdealHeight,
                idealHeight: Self.sheetIdealHeight,
-               maxHeight: .infinity)
+               maxHeight: Self.sheetIdealHeight)
         .task(id: repo.id) {
             didRequestInitialSnapshot = false
             await store.loadCachedSnapshots(for: [repo.id])
@@ -106,11 +106,14 @@ struct RepoHealthSheet: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("repoHealth.sheet.title")
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                    .font(interfaceScale.font(.workspaceTitle))
+                    .lineLimit(1)
                 Text(verbatim: repo.fullName)
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(repo.fullName)
             }
 
             Spacer()
@@ -118,7 +121,7 @@ struct RepoHealthSheet: View {
             SyncIconButton(
                 isRefreshing: isRefreshing,
                 disabled: isRefreshing,
-                font: .system(size: 14, weight: .medium),
+                font: interfaceScale.font(.iconMedium),
                 frameSize: 24,
                 tooltip: isRefreshing
                     ? String.l10n("repoHealth.action.refreshing")
@@ -132,9 +135,10 @@ struct RepoHealthSheet: View {
                 repoHealthShareText
             }
 
-            SheetCloseButton {
-                dismiss()
-            }
+            SheetCloseButton(
+                action: { dismiss() },
+                iconFont: interfaceScale.font(.iconLarge)
+            )
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -160,17 +164,17 @@ struct RepoHealthSheet: View {
     @ViewBuilder
     private var content: some View {
         if let snapshot {
-            // 三段固定高度铺完即满,无 ScrollView。
-            // .frame(maxWidth: .infinity, alignment: .leading) 仅横向撑满 + 左对齐,
-            // **不**设 maxHeight,让 content 用自然高度,避免撑出空白。
-            // 顶部对齐由外层 VStack(alignment: .leading) + sheet 顶部边距保证。
-            VStack(alignment: .leading, spacing: 16) {
-                scoreSummary(snapshot)
-                dimensionGrid(snapshot)
-                metadataSection(snapshot)
+            // 标题与操作保持可见；正文按自然高度排版，不能靠压缩字体硬塞进首屏。
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    scoreSummary(snapshot)
+                    dimensionGrid(snapshot)
+                    metadataSection(snapshot)
+                }
+                .padding(16)
+                .padding(.trailing, 6)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         } else if store.isLoading(repoId: repo.id) || !didRequestInitialSnapshot {
             loadingContent
         } else {
@@ -196,11 +200,11 @@ struct RepoHealthSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("repoHealth.score.overall")
-                        .font(.headline)
+                        .font(interfaceScale.font(.panelTitle))
                     statusLabel(snapshot)
                     if let computed = snapshot.computedDate {
                         Text(String(format: String.l10n("repoHealth.computedAtFormat"), formattedDate(computed)))
-                            .font(.caption)
+                            .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
@@ -232,13 +236,11 @@ struct RepoHealthSheet: View {
             ForEach(Array(healthDimensions(for: snapshot).enumerated()), id: \.offset) { _, dimension in
                 HStack(spacing: 5) {
                     Image(systemName: dimension.systemImage)
-                        .font(.system(size: 11, weight: .semibold))
-                        .imageScale(.small)
+                        .font(interfaceScale.font(.iconSmall, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(healthTint(dimension.score))
                     Text(verbatim: "\(Int(dimension.score.rounded()))")
-                        .font(.caption)
-                        .fontWeight(.semibold)
+                        .font(interfaceScale.font(.captionStrong))
                         .monospacedDigit()
                         .foregroundStyle(.primary)
                 }
@@ -261,12 +263,12 @@ struct RepoHealthSheet: View {
     private func statusLabel(_ snapshot: RepoHealthSnapshot) -> some View {
         Label {
             Text(statusText(snapshot))
-                .font(.subheadline)
+                .font(interfaceScale.font(.body))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: statusSystemImage(snapshot.fetchStatus))
-                .font(.system(size: 13, weight: .semibold))
+                .font(interfaceScale.font(.iconSmall, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(statusTint(snapshot.fetchStatus))
         }
@@ -351,19 +353,19 @@ struct RepoHealthSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .imageScale(.large)
+                    .font(interfaceScale.font(.iconLarge, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(healthTint(score))
                     .frame(width: 24, height: 24)
                 Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(interfaceScale.font(.rowTitle))
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Text(verbatim: "\(Int(score.rounded()))")
-                    .font(.headline)
+                    .font(interfaceScale.font(.panelTitle))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
+                    .fixedSize()
             }
             ProgressView(value: score, total: 100)
                 .tint(healthTint(score))
@@ -384,8 +386,9 @@ struct RepoHealthSheet: View {
     private func factRow(_ fact: RepoHealthFact) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(LocalizedStringKey(fact.labelKey))
-                .font(.caption)
+                .font(interfaceScale.font(.body))
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             factValueView(fact)
         }
@@ -397,18 +400,17 @@ struct RepoHealthSheet: View {
             Link(destination: url) {
                 HStack(spacing: 4) {
                     Text(verbatim: factDisplayValue(fact))
+                        .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(interfaceScale.font(.iconSmall))
                 }
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(interfaceScale.font(.body, weight: .medium))
                 .foregroundStyle(factValueColor(fact.tone))
             }
             .multilineTextAlignment(.trailing)
         } else {
             Text(verbatim: factDisplayValue(fact))
-                .font(.caption)
-                .fontWeight(.medium)
+                .font(interfaceScale.font(.body, weight: .medium))
                 .foregroundStyle(factValueColor(fact.tone))
                 .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
@@ -455,7 +457,7 @@ struct RepoHealthSheet: View {
     private func scoreSourcesSection() -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("repoHealth.sources.title")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle))
 
             metadataRow(
                 icon: "tray.full",
@@ -553,21 +555,25 @@ struct RepoHealthSheet: View {
     ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
+                .font(interfaceScale.font(.iconSmall))
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             Text(title)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(title)
             Spacer()
             Text(verbatim: value)
                 .fontWeight(.medium)
                 .lineLimit(1)
+                .help(value)
             if showLinkChevron {
                 Image(systemName: chevronSystemImage)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(interfaceScale.font(.iconSmall))
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.subheadline)
+        .font(interfaceScale.font(.body))
         // hover 时整行高亮,提示可点击(Lift 风格;依赖 Link 默认行为足够,不强加自定义 button style)
         .contentShape(Rectangle())
     }
@@ -577,9 +583,9 @@ struct RepoHealthSheet: View {
             ProgressView()
                 .controlSize(.large)
             Text("repoHealth.loading")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle))
             Text("repoHealth.loading.hint")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -589,12 +595,12 @@ struct RepoHealthSheet: View {
     private var unavailableContent: some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 28, weight: .semibold))
+                .font(interfaceScale.font(size: 28, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text("repoHealth.unavailable")
-                .font(.headline)
+                .font(interfaceScale.font(.panelTitle))
             Text("repoHealth.unavailable.hint")
-                .font(.caption)
+                .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -640,6 +646,8 @@ private struct HealthScoreArcGauge: View {
     let scoreLabel: String
     let tint: Color
 
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
     private let size: CGFloat = 96
     /// 270° / 360°
     private let arcFraction: CGFloat = 0.75
@@ -675,12 +683,13 @@ private struct HealthScoreArcGauge: View {
                 )
                 .rotationEffect(.degrees(startRotation))
 
-            VStack(spacing: -2) {
+            VStack(spacing: 2) {
                 Text(verbatim: grade)
-                    .font(.system(size: 36, weight: .heavy, design: .rounded))
+                    // 等级是图表数据：保留独立强调，但不再用 heavy 字重压过实际分数。
+                    .font(interfaceScale.font(size: 28, weight: .semibold, design: .rounded))
                     .foregroundStyle(tint)
                 Text(verbatim: scoreLabel)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(interfaceScale.font(.body, weight: .medium, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -703,14 +712,16 @@ private struct HealthScoreArcGauge: View {
 struct RepoHealthRulesPopover: View {
     let snapshot: RepoHealthSnapshot
 
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 Text("repoHealth.rules.title")
-                    .font(.headline)
+                    .font(interfaceScale.font(.panelTitle))
 
                 Text("repoHealth.rules.formula")
-                    .font(.subheadline)
+                    .font(interfaceScale.font(.body))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -742,11 +753,13 @@ struct RepoHealthRulesPopover: View {
                 }
 
                 Text("repoHealth.rules.missing")
-                    .font(.caption)
+                    .font(interfaceScale.font(.caption))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(14)
+            // 始终显示滚动条时，右侧正文仍需留出避让空间。
+            .padding(.trailing, 6)
         }
         .frame(width: 420)
         .frame(maxHeight: 360)
@@ -755,15 +768,14 @@ struct RepoHealthRulesPopover: View {
     private func ruleRow(icon: String, title: LocalizedStringKey, detail: LocalizedStringKey, tint: Color) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(interfaceScale.font(.iconSmall, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(interfaceScale.font(.rowTitle))
                 Text(detail)
-                    .font(.caption)
+                    .font(interfaceScale.font(.body))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
