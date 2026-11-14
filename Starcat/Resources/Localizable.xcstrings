@@ -645821,6 +645821,29 @@
         }
       }
     },
+    "sidebar.organizations.more" : {
+      "comment" : "侧栏公开组织头像组的溢出菜单提示。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "More organizations" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更多组织" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "needs_review", "value" : "更多組織" } },
+        "ja" : { "stringUnit" : { "state" : "needs_review", "value" : "その他の組織" } },
+        "ko" : { "stringUnit" : { "state" : "needs_review", "value" : "다른 조직" } },
+        "de" : { "stringUnit" : { "state" : "needs_review", "value" : "Weitere Organisationen" } },
+        "fr" : { "stringUnit" : { "state" : "needs_review", "value" : "Plus d’organisations" } },
+        "es" : { "stringUnit" : { "state" : "needs_review", "value" : "Más organizaciones" } },
+        "pt-BR" : { "stringUnit" : { "state" : "needs_review", "value" : "Mais organizações" } },
+        "it" : { "stringUnit" : { "state" : "needs_review", "value" : "Altre organizzazioni" } },
+        "ru" : { "stringUnit" : { "state" : "needs_review", "value" : "Больше организаций" } },
+        "nl" : { "stringUnit" : { "state" : "needs_review", "value" : "Meer organisaties" } },
+        "pl" : { "stringUnit" : { "state" : "needs_review", "value" : "Więcej organizacji" } },
+        "uk" : { "stringUnit" : { "state" : "needs_review", "value" : "Інші організації" } },
+        "tr" : { "stringUnit" : { "state" : "needs_review", "value" : "Diğer kuruluşlar" } },
+        "vi" : { "stringUnit" : { "state" : "needs_review", "value" : "Tổ chức khác" } },
+        "id" : { "stringUnit" : { "state" : "needs_review", "value" : "Organisasi lainnya" } }
+      }
+    },
     "sidebar.account" : {
       "localizations" : {
         "de" : {

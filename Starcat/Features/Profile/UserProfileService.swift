@@ -201,7 +201,7 @@ final class UserProfileService {
             do {
                 // force 刷新必须绕过 URLCache：GitHub `/user` 响应带 60 秒 max-age，
                 // 只跳过本地 TTL 仍可能拿到缓存里的旧 followers，用户会以为刷新没生效。
-                let fetched = try await self.apiClient.getCurrentUser(forceRefresh: force)
+                var fetched = try await self.apiClient.getCurrentUser(forceRefresh: force)
                 // 防御：网络回来时用户切账号 / 登出了——丢弃过期结果
                 guard !Task.isCancelled else { return }
                 guard fetched.login.lowercased() == login.lowercased() else {
@@ -209,6 +209,7 @@ final class UserProfileService {
                     return
                 }
 
+                fetched = self.preservingCachedOrganizations(in: fetched)
                 self.profile = fetched
                 self.lastFetchedAt = Date()
                 self.lastError = nil
@@ -238,11 +239,15 @@ final class UserProfileService {
     ///
     /// 调用方契约：仅当 AuthSession.state 真的更新为 .authenticated 时调用。
     func acceptFromAuth(_ user: GitHubUserDTO) {
+        let user = preservingCachedOrganizations(in: user)
         self.profile = user
         self.lastFetchedAt = Date()
         self.lastError = nil
         self.persistToDisk(login: user.login, profile: user, fetchedAt: Date())
         Self.saveLastLogin(user.login)
+        // 启动恢复先发布 REST 资料；若组织补充请求失败，把保留的缓存同步回登录态，
+        // 避免已显示的组织头像在恢复登录后消失。此入口只更新 state，不会递归写缓存。
+        self.authSession?.acceptRefreshedUser(user)
         AppLog.network.debug("UserProfile acceptFromAuth: login=\(user.login, privacy: .public)")
     }
 
@@ -261,6 +266,14 @@ final class UserProfileService {
     }
 
     // MARK: - 磁盘缓存
+
+    /// 只在同一账号且补充请求未成功时复用组织；成功的空列表仍会移除旧组织。
+    private func preservingCachedOrganizations(in user: GitHubUserDTO) -> GitHubUserDTO {
+        guard user.organizations == nil, let cached = profile, cached.id == user.id else { return user }
+        var result = user
+        result.organizations = cached.organizations
+        return result
+    }
 
     private func cacheKey(for login: String) -> String {
         cacheKeyPrefix + login.lowercased()

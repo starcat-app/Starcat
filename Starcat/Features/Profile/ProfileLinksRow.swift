@@ -2,7 +2,7 @@
 //  ProfileLinksRow.swift
 //  Starcat
 //
-//  Sidebar 头像卡的个人主页快捷链接行：bio + 一排紧凑图标（company / blog / twitter / email）。
+//  Sidebar 头像卡的个人主页快捷链接行：bio + 居中社交图标 + 右对齐公开组织头像。
 //  HOM-PROFILE 2026-06-05 引入。
 //
 //  设计动机：
@@ -16,7 +16,7 @@
 //  ┌────────────────────────────────────────┐
 //  │ bio 文字（如有，最多 2 行折行）             │
 //  ├────────────────────────────────────────┤
-//  │ 🏢 🔗 🐦 ✉️                            │
+//  │             🏢 🔗 🐦 ✉️       [组织] [+N] │
 //  └────────────────────────────────────────┘
 //
 //  关键约束：
@@ -34,8 +34,7 @@ struct ProfileLinksRow: View {
 
     var body: some View {
         // dong4j 2026-06-05 反馈：bio + 链接行整体居中（之前左对齐与三栏统计/草坪不齐）。
-        // bio 多行时按"段落居中"（multilineTextAlignment(.center)），链接图标行用
-        // HStack 不带 Spacer + frame(maxWidth:.infinity) 居中。
+        // 社交图标维持原来的中心位置；组织使用独立的右侧空间，不能把两组一起居中。
         VStack(spacing: 6) {
             if let bio = user.bio?.trimmingCharacters(in: .whitespacesAndNewlines),
                !bio.isEmpty {
@@ -50,15 +49,32 @@ struct ProfileLinksRow: View {
                     .help(bio)
             }
 
-            // 图标按钮行：每个字段独立判 nil/空，最终至少展示 1 个才渲染该行。
+            // 组织与社交链接独立判空，只有组织时也保持 20pt 行高且贴右展示。
             let buttons = makeIconButtons()
-            if !buttons.isEmpty {
+            let organizations = user.organizations ?? []
+            if !buttons.isEmpty || !organizations.isEmpty {
                 HStack(spacing: 10) {
                     ForEach(buttons) { btn in
                         ProfileIconButton(item: btn)
                     }
                 }
+                .frame(height: 20)
                 .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) {
+                    if !organizations.isEmpty {
+                        GeometryReader { geometry in
+                            // 只把居中按钮右侧的空间交给组织，保留 8pt 安全间距。
+                            // GeometryReader 放在 overlay 中，不参与用户卡的高度分配。
+                            let linksWidth = CGFloat(buttons.count * 20 + max(0, buttons.count - 1) * 10)
+                            let availableWidth = buttons.isEmpty
+                                ? geometry.size.width
+                                : max(0, (geometry.size.width - linksWidth) / 2 - 8)
+                            ProfileOrganizationsView(organizations: organizations)
+                                .frame(width: availableWidth, height: 20, alignment: .trailing)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                        }
+                    }
+                }
             }
         }
     }

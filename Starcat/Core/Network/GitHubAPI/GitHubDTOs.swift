@@ -70,6 +70,9 @@ struct GitHubUserDTO: Codable, Equatable {
     /// REST `/user` 不返回该字段；`UserAPI.getCurrentUser()` 会在 REST 身份校验后用 GraphQL
     /// `viewer.status` 补齐。保持 Optional，让无 status、GraphQL 临时失败、旧缓存都能自然降级。
     let status: GitHubUserStatusDTO?
+    /// 公开组织由独立 REST 请求补齐。nil 表示尚未取得结果，可继续使用同账号缓存；
+    /// 空数组表示请求成功且没有公开组织，必须清除旧头像。旧资料缓存缺少本字段仍可解码。
+    var organizations: [GitHubOrganizationDTO]?
 
     init(
         id: Int64,
@@ -87,7 +90,8 @@ struct GitHubUserDTO: Codable, Equatable {
         twitterUsername: String? = nil,
         htmlUrl: String? = nil,
         updatedAt: String? = nil,
-        status: GitHubUserStatusDTO? = nil
+        status: GitHubUserStatusDTO? = nil,
+        organizations: [GitHubOrganizationDTO]? = nil
     ) {
         self.id = id
         self.login = login
@@ -105,6 +109,7 @@ struct GitHubUserDTO: Codable, Equatable {
         self.htmlUrl = htmlUrl
         self.updatedAt = updatedAt
         self.status = status
+        self.organizations = organizations
     }
 
     /// 当前仍应显示的 status。GitHub 会返回 `expiresAt`，客户端需要在本地兜底过滤过期状态，
@@ -133,7 +138,8 @@ struct GitHubUserDTO: Codable, Equatable {
             twitterUsername: twitterUsername,
             htmlUrl: htmlUrl,
             updatedAt: updatedAt,
-            status: status
+            status: status,
+            organizations: organizations
         )
     }
 }

@@ -414,6 +414,10 @@ enum AppEndpoints {
             static func userSocialAccounts(login: String) -> String {
                 "/users/\(login)/social_accounts"
             }
+            /// `GET /users/{login}/orgs` —— 用户公开展示的组织，无需额外申请 read:org。
+            static func userOrganizations(login: String) -> String {
+                "/users/\(login)/orgs"
+            }
             /// `GET/PUT/DELETE /user/following/{login}` —— 是否已关注 / 关注 / 取关。
             static func userFollowing(login: String) -> String {
                 "/user/following/\(login)"

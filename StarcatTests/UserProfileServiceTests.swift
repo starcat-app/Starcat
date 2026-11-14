@@ -182,6 +182,70 @@ final class UserProfileServiceTests: XCTestCase {
 
     // MARK: - reset
 
+    /// 组织补充请求失败以 nil 表示，刷新基础资料时必须保留同账号的组织缓存。
+    func test_acceptFromAuth_preservesAndPersistsCachedOrganizations() {
+        let service = UserProfileService(apiClient: mock)
+        var original = makeUser(login: "alice")
+        original.organizations = [
+            GitHubOrganizationDTO(id: 101, login: "example-org", avatarUrl: nil, description: nil)
+        ]
+        service.acceptFromAuth(original)
+        service.acceptFromAuth(makeUser(login: "alice", followers: 99))
+
+        XCTAssertEqual(service.profile?.followers, 99)
+        XCTAssertEqual(service.profile?.organizations, original.organizations)
+        let restored = UserProfileService(apiClient: mock).primeFromCache()
+        XCTAssertEqual(restored?.organizations, original.organizations)
+    }
+
+    /// 成功取得空列表与请求失败不同：空列表代表用户已没有公开组织。
+    func test_acceptFromAuth_emptyOrganizationsClearsCachedOrganizations() {
+        let service = UserProfileService(apiClient: mock)
+        var user = makeUser(login: "alice")
+        user.organizations = [
+            GitHubOrganizationDTO(id: 101, login: "example-org", avatarUrl: nil, description: nil)
+        ]
+        service.acceptFromAuth(user)
+        user.organizations = []
+        service.acceptFromAuth(user)
+
+        XCTAssertEqual(service.profile?.organizations, [])
+        XCTAssertEqual(UserProfileService(apiClient: mock).primeFromCache()?.organizations, [])
+    }
+
+    func test_acceptFromAuth_doesNotReuseOrganizationsAcrossAccounts() {
+        let service = UserProfileService(apiClient: mock)
+        var user = makeUser(login: "alice")
+        user.organizations = [
+            GitHubOrganizationDTO(id: 101, login: "example-org", avatarUrl: nil, description: nil)
+        ]
+        service.acceptFromAuth(user)
+        service.acceptFromAuth(makeUser(login: "bob"))
+
+        XCTAssertNil(service.profile?.organizations)
+    }
+
+    func test_load_preservesOrganizationsWhenSupplementFails() async throws {
+        let service = UserProfileService(apiClient: mock)
+        var user = makeUser(login: "alice")
+        user.organizations = [
+            GitHubOrganizationDTO(id: 101, login: "example-org", avatarUrl: nil, description: nil)
+        ]
+        service.acceptFromAuth(user)
+        let fetched = expectation(description: "profile fetched")
+        mock.getCurrentUserHandler = {
+            defer { fetched.fulfill() }
+            return self.makeUser(login: "alice", followers: 99)
+        }
+
+        service.load(login: "alice", force: true)
+        await fulfillment(of: [fetched], timeout: 2)
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(service.profile?.followers, 99)
+        XCTAssertEqual(service.profile?.organizations, user.organizations)
+    }
+
     func test_reset_clearsMemoryDiskAndLastLogin() {
         let svc = UserProfileService(apiClient: mock)
         svc.acceptFromAuth(makeUser(login: "Carol"))
