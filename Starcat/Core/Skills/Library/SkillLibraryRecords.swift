@@ -155,6 +155,7 @@ struct SkillLibrarySnapshot: Sendable {
     let roots: [SkillLibraryRoot]
     let locations: [SkillLibraryLocation]
     var assignments: [SkillAssignment] = []
+    var updateChecks: [SkillUpdateCheck] = []
 }
 
 /// 私有库回执只描述受管基线；读到回执本身并不授予修改外部路径的权限。

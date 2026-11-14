@@ -77,19 +77,22 @@ actor SkillImportService {
         operations: SkillOperationCoordinator,
         distributionGate: DistributionGate = DistributionGate(),
         tokenProvider: any GitHubTokenProviding = KeychainTokenProvider(),
-        makeClients: @escaping ClientFactory = { token in
-            let provider = SkillImportTokenProvider(token: token)
-            return SkillGitHubClients(
-                api: GitHubAPIClient(tokenProvider: provider),
-                downloader: RepoFileDownloader(tokenProvider: provider)
-            )
-        }
+        makeClients: @escaping ClientFactory = SkillImportService.defaultClients
     ) throws {
         try distributionGate.requireDirect(.skillManagement)
         self.store = store
         self.operations = operations
         self.tokenProvider = tokenProvider
         self.makeClients = makeClients
+    }
+
+    /// 导入与更新共用冻结授权的客户端构造，真实凭据不进入持久模型。
+    nonisolated static func defaultClients(_ token: String?) -> SkillGitHubClients {
+        let provider = SkillImportTokenProvider(token: token)
+        return SkillGitHubClients(
+            api: GitHubAPIClient(tokenProvider: provider),
+            downloader: RepoFileDownloader(tokenProvider: provider)
+        )
     }
 
     /// 词法别名在来源身份中归一；原始目录始终保留，后续复制的是完整文件集合。

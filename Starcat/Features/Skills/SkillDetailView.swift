@@ -62,6 +62,16 @@ struct SkillDetailView: View {
 
     private func header(_ item: SkillLibraryItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            if item.managementKind == .managed {
+                Text(LocalizedStringKey(item.updateState.titleKey)).font(.caption).foregroundStyle(.secondary)
+                if let time = item.updateCheckedAt {
+                    Text(Date(timeIntervalSince1970: time), format: .dateTime)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = item.updateMessage {
+                    Text(verbatim: message).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
             Text(verbatim: item.name)
                 .font(interfaceScale.font(.workspaceTitle))
                 .textSelection(.enabled)

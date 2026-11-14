@@ -37,4 +37,7 @@ struct SkillLibraryItem: Identifiable, Equatable, Sendable {
     var revision: String? = nil
     var markdown: String? = nil
     var files: [String] = []
+    var updateState: SkillUpdateState = .neverChecked
+    var updateMessage: String?
+    var updateCheckedAt: TimeInterval?
 }

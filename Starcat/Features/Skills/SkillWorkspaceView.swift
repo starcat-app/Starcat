@@ -85,6 +85,8 @@ private struct SkillLibraryList: View {
     @Environment(AppDependencies.self) private var dependencies: AppDependencies?
     @Bindable var viewModel: SkillWorkspaceViewModel
     @State private var showsImport = false
+    @State private var isCheckingUpdates = false
+    @State private var updateMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -122,6 +124,21 @@ private struct SkillLibraryList: View {
             TextField("repo.skills.search", text: $viewModel.searchText)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel(Text("repo.skills.search"))
+
+            HStack {
+                Button("skills.update.check") {
+                    guard let service = viewModel.libraryEnvironment?.updates else { return }
+                    isCheckingUpdates = true
+                    Task {
+                        defer { isCheckingUpdates = false }
+                        do { try await service.check() } catch { updateMessage = error.localizedDescription }
+                        viewModel.refreshLibrary()
+                    }
+                }
+                .disabled(isCheckingUpdates || viewModel.libraryEnvironment == nil)
+                if isCheckingUpdates { ProgressView().controlSize(.small) }
+                if let updateMessage { Text(verbatim: updateMessage).font(.caption).foregroundStyle(.secondary) }
+            }
 
             Divider()
 

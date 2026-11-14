@@ -20,6 +20,7 @@ final class SkillLibraryEnvironment {
     let imports: SkillImportService
     let assignments: SkillAssignmentCoordinator
     let batchAssignments: SkillBatchAssignmentService
+    let updates: SkillUpdateService
     private weak var viewModel: SkillWorkspaceViewModel?
     private let scan: Scanner
     private let roots: Roots
@@ -61,6 +62,7 @@ final class SkillLibraryEnvironment {
         let assignments = try SkillAssignmentCoordinator(store: store, operations: operations, distributionGate: distributionGate)
         self.assignments = assignments
         self.batchAssignments = try SkillBatchAssignmentService(assignments: assignments, distributionGate: distributionGate)
+        self.updates = try SkillUpdateService(store: store, distributionGate: distributionGate)
         self.viewModel = viewModel
         self.scan = scan ?? { await scanner.scan($0) }
         self.roots = roots ?? { previous in
@@ -221,6 +223,7 @@ extension SkillLibrarySnapshot {
         let rootsByID = Dictionary(uniqueKeysWithValues: roots.map { ($0.id, $0) })
         let sourcesByID = Dictionary(uniqueKeysWithValues: sources.map { ($0.id, $0) })
         let revisionsByID = Dictionary(uniqueKeysWithValues: revisions.map { ($0.id, $0) })
+        let updatesByID = Dictionary(uniqueKeysWithValues: updateChecks.map { ($0.entryID, $0) })
         let grouped = Dictionary(grouping: locations, by: \.entryID)
         return entries.map { entry in
             let found = grouped[entry.id, default: []].sorted { $0.lexicalPath < $1.lexicalPath }
@@ -229,6 +232,7 @@ extension SkillLibrarySnapshot {
             }
             let source = entry.sourceID.flatMap { sourcesByID[$0] }
             let revision = entry.currentRevisionID.flatMap { revisionsByID[$0] }
+            let update = updatesByID[entry.id].flatMap { $0.revisionID == entry.currentRevisionID ? $0 : nil }
             return SkillLibraryItem(
                 id: entry.id, name: entry.manifestName, summary: entry.summary,
                 managementKind: entry.managementKind,
@@ -241,7 +245,10 @@ extension SkillLibrarySnapshot {
                     )
                 },
                 diagnostic: diagnostics.isEmpty ? nil : diagnostics.joined(separator: "\n"),
-                revision: revision?.upstreamCommit ?? revision?.contentDigest
+                hasUpdate: update?.hasUpdate ?? false,
+                revision: revision?.upstreamCommit ?? revision?.contentDigest,
+                updateState: update?.state ?? .neverChecked, updateMessage: update?.message,
+                updateCheckedAt: update?.attemptedAt
             )
         }
     }

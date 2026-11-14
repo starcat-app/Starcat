@@ -54,7 +54,8 @@ actor SkillLibraryStore {
                 revisions: SkillLibraryRevision.fetchAll(db),
                 roots: SkillLibraryRoot.fetchAll(db),
                 locations: SkillLibraryLocation.fetchAll(db),
-                assignments: SkillAssignment.fetchAll(db)
+                assignments: SkillAssignment.fetchAll(db),
+                updateChecks: SkillUpdateCheck.fetchAll(db)
             )
         }
     }
@@ -85,6 +86,15 @@ actor SkillLibraryStore {
 
     func save(_ operation: SkillOperationRecord) throws {
         try writer().write { try operation.save($0) }
+    }
+
+    /// 检查期间安装指针可能变化；旧 revision 的响应直接忽略，避免恢复旧更新角标。
+    func save(_ check: SkillUpdateCheck) throws {
+        try writer().write { db in
+            guard let entry = try SkillLibraryEntry.fetchOne(db, key: check.entryID.uuidString),
+                  entry.currentRevisionID == check.revisionID else { return }
+            try check.save(db)
+        }
     }
 
     /// 分配回执与索引同一次写事务更新；旧计划不能覆盖后来建立的另一分配。
@@ -361,6 +371,20 @@ actor SkillLibraryStore {
                     link_identity_json TEXT
                 );
                 CREATE INDEX idx_skill_assignments_entry ON skill_assignments(entry_id);
+                """)
+        }
+        migrator.registerMigration("v4-skill-update-checks") { db in
+            try db.execute(sql: """
+                CREATE TABLE skill_update_checks (
+                    entry_id TEXT PRIMARY KEY NOT NULL REFERENCES skill_entries(id),
+                    revision_id TEXT,
+                    state TEXT NOT NULL,
+                    has_update BOOLEAN NOT NULL DEFAULT 0,
+                    available_commit TEXT,
+                    attempted_at DOUBLE NOT NULL,
+                    succeeded_at DOUBLE,
+                    message TEXT
+                );
                 """)
         }
         try migrator.migrate(writer)
