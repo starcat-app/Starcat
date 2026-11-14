@@ -67,7 +67,10 @@ struct DailyRecommendationCardsView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            DailyRecommendationBackdrop().ignoresSafeArea()
+            DailyRecommendationBackdrop()
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             DailyRecommendationWebView(snapshot: snapshot, onAction: handle, onFailure: { rendererFailed = true })
                 .id(rendererRevision)
                 .ignoresSafeArea()

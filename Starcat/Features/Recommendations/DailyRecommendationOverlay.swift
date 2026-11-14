@@ -189,15 +189,23 @@ private final class CardPanel: NSPanel {
     override func performClose(_ sender: Any?) { onEscape() }
 }
 
-/// 透明子窗口直接透出主界面；只轻微调节明暗，不用 HUD 材质把整窗覆盖成灰幕。
-struct DailyRecommendationBackdrop: View {
+/// 整窗毛玻璃背景：模糊子窗口下方的真实主界面，避免只叠透明色而仍能读到后台内容。
+struct DailyRecommendationBackdrop: NSViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
 
-    var body: some View {
-        // 主窗口的真实内容保留至少 76% 可见度；文字可读性由页头和操作区的局部表面负责。
-        Rectangle()
-            .fill(colorScheme == .dark ? Color.black.opacity(0.18) : Color.white.opacity(0.24))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        // 网页在独立 child panel 中；withinWindow 只能混合该空面板，无法模糊下方主窗口。
+        view.blendingMode = .behindWindow
+        view.material = .fullScreenUI
+        view.state = .active
+        view.isEmphasized = false
+        updateNSView(view, context: context)
+        return view
+    }
+
+    /// 明暗主题由 App 注入，不能只跟随系统主题导致卡片与磨砂背景不一致。
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
     }
 }
