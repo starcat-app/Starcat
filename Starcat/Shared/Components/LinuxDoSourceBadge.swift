@@ -81,12 +81,16 @@ struct LinuxDoSourceBadge: View {
             ))
             .fixedSize()
         } else {
-            Text(verbatim: "Linux.do")
-                .font(interfaceScale.font(.captionSmall))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.quaternary.opacity(0.35), in: Capsule())
+            // 品牌 SVG 保留原色并自动切换明暗资源；图标高度贴合同排徽章的文字行高。
+            Image("LinuxDoLogo")
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: interfaceScale.scaled(iconSize), height: interfaceScale.scaled(iconSize))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                // 与 Stars 使用同一档中性底色，避免浅色或深色卡片吞掉胶囊边界。
+                .background(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08), in: Capsule())
                 .fixedSize()
         }
     }
