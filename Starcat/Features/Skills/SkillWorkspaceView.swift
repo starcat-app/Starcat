@@ -82,6 +82,7 @@ private struct SkillLibrarySidebar: View {
 /// 搜索和筛选只消费快照；刷新失败时保留列表，不将错误根伪装成空库。
 private struct SkillLibraryList: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AppDependencies.self) private var dependencies: AppDependencies?
     @Bindable var viewModel: SkillWorkspaceViewModel
     @State private var showsImport = false
 
@@ -90,6 +91,19 @@ private struct SkillLibraryList: View {
             HStack {
                 title.font(interfaceScale.font(.panelTitle))
                 Spacer(minLength: 8)
+                Button("skills.batch.title") {
+                    let ids = viewModel.visibleItems.filter { viewModel.selectedIDs.contains($0.id) }.map(\.id)
+                    SkillReviewWindowController.present(titleKey: "skills.batch.title") { close in
+                        if let dependencies {
+                            SkillBatchAssignmentSheet(viewModel: viewModel, entryIDs: ids, close: close)
+                                .appHostEnvironment(dependencies)
+                        } else {
+                            SkillBatchAssignmentSheet(viewModel: viewModel, entryIDs: ids, close: close)
+                                .appLocaleEnvironment()
+                        }
+                    }
+                }
+                .disabled(viewModel.selectedIDs.isEmpty || viewModel.libraryEnvironment == nil)
                 Button {
                     showsImport = true
                 } label: {

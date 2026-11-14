@@ -19,6 +19,7 @@ final class SkillLibraryEnvironment {
     let operations: SkillOperationCoordinator
     let imports: SkillImportService
     let assignments: SkillAssignmentCoordinator
+    let batchAssignments: SkillBatchAssignmentService
     private weak var viewModel: SkillWorkspaceViewModel?
     private let scan: Scanner
     private let roots: Roots
@@ -57,7 +58,9 @@ final class SkillLibraryEnvironment {
         self.imports = try SkillImportService(
             store: store, operations: operations, distributionGate: distributionGate
         )
-        self.assignments = try SkillAssignmentCoordinator(store: store, operations: operations, distributionGate: distributionGate)
+        let assignments = try SkillAssignmentCoordinator(store: store, operations: operations, distributionGate: distributionGate)
+        self.assignments = assignments
+        self.batchAssignments = try SkillBatchAssignmentService(assignments: assignments, distributionGate: distributionGate)
         self.viewModel = viewModel
         self.scan = scan ?? { await scanner.scan($0) }
         self.roots = roots ?? { previous in
