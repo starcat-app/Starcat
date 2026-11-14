@@ -106,31 +106,7 @@ struct SkillDetailView: View {
             SkillContentView(item: item, tab: selectedTab, refreshID: viewModel.contentRefreshID)
                 .id(item.id)
         case .assignments:
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(item.locations) { location in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(verbatim: location.agentNames.joined(separator: " · "))
-                            .font(interfaceScale.font(.rowTitle))
-                        Text(verbatim: location.path)
-                            .font(interfaceScale.font(.code))
-                            .textSelection(.enabled)
-                        if location.resolvedPath != location.path, let resolved = location.resolvedPath {
-                            Text(verbatim: resolved).font(interfaceScale.font(.code))
-                        }
-                        Text(LocalizedStringKey("skills.detail.location.\(location.state.rawValue)"))
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                        Text(LocalizedStringKey(location.isShared
-                            ? "skills.detail.shared"
-                            : "skills.detail.visibility.unverified"))
-                            .font(interfaceScale.font(.caption))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                if item.locations.isEmpty {
-                    Text("skills.detail.assignments.none").foregroundStyle(.secondary)
-                }
-            }
+            SkillAssignmentsView(item: item, viewModel: viewModel).id(item.id)
         case .versions:
             if let revision = item.revision {
                 Text(verbatim: revision).font(interfaceScale.font(.code))

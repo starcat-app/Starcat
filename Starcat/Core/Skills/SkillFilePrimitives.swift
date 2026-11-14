@@ -7,6 +7,7 @@
 //
 
 import CryptoKit
+import Darwin
 import Foundation
 
 /// 内容身份包含文件集合、类型和权限，不使用 mtime 代替内容校验。
@@ -66,6 +67,14 @@ enum SkillFilePrimitives {
 
     static func exists(_ url: URL) -> Bool {
         FileManager.default.fileExists(atPath: url.path) || isSymbolicLink(url)
+    }
+
+    /// 共享根可能被其他工具同时写入；存在性预检不能替代内核的禁止覆盖语义。
+    /// 不支持排他 rename 的卷直接失败，不能回退为会替换目标的普通 rename。
+    static func moveExclusively(_ source: URL, to destination: URL) throws {
+        guard renameatx_np(AT_FDCWD, source.path, AT_FDCWD, destination.path, UInt32(RENAME_EXCL)) == 0 else {
+            throw POSIXError(.init(rawValue: errno) ?? .EIO)
+        }
     }
 
     /// 有界流式 hash，不把大附件一次性映射进内存；空目录与执行位也参与整体指纹。

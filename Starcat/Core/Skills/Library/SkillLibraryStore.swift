@@ -15,6 +15,7 @@ struct SkillLibraryPaths: Sendable {
     var database: URL { root.appendingPathComponent("library.sqlite") }
     var managed: URL { root.appendingPathComponent("managed", isDirectory: true) }
     var transactions: URL { root.appendingPathComponent("transactions", isDirectory: true) }
+    var assignmentTransactions: URL { root.appendingPathComponent("assignment-transactions", isDirectory: true) }
 
     static func applicationDefault() throws -> Self {
         guard let support = FileManager.default.urls(
@@ -52,7 +53,8 @@ actor SkillLibraryStore {
                 entries: SkillLibraryEntry.order(Column("manifest_name"), Column("id")).fetchAll(db),
                 revisions: SkillLibraryRevision.fetchAll(db),
                 roots: SkillLibraryRoot.fetchAll(db),
-                locations: SkillLibraryLocation.fetchAll(db)
+                locations: SkillLibraryLocation.fetchAll(db),
+                assignments: SkillAssignment.fetchAll(db)
             )
         }
     }
@@ -83,6 +85,19 @@ actor SkillLibraryStore {
 
     func save(_ operation: SkillOperationRecord) throws {
         try writer().write { try operation.save($0) }
+    }
+
+    /// 分配回执与索引同一次写事务更新；旧计划不能覆盖后来建立的另一分配。
+    func commitAssignment(_ journal: SkillAssignmentJournal) throws {
+        currentScanGeneration = nil
+        try writer().write { db in
+            let plan = journal.plan
+            let path = URL(fileURLWithPath: plan.target.resolvedParent).appendingPathComponent(plan.entry.manifestName).path
+            let current = try SkillAssignment.filter(Column("target_path") == path).fetchOne(db)
+            guard current == plan.previous || current == journal.assignment else { throw SkillOperationError.ownership }
+            if let assignment = journal.assignment { try assignment.save(db) }
+            else if let current { try current.delete(db) }
+        }
     }
 
     /// 来源唯一键可能已被前一个导入创建；只复用来源身份，不合并两个受管条目。
@@ -332,6 +347,20 @@ actor SkillLibraryStore {
                     updated_at DOUBLE NOT NULL
                 );
                 CREATE INDEX idx_skill_operations_entry ON skill_operations(entry_id);
+                """)
+        }
+        migrator.registerMigration("v3-skill-assignments") { db in
+            try db.execute(sql: """
+                CREATE TABLE skill_assignments (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    entry_id TEXT NOT NULL REFERENCES skill_entries(id),
+                    target_json TEXT NOT NULL,
+                    target_path TEXT NOT NULL UNIQUE,
+                    content_path TEXT NOT NULL,
+                    desired_state TEXT NOT NULL,
+                    link_identity_json TEXT
+                );
+                CREATE INDEX idx_skill_assignments_entry ON skill_assignments(entry_id);
                 """)
         }
         try migrator.migrate(writer)

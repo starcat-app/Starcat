@@ -18,6 +18,7 @@ final class SkillLibraryEnvironment {
     let store: SkillLibraryStore
     let operations: SkillOperationCoordinator
     let imports: SkillImportService
+    let assignments: SkillAssignmentCoordinator
     private weak var viewModel: SkillWorkspaceViewModel?
     private let scan: Scanner
     private let roots: Roots
@@ -56,6 +57,7 @@ final class SkillLibraryEnvironment {
         self.imports = try SkillImportService(
             store: store, operations: operations, distributionGate: distributionGate
         )
+        self.assignments = try SkillAssignmentCoordinator(store: store, operations: operations, distributionGate: distributionGate)
         self.viewModel = viewModel
         self.scan = scan ?? { await scanner.scan($0) }
         self.roots = roots ?? { previous in
@@ -131,7 +133,9 @@ final class SkillLibraryEnvironment {
             }
         }
         do {
-            let recovery = await operations.recover()
+            let contentRecovery = await operations.recover()
+            let assignmentRecovery = await assignments.recover()
+            let recovery = contentRecovery + assignmentRecovery
             guard accepts(run) else { return }
             let cached = try await store.snapshot()
             guard accepts(run) else { return }

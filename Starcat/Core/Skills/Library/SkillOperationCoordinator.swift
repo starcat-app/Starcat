@@ -56,6 +56,12 @@ actor SkillOperationCoordinator {
         return await enqueue { await self.perform(plan) }
     }
 
+    /// 分配复用同一提交队列，避免内容换版与链接预检跨 await 交错。
+    /// 调用方在进入队列之前完成所属 journal 的恢复，不在此闭包中递归排队。
+    func exclusively<Value: Sendable>(_ work: @escaping @Sendable () async -> Value) async -> Value {
+        await enqueue(work)
+    }
+
     /// Task 的 predecessor 链约束整个异步操作，不把 actor 的方法互斥误当作事务互斥。
     private func enqueue<Value: Sendable>(
         _ work: @escaping @Sendable () async -> Value
@@ -82,7 +88,9 @@ actor SkillOperationCoordinator {
             if let previous = history.first(where: { $0.id == plan.id }) {
                 return previous.result ?? result(plan, .needsRecovery, SkillOperationError.recovery)
             }
-            guard !history.contains(where: { $0.entryID == plan.entry.id && $0.state == "needsRecovery" })
+            guard !history.contains(where: {
+                $0.entryID == plan.entry.id && ["running", "needsRecovery"].contains($0.state)
+            })
             else { throw SkillOperationError.recovery }
             try validate(plan)
             let paths = transactionPaths(plan)
@@ -172,7 +180,8 @@ actor SkillOperationCoordinator {
                 }
             }
             for record in try await store.operations()
-                where !seen.contains(record.id) && ["running", "needsRecovery"].contains(record.state) {
+                where ["importContent", "updateContent"].contains(record.kind)
+                    && !seen.contains(record.id) && ["running", "needsRecovery"].contains(record.state) {
                 results.append(SkillOperationResult(
                     id: record.id, entryID: record.entryID, status: .needsRecovery,
                     message: SkillOperationError.journal.localizedDescription
