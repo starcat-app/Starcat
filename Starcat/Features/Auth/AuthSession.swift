@@ -283,6 +283,8 @@ final class AuthSession {
     /// 数据库上触发读取或写入。把这段顺序收口为独立方法，也便于测试锁定该约束。
     func activateCachedSession(_ user: GitHubUserDTO) async {
         await onUserSessionChanged?(user.id)
+        // 语言统计也必须在首屏挂载前恢复；这里只读磁盘，离线或 `/user` 缓慢时仍可显示。
+        developerLanguageService?.primeFromCache(login: user.login)
         state = .authenticated(user: user)
     }
 
