@@ -53,6 +53,7 @@
 - [x] **T17a 更新证据乱序修复**：最近尝试与成功证据分开按请求时间合并，独立库 v5 及旧库升级通过。
 - [x] **T17b 自动化证据与交接**：大集合真实目录／合成快照、综合故障回归、可重复文案校验器、性能边界及人工步骤落档。
 - [ ] **T17c 原生与真实环境验收**：GUI、真实 GitHub、真实 Agent、真实系统废纸篓、全语言人工审核及实际大集合响应。
+- [x] **T17d 开窗崩溃整改**：复现并修复宽 Inspector 的约束循环，内容分栏与阅读宽度一次性恢复接入；Skill／栏宽 21 项、Agent／RAG 8 项及双渠道构建通过，真实界面仍归 T17c 验收。
 
 ## 3. 提交与验证记录
 
@@ -80,6 +81,7 @@
 | T11b | 库条目审核、逐项解除分配、整目录暂存、索引原子删除与系统废纸篓恢复 | 移除 15 项及分配／操作／环境共 50 项定向测试通过；双渠道 build-only、累计 121 key × 17 语言与 Catalog 仅新增校验通过 | `c861338f` |
 | T17a | 更新检查按发起时间合并最近尝试与成功证据，追加独立库 v5，失败不清空已有更新 | 先失败复现，再通过更新／数据库／移除／安全更新／批量更新共 50 项测试；12 种三响应组合及 v4 升级通过；双渠道 build-only 通过 | `b69121ad` |
 | T17b | 千目录重扫／重开、万条投影与选择回归、可重复全语言校验器、故障矩阵及人工交接 | 187 项、19 Suite 综合回归及 2 项大集合测试通过；双渠道标准 build-only；121 key × 17 语言编译资源一致 | 当前验收证据提交 |
+| T17d | 实际窗口约束循环复现、主内容分栏与原生阅读宽度恢复 | 最终 Skill／栏宽 21 项、4 Suite 通过，新增原生窗口 6 方法／10 场景；另有 Agent／RAG 8 项通过；双渠道标准 build-only 通过 | 本次崩溃整改提交 |
 
 新窗口入口为 Direct 的“显示 → Skill 管理”。T06 起显式打开窗口才创建本机环境并扫描配置根；关闭时停止扫描、监听和定时任务，重开沿用会话及已发布结果后重新对账。Scene 禁止启动自动恢复，未明确打开时不初始化本机环境。
 
@@ -116,6 +118,8 @@ T13 测试覆盖同仓多条目和并发请求聚合、缓存命中、仓库其�
 T17a 用失败测试复现旧快照失败响应覆盖已发现更新，再把证据合并移到数据库写事务。最后一次尝试和最后一次成功分别按请求发起时间选择，旧 revision 不写回；v4 升级保留已知证据，旧库无法还原的成功发起时间使用保守基线。测试日志为 `/tmp/starcat-skill-t17-race-repro.log`、`/tmp/starcat-skill-t17-update-order-tests.log`；两渠道构建日志为 `/tmp/starcat-skill-t17-update-order-direct.log`、`/tmp/starcat-skill-t17-update-order-appstore.log`。均为标准 build-only，不启动应用；本 worktree 缺少独立 `supports/starcat-site` 的既有 Debug Changelog 警告仍保留，不作为发布资源验证通过。
 
 T17b 的最终证据与可重跑命令见 [13](13-自动化验收证据与人工交接.md)。综合回归 187 项与独立大集合 2 项不重复累计历史执行次数。M2 Ultra／64 GiB／Debug 下，1,000 目录扫描中位约 309 ms；10,000 条快照投影约 99 ms、模型发布约 54 ms、单次搜索约 95 ms。万级主线程处理仍是实机待查风险，不宣称滚动流畅。文案校验器只读核对 AppLocale、独立语言表、源稿与两个已构建 bundle；2,057 个译文单元保持 `needs_review`。T17c 未获 GUI 授权且尚未执行，父项 T17 及关联任务继续开放。
+
+T17d 由用户 2026-11-15 的崩溃报告触发。默认 HostingController 尺寸协商下，实际生产三栏的不显示窗口在旧布局中复现 `NSGenericException`；改为原生 Sidebar 与 `HSplitView` 后修复，并补上实际拖动／重新展开时的阅读宽度恢复。测试使用独立 UserDefaults 与内存样例，不扫描真实 Home。最终定向日志为 `/tmp/starcat-skill-layout-width-restore-tests-20261115.log`；共享 Agent／RAG 的通过证据取自 `/tmp/starcat-skill-layout-regression-20261115.log` 对应 Suite，整轮历史失败及后续修正见 [13](13-自动化验收证据与人工交接.md) §9。两渠道构建日志为 `/tmp/starcat-skill-layout-direct-20261115.log`、`/tmp/starcat-skill-layout-appstore-20261115.log`。`make run-direct` 已稳定启动 PID 22663，进程路径确认属于本专项 `build/DerivedData-NoSandbox`，日志为 `/tmp/starcat-skill-layout-run-direct-20261115.log`；没有自动操作菜单或代替 GUI 验收。本次只更新专项记录，T17／T17c 及关联任务保持开放。
 
 ## 4. 人工验收与审核
 

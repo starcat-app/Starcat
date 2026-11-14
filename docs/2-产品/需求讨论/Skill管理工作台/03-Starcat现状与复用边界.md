@@ -21,7 +21,7 @@
 | `RepoSkillAgentCatalog.swift` | 当前工作区新增的工具路径及只读检测 | 工具描述与发现种子；不能直接证明启停语义 |
 | `RepoFileDownloader.swift` | 仓库文件获取与校验能力 | 继续走现有网络、鉴权与下载协议 |
 | `RepoSkillDetailPane` / `RepoSkillFilePreview` | 远端说明与文件预览 | 提炼纯展示组件或输入适配，保留仓库业务隔离 |
-| `WorkspaceColumns` 等 | 工作台分栏、尺寸、显隐、持久化 | 优先复用，共享 chrome 与独立偏好键 |
+| 工作台窗口与分栏组件 | 尺寸、显隐、持久化与 chrome | 复用窗口策略与独立偏好键；Skill 的宽阅读栏使用原生 HSplitView，见 §4 |
 | `DistributionGate` | UI 可用性与执行层渠道拒绝 | 增补拟议 `ChannelFeature.skillManagement` |
 | `LocaleStore.AppLocale` | 17 种语言与系统选项 | 新文案全语言覆盖，不另建翻译机制 |
 
@@ -48,17 +48,19 @@
 
 `WorkspaceColumns<Rail, RunSurface, Inspector>` 使用左侧 `NavigationSplitView`、中间 detail 以及右侧 `.inspector` 组合。它不是三个任意 View 直接组成的普通三参数分栏。
 
-Skill 工作台建议映射为：
+2026-11-14 初始方案按上述角色映射；2026-11-15 打开窗口时实际复现宽 Inspector 的约束循环后，Skill 改为左侧 `NavigationSplitView`，detail 内用 `HSplitView` 承载列表和主阅读区：
 
-| 泛型角色 | 本功能内容 |
+| 实际区域 | 本功能内容 |
 |---|---|
-| Rail | 全部、受管、更新、Agent、来源等导航 |
-| RunSurface | Skill 列表及搜索／排序／多选 |
-| Inspector | 主要阅读详情、文件、分配与版本 |
+| NavigationSplitView sidebar | 全部、受管、更新、Agent、来源等导航 |
+| HSplitView 左侧内容 | Skill 列表及搜索／排序／多选 |
+| HSplitView 右侧内容 | 主要阅读详情、文件、分配与版本 |
 
-右栏在此是主要详情区，需要比 Agent 的辅助 inspector 更宽。使用独立 `WorkspaceColumnLayout` 参数和偏好键，不更改 Agent/RAG 的默认宽度。先用真实内容验证右栏最小宽度、折叠与焦点；若共享组件存在硬限制，优先做最小的可配置扩展，不重写全部窗口架构。
+右栏在此是主要详情区，宽度为 480–1100pt，默认建议 820pt；中栏最低 280pt，整窗最低仍为 1040 × 640。使用独立 `WorkspaceColumnLayout` 与偏好键，继续共用原生 Sidebar、`WorkspaceColumnVisibility`、`WorkspaceSplitCollapsePolicy`、窗口 chrome 与尺寸策略。Agent/RAG 继续使用其既有辅助 Inspector；Skill 不再把宽主阅读区放入 `.inspector`。首次打开的实际生产视图在原结构下复现 `NSGenericException`，切换上述内容分栏后同一回归通过；后续显隐、拖动、窗口尺寸与构建证据见 [13](13-自动化验收证据与人工交接.md)。
 
 `WorkspaceColumnWidthPersistence` 刻意将测量缓存与响应式布局分开，避免“测量→保存→布局”循环。新功能不得在拖动时用 `@AppStorage` 持续反向更新当前 ideal width。
+
+`HSplitView` 的 ideal width 不足以恢复重新插入的阅读栏；`SkillDetailWidthRestorer` 仅在该栏创建并获得有效尺寸后恢复一次原生分隔条，后续拖动和缩窗由系统处理。回归同时核对恢复值与实际拖动，不能只断言偏好缓存内容正确。
 
 ## 5. 窗口与依赖生命周期
 

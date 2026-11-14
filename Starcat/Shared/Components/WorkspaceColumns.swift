@@ -91,7 +91,7 @@ struct WorkspaceColumns<Rail: View, RunSurface: View, Inspector: View>: View {
 ///
 /// SwiftUI 没有暴露 NSSplitViewItem.collapseBehavior。探针只沿自己的祖先链配置
 /// Sidebar / Inspector，不替换系统 delegate、不接管窗口，也不扫描其他工作台。
-private struct WorkspaceSplitCollapsePolicy: NSViewRepresentable {
+struct WorkspaceSplitCollapsePolicy: NSViewRepresentable {
     let transition: WorkspaceColumnTransition
 
     func makeNSView(context: Context) -> ProbeView {

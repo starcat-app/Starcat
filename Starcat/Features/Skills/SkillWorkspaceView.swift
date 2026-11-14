@@ -6,27 +6,148 @@
 //  不复用项目详情安装 sheet 的会话状态，也不在视图求值时初始化本机存储。
 //
 
+import AppKit
 import SwiftUI
 
-/// 沿用 Starcat 原生 Sidebar / 内容区 / Inspector，栏宽只在重开时读入。
+/// 使用原生 Sidebar 与内容分栏承载列表和阅读区，复用 Starcat 的窗口与栏宽偏好。
 struct SkillWorkspaceView: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Bindable var viewModel: SkillWorkspaceViewModel
     @Bindable var chromeState: WorkspaceChromeState
-    @State private var columnWidths = WorkspaceColumnWidthPersistence(
-        layout: SkillWorkspaceWindowMetrics.columnLayout
-    )
+    @State private var columnWidths: WorkspaceColumnWidthPersistence
+
+    /// 测试注入独立栏宽缓存，避免原生布局回归覆盖用户真实偏好。
+    init(
+        viewModel: SkillWorkspaceViewModel,
+        chromeState: WorkspaceChromeState,
+        columnWidths: WorkspaceColumnWidthPersistence? = nil
+    ) {
+        self.viewModel = viewModel
+        self.chromeState = chromeState
+        _columnWidths = State(initialValue: columnWidths ?? WorkspaceColumnWidthPersistence(
+            layout: SkillWorkspaceWindowMetrics.columnLayout
+        ))
+    }
 
     var body: some View {
-        WorkspaceColumns(chromeState: chromeState, columnWidths: columnWidths) {
+        // 阅读区需要 480–1100pt，属于主内容而非窄 Inspector。两层控制器在宽 Inspector
+        // 下会反复协商 min/max size；用原生 HSplitView 分配内容尺寸，避免这条反馈路径。
+        NavigationSplitView(columnVisibility: WorkspaceColumnVisibility.leftBinding(
+            for: chromeState, reduceMotion: reduceMotion
+        )) {
             SkillLibrarySidebar(viewModel: viewModel)
-        } runSurface: {
-            SkillLibraryList(viewModel: viewModel)
-        } inspector: {
-            SkillDetailView(viewModel: viewModel)
+                .navigationSplitViewColumnWidth(
+                    min: columnWidths.layout.left.minimum,
+                    ideal: columnWidths.initialLeftColumnWidth,
+                    max: columnWidths.layout.left.maximum
+                )
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
+                            columnWidths.scheduleLeftWidthPersistence(
+                                width, isCollapsed: chromeState.isLeftColumnCollapsed
+                            )
+                        }
+                    }
+                }
+        } detail: {
+            HSplitView {
+                GeometryReader { proxy in
+                    SkillLibraryList(viewModel: viewModel)
+                        .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                        .clipped()
+                }
+                .frame(minWidth: 280, idealWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
+
+                if chromeState.isRightColumnPresented {
+                    GeometryReader { proxy in
+                        SkillDetailView(viewModel: viewModel)
+                            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+                            .clipped()
+                    }
+                    .frame(
+                        minWidth: columnWidths.layout.right.minimum,
+                        idealWidth: columnWidths.rightColumnWidthForPresentation,
+                        maxWidth: columnWidths.layout.right.maximum,
+                        maxHeight: .infinity
+                    )
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
+                                columnWidths.scheduleRightWidthPersistence(
+                                    width, isCollapsed: chromeState.isRightColumnCollapsed
+                                )
+                            }
+                        }
+                    }
+                    .background(SkillDetailWidthRestorer(
+                        preferredWidth: columnWidths.rightColumnWidthForPresentation
+                    ))
+                }
+            }
+            .background(WorkspaceSplitCollapsePolicy(transition: chromeState.columnTransition))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .defaultCursorShield()
+        .onChange(of: chromeState.leftColumnVisibility) { _, _ in
+            columnWidths.cancelPendingPersistence()
+        }
+        .onChange(of: chromeState.isRightColumnPresented) { _, _ in
+            columnWidths.cancelPendingPersistence()
+        }
+        .onDisappear {
+            columnWidths.persistLastMeasuredWidths()
+            columnWidths.cancelPendingPersistence()
+        }
+    }
+}
+
+/// HSplitView 重新插入阅读栏时可能只采用最小宽度；每次创建只恢复一次有效宽度。
+/// 后续拖动与缩窗交回原生分栏，不把测量结果持续反向绑定到分隔条。
+private struct SkillDetailWidthRestorer: NSViewRepresentable {
+    let preferredWidth: CGFloat
+
+    func makeNSView(context: Context) -> ProbeView {
+        ProbeView(preferredWidth: preferredWidth)
+    }
+
+    func updateNSView(_ view: ProbeView, context: Context) {}
+
+    /// 只沿阅读栏自己的祖先查找内容分栏，不访问其他窗口或替换系统 delegate。
+    final class ProbeView: NSView {
+        private let preferredWidth: CGFloat
+        private var didRestoreWidth = false
+
+        init(preferredWidth: CGFloat) {
+            self.preferredWidth = preferredWidth
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        /// 等原生分栏分配出有效尺寸后再恢复，且先置位，避免祖先重布局时再次执行。
+        override func layout() {
+            super.layout()
+            guard !didRestoreWidth, window != nil, bounds.width > 0 else { return }
+            var ancestor = superview
+            while let current = ancestor {
+                if let split = current as? NSSplitView,
+                   split.isVertical, split.arrangedSubviews.count == 2 {
+                    didRestoreWidth = true
+                    split.setPosition(
+                        split.bounds.width - preferredWidth - split.dividerThickness,
+                        ofDividerAt: 0
+                    )
+                    return
+                }
+                ancestor = current.superview
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 
