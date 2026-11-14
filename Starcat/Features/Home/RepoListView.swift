@@ -564,6 +564,7 @@ struct RepoListView: View {
     @State private var activityViewModel: ActivityViewModel?
     @State private var showingInterestedLanguagePicker = false
     @State private var interestedLanguageDraft = ""
+    @State private var languageFilterContentHeight: CGFloat = 30
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -1261,17 +1262,17 @@ struct RepoListView: View {
         Divider()
         RepoSkillFilterSection(selection: globalFilterBinding(\.skillFilter))
         Divider()
-        availabilityPicker(
+        availabilityFilterSection(
             title: "list.filter.wikiAvailability",
             icon: "doc.text.magnifyingglass",
             selection: globalFilterBinding(\.wikiAvailabilityFilter)
         )
-        availabilityPicker(
+        availabilityFilterSection(
             title: "list.filter.healthAvailability",
             icon: "heart.text.square",
             selection: globalFilterBinding(\.healthAvailabilityFilter)
         )
-        availabilityPicker(
+        availabilityFilterSection(
             title: "list.filter.openSSFAvailability",
             icon: "checkmark.shield",
             selection: globalFilterBinding(\.openSSFAvailabilityFilter)
@@ -2679,20 +2680,27 @@ struct RepoListView: View {
         VStack(alignment: .leading, spacing: 4) {
             filterSectionHeader(title: "list.filter.status", icon: "tray.full")
 
-            Picker(selection: selection) {
-                // 「全部」也挂图标避免下拉里出现"3 个 Label + 1 个裸 Text"的不对齐视觉。
-                // `tray.full` 与下方 envelope.badge / envelope.open / checkmark.seal
-                // 同邮件视觉系统，语义"收件箱全在这"。
-                Label("general.all", systemImage: "tray.full").tag(RepoStatus?.none)
-                ForEach(RepoStatus.allCases, id: \.self) { st in
-                    Label(st.displayName, systemImage: statusIcon(for: st))
-                        .tag(RepoStatus?.some(st))
+            RepoFilterTabs(
+                label: "list.filter.status",
+                options: [RepoStatus?.none] + RepoStatus.allCases.map { Optional($0) },
+                selection: selection,
+                title: { $0?.displayName ?? "general.all" },
+                shortTitle: { status in
+                    guard let status else { return "general.all" }
+                    return status == .using ? "list.filter.status.short.using" : status.displayName
+                },
+                symbol: { status in
+                    status.map { statusIcon(for: $0) } ?? "tray.full"
+                },
+                color: { status in
+                    switch status {
+                    case .none: .blue
+                    case .some(.unread): .orange
+                    case .some(.read): .green
+                    case .some(.using): .purple
+                    }
                 }
-            } label: {
-                EmptyView()
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
+            )
         }
     }
 
@@ -2700,16 +2708,27 @@ struct RepoListView: View {
         VStack(alignment: .leading, spacing: 4) {
             filterSectionHeader(title: "list.filter.starStatus", icon: "star.circle")
 
-            Picker(selection: selection) {
-                ForEach(RepoStarFilter.allCases, id: \.self) { filter in
-                    Label(filter.displayName, systemImage: starFilterIcon(for: filter))
-                        .tag(filter)
+            RepoFilterTabs(
+                label: "list.filter.starStatus",
+                options: RepoStarFilter.allCases,
+                selection: selection,
+                title: \.displayName,
+                shortTitle: { filter in
+                    switch filter {
+                    case .all: "general.all"
+                    case .starred: "list.filter.starStatus.short.starred"
+                    case .unstarred: "list.filter.starStatus.short.unstarred"
+                    }
+                },
+                symbol: { starFilterIcon(for: $0) },
+                color: { filter in
+                    switch filter {
+                    case .all: .blue
+                    case .starred: .yellow
+                    case .unstarred: .secondary
+                    }
                 }
-            } label: {
-                EmptyView()
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
+            )
         }
     }
 
@@ -2717,16 +2736,20 @@ struct RepoListView: View {
         VStack(alignment: .leading, spacing: 4) {
             filterSectionHeader(title: "list.filter.library", icon: "heart.text.square")
 
-            Picker(selection: selection) {
-                ForEach(RepoLibraryFilter.allCases, id: \.self) { filter in
-                    Label(filter.displayName, systemImage: libraryFilterIcon(for: filter))
-                        .tag(filter)
+            RepoFilterTabs(
+                label: "list.filter.library",
+                options: RepoLibraryFilter.allCases,
+                selection: selection,
+                title: \.displayName,
+                symbol: { libraryFilterIcon(for: $0) },
+                color: { filter in
+                    switch filter {
+                    case .all: .blue
+                    case .inLibrary: .green
+                    case .outsideLibrary: .secondary
+                    }
                 }
-            } label: {
-                EmptyView()
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
+            )
         }
     }
 
@@ -2751,31 +2774,48 @@ struct RepoListView: View {
                     interestedLanguagePickerPopover
                         .frame(width: 280, height: 300)
                         .padding(14)
+                        .appLocaleEnvironment()
                 }
             }
 
-            if !viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty {
-                Button {
-                    viewModel.clearLanguageFiltersFromUser()
-                } label: {
-                    Label("list.filter.language.clearSelection", systemImage: "xmark.circle")
+            ScrollView {
+                TagChipFlowLayout(spacing: 6, constrainsItemWidth: true) {
+                    RepoLanguageFilterChip(
+                        title: String.l10n("general.all"),
+                        isSelected: viewModel.effectiveGlobalFilterState.globalFilterLanguages.isEmpty,
+                        action: { viewModel.clearLanguageFiltersFromUser() },
+                        helpText: String.l10n("list.filter.language.clearSelection")
+                    ) {
+                        Image(systemName: "globe")
+                    }
+                    ForEach(settings.interestedLanguages, id: \.self) { language in
+                        let selected = globalLanguageBinding(for: language)
+                        RepoLanguageFilterChip(
+                            title: LanguageDisplayName.shortened(for: language),
+                            isSelected: selected.wrappedValue,
+                            action: { selected.wrappedValue.toggle() },
+                            helpText: language
+                        ) {
+                            FilterMenuLanguageIcon(language: language, size: 14)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(3)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    languageFilterContentHeight = height
                 }
             }
+            .contentMargins(.trailing, 10, for: .scrollContent)
+            // 与许可证保持约四行的视口；少量语言自然收缩，其余仍可滚动选择。
+            .frame(height: min(languageFilterContentHeight, 4 * 24 + 3 * 6 + 6))
 
             if settings.interestedLanguages.isEmpty {
                 Text("settings.filters.interestedLanguages.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else {
-                ForEach(settings.interestedLanguages, id: \.self) { language in
-                    Toggle(isOn: globalLanguageBinding(for: language)) {
-                        Label {
-                            Text(LanguageDisplayName.shortened(for: language))
-                        } icon: {
-                            FilterMenuLanguageIcon(language: language, size: 14)
-                        }
-                    }
-                }
             }
         }
     }
@@ -2851,7 +2891,7 @@ struct RepoListView: View {
         }
     }
 
-    private func availabilityPicker(
+    private func availabilityFilterSection(
         title: LocalizedStringKey,
         icon: String,
         selection: Binding<RepoSignalAvailabilityFilter>
@@ -2859,16 +2899,20 @@ struct RepoListView: View {
         VStack(alignment: .leading, spacing: 4) {
             filterSectionHeader(title: title, icon: icon)
 
-            Picker(selection: selection) {
-                ForEach(RepoSignalAvailabilityFilter.allCases, id: \.self) { filter in
-                    Label(availabilityFilterTitle(for: filter), systemImage: availabilityFilterIcon(for: filter, fallback: icon))
-                        .tag(filter)
+            RepoFilterTabs(
+                label: title,
+                options: RepoSignalAvailabilityFilter.allCases,
+                selection: selection,
+                title: { availabilityFilterTitle(for: $0) },
+                symbol: { availabilityFilterIcon(for: $0, fallback: icon) },
+                color: { filter in
+                    switch filter {
+                    case .unknown: .blue
+                    case .available: .green
+                    case .missing: .secondary
+                    }
                 }
-            } label: {
-                EmptyView()
-            }
-            .labelsHidden()
-            .pickerStyle(.inline)
+            )
         }
     }
 
