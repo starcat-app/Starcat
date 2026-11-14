@@ -6,6 +6,7 @@
 //  Window Scene 和分栏实现，仅使用本功能自己的宽度键。
 //
 
+import AppKit
 import SwiftUI
 
 /// 中栏是目录列表，右栏是主要阅读区，因此右栏预算大于其他 AI 工作台。
@@ -31,6 +32,7 @@ struct SkillWorkspaceSceneRoot: View {
     @State private var chromeState = WorkspaceChromeState()
     @State private var windowReference = WorkspaceSceneWindowReference()
     @State private var localeStore = LocaleStore.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Scene 标题不自动跟随应用语言，沿用现有工作台的显式观察方式。
     private var windowTitle: String {
@@ -55,7 +57,24 @@ struct SkillWorkspaceSceneRoot: View {
                 )
             }
             .starcatWindowToolbarChrome(extendsContentTintIntoToolbar: true)
+            .onAppear { viewModel.startLibrary() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { viewModel.refreshLibrary() }
+            }
+            // macOS 可保留已关闭 Window 的 SwiftUI 树；显式窗口通知负责资源生命周期，
+            // onAppear／onDisappear 仍覆盖内容树实际创建与销毁，两条路径都幂等。
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { event in
+                if let window = event.object as? NSWindow, window === windowReference.window {
+                    viewModel.startLibrary()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { event in
+                if let window = event.object as? NSWindow, window === windowReference.window {
+                    viewModel.stopLibrary()
+                }
+            }
             .onDisappear {
+                viewModel.stopLibrary()
                 windowReference.window?.level = .normal
             }
     }

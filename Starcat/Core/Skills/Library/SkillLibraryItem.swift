@@ -18,6 +18,8 @@ enum SkillLibraryManagementKind: String, Codable, Sendable {
 struct SkillLibraryLocationSummary: Identifiable, Equatable, Sendable {
     let path: String
     let agentNames: [String]
+    var resolvedPath: String? = nil
+    var state: SkillLibraryLocationState = .present
     var isShared: Bool { agentNames.count > 1 }
     var id: String { path }
 }

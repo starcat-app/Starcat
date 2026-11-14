@@ -2,8 +2,8 @@
 //  SkillWorkspaceViewModel.swift
 //  Starcat
 //
-//  独立 Skill 窗口的导航状态。首个界面提交只建立真实空态，
-//  不把演示条目混入生产模型；后续由本机库快照提供内容。
+//  独立 Skill 窗口的导航状态。只消费完整本机库快照，
+//  窗口显式显示后才创建索引会话，不把演示条目混入生产模型。
 //
 
 import Foundation
@@ -52,12 +52,21 @@ enum SkillWorkspaceLoadState: Equatable, Sendable {
     case ready
     case loading
     case failed(String)
+    case partial(String)
+
+    var message: String? {
+        switch self {
+        case .failed(let message), .partial(let message): message
+        case .ready, .loading: nil
+        }
+    }
 }
 
 /// 应用级协调器持有此会话，关闭主窗口或切换 GitHub 账号不会丢失本机导航。
 @MainActor
 @Observable
 final class SkillWorkspaceViewModel {
+    @ObservationIgnored private var libraryEnvironment: SkillLibraryEnvironment?
     /// List 的单选绑定允许系统短暂清空选择；读取时回退到全部条目。
     var navigation: SkillWorkspaceNavigation? = .library(.all) {
         didSet { rebuildVisibleItems() }
@@ -94,6 +103,19 @@ final class SkillWorkspaceViewModel {
     func setLoadState(_ state: SkillWorkspaceLoadState) {
         loadState = state
     }
+
+    /// 默认模型与 Preview 不读取本机路径；仅真实 Scene 的显示生命周期调用此入口。
+    func startLibrary() {
+        do {
+            if libraryEnvironment == nil { libraryEnvironment = try SkillLibraryEnvironment(viewModel: self) }
+            libraryEnvironment?.start()
+        } catch {
+            setLoadState(.failed(error.localizedDescription))
+        }
+    }
+
+    func stopLibrary() { libraryEnvironment?.stop() }
+    func refreshLibrary() { libraryEnvironment?.refresh() }
 
     /// 筛选变化后收敛选择，后续批量操作不会误处理已离开屏幕的隐藏目标。
     private func rebuildVisibleItems() {

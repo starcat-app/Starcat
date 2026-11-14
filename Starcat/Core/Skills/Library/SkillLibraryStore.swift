@@ -84,8 +84,9 @@ actor SkillLibraryStore {
         return generation
     }
 
-    func invalidateScan() {
-        currentScanGeneration = nil
+    /// 只撤销自己的代次，旧窗口的异步清理不能使新窗口的扫描失效。
+    func invalidateScan(generation: UUID) {
+        if currentScanGeneration == generation { currentScanGeneration = nil }
     }
 
     /// 一次事务合并全部根，只有完整覆盖或确认缺失才能把未见位置标为 missing。

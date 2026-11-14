@@ -86,7 +86,15 @@ private struct SkillLibraryList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            title.font(interfaceScale.font(.panelTitle))
+            HStack {
+                title.font(interfaceScale.font(.panelTitle))
+                Spacer(minLength: 8)
+                SyncIconButton(
+                    isRefreshing: viewModel.loadState == .loading,
+                    tooltip: String.l10n("repo.skills.scan.refresh"),
+                    action: viewModel.refreshLibrary
+                )
+            }
 
             TextField("repo.skills.search", text: $viewModel.searchText)
                 .textFieldStyle(.roundedBorder)
@@ -94,9 +102,9 @@ private struct SkillLibraryList: View {
 
             Divider()
 
-            if case .failed(let message) = viewModel.loadState, !viewModel.items.isEmpty {
+            if let message = viewModel.loadState.message, !viewModel.items.isEmpty {
                 Label {
-                    Text(verbatim: message).textSelection(.enabled)
+                    Text(verbatim: message).lineLimit(2).textSelection(.enabled)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle")
                 }
