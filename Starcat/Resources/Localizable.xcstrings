@@ -435567,6 +435567,28 @@
         }
       }
     },
+    "repo.skills.install.cancelled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Cancelled"}},
+        "zh-Hans" : {"stringUnit" : {"state" : "needs_review", "value" : "已取消"}},
+        "zh-Hant" : {"stringUnit" : {"state" : "needs_review", "value" : "已取消"}},
+        "ja" : {"stringUnit" : {"state" : "needs_review", "value" : "キャンセル済み"}},
+        "ko" : {"stringUnit" : {"state" : "needs_review", "value" : "취소됨"}},
+        "de" : {"stringUnit" : {"state" : "needs_review", "value" : "Abgebrochen"}},
+        "fr" : {"stringUnit" : {"state" : "needs_review", "value" : "Annulé"}},
+        "es" : {"stringUnit" : {"state" : "needs_review", "value" : "Cancelado"}},
+        "pt-BR" : {"stringUnit" : {"state" : "needs_review", "value" : "Cancelado"}},
+        "it" : {"stringUnit" : {"state" : "needs_review", "value" : "Annullato"}},
+        "ru" : {"stringUnit" : {"state" : "needs_review", "value" : "Отменено"}},
+        "nl" : {"stringUnit" : {"state" : "needs_review", "value" : "Geannuleerd"}},
+        "pl" : {"stringUnit" : {"state" : "needs_review", "value" : "Anulowano"}},
+        "uk" : {"stringUnit" : {"state" : "needs_review", "value" : "Скасовано"}},
+        "tr" : {"stringUnit" : {"state" : "needs_review", "value" : "İptal edildi"}},
+        "vi" : {"stringUnit" : {"state" : "needs_review", "value" : "Đã hủy"}},
+        "id" : {"stringUnit" : {"state" : "needs_review", "value" : "Dibatalkan"}}
+      }
+    },
     "repo.skills.install.done" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -439845,6 +439867,28 @@
             "value" : "Setelah berkas terpasang, muat ulang atau mulai ulang agen jika perlu."
           }
         }
+      }
+    },
+    "repo.skills.install.reloadHint" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Reload or restart the target tool if needed."}},
+        "zh-Hans" : {"stringUnit" : {"state" : "needs_review", "value" : "按需重新加载或重启目标工具。"}},
+        "zh-Hant" : {"stringUnit" : {"state" : "needs_review", "value" : "視需要重新載入或重啟目標工具。"}},
+        "ja" : {"stringUnit" : {"state" : "needs_review", "value" : "必要に応じて対象ツールを再読み込みするか、再起動してください。"}},
+        "ko" : {"stringUnit" : {"state" : "needs_review", "value" : "필요하면 대상 도구를 다시 불러오거나 재시작하세요."}},
+        "de" : {"stringUnit" : {"state" : "needs_review", "value" : "Bei Bedarf das Zieltool neu laden oder neu starten."}},
+        "fr" : {"stringUnit" : {"state" : "needs_review", "value" : "Rechargez ou redémarrez l’outil cible si nécessaire."}},
+        "es" : {"stringUnit" : {"state" : "needs_review", "value" : "Recarga o reinicia la herramienta de destino si es necesario."}},
+        "pt-BR" : {"stringUnit" : {"state" : "needs_review", "value" : "Recarregue ou reinicie a ferramenta de destino, se necessário."}},
+        "it" : {"stringUnit" : {"state" : "needs_review", "value" : "Se necessario, ricarica o riavvia lo strumento di destinazione."}},
+        "ru" : {"stringUnit" : {"state" : "needs_review", "value" : "При необходимости обновите или перезапустите целевой инструмент."}},
+        "nl" : {"stringUnit" : {"state" : "needs_review", "value" : "Laad het doelprogramma zo nodig opnieuw of start het opnieuw op."}},
+        "pl" : {"stringUnit" : {"state" : "needs_review", "value" : "W razie potrzeby przeładuj lub uruchom ponownie narzędzie docelowe."}},
+        "uk" : {"stringUnit" : {"state" : "needs_review", "value" : "За потреби перезавантажте або перезапустіть цільовий інструмент."}},
+        "tr" : {"stringUnit" : {"state" : "needs_review", "value" : "Gerekirse hedef aracı yeniden yükleyin veya yeniden başlatın."}},
+        "vi" : {"stringUnit" : {"state" : "needs_review", "value" : "Nếu cần, hãy tải lại hoặc khởi động lại công cụ đích."}},
+        "id" : {"stringUnit" : {"state" : "needs_review", "value" : "Muat ulang atau mulai ulang alat tujuan jika diperlukan."}}
       }
     },
     "repo.skills.install.running" : {
