@@ -19,6 +19,7 @@ final class SkillLibraryEnvironment {
     let operations: SkillOperationCoordinator
     let imports: SkillImportService
     let assignments: SkillAssignmentCoordinator
+    let removals: SkillRemovalCoordinator
     let batchAssignments: SkillBatchAssignmentService
     let updates: SkillUpdateService
     let contentUpdates: SkillContentUpdateService
@@ -66,6 +67,9 @@ final class SkillLibraryEnvironment {
         self.imports = imports
         let assignments = try SkillAssignmentCoordinator(store: store, operations: operations, distributionGate: distributionGate)
         self.assignments = assignments
+        self.removals = try SkillRemovalCoordinator(
+            store: store, operations: operations, assignments: assignments, distributionGate: distributionGate
+        )
         self.batchAssignments = try SkillBatchAssignmentService(assignments: assignments, distributionGate: distributionGate)
         self.updates = try SkillUpdateService(store: store, distributionGate: distributionGate, requests: updateRequests)
         let contentUpdates = try SkillContentUpdateService(
@@ -150,7 +154,8 @@ final class SkillLibraryEnvironment {
         do {
             let contentRecovery = await operations.recover()
             let assignmentRecovery = await assignments.recover()
-            let recovery = contentRecovery + assignmentRecovery
+            let removalRecovery = await removals.recover()
+            let recovery = contentRecovery + assignmentRecovery + removalRecovery
             guard accepts(run) else { return }
             let cached = try await store.snapshot()
             guard accepts(run) else { return }

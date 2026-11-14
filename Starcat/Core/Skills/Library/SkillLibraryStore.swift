@@ -16,6 +16,7 @@ struct SkillLibraryPaths: Sendable {
     var managed: URL { root.appendingPathComponent("managed", isDirectory: true) }
     var transactions: URL { root.appendingPathComponent("transactions", isDirectory: true) }
     var assignmentTransactions: URL { root.appendingPathComponent("assignment-transactions", isDirectory: true) }
+    var removalTransactions: URL { root.appendingPathComponent("removal-transactions", isDirectory: true) }
 
     static func applicationDefault() throws -> Self {
         guard let support = FileManager.default.urls(
@@ -132,6 +133,26 @@ actor SkillLibraryStore {
     func restoreEntry(_ entry: SkillLibraryEntry) throws {
         currentScanGeneration = nil
         try writer().write { try entry.save($0) }
+    }
+
+    /// 文件已移到有 journal 的暂存区后才删除索引。显式按外键次序删除，
+    /// 保留操作历史及共享来源；撤销旧扫描代次，避免已移除条目被旧报告重新创建。
+    func commitRemoval(_ plan: SkillRemovalPlan) throws {
+        currentScanGeneration = nil
+        try writer().write { db in
+            guard let entry = try SkillLibraryEntry.fetchOne(db, key: plan.entry.id.uuidString) else { return }
+            guard entry == plan.entry,
+                  try SkillAssignment.filter(Column("entry_id") == entry.id.uuidString).fetchCount(db) == 0
+            else { throw SkillOperationError.planChanged }
+            try SkillUpdateCheck.filter(Column("entry_id") == entry.id.uuidString).deleteAll(db)
+            try SkillLibraryLocation.filter(Column("entry_id") == entry.id.uuidString).deleteAll(db)
+            try SkillLibraryRevision.filter(Column("entry_id") == entry.id.uuidString).deleteAll(db)
+            try entry.delete(db)
+            if let sourceID = entry.sourceID,
+               try SkillLibraryEntry.filter(Column("source_id") == sourceID.uuidString).fetchCount(db) == 0 {
+                try SkillLibrarySource.deleteOne(db, key: sourceID.uuidString)
+            }
+        }
     }
 
     /// 发放新的扫描代次；数据库提交前再次比较，旧扫描即使晚返回也不能污染索引。

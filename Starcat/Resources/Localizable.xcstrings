@@ -658433,6 +658433,438 @@
         }
       }
     },
+    "skills.removal.title" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Remove from Library"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "从库中移除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "從資料庫移除"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ライブラリから削除"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "라이브러리에서 제거"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aus Bibliothek entfernen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Retirer de la bibliothèque"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eliminar de la biblioteca"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Remover da biblioteca"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rimuovi dalla libreria"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Удалить из библиотеки"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uit bibliotheek verwijderen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usuń z biblioteki"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вилучити з бібліотеки"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kitaplıktan Kaldır"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Xóa khỏi thư viện"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hapus dari pustaka"
+          }
+        }
+      }
+    },
+    "skills.removal.notice" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uninstall this item’s managed assignments first, then move its managed files to Trash. The original source files are kept."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "先卸载此条目的受管分配，再将受管文件移入废纸篓。原始来源文件保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "先解除此項目的受管分配，再將受管檔案移至垃圾桶。原始來源檔案會保留。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "まずこの項目の管理対象の割り当てを解除し、管理対象ファイルをゴミ箱へ移動します。元のソースファイルは保持されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "먼저 이 항목의 관리 할당을 제거한 다음 관리 파일을 휴지통으로 이동합니다. 원본 소스 파일은 유지됩니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zuerst werden die verwalteten Zuweisungen entfernt, danach die verwalteten Dateien in den Papierkorb verschoben. Die ursprünglichen Quelldateien bleiben erhalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Désinstallez d’abord les affectations gérées, puis déplacez les fichiers gérés vers la corbeille. Les fichiers sources d’origine sont conservés."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Primero se desinstalan las asignaciones administradas y luego se trasladan los archivos administrados a la papelera. Se conservan los archivos de origen."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Primeiro, desinstale as atribuições gerenciadas e mova os arquivos gerenciados para o Lixo. Os arquivos de origem são preservados."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prima vengono disinstallate le assegnazioni gestite, poi i file gestiti vengono spostati nel Cestino. I file sorgente originali vengono conservati."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сначала будут удалены управляемые назначения, затем управляемые файлы переместятся в Корзину. Исходные файлы сохраняются."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Verwijder eerst de beheerde toewijzingen en verplaats daarna de beheerde bestanden naar de prullenmand. De oorspronkelijke bronbestanden blijven behouden."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Najpierw usuń zarządzane przypisania, a następnie przenieś zarządzane pliki do Kosza. Oryginalne pliki źródłowe zostaną zachowane."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Спочатку буде видалено керовані призначення, потім керовані файли перемістяться до Смітника. Початкові вихідні файли зберігаються."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Önce bu öğenin yönetilen atamaları kaldırılır, ardından yönetilen dosyaları Çöp Sepeti’ne taşınır. Özgün kaynak dosyaları korunur."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Trước tiên gỡ các phân công được quản lý, sau đó chuyển các tệp được quản lý vào Thùng rác. Các tệp nguồn gốc được giữ lại."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copot penetapan terkelola item ini terlebih dahulu, lalu pindahkan berkas terkelolanya ke Tong Sampah. Berkas sumber asli tetap disimpan."
+          }
+        }
+      }
+    },
+    "skills.removal.confirm" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Remove Skill"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移除 Skill"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "移除 Skill"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skill を削除"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skill 제거"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skill entfernen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Retirer le Skill"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Eliminar Skill"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Remover Skill"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rimuovi Skill"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Удалить Skill"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skill verwijderen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Usuń Skill"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Вилучити Skill"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skill’i Kaldır"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Xóa Skill"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hapus Skill"
+          }
+        }
+      }
+    },
+    "skills.removal.externalNotice" : {
+      "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Links created by other tools are kept, but may stop working after removal."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他工具创建的链接会保留，但移除后可能失效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "其他工具建立的連結會保留，但移除後可能失效。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "他のツールが作成したリンクは保持されますが、削除後に機能しなくなる場合があります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "다른 도구에서 만든 링크는 유지되지만 제거 후 작동하지 않을 수 있습니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Von anderen Tools erstellte Links bleiben erhalten, funktionieren nach dem Entfernen aber möglicherweise nicht mehr."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les liens créés par d’autres outils sont conservés, mais peuvent cesser de fonctionner après le retrait."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Los enlaces creados por otras herramientas se conservan, pero pueden dejar de funcionar después de la eliminación."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Os links criados por outras ferramentas são preservados, mas podem parar de funcionar após a remoção."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I collegamenti creati da altri strumenti vengono conservati, ma potrebbero non funzionare più dopo la rimozione."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ссылки, созданные другими инструментами, сохраняются, но после удаления могут перестать работать."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Koppelingen die door andere tools zijn gemaakt blijven behouden, maar werken mogelijk niet meer na verwijdering."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Łącza utworzone przez inne narzędzia zostaną zachowane, ale po usunięciu mogą przestać działać."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Посилання, створені іншими інструментами, зберігаються, але після вилучення можуть перестати працювати."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Diğer araçların oluşturduğu bağlantılar korunur ancak kaldırma sonrasında çalışmayabilir."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Các liên kết do công cụ khác tạo vẫn được giữ lại nhưng có thể ngừng hoạt động sau khi xóa."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tautan yang dibuat alat lain tetap disimpan, tetapi mungkin tidak berfungsi lagi setelah penghapusan."
+          }
+        }
+      }
+    },
     "skills.operation.error.planChanged" : {
       "comment" : "Skill 管理工作台；AI 初稿，待人工审核。",
       "extractionState" : "manual",

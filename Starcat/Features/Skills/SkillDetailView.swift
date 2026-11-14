@@ -92,6 +92,11 @@ struct SkillDetailView: View {
                 } else {
                     Text("skills.detail.source.unknown")
                 }
+                if item.managementKind == .managed, viewModel.libraryEnvironment != nil {
+                    Spacer()
+                    Button("skills.removal.title", role: .destructive) { remove(item.id) }
+                        .controlSize(.small)
+                }
             }
             .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
@@ -129,6 +134,18 @@ struct SkillDetailView: View {
                 Text(verbatim: revision).font(interfaceScale.font(.code))
             } else {
                 Text("skills.detail.version.unknown").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func remove(_ entryID: UUID) {
+        SkillReviewWindowController.present(titleKey: "skills.removal.title", size: NSSize(width: 640, height: 540)) { close in
+            if let dependencies {
+                SkillRemovalReviewSheet(viewModel: viewModel, entryID: entryID, close: close)
+                    .appHostEnvironment(dependencies)
+            } else {
+                SkillRemovalReviewSheet(viewModel: viewModel, entryID: entryID, close: close)
+                    .appLocaleEnvironment()
             }
         }
     }
