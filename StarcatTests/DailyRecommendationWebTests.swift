@@ -83,6 +83,7 @@ struct DailyRecommendationWebTests {
         #expect(item.language == nil)
         #expect(item.reason == String.l10n("recommendations.daily.reason"))
         #expect(item.reasonDetail == item.reason)
+        #expect(item.compactReason)
         #expect(!item.revealed)
     }
 
@@ -94,6 +95,16 @@ struct DailyRecommendationWebTests {
         #expect(item.reason == String.l10n("recommendations.daily.reasonCoStar"))
         #expect(item.reasonDetail == String.l10n("recommendations.daily.reasonCoStarDetail"))
         #expect(item.reason != item.reasonDetail)
+        #expect(!item.compactReason)
+    }
+
+    @Test("通用模型说明与未知理由不伪装成详细依据", arguments: [
+        ["基于自研推荐模型"], ["unknown"]
+    ])
+    func generalReasonUsesCompactPresentation(reasons: [String]) {
+        let item = DailyRecommendationWebSnapshot.Item(candidate(reasons: reasons), revealed: false)
+        #expect(item.compactReason)
+        #expect(!item.reasonDetail.isEmpty)
     }
 
     @Test("账号、数据库和新批次分别改变网页身份")

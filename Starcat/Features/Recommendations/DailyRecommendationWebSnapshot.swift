@@ -19,6 +19,7 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
         let forks: Int
         let reason: String
         let reasonDetail: String
+        let compactReason: Bool
         let revealed: Bool
 
         /// GitHub ID 按字符串过桥，避免 JavaScript Number 丢失 Int64 精度。
@@ -32,6 +33,8 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
             let basis = DailyRecommendationReason(reasons: item.reasons)
             reason = String.l10n(basis.localizationKey)
             reasonDetail = String.l10n(basis.detailLocalizationKey)
+            // 模型兜底和未知类型只有通用说明，不应占用暗示“详细个性化理由”的重型分区。
+            compactReason = basis == .model || basis == .unspecified
             self.revealed = revealed
         }
     }
