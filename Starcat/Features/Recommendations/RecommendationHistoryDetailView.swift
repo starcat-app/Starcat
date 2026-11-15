@@ -12,6 +12,9 @@ struct RecommendationHistoryDetailView: View {
     let entry: RecommendationHistoryEntry?
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.locale) private var locale
+    private var explanationIdentity: String {
+        "\(dependencies.database.currentUserId ?? 0)|\(dependencies.databaseScopeRevision)|\(entry?.id ?? 0)|\(locale.identifier)|\(dependencies.entitlementGate.isProUser)"
+    }
 
     var body: some View {
         if let entry, let item = entry.item {
@@ -19,6 +22,17 @@ struct RecommendationHistoryDetailView: View {
                 item: item.historyDiscoveryItem,
                 supplementalHeader: AnyView(historyHeader(entry, item: item))
             )
+            .task(id: explanationIdentity) {
+                guard let accountID = dependencies.database.currentUserId else { return }
+                await dependencies.dailyRecommendationExplanationStore.prepare(
+                    item: item, accountID: accountID, revision: dependencies.databaseScopeRevision,
+                    locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser
+                ) { input in
+                    try await dependencies.repoAIInsightService.generateRecommendationReason(
+                        input: input, outputLanguage: locale.identifier
+                    )
+                }
+            }
         } else if entry != nil {
             ContentUnavailableView("recommendations.history.unavailable", systemImage: "archivebox")
         } else {
@@ -43,6 +57,12 @@ struct RecommendationHistoryDetailView: View {
                 }
             }
             Text("recommendations.daily.reasonTitle").fontWeight(.semibold)
+            if let explanation = dependencies.dailyRecommendationExplanationStore.text(
+                for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser
+            ) {
+                Text("recommendations.daily.aiReasonTitle").font(.caption).foregroundStyle(.secondary)
+                Text(verbatim: explanation).fixedSize(horizontal: false, vertical: true)
+            }
             Text(verbatim: item.basicRecommendationReason)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
