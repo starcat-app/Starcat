@@ -129,7 +129,8 @@
 - [x] `git diff --check`、专题本地链接与清单完整性检查通过。
 - [x] `SidebarView`、`RepoSkillSelectionPane`、`RepoSkillDetailPane` 没有 diff；设置改动仅涉及语言候选行。
 - [ ] 人工视觉验收（需 dong4j 查看；当前无 GUI 操作授权）。
-- [x] 授权边界已落实：保留当前 worktree 与分支；2026-11-15 获准本地提交原实现基线与逐项性能修复，不合并 / 推送，未改 Changelog 或 `docs/功能实现总览.md`。
+- [x] 原实施与性能修复阶段的授权边界已落实：2026-11-15 获准本地提交原实现基线与逐项性能修复，当时保留 worktree 与分支、不合并 / 推送，未改 Changelog 或 `docs/功能实现总览.md`。
+- [x] 2026-11-16 按追加授权经 `fd3c66b7` 合入本地 dev，145 项集成回归与双渠道构建通过，功能 worktree 和分支已非强制清理；人工验收继续开放，详情见[性能修复 Checklist](性能与动画修复Checklist.md)的集成记录。
 
 ### 验证记录
 

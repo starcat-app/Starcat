@@ -1,13 +1,13 @@
 # 列表与详情动效性能修复 Checklist
 
-> 状态：本轮七项代码修复与自动化验证完成，每项修复已单独提交；实机流畅度待验收，专题保持开放。
+> 状态：七项代码修复、自动化验证及本地 dev 集成已完成，功能 worktree 和分支已清理；实机流畅度待验收，专题保持开放。
 > 授权：2026-11-15，dong4j 要求登记任务、逐项完成、每个修复单独提交。
-> 工作区：`Starcat-list-detail-motion` / `codex/list-detail-motion`，原始基线 `b91e22c1`。
+> 原开发工作区：`Starcat-list-detail-motion` / `codex/list-detail-motion`，原始基线 `b91e22c1`；后续在主工作区 `Starcat` / `dev` 验收。
 > 关联：[实施 Checklist](实施Checklist.md)、[优化方案](列表与详情动效优化方案与Checklist.md)、[动效规范](../../5-规范/UI-动效规范.md)。
 
 ## 范围与提交顺序
 
-原始专题实现已保存为可比较的基线 `86629936`，再按下表逐项核对和修复，每项修复与相应记录一起提交。此前独立的洞察图标修改不混入性能修复。只在本 worktree 工作，不合并 dev、不推送、不修改主进度总览或 Changelog。
+原始专题实现已保存为可比较的基线 `86629936`，再按下表逐项核对和修复，每项修复与相应记录一起提交。此前独立的洞察图标修改不混入性能修复。性能修复阶段只在该 worktree 工作，不合并 dev、不推送、不修改主进度总览或 Changelog；2026-11-16 dong4j 追加授权合入本地 dev 并清理，结果见下方集成记录。
 
 源码可证明多余重建、重复扫描或状态遗漏，但不能证明已经发生彩虹圈；没有线程采样或界面测量时不作该结论。主窗口最左侧分类导航与用户暂缓的全局筛选图标问题均不在本次修复范围。
 
@@ -70,7 +70,25 @@
 
 最终定向测试覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`。状态归属和业务契约由测试校验；帧率、主线程停顿、内存峰值及动画观感仍需上方人工验收与实际测量。
 
-七项修复的最终代码提交为 `b947b919`；本轮工作均保留在当前分支，没有合并或推送。构建所在 worktree 保留了此前独立的 `Starcat/Features/Home/SidebarItem.swift` 图标改动，该文件未混入性能修复提交。验证记录与实施清单措辞更新作为独立文档提交收尾，不关闭整个专题。
+七项修复的最终代码提交为 `b947b919`；性能修复阶段没有合并或推送。此前独立的 `Starcat/Features/Home/SidebarItem.swift` 图标改动未混入七个性能修复提交；验证记录与实施清单措辞更新由 `de07b6ce` 单独收尾。追加授权后的图标补交、集成与清理见下一节，专题不因合并而自动关闭。
+
+## 合入 dev 与本地清理
+
+授权与执行日期：2026-11-16。主工作区原为 `dev@2f59419c`，功能分支头为 `a0db1dd9`；合并提交为 `fd3c66b7`，后续实现与验收在主工作区继续。
+
+- [x] M01 · 提交范围核对：独立洞察图标补交为 `a0db1dd9`，专题原实现及 P01–P07 提交全部保留；没有夹带其他 worktree 的工作。
+- [x] M02 · 解决五处冲突：共享仓库行保留绘制层动画，探索详情同时保留当前快照回写与推荐反馈，Issues 保留相邻切换、滚动定位和编辑器逻辑；分支登记保留 dev 的现有记录。
+- [x] M03 · 验证集成结果：9 个 Suite、145 项定向测试通过，Direct 与 App Store 均完成构建和产物校验；未启动应用或操作桌面。
+- [x] M04 · 删除前检查：功能分支是 dev 祖先，`dev...codex/list-detail-motion` 为 `57 0`，`git cherry` 与三点 diff 为空；worktree 无未提交或未跟踪文件，Secrets 配置与主工作区一致，忽略文件无独有用户数据。
+- [x] M05 · 非强制清理：通过 `git worktree remove` 和 `git branch -d` 删除 `Starcat-list-detail-motion` 与 `codex/list-detail-motion`；保留其他 worktree，未推送或操作远端。
+
+| 集成验证 | 结果 | 日志 |
+|------|------|------|
+| `make test` 定向回归 | 9 个 Suite、145 项通过 | `/tmp/starcat-list-detail-motion-merge-tests.log` |
+| `make build-direct` | 构建与产物校验通过，build-only | `/tmp/starcat-list-detail-motion-merge-build-direct.log` |
+| `make build-appstore` | 构建与产物校验通过，build-only | `/tmp/starcat-list-detail-motion-merge-build-appstore.log` |
+
+本次定向回归覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`ReadmeWebViewTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`、`DailyRecommendationTests`、`RecommendationHistoryListTests`、`RepoIssuesViewModelTests`、`RepoIssuesWorkspaceViewModelTests`。这次结果与上方性能修复阶段的记录分开统计；人工验收项继续保持未勾选，不以合并或自动化结果替代。
 
 ## 修复与验证记录
 
