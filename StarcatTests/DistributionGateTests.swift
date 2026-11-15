@@ -16,9 +16,11 @@ struct DistributionGateTests {
     func appStoreBuildRejectsDirectOnlyFeatures() {
         let gate = DistributionGate(channel: .appStore)
 
-        #expect(gate.isAvailable(.localAutomation) == false)
-        #expect(throws: DistributionGateError.directOnly(feature: .localAutomation, current: .appStore)) {
-            try gate.requireDirect(.localAutomation)
+        for feature in ChannelFeature.allCases {
+            #expect(gate.isAvailable(feature) == false)
+            #expect(throws: DistributionGateError.directOnly(feature: feature, current: .appStore)) {
+                try gate.requireDirect(feature)
+            }
         }
     }
 
@@ -41,5 +43,6 @@ struct DistributionGateTests {
         #expect(gate.isAvailable(.deviceFlowLogin) == false)
         #expect(gate.isAvailable(.personalAccessTokenLogin) == false)
         #expect(gate.isAvailable(.externalAgentRuntime) == false)
+        #expect(gate.isAvailable(.skillManagement) == false)
     }
 }

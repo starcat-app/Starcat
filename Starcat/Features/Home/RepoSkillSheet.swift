@@ -16,6 +16,7 @@ struct RepoSkillSheet: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.openWindow) private var openWindow
     @State private var previewID = ""
     @State private var isPreviewExpanded = false
     @State private var isInspectorPresented = false
@@ -150,6 +151,15 @@ struct RepoSkillSheet: View {
                 .truncationMode(.middle)
                 .help(session.repo.fullName)
             Spacer(minLength: 12)
+            if DistributionChannel.current.isDirect, let preview {
+                Button("skills.import.addToLibrary") {
+                    try? SkillWorkspaceSceneCoordinator.shared.openRepositoryImport(.init(repo: session.repo, skill: preview)) { sceneID in
+                        openWindow(id: sceneID)
+                    }
+                }
+                .disabled(session.isInstalling || preview.installationIssue != nil)
+                .controlSize(.small)
+            }
             RepoSkillScanNotice(session: session)
             if let progress = session.scanProgressText {
                 Text(verbatim: progress)
