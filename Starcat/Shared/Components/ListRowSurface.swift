@@ -27,6 +27,11 @@ extension View {
     func nativeDetailTransition<Value: Equatable & Hashable>(value: Value) -> some View {
         modifier(NativeDetailTransition(value: value))
     }
+
+    /// 长列表、时间线和含读取任务的宿主只做一次淡化，不为动画复制或重置内容身份。
+    func stableDetailTransition<Value: Equatable>(value: Value) -> some View {
+        modifier(StableDetailTransition(value: value))
+    }
 }
 
 /// 背景与描边共用几何身份；文字、复选框、行尺寸及点击区域保持原位。
@@ -91,5 +96,21 @@ private struct NativeDetailTransition<Value: Equatable & Hashable>: ViewModifier
         }
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: value)
         .clipped()
+    }
+}
+
+/// 直接动画现有绘制层，保留原生滚动容器与子视图状态。
+/// 大型可变内容不保留第二棵离场树，也不对整段 Markdown / Trace 施加模糊。
+private struct StableDetailTransition<Value: Equatable>: ViewModifier {
+    let value: Value
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.keyframeAnimator(initialValue: 1.0, trigger: value) { view, opacity in
+            view.opacity(opacity)
+        } keyframes: { _ in
+            MoveKeyframe(reduceMotion ? 0.85 : 0.7)
+            LinearKeyframe(1.0, duration: reduceMotion ? 0.12 : 0.18)
+        }
     }
 }

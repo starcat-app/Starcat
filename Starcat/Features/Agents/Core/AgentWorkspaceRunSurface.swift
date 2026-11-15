@@ -516,14 +516,15 @@ struct AgentWorkspaceRunSurface: View {
 
     private var runTimeline: some View {
         ZStack {
+            // 时间线已有 runIdentity 的折叠与跟随重置，不用 .id 再重建整棵消息树。
+            AgentMessageTimelineView(viewModel: viewModel)
+                .stableDetailTransition(value: "\(viewModel.selectedAgentID)|\(viewModel.selectedHistoryRunID ?? "")")
+                .opacity(viewModel.loadingHistoryRunID == nil ? 1 : 0)
+                .allowsHitTesting(viewModel.loadingHistoryRunID == nil)
+                .accessibilityHidden(viewModel.loadingHistoryRunID != nil)
             if viewModel.loadingHistoryRunID != nil {
                 RepoSkillSkeletonView(layout: .manifest)
                     .transition(.opacity)
-            } else {
-                AgentMessageTimelineView(viewModel: viewModel)
-                    .allowsHitTesting(viewModel.loadingHistoryRunID == nil)
-                    .nativeDetailTransition(value: "\(viewModel.selectedAgentID)|\(viewModel.selectedHistoryRunID ?? "")")
-                    .detailContentTransition()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

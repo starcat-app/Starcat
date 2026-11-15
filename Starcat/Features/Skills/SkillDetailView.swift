@@ -44,7 +44,8 @@ struct SkillDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
-                .nativeDetailTransition(value: item.id)
+                // 条目自己的内容仍按 item.id 重置，外层滚动宿主无需再复制一次。
+                .stableDetailTransition(value: item.id)
             }
             .padding(20)
         } else if viewModel.selectedIDs.count > 1 {

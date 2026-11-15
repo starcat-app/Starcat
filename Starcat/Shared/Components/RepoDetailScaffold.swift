@@ -865,8 +865,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 ) {
                     trailingActionsView
                 }
-                // 只交接身份与统计展示；Notes、Tags、Scaffold 和正文宿主继续保活。
-                .nativeDetailTransition(value: repo.fullName)
+                // 标题内部也有按 repo 加载的统计任务，淡化时保留其身份，避免重复挂载。
+                .stableDetailTransition(value: repo.fullName)
                 .background(WorkspaceSceneWindowReader(reference: workspaceWindow, minimumContentSize: nil))
                 heroExtension_()
                 // v1.5（2026-06-10）：RepoLocalSections 内置渲染,跟随面板整段折叠。

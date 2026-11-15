@@ -102,7 +102,7 @@ struct GitHubNotificationDetailView: View {
         VStack(spacing: 0) {
             if !isComposerExpanded {
                 conversationScroll(item)
-                    .nativeDetailTransition(value: item.id)
+                    .stableDetailTransition(value: item.id)
             }
             if let payload = item.notification,
                GitHubNotificationMapper.canReply(subjectType: payload.subjectType, number: payload.subjectNumber) {

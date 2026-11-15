@@ -326,7 +326,8 @@ private struct SkillLibraryList: View {
                     }
                 }
                 .listStyle(.inset)
-                .nativeDetailTransition(value: viewModel.navigation)
+                // 原生多选 List 保留身份，避免每次分类切换重建全部行与滚动宿主。
+                .stableDetailTransition(value: viewModel.navigation)
             }
         }
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.items.isEmpty)

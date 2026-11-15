@@ -1610,7 +1610,7 @@ struct RepoAIWindowContentView: View {
                         }
                         .padding(.vertical, 16)
                     }
-                    .nativeDetailTransition(value: chat.currentSessionId)
+                    .stableDetailTransition(value: chat.currentSessionId)
                     .background(Color.clear)
                     .onChange(of: chat.messages.count) { _, _ in
                         scheduleChatTailScroll(proxy: proxy)

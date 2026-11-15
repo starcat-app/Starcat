@@ -1735,7 +1735,7 @@ private struct KnowledgeRAGBrowserView: View {
                         }
                     }
                 }
-                .nativeDetailTransition(value: candidate.repo.id)
+                .stableDetailTransition(value: candidate.repo.id)
             } else {
                 // 与主窗口详情列共享同一套响应式示意图，窗口缩放时不引入独立图片资产。
                 RepoDetailNoSelectionPlaceholder()

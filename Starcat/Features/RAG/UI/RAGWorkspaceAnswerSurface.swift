@@ -102,8 +102,7 @@ struct RAGWorkspaceAnswerSurface: View {
     var conversationContent: some View {
         let isLoading = viewModel.isConversationLoading
         return ZStack {
-            // 身份变化时只让旧展示树短暂退场；VM 仍立即清空上一会话并隔离流式结果。
-            // 新正文先在 handoff 骨架下完成布局，不能为动效延迟真正的会话选择。
+            // VM 立即切换会话，原有骨架负责正文安装交接；不为动效再复制一棵长消息树。
             Group {
                 if !isLoading {
                     // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
@@ -114,8 +113,7 @@ struct RAGWorkspaceAnswerSurface: View {
                     }
                 }
             }
-            .id(viewModel.selectedConversationID)
-            .detailContentTransition()
+            .stableDetailTransition(value: viewModel.selectedConversationID)
             .allowsHitTesting(!isLoading)
             .accessibilityHidden(isLoading)
 
@@ -126,7 +124,6 @@ struct RAGWorkspaceAnswerSurface: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.selectedConversationID)
         .clipped()
         // `task(id:)` 会在加载状态再次变化或 View 消失时自动取消旧任务，连续切换会话时
         // 上一会话的延迟淡出因此不能误删当前会话的骨架。
