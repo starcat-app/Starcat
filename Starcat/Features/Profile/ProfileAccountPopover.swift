@@ -94,10 +94,6 @@ struct ProfileAccountPopover: View {
             } else {
                 ProfileOrganizationsView(organizations: organizations)
             }
-            Text("profile.extras.organizations.access")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             if result?.accessLimited == true || service.failures.contains(.organizations) {
                 Text("profile.extras.organizations.limited")
                     .font(.caption)
@@ -196,14 +192,19 @@ struct ProfileAccountPopover: View {
                 Button("sidebar.account.refresh", action: onRefresh)
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .disabled(service.isLoading)
                 Spacer(minLength: 0)
-            }
-            if let lastRefreshed {
-                Text(verbatim: lastRefreshed)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                // 时间留在操作行尾，长译文只截断辅助信息，不增加操作区高度。
+                if let lastRefreshed {
+                    Text(verbatim: lastRefreshed)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(lastRefreshed)
+                }
             }
             Button(role: .destructive, action: onSignOut) {
                 Label("auth.signOut", systemImage: "rectangle.portrait.and.arrow.right")
