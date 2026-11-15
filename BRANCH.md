@@ -92,8 +92,11 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 位于 `../Starcat-daily-recommendation-cards/supports/starcat-recommend-api`，
 基线为该独立仓 `dev@1ad1c21`。2026-11-15 dong4j 单独授权部署，聚合仓
 `5fde215` 锁定推荐仓 `02b748e`，已发布为既有 `starcat-api` release 45；
-来源证据、游标分页与原排序线上验证通过，活动模型不变。两专项分支仍待验收，
-未推送源码、未合回各自 dev；该次后端部署未合并或发布 App。
+来源证据、游标分页与原排序线上验证通过，活动模型不变。2026-11-15 推荐仓
+经 `a0a8f45` 合入本地 `dev`，聚合仓 `5fde215` 已在其本地 `dev`。
+dong4j 授权清理后，确认推荐仓专项分支是 `dev` 祖先、独有提交为 0，
+worktree 干净且无独有本地数据，以非强制方式删除后端专项 worktree 和分支；
+本次未推送、重新部署或更换活动模型。
 
 2026-08-29 已按 dong4j 授权清理：Starcat `../Starcat-collection-pipeline` worktree 与各仓需求分支均已删除。独立仓库仍各自保留 `dev` / `main`，不由主仓库管理其 Git 历史。
 
@@ -101,7 +104,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
-| `codex/daily-recommendation-cards` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-15 dong4j 授权合并；集成提交 `5ffd0547` 包含每日推荐卡片、历史、真实来源依据及 Pro 理由。合并前 199 项定向测试、17 个测试套件与双渠道构建通过；本次未做界面及真实 LLM 验收，动效推广另行处理，未推送。 |
+| `codex/daily-recommendation-cards` | 已删除本地分支及 worktree。 | 2026-11-15 集成提交 `5ffd0547` 经 `d059f933` 合入本地 `dev`，包含每日推荐卡片、历史、真实来源依据及 Pro 理由；199 项定向测试、17 个测试套件与双渠道构建通过。dong4j 授权清理前确认分支是 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空，worktree 干净且 Secrets 配置与主工作区一致；先清理嵌套推荐后端 worktree，再以非强制方式删除 App worktree 和分支。未操作远端，界面与真实 LLM 验收及动效推广另行处理。 |
 | `codex/repo-workspace-unification` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-15 dong4j 授权合并；基于 `dev@b961902b` 的专项提交 `9a81453a` 覆盖仓库弹窗、文件阅读与笔记标识。合并前 160 项定向测试及双渠道 build-only 通过；人工界面与 17 语言译文审核仍待完成，未推送。 |
 | `codex/skill-management` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 确认目前可用并授权合并、清理；分支头 `3162ca5d` 的 22 个提交经 `4712a2b6` 合入本地 `dev`，后续直接在主工作区优化。204 项、23 Suite 集成回归、双渠道构建与 121 key × 17 语言编译资源校验通过。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置一致；先把 Direct 切换到主工作区产物，再以非强制 `git worktree remove` 和 `git branch -d` 清理。14 篇文档完整保留，完整人工验收与译文审核继续开放，本次未操作远端。 |
 | `codex/shared-selection-motion` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 授权合并与清理；分支头 `487fefde` 的设置页、Skills 动效、骨架加载及默认 UI 规范经 `e8a5e7bd` 合入 `dev`，详情页冲突处理保留既有 Skill 翻译。50 项定向测试与双渠道 build-only 通过，本次未做 GUI 复验。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 清理 `../Starcat-shared-selection-motion` 及本地分支，本次未操作远端。 |
