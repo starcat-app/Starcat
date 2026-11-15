@@ -166,7 +166,7 @@ private struct SkillLibrarySidebar: View {
 
             List(selection: $viewModel.navigation) {
                 Section("skills.workspace.library") {
-                    ForEach(SkillWorkspaceFilter.allCases) { filter in
+                    ForEach(Array(SkillWorkspaceFilter.allCases.enumerated()), id: \.element.id) { index, filter in
                         HStack {
                             Label(LocalizedStringKey(filter.titleKey), systemImage: filter.systemImage)
                             Spacer(minLength: 8)
@@ -175,7 +175,7 @@ private struct SkillLibrarySidebar: View {
                                 .foregroundStyle(.secondary)
                         }
                         .listRowSurface(
-                            index: SkillWorkspaceFilter.allCases.firstIndex(of: filter) ?? 0,
+                            index: index,
                             isSelected: viewModel.navigation == .library(filter),
                             selectionNamespace: selectionSpace
                         )
@@ -185,9 +185,9 @@ private struct SkillLibrarySidebar: View {
                 }
                 if !viewModel.agentNames.isEmpty {
                     Section("skills.workspace.agents") {
-                        ForEach(viewModel.agentNames, id: \.self) { name in
+                        ForEach(Array(viewModel.agentNames.enumerated()), id: \.element) { index, name in
                             Label(name, systemImage: "terminal")
-                                .listRowSurface(index: viewModel.agentNames.firstIndex(of: name) ?? 0,
+                                .listRowSurface(index: index,
                                                 isSelected: viewModel.navigation == .agent(name),
                                                 selectionNamespace: selectionSpace)
                                 .tag(SkillWorkspaceNavigation.agent(name))
@@ -197,11 +197,11 @@ private struct SkillLibrarySidebar: View {
                 }
                 if !viewModel.sources.isEmpty {
                     Section("skills.workspace.sources") {
-                        ForEach(viewModel.sources, id: \.self) { source in
+                        ForEach(Array(viewModel.sources.enumerated()), id: \.element) { index, source in
                             Label(source, systemImage: "arrow.triangle.branch")
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                                .listRowSurface(index: viewModel.sources.firstIndex(of: source) ?? 0,
+                                .listRowSurface(index: index,
                                                 isSelected: viewModel.navigation == .source(source),
                                                 selectionNamespace: selectionSpace)
                                 .tag(SkillWorkspaceNavigation.source(source))

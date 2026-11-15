@@ -315,8 +315,8 @@ struct AgentRunInspectorView: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 inspectorGroup(title: String.l10n("agent.workspace.inspector.artifacts.list"), icon: "square.stack.3d.up") {
-                    ForEach(viewModel.artifacts) { artifact in
-                        artifactRow(artifact)
+                    ForEach(Array(viewModel.artifacts.enumerated()), id: \.element.id) { index, artifact in
+                        artifactRow(artifact, rowIndex: index)
                     }
                 }
 
@@ -552,7 +552,7 @@ struct AgentRunInspectorView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func artifactRow(_ artifact: AgentArtifact) -> some View {
+    private func artifactRow(_ artifact: AgentArtifact, rowIndex: Int) -> some View {
         Button {
             viewModel.selectArtifact(artifact.id)
         } label: {
@@ -578,7 +578,7 @@ struct AgentRunInspectorView: View {
             .padding(.vertical, 5)
             .padding(.horizontal, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .listRowSurface(index: viewModel.artifacts.firstIndex(where: { $0.id == artifact.id }) ?? 0,
+            .listRowSurface(index: rowIndex,
                             isSelected: viewModel.selectedArtifact?.id == artifact.id,
                             selectionNamespace: artifactSelectionSpace)
             .contentShape(Rectangle())

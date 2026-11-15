@@ -230,11 +230,11 @@ struct AgentWorkspaceView: View {
                 .padding(11)
                 .background(Color(nsColor: .separatorColor).opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
             } else {
-                ForEach(AgentHistoryPresentation.visibleRuns(
+                ForEach(Array(AgentHistoryPresentation.visibleRuns(
                     viewModel.historyRuns,
                     isExpanded: isHistoryExpanded
-                )) { run in
-                    historyRunButton(run)
+                ).enumerated()), id: \.element.id) { index, run in
+                    historyRunButton(run, rowIndex: index)
                 }
 
                 if viewModel.historyRuns.count > AgentHistoryPresentation.collapsedLimit {
@@ -274,7 +274,7 @@ struct AgentWorkspaceView: View {
         )
     }
 
-    private func historyRunButton(_ run: AgentRunRecord) -> some View {
+    private func historyRunButton(_ run: AgentRunRecord, rowIndex: Int) -> some View {
         let isSelected = (viewModel.loadingHistoryRunID ?? viewModel.selectedHistoryRunID) == run.id
         return Button {
             Task {
@@ -300,7 +300,7 @@ struct AgentWorkspaceView: View {
             .padding(11)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .listRowSurface(index: viewModel.historyRuns.firstIndex(where: { $0.id == run.id }) ?? 0,
+            .listRowSurface(index: rowIndex,
                             isSelected: isSelected, selectionNamespace: historySelectionSpace)
         }
         .buttonStyle(.plain)

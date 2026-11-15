@@ -158,8 +158,8 @@ struct TagTaxonomyBootstrapView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(model.candidates) { candidate in
-                            candidateRow(candidate)
+                        ForEach(Array(model.candidates.enumerated()), id: \.element.id) { index, candidate in
+                            candidateRow(candidate, rowIndex: index)
                         }
                     }
                 }
@@ -172,7 +172,7 @@ struct TagTaxonomyBootstrapView: View {
         .overlay(panelBorder)
     }
 
-    private func candidateRow(_ candidate: TagTaxonomyCandidate) -> some View {
+    private func candidateRow(_ candidate: TagTaxonomyCandidate, rowIndex: Int) -> some View {
         let isSelected = model.selectedCandidateIDs.contains(candidate.id)
         let isFocused = model.focusedCandidateID == candidate.id
 
@@ -223,7 +223,7 @@ struct TagTaxonomyBootstrapView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 36)
-        .listRowSurface(index: model.candidates.firstIndex(where: { $0.id == candidate.id }) ?? 0,
+        .listRowSurface(index: rowIndex,
                         isSelected: isFocused, selectionNamespace: selectionSpace)
         .contentShape(Rectangle())
         .onTapGesture { model.focusedCandidateID = candidate.id }

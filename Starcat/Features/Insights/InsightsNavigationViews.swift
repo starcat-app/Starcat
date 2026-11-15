@@ -43,15 +43,16 @@ struct InsightsListView: View {
             ZStack(alignment: .topLeading) {
                 List(selection: $selection) {
                     Section("insights.list.section.analysis") {
-                        ForEach(topic.contentSelections) { item in
-                            row(item, count: nil)
+                        ForEach(Array(topic.contentSelections.enumerated()), id: \.element.id) { index, item in
+                            row(item, count: nil, rowIndex: index)
                         }
                     }
 
                     if !attentionSelections.isEmpty {
                         Section("insights.list.section.attention") {
-                            ForEach(attentionSelections) { item in
-                                row(item, count: count(for: item))
+                            ForEach(Array(attentionSelections.enumerated()), id: \.element.id) { index, item in
+                                // 第二组延续完整展示顺序，行身份仍使用业务 ID。
+                                row(item, count: count(for: item), rowIndex: topic.contentSelections.count + index)
                             }
                         }
                     }
@@ -104,7 +105,7 @@ struct InsightsListView: View {
     }
 
     @ViewBuilder
-    private func row(_ item: InsightsSelection, count: Int?) -> some View {
+    private func row(_ item: InsightsSelection, count: Int?, rowIndex: Int) -> some View {
         HStack(spacing: 10) {
             BusinessIcon(source: item.iconSource, pointSize: (item.iconSource.isAsset ? 16 : 13) * interfaceScale.multiplier)
                 .foregroundStyle(InsightsColor.resolve(item.tintName))
@@ -123,7 +124,7 @@ struct InsightsListView: View {
             }
         }
         .padding(.vertical, 3)
-        .listRowSurface(index: topic.selections(for: snapshot.scope).firstIndex(of: item) ?? 0,
+        .listRowSurface(index: rowIndex,
                         isSelected: selection == item, selectionNamespace: selectionSpace)
         .tag(item)
     }

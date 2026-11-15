@@ -17,7 +17,7 @@
 - [x] P02 · 保留大型展示宿主：Skill 原生多选 List、Agent / RAG / Repo AI 时间线、知识库 / 通知 ScrollView 及含读取任务的 Repo 标题改为稳定身份的轻量淡化；保留原有滚动与加载交接。
 - [x] P03 · 修复 README 交接终态：任务身份区分等待、当前文档与终态；核对缓存回切与 ready / failure 回调归属，空结果、登录提示及错误能够触发骨架收口。
 - [x] P04 · 修复 Skill 文件预览中断：快速 A → B → A 时先恢复保留的当前文件；刷新失败保留正文和错误反馈，取消 / 过期结果仍由原请求身份守门。
-- [ ] P05 · 消除新增行索引重复扫描：核对 Skill 来源 / Agent 名称、Agent 历史 / 产物及洞察行的 `firstIndex`，传递展示索引；保持稳定业务 ID，不引入派生状态缓存。
+- [x] P05 · 消除新增行索引重复扫描：Skill 分类 / 来源 / Agent 名称、Agent 历史 / 产物、洞察及标签候选共七处行渲染改为传递展示索引；保持稳定业务 ID，不引入派生状态缓存。
 - [ ] P06 · 核对骨架与其他交接：检查新增骨架时钟数量、停止边界、原生页签叠加、业务任务归属；只对可确认问题做最小修复，保留既有已完成路径。
 
 每项记录填写：触发条件、源码证据、修改方式、验证结果与提交。仅已验证适用项打勾；确认不需修改的候选记录原因。
@@ -55,3 +55,9 @@
 触发：B 的文件切换把 A 设为透明但尚未清空快照，此时回切 A 被视为同文件刷新；原逻辑只有读取成功才恢复可见，刷新失败后正文和错误一起留在透明层。将已有文件、正文、错误与可见性收为局部 `PreviewPresentation` 快照，开始同文件刷新时先恢复保留正文，不依赖成功回调。不同文件仍先退场再更新快照；读取并行、取消检查、请求身份与 loading 收口保持原有约束。
 
 新增 `SkillPreviewHandoffTests` 覆盖中断退场后回切、同文件刷新、不同文件快照和首载边界。通过 `make test` 运行该 Suite、`SkillContentReaderTests`、`SkillWorkspaceTests`、`SkillWorkspaceSnapshotTests`：4 个 Suite、26 个测试通过。测试验证展示快照和真实文件读取，不冒充实际快速点击的视觉验收。
+
+### P05 · 展示索引只枚举一次
+
+触发：新增行底色在每行调用来源集合的 `firstIndex`，整批重算时反复线性扫描；Skill 来源 / Agent 名称的派生集合也被每行重新读取。改为在当前 `ForEach` 上枚举，并把行号传给绘制函数，消除七处新增扫描。`ForEach` 仍使用原业务 ID；洞察第二组接续第一组的展示索引，历史折叠沿用原有前缀顺序。标签编辑真正修改候选时的 `firstIndex` 保留，不扩大到业务重构。
+
+通过 `make test` 运行 `AgentWorkspaceViewModelTests`、`AgentRunInspectorPresentationTests`、`InsightsModelsTests`、`InsightsDrillDownTests`、`SkillWorkspaceTests`、`TagTaxonomyBootstrapServiceTests`：6 个 Suite、58 个测试通过。本项没有新增仅复刻枚举实现的测试；实际行配色、懒加载滑动与流畅度仍待人工验收。
