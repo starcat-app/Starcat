@@ -41,26 +41,69 @@ struct RepoFileBrowserTarget: Equatable, Sendable {
         self.isPrivate = isPrivate
         self.ownerAvatar = ownerAvatar
     }
+
+    /// 顶栏三种入口使用相同仓库快照，不为简介和头像再发网络请求。
+    init(repo: Repo) {
+        self.init(owner: repo.owner, name: repo.name, fullName: repo.fullName,
+                  ref: repo.defaultBranch ?? "HEAD", summary: repo.description,
+                  isPrivate: repo.isPrivate, ownerAvatar: repo.ownerAvatar)
+    }
 }
 
-/// 文件树行、预览 header、右侧详情三处共用的「文件名 → SF Symbol」映射。
-///
-/// 为什么只做纯 Source 映射：不渲染视图，单测直接断言 iconSource；
-/// 图标颜色统一交给调用方维持 `.secondary` 单色，符合 UI 颜色规范。
-/// macOS 的 `pathExtension` 会把 `.gitignore` 这类 dotfile 判成无扩展名，
-/// 所以手动按最后一个 `.` 切，点号在最前时整名当作扩展名 key。
+/// 三处共用的文件身份映射：特殊名称、复合后缀、普通后缀、通用类型依次匹配。
+/// 技术标识使用已内置的 Devicon；文档语义使用系统符号，不下载或执行仓库资源。
 enum RepoFileTypeIcon {
 
     static func iconSource(forFileName name: String) -> BusinessIcon.Source {
         let lowered = name.lowercased()
+        let documentExtensions: Set<String> = ["md", "markdown", "txt", "rst", "adoc"]
+        let parts = lowered.split(separator: ".")
+        let isDocumentName = !lowered.contains(".") || documentExtensions.contains(String(parts.last ?? ""))
+        if isDocumentName {
+            let base = String(parts.first ?? "")
+            if base == "readme" { return .business(.readme) }
+            if base == "license" || base == "licence" { return .business(.license) }
+            if base == "changelog" || base == "changes" { return .business(.recentUpdate) }
+            if base == "todo" { return .system("checklist") }
+        }
+        if [".gitignore", ".gitattributes", ".gitmodules", ".gitkeep"].contains(lowered) {
+            return .asset("git")
+        }
+        if ["makefile", "gnumakefile"].contains(lowered) { return .system("hammer.fill") }
+        if lowered == "dockerfile" || lowered == ".dockerignore" {
+            return .asset("docker")
+        }
+        if lowered == "gradlew" || lowered == "gradle.properties" { return .asset("gradle") }
+        if [".tool-versions", ".editorconfig", ".env"].contains(lowered) { return .business(.general) }
+        if ["package.json", "package-lock.json", ".npmrc"].contains(lowered) { return .asset("npm") }
+        if lowered == "yarn.lock" { return .asset("yarn") }
+        if lowered.hasSuffix(".gradle.kts") { return .asset("kotlin") }
+        if lowered.hasSuffix(".gradle") { return .asset("gradle") }
         if let dot = lowered.lastIndex(of: ".") {
             let ext = lowered[lowered.index(after: dot)...]
+            if let asset = technologyAssets[String(ext)] { return .asset(asset) }
             if let symbol = byExtension[String(ext)] { return symbol }
         }
         return byBareName[lowered] ?? .business(.file)
     }
 
     private static let code = BusinessIcon.Source.business(.codeContext)
+
+    /// 仅引用本地已有资产；原色渲染只在文件类型视图启用，不影响全局 BusinessIcon。
+    static let technologyAssets: [String: String] = [
+        "swift": "swift", "py": "python", "pyi": "python", "js": "javascript",
+        "mjs": "javascript", "cjs": "javascript", "ts": "typescript",
+        "jsx": "react", "tsx": "react", "go": "go", "rs": "rust",
+        "rb": "ruby", "php": "php", "java": "java", "properties": "java",
+        "kt": "kotlin", "kts": "kotlin", "c": "c", "h": "c",
+        "cpp": "cplusplus", "hpp": "cplusplus", "cc": "cplusplus",
+        "cs": "csharp", "sh": "bash", "bash": "bash", "zsh": "bash",
+        "html": "html5", "css": "css3", "scss": "sass",
+        "vue": "vuejs", "svelte": "svelte", "json": "json", "yaml": "yaml",
+        "yml": "yaml", "md": "markdown", "markdown": "markdown",
+        "sql": "azuresqldatabase", "dart": "dart", "lua": "lua",
+        "bat": "windows11", "cmd": "windows11", "ps1": "powershell",
+    ]
 
     private static let byExtension: [String: BusinessIcon.Source] = [
         // 文档

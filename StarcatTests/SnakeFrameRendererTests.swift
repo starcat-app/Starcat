@@ -75,6 +75,39 @@ struct SnakeFrameRendererTests {
     }
 
     /// 比较最终 RGBA 字节，而不是只比较 CGImage 身份或尺寸。
+    @Test("玩法首帧就绪后才推进版本，切回关闭时立即提供静态草坪")
+    @MainActor
+    func styleChangesPublishReadyFrames() async throws {
+        let service = SnakeRenderService()
+        defer { service.stop() }
+        service.configure(animator: nil, payload: nil, colorScheme: .dark)
+        let staticRevision = service.readyRevision
+        #expect(staticRevision > 0)
+        #expect(service.frameImage != nil)
+
+        let animator = try #require(SnakeAnimatorFactory.make(style: .zigzag, weeks: nil))
+        service.configure(animator: animator, payload: nil, colorScheme: .dark)
+        #expect(service.readyRevision == staticRevision, "后台首帧返回前，旧图片不能充当新玩法就绪")
+
+        // 等真实渲染结果；截止时间只防测试挂起，不参与产品动画的时序。
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while service.readyRevision == staticRevision, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(service.readyRevision > staticRevision)
+        #expect(service.frameImage != nil)
+
+        let animatedRevision = service.readyRevision
+        service.configure(animator: nil, payload: nil, colorScheme: .light)
+        #expect(service.readyRevision > animatedRevision)
+        let expectedGrid = try #require(SnakeFrameRenderer.renderBaseGrid(
+            payload: nil,
+            colorScheme: .light
+        ))
+        let displayedGrid = try #require(service.frameImage)
+        #expect(pixelData(of: displayedGrid) == pixelData(of: expectedGrid))
+    }
+
     private func pixelData(of image: CGImage) -> Data? {
         image.dataProvider?.data as Data?
     }

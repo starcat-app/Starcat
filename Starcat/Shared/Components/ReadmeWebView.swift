@@ -141,6 +141,10 @@ struct ReadmeWebView: View {
 
     /// 当前导航完成后回传实际文档身份，供阅读区衔接淡入；HTML 准备好不代表 WebKit 已替换旧 DOM。
     var onDocumentReady: (String) -> Void = { _ in }
+    /// 独立文件阅读器可接管错误并切回源码；默认不改变 README 和 Skills 的行为。
+    var onDocumentFailed: (String) -> Void = { _ in }
+    var registersFindShortcut: Bool = true
+    var allowsSameDocumentAnchors: Bool = false
 
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
@@ -168,6 +172,8 @@ struct ReadmeWebView: View {
             starHistoryRenderState: starHistoryRenderState,
             onApproachingBottom: onApproachingBottom,
             onDocumentReady: onDocumentReady,
+            onDocumentFailed: onDocumentFailed,
+            allowsSameDocumentAnchors: allowsSameDocumentAnchors,
             openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
@@ -218,9 +224,19 @@ struct ReadmeWebView: View {
         .onChange(of: readmeFindCommandIdentity) { _, _ in
             hideFindBar()
         }
-        .starcatReadmeFindCommand(identity: readmeFindCommandIdentity) {
+        .starcatReadmeFindCommand(identity: readmeFindCommandIdentity, isEnabled: registersFindShortcut) {
             showFindBar()
         }
+    }
+
+    /// 只允许当前页内部锚点留在阅读器，其他仓库文件和外链继续交给浏览器。
+    static func isSameDocumentAnchor(_ url: URL, currentURL: URL?) -> Bool {
+        guard url.fragment != nil, let currentURL,
+              var requested = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              var current = URLComponents(url: currentURL, resolvingAgainstBaseURL: true) else { return false }
+        requested.fragment = nil
+        current.fragment = nil
+        return requested == current
     }
 
     private func decreaseFontSize() {
@@ -337,6 +353,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
     let starHistoryRenderState: ReadmeStarHistoryRenderState
     var onApproachingBottom: () -> Void
     var onDocumentReady: (String) -> Void
+    var onDocumentFailed: (String) -> Void
+    var allowsSameDocumentAnchors: Bool
     var openRepositoryMarkdownInApp: Bool
     var markdownLinkRepositoryOwner: String?
     var markdownLinkRepositoryName: String?
@@ -379,6 +397,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.onApproachingBottom = onApproachingBottom
         context.coordinator.onDocumentReady = onDocumentReady
+        context.coordinator.onDocumentFailed = onDocumentFailed
+        context.coordinator.allowsSameDocumentAnchors = allowsSameDocumentAnchors
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -400,6 +420,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         context.coordinator.onTranslationSourceChange = onTranslationSourceChange
         context.coordinator.onApproachingBottom = onApproachingBottom
         context.coordinator.onDocumentReady = onDocumentReady
+        context.coordinator.onDocumentFailed = onDocumentFailed
+        context.coordinator.allowsSameDocumentAnchors = allowsSameDocumentAnchors
         context.coordinator.openRepositoryMarkdownInApp = openRepositoryMarkdownInApp
         context.coordinator.markdownLinkRepositoryOwner = markdownLinkRepositoryOwner
         context.coordinator.markdownLinkRepositoryName = markdownLinkRepositoryName
@@ -564,6 +586,8 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
         var onApproachingBottom: () -> Void = {}
         var onDocumentReady: (String) -> Void = { _ in }
+        var onDocumentFailed: (String) -> Void = { _ in }
+        var allowsSameDocumentAnchors = false
         var onFindResult: (Bool?) -> Void = { _ in }
         var openRepositoryMarkdownInApp = false
         var markdownLinkRepositoryOwner: String?
@@ -1797,6 +1821,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             // 触发的主框架首次导航（url == baseURL，navigationType == .other）也被 cancel，
             // WebView 直接白屏。修复后改为「除 linkActivated 外有条件允许」。
             if navigationAction.navigationType == .linkActivated {
+                if allowsSameDocumentAnchors, ReadmeWebView.isSameDocumentAnchor(url, currentURL: webView.url) {
+                    decisionHandler(.allow)
+                    return
+                }
                 if openRepositoryMarkdownIfNeeded(
                     url: url,
                     modifierFlags: navigationAction.modifierFlags
@@ -1868,16 +1896,26 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             diagnosticOperation?.finish(.failed, error: error, impact: .blocked, summary: .readmeUnavailable)
             AppLog.ui.error("ReadmeWebView didFail: \(error.localizedDescription, privacy: .public)")
+            reportDocumentFailure(navigation, error: error)
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             diagnosticOperation?.finish(.failed, error: error, impact: .blocked, summary: .readmeUnavailable)
             AppLog.ui.error("ReadmeWebView didFailProvisional: \(error.localizedDescription, privacy: .public)")
+            reportDocumentFailure(navigation, error: error)
+        }
+
+        /// 切换文档会取消旧导航，该取消不能把当前文档误报成加载失败。
+        private func reportDocumentFailure(_ navigation: WKNavigation?, error: Error) {
+            guard (error as NSError).code != NSURLErrorCancelled,
+                  navigation === documentNavigation, let documentID = lastLoadedKey?.documentID else { return }
+            onDocumentFailed(documentID)
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
             guard webView.window != nil else { return }
             let diagnostic = DiagnosticOperation(category: "readme", name: "contentProcessTerminated")
             diagnostic.finish(.failed, impact: .blocked, summary: .readmeUnavailable)
+            if let documentID = lastLoadedKey?.documentID { onDocumentFailed(documentID) }
         }
     }
 }

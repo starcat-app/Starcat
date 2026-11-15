@@ -280,11 +280,25 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             return
         }
         ensureRepoIssuesVMIfNeeded()
-        showsIssuesWorkspace = true
+        guard let issuesVM = repoIssuesVM else { return }
+        issuesWindow = RepoWorkspaceWindowController.present(
+            identifier: "issues", title: repo.fullName,
+            parent: workspaceWindow.window, dependencies: dependencies
+        ) { close in
+            RepoIssuesWorkspaceView(
+                repo: repo, listViewModel: issuesVM,
+                inbox: dependencies.githubNotificationInboxService,
+                threadRepository: dependencies.githubNotificationThreadRepository,
+                apiClient: dependencies.apiClient,
+                aiService: dependencies.repoAIInsightService,
+                onClose: close
+            )
+        }
     }
 
     /// Issues 工作台（左列表 + 右详情/新建 大模态）展示状态（`showsIssuesEntry` 开启时入口才可见）。
-    @State private var showsIssuesWorkspace = false
+    @State private var workspaceWindow = WorkspaceSceneWindowReference()
+    @State private var issuesWindow: RepoWorkspaceWindowController?
     /// Issues 工作台数据层。挂载时预创建（`.task`，Environment 在 task 阶段可靠），
     /// 跨窗口开关保活，切换仓库由 `prepare(owner:repo:)` 复位。
     /// 为什么不能等首次点击再创建：VM 写入与 popover/sheet 内容求值同事务时，
@@ -546,7 +560,8 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
             showsRecommendations = false
             // 切仓库时收起 Issues 工作台；VM 保留实例，
             // 下次打开由 `prepare(owner:repo:)` 复位到新仓库。
-            showsIssuesWorkspace = false
+            issuesWindow?.dismissWorkspace()
+            issuesWindow = nil
             aiOverlayTopChromeInset = 0
             libraryState = .outsideLibrary
             isLibraryOperationInFlight = false
@@ -850,19 +865,7 @@ struct RepoDetailScaffold<Body: View, HeroExt: View>: View {
                 ) {
                     trailingActionsView
                 }
-                .sheet(isPresented: $showsIssuesWorkspace) {
-                    if let issuesVM = repoIssuesVM {
-                        RepoIssuesWorkspaceView(
-                            repo: repo,
-                            listViewModel: issuesVM,
-                            inbox: dependencies.githubNotificationInboxService,
-                            threadRepository: dependencies.githubNotificationThreadRepository,
-                            apiClient: dependencies.apiClient,
-                            aiService: dependencies.repoAIInsightService
-                        )
-                        .appLocaleEnvironment()
-                    }
-                }
+                .background(WorkspaceSceneWindowReader(reference: workspaceWindow, minimumContentSize: nil))
                 heroExtension_()
                 // v1.5（2026-06-10）：RepoLocalSections 内置渲染,跟随面板整段折叠。
                 // 可见性 + spring 0.25s star 后展开转场都由组件内部自治,Scaffold 无脑挂。

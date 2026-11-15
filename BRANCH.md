@@ -102,6 +102,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/repo-workspace-unification` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-15 dong4j 授权合并；基于 `dev@b961902b` 的专项提交 `9a81453a` 覆盖仓库弹窗、文件阅读与笔记标识。合并前 160 项定向测试及双渠道 build-only 通过；人工界面与 17 语言译文审核仍待完成，未推送。 |
 | `codex/skill-management` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 确认目前可用并授权合并、清理；分支头 `3162ca5d` 的 22 个提交经 `4712a2b6` 合入本地 `dev`，后续直接在主工作区优化。204 项、23 Suite 集成回归、双渠道构建与 121 key × 17 语言编译资源校验通过。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置一致；先把 Direct 切换到主工作区产物，再以非强制 `git worktree remove` 和 `git branch -d` 清理。14 篇文档完整保留，完整人工验收与译文审核继续开放，本次未操作远端。 |
 | `codex/shared-selection-motion` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 授权合并与清理；分支头 `487fefde` 的设置页、Skills 动效、骨架加载及默认 UI 规范经 `e8a5e7bd` 合入 `dev`，详情页冲突处理保留既有 Skill 翻译。50 项定向测试与双渠道 build-only 通过，本次未做 GUI 复验。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 清理 `../Starcat-shared-selection-motion` 及本地分支，本次未操作远端。 |
 | `codex/severe-diagnostics` | 已删除本地分支及 worktree。 | 2026-11-13 功能提交 `d2b710f6` 经 `7b0a6d8e` 整合主线后，通过 `c42b5e6c` 合入 `dev`；当时 174 项定向测试、16 项 Python 测试、双渠道 build-only 及 17 语言编译资源校验通过。2026-11-14 dong4j 授权清理，删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净，Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-severe-diagnostics` 及本地分支；界面与译文后续在 `dev` 验收，本次未操作远端。 |

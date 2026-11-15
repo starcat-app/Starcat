@@ -2,7 +2,7 @@
 //  SidebarAnimationCoordinator.swift
 //  Starcat
 //
-//  Sidebar 装饰动画协调器（仅头像 tint；贡献草坪与 Activity 完全解耦）。
+//  Sidebar 头像 tint；贡献草坪与 Activity 完全解耦。
 //
 //  2026-06-17 dong4j：Activity 切分类时只抑制头像卡 tint 的 0.45s 补间。
 //  **草坪蛇不参与**——暂停 Timeline 并用 `.empty` 帧重画会让已吃格子全部回弹，体验更糟。

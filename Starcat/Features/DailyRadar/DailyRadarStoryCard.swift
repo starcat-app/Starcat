@@ -33,7 +33,8 @@ struct DailyRadarStoryCard: View {
                         DailyRadarCoverView(cover: story.cover, category: story.category,
                                             seed: story.id,
                                             textSafeLeading: featured ? 0.38 : 0)
-                            .scaleEffect(hovered && !featured ? 1.01 : 1)
+                            // 只放大普通卡片的封面，并在原图片区裁剪；减少动态效果时保持静态。
+                            .scaleEffect(hovered && !featured && !reduceMotion ? 1.15 : 1)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                     }
@@ -139,7 +140,7 @@ struct DailyRadarStoryCard: View {
                 hovered = hovering
                 return
             }
-            withAnimation(.easeOut(duration: 0.16)) {
+            withAnimation(.easeOut(duration: 0.20)) {
                 hovered = hovering
             }
         }

@@ -101,6 +101,11 @@ struct ContributionGraphView: View {
     /// 动画的重活（371 格 + 蛇身 + 食物）都在后台队列，切换模块/分类时不再掉帧。
     @State private var renderService = SnakeRenderService()
 
+    /// 只淡化草坪位图，标题、点击区域和后台服务身份保持稳定。
+    @State private var isGridVisible = true
+    @State private var isStyleFadingOut = false
+    @State private var isAwaitingStyleFrame = false
+
     /// 每格宽度（pt）。
     ///
     /// **为什么 width / height 拆开（dong4j 2026-06-05 反馈"草坪太窄"修正）**：
@@ -154,25 +159,66 @@ struct ContributionGraphView: View {
             // 新方案：Canvas 直接拿自身 size 算 scale，外层用 aspectRatio 按 intrinsic
             // 比例自动算高度 → frame 高度 = Canvas 实际渲染高度，零空白。
             gridContent
+                .opacity(isGridVisible ? 1 : 0)
                 .aspectRatio(intrinsicSize.width / intrinsicSize.height, contentMode: .fit)
         }
         .help(payload != nil ? Text("contribution.hoverHint") : Text("contribution.loading"))
         .opacity(isLoading && payload == nil ? 0.6 : 1.0)
         // v4 HOM-SNAKE-MODES：根据玩法 / 数据变化重建 animator
         .onAppear { rebuildAnimator() }
-        .onChange(of: settings.snakeStyle) { _, _ in rebuildAnimator() }
+        .onChange(of: settings.snakeStyle) { _, _ in transitionToSelectedStyle() }
+        .onChange(of: renderService.readyRevision) { _, _ in
+            guard isAwaitingStyleFrame, !isStyleFadingOut else { return }
+            isAwaitingStyleFrame = false
+            withAnimation(reduceMotion ? nil : .easeIn(duration: 0.12)) {
+                isGridVisible = true
+            }
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            isStyleFadingOut = false
+            isAwaitingStyleFrame = false
+            isGridVisible = true
+            rebuildAnimator()
+        }
         // payload 从 nil → 有数据时也要重建，让 greedy / foodChase / multiSnake 拿到真实 weeks
         .onChange(of: payload?.totalContributions) { _, _ in rebuildAnimator() }
         // 明暗主题切换时也要重建：草坪是 CGContext 后台渲染成 CGImage 的，
         // 配色在 configure 时按 colorScheme 固化，不随主题切换自动更新，否则明亮主题下仍显示暗色格子。
         .onChange(of: colorScheme) { _, _ in rebuildAnimator() }
         .onChange(of: style) { _, _ in rebuildAnimator() }
+        .onDisappear {
+            // 退场后使尚未完成的淡出回调失效；再次出现时仍由 onAppear 恢复同一个服务。
+            isStyleFadingOut = false
+            isAwaitingStyleFrame = false
+            isGridVisible = true
+            renderService.stop()
+        }
+    }
+
+    /// 淡出完成后才读取最新设置，连续点击不会排队播放已经过时的玩法。
+    private func transitionToSelectedStyle() {
+        guard !reduceMotion else {
+            rebuildAnimator()
+            return
+        }
+        guard !isStyleFadingOut else { return }
+        isStyleFadingOut = true
+        withAnimation(.easeOut(duration: 0.12), completionCriteria: .removed) {
+            isGridVisible = false
+        } completion: {
+            guard isStyleFadingOut else { return }
+            isStyleFadingOut = false
+            isAwaitingStyleFrame = true
+            rebuildAnimator()
+        }
     }
 
     /// 根据当前 settings.snakeStyle + payload 重建 animator 并驱动后台渲染。
     /// 频次很低（用户切换 / 数据到位），每次 init 可能要做几十毫秒的预计算（greedy 最重），
     /// 但仍在主线程能容忍范围；避免在 frame(at:) 这种每帧路径上做重活。
     private func rebuildAnimator() {
+        // 数据或主题在淡出期间到达时，也等旧画面退完再使用最新输入重建。
+        guard !isStyleFadingOut else { return }
         let animator = SnakeAnimatorFactory.make(style: settings.snakeStyle,
                                                  weeks: payload?.weeks)
         // reduceMotion / 宿主暂停 / off 玩法（animator == nil）→ 只画静态草坪。

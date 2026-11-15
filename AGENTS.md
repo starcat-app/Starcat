@@ -404,6 +404,11 @@ Section {
 > 单一信任源：[`docs/5-规范/UI-Focus-Ring-规范.md`](docs/5-规范/UI-Focus-Ring-规范.md)
 > 使用 `.buttonStyle(.plain)` 的 Button **必须**添加 `.focusEffectDisabled()`。
 
+### UI 规范：动效（强制，2026-11-15 起生效）
+
+> 单一信任源：[`docs/5-规范/UI-动效规范.md`](docs/5-规范/UI-动效规范.md)
+> 凡新增或修改用户可见 UI，AI 必须主动读取并落实适用的反馈、切换与加载动效，无需 dong4j 再单独提醒；列表、详情及骨架加载继续执行下述专项规范。
+
 ### UI 规范：折叠/展开整行点击（强制，2026-07-13 起生效）
 
 > 单一信任源：[`docs/5-规范/UI-折叠展开-规范.md`](docs/5-规范/UI-折叠展开-规范.md)

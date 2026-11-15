@@ -12,6 +12,7 @@ struct RepoSkillBadge: View {
     let repo: Repo
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @State private var workspaceWindow = WorkspaceSceneWindowReference()
 
     var body: some View {
         let store = dependencies.repoSkillStore
@@ -21,7 +22,7 @@ struct RepoSkillBadge: View {
         Group {
             if presence != .absent {
                 Button {
-                    RepoSkillWindowController.present(repo: repo, dependencies: dependencies)
+                    RepoSkillWindowController.present(repo: repo, dependencies: dependencies, parent: workspaceWindow.window)
                 } label: {
                     HStack(spacing: 4) {
                         // 复用现有拼图模板表示可安装的能力模块，不再使用发行包图形。
@@ -46,6 +47,7 @@ struct RepoSkillBadge: View {
                 .help(store.errors[repo.id] ?? String.l10n("repo.skills.preview.title"))
             }
         }
+        .background(WorkspaceSceneWindowReader(reference: workspaceWindow, minimumContentSize: nil))
         .task(id: "\(dependencies.databaseScopeRevision):\(repo.id):\(repo.pushedAt ?? "")") {
             _ = try? await store.detect(repo)
         }
