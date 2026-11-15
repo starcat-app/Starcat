@@ -152,15 +152,6 @@ struct RepoSkillSheet: View {
                 .buttonStyle(RepoSkillHeaderButtonStyle())
             }
             RepoSkillScanNotice(session: session)
-            if let progress = session.scanProgressText {
-                Text(verbatim: progress)
-                    .font(interfaceScale.font(.caption))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .frame(maxWidth: 180)
-                    .accessibilityLabel(Text(verbatim: progress))
-            }
             SyncIconButton(isRefreshing: session.isLoading, disabled: session.isInstalling,
                            tooltip: String.l10n("repo.skills.scan.refresh")) {
                 Task { await session.load(force: true) }
@@ -171,16 +162,27 @@ struct RepoSkillSheet: View {
 
     private var footer: some View {
         HStack(spacing: 14) {
-            Label {
-                Text(verbatim: footerText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(footerText)
-            } icon: {
-                Image(systemName: footerStatus.symbol)
-                    .foregroundStyle(footerStatus.color)
-                    .help("repo.skills.install.safety")
-                    .accessibilityHidden(true)
+            HStack(spacing: 8) {
+                Label {
+                    Text(verbatim: footerText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(footerText)
+                } icon: {
+                    Image(systemName: footerStatus.symbol)
+                        .foregroundStyle(footerStatus.color)
+                        .help("repo.skills.install.safety")
+                        .accessibilityHidden(true)
+                }
+                if let progress = session.scanProgressText {
+                    Text(verbatim: progress)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: interfaceScale.scaled(180), alignment: .leading)
+                        .help(progress)
+                        .accessibilityLabel(Text(verbatim: progress))
+                }
             }
             .font(interfaceScale.font(.caption))
             .foregroundStyle(.secondary)
@@ -198,10 +200,10 @@ struct RepoSkillSheet: View {
                 .disabled(primaryDisabled)
         }
         .buttonStyle(.automatic)
-        // 只固定底栏高度以避免正文跳动；按钮尺寸、内边距和外形交给系统决定。
+        // 进度只更新固定底栏内的单行内容，不挤动顶栏或改变正文高度；按钮仍使用原生尺寸。
         .frame(height: max(32, interfaceScale.scaled(28)))
         .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.vertical, 6)
     }
 
     /// 图标同时使用形状与状态色区分结果，品牌图标和正文不随此状态染色。
