@@ -1029,6 +1029,118 @@ struct DailyRecommendationTests {
         #expect(restored.historyEntries.first?.item?.basicRecommendationReason.contains("owner/repo1") == true)
     }
 
+    @Test("初始批次等待整批理由准备，预取不登记历史或消耗展示资格")
+    func waitsForBatchPreparation() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        var waiting: CheckedContinuation<Void, Never>?
+        let preparation = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test",
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100), item(101)]) },
+                prepareItems: { items in
+                    #expect(items.map(\.repoID) == [100, 101])
+                    await withCheckedContinuation { waiting = $0 }
+                }
+            )
+        }
+        while waiting == nil { await Task.yield() }
+        #expect(store.isLoading)
+        #expect(store.visibleItems.isEmpty)
+        #expect(!store.canAutomaticallyPresent())
+        #expect(store.historyEntries.isEmpty)
+        waiting?.resume()
+        #expect(await preparation.value)
+        #expect(store.visibleItems.map(\.repoID) == [100, 101])
+        #expect(store.canAutomaticallyPresent())
+        #expect(store.state.autoPresentedDay.isEmpty)
+        #expect(store.historyEntries.isEmpty)
+    }
+
+    @Test("换批准备期间保留旧卡，准备后再次过滤刚 Star 的项目")
+    func keepsCurrentBatchUntilReasonsReady() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+            response((100...119).map { item(Int64($0)) })
+        })
+        await store.markPresented()
+        let oldIDs = store.visibleItems.map(\.repoID)
+        var waiting: CheckedContinuation<Void, Never>?
+        let preparation = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                    Issue.record("应直接使用尚未消费的候选")
+                    return response([])
+                },
+                prepareItems: { items in
+                    #expect(items.map(\.repoID) == (110...119).map(Int64.init))
+                    await withCheckedContinuation { waiting = $0 }
+                }
+            )
+        }
+        while waiting == nil { await Task.yield() }
+        #expect(store.visibleItems.map(\.repoID) == oldIDs)
+        #expect(store.historyEntries.count == 10)
+        await store.excludeStarred([1, 110])
+        waiting?.resume()
+        #expect(await preparation.value)
+        #expect(store.visibleItems.map(\.repoID) == (111...119).map(Int64.init))
+        #expect(store.historyEntries.count == 10)
+        await store.markPresented()
+        #expect(store.historyEntries.count == 19)
+    }
+
+    @Test("当天缓存批次仍经过理由恢复，不再次请求推荐")
+    func cachedBatchStillPreparesReasons() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) })
+        let restored = makeStore(root: root)
+        var preparedIDs: [Int64] = []
+        #expect(await restored.load(
+            accountID: 42, scopeRevision: 1, serviceScope: "test",
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                Issue.record("当天缓存不能重复请求")
+                return response([])
+            }, prepareItems: { preparedIDs = $0.map(\.repoID) }
+        ))
+        #expect(preparedIDs == [100])
+        #expect(restored.historyEntries.isEmpty)
+    }
+
+    @Test("理由准备期间取消或切账号不替换批次", arguments: [false, true])
+    func cancelledPreparationDoesNotReplaceBatch(switchAccount: Bool) async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        var waiting: CheckedContinuation<Void, Never>?
+        let preparation = Task {
+            await store.load(
+                accountID: 42, scopeRevision: 1, serviceScope: "test",
+                fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) },
+                prepareItems: { _ in await withCheckedContinuation { waiting = $0 } }
+            )
+        }
+        while waiting == nil { await Task.yield() }
+        if switchAccount {
+            await switchHistoryAccount(99, root: root)
+            store.activate(accountID: 99, scopeRevision: 2)
+        } else {
+            preparation.cancel()
+        }
+        waiting?.resume()
+        #expect(!(await preparation.value))
+        #expect(store.visibleItems.isEmpty)
+        #expect(store.historyEntries.isEmpty)
+    }
+
     /// 同一测试重启 Store 时复用磁盘库；切账号显式模拟 AppDependencies 的数据库切换。
     private let historyDatabases = HistoryTestDatabases()
 

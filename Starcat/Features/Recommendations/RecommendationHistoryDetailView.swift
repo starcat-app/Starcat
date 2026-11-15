@@ -24,14 +24,10 @@ struct RecommendationHistoryDetailView: View {
             )
             .task(id: explanationIdentity) {
                 guard let accountID = dependencies.database.currentUserId else { return }
-                await dependencies.dailyRecommendationExplanationStore.prepare(
-                    item: item, accountID: accountID, revision: dependencies.databaseScopeRevision,
+                await dependencies.dailyRecommendationExplanationStore.loadSaved(
+                    items: [item], accountID: accountID, revision: dependencies.databaseScopeRevision,
                     locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser
-                ) { input in
-                    try await dependencies.repoAIInsightService.generateRecommendationReason(
-                        input: input, outputLanguage: locale.identifier
-                    )
-                }
+                )
             }
         } else if entry != nil {
             ContentUnavailableView("recommendations.history.unavailable", systemImage: "archivebox")

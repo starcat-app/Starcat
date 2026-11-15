@@ -111,7 +111,8 @@ final class DailyRecommendationStore {
         serviceScope: String,
         replacingCurrentBatch: Bool = false,
         fetchStars: () async throws -> [Repo],
-        fetchCandidates: ([Int64], String?) async throws -> DailyRecommendationResponse
+        fetchCandidates: ([Int64], String?) async throws -> DailyRecommendationResponse,
+        prepareItems: ([RepoRecommendationItem]) async -> Void = { _ in }
     ) async -> Bool {
         activate(accountID: accountID, scopeRevision: scopeRevision)
         guard !isLoading, !Task.isCancelled else { return false }
@@ -147,6 +148,9 @@ final class DailyRecommendationStore {
             if !replacingCurrentBatch, state.day == day, state.serviceScope == serviceScope, !state.modelVersion.isEmpty,
                state.hasGeneratedBatch || state.candidatePool?.hasMore != true {
                 if state.items.isEmpty { emptyKey = "recommendations.daily.noNew" }
+                // 重开也要恢复整批理由；尚未完成准备的磁盘快照不能直接触发展示。
+                await prepareItems(visibleItems)
+                guard token == generation, !Task.isCancelled else { return false }
                 await persist()
                 return token == generation && !Task.isCancelled
             }
@@ -241,12 +245,16 @@ final class DailyRecommendationStore {
                 await persist()
                 return false
             }
+            // 保留上一批至新批理由生成并保存（或明确兜底）完成，网页不会先露出没有理由的新卡。
+            await prepareItems(items)
+            guard token == generation, !Task.isCancelled else { return false }
             state.day = day
             state.serviceScope = serviceScope
             state.modelVersion = pool.modelVersion
             state.generatedAt = date
-            state.items = items
-            state.hasGeneratedBatch = !items.isEmpty
+            // LLM 等待期间的新 Star / 负反馈仍然生效；不从候选池补入尚未准备理由的项目。
+            state.items = items.filter { !observedStarredIDs.contains($0.repoID) && !state.dismissedIDs.contains($0.repoID) }
+            state.hasGeneratedBatch = !state.items.isEmpty
             state.revealedIDs = []
             await persist()
             return token == generation && !Task.isCancelled

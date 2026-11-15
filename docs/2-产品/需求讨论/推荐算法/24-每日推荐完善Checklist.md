@@ -73,3 +73,21 @@
 - [ ] 客户端换一批后人工验收来源展示与 Pro 实际 AI 理由；旧批次不自动补造来源。动效推广继续排除。
 
 部署日志：`/tmp/starcat-daily-evidence-deploy.log`；线上验证：`/tmp/starcat-daily-evidence-online-verification.json`；固定构建上下文：`/tmp/starcat-daily-evidence-20261115-deploy`。本次未推送源码或标签、未合并 App 或推荐专项分支、未激活新模型、未修改 Fly secrets 或覆盖生产数据卷。
+
+## C9 推荐理由预生成与展示时序
+
+> 2026-11-15 dong4j 确认实施。本节替代 C4 的按卡片／详情生成时机；保留原生成证据、权益与用量约束。
+
+- [x] C9.1 最终批次确定后后台准备整批理由；缓存先读，Pro 且摘要任务配置可用才请求 LLM，最多三路并发、整批等待最多 30 秒。
+- [x] C9.2 成功理由先原子保存再发布；无权限、缺配置／证据、失败／超时和保存失败均回退基础依据，取消或切账号后不发布迟到结果。
+- [x] C9.3 自动与手动打开都等待准备结束；换批保留旧卡至新批理由就绪，后台准备不消耗展示资格或写入已展示历史。
+- [x] C9.4 卡片与历史详情只读取准备好的理由；移除浏览卡片／选中详情触发的 LLM 调用。
+- [x] C9.5 覆盖整批就绪、磁盘复用、只读详情、全部兜底、超时、取消／账号切换及换批时序；通过定向回归、双渠道构建并独立提交。
+
+实施与验证（2026-11-15）：
+
+- `DailyRecommendationHost` 的后台预取与手动打开复用准备任务，实际创建覆盖窗口前等待整批结束。`DailyRecommendationStore` 在替换批次前调用准备阶段，并重新过滤等待期间新增的 Star／负反馈；候选预取仍不登记展示。
+- `DailyRecommendationExplanationStore.prepareBatch` 先恢复已有账号／语言／证据缓存，再检查摘要任务配置；仅为缺少理由且有真实来源的项目生成。成功理由以既有 JSON 缓存原子保存后发布，历史只调用 `loadSaved`；不新增数据表或后端接口。
+- 共同截止时间到达即取消等待及未开始的任务；忽略取消的模型响应在写盘前再次检查取消，不能在超时或切账号后补写迟到理由。部分成功保留缓存，剩余项目使用真实来源说明。
+- 定向回归 81 项 / 5 套件通过；`make build-direct`、`make build-appstore` 均通过构建与产物校验，`git diff --check` 通过。本轮没有新增本地化文案，不改 Catalog。
+- 日志：`/tmp/starcat-daily-pregen-tests.log`、`/tmp/starcat-daily-pregen-build-direct.log`、`/tmp/starcat-daily-pregen-build-appstore.log`。未调用真实付费模型、未启动用户 App、未操作 GUI；真实配置下的自动／手动展示和模型输出仍待人工验收，不关闭完整推荐需求。

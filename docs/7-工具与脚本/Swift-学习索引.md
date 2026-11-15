@@ -94,9 +94,10 @@
 | `Task.checkCancellation()` | `RepoAIInsightService.generateText` 每个流式事件与 `RepoNoteAIGenerationViewModel.validate` 双重防迟到回写 | "Swift Task checkCancellation" |
 | `Task<Void, Never>` | `private var currentTask: Task<Void, Never>?` | "Swift Task generic parameters" |
 | `Task.value` / 共享进行中的任务 | `DailyRecommendationExplanationStore.prepare` 合并多个窗口的相同推荐理由生成，账号切换统一取消 | "Swift Task value unstructured tasks cancellation" |
+| `AsyncStream.makeStream` / `onTermination` | `DailyRecommendationExplanationStore.prepare` 让超时或取消结束等待，忽略取消的 Provider 迟到响应不再保存 | "Swift AsyncStream Continuation onTermination cancellation" |
 | `AsyncThrowingStream` / `for try await` | `AIClientProtocol.chatStream` 生产事件，`RepoAIInsightService.generateText` 消费 delta / completed | "Swift AsyncThrowingStream for try await" |
 | `async let` | `HomeViewModel.refreshSidebar` 并行起 3 个查询 | "Swift async let concurrency" |
-| `withTaskGroup` | `RepoFileBrowserViewModel` 勾选下载（并发上限 4）/ `BatchAIQueueService` / `SearchCoordinator` | "Swift TaskGroup" |
+| `withTaskGroup` | `RepoFileBrowserViewModel` 勾选下载（并发上限 4）/ `DailyRecommendationExplanationStore.prepareBatch` 整批理由并发上限 3 / `BatchAIQueueService` | "Swift TaskGroup" |
 | `@MainActor` | `ReadmeViewModel` / `HomeViewModel` / `AppDependencies` / `Coordinator` | "Swift MainActor" |
 | `actor` | `GitHubAPIClient` / `WikiAPI` | "Swift actors data race" |
 | `nonisolated` / `nonisolated(unsafe)` | `URLProtocolStub` 静态可变属性 | "Swift nonisolated keyword" |

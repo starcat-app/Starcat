@@ -16,6 +16,7 @@ struct DailyRecommendationHost: ViewModifier {
     let onOpen: (Repo) -> Void
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    @Environment(\.locale) private var locale
     @Environment(\.firstRunOnboardingActive) private var onboarding
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -25,6 +26,12 @@ struct DailyRecommendationHost: ViewModifier {
     @State private var isParentWindowReady = false
     @State private var isOverlayWindowReady = false
     @State private var isCardContentReady = false
+    /// 外部 Binding 是“请求打开”，只有批次理由已保存或明确兜底才真正创建推荐窗口。
+    @State private var isReadyToPresent = false
+    /// 启动预取与手动点击共用一个准备任务，点击不能绕过正在进行的整批生成。
+    @State private var preparationTask: Task<Bool, Never>?
+    @State private var preparationTaskID: UUID?
+    @State private var preparationKey: String?
 
     private var accountID: Int64? {
         guard let id = authSession.state.user?.id, dependencies.database.currentUserId == id else { return nil }
@@ -32,12 +39,15 @@ struct DailyRecommendationHost: ViewModifier {
     }
 
     private var accountIdentity: String { "\(accountID ?? 0)|\(dependencies.databaseScopeRevision)" }
-    private var identity: String { "\(accountIdentity)|\(DailyRecommendationState.dayKey(Date()))|\(onboarding)" }
+    private var identity: String {
+        "\(accountIdentity)|\(DailyRecommendationState.dayKey(Date()))|\(onboarding)|\(locale.identifier)|\(dependencies.entitlementGate.isProUser)"
+    }
+    private var isOverlayPresented: Bool { isPresented && isReadyToPresent }
 
     func body(content: Content) -> some View {
-        content.disabled(isPresented).accessibilityHidden(isPresented).background {
+        content.disabled(isOverlayPresented).accessibilityHidden(isOverlayPresented).background {
             DailyRecommendationOverlay(
-                isPresented: isPresented,
+                isPresented: isOverlayPresented,
                 onClose: { isPresented = false },
                 onPresentationChanged: {
                     isOverlayWindowReady = $0
@@ -89,7 +99,12 @@ struct DailyRecommendationHost: ViewModifier {
             preparationRevision &+= 1
         }
         .onChange(of: accountIdentity) { _, _ in
+            preparationTask?.cancel()
+            preparationTask = nil
+            preparationTaskID = nil
+            preparationKey = nil
             isPresented = false
+            isReadyToPresent = false
             preparedIdentity = nil
             isCardContentReady = false
         }
@@ -98,6 +113,7 @@ struct DailyRecommendationHost: ViewModifier {
         }
         .onChange(of: isPresented) { _, presented in
             if !presented {
+                isReadyToPresent = false
                 preparedIdentity = nil
                 isCardContentReady = false
             }
@@ -109,11 +125,14 @@ struct DailyRecommendationHost: ViewModifier {
             // 新批次和 Star/屏蔽后的下一张都要等待网页首帧，空白页不能消耗每日资格。
             isCardContentReady = false
         }
-        .task(id: isPresented) {
-            guard isPresented else { return }
+        .task(id: "\(isPresented)|\(identity)") {
+            guard isPresented, !isReadyToPresent else { return }
             await load()
-            recordPresentation()
+            guard !Task.isCancelled, isPresented else { return }
+            // 包括取数失败和未登录的原有空态；LLM 失败本身不会让 prepare 失败。
+            isReadyToPresent = true
         }
+        .onDisappear { preparationTask?.cancel() }
         .onChange(of: dependencies.starredRegistry.ids) { _, ids in
             let account = accountIdentity
             Task {
@@ -144,32 +163,79 @@ struct DailyRecommendationHost: ViewModifier {
               preparedIdentity == identity, isParentWindowReady, NSApp.isActive, !isPresented,
               !dependencies.dailyRecommendationStore.isLoading,
               dependencies.dailyRecommendationStore.canAutomaticallyPresent() else { return }
+        isReadyToPresent = true
         isPresented = true
     }
 
     /// 自动准备、失败重试与主动换批共用取数路径；换批的成功结果只用于重置舞台动画。
     private func prepare(replacingCurrentBatch: Bool) async -> Bool {
         guard let accountID, !TestEnvironment.isRunning else { return false }
+        let key = "\(identity)|\(replacingCurrentBatch)"
+        if let task = preparationTask {
+            if preparationKey == key { return await task.value }
+            let previousID = preparationTaskID
+            task.cancel()
+            _ = await task.value
+            if preparationTaskID == previousID {
+                preparationTask = nil
+                preparationTaskID = nil
+                preparationKey = nil
+            }
+            guard !Task.isCancelled else { return false }
+            return await prepare(replacingCurrentBatch: replacingCurrentBatch)
+        }
         let revision = dependencies.databaseScopeRevision
-        let scope = await dependencies.recommendAPI.recommendationCacheScope()
-        guard accountID == self.accountID, revision == dependencies.databaseScopeRevision, !Task.isCancelled else { return false }
-        let prepared = await dependencies.dailyRecommendationStore.load(
-            accountID: accountID, scopeRevision: revision, serviceScope: scope,
-            replacingCurrentBatch: replacingCurrentBatch,
-            fetchStars: { try await dependencies.repoRepository.fetchAllStarred() },
-            fetchCandidates: { try await dependencies.recommendAPI.fetchDailyCandidates(seedIDs: $0, cursor: $1) }
-        )
-        guard accountID == self.accountID, revision == dependencies.databaseScopeRevision, !Task.isCancelled else { return false }
-        await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
-        return prepared
+        let language = locale.identifier
+        let isPro = dependencies.entitlementGate.isProUser
+        let taskID = UUID()
+        let task = Task { @MainActor in
+            let scope = await dependencies.recommendAPI.recommendationCacheScope()
+            guard accountID == self.accountID, revision == dependencies.databaseScopeRevision,
+                  !Task.isCancelled else { return false }
+            let prepared = await dependencies.dailyRecommendationStore.load(
+                accountID: accountID, scopeRevision: revision, serviceScope: scope,
+                replacingCurrentBatch: replacingCurrentBatch,
+                fetchStars: { try await dependencies.repoRepository.fetchAllStarred() },
+                fetchCandidates: { try await dependencies.recommendAPI.fetchDailyCandidates(seedIDs: $0, cursor: $1) },
+                prepareItems: { items in
+                    await dependencies.dailyRecommendationExplanationStore.prepareBatch(
+                        items: items, accountID: accountID, revision: revision, locale: language, isPro: isPro,
+                        checkConfiguration: { try dependencies.repoAIInsightService.ensureRecommendationReasonReady() }
+                    ) { input in
+                        try await dependencies.repoAIInsightService.generateRecommendationReason(
+                            input: input, outputLanguage: language
+                        )
+                    }
+                }
+            )
+            guard accountID == self.accountID, revision == dependencies.databaseScopeRevision,
+                  !Task.isCancelled else { return false }
+            await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
+            // 取数失败时旧批次仍可读，只恢复原已保存理由，不为失败回退另开一轮模型请求。
+            await dependencies.dailyRecommendationExplanationStore.loadSaved(
+                items: dependencies.dailyRecommendationStore.visibleItems,
+                accountID: accountID, revision: revision, locale: language, isPro: isPro
+            )
+            return prepared
+        }
+        preparationTask = task
+        preparationTaskID = taskID
+        preparationKey = key
+        let result = await task.value
+        if preparationTaskID == taskID {
+            preparationTask = nil
+            preparationTaskID = nil
+            preparationKey = nil
+        }
+        return result
     }
 
     /// 手动和自动入口共用实际呈现回调；关闭或切换账号后不登记尚未展示的批次
     private func recordPresentation() {
-        guard isPresented, isOverlayWindowReady, isCardContentReady, let accountID else { return }
+        guard isOverlayPresented, isOverlayWindowReady, isCardContentReady, let accountID else { return }
         let revision = dependencies.databaseScopeRevision
         Task {
-            guard !Task.isCancelled, isPresented, isOverlayWindowReady, isCardContentReady,
+            guard !Task.isCancelled, isOverlayPresented, isOverlayWindowReady, isCardContentReady,
                   accountID == self.accountID, revision == dependencies.databaseScopeRevision else { return }
             await dependencies.dailyRecommendationStore.markPresented()
         }

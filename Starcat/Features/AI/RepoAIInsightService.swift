@@ -1340,12 +1340,23 @@ final class RepoAIInsightService {
         )
     }
 
+    /// 在批次准备前检查用户明确选中的摘要任务，不发探测请求，也不回退未选中的旧模型。
+    /// Keychain / Provider 的本地配置错误由调用方降级为基础依据，不能阻止推荐窗口打开。
+    func ensureRecommendationReasonReady() throws {
+        guard entitlementGate?.isProUser == true else { throw CancellationError() }
+        let task = settings.resolvedAITask(settings.aiSummaryTask)
+        let name = String.l10n("ai.taskName.summary")
+        try validateGenerationTask(task, taskName: name)
+        _ = try makeGenerationClient(task: task, taskName: name)
+    }
+
     /// 推荐理由复用摘要任务的 Provider、模型和用量链路，仅 Pro 请求，不额外抓代码或 README。
     func generateRecommendationReason(
         input: DailyRecommendationExplanationInput, outputLanguage: String
     ) async throws -> String {
         guard entitlementGate?.isProUser == true, !input.sources.isEmpty else { throw CancellationError() }
         let task = settings.resolvedAITask(settings.aiSummaryTask)
+        try validateGenerationTask(task, taskName: String.l10n("ai.taskName.summary"))
         let configuration = try makeGenerationClient(task: task, taskName: String.l10n("ai.taskName.summary"))
         let request = try Self.makeRecommendationReasonRequest(
             input: input, model: configuration.model, parameters: task.parameters, outputLanguage: outputLanguage

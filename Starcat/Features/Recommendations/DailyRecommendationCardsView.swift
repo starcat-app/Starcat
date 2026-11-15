@@ -32,11 +32,6 @@ struct DailyRecommendationCardsView: View {
     @State private var rendererRevision = 0
     @State private var actionTask: Task<Void, Never>?
     @State private var detailTask: Task<Void, Never>?
-    @State private var presentedID: Int64?
-
-    private var explanationIdentity: String {
-        "\(context)|\(presentedID ?? 0)|\(locale.identifier)|\(dependencies.entitlementGate.isProUser)"
-    }
 
     private var controlsBusy: Bool {
         store.isLoading || isPerformingAction || openingDetail || starringID != nil || pendingStar != nil
@@ -102,18 +97,6 @@ struct DailyRecommendationCardsView: View {
                 .padding(.top, 22)
         }
         .onAppear { isVisible = true }
-        .task(id: explanationIdentity) {
-            guard let accountID = store.accountID,
-                  let item = store.visibleItems.first(where: { $0.repoID == presentedID }) else { return }
-            await dependencies.dailyRecommendationExplanationStore.prepare(
-                item: item, accountID: accountID, revision: dependencies.databaseScopeRevision,
-                locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser
-            ) { input in
-                try await dependencies.repoAIInsightService.generateRecommendationReason(
-                    input: input, outputLanguage: locale.identifier
-                )
-            }
-        }
         .onDisappear {
             isVisible = false
             actionTask?.cancel()
@@ -171,7 +154,6 @@ struct DailyRecommendationCardsView: View {
         if action == .close { onClose(); return }
         if case let .presented(id) = action {
             onPresented()
-            presentedID = id
             guard !store.state.revealedIDs.contains(id) else { return }
             let identity = context
             Task {

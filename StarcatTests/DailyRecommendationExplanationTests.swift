@@ -2,7 +2,7 @@
 //  DailyRecommendationExplanationTests.swift
 //  StarcatTests
 //
-//  隔离 AI 网络和真实用户目录，验证权益、缓存维度、跨窗口合并与账号取消。
+//  隔离 AI 网络和真实用户目录，验证整批就绪、只读缓存、权益兜底及取消／截止时间。
 //
 
 import Foundation
@@ -22,12 +22,12 @@ struct DailyRecommendationExplanationTests {
             calls += 1
             return "A reason."
         }
-        await store.prepare(item: item(), accountID: 1, revision: 1, locale: "en", isPro: false, generate: generate)
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: false, generate: generate)
         var noSources = item()
         noSources.matchedSeeds = nil
-        await store.prepare(item: noSources, accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
+        await store.prepareBatch(items: [noSources], accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
         #expect(calls == 0)
-        await store.prepare(item: item(), accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
         #expect(calls == 1)
         #expect(store.text(for: item(), locale: "en", isPro: false) == nil)
     }
@@ -42,18 +42,18 @@ struct DailyRecommendationExplanationTests {
             return "Reason \(calls)"
         }
         let original = DailyRecommendationExplanationStore(root: root)
-        await original.prepare(item: item(), accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
+        await original.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
         let restored = DailyRecommendationExplanationStore(root: root)
-        await restored.prepare(item: item(), accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
+        await restored.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true, generate: generate)
         #expect(calls == 1)
         #expect(restored.text(for: item(), locale: "en", isPro: true) == "Reason 1")
-        await restored.prepare(item: item(), accountID: 2, revision: 2, locale: "en", isPro: true, generate: generate)
-        await restored.prepare(item: item(), accountID: 2, revision: 2, locale: "ja", isPro: true, generate: generate)
+        await restored.prepareBatch(items: [item()], accountID: 2, revision: 2, locale: "en", isPro: true, generate: generate)
+        await restored.prepareBatch(items: [item()], accountID: 2, revision: 2, locale: "ja", isPro: true, generate: generate)
         var changed = item()
         changed.matchedSeeds = []
         changed.matchedSeeds = [RecommendationSeed(repoID: 9, fullName: "owner/other", description: nil,
                                                    language: nil, reasons: ["costar"])]
-        await restored.prepare(item: changed, accountID: 2, revision: 2, locale: "ja", isPro: true, generate: generate)
+        await restored.prepareBatch(items: [changed], accountID: 2, revision: 2, locale: "ja", isPro: true, generate: generate)
         #expect(calls == 4)
     }
 
@@ -64,7 +64,7 @@ struct DailyRecommendationExplanationTests {
         let store = DailyRecommendationExplanationStore(root: root)
         var continuation: CheckedContinuation<String, Never>?
         let task = Task {
-            await store.prepare(item: item(), accountID: 1, revision: 1, locale: "en", isPro: true) { _ in
+            await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true) { _ in
                 await withCheckedContinuation { continuation = $0 }
             }
         }
@@ -86,21 +86,21 @@ struct DailyRecommendationExplanationTests {
             calls += 1
             return await withCheckedContinuation { continuation = $0 }
         }
-        let first = Task { await store.prepare(item: item(), accountID: 1, revision: 1, locale: "en",
+        let first = Task { await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en",
                                               isPro: true, generate: generator) }
         while continuation == nil { await Task.yield() }
-        let second = Task { await store.prepare(item: item(), accountID: 1, revision: 1, locale: "en",
+        let second = Task { await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en",
                                                isPro: true, generate: generator) }
         await Task.yield()
         continuation?.resume(returning: "Shared")
         await first.value
         await second.value
         #expect(calls == 1)
-        await store.prepare(item: item(), accountID: 1, revision: 1, locale: "ja", isPro: true) { _ in
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "ja", isPro: true) { _ in
             throw URLError(.notConnectedToInternet)
         }
         #expect(store.text(for: item(), locale: "ja", isPro: true) == nil)
-        await store.prepare(item: item(), accountID: 1, revision: 1, locale: "ja", isPro: true) { _ in "Recovered" }
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "ja", isPro: true) { _ in "Recovered" }
         #expect(store.text(for: item(), locale: "ja", isPro: true) == "Recovered")
     }
 
@@ -118,12 +118,167 @@ struct DailyRecommendationExplanationTests {
         #expect(request.model == "configured-model")
     }
 
+    @Test("整批保存完成才返回，生成并发最多三个")
+    func batchWaitsForPersistedReasons() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        let items = (10...13).map { item(Int64($0)) }
+        var waiting: [Int64: CheckedContinuation<String, Never>] = [:]
+        var completed = false
+        let preparation = Task {
+            await store.prepareBatch(items: items, accountID: 1, revision: 1, locale: "en", isPro: true) { input in
+                await withCheckedContinuation { waiting[input.repoID] = $0 }
+            }
+            completed = true
+        }
+        while waiting.count < 3 { await Task.yield() }
+        #expect(!completed)
+        #expect(waiting[13] == nil)
+        waiting.removeValue(forKey: 10)?.resume(returning: "Reason 10")
+        while waiting[13] == nil { await Task.yield() }
+        #expect(!completed)
+        for (id, continuation) in waiting { continuation.resume(returning: "Reason \(id)") }
+        await preparation.value
+        #expect(completed)
+        // 用新 Store 只读磁盘，证明返回时结果确实已保存，而不只是发布了内存文本。
+        let detail = DailyRecommendationExplanationStore(root: root)
+        await detail.loadSaved(items: items, accountID: 1, revision: 1, locale: "en", isPro: true)
+        #expect(items.allSatisfy { detail.text(for: $0, locale: "en", isPro: true) == "Reason \($0.repoID)" })
+    }
+
+    @Test("历史只读已保存理由，缺失或损坏缓存保持基础依据")
+    func historyReadsSavedResultsOnly() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let generated = DailyRecommendationExplanationStore(root: root)
+        await generated.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true) { _ in "Saved" }
+        let key = try DailyRecommendationExplanationInput(item()).cacheKey(locale: "en")
+        let detail = DailyRecommendationExplanationStore(root: root)
+        await detail.loadSaved(items: [item(), item(11)], accountID: 1, revision: 1, locale: "en", isPro: true)
+        #expect(detail.text(for: item(), locale: "en", isPro: true) == "Saved")
+        #expect(detail.text(for: item(11), locale: "en", isPro: true) == nil)
+        try Data("broken".utf8).write(to: root.appendingPathComponent("1/\(key).json"))
+        let restarted = DailyRecommendationExplanationStore(root: root)
+        await restarted.loadSaved(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true)
+        #expect(restarted.explanations.isEmpty)
+    }
+
+    @Test("配置错误不调用 LLM，已有缓存仍可离线读取")
+    func invalidConfigurationFallsBack() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        var calls = 0
+        await store.prepareBatch(
+            items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true,
+            checkConfiguration: { throw URLError(.userAuthenticationRequired) }
+        ) { _ in calls += 1; return "Unexpected" }
+        #expect(calls == 0)
+        #expect(store.explanations.isEmpty)
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true) { _ in "Saved" }
+        let restored = DailyRecommendationExplanationStore(root: root)
+        var configurationChecks = 0
+        await restored.prepareBatch(
+            items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true,
+            checkConfiguration: { configurationChecks += 1; throw URLError(.userAuthenticationRequired) }
+        ) { _ in calls += 1; return "Unexpected" }
+        #expect(configurationChecks == 0)
+        #expect(calls == 0)
+        #expect(restored.text(for: item(), locale: "en", isPro: true) == "Saved")
+    }
+
+    @Test("部分项目失败或返回空文本不影响整批完成")
+    func partialFailuresKeepSuccessfulReasons() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        var calls: [Int64] = []
+        await store.prepareBatch(items: (10...13).map { item(Int64($0)) },
+                                 accountID: 1, revision: 1, locale: "en", isPro: true) { input in
+            calls.append(input.repoID)
+            if input.repoID == 11 { throw URLError(.notConnectedToInternet) }
+            return input.repoID == 12 ? "  \n" : "Reason \(input.repoID)"
+        }
+        #expect(Set(calls) == [10, 11, 12, 13])
+        #expect(store.text(for: item(), locale: "en", isPro: true) == "Reason 10")
+        #expect(store.text(for: item(11), locale: "en", isPro: true) == nil)
+        #expect(store.text(for: item(12), locale: "en", isPro: true) == nil)
+        #expect(store.text(for: item(13), locale: "en", isPro: true) == "Reason 13")
+    }
+
+    @Test("理由写盘失败时不发布未保存结果")
+    func persistenceFailureUsesBasicReason() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("blocked directory".utf8).write(to: root)
+        let store = DailyRecommendationExplanationStore(root: root)
+        var calls = 0
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true) { _ in
+            calls += 1
+            return "Cannot save"
+        }
+        #expect(calls == 1)
+        #expect(store.explanations.isEmpty)
+    }
+
+    @Test("整批超时不等待忽略取消的模型，不启动排队项目、不保存迟到响应")
+    func timeoutReleasesPresentation() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        var waiting: [CheckedContinuation<String, Never>] = []
+        var calls = 0
+        var finished = 0
+        let start = ContinuousClock.now
+        await store.prepareBatch(items: (10...19).map { item(Int64($0)) },
+                                 accountID: 1, revision: 1, locale: "en", isPro: true,
+                                 timeout: .milliseconds(80)) { _ in
+            calls += 1
+            defer { finished += 1 }
+            return await withCheckedContinuation { waiting.append($0) }
+        }
+        #expect(start.duration(to: .now) < .seconds(2))
+        #expect(calls == 3)
+        #expect(store.explanations.isEmpty)
+        for continuation in waiting { continuation.resume(returning: "Too late") }
+        while finished < calls { await Task.yield() }
+        let restored = DailyRecommendationExplanationStore(root: root)
+        await restored.loadSaved(items: (10...19).map { item(Int64($0)) },
+                                 accountID: 1, revision: 1, locale: "en", isPro: true)
+        #expect(restored.explanations.isEmpty)
+    }
+
+    @Test("取消批次立即结束等待且不保存迟到响应")
+    func cancelledBatchDoesNotPublish() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        var continuation: CheckedContinuation<String, Never>?
+        var finished = false
+        let preparation = Task {
+            await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true) { _ in
+                defer { finished = true }
+                return await withCheckedContinuation { continuation = $0 }
+            }
+        }
+        while continuation == nil { await Task.yield() }
+        preparation.cancel()
+        await preparation.value
+        continuation?.resume(returning: "Cancelled")
+        while !finished { await Task.yield() }
+        #expect(store.explanations.isEmpty)
+        let restored = DailyRecommendationExplanationStore(root: root)
+        await restored.loadSaved(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true)
+        #expect(restored.explanations.isEmpty)
+    }
+
     private func temporaryRoot() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("recommendation-reason-\(UUID())")
     }
 
-    private func item() -> RepoRecommendationItem {
-        RepoRecommendationItem(repoID: 10, fullName: "owner/result", description: "A code editor",
+    private func item(_ id: Int64 = 10) -> RepoRecommendationItem {
+        RepoRecommendationItem(repoID: id, fullName: "owner/result\(id)", description: "A code editor",
                                language: "Swift", stars: 1, forks: 0, archived: false, score: 1,
                                source: "starcat_trained", reasons: ["costar"],
                                matchedSeeds: [RecommendationSeed(repoID: 1, fullName: "owner/source",
