@@ -93,6 +93,7 @@
 | `Task.cancel()` / `Task.isCancelled` | `HomeViewModel.currentReloadTask?.cancel()` / `RepoNoteAIGenerationViewModel.cancelCurrentTask` | "Swift Task cancellation" |
 | `Task.checkCancellation()` | `RepoAIInsightService.generateText` 每个流式事件与 `RepoNoteAIGenerationViewModel.validate` 双重防迟到回写 | "Swift Task checkCancellation" |
 | `Task<Void, Never>` | `private var currentTask: Task<Void, Never>?` | "Swift Task generic parameters" |
+| `Task.value` / 共享进行中的任务 | `DailyRecommendationExplanationStore.prepare` 合并多个窗口的相同推荐理由生成，账号切换统一取消 | "Swift Task value unstructured tasks cancellation" |
 | `AsyncThrowingStream` / `for try await` | `AIClientProtocol.chatStream` 生产事件，`RepoAIInsightService.generateText` 消费 delta / completed | "Swift AsyncThrowingStream for try await" |
 | `async let` | `HomeViewModel.refreshSidebar` 并行起 3 个查询 | "Swift async let concurrency" |
 | `withTaskGroup` | `RepoFileBrowserViewModel` 勾选下载（并发上限 4）/ `BatchAIQueueService` / `SearchCoordinator` | "Swift TaskGroup" |
@@ -232,7 +233,7 @@
 | `Date` / `TimeInterval` | `static let softTtl: TimeInterval = 6 * 3600` | "Foundation Date TimeInterval" |
 | `ISO8601DateFormatter` | `ISO8601DateFormatter.shared`（项目自定义共享实例） | "ISO8601DateFormatter formatOptions" |
 | `withInternetDateTime + withFractionalSeconds` | 同上 | "ISO8601DateFormatter Options" |
-| `Calendar` / `DateComponents` | 项目里少用 | "Foundation Calendar dateComponents" |
+| `Calendar` / `DateComponents` | `RecommendationHistoryDates` 按当地自然日划分最近五天，校验年月日并保留未知日期 | "Foundation Calendar startOfDay date byAdding DateComponents timeZone" |
 
 ---
 
