@@ -44,16 +44,21 @@ private struct ListRowSurface: ViewModifier {
         content
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
             .background {
-                if isSelected, let selectionNamespace, !reduceMotion {
-                    selection
-                        .matchedGeometryEffect(id: "list-row-selection", in: selectionNamespace)
-                } else if isSelected {
-                    selection
-                } else {
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(isHovered ? accentColor.opacity(0.08)
-                              : Color.primary.opacity(index.isMultiple(of: 2) ? 0 : 0.045))
+                Group {
+                    if isSelected, let selectionNamespace, !reduceMotion {
+                        selection
+                            .matchedGeometryEffect(id: "list-row-selection", in: selectionNamespace)
+                    } else if isSelected {
+                        selection
+                    } else {
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(isHovered ? accentColor.opacity(0.08)
+                                  : Color.primary.opacity(index.isMultiple(of: 2) ? 0 : 0.045))
+                    }
                 }
+                // 动画交易只进入背景；同帧更新的流式正文、折叠高度和控件不跟随弹簧。
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+                .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
             }
             .onHover { hovering in
                 isHovered = !interactionSuppressed && hovering
@@ -61,8 +66,6 @@ private struct ListRowSurface: ViewModifier {
             .onChange(of: interactionSuppressed) { _, suppressed in
                 if suppressed { isHovered = false }
             }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
-            .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
     }
 
     private var selection: some View {

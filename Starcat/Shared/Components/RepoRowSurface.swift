@@ -108,27 +108,32 @@ struct RepoRowSurface<Content: View>: View {
             .padding(.leading, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                if isSelected, let selectionNamespace, !reduceMotion {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(resolvedAccent.opacity(backgroundOpacity))
-                        .background {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
-                        }
-                        .overlay {
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
-                        }
-                        .matchedGeometryEffect(id: "repo-row-selection", in: selectionNamespace)
-                } else {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(resolvedAccent.opacity(backgroundOpacity))
-                        .background {
-                            // 半透明底色让浅色、深色背景下的选中与悬停均清晰可见。
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
-                        }
+                Group {
+                    if isSelected, let selectionNamespace, !reduceMotion {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(resolvedAccent.opacity(backgroundOpacity))
+                            .background {
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                            }
+                            .matchedGeometryEffect(id: "repo-row-selection", in: selectionNamespace)
+                    } else {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(resolvedAccent.opacity(backgroundOpacity))
+                            .background {
+                                // 半透明底色让浅色、深色背景下的选中与悬停均清晰可见。
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
+                            }
+                    }
                 }
+                // 背景滑动与正文布局分开，选择变化不能给整张卡片注入弹簧交易。
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+                .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
             }
             .overlay(alignment: .leading) {
                 // 选中态左侧 3pt accent bar（设计 §3.1.4）
@@ -137,11 +142,14 @@ struct RepoRowSurface<Content: View>: View {
                     .frame(width: isSelected ? 3 : 0)
                     .padding(.vertical, 8)
                     .opacity(isSelected ? 1 : 0)
+                    .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
             }
             .overlay {
                 if !isSelected || selectionNamespace == nil || reduceMotion {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+                        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -152,9 +160,7 @@ struct RepoRowSurface<Content: View>: View {
                     }
                     return
                 }
-                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
-                    isHovered = hovering
-                }
+                isHovered = hovering
             }
             .onChange(of: interactionSuppressed) { _, isSuppressed in
                 // 滚动开始时立即清掉旧 hover，避免离开该 row 后仍残留高亮。
@@ -162,6 +168,5 @@ struct RepoRowSurface<Content: View>: View {
                     isHovered = false
                 }
             }
-            .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
     }
 }

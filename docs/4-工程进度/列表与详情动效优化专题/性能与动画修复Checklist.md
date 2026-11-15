@@ -13,7 +13,7 @@
 
 ## 修复任务
 
-- [ ] P01 · 隔离行背景动画：核对 `ListRowSurface` / `RepoRowSurface` 的 hover、spring 是否传播到正文、流式事件和控件布局；仅动画背景、描边和指示条，保留共享选中与 Reduce Motion。
+- [x] P01 · 隔离行背景动画：将 `ListRowSurface` / `RepoRowSurface` 的 hover、spring 限定在背景、描边和指示条；移除包裹正文的动画及 hover 的全子树交易，保留共享选中与 Reduce Motion。
 - [ ] P02 · 保留大型展示宿主：核对 Skill 原生多选 List、Agent / RAG 消息时间线、知识库 ScrollView 的 `.id` 和嵌套过渡；去除为动效引入的整树重建，保留原有滚动与加载交接。
 - [ ] P03 · 修复 README 交接终态：核对 idle / loading / empty / error / requiresLogin 是否正确触发状态收口，以及缓存回切与 ready / failure 回调归属；错误或空态必须结束骨架。
 - [ ] P04 · 修复 Skill 文件预览中断：核对快速 A → B → A、当前文件刷新失败和取消后可见性；读取结果与当前选择一致，旧退场不能留下透明正文。
@@ -32,4 +32,8 @@
 
 ## 修复与验证记录
 
-待逐项填写。原专题测试和构建记录见实施 Checklist，不自动视为本轮修复后的验证结果。
+### P01 · 行背景动画边界
+
+触发：Agent 流式事件行的正文或高度更新与 hover / 选中同帧发生时，原先行根部 `.animation` 会把布局更新一并纳入动画。此次把动画下沉到绘制背景与 overlay，行内容不再接收这些新增交易。`git diff --check` 通过；该绘制改动没有对应单测，不额外构建或操作 GUI。真实滚动与选择观感待人工验收。
+
+原专题测试和构建记录见实施 Checklist，不自动视为本轮修复后的验证结果。
