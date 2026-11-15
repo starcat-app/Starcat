@@ -77,7 +77,8 @@ struct SkillContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // 加载快照与文件选择留在稳定的外层，只交接不同页签的展示内容。
-        .nativeDetailTransition(value: tab)
+        // 条目与文件预览已有独立交接，页签不再复制并模糊整段 Markdown / 文件列表。
+        .stableDetailTransition(value: tab)
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: snapshot == nil)
         .task(id: refreshID) { await load() }
         .task(id: PreviewRequest(contentID: contentID, file: selectedFile)) { await loadPreview() }

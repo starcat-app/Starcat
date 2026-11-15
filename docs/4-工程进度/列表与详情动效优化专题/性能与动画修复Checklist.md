@@ -18,7 +18,8 @@
 - [x] P03 · 修复 README 交接终态：任务身份区分等待、当前文档与终态；核对缓存回切与 ready / failure 回调归属，空结果、登录提示及错误能够触发骨架收口。
 - [x] P04 · 修复 Skill 文件预览中断：快速 A → B → A 时先恢复保留的当前文件；刷新失败保留正文和错误反馈，取消 / 过期结果仍由原请求身份守门。
 - [x] P05 · 消除新增行索引重复扫描：Skill 分类 / 来源 / Agent 名称、Agent 历史 / 产物、洞察及标签候选共七处行渲染改为传递展示索引；保持稳定业务 ID，不引入派生状态缓存。
-- [ ] P06 · 核对骨架与其他交接：检查新增骨架时钟数量、停止边界、原生页签叠加、业务任务归属；只对可确认问题做最小修复，保留既有已完成路径。
+- [x] P06 · 核对骨架与其他交接：保留每组共享的骨架时钟和 Reduce Motion；Skill overview / files 页签移除额外的整容器身份切换与全区模糊，其余已有交接保持原职责。
+- [ ] P07 · 隔离探索详情的 Star 请求回写：稳定宿主下，A 的异步 Star 结束后不能用捕获的旧 Repo / item 覆盖已选择的 B，也不应再次加载 A 的 README；登记本轮源码审查新增的实际路径。
 
 每项记录填写：触发条件、源码证据、修改方式、验证结果与提交。仅已验证适用项打勾；确认不需修改的候选记录原因。
 
@@ -61,3 +62,9 @@
 触发：新增行底色在每行调用来源集合的 `firstIndex`，整批重算时反复线性扫描；Skill 来源 / Agent 名称的派生集合也被每行重新读取。改为在当前 `ForEach` 上枚举，并把行号传给绘制函数，消除七处新增扫描。`ForEach` 仍使用原业务 ID；洞察第二组接续第一组的展示索引，历史折叠沿用原有前缀顺序。标签编辑真正修改候选时的 `firstIndex` 保留，不扩大到业务重构。
 
 通过 `make test` 运行 `AgentWorkspaceViewModelTests`、`AgentRunInspectorPresentationTests`、`InsightsModelsTests`、`InsightsDrillDownTests`、`SkillWorkspaceTests`、`TagTaxonomyBootstrapServiceTests`：6 个 Suite、58 个测试通过。本项没有新增仅复刻枚举实现的测试；实际行配色、懒加载滑动与流畅度仍待人工验收。
+
+### P06 · 骨架时钟和 Skill 页签边界
+
+`ListLoadingSkeleton` 每组只使用一个既有 `SkeletonAnimatedPhase`，没有新增逐行计时器；列表 / 详情骨架由加载分支挂载，Reduce Motion 时使用静态 phase。仓库 Skills 安装窗口与 RAG 的既有交接保持原实现。
+
+Skill 内容页已有条目级交接、文件退场及独立加载任务，overview / files 页签原先再用 `nativeDetailTransition` 给整段内容换身份并模糊。此次只把这一层改为稳定身份的轻量淡化，避免额外复制内容容器；读取任务和展示快照仍由外层持有。其余小型纯展示详情没有发现需重复修改的同类任务归属问题。`git diff --check` 通过，无对应页签动画单测；编译随后续双渠道构建核对，视觉效果保持待验收。
