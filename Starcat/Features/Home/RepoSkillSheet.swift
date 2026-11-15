@@ -149,7 +149,7 @@ struct RepoSkillSheet: View {
                     }
                 }
                 .disabled(session.isInstalling || preview.installationIssue != nil)
-                .controlSize(.small)
+                .buttonStyle(RepoSkillHeaderButtonStyle())
             }
             RepoSkillScanNotice(session: session)
             if let progress = session.scanProgressText {
