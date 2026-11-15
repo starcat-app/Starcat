@@ -287,21 +287,34 @@ struct DailyRecommendationTests {
         #expect(!store.canAutomaticallyPresent())
     }
 
-    @Test("损坏状态文件不可用空反馈覆盖")
-    func corruptFileIsNotOverwritten() async throws {
+    @Test("损坏批次被隔离重建，SQLite 历史与负反馈完整保留")
+    func corruptBatchDoesNotBlockHealthyHistory() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var previous = DailyRecommendationState()
+        previous.recommendedDays = ["100": "2026-11-4", "101": "2026-11-4"]
+        previous.dismissedIDs = [101]
+        try await saveHistoryFixture(previous, root: root)
         let file = root.appendingPathComponent("42.json")
         try Data("invalid".utf8).write(to: file)
         let store = makeStore(root: root)
-        await store.load(
+        #expect(await store.loadPreferences(accountID: 42, scopeRevision: 1))
+        #expect(store.historyEntries.count == 2)
+        #expect(store.state.recommendedIDs == [100, 101])
+        #expect(store.state.dismissedIDs == [101])
+        #expect(try Data(contentsOf: root.appendingPathComponent("42.corrupt.json")) == Data("invalid".utf8))
+        #expect(await store.load(
             accountID: 42, scopeRevision: 1, serviceScope: "test",
-            fetchStars: { [] }, fetchCandidates: { _, _ in response([]) }
-        )
-        #expect(store.errorKey != nil)
+            fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100), item(101), item(200)]) }
+        ))
+        #expect(store.errorKey == nil)
+        #expect(store.visibleItems.map(\.repoID) == [200])
         await store.setShowsOnLaunch(false)
-        #expect(try Data(contentsOf: file) == Data("invalid".utf8))
+        let restarted = makeStore(root: root)
+        #expect(await restarted.loadPreferences(accountID: 42, scopeRevision: 1))
+        #expect(restarted.historyEntries.count == 2)
+        #expect(restarted.state.dismissedIDs == [101])
+        #expect(!restarted.state.showsOnLaunch)
     }
 
     @Test("固定种子和模型跨天展示新项目，当天重开和重启保留原批次")

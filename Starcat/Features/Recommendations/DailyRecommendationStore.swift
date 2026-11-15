@@ -82,9 +82,10 @@ final class DailyRecommendationStore {
         let token = generation
         errorKey = nil
         do {
-            let saved = try await disk.load(accountID: accountID)
-            guard token == generation, !Task.isCancelled else { return false }
+            // 历史是持久化真值；批次 JSON 可以独立恢复，不能被当成历史读取的前置条件。
             let entries = try await history.fetchAll(accountID: accountID)
+            guard token == generation, !Task.isCancelled else { return false }
+            let saved = try await disk.load(accountID: accountID)
             guard token == generation, !Task.isCancelled else { return false }
             if !hasLoadedState {
                 state = saved

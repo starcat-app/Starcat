@@ -189,8 +189,17 @@ actor DailyRecommendationDiskStore {
     func load(accountID: Int64) throws -> DailyRecommendationState {
         let url = root.appendingPathComponent("\(accountID).json")
         guard FileManager.default.fileExists(atPath: url.path) else { return DailyRecommendationState() }
-        // 损坏文件必须报错，不能以空状态覆盖用户“不感兴趣”反馈。
-        return try JSONDecoder().decode(DailyRecommendationState.self, from: Data(contentsOf: url))
+        do {
+            return try JSONDecoder().decode(DailyRecommendationState.self, from: Data(contentsOf: url))
+        } catch is DecodingError {
+            // 历史和反馈已迁入 SQLite；批次文件损坏只影响可重建的进度／偏好，
+            // 不能继续阻断健康历史。保留一份坏文件供排查，隔离失败也允许恢复；
+            // 真正的读取权限／磁盘 I/O 错误仍抛出，不冒充成功保存。
+            let quarantine = root.appendingPathComponent("\(accountID).corrupt.json")
+            try? FileManager.default.removeItem(at: quarantine)
+            try? FileManager.default.moveItem(at: url, to: quarantine)
+            return DailyRecommendationState()
+        }
     }
 
     func save(_ state: DailyRecommendationState, accountID: Int64, revision: UInt64) throws {
