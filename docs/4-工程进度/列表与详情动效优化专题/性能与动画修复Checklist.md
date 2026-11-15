@@ -16,7 +16,7 @@
 - [x] P01 · 隔离行背景动画：将 `ListRowSurface` / `RepoRowSurface` 的 hover、spring 限定在背景、描边和指示条；移除包裹正文的动画及 hover 的全子树交易，保留共享选中与 Reduce Motion。
 - [x] P02 · 保留大型展示宿主：Skill 原生多选 List、Agent / RAG / Repo AI 时间线、知识库 / 通知 ScrollView 及含读取任务的 Repo 标题改为稳定身份的轻量淡化；保留原有滚动与加载交接。
 - [x] P03 · 修复 README 交接终态：任务身份区分等待、当前文档与终态；核对缓存回切与 ready / failure 回调归属，空结果、登录提示及错误能够触发骨架收口。
-- [ ] P04 · 修复 Skill 文件预览中断：核对快速 A → B → A、当前文件刷新失败和取消后可见性；读取结果与当前选择一致，旧退场不能留下透明正文。
+- [x] P04 · 修复 Skill 文件预览中断：快速 A → B → A 时先恢复保留的当前文件；刷新失败保留正文和错误反馈，取消 / 过期结果仍由原请求身份守门。
 - [ ] P05 · 消除新增行索引重复扫描：核对 Skill 来源 / Agent 名称、Agent 历史 / 产物及洞察行的 `firstIndex`，传递展示索引；保持稳定业务 ID，不引入派生状态缓存。
 - [ ] P06 · 核对骨架与其他交接：检查新增骨架时钟数量、停止边界、原生页签叠加、业务任务归属；只对可确认问题做最小修复，保留既有已完成路径。
 
@@ -49,3 +49,9 @@
 触发：同一仓库的 `.loading` 转为 `.empty`、`.requiresLogin` 或 `.error` 时，原任务 token 都是 `scope|unloaded`，SwiftUI 不会重启交接任务，骨架可能持续遮住终态。改为使用 `ReadmeStateView.HandoffKey`，以仓库范围、等待 / 文档 / 终态驱动交接；仅缓存时间或错误文案变化不重播，未对齐范围的旧状态继续等待。原文档 ready / failure 的双重身份校验、WebKit 失败重试代次和稳定宿主均保留。
 
 新增 `ReadmeHandoffTests` 覆盖无文档终态、范围未对齐、缓存时间变化、重试身份与快速回切的任务归属。通过 `make test` 定向运行 `ReadmeHandoffTests`、`ReadmeWebViewTests`、`SkillContentReaderTests`、`AgentRunInspectorPresentationTests`：4 个 Suite、34 个测试通过。测试验证状态身份和既有读取 / 文档契约，未代替真实 WebView 导航与视觉验收。
+
+### P04 · Skill 预览回切恢复
+
+触发：B 的文件切换把 A 设为透明但尚未清空快照，此时回切 A 被视为同文件刷新；原逻辑只有读取成功才恢复可见，刷新失败后正文和错误一起留在透明层。将已有文件、正文、错误与可见性收为局部 `PreviewPresentation` 快照，开始同文件刷新时先恢复保留正文，不依赖成功回调。不同文件仍先退场再更新快照；读取并行、取消检查、请求身份与 loading 收口保持原有约束。
+
+新增 `SkillPreviewHandoffTests` 覆盖中断退场后回切、同文件刷新、不同文件快照和首载边界。通过 `make test` 运行该 Suite、`SkillContentReaderTests`、`SkillWorkspaceTests`、`SkillWorkspaceSnapshotTests`：4 个 Suite、26 个测试通过。测试验证展示快照和真实文件读取，不冒充实际快速点击的视觉验收。

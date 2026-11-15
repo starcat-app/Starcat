@@ -20,10 +20,7 @@ struct SkillContentView: View {
     @State private var snapshot: SkillContentSnapshot?
     @State private var failure: String?
     @State private var selectedFile: String?
-    @State private var preview: SkillContentPreview?
-    @State private var previewFailure: String?
-    @State private var presentedFile: String?
-    @State private var isPreviewVisible = false
+    @State private var preview = PreviewPresentation()
     @State private var previewLoading = false
     @State private var contentID = UUID()
     @State private var loadID = UUID()
@@ -32,6 +29,24 @@ struct SkillContentView: View {
     private struct PreviewRequest: Hashable {
         let contentID: UUID
         let file: String?
+    }
+
+    /// 文件、正文与可见性是同一份展示快照；回切时可以恢复被中断退场的当前文件。
+    struct PreviewPresentation {
+        var file: String?
+        var content: SkillContentPreview?
+        var failure: String?
+        var isVisible = false
+
+        /// 同文件重新读取前先恢复已有正文，后续失败也不依赖成功回调才能看见内容。
+        mutating func begin(file: String) -> Bool {
+            failure = nil
+            let retainsContent = self.file == file && content != nil
+            if retainsContent {
+                isVisible = true
+            }
+            return retainsContent
+        }
     }
 
     var body: some View {
@@ -116,19 +131,19 @@ struct SkillContentView: View {
             }
             .frame(height: min(260, CGFloat(snapshot.files.count) * 32))
             Divider()
-            if let path = presentedFile ?? selectedFile {
+            if let path = preview.file ?? selectedFile {
                 Text(verbatim: path).font(interfaceScale.font(.code)).textSelection(.enabled)
             }
             ZStack(alignment: .topLeading) {
-                if previewLoading && preview == nil {
+                if previewLoading && preview.content == nil {
                     RepoSkillSkeletonView(layout: .manifest).frame(minHeight: 320)
                         .transition(.opacity)
-                } else if let preview {
+                } else if let content = preview.content {
                     VStack(alignment: .leading, spacing: 8) {
-                        if let previewFailure {
+                        if let previewFailure = preview.failure {
                             Text(verbatim: previewFailure).foregroundStyle(.secondary).textSelection(.enabled)
                         }
-                        switch preview {
+                        switch content {
                         case .text(let text):
                             RepoFileSourcePreview(text: text).frame(minHeight: 320)
                         case .binary:
@@ -137,12 +152,12 @@ struct SkillContentView: View {
                             Text("skills.detail.files.tooLarge").foregroundStyle(.secondary)
                         }
                     }
-                    .opacity(isPreviewVisible ? 1 : 0)
-                    .blur(radius: reduceMotion || isPreviewVisible ? 0 : 10)
+                    .opacity(preview.isVisible ? 1 : 0)
+                    .blur(radius: reduceMotion || preview.isVisible ? 0 : 10)
                     .detailContentTransition()
-                    .allowsHitTesting(isPreviewVisible)
-                    .accessibilityHidden(!isPreviewVisible)
-                } else if let previewFailure {
+                    .allowsHitTesting(preview.isVisible)
+                    .accessibilityHidden(!preview.isVisible)
+                } else if let previewFailure = preview.failure {
                     Text(verbatim: previewFailure).foregroundStyle(.secondary).textSelection(.enabled)
                         .detailContentTransition()
                 } else {
@@ -182,15 +197,14 @@ struct SkillContentView: View {
     private func loadPreview() async {
         let run = UUID()
         previewID = run
-        previewFailure = nil
         guard let selectedFile, let snapshot else {
-            preview = nil
-            presentedFile = nil
-            isPreviewVisible = false
+            preview = PreviewPresentation()
             previewLoading = false
             return
         }
-        let isRefresh = presentedFile == selectedFile && preview != nil
+        let isRefresh = withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
+            preview.begin(file: selectedFile)
+        }
         previewLoading = true
         defer { if previewID == run { previewLoading = false } }
         do {
@@ -202,34 +216,31 @@ struct SkillContentView: View {
                 await fadeOutPreview()
                 try Task.checkCancellation()
                 guard previewID == run else { return }
-                preview = nil
-                presentedFile = nil
+                preview = PreviewPresentation()
             }
             let value = try await preparation
             try Task.checkCancellation()
             guard previewID == run, self.selectedFile == selectedFile else { return }
-            presentedFile = selectedFile
             withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
-                preview = value
-                isPreviewVisible = true
+                preview = PreviewPresentation(file: selectedFile, content: value, isVisible: true)
                 previewLoading = false
             }
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled, previewID == run, self.selectedFile == selectedFile else { return }
-            previewFailure = error.localizedDescription
+            preview.failure = error.localizedDescription
         }
     }
 
     /// 等实际退场完成后才替换正文，不用固定等待猜测 Markdown 或源码的渲染耗时。
     private func fadeOutPreview() async {
-        guard preview != nil else {
-            isPreviewVisible = false
+        guard preview.content != nil else {
+            preview.isVisible = false
             return
         }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12), completionCriteria: .removed) {
-                isPreviewVisible = false
+                preview.isVisible = false
             } completion: {
                 continuation.resume()
             }
