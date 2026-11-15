@@ -53,6 +53,7 @@ final class CompanionConfiguration {
     private enum Key {
         static let enabled = "companion.enabled"
         static let port = "companion.localHTTP.port"
+        static let instanceID = "companion.instanceID"
     }
 
     static let defaultPort: UInt16 = 5051
@@ -70,6 +71,7 @@ final class CompanionConfiguration {
         didSet { defaults.set(isEnabled, forKey: Key.enabled) }
     }
     private(set) var serverStatus: ServerStatus = .stopped
+    let instanceID: String
 
     init(
         localAPIKeyStore: StarcatLocalAPIKeyStore = .shared,
@@ -77,6 +79,13 @@ final class CompanionConfiguration {
     ) {
         self.localAPIKeyStore = localAPIKeyStore
         self.defaults = defaults
+        if let stored = defaults.string(forKey: Key.instanceID) {
+            instanceID = stored
+        } else {
+            let value = UUID().uuidString.lowercased()
+            instanceID = value
+            defaults.set(value, forKey: Key.instanceID)
+        }
 
         let savedPort = defaults.integer(forKey: Key.port)
         if Self.allowedPortRange.contains(savedPort) {

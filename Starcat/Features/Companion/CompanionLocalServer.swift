@@ -25,6 +25,7 @@ final class CompanionLocalServer {
     private let starStateHandler: CompanionStarStateHandler?
     private let recommendationHandler: CompanionRecommendationHandler?
     private let eventHub: CompanionEventHub
+    private let pairingStore: CompanionDeviceStore?
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "com.starcat.companion.local-server")
     private static let jsonEncoder: JSONEncoder = {
@@ -47,7 +48,8 @@ final class CompanionLocalServer {
         actionHandler: CompanionActionHandler? = nil,
         starStateHandler: CompanionStarStateHandler? = nil,
         recommendationHandler: CompanionRecommendationHandler? = nil,
-        eventHub: CompanionEventHub? = nil
+        eventHub: CompanionEventHub? = nil,
+        pairingStore: CompanionDeviceStore? = nil
     ) {
         self.configuration = configuration
         self.contextProvider = contextProvider
@@ -58,6 +60,10 @@ final class CompanionLocalServer {
         self.starStateHandler = starStateHandler
         self.recommendationHandler = recommendationHandler
         self.eventHub = eventHub ?? CompanionEventHub()
+        self.pairingStore = pairingStore
+        pairingStore?.onRevoke = { [weak eventHub = self.eventHub] deviceID in
+            eventHub?.disconnectDevice(deviceID)
+        }
     }
 
     func start() {
@@ -67,6 +73,8 @@ final class CompanionLocalServer {
     }
 
     func stop() {
+        eventHub.disconnectAll()
+        pairingStore?.invalidatePendingRequests()
         listener?.cancel()
         listener = nil
         configuration.updateServerStatus(.stopped)
@@ -199,8 +207,33 @@ final class CompanionLocalServer {
             return response(status: 204, bodyData: Data(), origin: origin)
         }
 
-        guard request.headers["authorization"] == "Bearer \(configuration.token)" else {
+        if request.method == "GET", request.path == "/plugin/v1/discover" {
+            return response(status: 200, body: [
+                "product": "starcat",
+                "protocol_version": "1",
+                "pairing": "numeric_comparison",
+                "channel": Bundle.main.bundleIdentifier ?? "starcat",
+                "instance_id": configuration.instanceID
+            ], origin: origin)
+        }
+        if request.path.hasPrefix("/plugin/v1/pairing/") {
+            return pairingResponse(request, origin: origin)
+        }
+
+        let authentication = authenticate(request)
+        guard authentication.authorized else {
             return response(status: 401, body: ["error": "unauthorized"], origin: origin)
+        }
+        if request.method == "POST", request.path == "/plugin/v1/devices/revoke-current" {
+            guard let deviceID = authentication.deviceID else {
+                return response(status: 409, body: ["error": "manual_key_requires_rotation"], origin: origin)
+            }
+            do {
+                try pairingStore?.revoke(deviceID: deviceID)
+                return response(status: 200, body: ["status": "revoked"], origin: origin)
+            } catch {
+                return response(status: 500, body: ["error": "revoke_failed"], origin: origin)
+            }
         }
 
         switch (request.method, request.path) {
@@ -249,7 +282,8 @@ final class CompanionLocalServer {
             })
             return true
         }
-        guard request.headers["authorization"] == "Bearer \(configuration.token)" else {
+        let authentication = authenticate(request)
+        guard authentication.authorized else {
             connection.send(content: response(status: 401, body: ["error": "unauthorized"], origin: origin), completion: .contentProcessed { _ in
                 connection.cancel()
             })
@@ -265,7 +299,11 @@ final class CompanionLocalServer {
         })
         connection.send(content: Data(": connected\n\n".utf8), completion: .contentProcessed { _ in })
 
-        let clientID = eventHub.addClient(repoID: repoID) { [weak connection] event in
+        let clientID = eventHub.addClient(
+            repoID: repoID,
+            deviceID: authentication.deviceID,
+            disconnect: { [weak connection] in connection?.cancel() }
+        ) { [weak connection] event in
             guard let connection else { return }
             let data = Self.eventStreamData(for: event)
             connection.send(content: data, completion: .contentProcessed { _ in })
@@ -280,6 +318,61 @@ final class CompanionLocalServer {
             Task { @MainActor in self?.eventHub.removeClient(clientID) }
         }
         return true
+    }
+
+    /// Companion 与 MCP 凭据存储隔离；旧全局 Key 只在用户主动选择的手动模式继续有效。
+    private func authenticate(_ request: CompanionHTTPRequest) -> (authorized: Bool, deviceID: String?) {
+        guard let header = request.headers["authorization"], header.hasPrefix("Bearer ") else {
+            return (false, nil)
+        }
+        let token = String(header.dropFirst(7))
+        if let device = pairingStore?.authorizedDevice(token: token) { return (true, device.id) }
+        return (header == "Bearer \(configuration.token)", nil)
+    }
+
+    /// 免 Key 接口仅接受扩展自身 Origin 的 JSON POST。页面注入层不能发起或领取配对，
+    /// 领取凭据不进入 URL、发现响应或日志；浏览器名称仅用于用户核对。
+    private func pairingResponse(_ request: CompanionHTTPRequest, origin: String?) -> Data {
+        guard let origin, Self.isExtensionOrigin(origin), let pairingStore else {
+            return response(status: 403, body: ["error": "extension_origin_required"], origin: nil)
+        }
+        guard request.method == "POST",
+              request.headers["content-type"]?.lowercased().hasPrefix("application/json") == true else {
+            return response(status: 400, body: ["error": "json_post_required"], origin: origin)
+        }
+        do {
+            switch request.path {
+            case "/plugin/v1/pairing/start":
+                let input = try JSONDecoder().decode(CompanionPairingStart.self, from: request.body)
+                return response(status: 200, body: try pairingStore.start(input, origin: origin), origin: origin)
+            case "/plugin/v1/pairing/poll":
+                let claim = try JSONDecoder().decode(CompanionPairingClaim.self, from: request.body)
+                return response(status: 200, body: try pairingStore.poll(claim, origin: origin), origin: origin)
+            case "/plugin/v1/pairing/cancel":
+                let claim = try JSONDecoder().decode(CompanionPairingClaim.self, from: request.body)
+                try pairingStore.cancel(claim, origin: origin)
+                return response(status: 200, body: ["status": "cancelled"], origin: origin)
+            default:
+                return response(status: 404, body: ["error": "not_found"], origin: origin)
+            }
+        } catch CompanionPairingError.busy {
+            return response(status: 409, body: ["error": "pairing_pending"], origin: origin)
+        } catch CompanionPairingError.rateLimited {
+            return response(status: 429, body: ["error": "pairing_rate_limited"], origin: origin)
+        } catch CompanionPairingError.unauthorized {
+            return response(status: 401, body: ["error": "pairing_claim_invalid"], origin: origin)
+        } catch {
+            return response(status: 400, body: ["error": "invalid_pairing_request"], origin: origin)
+        }
+    }
+
+    static func isExtensionOrigin(_ origin: String) -> Bool {
+        guard let url = URL(string: origin), let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil, url.port == nil,
+              url.path.isEmpty || url.path == "/", url.query == nil, url.fragment == nil else {
+            return false
+        }
+        return url.scheme == "chrome-extension" || url.scheme == "safari-web-extension"
     }
 
     private func repoContextResponse(request: CompanionHTTPRequest, origin: String?) async -> Data {
@@ -521,8 +614,7 @@ final class CompanionLocalServer {
         // GitHub/Google 页面、Chrome 扩展和 Safari WebExtension；真正业务请求仍必须通过 Bearer token。
         // Google 搜索有大量国家域名，不能只放行 www.google.com，否则 google.com.hk
         // 这类实际搜索页会被 CORS 预检挡掉。
-        return origin.hasPrefix("chrome-extension://")
-            || origin.hasPrefix("safari-web-extension://")
+        return Self.isExtensionOrigin(origin)
             || origin == "https://github.com"
             || Self.isAllowedGoogleOrigin(origin)
     }
@@ -555,6 +647,7 @@ final class CompanionLocalServer {
         case 204: "No Content"
         case 409: "Conflict"
         case 426: "Upgrade Required"
+        case 429: "Too Many Requests"
         case 400: "Bad Request"
         case 401: "Unauthorized"
         case 403: "Forbidden"
@@ -565,6 +658,7 @@ final class CompanionLocalServer {
         var headers = [
             "HTTP/1.1 \(status) \(reason)",
             "Content-Type: application/json; charset=utf-8",
+            "Cache-Control: no-store",
             "Content-Length: \(bodyData.count)",
             "Access-Control-Allow-Headers: Authorization, Content-Type",
             "Access-Control-Allow-Methods: GET, PATCH, POST, OPTIONS",
