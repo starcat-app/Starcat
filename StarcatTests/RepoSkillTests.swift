@@ -110,8 +110,9 @@ struct RepoSkillTests {
         #expect(Set(result.skills.map(\.id)).count == 2)
         #expect(result.skills[0].files.map(\.path) == ["SKILL.md", "scripts/check.sh"])
         #expect(result.skills[0].commitSHA == "fixed")
-        // 预览只保留正文，frontmatter 不进 Markdown 渲染。
-        #expect(result.skills[0].manifest == "# Review")
+        // 预览保留原始 frontmatter，由阅读渲染器转成键值表格。
+        #expect(result.skills[0].manifest.hasPrefix("---\n"))
+        #expect(result.skills[0].manifest.hasSuffix("# Review"))
     }
 
     @Test("树截断补查失败仍保留已核实 Skill，零证据不判为不存在")
@@ -925,12 +926,29 @@ struct RepoSkillTests {
         let skill = RepoSkill(
             repositoryID: original.repositoryID, commitSHA: original.commitSHA, directory: original.directory,
             name: original.name, summary: original.summary,
-            manifest: "# Review\n\n```swift\nlet value = 1\n```\n\n![image](assets/example.png)\n\n[guide](references/guide.md)",
+            manifest: """
+            ---
+            name: review
+            description: Review repositories
+            ---
+            # Review
+
+            ```swift
+            let value = 1
+            ```
+
+            ![image](assets/example.png)
+
+            [guide](references/guide.md)
+            """,
             files: original.files, installationIssue: nil
         )
         let prepared = try await cache.prepare(
             skill, imageBaseURL: URL(string: "https://raw.githubusercontent.com/owner/repo/fixed/skills/review/")
         )
+        #expect(prepared.html.contains("class=\"starcat-front-matter\""))
+        #expect(prepared.html.contains(">Review repositories</td>"))
+        #expect(prepared.html.contains("<h1>Review</h1>"))
         #expect(prepared.html.contains("<pre><code class=\"language-swift\">"))
         #expect(prepared.html.contains("https://raw.githubusercontent.com/owner/repo/fixed/skills/review/assets/example.png"))
         #expect(prepared.html.contains("href=\"references/guide.md\""))

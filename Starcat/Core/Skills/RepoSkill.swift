@@ -57,8 +57,8 @@ struct RepoSkill: Identifiable, Codable, Equatable, Sendable {
 
 /// 整仓扫描快照可重建，不参与 CloudKit 用户数据同步。
 struct RepoSkillScan: Codable, Equatable, Sendable {
-    /// v2：预览正文排除 frontmatter；旧缓存仍含元数据，须整体重扫。
-    static let rulesVersion = 2
+    /// v3：预览保留原始 frontmatter；v2 缓存已剥离元数据，须整体重扫。
+    static let rulesVersion = 3
     let repositoryID: Int64
     let commitSHA: String
     let sourcePushedAt: String?

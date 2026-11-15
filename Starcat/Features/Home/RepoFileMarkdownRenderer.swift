@@ -28,7 +28,7 @@ actor RepoFileMarkdownRenderer {
                  path: String, blobSHA: String) throws -> RepoFileMarkdownDocument {
         try Task.checkCancellation()
         let html = ReadmeAssetURLRewriter.rewrite(
-            in: Self.renderHTML(text), owner: target.owner, repo: target.name,
+            in: Self.renderHTMLPreservingFrontMatter(text), owner: target.owner, repo: target.name,
             ref: commit, filePath: path
         )
         try Task.checkCancellation()
@@ -40,7 +40,8 @@ actor RepoFileMarkdownRenderer {
     }
 
     /// 只识别文件开头、在顶层闭合的元数据；正文中的分隔线与未闭合内容仍走原有 Markdown。
-    private static func renderHTML(_ text: String) -> String {
+    /// 供文件预览与 Skill 阅读区共享同一份 front matter 展示规则，避免两个入口语义漂移。
+    static func renderHTMLPreservingFrontMatter(_ text: String) -> String {
         var normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
         if normalized.hasPrefix("\u{feff}") { normalized.removeFirst() }
         let lines = normalized.components(separatedBy: "\n")
