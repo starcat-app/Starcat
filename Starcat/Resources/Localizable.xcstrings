@@ -4430,215 +4430,215 @@
       }
     },
     "recommendations.daily.basedOnStars" : {
-      "comment": "Actual positive source projects for the recommendation. AI translation drafts need review.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Based on projects you starred: %@"
+      "comment" : "Actual positive source projects for the recommendation. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Based on projects you starred: %@"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "基于你 Star 过的项目推荐：%@"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "基于你 Star 过的项目推荐：%@"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "根據你 Star 過的專案推薦：%@"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "根據你 Star 過的專案推薦：%@"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Star 済みのプロジェクトに基づくおすすめ：%@"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Star 済みのプロジェクトに基づくおすすめ：%@"
           }
         },
-        "ko": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Star한 프로젝트를 바탕으로 추천: %@"
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Star한 프로젝트를 바탕으로 추천: %@"
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Basierend auf deinen mit einem Stern markierten Projekten: %@"
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Basierend auf deinen mit einem Stern markierten Projekten: %@"
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Selon les projets auxquels vous avez ajouté une étoile : %@"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Selon les projets auxquels vous avez ajouté une étoile : %@"
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Basado en los proyectos que has marcado con una estrella: %@"
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Basado en los proyectos que has marcado con una estrella: %@"
           }
         },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Com base nos projetos que você marcou com uma estrela: %@"
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Com base nos projetos que você marcou com uma estrela: %@"
           }
         },
-        "it": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "In base ai progetti a cui hai aggiunto una stella: %@"
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "In base ai progetti a cui hai aggiunto una stella: %@"
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "На основе проектов, отмеченных вами звездой: %@"
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "На основе проектов, отмеченных вами звездой: %@"
           }
         },
-        "nl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Op basis van projecten die je een ster hebt gegeven: %@"
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Op basis van projecten die je een ster hebt gegeven: %@"
           }
         },
-        "pl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Na podstawie projektów oznaczonych przez Ciebie gwiazdką: %@"
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Na podstawie projektów oznaczonych przez Ciebie gwiazdką: %@"
           }
         },
-        "uk": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "На основі проєктів, які ви позначили зіркою: %@"
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "На основі проєктів, які ви позначили зіркою: %@"
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Yıldız verdiğin projelere göre önerildi: %@"
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yıldız verdiğin projelere göre önerildi: %@"
           }
         },
-        "vi": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Đề xuất dựa trên các dự án bạn đã gắn sao: %@"
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đề xuất dựa trên các dự án bạn đã gắn sao: %@"
           }
         },
-        "id": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Berdasarkan proyek yang Anda beri bintang: %@"
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Berdasarkan proyek yang Anda beri bintang: %@"
           }
         }
       }
     },
     "recommendations.daily.aiReasonTitle" : {
-      "comment": "AI-generated explanation based on actual positive source projects. AI translation drafts need review.",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI recommendation reason"
+      "comment" : "AI-generated explanation based on actual positive source projects. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI recommendation reason"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI 推荐理由"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 推荐理由"
           }
         },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI 推薦理由"
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 推薦理由"
           }
         },
-        "ja": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "AI によるおすすめ理由"
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI によるおすすめ理由"
           }
         },
-        "ko": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "AI 추천 이유"
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI 추천 이유"
           }
         },
-        "de": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "KI-Empfehlungsgrund"
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KI-Empfehlungsgrund"
           }
         },
-        "fr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Raison de la recommandation par l’IA"
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Raison de la recommandation par l’IA"
           }
         },
-        "es": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Motivo de la recomendación de IA"
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Motivo de la recomendación de IA"
           }
         },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Motivo da recomendação por IA"
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Motivo da recomendação por IA"
           }
         },
-        "it": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Motivo del consiglio dell’IA"
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Motivo del consiglio dell’IA"
           }
         },
-        "ru": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Обоснование рекомендации ИИ"
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обоснование рекомендации ИИ"
           }
         },
-        "nl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "AI-aanbevelingsreden"
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI-aanbevelingsreden"
           }
         },
-        "pl": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Uzasadnienie rekomendacji AI"
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Uzasadnienie rekomendacji AI"
           }
         },
-        "uk": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Обґрунтування рекомендації ШІ"
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Обґрунтування рекомендації ШІ"
           }
         },
-        "tr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Yapay zekâ öneri gerekçesi"
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâ öneri gerekçesi"
           }
         },
-        "vi": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Lý do đề xuất của AI"
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lý do đề xuất của AI"
           }
         },
-        "id": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Alasan rekomendasi AI"
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Alasan rekomendasi AI"
           }
         }
       }
