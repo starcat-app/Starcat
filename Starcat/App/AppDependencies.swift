@@ -36,6 +36,12 @@ final class AppDependencies {
     /// 不能直接使用 `AuthSession.state.user.id`：冷启动会先从磁盘 profile 提前恢复登录 UI，
     /// 此时数据库仍可能指向 `_anonymous`，必须等 `database.reopen` 完成后再刷新账号级缓存。
     private(set) var databaseScopeRevision: UInt64 = 0
+    /// 多窗口共用批次与历史；长期反馈存入当前账号数据库，JSON 仅保存批次偏好。
+    let dailyRecommendationStore: DailyRecommendationStore
+    /// 可重建 AI 理由缓存与长期历史分离，卡片和历史详情共享同一份生成结果。
+    let dailyRecommendationExplanationStore = DailyRecommendationExplanationStore()
+    /// 原生宿主共用可取消的准备任务，关闭用户换批不依赖 SwiftUI 的任务继承。
+    let dailyRecommendationPreparation = DailyRecommendationPreparation()
     /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
     let aiUsageRepository: any AIUsageRepositoryProtocol
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
@@ -916,6 +922,7 @@ final class AppDependencies {
         // 发生在任何 Service 创建 OpenAIClient 之前，避免启动早期请求漏记。
         AIUsageRecorder.shared.configure(database: db)
         self.aiUsageRepository = GRDBAIUsageRepository(database: db)
+        self.dailyRecommendationStore = DailyRecommendationStore(history: RecommendationHistoryRepository(database: db))
 
         let api = GitHubAPIClient()
         self.apiClient = api
@@ -2040,6 +2047,8 @@ final class AppDependencies {
         guard database.currentUserId != previousUserId else { return }
         activityCategoryCountService.activate(accountID: database.currentUserId)
         databaseScopeRevision &+= 1
+        dailyRecommendationStore.activate(accountID: database.currentUserId, scopeRevision: databaseScopeRevision)
+        dailyRecommendationExplanationStore.activate(accountID: database.currentUserId, revision: databaseScopeRevision)
         githubIssueSummaryStore.reset(scopeRevision: databaseScopeRevision)
         repositoryInsightsContextScopeState.update(
             userID: database.currentUserId,
@@ -2065,6 +2074,7 @@ final class AppDependencies {
     /// 全流程只动本机，不调用 GitHub / CloudKit / 自建后端删除远端数据。
     func resetLocalAppData(for target: AppDataResetTarget) async throws {
         mcpService.stop()
+        defer { dailyRecommendationPreparation.resume() }
 
         let resetter = AppDataResetService(
             database: database,
@@ -2072,6 +2082,12 @@ final class AppDependencies {
         )
         try await resetter.resetLocalData(
             for: target,
+            prepareAccountReset: {
+                // JSON 与理由目录不在账号 DB 内；先停生成并排空反馈写入，再删文件、注销和切库。
+                await self.dailyRecommendationPreparation.suspendAndWait()
+                try await self.dailyRecommendationStore.clearForFactoryReset(accountID: target.userID)
+                try await self.dailyRecommendationExplanationStore.clearForFactoryReset(accountID: target.userID)
+            },
             releaseCurrentSession: { [authSession] in
                 await authSession.signOut()
             },

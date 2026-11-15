@@ -67,6 +67,12 @@ private struct DiscoveryScaffoldShell: View {
             await resolveRepo()
             loadReadmeIfNeeded()
         }
+        .onChange(of: dependencies.starredRegistry.ids) { _, _ in
+            // 历史列表不随 Star 消失；来自其它窗口或同步的变化也必须立即反映在当前详情。
+            if let displayRepo {
+                self.displayRepo = dependencies.starredRegistry.applyingDisplayState(to: displayRepo)
+            }
+        }
     }
 
     private func scaffold(for repo: Repo, readmeVM: ReadmeViewModel) -> some View {
@@ -126,6 +132,8 @@ private struct DiscoveryScaffoldShell: View {
         }
 
         displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
+        // 只有远端 Star/Unstar 成功才同步反馈；失败不能清掉用户原有的“不感兴趣”。
+        await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
 
         await homeViewModel.refreshAfterExternalStarChange()
         await resolveRepo()

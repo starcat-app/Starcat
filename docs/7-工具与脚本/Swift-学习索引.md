@@ -93,9 +93,11 @@
 | `Task.cancel()` / `Task.isCancelled` | `HomeViewModel.currentReloadTask?.cancel()` / `RepoNoteAIGenerationViewModel.cancelCurrentTask` | "Swift Task cancellation" |
 | `Task.checkCancellation()` | `RepoAIInsightService.generateText` 每个流式事件与 `RepoNoteAIGenerationViewModel.validate` 双重防迟到回写 | "Swift Task checkCancellation" |
 | `Task<Void, Never>` | `private var currentTask: Task<Void, Never>?` | "Swift Task generic parameters" |
+| `Task.value` / 共享进行中的任务 | `DailyRecommendationExplanationStore.prepare` 合并多个窗口的相同推荐理由生成，账号切换统一取消 | "Swift Task value unstructured tasks cancellation" |
+| `AsyncStream.makeStream` / `onTermination` | `DailyRecommendationExplanationStore.prepare` 让超时或取消结束等待，忽略取消的 Provider 迟到响应不再保存 | "Swift AsyncStream Continuation onTermination cancellation" |
 | `AsyncThrowingStream` / `for try await` | `AIClientProtocol.chatStream` 生产事件，`RepoAIInsightService.generateText` 消费 delta / completed | "Swift AsyncThrowingStream for try await" |
 | `async let` | `HomeViewModel.refreshSidebar` 并行起 3 个查询 | "Swift async let concurrency" |
-| `withTaskGroup` | `RepoFileBrowserViewModel` 勾选下载（并发上限 4）/ `BatchAIQueueService` / `SearchCoordinator` | "Swift TaskGroup" |
+| `withTaskGroup` | `RepoFileBrowserViewModel` 勾选下载（并发上限 4）/ `DailyRecommendationExplanationStore.prepareBatch` 整批理由并发上限 3 / `BatchAIQueueService` | "Swift TaskGroup" |
 | `@MainActor` | `ReadmeViewModel` / `HomeViewModel` / `AppDependencies` / `Coordinator` | "Swift MainActor" |
 | `actor` | `GitHubAPIClient` / `WikiAPI` | "Swift actors data race" |
 | `nonisolated` / `nonisolated(unsafe)` | `URLProtocolStub` 静态可变属性 | "Swift nonisolated keyword" |
@@ -195,6 +197,9 @@
 | `decidePolicyFor navigationAction` | 拦截链接 / 主框架 reload | "WKNavigationActionPolicy decidePolicy" |
 | `WKNavigationAction.navigationType == .linkActivated` | 区分用户点链接 vs 程序加载 | "WKNavigationType cases" |
 | `loadHTMLString(_:baseURL:)` | 加载 README HTML 片段 | "WKWebView loadHTMLString baseURL" |
+| `loadFileURL(_:allowingReadAccessTo:)` / `.nonPersistent()` | `DailyRecommendationWebView.makeNSView` 加载本地发现页，限定文件读取范围，不另存网页业务状态 | "WKWebView loadFileURL allowingReadAccessTo WKWebsiteDataStore nonPersistent" |
+| `WKScriptMessageHandler` / `removeScriptMessageHandler` | `DailyRecommendationWebView.Coordinator` 接收动作；销毁时移除 handler，`DailyRecommendationWebAction` 验证批次与候选 ID | "WKScriptMessageHandler WKUserContentController removeScriptMessageHandler retain cycle" |
+| `callAsyncJavaScript(_:arguments:in:contentWorld:)` | `DailyRecommendationWebView.Coordinator.flush` 用结构化参数串行发送展示快照，不拼接仓库文本为脚本 | "WKWebView callAsyncJavaScript arguments WKContentWorld" |
 | `webView.reload()` 的副作用 | 触发 baseURL 真实请求（**坑**，见 `ReadmeWebView` 第 232-256 行注释） | "WKWebView reload behavior" |
 | WebContent 进程 + Sandbox 噪音 | `Failed to change to usage state 2` 等无害 log | "WKWebView WebContent process sandbox logs" |
 
@@ -229,7 +234,7 @@
 | `Date` / `TimeInterval` | `static let softTtl: TimeInterval = 6 * 3600` | "Foundation Date TimeInterval" |
 | `ISO8601DateFormatter` | `ISO8601DateFormatter.shared`（项目自定义共享实例） | "ISO8601DateFormatter formatOptions" |
 | `withInternetDateTime + withFractionalSeconds` | 同上 | "ISO8601DateFormatter Options" |
-| `Calendar` / `DateComponents` | 项目里少用 | "Foundation Calendar dateComponents" |
+| `Calendar` / `DateComponents` | `RecommendationHistoryDates` 按当地自然日划分最近五天，校验年月日并保留未知日期 | "Foundation Calendar startOfDay date byAdding DateComponents timeZone" |
 
 ---
 
@@ -257,6 +262,7 @@
 | `StatementArguments` | 同上，参数化 | "GRDB StatementArguments" |
 | `upsert(_ db:)` | `ReadmeRepository.upsert` | "GRDB upsert mutating" |
 | `Migration` / `DatabaseMigrator` | `DatabaseMigrationsV1` | "GRDB DatabaseMigrator" |
+| 事务内一次性导入 / `ON CONFLICT` | `RecommendationHistoryRepository.importLegacy`：历史与导入标记一起提交；`record` 冻结首次推荐时间；`DailyRecommendationStore.persist` 串行保存反馈 | "GRDB transactions DatabaseWriter write SQLite ON CONFLICT" |
 | FTS5 全文搜索 | `repos_fts MATCH ?` | "GRDB FTS5 full text search" |
 | Triggers / `CREATE TRIGGER` | Migration v1 里同步 repos ↔ repos_fts | "SQLite triggers FTS" |
 

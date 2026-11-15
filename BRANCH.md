@@ -46,9 +46,8 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
 | `codex/cli-browser-access` | 本地 worktree：`../Starcat-cli-browser-access`；CLI、Skill、Chrome、Safari 四个独立仓库在其 `supports/` 下使用同名分支与独立 worktree | 从 `dev@34e68983` 实施 CLI/MCP 能力开放与浏览器免输 Key 配对、发现及 CLI 桥接两项专项，共用 App 能力与设备授权边界。 | `开发中`；2026-11-15 代码、自动化及双渠道构建完成，已按功能本地提交，待真实验收；Safari 原生宿主与分发矩阵仍待完成，具体证据见专项 Checklist。 | 继续真实连接与浏览器验收；通过后再合回各仓 `dev`，不自动推送、发布或清理。 |
-| `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐已合入本地 `dev`。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-12 按本次发布收尾要求从 `dev` fast-forward 并推送，本地及远端 `dev/main` 保持一致。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
 
@@ -88,12 +87,21 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 ## 推荐数据链路跨仓分支
 
+2026-11-15 为每日推荐真实依据创建推荐后端专项 worktree：
+`supports/starcat-recommend-api` 使用独立仓分支 `codex/daily-recommendation-evidence`，
+位于 `../Starcat-daily-recommendation-cards/supports/starcat-recommend-api`，
+基线为该独立仓 `dev@1ad1c21`。2026-11-15 dong4j 单独授权部署，聚合仓
+`5fde215` 锁定推荐仓 `02b748e`，已发布为既有 `starcat-api` release 45；
+来源证据、游标分页与原排序线上验证通过，活动模型不变。两专项分支仍待验收，
+未推送源码、未合回各自 dev；该次后端部署未合并或发布 App。
+
 2026-08-29 已按 dong4j 授权清理：Starcat `../Starcat-collection-pipeline` worktree 与各仓需求分支均已删除。独立仓库仍各自保留 `dev` / `main`，不由主仓库管理其 Git 历史。
 
 ## 近期已清理分支
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/daily-recommendation-cards` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-15 dong4j 授权合并；集成提交 `5ffd0547` 包含每日推荐卡片、历史、真实来源依据及 Pro 理由。合并前 199 项定向测试、17 个测试套件与双渠道构建通过；本次未做界面及真实 LLM 验收，动效推广另行处理，未推送。 |
 | `codex/repo-workspace-unification` | 已合入本地 `dev`；分支及 worktree 保留。 | 2026-11-15 dong4j 授权合并；基于 `dev@b961902b` 的专项提交 `9a81453a` 覆盖仓库弹窗、文件阅读与笔记标识。合并前 160 项定向测试及双渠道 build-only 通过；人工界面与 17 语言译文审核仍待完成，未推送。 |
 | `codex/skill-management` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 确认目前可用并授权合并、清理；分支头 `3162ca5d` 的 22 个提交经 `4712a2b6` 合入本地 `dev`，后续直接在主工作区优化。204 项、23 Suite 集成回归、双渠道构建与 121 key × 17 语言编译资源校验通过。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置一致；先把 Direct 切换到主工作区产物，再以非强制 `git worktree remove` 和 `git branch -d` 清理。14 篇文档完整保留，完整人工验收与译文审核继续开放，本次未操作远端。 |
 | `codex/shared-selection-motion` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 授权合并与清理；分支头 `487fefde` 的设置页、Skills 动效、骨架加载及默认 UI 规范经 `e8a5e7bd` 合入 `dev`，详情页冲突处理保留既有 Skill 翻译。50 项定向测试与双渠道 build-only 通过，本次未做 GUI 复验。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 清理 `../Starcat-shared-selection-motion` 及本地分支，本次未操作远端。 |

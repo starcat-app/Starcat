@@ -18,6 +18,8 @@ struct ExploreView: View {
     var githubAPIClient: (any GitHubAPIClientProtocol)?
     /// 由 Repo List 窗口会话持有，跨 Manage / Explore / Activity 切换不销毁。
     let discoveryViewModel: ExploreDiscoveryViewModel
+    let recommendationHistoryModel: RecommendationHistoryListModel
+    let onShowDailyRecommendations: () -> Void
     @Binding var trendingViewModel: TrendingViewModel?
     @Binding var weeklyViewModel: WeeklyContentViewModel?
 
@@ -45,6 +47,8 @@ struct ExploreView: View {
             // layout / display-list 提交，三个常驻列表会把一次分类切换放大成整窗重排。
             // ViewModel 继续由 ExploreView 的 @State 持有，因此切换分类不会丢缓存。
             switch selectedMode {
+            case .recommendations:
+                RecommendationHistoryListView(model: recommendationHistoryModel, onShowDailyRecommendations: onShowDailyRecommendations, onCountChange: onRepoCountChange)
             case .trending:
                 trendingContent
             case .weekly:
@@ -73,7 +77,7 @@ struct ExploreView: View {
             switch mode {
             case .trending:
                 clearDiscoverySelection()
-            case .weekly:
+            case .recommendations, .weekly:
                 clearTrendingSelection()
                 clearDiscoverySelection()
             case .awesome:
@@ -614,7 +618,7 @@ private struct ExploreDiscoveryListView: View {
             return discoverySignalMetadata(for: repo)
         case .newReleases:
             return releaseFooterMetadata(for: repo)
-        case .trending, .weekly, .awesome:
+        case .recommendations, .trending, .weekly, .awesome:
             return nil
         }
     }

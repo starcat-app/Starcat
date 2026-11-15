@@ -32,6 +32,7 @@ struct GeneralSettingsView: View {
             // 感兴趣语言是长期候选池，保持在 macOS 集成之后，不与显示语言混排。
             InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
             ExploreCatalogSettingsSection()
+            dailyRecommendationSection
 
             if DistributionChannel.current.isDirect {
                 directUpdateSection
@@ -219,6 +220,67 @@ struct GeneralSettingsView: View {
             }
         } header: {
             SettingsSectionHeader("settings.general.macOSIntegration", systemImage: "macwindow.on.rectangle")
+        }
+    }
+
+    /// 与主窗口等待相同的账号/数据库边界，避免切换账号时编辑到上一账号的偏好
+    private var dailyRecommendationAccountID: Int64? {
+        guard let id = dependencies.authSession.state.user?.id,
+              dependencies.database.currentUserId == id else { return nil }
+        return id
+    }
+
+    /// 设置与抽卡页观察同一个 Store，离线或未打开抽卡页时也能独立读取并保存偏好
+    private var dailyRecommendationSection: some View {
+        let store = dependencies.dailyRecommendationStore
+        let accountID = dailyRecommendationAccountID
+        let revision = dependencies.databaseScopeRevision
+
+        return Section {
+            Toggle("recommendations.daily.autoShow", isOn: Binding(
+                get: { store.state.showsOnLaunch },
+                set: { enabled in
+                    Task {
+                        guard accountID == dailyRecommendationAccountID,
+                              revision == dependencies.databaseScopeRevision,
+                              store.accountID == accountID else { return }
+                        await store.setShowsOnLaunch(enabled)
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .disabled(accountID == nil || store.accountID != accountID || !store.hasLoadedState)
+
+            if let error = store.errorKey,
+               !store.hasLoadedState || error == "recommendations.daily.saveFailed" {
+                HStack(spacing: 8) {
+                    Text(LocalizedStringKey(error))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("recommendations.daily.retry") {
+                        Task {
+                            guard let accountID, accountID == dailyRecommendationAccountID,
+                                  revision == dependencies.databaseScopeRevision else { return }
+                            // 保存失败保留当前选择；只有尚未成功读盘时才重新读取账号偏好。
+                            if store.hasLoadedState, store.accountID == accountID {
+                                await store.retrySaving()
+                            } else {
+                                await store.loadPreferences(accountID: accountID, scopeRevision: revision)
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(accountID == nil || store.isLoading)
+                }
+            }
+        } header: {
+            SettingsSectionHeader("recommendations.daily.navigationTitle", systemImage: "sparkles")
+        }
+        .task(id: "\(accountID ?? 0)|\(revision)") {
+            guard let accountID, !TestEnvironment.isRunning else { return }
+            await store.loadPreferences(accountID: accountID, scopeRevision: revision)
         }
     }
 

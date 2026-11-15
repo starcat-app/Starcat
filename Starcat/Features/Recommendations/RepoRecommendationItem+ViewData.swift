@@ -26,7 +26,11 @@ extension RepoRecommendationItem {
     /// - `avatarURL` = nil —— 推荐接口不返回 owner 头像，由 UnifiedRepoRow 用 owner login 拼
     /// - `openSSFScore` / `healthBadge` = nil —— 详情页才查，列表行不查
     @MainActor
-    func asCardData(registry: StarredRegistry) -> RepoCardViewData {
+    func asCardData(
+        registry: StarredRegistry,
+        inlineMetadata: RepoCardInlineMetadata? = nil,
+        footerMetadata: RepoCardInlineMetadata? = nil
+    ) -> RepoCardViewData {
         let (owner, repoName) = Self.splitFullName(fullName)
         return RepoCardViewData(
             ghRepoId: repoID,
@@ -46,8 +50,8 @@ extension RepoRecommendationItem {
             badge: nil,
             weeklySources: [],
             weeklySourceLabel: nil,
-            inlineMetadata: nil,
-            footerMetadata: nil,
+            inlineMetadata: inlineMetadata,
+            footerMetadata: footerMetadata,
             readStatus: nil,
             openSSFScore: nil,
             healthBadge: nil

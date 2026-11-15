@@ -14,6 +14,7 @@ import SwiftUI
 
 /// 探索页二级模块。
 enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
+    case recommendations
     case discover
     case trending
     case popular
@@ -25,6 +26,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var titleKey: LocalizedStringKey {
         switch self {
+        case .recommendations: return "recommendations.daily.navigationTitle"
         case .discover: return "explore.mode.discover"
         case .trending: return "explore.mode.trending"
         case .popular: return "explore.mode.popular"
@@ -36,6 +38,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var localizedTitle: String {
         switch self {
+        case .recommendations: return String.l10n("recommendations.daily.navigationTitle")
         case .discover: return String.l10n("explore.mode.discover")
         case .trending: return String.l10n("explore.mode.trending")
         case .popular: return String.l10n("explore.mode.popular")
@@ -47,6 +50,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var businessIcon: BusinessIcon.Symbol {
         switch self {
+        case .recommendations: return .recommendations
         case .discover: return .discovery
         case .trending: return .trending
         case .popular: return .popular
@@ -62,6 +66,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
     /// Awesome 不用 `.purple`：发现已经占用紫色，侧栏两行叠在一起会读成同一入口。
     var sidebarIconColor: Color {
         switch self {
+        case .recommendations: return .blue
         case .discover:    return .purple
         case .trending:    return .blue
         case .popular:     return .orange
@@ -78,7 +83,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
         switch self {
         case .discover, .popular, .newReleases:
             return true
-        case .trending, .weekly, .awesome:
+        case .recommendations, .trending, .weekly, .awesome:
             return false
         }
     }
@@ -87,6 +92,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
     /// 趋势继续走 starcat-trending-api，不能映射到 discovery-api 的候选 trending。
     var discoveryListMode: DiscoveryListMode? {
         switch self {
+        case .recommendations: return nil
         case .discover: return .discover
         case .trending: return nil
         case .popular: return .popular
@@ -119,6 +125,8 @@ struct ExploreNavigationPresentation: Equatable {
         platforms: [DiscoveryPlatformDTO]
     ) -> ExploreNavigationPresentation {
         switch mode {
+        case .recommendations:
+            return ExploreNavigationPresentation(thirdLevelTitle: String.l10n("recommendations.history.all"), isFiltered: false)
         case .discover:
             // Linux.do 是 Discover 下的独立来源，不继承普通目录的 topic / platform
             // 面包屑和“已筛选”语义。
@@ -302,7 +310,7 @@ enum ExploreSortOption: String, CaseIterable, Identifiable, Hashable, Sendable {
             return commonOptions(defaultOption: .popular)
         case .newReleases:
             return commonOptions(defaultOption: .release)
-        case .trending, .weekly, .awesome:
+        case .recommendations, .trending, .weekly, .awesome:
             return []
         }
     }

@@ -16,6 +16,19 @@ import SwiftUI
 private final class SearchCenterPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// 透明底不会裁剪 borderless 窗口；沿用系统轮廓，避免遮罩把主窗口圆角填成直角。
+    /// 搜索仍只覆盖原来的内容区，系统全屏时与父窗口一起切换为矩形。
+    func synchronizeFrame(with parent: NSWindow, frame: NSRect) {
+        let targetStyle: NSWindow.StyleMask = parent.styleMask.contains(.fullScreen)
+            ? [.borderless, .fullSizeContentView]
+            : [.titled, .fullSizeContentView]
+        if styleMask != targetStyle { styleMask = targetStyle }
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+        titlebarSeparatorStyle = .none
+        setFrame(frame, display: true, animate: false)
+    }
 }
 
 /// 管理主窗口级搜索中心的 child window 生命周期和几何同步。
@@ -28,7 +41,7 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
     private static var activeController: SearchCenterWindowController?
 
     private weak var parentWindow: NSWindow?
-    private var resizeObserver: NSObjectProtocol?
+    private var geometryObservers: [NSObjectProtocol] = []
     private let reduceMotion: Bool
     private var isDismissing = false
 
@@ -52,13 +65,14 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
         let hostingController = NSHostingController(
             rootView: content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
         )
         // 搜索窗口尺寸由主窗口内容区唯一决定，禁止 hosting controller 反向协商窗口尺寸。
         hostingController.sizingOptions = []
 
         let panel = SearchCenterPanel(
             contentRect: NSRect(origin: .zero, size: parent.contentView?.bounds.size ?? .zero),
-            styleMask: [.borderless, .fullSizeContentView],
+            styleMask: [.titled, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -104,17 +118,17 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
         // child window 关系保证主窗口移动时搜索窗口一起移动；resize observer 负责同步
         // 内容区尺寸，否则主窗口拖拽后旧 panel 只会覆盖旧的矩形区域。
         parentWindow.addChildWindow(window, ordered: .above)
-        resizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didResizeNotification,
-            object: parentWindow,
-            queue: .main
-        ) { [weak self] _ in
-            DispatchQueue.main.async { [weak self] in
-                self?.updateFrame()
-            }
+        for name in [
+            NSWindow.didResizeNotification,
+            NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification
+        ] {
+            geometryObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: parentWindow, queue: .main
+            ) { [weak self] _ in
+                DispatchQueue.main.async { [weak self] in self?.updateFrame() }
+            })
         }
-        let targetFrame = frameForCurrentState()
-        window.setFrame(targetFrame, display: true)
+        updateFrame()
         window.alphaValue = reduceMotion ? 1 : 0
         window.makeKeyAndOrderFront(nil)
         guard !reduceMotion else { return true }
@@ -129,28 +143,17 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
     private func updateFrame() {
         guard let parentWindow,
               let contentView = parentWindow.contentView,
-              let window else { return }
+              let window = window as? SearchCenterPanel else { return }
 
         // `contentView.frame` 使用父窗口坐标系，转换到 screen 后正好覆盖主窗口内容区，
         // 不覆盖标题栏，也不让搜索 panel 的 cursor rect 泄漏到主窗口标题栏。
         let contentFrameOnScreen = parentWindow.convertToScreen(contentView.frame)
-        window.setFrame(contentFrameOnScreen, display: true, animate: false)
-    }
-
-    private func frameForCurrentState() -> NSRect {
-        guard let parentWindow, let contentView = parentWindow.contentView else {
-            return window?.frame ?? .zero
-        }
-        return parentWindow.convertToScreen(contentView.frame)
+        window.synchronizeFrame(with: parentWindow, frame: contentFrameOnScreen)
     }
 
     private func finishDismissal() {
         guard Self.activeController === self, !isDismissing else { return }
         isDismissing = true
-        if let resizeObserver {
-            NotificationCenter.default.removeObserver(resizeObserver)
-            self.resizeObserver = nil
-        }
         guard !reduceMotion, let window else {
             completeDismissal()
             return
@@ -168,6 +171,8 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func completeDismissal() {
+        geometryObservers.forEach(NotificationCenter.default.removeObserver)
+        geometryObservers = []
         if let parentWindow, let window {
             parentWindow.removeChildWindow(window)
             window.orderOut(nil)

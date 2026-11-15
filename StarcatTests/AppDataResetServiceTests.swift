@@ -103,4 +103,88 @@ struct AppDataResetServiceTests {
         #expect(defaults.object(forKey: "userprofile.snapshot.dong4j") == nil)
         #expect(defaults.object(forKey: MainWindowFrameDefaults.defaultsKey) == nil)
     }
+
+    @Test("恢复出厂排空每日推荐写入、取消迟到理由，仅清目标账号文件")
+    func resetClearsDailyRecommendationsWithoutLateWrites() async throws {
+        let root = try makeTemporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseRoot = root.appendingPathComponent("databases")
+        let database = try DatabaseManager(userId: 1, basePathOverride: databaseRoot)
+        let batchRoot = root.appendingPathComponent("batches")
+        let reasonRoot = root.appendingPathComponent("reasons")
+        let disk = DailyRecommendationDiskStore(root: batchRoot)
+        var old = DailyRecommendationState()
+        old.showsOnLaunch = false
+        for id in [Int64(1), 2] { try await disk.save(old, accountID: id, revision: 1) }
+        try Data("invalid".utf8).write(to: batchRoot.appendingPathComponent("1.corrupt.json"))
+        let store = DailyRecommendationStore(disk: disk, history: RecommendationHistoryRepository(database: database))
+        #expect(await store.loadPreferences(accountID: 1, scopeRevision: 1))
+        let reasons = DailyRecommendationExplanationStore(root: reasonRoot)
+        let saved = recommendation(100)
+        for id in [Int64(1), 2] {
+            await reasons.prepareBatch(items: [saved], accountID: id, revision: 1, locale: "en", isPro: true) { _ in "Saved" }
+        }
+
+        let preparation = DailyRecommendationPreparation()
+        var late: CheckedContinuation<String, Never>?
+        var generatorFinished = false
+        let work = Task {
+            await preparation.run(key: "reset", origin: .user) {
+                await reasons.prepareBatch(items: [recommendation(200)], accountID: 1, revision: 1,
+                                           locale: "en", isPro: true) { _ in
+                    defer { generatorFinished = true }
+                    return await withCheckedContinuation { late = $0 }
+                }
+                return !Task.isCancelled
+            }
+        }
+        while late == nil { await Task.yield() }
+        let write = Task { await store.setShowsOnLaunch(true) }
+        await Task.yield()
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let resetter = AppDataResetService(
+            database: database, settings: AppSettings(defaults: defaults, keychain: InMemoryKeychain()),
+            databaseBasePathOverride: databaseRoot, standardDefaults: defaults,
+            followGraphCache: FollowGraphDiskCache(root: root.appendingPathComponent("graphs"))
+        )
+        try await resetter.resetLocalData(
+            for: .init(userID: 1, login: "fixture"),
+            prepareAccountReset: {
+                await preparation.suspendAndWait()
+                #expect(!(await preparation.run(key: "blocked", origin: .background) { true }))
+                try await store.clearForFactoryReset(accountID: 1)
+                try await reasons.clearForFactoryReset(accountID: 1)
+            },
+            releaseCurrentSession: {
+                // 证明清理屏障先于切库，旧反馈写入不能误投匿名库。
+                #expect(database.currentUserId == 1)
+                #expect(!FileManager.default.fileExists(atPath: batchRoot.appendingPathComponent("1.json").path))
+            }
+        )
+        await write.value
+        #expect(!(await work.value))
+        late?.resume(returning: "Too late")
+        while !generatorFinished { await Task.yield() }
+        let restored = DailyRecommendationExplanationStore(root: reasonRoot)
+        await restored.loadSaved(items: [saved, recommendation(200)], accountID: 1, revision: 2, locale: "en", isPro: true)
+        #expect(restored.explanations.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: reasonRoot.appendingPathComponent("1").path))
+        #expect(!FileManager.default.fileExists(atPath: batchRoot.appendingPathComponent("1.corrupt.json").path))
+        #expect(try await disk.load(accountID: 1).showsOnLaunch)
+        #expect(!(try await disk.load(accountID: 2).showsOnLaunch))
+        await restored.loadSaved(items: [saved], accountID: 2, revision: 2, locale: "en", isPro: true)
+        #expect(restored.text(for: saved, locale: "en", isPro: true) == "Saved")
+        preparation.resume()
+        #expect(await preparation.run(key: "after-reset", origin: .background) { true })
+    }
+
+    /// 公开资料与实际来源供本地生成桩使用，不调用真实模型。
+    private func recommendation(_ id: Int64) -> RepoRecommendationItem {
+        RepoRecommendationItem(repoID: id, fullName: "owner/result\(id)", description: "Fixture",
+                               language: "Swift", stars: 1, forks: 0, archived: false, score: 1,
+                               source: "starcat_trained", reasons: ["costar"],
+                               matchedSeeds: [.init(repoID: 9, fullName: "owner/source", description: nil,
+                                                    language: "Swift", reasons: ["costar"])])
+    }
 }
