@@ -372,7 +372,7 @@ struct DailyRecommendationTests {
         var saved = DailyRecommendationState()
         for id in 101...200 { saved.recommendedDays[String(id)] = "2026-1-1" }
         saved.dismissedIDs = [201]
-        try saveLegacy(saved, root: root)
+        try await saveHistoryFixture(saved, root: root)
         let store = makeStore(root: root, disk: disk)
         var cursors: [String?] = []
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
@@ -422,7 +422,7 @@ struct DailyRecommendationTests {
         let disk = DailyRecommendationDiskStore(root: root)
         var saved = DailyRecommendationState()
         for id in 100...399 { saved.recommendedDays[String(id)] = "2026-1-1" }
-        try saveLegacy(saved, root: root)
+        try await saveHistoryFixture(saved, root: root)
         let store = makeStore(root: root, disk: disk)
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
@@ -463,7 +463,7 @@ struct DailyRecommendationTests {
             seedIDs: [1], serviceScope: "test", modelVersion: "old", checkedDay: day,
             items: [], hasMore: true, nextCursor: "old-cursor"
         )
-        try saveLegacy(saved, root: root)
+        try await saveHistoryFixture(saved, root: root)
         let store = makeStore(root: root, disk: disk)
         var cursors: [String?] = []
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
@@ -494,32 +494,26 @@ struct DailyRecommendationTests {
         #expect(store.emptyKey == "recommendations.daily.noNew")
     }
 
-    @Test("旧快照缺少历史和候选池时保留偏好、反馈和翻牌进度")
-    func legacySnapshotPreservesUserChoices() async throws {
+    @Test("批次文件中的旧 ID-only 字段不能重新导入历史")
+    func ignoresLegacyHistoryFields() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         var saved = DailyRecommendationState()
         saved.items = [item(100)]
         saved.revealedIDs = [100]
-        saved.dismissedIDs = [101]
         saved.showsOnLaunch = false
         var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
-        json["dismissedIDs"] = Array(saved.dismissedIDs)
-        json.removeValue(forKey: "recommendedDays")
-        json.removeValue(forKey: "candidatePool")
-        json.removeValue(forKey: "hasGeneratedBatch")
+        json["dismissedIDs"] = [101]
+        json["recommendedDays"] = ["101": "2026-11-1"]
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("42.json"))
         let store = makeStore(root: root)
-        await switchHistoryAccount(42, root: root)
-        await store.loadPreferences(accountID: 42, scopeRevision: 1)
-        #expect(store.hasLoadedState)
+        #expect(await store.loadPreferences(accountID: 42, scopeRevision: 1))
         #expect(!store.state.showsOnLaunch)
         #expect(store.state.revealedIDs == [100])
-        #expect(store.state.dismissedIDs == [101])
-        #expect(store.state.hasGeneratedBatch)
-        #expect(store.state.recommendedDays == ["101": ""])
-        #expect(store.state.candidatePool == nil)
+        #expect(store.historyEntries.isEmpty)
+        #expect(store.state.dismissedIDs.isEmpty)
+        #expect(store.state.recommendedDays.isEmpty)
     }
 
     @Test("主动换批使用未消费池，排除当前批次、完整 Stars 和反馈，成功才重置翻牌")
@@ -528,7 +522,7 @@ struct DailyRecommendationTests {
         defer { try? FileManager.default.removeItem(at: root) }
         var legacy = DailyRecommendationState()
         legacy.dismissedIDs = [111]
-        try saveLegacy(legacy, root: root)
+        try await saveHistoryFixture(legacy, root: root)
         let store = makeStore(root: root)
         await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
                          fetchStars: { [repo(1), repo(110)] },
@@ -561,7 +555,7 @@ struct DailyRecommendationTests {
         defer { try? FileManager.default.removeItem(at: root) }
         var legacy = DailyRecommendationState()
         legacy.dismissedIDs = [901]
-        try saveLegacy(legacy, root: root)
+        try await saveHistoryFixture(legacy, root: root)
         let store = makeStore(root: root)
         var cursors: [String?] = []
         func page(_ seeds: [Int64], _ cursor: String?) async throws -> DailyRecommendationResponse {
@@ -1030,13 +1024,16 @@ struct DailyRecommendationTests {
         try! await historyDatabases.values[root]?.reopen(userId: id)
     }
 
-    /// 构造旧版本文件，生产编码器已不再输出长期历史字段。
-    private func saveLegacy(_ state: DailyRecommendationState, root: URL) throws {
-        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
-        json["recommendedDays"] = state.recommendedDays
-        json["dismissedIDs"] = Array(state.dismissedIDs)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: json).write(to: root.appendingPathComponent("42.json"))
+    /// 历史测试直接写完整数据库快照，不能依赖已经移除的开发期 JSON 导入。
+    private func saveHistoryFixture(_ state: DailyRecommendationState, root: URL) async throws {
+        if historyDatabases.values[root] == nil { historyDatabases.values[root] = try HistoryTestDatabase() }
+        let repository = RecommendationHistoryRepository(database: historyDatabases.values[root]!)
+        for id in state.recommendedIDs.union(state.dismissedIDs) {
+            try await repository.record([item(id)], day: state.recommendedDays[String(id)] ?? "",
+                                        date: Date(timeIntervalSince1970: 0), batchID: "fixture", accountID: 42)
+            if state.dismissedIDs.contains(id) { try await repository.setDismissed(true, id: id, accountID: 42) }
+        }
+        try await DailyRecommendationDiskStore(root: root).save(state, accountID: 42, revision: 1)
     }
 
     @MainActor

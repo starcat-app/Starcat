@@ -34,7 +34,7 @@ struct RecommendationHistoryTests {
             let foreignKeys = try db.foreignKeys(on: "recommendation_history")
             #expect(applied.contains("v26-recommendation-history"))
             #expect(isStarred == true)
-            #expect(hasImportState)
+            #expect(!hasImportState)
             #expect(foreignKeys.isEmpty)
         }
     }
@@ -57,42 +57,14 @@ struct RecommendationHistoryTests {
         #expect(old.item?.reasons == ["costar"])
     }
 
-    @Test("旧 ID 从当前批次和本地仓库补资料，缺资料与缺日期都不丢行")
-    func importLegacyPlaceholders() async throws {
+    @Test("新历史表拒绝只有 ID 而没有快照的记录")
+    func requiresSnapshot() async throws {
         let database = try InMemoryDatabaseManager(userId: 42)
-        let repository = RecommendationHistoryRepository(database: database)
-        let cachedRepo = item(12).dailyRecommendationRepo
-        try await database.writer.write { db in
-            var repo = cachedRepo
-            try repo.save(db)
+        await #expect(throws: (any Error).self) {
+            try await database.writer.write { db in
+                try db.execute(sql: "INSERT INTO recommendation_history (repo_id) VALUES (10)")
+            }
         }
-        var state = DailyRecommendationState()
-        state.items = [item(10)]
-        state.recommendedDays = ["10": "2026-11-9", "11": "2026-11-10", "12": "2026-9-1"]
-        state.dismissedIDs = [13]
-        try await repository.importLegacy(state, accountID: 42)
-        let entries = try await repository.fetchAll(accountID: 42)
-        #expect(entries.map(\.id) == [11, 10, 12, 13])
-        #expect(entries.first?.item == nil)
-        #expect(entries.first?.recommendedAt == nil)
-        #expect(entries.first?.recommendedDay == "2026-11-10")
-        #expect(entries.first(where: { $0.id == 10 })?.item?.fullName == "owner/repo10")
-        #expect(entries.first(where: { $0.id == 10 })?.item?.reasons.isEmpty == true)
-        #expect(entries.first(where: { $0.id == 12 })?.item?.fullName == "owner/repo12")
-        #expect(entries.last?.recommendedDay == nil)
-        #expect(entries.last?.isDismissed == true)
-    }
-
-    @Test("导入标记避免旧 JSON 复活已撤销的负反馈")
-    func importIsOneTime() async throws {
-        let database = try InMemoryDatabaseManager(userId: 42)
-        let repository = RecommendationHistoryRepository(database: database)
-        var state = DailyRecommendationState()
-        state.dismissedIDs = [10]
-        try await repository.importLegacy(state, accountID: 42)
-        try await repository.setDismissed(false, id: 10, accountID: 42)
-        try await repository.importLegacy(state, accountID: 42)
-        #expect(try await repository.fetchAll(accountID: 42).first?.isDismissed == false)
     }
 
     @Test("Store 按 Star 真值清除负反馈，Unstar 回未反馈且重启不复活旧反馈")

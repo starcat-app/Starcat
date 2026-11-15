@@ -2,13 +2,13 @@
 //  RecommendationHistoryRepository.swift
 //  Starcat
 //
-//  账号内的长期推荐事实与负反馈。与可清理的 repo 缓存解耦，旧 JSON 只导入一次。
+//  账号内的长期推荐事实与负反馈。与可清理的 repo 缓存解耦，只登记实际展示过的完整快照。
 //
 
 import Foundation
 import GRDB
 
-/// 保存推荐当时的公开快照；缺资料的旧 ID 仍然是有效历史，不能从去重集合中消失。
+/// 保存推荐当时的公开快照；新历史没有仅 ID 的占位导入路径。
 struct RecommendationHistoryEntry: Identifiable, Sendable, Equatable {
     let id: Int64
     let item: RepoRecommendationItem?
@@ -35,38 +35,6 @@ enum RecommendationHistoryFilter: String, CaseIterable, Identifiable, Sendable {
 /// 不长期缓存 writer；切账号后下一次操作必须走 DatabaseManaging 的最新实例。
 struct RecommendationHistoryRepository: Sendable {
     let database: any DatabaseManaging
-
-    /// 旧快照只有最后记录日期；不伪装成精确时间，也不把当前模型理由套到旧历史上。
-    /// 导入标记和所有行在一个事务内提交，重试或旧 JSON 残留不会恢复已撤销的反馈。
-    @MainActor
-    func importLegacy(_ state: DailyRecommendationState, accountID: Int64) async throws {
-        guard database.currentUserId == accountID else { throw CancellationError() }
-        try await database.writer.write { db in
-            guard try Bool.fetchOne(db, sql: "SELECT legacy_imported FROM recommendation_history_state WHERE id = 1") != true else { return }
-            let snapshots = Dictionary(
-                (state.items + (state.candidatePool?.items ?? [])).map { ($0.repoID, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            for id in state.recommendedIDs.union(state.dismissedIDs).sorted() where id > 0 {
-                let day = state.recommendedDays[String(id)]
-                let item: RepoRecommendationItem?
-                if let recovered = snapshots[id] {
-                    item = Self.legacyItem(recovered)
-                } else if let repo = try Repo.fetchOne(db, key: id) {
-                    item = Self.item(from: repo)
-                } else {
-                    item = nil
-                }
-                let snapshot = try item.map { try JSONEncoder().encode($0) }
-                try db.execute(sql: """
-                    INSERT OR IGNORE INTO recommendation_history
-                        (repo_id, snapshot, recommended_day, sort_day, dismissed)
-                    VALUES (?, ?, ?, ?, ?)
-                    """, arguments: [id, snapshot, day, Self.sortDay(day), state.dismissedIDs.contains(id)])
-            }
-            try db.execute(sql: "INSERT INTO recommendation_history_state (id, legacy_imported) VALUES (1, 1)")
-        }
-    }
 
     /// 真正展示整批后登记；重复展示只补缺失资料，不改写原推荐时间。
     @MainActor
@@ -123,15 +91,4 @@ struct RecommendationHistoryRepository: Sendable {
         return parts[0] * 10_000 + parts[1] * 100 + parts[2]
     }
 
-    private static func legacyItem(_ item: RepoRecommendationItem) -> RepoRecommendationItem {
-        RepoRecommendationItem(repoID: item.repoID, fullName: item.fullName, description: item.description,
-                               language: item.language, stars: item.stars, forks: item.forks, archived: item.archived,
-                               score: 0, source: "", reasons: [])
-    }
-
-    private static func item(from repo: Repo) -> RepoRecommendationItem {
-        RepoRecommendationItem(repoID: repo.id, fullName: repo.fullName, description: repo.description,
-                               language: repo.language, stars: repo.starsCount, forks: repo.forksCount,
-                               archived: repo.isArchived, score: 0, source: "", reasons: [])
-    }
 }

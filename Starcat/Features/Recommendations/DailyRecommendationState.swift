@@ -68,7 +68,7 @@ struct DailyRecommendationCandidatePool: Codable, Sendable {
     var nextCursor: String?
 }
 
-/// 账号级每日快照；历史字段仅解码旧文件或承载数据库投影，不再双写到 JSON。
+/// 账号级每日快照；历史与反馈仅为数据库投影，不从批次文件导入或双写。
 struct DailyRecommendationState: Codable, Sendable {
     var day = ""
     var serviceScope = ""
@@ -88,12 +88,11 @@ struct DailyRecommendationState: Codable, Sendable {
     init() {}
 
     enum CodingKeys: String, CodingKey {
-        case day, serviceScope, modelVersion, generatedAt, items, hasGeneratedBatch, revealedIDs, dismissedIDs
-        case autoPresentedDay, showsOnLaunch, recommendedDays, candidatePool
+        case day, serviceScope, modelVersion, generatedAt, items, hasGeneratedBatch, revealedIDs
+        case autoPresentedDay, showsOnLaunch, candidatePool
     }
 
-    /// 旧账号快照只缺新增字段，不能因为增加历史就丢弃既有反馈、偏好与翻牌进度
-    /// 旧字段仍严格解码，损坏文件继续报错，避免静默覆盖用户选择
+    /// 批次严格解码；历史和反馈由账号数据库恢复，不能从旧开发 JSON 创建残缺记录。
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         day = try values.decode(String.self, forKey: .day)
@@ -102,13 +101,10 @@ struct DailyRecommendationState: Codable, Sendable {
         generatedAt = try values.decodeIfPresent(Date.self, forKey: .generatedAt)
         items = try values.decode([RepoRecommendationItem].self, forKey: .items)
         revealedIDs = try values.decode(Set<Int64>.self, forKey: .revealedIDs)
-        dismissedIDs = try values.decodeIfPresent(Set<Int64>.self, forKey: .dismissedIDs) ?? []
         autoPresentedDay = try values.decode(String.self, forKey: .autoPresentedDay)
         showsOnLaunch = try values.decode(Bool.self, forKey: .showsOnLaunch)
-        recommendedDays = try values.decodeIfPresent([String: String].self, forKey: .recommendedDays) ?? [:]
         candidatePool = try values.decodeIfPresent(DailyRecommendationCandidatePool.self, forKey: .candidatePool)
-        hasGeneratedBatch = try values.decodeIfPresent(Bool.self, forKey: .hasGeneratedBatch)
-            ?? (!items.isEmpty || !revealedIDs.isEmpty || recommendedDays.values.contains(day))
+        hasGeneratedBatch = try values.decode(Bool.self, forKey: .hasGeneratedBatch)
     }
 
     /// 长期历史和反馈的唯一持久化来源已迁到 SQLite；本文件仅保留批次、进度与偏好。

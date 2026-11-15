@@ -84,7 +84,6 @@ final class DailyRecommendationStore {
         do {
             let saved = try await disk.load(accountID: accountID)
             guard token == generation, !Task.isCancelled else { return false }
-            try await history.importLegacy(saved, accountID: accountID)
             let entries = try await history.fetchAll(accountID: accountID)
             guard token == generation, !Task.isCancelled else { return false }
             if !hasLoadedState {

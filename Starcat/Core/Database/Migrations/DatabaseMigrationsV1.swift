@@ -126,13 +126,13 @@ enum DatabaseMigrations {
         registerV26(into: &migrator)
     }
 
-    /// 推荐历史属于用户数据，不外键关联可清理的 repos；旧 JSON 导入标记与历史同事务提交。
+    /// 未发布的推荐历史草稿：完整快照独立于可清理的 repos，不保留开发期 ID-only 导入表。
     private static func registerV26(into migrator: inout DatabaseMigrator) {
         migrator.registerMigration("v26-recommendation-history") { db in
             try db.execute(sql: """
                 CREATE TABLE recommendation_history (
                     repo_id INTEGER PRIMARY KEY NOT NULL,
-                    snapshot BLOB,
+                    snapshot BLOB NOT NULL,
                     recommended_at REAL,
                     recommended_day TEXT,
                     sort_day INTEGER NOT NULL DEFAULT 0,
@@ -141,10 +141,6 @@ enum DatabaseMigrations {
                 );
                 CREATE INDEX idx_recommendation_history_time
                     ON recommendation_history(sort_day DESC, recommended_at DESC, repo_id DESC);
-                CREATE TABLE recommendation_history_state (
-                    id INTEGER PRIMARY KEY NOT NULL CHECK(id = 1),
-                    legacy_imported INTEGER NOT NULL
-                );
                 """)
         }
     }
