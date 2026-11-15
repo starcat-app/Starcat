@@ -45,7 +45,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 迭代每日推荐卡片、账号历史、来源证据与 Pro 推荐理由。 | `待验收`；2026-11-15 合入 `dev@dc0e32f6` 后按 checklist 分项提交；150 项测试与双渠道构建通过，GUI、真实 AI 和后端部署后联调待验收，动效推广另行处理。 | 继续在本 worktree 验证；验收后另行授权合回 `dev`，不自动 push 或清理。 |
+| `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 迭代每日推荐卡片、账号历史、来源证据与 Pro 推荐理由。 | `待验收`；2026-11-15 合入 `dev@dc0e32f6` 后按 checklist 分项提交；150 项测试与双渠道构建通过，后端 release 45 已验证真实来源及分页；GUI、真实 AI 待验收，动效推广另行处理。 | 继续在本 worktree 验证；验收后另行授权合回 `dev`，不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
@@ -90,8 +90,10 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 2026-11-15 为每日推荐真实依据创建推荐后端专项 worktree：
 `supports/starcat-recommend-api` 使用独立仓分支 `codex/daily-recommendation-evidence`，
 位于 `../Starcat-daily-recommendation-cards/supports/starcat-recommend-api`，
-基线为该独立仓 `dev@1ad1c21`。状态为开发中，只实现与测试来源证据字段；
-验收后另行合回该仓 dev，不自动推送、部署或修改主工作区支持仓。
+基线为该独立仓 `dev@1ad1c21`。2026-11-15 dong4j 单独授权部署，聚合仓
+`5fde215` 锁定推荐仓 `02b748e`，已发布为既有 `starcat-api` release 45；
+来源证据、游标分页与原排序线上验证通过，活动模型不变。两专项分支仍待验收，
+未推送源码、未合回各自 dev；不合并或发布 App。
 
 
 2026-08-29 已按 dong4j 授权清理：Starcat `../Starcat-collection-pipeline` worktree 与各仓需求分支均已删除。独立仓库仍各自保留 `dev` / `main`，不由主仓库管理其 Git 历史。
