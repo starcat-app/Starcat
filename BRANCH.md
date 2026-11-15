@@ -45,7 +45,7 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/cli-browser-access` | 本地 worktree：`../Starcat-cli-browser-access`；CLI、Skill、Chrome、Safari 四个独立仓库在其 `supports/` 下使用同名分支与独立 worktree | 从 `dev@34e68983` 实施 CLI/MCP 能力开放与浏览器免输 Key 配对、发现及 CLI 桥接两项专项，共用 App 能力与设备授权边界。 | `开发中`；2026-11-15 代码、自动化及双渠道构建完成，已按功能本地提交，待真实验收；Safari 原生宿主与分发矩阵仍待完成，具体证据见专项 Checklist。 | 继续真实连接与浏览器验收；通过后再合回各仓 `dev`，不自动推送、发布或清理。 |
+| `codex/cli-browser-access` | 本地 worktree：`../Starcat-cli-browser-access`；CLI、Skill、Chrome、Safari 四个独立仓库在其 `supports/` 下使用同名分支与独立 worktree | 从 `dev@34e68983` 实施 CLI/MCP 能力开放与浏览器免输 Key 配对、发现及 CLI 桥接两项专项，共用 App 能力与设备授权边界。 | `开发中`；2026-11-15 已通过 `d6babf75` 合入主仓 `dev@0bcbb08b`，无冲突且文件内容未变化；此前代码、自动化及双渠道构建完成，待真实验收，Safari 原生宿主与分发矩阵仍待完成。 | 继续真实连接与浏览器验收；通过后再合回各仓 `dev`，不自动推送、发布或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
 | `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
