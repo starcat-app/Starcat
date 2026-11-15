@@ -71,6 +71,11 @@ struct DailyRecommendationHost: ViewModifier {
             }
             .frame(width: 0, height: 0)
         }
+        .overlay(alignment: .bottom) {
+            if isPresented && !isReadyToPresent {
+                preparationStatus
+            }
+        }
         .task(id: "\(identity)|\(preparationRevision)") {
             guard !TestEnvironment.isRunning else { return }
             preparedIdentity = nil
@@ -144,6 +149,27 @@ struct DailyRecommendationHost: ViewModifier {
                 await dependencies.dailyRecommendationStore.excludeStarred(ids)
             }
         }
+    }
+
+    /// 理由准备结束前不创建覆盖窗口；局部反馈和取消入口不锁住主窗口的其余操作。
+    private var preparationStatus: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityHidden(true)
+            Text("recommendations.daily.loading")
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 12)
+            Button("common.cancel") { isPresented = false }
+                .controlSize(.small)
+        }
+        .font(.system(size: 13 * interfaceScale.multiplier))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 480)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(16)
     }
 
     /// 每次请求先固定账号和服务作用域；账号切换会让 Store 的 generation 失效。

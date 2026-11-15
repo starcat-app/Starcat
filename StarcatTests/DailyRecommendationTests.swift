@@ -1274,6 +1274,48 @@ struct DailyRecommendationTests {
         #expect(store.visibleItems.isEmpty)
     }
 
+    @Test("手动准备等待期间可取消，再次打开可正常准备且不提前登记展示")
+    func cancelPendingManualOpenThenReopen() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        let preparation = DailyRecommendationPreparation()
+        var waiting: CheckedContinuation<Void, Never>?
+        let caller = Task {
+            await preparation.run(key: "today", origin: .user) {
+                await store.load(
+                    accountID: 42, scopeRevision: 1, serviceScope: "test",
+                    fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(100)]) },
+                    prepareItems: { _ in await withCheckedContinuation { waiting = $0 } }
+                )
+            }
+        }
+        while waiting == nil { await Task.yield() }
+        #expect(preparation.isRunning)
+        #expect(store.isLoading)
+        #expect(!store.canAutomaticallyPresent())
+        // 与准备状态条的取消入口相同，Provider 忽略取消时也不能发布未展示的批次。
+        preparation.cancelUserPreparation()
+        caller.cancel()
+        waiting?.resume()
+        #expect(!(await caller.value))
+        #expect(!preparation.isRunning)
+        #expect(!store.isLoading)
+        #expect(store.visibleItems.isEmpty)
+        #expect(store.historyEntries.isEmpty)
+        #expect(store.state.autoPresentedDay.isEmpty)
+        #expect(await preparation.run(key: "today", origin: .user) {
+            await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                             fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                Issue.record("取消没有消费候选，再次打开应复用已取回的项目")
+                return response([])
+            })
+        })
+        #expect(store.visibleItems.map(\.repoID) == [100])
+        #expect(store.historyEntries.isEmpty)
+        #expect(store.state.autoPresentedDay.isEmpty)
+    }
+
     /// 同一测试重启 Store 时复用磁盘库；切账号显式模拟 AppDependencies 的数据库切换。
     private let historyDatabases = HistoryTestDatabases()
 
