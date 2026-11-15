@@ -12,6 +12,28 @@ import Testing
 @Suite("RepositoryReadCapability")
 struct RepositoryReadCapabilityTests {
 
+    @Test("数据库单仓查找遵守 Star 和 Knowledge 范围，all 保留缓存定位")
+    func databaseSelectorsRespectMembership() async throws {
+        let database = try InMemoryDatabaseManager()
+        try await database.insertRepoFixture(id: 1, owner: "apple", name: "swift")
+        try await database.insertRepoFixture(id: 2, owner: "openai", name: "codex")
+        try await database.writer.write { connection in
+            try connection.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 2")
+        }
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 2, state: .inLibrary)
+        let repository = GRDBRepoRepository(database: database)
+        let starred = DatabaseRepositoryReadCapabilitySource(repository: repository, scope: .starred)
+        let knowledge = DatabaseRepositoryReadCapabilitySource(repository: repository, scope: .knowledge)
+        let all = DatabaseRepositoryReadCapabilitySource(repository: repository, scope: .all)
+        #expect(try await starred.findByID(1)?.id == 1)
+        #expect(try await starred.findByID(2) == nil)
+        #expect(try await knowledge.findByOwnerName(owner: "apple", name: "swift") == nil)
+        #expect(try await knowledge.findByOwnerName(owner: "openai", name: "codex")?.id == 2)
+        try await GRDBRepoNoteRepository(database: database).updateLibraryState(repoId: 2, state: .outsideLibrary)
+        #expect(try await knowledge.findByID(2) == nil)
+        #expect(try await all.findByID(2)?.id == 2)
+    }
+
     @Test("冻结 Source 在 restriction 不完整时 fail closed")
     func frozenSourceRejectsUnknownRestrictedIDs() async {
         let source = FrozenRepositoryReadCapabilitySource(repositories: [repo(id: 1, fullName: "apple/swift")])
