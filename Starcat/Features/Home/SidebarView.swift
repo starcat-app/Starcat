@@ -1275,7 +1275,7 @@ struct SidebarView: View {
             exploreSelectableRow(selection: .mode(.recommendations), count: dependencies.dailyRecommendationStore.hasLoadedState ? dependencies.dailyRecommendationStore.historyEntries.count : nil) {
                 exploreSidebarBusinessIcon(.recommendations, color: .blue)
             } title: {
-                Text("recommendations.history.title")
+                Text("recommendations.daily.navigationTitle")
             }
             if settings.exploreCatalogPreferences.isGroupEnabled("dailyRadar") {
                 exploreSelectableRow(selection: .dailyRadarPreview, count: dailyRadarModel.totalCount) {

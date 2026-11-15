@@ -4857,6 +4857,648 @@
         }
       }
     },
+    "recommendations.daily.navigationTitle" : {
+      "comment" : "Daily recommendations title and history help. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日推荐"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每日推薦"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "毎日のおすすめ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "매일 추천"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tägliche Empfehlungen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recommandations du jour"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recomendaciones diarias"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Recomendações diárias"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Consigli del giorno"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ежедневные рекомендации"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Dagelijkse aanbevelingen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Codzienne rekomendacje"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Щоденні рекомендації"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Günlük öneriler"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đề xuất hằng ngày"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rekomendasi harian"
+          }
+        }
+      }
+    },
+    "explore.help.recommendations.open" : {
+      "comment" : "Daily recommendations title and history help. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About daily recommendations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看每日推荐说明"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看每日推薦說明"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "毎日のおすすめについて"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "매일 추천 안내"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Über tägliche Empfehlungen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "À propos des recommandations du jour"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Acerca de las recomendaciones diarias"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sobre as recomendações diárias"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Informazioni sui consigli del giorno"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "О ежедневных рекомендациях"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Over dagelijkse aanbevelingen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O codziennych rekomendacjach"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Про щоденні рекомендації"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Günlük öneriler hakkında"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Về đề xuất hằng ngày"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tentang rekomendasi harian"
+          }
+        }
+      }
+    },
+    "explore.help.recommendations.source" : {
+      "comment" : "Daily recommendations title and history help. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommendations are based on public projects you have starred. This view keeps the projects shown to you and your feedback."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "根据你 Star 的公开项目生成推荐，这里保留已展示的项目及反馈。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "根據你 Star 的公開專案產生推薦，這裡保留已展示的專案及回饋。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Star を付けた公開プロジェクトをもとにおすすめを生成します。ここには表示済みのプロジェクトとフィードバックが保存されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Star한 공개 프로젝트를 바탕으로 추천합니다. 여기에 표시된 프로젝트와 내 피드백이 저장됩니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Die Empfehlungen basieren auf öffentlichen Projekten, denen du einen Star gegeben hast. Hier bleiben die angezeigten Projekte und dein Feedback erhalten."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Les recommandations reposent sur les projets publics auxquels vous avez ajouté une étoile. Les projets présentés et vos avis sont conservés ici."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Las recomendaciones se basan en los proyectos públicos que has marcado con una estrella. Aquí se guardan los proyectos mostrados y tus comentarios."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "As recomendações se baseiam nos projetos públicos que você marcou com uma estrela. Os projetos exibidos e seu feedback ficam salvos aqui."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "I consigli si basano sui progetti pubblici a cui hai assegnato una stella. Qui vengono conservati i progetti mostrati e i tuoi riscontri."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Рекомендации основаны на публичных проектах, которым вы поставили звезду. Здесь сохраняются показанные проекты и ваши отзывы."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aanbevelingen zijn gebaseerd op openbare projecten waaraan je een ster hebt gegeven. De getoonde projecten en je feedback worden hier bewaard."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rekomendacje powstają na podstawie publicznych projektów oznaczonych przez Ciebie gwiazdką. Tutaj zachowywane są wyświetlone projekty i Twoje opinie."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Рекомендації ґрунтуються на публічних проєктах, яким ви поставили зірку. Тут зберігаються показані проєкти та ваші відгуки."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Öneriler, yıldız verdiğiniz herkese açık projelere dayanır. Gösterilen projeler ve geri bildirimleriniz burada saklanır."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đề xuất dựa trên các dự án công khai bạn đã gắn sao. Các dự án đã hiển thị và phản hồi của bạn được lưu tại đây."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rekomendasi didasarkan pada proyek publik yang Anda beri bintang. Proyek yang ditampilkan dan masukan Anda disimpan di sini."
+          }
+        }
+      }
+    },
+    "explore.help.recommendations.cache.ttl" : {
+      "comment" : "Daily recommendations title and history help. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "History is stored in the current account’s local database and does not expire daily."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "历史保存在当前账号的本机数据库，不按天自动过期。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "歷史保存在目前帳號的本機資料庫，不按天自動到期。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "履歴は現在のアカウントのローカルデータベースに保存され、日ごとに期限切れになることはありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "기록은 현재 계정의 로컬 데이터베이스에 저장되며 날짜가 바뀌어도 만료되지 않습니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Der Verlauf wird in der lokalen Datenbank des aktuellen Kontos gespeichert und läuft nicht täglich ab."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’historique est conservé dans la base de données locale du compte actuel et n’expire pas chaque jour."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El historial se guarda en la base de datos local de la cuenta actual y no caduca cada día."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O histórico é salvo no banco de dados local da conta atual e não expira diariamente."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La cronologia è salvata nel database locale dell’account attuale e non scade ogni giorno."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "История хранится в локальной базе данных текущего аккаунта и не удаляется по истечении дня."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De geschiedenis wordt opgeslagen in de lokale database van het huidige account en verloopt niet dagelijks."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Historia jest przechowywana w lokalnej bazie danych bieżącego konta i nie wygasa każdego dnia."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Історія зберігається в локальній базі даних поточного облікового запису й не видаляється після завершення дня."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Geçmiş, mevcut hesabın yerel veritabanında saklanır ve her gün süresi dolmaz."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lịch sử được lưu trong cơ sở dữ liệu cục bộ của tài khoản hiện tại và không tự hết hạn mỗi ngày."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Riwayat disimpan di basis data lokal akun saat ini dan tidak kedaluwarsa setiap hari."
+          }
+        }
+      }
+    },
+    "explore.help.recommendations.cache.update" : {
+      "comment" : "Daily recommendations title and history help. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New recommendations can be generated each day. A batch is added to history only after it is displayed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每天可生成新推荐；实际展示过的批次才记入历史。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每天可產生新推薦；實際展示過的批次才記入歷史。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "毎日新しいおすすめを生成できます。実際に表示されたおすすめのセットだけが履歴に追加されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "매일 새로운 추천을 생성할 수 있습니다. 실제로 표시된 추천 묶음만 기록에 추가됩니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Täglich können neue Empfehlungen erstellt werden. Eine Gruppe wird erst nach der Anzeige im Verlauf gespeichert."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "De nouvelles recommandations peuvent être générées chaque jour. Un lot n’est ajouté à l’historique qu’après son affichage."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Se pueden generar nuevas recomendaciones cada día. Un lote solo se añade al historial después de mostrarse."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Novas recomendações podem ser geradas a cada dia. Um lote só entra no histórico depois de ser exibido."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Ogni giorno si possono generare nuovi consigli. Un gruppo viene aggiunto alla cronologia solo dopo essere stato mostrato."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Новые рекомендации можно получать каждый день. Подборка попадает в историю только после показа."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Elke dag kunnen nieuwe aanbevelingen worden gemaakt. Een groep wordt pas na weergave aan de geschiedenis toegevoegd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Nowe rekomendacje mogą być generowane codziennie. Zestaw trafia do historii dopiero po wyświetleniu."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Нові рекомендації можна отримувати щодня. Добірка потрапляє до історії лише після показу."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Her gün yeni öneriler oluşturulabilir. Bir öneri grubu yalnızca gösterildikten sonra geçmişe eklenir."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Có thể tạo đề xuất mới mỗi ngày. Một nhóm đề xuất chỉ được thêm vào lịch sử sau khi hiển thị."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Rekomendasi baru dapat dibuat setiap hari. Sekumpulan rekomendasi hanya ditambahkan ke riwayat setelah ditampilkan."
+          }
+        }
+      }
+    },
+    "explore.help.recommendations.cache.offline" : {
+      "comment" : "Daily recommendations title and history help. AI translation drafts need review.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved history is available offline. New recommendations and project updates require an internet connection."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "离线可查看已保存历史；获取新推荐和更新项目资料需要联网。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "離線可查看已保存歷史；取得新推薦和更新專案資料需要連線。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "保存済みの履歴はオフラインで閲覧できます。新しいおすすめの取得やプロジェクト情報の更新にはインターネット接続が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "저장된 기록은 오프라인에서도 볼 수 있습니다. 새 추천을 받거나 프로젝트 정보를 업데이트하려면 인터넷 연결이 필요합니다."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Gespeicherte Verläufe sind offline verfügbar. Neue Empfehlungen und Projektaktualisierungen benötigen eine Internetverbindung."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "L’historique enregistré est accessible hors ligne. Une connexion Internet est nécessaire pour obtenir de nouvelles recommandations et actualiser les projets."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "El historial guardado está disponible sin conexión. Las nuevas recomendaciones y las actualizaciones de proyectos requieren conexión a Internet."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O histórico salvo está disponível offline. Novas recomendações e atualizações dos projetos exigem conexão com a internet."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La cronologia salvata è disponibile offline. I nuovi consigli e gli aggiornamenti dei progetti richiedono una connessione a Internet."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Сохранённая история доступна без интернета. Для новых рекомендаций и обновления сведений о проектах нужно подключение к сети."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Opgeslagen geschiedenis is offline beschikbaar. Voor nieuwe aanbevelingen en projectupdates is een internetverbinding nodig."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zapisana historia jest dostępna offline. Nowe rekomendacje i aktualizacje informacji o projektach wymagają połączenia z internetem."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Збережена історія доступна без інтернету. Для нових рекомендацій та оновлення даних про проєкти потрібне підключення до мережі."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kaydedilen geçmiş çevrimdışı görüntülenebilir. Yeni öneriler ve proje bilgilerini güncellemek için internet bağlantısı gerekir."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Có thể xem lịch sử đã lưu khi ngoại tuyến. Cần kết nối Internet để nhận đề xuất mới và cập nhật thông tin dự án."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Riwayat tersimpan dapat dilihat secara offline. Rekomendasi baru dan pembaruan informasi proyek memerlukan koneksi internet."
+          }
+        }
+      }
+    },
     "recommendations.history.datesTitle" : {
       "comment" : "Recommendation history date navigation. AI translation drafts need review.",
       "localizations" : {

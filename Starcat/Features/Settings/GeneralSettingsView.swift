@@ -276,7 +276,7 @@ struct GeneralSettingsView: View {
                 }
             }
         } header: {
-            SettingsSectionHeader("recommendations.daily.title", systemImage: "sparkles")
+            SettingsSectionHeader("recommendations.daily.navigationTitle", systemImage: "sparkles")
         }
         .task(id: "\(accountID ?? 0)|\(revision)") {
             guard let accountID, !TestEnvironment.isRunning else { return }

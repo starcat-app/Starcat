@@ -65,7 +65,7 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
     /// 文案在原生层查 Catalog；网页始终跟随应用语言，而非 WebKit 的系统语言。
     static var localizedLabels: [String: String] {
         let keys = [
-            "title": "recommendations.daily.title",
+            "title": "recommendations.daily.navigationTitle",
             "subtitle": "recommendations.daily.reason",
             "reasonTitle": "recommendations.daily.reasonTitle",
             "noDescription": "recommendations.daily.noDescription",
