@@ -48,6 +48,22 @@ private enum ExploreSidebarSelection: Hashable {
     case dailyRadarPreview
 }
 
+/// 子分类的展示身份包含独立来源；Linux.do 与普通发现虽然同属 discover，仍须分别过渡。
+private enum ExploreSidebarContext: Equatable {
+    case mode(ExploreMode)
+    case linuxDo
+    case dailyRadar
+}
+
+/// 保留退场中的标签/语言计数，避免业务选择先变后，旧分类立即闪成新分类的占位计数。
+private struct ManageSidebarFacetPresentation: Equatable {
+    let selection: SidebarItem
+    let languageRows: [HomeViewModel.SidebarLanguageRow]
+    let languageTotal: Int?
+    let tagCounts: [String: Int]?
+    let canFilterByTags: Bool
+}
+
 /// 探索侧栏图标色：未选中用语义色；明亮主题选中时跟系统蓝底反成白色。
 ///
 /// 实现已收口到共享 `SidebarSemanticIconStyle`（星标 / 活动等 SF Symbol 行共用）。
@@ -159,6 +175,9 @@ struct SidebarView: View {
     /// 顶部选择立即生效，下方 List 在旧内容淡出后才切换展示分支。
     @State private var rootContentTransition = SidebarContentTransition<SidebarRootPage>()
 
+    @State private var exploreContentTransition = SidebarContentTransition<ExploreSidebarContext>()
+    @State private var manageFacetTransition = SidebarContentTransition<ManageSidebarFacetPresentation>()
+
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
     /// 2026-06-06 抖动**三次**修复（这次彻底）：
@@ -241,12 +260,31 @@ struct SidebarView: View {
         .background(.bar)
         .onChange(of: selectedPage, initial: true) { _, page in
             rootContentTransition.update(to: page, reduceMotion: reduceMotion)
+            // 跨板块已有整块淡化；子分类直接对齐，避免进入后再播放第二轮。
+            exploreContentTransition.update(to: exploreSidebarContext, reduceMotion: true)
+            manageFacetTransition.update(to: manageFacetPresentation, reduceMotion: true)
+        }
+        .onChange(of: exploreSidebarContext, initial: true) { _, context in
+            let isExploreVisible = selectedPage == .trending
+                && rootContentTransition.displayedSelection == .trending
+            exploreContentTransition.update(to: context, reduceMotion: reduceMotion || !isExploreVisible)
+        }
+        .onChange(of: manageFacetPresentation, initial: true) { _, presentation in
+            let isCategoryChange = selectedPage == .manage
+                && rootContentTransition.displayedSelection == .manage
+                && manageFacetTransition.displayedSelection?.selection != presentation.selection
+            // 同分类的计数刷新仍即时更新，只在基础分类变化时播放子分类过渡。
+            manageFacetTransition.update(to: presentation, reduceMotion: reduceMotion || !isCategoryChange)
         }
         .onChange(of: reduceMotion) { _, _ in
             rootContentTransition.update(to: selectedPage, reduceMotion: reduceMotion)
+            exploreContentTransition.update(to: exploreSidebarContext, reduceMotion: reduceMotion)
+            manageFacetTransition.update(to: manageFacetPresentation, reduceMotion: reduceMotion)
         }
         .onDisappear {
             rootContentTransition.update(to: selectedPage, reduceMotion: true)
+            exploreContentTransition.update(to: exploreSidebarContext, reduceMotion: true)
+            manageFacetTransition.update(to: manageFacetPresentation, reduceMotion: true)
         }
         .task {
             // 公共来源索引不依赖进入发现页；长期前台使用也按 TTL 低频更新。
@@ -1052,23 +1090,19 @@ struct SidebarView: View {
         case .trending:
             List(selection: exploreSidebarSelectionBinding) {
                 exploreModeSidebarContent
-                if !dailyRadarPreviewPresentation {
-                    exploreSidebarContent
-                } else {
-                    dailyRadarSidebarContent
-                }
+                exploreSidebarContent
+                    // 仅在展示身份变化时禁止 section 布局插值；透明度在此边界外播放，
+                    // 手动折叠仍使用原有 disclosureSpring，不会被长期禁用动画。
+                    .transaction(value: displayedExploreSidebarContext) { transaction in
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
+                    .opacity(exploreContentTransition.opacity)
+                    .allowsHitTesting(displayedExploreSidebarContext == exploreSidebarContext)
             }
             .listStyle(.sidebar)
             .task(id: dailyRadarScope) {
                 await prepareDailyRadarSidebar()
-            }
-            // 分类行自身挂有折叠/展开 transition；切 Explore mode 时不能复用
-            // List(selection:) 的系统选中动画，否则旧筛选 section 退场与新 section
-            // 入场会连续触发整窗 layout。手动点 header 的 disclosureSpring 是另一笔
-            // transaction，不受这里影响。
-            .transaction(value: selectedExploreMode) { transaction in
-                transaction.animation = nil
-                transaction.disablesAnimations = true
             }
         case .activity:
             List(selection: $selectedActivityCategory) {
@@ -1081,6 +1115,38 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
         }
+    }
+
+    private var exploreSidebarContext: ExploreSidebarContext {
+        if dailyRadarPreviewPresentation { return .dailyRadar }
+        if selectedExploreMode == .discover, dependencies.linuxDoStore.selectedSource == .linuxDo {
+            return .linuxDo
+        }
+        return .mode(selectedExploreMode)
+    }
+
+    private var displayedExploreSidebarContext: ExploreSidebarContext {
+        exploreContentTransition.displayedSelection ?? exploreSidebarContext
+    }
+
+    /// 旧语言段退场时继续读取它自己的模式，不能提前拿新模式的目录和总数。
+    private var displayedExploreMode: ExploreMode {
+        if case .mode(let mode) = displayedExploreSidebarContext { return mode }
+        return .discover
+    }
+
+    private var manageFacetPresentation: ManageSidebarFacetPresentation {
+        ManageSidebarFacetPresentation(
+            selection: viewModel.selection,
+            languageRows: viewModel.sidebarLanguageRows,
+            languageTotal: viewModel.sidebarLanguageTotal,
+            tagCounts: viewModel.sidebarTagCounts,
+            canFilterByTags: viewModel.canFilterByTags
+        )
+    }
+
+    private var displayedManageFacets: ManageSidebarFacetPresentation {
+        manageFacetTransition.displayedSelection ?? manageFacetPresentation
     }
 
     /// 与阅读工作区使用相同身份，预加载目录后打开文章不会再次清空计数或选中分类
@@ -1227,20 +1293,26 @@ struct SidebarView: View {
                 if tagsExpanded && !viewModel.tags.isEmpty {
                     TagWallView(
                         tags: viewModel.tags,
-                        tagCounts: viewModel.sidebarTagCounts,
+                        tagCounts: displayedManageFacets.tagCounts,
                         countUpperBounds: viewModel.sidebarTagCountUpperBounds,
                         selectedTagIds: viewModel.selectedTagIds,
                         onTagTap: { tagId in
                             viewModel.toggleSelectedTag(tagId)
                         }
                     )
-                    .disabled(!viewModel.canFilterByTags)
-                    .opacity(viewModel.canFilterByTags ? 1 : 0.5)
+                    .disabled(!displayedManageFacets.canFilterByTags)
+                    .opacity(displayedManageFacets.canFilterByTags ? 1 : 0.5)
                     .transition(Self.disclosureRowTransition)
                 }
             } header: {
                 tagSectionHeader
             }
+            .transaction(value: displayedManageFacets.selection) { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+            .opacity(manageFacetTransition.opacity)
+            .allowsHitTesting(displayedManageFacets.selection == viewModel.selection)
 
             if !viewModel.languageStats.isEmpty || viewModel.libraryCount > 0 || viewModel.myProjectsCount > 0 {
                 // HOM-43：折叠按钮始终可见，不依赖 hover；图标在右侧；点击整个区域可折叠
@@ -1251,7 +1323,7 @@ struct SidebarView: View {
                     allLanguagesRow
 
                     if languagesExpanded {
-                        ForEach(viewModel.sidebarLanguageRows) { row in
+                        ForEach(displayedManageFacets.languageRows) { row in
                             languageRow(row)
                                 .transition(Self.disclosureRowTransition)
                         }
@@ -1259,6 +1331,12 @@ struct SidebarView: View {
                 } header: {
                     languageSectionHeader
                 }
+                .transaction(value: displayedManageFacets.selection) { transaction in
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+                .opacity(manageFacetTransition.opacity)
+                .allowsHitTesting(displayedManageFacets.selection == viewModel.selection)
             }
         } else {
             Section {
@@ -1360,21 +1438,24 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var exploreSidebarContent: some View {
-        switch selectedExploreMode {
-        case .discover:
-            if dependencies.linuxDoStore.selectedSource == .catalog {
+        switch displayedExploreSidebarContext {
+        case .dailyRadar:
+            dailyRadarSidebarContent
+        case .linuxDo:
+            linuxDoLanguageSidebarContent
+        case .mode(let mode):
+            switch mode {
+            case .discover:
                 exploreDiscoverySidebarContent
-            } else {
-                linuxDoLanguageSidebarContent
+            case .popular, .newReleases:
+                exploreLanguageSidebarContent
+            case .trending:
+                trendingSidebarContent
+            case .weekly:
+                weeklyLanguageSidebarContent
+            case .awesome:
+                awesomeSourceSidebarContent
             }
-        case .popular, .newReleases:
-            exploreLanguageSidebarContent
-        case .trending:
-            trendingSidebarContent
-        case .weekly:
-            weeklyLanguageSidebarContent
-        case .awesome:
-            awesomeSourceSidebarContent
         }
     }
 
@@ -1558,7 +1639,7 @@ struct SidebarView: View {
 
             if trendingLanguagesExpanded {
                 let items = exploreLanguageRowItems(
-                    keysWithCounts: dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode).map { ($0.key, $0.count) },
+                    keysWithCounts: dependencies.exploreCatalogStore.displayLanguages(for: displayedExploreMode).map { ($0.key, $0.count) },
                     interestedLanguages: viewModel.interestedLanguages
                 )
                 ForEach(items) { item in
@@ -1935,7 +2016,7 @@ struct SidebarView: View {
 
                 Spacer(minLength: 8)
 
-                Text(viewModel.sidebarLanguageRows.count.formatted())
+                Text(displayedManageFacets.languageRows.count.formatted())
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -2023,9 +2104,9 @@ struct SidebarView: View {
 
                 Spacer(minLength: 8)
 
-                Text((dependencies.linuxDoStore.selectedSource == .linuxDo && selectedExploreMode == .discover
+                Text((displayedExploreSidebarContext == .linuxDo
                     ? dependencies.linuxDoStore.languages.count
-                    : dependencies.exploreCatalogStore.displayLanguages(for: selectedExploreMode).count).formatted())
+                    : dependencies.exploreCatalogStore.displayLanguages(for: displayedExploreMode).count).formatted())
                     .font(interfaceScale.font(.captionSmall))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -2264,7 +2345,7 @@ struct SidebarView: View {
         // 「全部」回退到 catalog total。
         let count: Int? = language?.count ?? (isLinuxDo
             ? dependencies.linuxDoStore.repositories.count
-            : dependencies.exploreCatalogStore.total(for: selectedExploreMode))
+            : dependencies.exploreCatalogStore.total(for: displayedExploreMode))
         // 语言 logo 不是 SF Symbol，不能塞进 systemImage 字符串；仍走 Label icon 槽，
         // 与趋势/周刊语言行、星标主导航同一套 sidebar 图标列对齐。
         return exploreSelectableRow(
@@ -2793,7 +2874,7 @@ struct SidebarView: View {
                     Spacer(minLength: 4)
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(viewModel.sidebarLanguageStats == nil ? "—" : row.count.formatted())
+                        Text(displayedManageFacets.languageTotal == nil ? "—" : row.count.formatted())
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -2839,7 +2920,7 @@ struct SidebarView: View {
 
                     HStack(spacing: 4) {
                         Spacer(minLength: 0)
-                        Text(viewModel.sidebarLanguageTotal?.formatted() ?? "—")
+                        Text(displayedManageFacets.languageTotal?.formatted() ?? "—")
                             .font(interfaceScale.font(.captionSmall))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
