@@ -45,10 +45,9 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
-| `codex/skill-management` | 本地 worktree：`../Starcat-skill-management`；无远端分支 | 当前集成基线为 `dev@485be65d`；研究并实现 Direct 独有的 Skill 管理主窗口，采用 Starcat 原生三栏 UI；研究报告与实施方案仅在专项 worktree 维护。 | `开发中`；M0–M3 实现及自动化检查已完成，人工验收待进行。2026-11-15 按 dong4j 要求合入 `dev` 的 18 个后续提交，保留原有 20 个专项提交，并带入既有 Skill 正文翻译、设置与 Skills 动效及默认 UI 规范；117 项定向测试、双渠道 build-only 及工作台全语言编译资源校验通过。 | 在本 worktree 按 `docs/2-产品/需求讨论/Skill管理工作台/12-开发Checklist与实施记录.md` 推进与验收；后续翻译复用现有 README 组件。完成后待授权合回 `dev`，不自动推送或清理。 |
 | `codex/daily-recommendation-cards` | 本地 worktree：`../Starcat-daily-recommendation-cards`；无远端分支 | 基于 `dev` 实现并继续迭代每日推荐抽卡：透明整窗覆盖、多种子真实推荐、账号历史去重、跨天候选分页与本地反馈。 | `开发中`；2026-11-11 worktree 已按功能提交到 `3a89321c` 并保持干净；该功能不进入 1.9.5 Beta。 | 继续在本 worktree 开发与验收，完成后合回 `dev`；不自动 push 或清理。 |
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-13 已合入 Skill 性能优化 `38e9a6c3`，并按 dong4j 要求经 `e66c56da` 合入全局搜索复审的 10 项修复 `fd213c5b`；真实联网与实机交互待验收。最新 Direct 发布仍为 `1.9.5-beta.1`（`1aab33e6`），每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐继续独立开发。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
 | `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-12 按本次发布收尾要求从 `dev` fast-forward 并推送，本地及远端 `dev/main` 保持一致。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
 
@@ -94,6 +93,7 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 | 分支 | 处理结论 | 清理依据 |
 |---|---|---|
+| `codex/skill-management` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 确认目前可用并授权合并、清理；分支头 `3162ca5d` 的 22 个提交经 `4712a2b6` 合入本地 `dev`，后续直接在主工作区优化。204 项、23 Suite 集成回归、双渠道构建与 121 key × 17 语言编译资源校验通过。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置一致；先把 Direct 切换到主工作区产物，再以非强制 `git worktree remove` 和 `git branch -d` 清理。14 篇文档完整保留，完整人工验收与译文审核继续开放，本次未操作远端。 |
 | `codex/shared-selection-motion` | 已删除本地分支及 worktree。 | 2026-11-15 dong4j 授权合并与清理；分支头 `487fefde` 的设置页、Skills 动效、骨架加载及默认 UI 规范经 `e8a5e7bd` 合入 `dev`，详情页冲突处理保留既有 Skill 翻译。50 项定向测试与双渠道 build-only 通过，本次未做 GUI 复验。删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净且 Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 清理 `../Starcat-shared-selection-motion` 及本地分支，本次未操作远端。 |
 | `codex/severe-diagnostics` | 已删除本地分支及 worktree。 | 2026-11-13 功能提交 `d2b710f6` 经 `7b0a6d8e` 整合主线后，通过 `c42b5e6c` 合入 `dev`；当时 174 项定向测试、16 项 Python 测试、双渠道 build-only 及 17 语言编译资源校验通过。2026-11-14 dong4j 授权清理，删除前确认分支为 `dev` 祖先、独有提交为 0、`git cherry` 与三点 diff 为空、worktree 干净，Secrets 配置与主工作区一致。已通过非强制 `git worktree remove` 和 `git branch -d` 删除 `../Starcat-severe-diagnostics` 及本地分支；界面与译文后续在 `dev` 验收，本次未操作远端。 |
 | `codex/github-overview` | 已删除（方案废弃） | 2026-11-13 dong4j 查看效果后明确永久取消，不再安排后续开发。删除前确认分支独有提交为 0，全部实现仍为 worktree 内的未提交改动；按授权通过 `git worktree remove --force` 丢弃实现、测试、本地化改动与构建产物，随后通过 `git branch -d` 删除本地分支。最终方案与设计图一并删除，未合入 `dev`，未操作远端。 |
