@@ -27,6 +27,8 @@ enum ChannelFeature: String, CaseIterable, Sendable {
     case deviceFlowLogin
     /// Direct 版 Personal Access Token 登录及 Token 获取入口。
     case personalAccessTokenLogin
+    /// Direct 版独立 Skill 管理；与仓库详情安装器及 Pro 权益分别判断。
+    case skillManagement
 }
 
 /// 分发渠道门控失败。
@@ -55,7 +57,8 @@ struct DistributionGate: Sendable {
              .externalToolBridge,
              .externalAgentRuntime,
              .deviceFlowLogin,
-             .personalAccessTokenLogin:
+             .personalAccessTokenLogin,
+             .skillManagement:
             return channel.isDirect
         }
     }
