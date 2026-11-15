@@ -27,9 +27,7 @@ struct DiscoveryDetailView: View {
         ZStack(alignment: .topLeading) {
             if let item {
                 DiscoveryScaffoldShell(item: item, supplementalHeader: supplementalHeader)
-                    // 同一仓库刷新后 repoID 不变，但 description 和 GitHub 时间可能补齐；
-                    // 完整快照作为 identity 可重建内部 @State，避免继续显示旧的空元数据。
-                    .id(item)
+                    // 元数据更新交给 task(id: item)，保持 Scaffold 与 README WebView 身份。
                     .detailContentTransition()
             } else {
                 RepoDetailNoSelectionPlaceholder(messageKey: "explore.detail.empty")
@@ -57,7 +55,11 @@ private struct DiscoveryScaffoldShell: View {
             if let displayRepo, let readmeVM {
                 scaffold(for: displayRepo, readmeVM: readmeVM)
             } else {
-                ProgressView()
+                VStack(spacing: 16) {
+                    ListLoadingSkeleton(rowCount: 1, rowHeight: 110)
+                    ReadmeSkeletonView()
+                }
+                    .padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

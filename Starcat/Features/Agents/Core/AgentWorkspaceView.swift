@@ -61,6 +61,8 @@ struct AgentWorkspaceView: View {
     @Environment(\.locale) private var locale
     @State private var viewModel = AgentWorkspaceViewModel()
     @State private var isHistoryExpanded = false
+    @Namespace private var agentSelectionSpace
+    @Namespace private var historySelectionSpace
     /// 栏宽测量属于持久化缓存而不是渲染状态；引用对象内部变化不能让整棵工作台重新求值。
     @State private var columnWidthPersistence = WorkspaceColumnWidthPersistence(layout: AgentWorkspaceLayoutMetrics.columnLayout)
     @Bindable var chromeState: WorkspaceChromeState
@@ -151,13 +153,13 @@ struct AgentWorkspaceView: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, 4)
 
-            ForEach(agents) { agent in
-                agentButton(agent)
+            ForEach(Array(agents.enumerated()), id: \.element.id) { index, agent in
+                agentButton(agent, rowIndex: index)
             }
         }
     }
 
-    private func agentButton(_ agent: AgentDefinition) -> some View {
+    private func agentButton(_ agent: AgentDefinition, rowIndex: Int) -> some View {
         Button {
             viewModel.selectAgent(agent)
         } label: {
@@ -198,12 +200,8 @@ struct AgentWorkspaceView: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(agent.id == viewModel.selectedAgentID ? Color.accentColor.opacity(0.12) : Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(agent.id == viewModel.selectedAgentID ? Color.accentColor.opacity(0.24) : Color.clear)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .listRowSurface(index: rowIndex, isSelected: agent.id == viewModel.selectedAgentID,
+                            selectionNamespace: agentSelectionSpace)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -218,7 +216,9 @@ struct AgentWorkspaceView: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, 4)
 
-            if viewModel.historyRuns.isEmpty {
+            if !viewModel.hasLoadedHistory, viewModel.historyRuns.isEmpty {
+                ListLoadingSkeleton(rowCount: 3, rowHeight: 44)
+            } else if viewModel.historyRuns.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
                         .foregroundStyle(.secondary)
@@ -275,7 +275,7 @@ struct AgentWorkspaceView: View {
     }
 
     private func historyRunButton(_ run: AgentRunRecord) -> some View {
-        let isSelected = viewModel.selectedHistoryRunID == run.id
+        let isSelected = (viewModel.loadingHistoryRunID ?? viewModel.selectedHistoryRunID) == run.id
         return Button {
             Task {
                 await viewModel.openHistoryRun(run)
@@ -300,10 +300,8 @@ struct AgentWorkspaceView: View {
             .padding(11)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(
-                isSelected ? Color.accentColor.opacity(0.12) : Color(nsColor: .separatorColor).opacity(0.10),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
+            .listRowSurface(index: viewModel.historyRuns.firstIndex(where: { $0.id == run.id }) ?? 0,
+                            isSelected: isSelected, selectionNamespace: historySelectionSpace)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

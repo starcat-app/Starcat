@@ -371,8 +371,10 @@ struct RepoHealthSheet: View {
                 .tint(healthTint(score))
             if !facts.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(facts, id: \.key) { fact in
+                    ForEach(Array(facts.enumerated()), id: \.element.key) { index, fact in
                         factRow(fact)
+                            .padding(.vertical, 3)
+                            .listRowSurface(index: index)
                     }
                 }
             }
@@ -580,8 +582,7 @@ struct RepoHealthSheet: View {
 
     private var loadingContent: some View {
         VStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.large)
+            ListLoadingSkeleton(rowCount: 4, rowHeight: 70)
             Text("repoHealth.loading")
                 .font(interfaceScale.font(.panelTitle))
             Text("repoHealth.loading.hint")

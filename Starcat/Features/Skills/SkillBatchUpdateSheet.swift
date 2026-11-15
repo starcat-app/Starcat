@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct SkillBatchUpdateSheet: View {
+    @Namespace private var selectionSpace
     let viewModel: SkillWorkspaceViewModel
     let entryIDs: [UUID]
     let close: () -> Void
@@ -35,7 +36,7 @@ struct SkillBatchUpdateSheet: View {
             Text("skills.update.batch.notice").font(.caption).foregroundStyle(.secondary)
             Text(verbatim: "\(rows.filter { $0.result != nil }.count)/\(rows.count)").monospacedDigit()
             List(selection: $selectedID) {
-                ForEach(rows) { row in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(verbatim: row.name).font(.headline)
@@ -55,6 +56,7 @@ struct SkillBatchUpdateSheet: View {
                             Text(verbatim: error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                         }
                     }
+                    .listRowSurface(index: index, isSelected: selectedID == row.id, selectionNamespace: selectionSpace)
                     .tag(row.id)
                 }
             }
@@ -78,6 +80,7 @@ struct SkillBatchUpdateSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 100)
+                .nativeDetailTransition(value: selectedID)
                 Picker("SKILL.md", selection: $manifest) {
                     Text("skills.update.base").tag(0).disabled(selected.baseManifest == nil)
                     Text("skills.update.local").tag(1)
@@ -90,9 +93,10 @@ struct SkillBatchUpdateSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 130)
+                .nativeDetailTransition(value: "\(selectedID?.uuidString ?? "")|\(manifest)")
             }
             if let message { Text(verbatim: message).font(.caption).foregroundStyle(.secondary) }
-            if isBusy && !isRunning { ProgressView("skills.import.preparing").controlSize(.small) }
+            if isBusy && !isRunning && rows.isEmpty { ListLoadingSkeleton(rowCount: 4, rowHeight: 52) }
             Divider()
             HStack {
                 Spacer()

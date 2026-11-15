@@ -43,11 +43,12 @@ struct SkillUpdateReviewSheet: View {
                     Section("skills.update.remote") { differences(preview.remoteDifferences) }
                     if !preview.assignments.isEmpty {
                         Section("skills.assignment.title") {
-                            ForEach(preview.assignments) { assignment in
+                            ForEach(Array(preview.assignments.enumerated()), id: \.element.id) { index, assignment in
                                 VStack(alignment: .leading) {
                                     Text(verbatim: assignment.target.names)
                                     Text(verbatim: assignment.targetPath).font(.caption.monospaced()).foregroundStyle(.secondary)
                                 }
+                                .listRowSurface(index: index)
                             }
                         }
                     }
@@ -65,9 +66,10 @@ struct SkillUpdateReviewSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: 155)
+                .nativeDetailTransition(value: manifest)
             } else {
                 Spacer()
-                if isBusy { ProgressView("skills.import.preparing") }
+                if isBusy { ListLoadingSkeleton(rowCount: 5, rowHeight: 48) }
                 Spacer()
             }
             if let result {
@@ -107,12 +109,13 @@ struct SkillUpdateReviewSheet: View {
     }
 
     private func differences(_ files: [SkillFileDifference]) -> some View {
-        ForEach(files) { file in
+        ForEach(Array(files.enumerated()), id: \.element.id) { index, file in
             HStack {
                 Text(verbatim: file.path).font(.caption.monospaced())
                 Spacer()
                 Text(LocalizedStringKey("skills.update.diff.\(file.kind.rawValue)")).foregroundStyle(.secondary)
             }
+            .listRowSurface(index: index)
         }
     }
 

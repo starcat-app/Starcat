@@ -16,6 +16,7 @@ struct RAGWorkspaceConversationRail: View {
     @Bindable var viewModel: KnowledgeRAGWorkspaceViewModel
     /// 把全局 selection 拆成行级状态，切换时只失效旧、新两行。
     @State private var selectionStore = RAGConversationRailSelectionStore()
+    @Namespace private var selectionSpace
     /// 「展开更多」分页状态是进程级单例：关闭工作台窗口重开不重置，仅应用重启归零。
     private let expansionStore = RAGConversationRailExpansionStore.shared
     @State private var expandedGroupIDs: Set<UUID> = []
@@ -326,11 +327,14 @@ struct RAGWorkspaceConversationRail: View {
             selectionState: selectionStore.state(for: conversation.id),
             conversation: conversation,
             rowIndex: rowIndex,
+            selectionNamespace: selectionSpace,
             showsIcon: showsIcon,
             isDragging: isDragging,
             isSettling: isSettling,
             onSelected: {
-                selectionStore.select(conversation.id)
+                withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82)) {
+                    selectionStore.select(conversation.id)
+                }
             },
             onDragStarted: {
                 beginConversationDrag(conversation.id)

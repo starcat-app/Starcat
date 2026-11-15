@@ -13,7 +13,6 @@
 import SwiftUI
 
 struct ExploreView: View {
-
     var trendingRepository: (any TrendingRepositoryProtocol)?
     var githubAPIClient: (any GitHubAPIClientProtocol)?
     /// 由 Repo List 窗口会话持有，跨 Manage / Explore / Activity 切换不销毁。
@@ -179,6 +178,7 @@ struct ExploreView: View {
 }
 
 private struct ExploreDiscoveryListView: View {
+    @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
 
     let viewModel: ExploreDiscoveryViewModel
@@ -474,7 +474,8 @@ private struct ExploreDiscoveryListView: View {
                         ),
                         isSelected: store.isActive
                             ? store.contains(ghRepoId: repo.repoID)
-                            : (selectedRepoID == repo.repoID)
+                            : (selectedRepoID == repo.repoID),
+                        selectionNamespace: store.isActive ? nil : selectionSpace
                     )
                     .id(repoRowIdentity(for: repo))
                 }

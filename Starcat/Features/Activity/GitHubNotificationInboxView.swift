@@ -11,6 +11,7 @@ import AppKit
 import SwiftUI
 
 struct GitHubNotificationInboxView: View {
+    @Namespace private var selectionSpace
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -220,8 +221,9 @@ struct GitHubNotificationInboxView: View {
         if inbox.missingScope && rows.isEmpty {
             missingScopeEmpty
         } else if rows.isEmpty && inbox.isSyncing {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ListLoadingSkeleton(rowHeight: 76)
+                .padding(12)
+                .frame(maxHeight: .infinity, alignment: .top)
         } else if rows.isEmpty {
             emptyState
         } else if visibleRows.isEmpty {
@@ -279,6 +281,8 @@ struct GitHubNotificationInboxView: View {
                         GitHubNotificationTimelineRow(
                             display: timelineDisplay(for: row),
                             isSelected: selectedThreadId == row.id,
+                            rowIndex: rowIndex,
+                            selectionNamespace: selectionSpace,
                             isFirstInTimeline: isFirst,
                             isLastInTimeline: isLast,
                             onSelect: {
@@ -827,12 +831,12 @@ private struct GitHubNotificationTimelineHeader: View {
 private struct GitHubNotificationTimelineRow: View {
     let display: GitHubNotificationTimelineDisplay
     let isSelected: Bool
+    let rowIndex: Int
+    let selectionNamespace: Namespace.ID
     let isFirstInTimeline: Bool
     let isLastInTimeline: Bool
     let onSelect: () -> Void
     @Environment(\.locale) private var locale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: onSelect) {
@@ -924,58 +928,24 @@ private struct GitHubNotificationTimelineRow: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .background {
-            RoundedRectangle(
-                cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
-                style: .continuous
-            )
-            .fill(rowFill)
-            .background {
-                // 与 `RepoRowSurface` 同款：半透明 controlBackground 让浅/深色下选中都够跳。
-                RoundedRectangle(
-                    cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
-                    style: .continuous
+            Color.clear
+                .listRowSurface(
+                    index: rowIndex, isSelected: isSelected,
+                    selectionNamespace: selectionNamespace,
+                    accentColor: display.accentColor,
+                    cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius
                 )
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0))
-            }
-            .overlay(alignment: .leading) {
-                // 选中左侧 3pt 语言色条。贴在圆角底上，不改 `HH:mm` / 轴线布局。
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(display.accentColor)
-                    .frame(width: isSelected ? 3 : 0)
-                    .padding(.vertical, 8)
-                    .opacity(isSelected ? 1 : 0)
-            }
-            .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
-            .padding(.vertical, 1)
+                .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
+                .padding(.vertical, 1)
         }
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: GitHubNotificationTimelineMetrics.rowCornerRadius,
-                style: .continuous
-            )
-            .stroke(
-                isSelected ? display.accentColor.opacity(0.42) : Color.clear,
-                lineWidth: 1
-            )
-            .padding(.horizontal, GitHubNotificationTimelineMetrics.selectedInset)
-            .padding(.vertical, 1)
+        .overlay(alignment: .leading) {
+            // 颜色仍来自通知仓库；只绘制选中竖条，不挪动时间轴和头像。
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(display.accentColor)
+                .frame(width: isSelected ? 3 : 0)
+                .padding(.vertical, 8)
+                .padding(.leading, GitHubNotificationTimelineMetrics.selectedInset)
         }
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
-                isHovered = hovering
-            }
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
-    }
-
-    private var rowFill: Color {
-        if isSelected {
-            return display.accentColor.opacity(0.18)
-        }
-        if isHovered {
-            return display.accentColor.opacity(0.08)
-        }
-        return .clear
     }
 
     private var updatedAt: Date? {

@@ -928,7 +928,7 @@ private struct RepoFileBranchPicker: View {
                     .textFieldStyle(.roundedBorder)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(filtered, id: \.self) { name in
+                        ForEach(Array(filtered.enumerated()), id: \.element) { index, name in
                             Button {
                                 onSelect(name)
                                 isPresented = false
@@ -946,6 +946,7 @@ private struct RepoFileBranchPicker: View {
                             .focusEffectDisabled()
                             .padding(.horizontal, 6)
                             .padding(.vertical, 5)
+                            .listRowSurface(index: index, isSelected: name == selection)
                         }
                     }
                 }

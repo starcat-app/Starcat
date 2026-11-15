@@ -102,16 +102,22 @@ struct RAGWorkspaceAnswerSurface: View {
     var conversationContent: some View {
         let isLoading = viewModel.isConversationLoading
         return ZStack {
-            // 加载期间不保留上一会话，避免左栏已经选中 B、中栏却仍显示 A 的误导状态。
-            // 安装完成后先挂载正文；此时 handoff 骨架仍在最上层，遮住首轮解析和布局。
-            if !isLoading {
-                // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
-                if showsEmptyConversation {
-                    emptyConversation
-                } else {
-                    messageTimeline
+            // 身份变化时只让旧展示树短暂退场；VM 仍立即清空上一会话并隔离流式结果。
+            // 新正文先在 handoff 骨架下完成布局，不能为动效延迟真正的会话选择。
+            Group {
+                if !isLoading {
+                    // 空态放在 ScrollView 外，才能占满中栏剩余高度并真正上下居中。
+                    if showsEmptyConversation {
+                        emptyConversation
+                    } else {
+                        messageTimeline
+                    }
                 }
             }
+            .id(viewModel.selectedConversationID)
+            .detailContentTransition()
+            .allowsHitTesting(!isLoading)
+            .accessibilityHidden(isLoading)
 
             if isLoading || isConversationSkeletonHandoffVisible {
                 conversationLoading
@@ -120,6 +126,8 @@ struct RAGWorkspaceAnswerSurface: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.selectedConversationID)
+        .clipped()
         // `task(id:)` 会在加载状态再次变化或 View 消失时自动取消旧任务，连续切换会话时
         // 上一会话的延迟淡出因此不能误删当前会话的骨架。
         .task(id: isLoading) {
@@ -1127,7 +1135,7 @@ struct RAGWorkspaceAnswerSurface: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(snapshot.suggestions) { repo in
+                        ForEach(Array(snapshot.suggestions.enumerated()), id: \.element.id) { index, repo in
                             let isSelected = selectedRepoIDs.contains(repo.id)
                             RAGContextPickerRepositoryRow(
                                 candidate: repo,
@@ -1135,6 +1143,7 @@ struct RAGWorkspaceAnswerSurface: View {
                                 isHighlighted: repo.id == highlightedRepoID,
                                 isEnabled: isSelected || !selectionFull,
                                 selectionLimit: KnowledgeRAGWorkspaceViewModel.maxSelectedRepoContexts,
+                                rowIndex: index,
                                 onToggle: { viewModel.toggleMention(repo) }
                             )
                             .equatable()

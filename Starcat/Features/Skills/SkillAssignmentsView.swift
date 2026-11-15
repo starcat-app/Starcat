@@ -15,6 +15,7 @@ struct SkillAssignmentsView: View {
     @State private var observations: [SkillAssignmentObservation] = []
     @State private var preview: SkillAssignmentPlan?
     @State private var isBusy = false
+    @State private var hasLoadedAssignments = false
     @State private var message: String?
 
     var body: some View {
@@ -30,9 +31,13 @@ struct SkillAssignmentsView: View {
                     }
                     .disabled(isBusy || targets.isEmpty)
                 }
-                if targets.isEmpty { Text("skills.assignment.noTargets").foregroundStyle(.secondary) }
+                if !hasLoadedAssignments {
+                    ListLoadingSkeleton(rowCount: 3, rowHeight: 72)
+                } else if targets.isEmpty {
+                    Text("skills.assignment.noTargets").foregroundStyle(.secondary)
+                }
                 Text("skills.assignment.notice").font(.caption).foregroundStyle(.secondary)
-                ForEach(observations) { observation in
+                ForEach(Array(observations.enumerated()), id: \.element.id) { index, observation in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(verbatim: observation.assignment.target.names).font(.headline)
                         Text(verbatim: observation.assignment.targetPath).font(.caption.monospaced())
@@ -55,13 +60,15 @@ struct SkillAssignmentsView: View {
                         }
                         .disabled(isBusy)
                     }
+                    .padding(6)
+                    .listRowSurface(index: index)
                     Divider()
                 }
                 if isBusy { ProgressView().controlSize(.small) }
                 if let message { Text(verbatim: message).font(.caption).foregroundStyle(.secondary) }
             }
             Text("skills.assignment.discovered").font(.headline)
-            ForEach(item.locations) { location in
+            ForEach(Array(item.locations.enumerated()), id: \.element.id) { index, location in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(verbatim: location.agentNames.joined(separator: " · ")).font(.headline)
                     Text(verbatim: location.path).font(.caption.monospaced())
@@ -73,6 +80,8 @@ struct SkillAssignmentsView: View {
                     Text(LocalizedStringKey(location.isShared ? "skills.detail.shared" : "skills.detail.visibility.unverified"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                .padding(6)
+                .listRowSurface(index: index)
             }
             if item.locations.isEmpty { Text("skills.detail.assignments.none").foregroundStyle(.secondary) }
         }
@@ -86,6 +95,8 @@ struct SkillAssignmentsView: View {
     }
 
     private func load() async {
+        // 刷新沿用现有列表；只有首载缺少快照时显示骨架，不影响真实分配操作进度。
+        defer { if !Task.isCancelled { hasLoadedAssignments = true } }
         guard let service = viewModel.libraryEnvironment?.assignments else { return }
         do {
             let targets = try await service.targets()

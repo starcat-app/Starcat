@@ -17,6 +17,7 @@ struct RAGContextPickerRepositoryRow: View, Equatable {
     let isHighlighted: Bool
     let isEnabled: Bool
     let selectionLimit: Int
+    let rowIndex: Int
     let onToggle: () -> Void
 
     @Environment(\.locale) private var locale
@@ -27,6 +28,7 @@ struct RAGContextPickerRepositoryRow: View, Equatable {
             && lhs.isHighlighted == rhs.isHighlighted
             && lhs.isEnabled == rhs.isEnabled
             && lhs.selectionLimit == rhs.selectionLimit
+            && lhs.rowIndex == rhs.rowIndex
     }
 
     var body: some View {
@@ -39,7 +41,8 @@ struct RAGContextPickerRepositoryRow: View, Equatable {
                 starsCount: candidate.starsCount,
                 isChecked: isSelected,
                 isHighlighted: isHighlighted,
-                isEnabled: isEnabled
+                isEnabled: isEnabled,
+                rowIndex: rowIndex
             ) {
                 // 索引侧元数据属于 RAG，不下沉进共享 Row 的仓库身份模型。
                 if candidate.chunkCount > 0 {

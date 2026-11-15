@@ -22,6 +22,7 @@ enum InsightsColumnChrome {
 
 /// 洞察中心中栏：当前主题的摘要和可下钻问题集合。
 struct InsightsListView: View {
+    @Namespace private var selectionSpace
 
     @Binding var topic: InsightsTopic
     @Binding var selection: InsightsSelection
@@ -62,7 +63,7 @@ struct InsightsListView: View {
                 .detailContentTransition()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: topic)
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 原生导航标题可能在内容的 locale 环境外解析 Text，
@@ -122,6 +123,8 @@ struct InsightsListView: View {
             }
         }
         .padding(.vertical, 3)
+        .listRowSurface(index: topic.selections(for: snapshot.scope).firstIndex(of: item) ?? 0,
+                        isSelected: selection == item, selectionNamespace: selectionSpace)
         .tag(item)
     }
 

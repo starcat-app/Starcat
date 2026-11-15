@@ -40,6 +40,7 @@ struct RecommendationCard: Identifiable {
 }
 
 struct RepoRecommendationPopover: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     let items: [RecommendationCard]
     let hasMore: Bool
     let isLoading: Bool
@@ -52,7 +53,10 @@ struct RepoRecommendationPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-            content
+            ZStack(alignment: .topLeading) {
+                content
+            }
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: isLoading)
         }
         .frame(width: 400)
         .frame(minHeight: 200, idealHeight: 500)
@@ -85,23 +89,30 @@ struct RepoRecommendationPopover: View {
             // items 为空：要么是 loading（skeleton），要么是空态
             if isLoading {
                 skeletonList
+                    .transition(.opacity)
             } else {
                 emptyState
+                    .transition(.opacity)
             }
         } else {
             cardList
+                .transition(.opacity)
         }
     }
 
     @ViewBuilder
     private var skeletonList: some View {
-        // 与主 repo 列表 skeleton 完全同形（5 行），保证 loading → list 切换无视觉跳变
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(0..<5, id: \.self) { _ in
-                RepoRowSkeletonView()
+        // 五张占位卡共用一个时钟，不能只使用 phase 默认值让骨架停在静态。
+        SkeletonAnimatedPhase { phase in
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(0..<5, id: \.self) { _ in
+                    RepoRowSkeletonView(phase: phase)
+                }
             }
+            .padding(12)
         }
-        .padding(12)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder

@@ -114,6 +114,7 @@ struct AgentRunInspectorHeader: View {
 
 /// Agent Run 的统一任务检查器。页签负责浏览 Run，时间线选择负责查看单步事实。
 struct AgentRunInspectorView: View {
+    @Namespace private var artifactSelectionSpace
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
 
@@ -137,10 +138,13 @@ struct AgentRunInspectorView: View {
         VStack(spacing: 0) {
             if let approval = pendingApproval {
                 approvalInspector(approval)
+                    .nativeDetailTransition(value: approval.id)
             } else if let event = viewModel.selectedTraceEvent {
                 traceInspector(event)
+                    .nativeDetailTransition(value: event.id)
             } else if let audit = viewModel.selectedKnowledgeAudit {
                 knowledgeAuditInspector(audit)
+                    .nativeDetailTransition(value: viewModel.selectedToolCallID)
             } else {
                 inspectorTabs
                 ScrollView {
@@ -151,6 +155,7 @@ struct AgentRunInspectorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .nativeDetailTransition(value: viewModel.inspectorTab)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -254,32 +259,35 @@ struct AgentRunInspectorView: View {
 
                 if !context.repos.isEmpty {
                     inspectorGroup(title: String.l10n("agent.workspace.inspector.context.repositoryList"), icon: "shippingbox") {
-                        ForEach(context.repos) { repo in
+                        ForEach(Array(context.repos.enumerated()), id: \.element.id) { index, repo in
                             compactItemRow(
                                 icon: repo.isPrivate ? "lock.fill" : "shippingbox",
                                 title: repo.fullName,
                                 subtitle: repo.language ?? String.l10n("agent.workspace.inspector.value.unavailable")
                             )
+                            .listRowSurface(index: index)
                         }
                     }
                 }
 
                 if !context.attachments.isEmpty {
                     inspectorGroup(title: String.l10n("agent.workspace.inspector.context.attachmentList"), icon: "paperclip") {
-                        ForEach(context.attachments) { attachment in
+                        ForEach(Array(context.attachments.enumerated()), id: \.element.id) { index, attachment in
                             compactItemRow(
                                 icon: "doc",
                                 title: attachment.name,
                                 subtitle: ByteCountFormatter.string(fromByteCount: Int64(attachment.byteCount), countStyle: .file)
                             )
+                            .listRowSurface(index: index)
                         }
                     }
                 }
 
                 if let links = context.githubLinks, !links.isEmpty {
                     inspectorGroup(title: String.l10n("agent.workspace.inspector.context.linkList"), icon: "link") {
-                        ForEach(links) { link in
+                        ForEach(Array(links.enumerated()), id: \.element.id) { index, link in
                             compactItemRow(icon: "link", title: "\(link.owner)/\(link.repository)", subtitle: link.url.absoluteString)
+                                .listRowSurface(index: index)
                         }
                     }
                 }
@@ -333,6 +341,7 @@ struct AgentRunInspectorView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .nativeDetailTransition(value: artifact.id)
                 }
             }
             .padding(.horizontal, 14)
@@ -569,12 +578,9 @@ struct AgentRunInspectorView: View {
             .padding(.vertical, 5)
             .padding(.horizontal, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                if viewModel.selectedArtifact?.id == artifact.id {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.09))
-                }
-            }
+            .listRowSurface(index: viewModel.artifacts.firstIndex(where: { $0.id == artifact.id }) ?? 0,
+                            isSelected: viewModel.selectedArtifact?.id == artifact.id,
+                            selectionNamespace: artifactSelectionSpace)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

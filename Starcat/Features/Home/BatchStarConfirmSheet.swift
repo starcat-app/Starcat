@@ -94,7 +94,7 @@ struct BatchStarConfirmSheet: View {
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(preview) { target in
+                ForEach(Array(preview.enumerated()), id: \.element.id) { index, target in
                     HStack(spacing: 6) {
                         Image(systemName: "circle.fill")
                             .font(.system(size: 4))
@@ -104,6 +104,9 @@ struct BatchStarConfirmSheet: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
+                    .listRowSurface(index: index)
                 }
                 if remaining > 0 {
                     Text(String(format: String.l10n("batch.confirm.moreReposFormat"), remaining))

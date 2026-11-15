@@ -229,9 +229,9 @@ struct RAGAddToLibrarySheet: View {
 
     @ViewBuilder
     private var listBody: some View {
-        if isLoading {
-            ProgressView()
-                .controlSize(.small)
+        if isLoading && candidates.isEmpty {
+            ListLoadingSkeleton(rowHeight: 56)
+                .padding(10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let loadError {
             EmptyStateView(
@@ -316,21 +316,12 @@ struct RAGAddToLibrarySheet: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(
-                isSelected
-                    ? Color.accentColor.opacity(0.12)
-                    : zebraBackground(rowIndex: rowIndex)
-            )
+            .listRowSurface(index: rowIndex, isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .disabled(isSubmitting)
         .help(repo.fullName)
-    }
-
-    /// 与 `@` mention / 分片列表同一套斑马纹：奇数行极淡 primary。
-    private func zebraBackground(rowIndex: Int) -> Color {
-        rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
     }
 
     /// 滚近已加载窗口尾部时追加一页，避免一次渲完几百行。

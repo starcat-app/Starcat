@@ -74,6 +74,7 @@ final class TagTaxonomyBootstrapReviewModel {
 }
 
 struct TagTaxonomyBootstrapView: View {
+    @Namespace private var selectionSpace
     @Bindable var model: TagTaxonomyBootstrapReviewModel
 
     @Environment(\.colorScheme) private var colorScheme
@@ -86,6 +87,7 @@ struct TagTaxonomyBootstrapView: View {
             HStack(alignment: .top, spacing: AIOrganizationLayout.gap) {
                 candidatePanel
                 evidencePanel
+                    .nativeDetailTransition(value: model.focusedCandidateID)
             }
             .frame(width: AIOrganizationLayout.innerWidth, height: AIOrganizationLayout.panelHeight, alignment: .top)
         }
@@ -221,10 +223,8 @@ struct TagTaxonomyBootstrapView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 36)
-        .background(
-            isFocused ? Color.accentColor.opacity(0.10) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
+        .listRowSurface(index: model.candidates.firstIndex(where: { $0.id == candidate.id }) ?? 0,
+                        isSelected: isFocused, selectionNamespace: selectionSpace)
         .contentShape(Rectangle())
         .onTapGesture { model.focusedCandidateID = candidate.id }
     }

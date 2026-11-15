@@ -385,6 +385,7 @@ private struct GitHubStarListAIGroupingRuleCard: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isExpanded: Bool
     @State private var instruction: String
     @State private var saveTask: Task<Void, Never>?
@@ -460,6 +461,7 @@ private struct GitHubStarListAIGroupingRuleCard: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .listRowSurface()
 
             if isExpanded {
                 TextField(
@@ -478,6 +480,7 @@ private struct GitHubStarListAIGroupingRuleCard: View {
             GitHubStarListAIGroupingSurface.nestedFill(colorScheme),
             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isExpanded)
         .onChange(of: instruction) { _, _ in
             scheduleSave()
         }

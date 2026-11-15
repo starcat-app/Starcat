@@ -43,7 +43,7 @@ struct AgentWorkspaceRunSurface: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @AppStorage(ExternalAgentRuntimePreferences.backendKey)
     private var externalRuntimeBackendRawValue = AgentRuntimeBackend.builtinLoop.rawValue
     @AppStorage(ExternalAgentRuntimePreferences.codexModelKey)
@@ -95,6 +95,7 @@ struct AgentWorkspaceRunSurface: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             composer
+                .disabled(viewModel.loadingHistoryRunID != nil)
         }
         // 明确接受父栏宽度，不能让菜单的最小宽度把整个 VStack 撑大后居中裁切。
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -514,8 +515,19 @@ struct AgentWorkspaceRunSurface: View {
     }
 
     private var runTimeline: some View {
-        AgentMessageTimelineView(viewModel: viewModel)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            if viewModel.loadingHistoryRunID != nil {
+                RepoSkillSkeletonView(layout: .manifest)
+                    .transition(.opacity)
+            } else {
+                AgentMessageTimelineView(viewModel: viewModel)
+                    .allowsHitTesting(viewModel.loadingHistoryRunID == nil)
+                    .nativeDetailTransition(value: "\(viewModel.selectedAgentID)|\(viewModel.selectedHistoryRunID ?? "")")
+                    .detailContentTransition()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.loadingHistoryRunID)
     }
 
     // MARK: - Composer
@@ -946,7 +958,7 @@ struct AgentWorkspaceRunSurface: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(candidates) { candidate in
+                        ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
                             let isSelected = selectedRepoIDs.contains(candidate.id)
                             AgentContextPickerRepositoryRow(
                                 candidate: candidate,
@@ -955,6 +967,7 @@ struct AgentWorkspaceRunSurface: View {
                                 isHighlighted: candidate.id == highlightedRepoID,
                                 isEnabled: isSelected || !selectionFull,
                                 selectionLimit: viewModel.maximumSelectedRepoContexts,
+                                rowIndex: index,
                                 onToggle: { viewModel.toggleRepoContext(candidate) }
                             )
                             .equatable()

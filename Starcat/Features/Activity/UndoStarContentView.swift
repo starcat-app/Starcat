@@ -82,6 +82,7 @@ final class UndoStarViewModel {
 // MARK: - UndoStarContentView
 
 struct UndoStarContentView: View {
+    @Namespace private var selectionSpace
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
 
@@ -347,7 +348,8 @@ struct UndoStarContentView: View {
                         card: record.asCardData(isStarring: isStarring),
                         isSelected: store.isActive
                             ? store.contains(ghRepoId: record.ghRepoId)
-                            : (selectedRecord?.ghRepoId == record.ghRepoId)
+                            : (selectedRecord?.ghRepoId == record.ghRepoId),
+                        selectionNamespace: store.isActive ? nil : selectionSpace
                     )
                 }
                 .buttonStyle(.plain)

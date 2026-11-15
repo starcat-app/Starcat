@@ -118,8 +118,10 @@ struct AgentKnowledgeAuditView: View {
             Label("agent.workspace.timeline.sources", systemImage: "link")
                 .font(interfaceScale.font(.captionSmall, weight: .semibold))
                 .foregroundStyle(.secondary)
-            ForEach(audit.citations) { citation in
+            ForEach(Array(audit.citations.enumerated()), id: \.element.id) { index, citation in
                 citationRow(citation)
+                    .padding(5)
+                    .listRowSurface(index: index)
             }
         }
     }

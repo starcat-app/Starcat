@@ -12,6 +12,7 @@ import AppKit
 import SwiftUI
 
 struct AwesomeView: View {
+    @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
     let store: AwesomeStore
     let onRepoCountChange: (Int) -> Void
@@ -296,7 +297,8 @@ struct AwesomeView: View {
                 ),
                 isSelected: multiStore.isActive
                     ? multiStore.contains(ghRepoId: repo.id)
-                    : (store.selectedRepositoryID == repo.id)
+                    : (store.selectedRepositoryID == repo.id),
+                selectionNamespace: multiStore.isActive ? nil : selectionSpace
             )
         }
         .buttonStyle(.plain)
