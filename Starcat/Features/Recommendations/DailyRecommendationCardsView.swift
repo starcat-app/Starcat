@@ -53,7 +53,9 @@ struct DailyRecommendationCardsView: View {
             items: store.visibleItems.map { item in
                 .init(item, revealed: store.state.revealedIDs.contains(item.repoID),
                       explanation: dependencies.dailyRecommendationExplanationStore.text(
-                        for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser))
+                         for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser),
+                       canRetryExplanation: dependencies.dailyRecommendationExplanationStore.canRetry(
+                         for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser))
             },
             labels: DailyRecommendationWebSnapshot.localizedLabels,
             date: store.state.generatedAt.map { $0.formatted(.dateTime.year().month().day().locale(locale)) } ?? "",

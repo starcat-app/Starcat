@@ -21,9 +21,10 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
         let reasonDetail: String
         let compactReason: Bool
         let revealed: Bool
+        let canRetryExplanation: Bool
 
         /// GitHub ID 按字符串过桥，避免 JavaScript Number 丢失 Int64 精度。
-        init(_ item: RepoRecommendationItem, revealed: Bool, explanation: String? = nil) {
+        init(_ item: RepoRecommendationItem, revealed: Bool, explanation: String? = nil, canRetryExplanation: Bool = false) {
             id = String(item.repoID)
             fullName = item.fullName
             description = item.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -37,6 +38,7 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
             // 模型兜底和未知类型只有通用说明，不应占用暗示“详细个性化理由”的重型分区。
             compactReason = explanation == nil && (basis == .model || basis == .unspecified)
             self.revealed = revealed
+            self.canRetryExplanation = canRetryExplanation
         }
     }
 

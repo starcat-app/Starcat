@@ -164,7 +164,7 @@
     #starcat-refined .sd-language { display: flex; align-items: center; gap: 7px; }
     #starcat-refined .sd-language::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--sd-lang, var(--sd-secondary)); }
     #starcat-refined .sd-recommend { padding: 18px 24px 0; }
-    #starcat-refined .sd-reason-heading { margin-bottom: 8px; }
+    #starcat-refined .sd-reason-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
     #starcat-refined .sd-reason-heading h3 { font-size: calc(14px * var(--sd-scale)); font-weight: 600; }
     #starcat-refined .sd-reason { font-size: calc(14px * var(--sd-scale)); line-height: 1.7; }
     #starcat-refined .sd-recommend.sd-general { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--sd-secondary); }
@@ -305,7 +305,7 @@
           <div class="sd-metrics"><span class="sd-language" data-field="language"></span><span>★ <span data-field="stars"></span> Stars</span><span><span data-field="forks"></span> Forks</span></div>
         </div>
       </div>
-      <section class="sd-recommend" aria-labelledby="reason-title"><div class="sd-reason-heading"><h3 id="reason-title" data-label="reasonTitle"></h3></div><p class="sd-reason" data-field="reason"></p></section>
+      <section class="sd-recommend" aria-labelledby="reason-title"><div class="sd-reason-heading"><h3 id="reason-title" data-label="reasonTitle"></h3><button type="button" class="sd-text-button" data-action="retry" data-label="retry" data-retry-explanation hidden></button></div><p class="sd-reason" data-field="reason"></p></section>
       <div class="sd-actions"><button type="button" class="sd-button sd-star" data-action="star"><span aria-hidden="true">☆</span><span data-label="star"></span></button><button type="button" class="sd-button" data-action="details" data-label="details"></button><button type="button" class="sd-button sd-dismiss" data-action="dismiss" data-label="dismiss"></button></div>
     </article></div></div>
     <button type="button" class="sd-peek sd-peek-right" data-action="next"></button>
@@ -451,6 +451,7 @@
     q(".sd-recommend").classList.toggle("sd-general", item.compactReason);
     q(".sd-recommend").hidden = item.compactReason && item.reasonDetail === snapshot.labels.subtitle;
     q("#reason-title").textContent = item.compactReason ? snapshot.labels.reasonTitle : item.reason;
+    q("[data-retry-explanation]").hidden = !item.canRetryExplanation;
     field("reason").textContent = item.reasonDetail;
     const position = `${String(index() + 1).padStart(2, "0")} / ${String(snapshot.items.length).padStart(2, "0")}`;
     field("edition").textContent = position;

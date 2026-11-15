@@ -100,7 +100,8 @@ struct DailyRecommendationExplanationTests {
             throw URLError(.notConnectedToInternet)
         }
         #expect(store.text(for: item(), locale: "ja", isPro: true) == nil)
-        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "ja", isPro: true) { _ in "Recovered" }
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "ja", isPro: true,
+                                 retryFailed: true) { _ in "Recovered" }
         #expect(store.text(for: item(), locale: "ja", isPro: true) == "Recovered")
     }
 
@@ -176,7 +177,8 @@ struct DailyRecommendationExplanationTests {
         ) { _ in calls += 1; return "Unexpected" }
         #expect(calls == 0)
         #expect(store.explanations.isEmpty)
-        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true) { _ in "Saved" }
+        await store.prepareBatch(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true,
+                                 retryFailed: true) { _ in "Saved" }
         let restored = DailyRecommendationExplanationStore(root: root)
         var configurationChecks = 0
         await restored.prepareBatch(
@@ -271,6 +273,55 @@ struct DailyRecommendationExplanationTests {
         let restored = DailyRecommendationExplanationStore(root: root)
         await restored.loadSaved(items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true)
         #expect(restored.explanations.isEmpty)
+    }
+
+    @Test("失败冷却期间重开不再请求，主动重试只补缺少的理由")
+    func failedReasonsHaveCooldownAndExplicitRetry() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        let now = ContinuousClock.now
+        var calls: [Int64] = []
+        let generate: @MainActor @Sendable (DailyRecommendationExplanationInput) async throws -> String = { input in
+            calls.append(input.repoID)
+            if input.repoID == 11 { throw URLError(.userAuthenticationRequired) }
+            return "Saved"
+        }
+        await store.prepareBatch(items: [item(), item(11)], accountID: 1, revision: 1, locale: "en", isPro: true,
+                                 now: now, generate: generate)
+        #expect(store.canRetry(for: item(11), locale: "en", isPro: true))
+        for _ in 0..<3 {
+            await store.prepareBatch(items: [item(), item(11)], accountID: 1, revision: 1, locale: "en", isPro: true,
+                                     now: now.advanced(by: .seconds(60)), generate: generate)
+        }
+        #expect(calls.sorted() == [10, 11])
+        await store.prepareBatch(items: [item(), item(11)], accountID: 1, revision: 1, locale: "en", isPro: true,
+                                 retryFailed: true, now: now.advanced(by: .seconds(61))) { input in
+            calls.append(input.repoID)
+            return "Recovered"
+        }
+        #expect(calls.sorted() == [10, 11, 11])
+        #expect(!store.canRetry(for: item(11), locale: "en", isPro: true))
+    }
+
+    @Test("冷却到期允许自动补试，配置失败同样冷却")
+    func cooldownExpiresAndIncludesConfigurationFailure() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DailyRecommendationExplanationStore(root: root)
+        let now = ContinuousClock.now
+        var checks = 0
+        var calls = 0
+        for elapsed in [0, 60, 301] {
+            await store.prepareBatch(
+                items: [item()], accountID: 1, revision: 1, locale: "en", isPro: true,
+                now: now.advanced(by: .seconds(elapsed)),
+                checkConfiguration: { checks += 1; throw URLError(.userAuthenticationRequired) }
+            ) { _ in calls += 1; return "Unexpected" }
+        }
+        #expect(checks == 2)
+        #expect(calls == 0)
+        #expect(!store.canRetry(for: item(), locale: "en", isPro: false))
     }
 
     private func temporaryRoot() -> URL {

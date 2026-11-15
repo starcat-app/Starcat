@@ -41,6 +41,8 @@ struct DailyRecommendationExplanationInput: Codable, Sendable, Equatable {
 final class DailyRecommendationExplanationStore {
     private(set) var explanations: [String: String] = [:]
     private var tasks: [String: Task<String?, Never>] = [:]
+    /// 前台通知和重开窗口不是重试意图。失败输入冷却五分钟，显式“重试”可绕过。
+    private var retryAfter: [String: ContinuousClock.Instant] = [:]
     private var accountID: Int64?
     private var revision: UInt64?
     private var generation: UInt64 = 0
@@ -56,6 +58,7 @@ final class DailyRecommendationExplanationStore {
         tasks.values.forEach { $0.cancel() }
         tasks = [:]
         explanations = [:]
+        retryAfter = [:]
         self.accountID = accountID
         self.revision = revision
     }
@@ -64,6 +67,12 @@ final class DailyRecommendationExplanationStore {
     func text(for item: RepoRecommendationItem, locale: String, isPro: Bool) -> String? {
         guard isPro, let key = try? DailyRecommendationExplanationInput(item).cacheKey(locale: locale) else { return nil }
         return explanations[key]
+    }
+
+    /// 为失败项目保留明确的重试入口，不把基础依据兜底误报为整批加载失败。
+    func canRetry(for item: RepoRecommendationItem, locale: String, isPro: Bool) -> Bool {
+        guard isPro, let key = try? DailyRecommendationExplanationInput(item).cacheKey(locale: locale) else { return false }
+        return explanations[key] == nil && retryAfter[key] != nil
     }
 
     /// 历史详情只恢复已保存理由，缺缓存时展示基础依据，绝不隐式发出 LLM 请求。
@@ -88,6 +97,8 @@ final class DailyRecommendationExplanationStore {
     func prepareBatch(
         items: [RepoRecommendationItem], accountID: Int64, revision: UInt64, locale: String, isPro: Bool,
         timeout: Duration = .seconds(30),
+        retryFailed: Bool = false,
+        now: ContinuousClock.Instant = .now,
         checkConfiguration: @MainActor () throws -> Void = {},
         generate: @escaping @MainActor @Sendable (DailyRecommendationExplanationInput) async throws -> String
     ) async {
@@ -101,8 +112,13 @@ final class DailyRecommendationExplanationStore {
             let input = DailyRecommendationExplanationInput($0)
             guard !input.sources.isEmpty, let key = try? input.cacheKey(locale: locale) else { return false }
             return explanations[key] == nil && seen.insert(key).inserted
+                && (retryFailed || retryAfter[key].map { now >= $0 } != false)
         }
-        guard !pending.isEmpty, (try? checkConfiguration()) != nil else { return }
+        guard !pending.isEmpty else { return }
+        guard (try? checkConfiguration()) != nil else {
+            recordFailures(pending, locale: locale, now: now)
+            return
+        }
         let deadline = ContinuousClock.now.advanced(by: timeout)
         await withTaskGroup(of: Void.self) { group in
             var remaining = pending.makeIterator()
@@ -126,6 +142,15 @@ final class DailyRecommendationExplanationStore {
                     }
                 }
             }
+        }
+        guard token == generation, !Task.isCancelled else { return }
+        recordFailures(pending, locale: locale, now: now)
+    }
+
+    private func recordFailures(_ items: [RepoRecommendationItem], locale: String, now: ContinuousClock.Instant) {
+        for item in items {
+            guard let key = try? DailyRecommendationExplanationInput(item).cacheKey(locale: locale) else { continue }
+            retryAfter[key] = explanations[key] == nil ? now.advanced(by: .seconds(300)) : nil
         }
     }
 

@@ -147,7 +147,8 @@ struct DailyRecommendationHost: ViewModifier {
         if store.errorKey == "recommendations.daily.saveFailed" {
             await store.retrySaving()
         } else {
-            _ = await prepare(replacingCurrentBatch: store.retryReplacesCurrentBatch, origin: .user)
+            let retryReplacement = (store.errorKey != nil || store.batchMessageKey != nil) && store.retryReplacesCurrentBatch
+            _ = await prepare(replacingCurrentBatch: retryReplacement, origin: .user, retryReasons: true)
         }
     }
 
@@ -163,10 +164,11 @@ struct DailyRecommendationHost: ViewModifier {
 
     /// 自动准备、失败重试与主动换批共用取数路径；换批的成功结果只用于重置舞台动画。
     private func prepare(
-        replacingCurrentBatch: Bool, origin: DailyRecommendationPreparation.Origin = .background
+        replacingCurrentBatch: Bool, origin: DailyRecommendationPreparation.Origin = .background,
+        retryReasons: Bool = false
     ) async -> Bool {
         guard let accountID, !TestEnvironment.isRunning else { return false }
-        let key = "\(identity)|\(replacingCurrentBatch)"
+        let key = "\(identity)|\(replacingCurrentBatch)|\(retryReasons)"
         let revision = dependencies.databaseScopeRevision
         let language = locale.identifier
         let isPro = dependencies.entitlementGate.isProUser
@@ -182,6 +184,7 @@ struct DailyRecommendationHost: ViewModifier {
                 prepareItems: { items in
                     await dependencies.dailyRecommendationExplanationStore.prepareBatch(
                         items: items, accountID: accountID, revision: revision, locale: language, isPro: isPro,
+                        retryFailed: retryReasons,
                         checkConfiguration: { try dependencies.repoAIInsightService.ensureRecommendationReasonReady() }
                     ) { input in
                         try await dependencies.repoAIInsightService.generateRecommendationReason(
