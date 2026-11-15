@@ -156,6 +156,9 @@ struct SidebarView: View {
     /// 顶部三入口点击反馈。用计数 token 驱动 symbolEffect，避免把动效状态混进业务 selection。
     @State private var rootNavigationBounceTokens: [SidebarRootPage: Int] = [:]
 
+    /// 顶部选择立即生效，下方 List 在旧内容淡出后才切换展示分支。
+    @State private var rootContentTransition = SidebarContentTransition<SidebarRootPage>()
+
     /// row() / tagRow() 内 trailing 区域（sync icon + count）的**整体固定宽度**（pt）。
     ///
     /// 2026-06-06 抖动**三次**修复（这次彻底）：
@@ -229,11 +232,22 @@ struct SidebarView: View {
                 // 12/20 FPS 装饰时钟切成静态分支，让出转场渲染预算。
                 .environment(\.starcatContinuousAnimationsPaused, showGitHubStarListAIGroupingSheet)
             sidebarList
+                .opacity(rootContentTransition.opacity)
+                .allowsHitTesting(rootContentTransition.displayedSelection == selectedPage)
             // 后台任务区统一承载自动/手动整理与面板已关闭的单仓摘要。
             // 手动整理会抢占本轮自动整理，因此两者不会同时出现。
             backgroundTaskFooter
         }
         .background(.bar)
+        .onChange(of: selectedPage, initial: true) { _, page in
+            rootContentTransition.update(to: page, reduceMotion: reduceMotion)
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            rootContentTransition.update(to: selectedPage, reduceMotion: reduceMotion)
+        }
+        .onDisappear {
+            rootContentTransition.update(to: selectedPage, reduceMotion: true)
+        }
         .task {
             // 公共来源索引不依赖进入发现页；长期前台使用也按 TTL 低频更新。
             while !Task.isCancelled {
@@ -1023,7 +1037,7 @@ struct SidebarView: View {
 
     @ViewBuilder
     private var sidebarList: some View {
-        switch selectedPage {
+        switch rootContentTransition.displayedSelection ?? selectedPage {
         case .manage:
             List(selection: Binding(
                 get: { viewModel.selection },
