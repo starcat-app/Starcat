@@ -1,6 +1,6 @@
 # 列表与详情动效性能修复 Checklist
 
-> 状态：进行中；源码风险核对与修复分别记录，实机流畅度尚未验收。
+> 状态：本轮七项代码修复与自动化验证完成，每项修复已单独提交；实机流畅度待验收，专题保持开放。
 > 授权：2026-11-15，dong4j 要求登记任务、逐项完成、每个修复单独提交。
 > 工作区：`Starcat-list-detail-motion` / `codex/list-detail-motion`，原始基线 `b91e22c1`。
 > 关联：[实施 Checklist](实施Checklist.md)、[优化方案](列表与详情动效优化方案与Checklist.md)、[动效规范](../../5-规范/UI-动效规范.md)。
@@ -26,10 +26,51 @@
 ## 验证任务
 
 - [x] V01 · 核对本轮修改路径的任务身份、终态和取消门禁；README / Skill 预览状态补充回归测试，探索详情的实际连续点击场景保留人工验收。
-- [ ] V02 · 运行相关定向测试；涉及状态管理 / 新 Swift 文件时按 Makefile 完成双渠道构建，不操作桌面。
-- [ ] V03 · 每个提交检查暂存内容与 `git diff --cached --check`，不夹带无关改动。
-- [ ] V04 · 回读提交历史、剩余修改与 checklist，给出仍待人工验证的场景。
-- [ ] 人工验收 · 大列表滚动、长 Agent / RAG 会话、快速 A → B → A、慢网 / 错误恢复、Reduce Motion、明暗主题；未获 GUI 授权，保持待验收。
+- [x] V02 · 运行相关定向测试；涉及状态管理 / 新 Swift 文件时按 Makefile 完成双渠道构建，不操作桌面。
+- [x] V03 · 每个提交检查暂存内容与 `git diff --cached --check`，不夹带无关改动。
+- [x] V04 · 回读提交历史、剩余修改与 checklist，给出仍待人工验证的场景。
+
+### 人工验收
+
+以下项目未执行；没有 GUI 操作授权或实机性能测量，不能以构建和状态测试通过代替。
+
+- [ ] 大列表滚动与连续选中：在较多已加载行中快速滚动、悬停和跨行选择，确认正文不随背景弹簧拉伸，分页、键盘、多选和拖拽保持原行为。
+- [ ] 长 Agent / RAG / Repo AI 会话：切换会话、查看流式内容和 Inspector，确认滚动位置、草稿及读取任务不因展示淡化反复重建。
+- [ ] 快速 A → B → A：分别检查仓库 README、独立 Skill 条目及文件，确认当前内容正确、没有永久透明或迟到内容覆盖。
+- [ ] 加载终态与恢复：慢网、空结果、需要登录、读取失败及重试后，骨架能够结束；已有缓存或同文件刷新保留可用正文。
+- [ ] 探索 Star 请求：A 发起 Star 后立即选 B，等待 A 完成，确认 B 详情与 README 保持当前选择，A 的操作结果仍正确反映到列表。
+- [ ] Reduce Motion：启用减少动态效果后，不出现跨行弹簧与整区模糊；淡化、加载终态及选择反馈仍可用。
+- [ ] 明暗主题与视觉状态：检查斑马纹、整行 hover、彩色图标及语言色；确认选择、勾选和键盘聚焦可区分。
+
+## 提交映射
+
+| 任务 | 提交 | 结果 |
+|------|------|------|
+| P01 | `1815514c` | 行动画限定在背景、描边与指示条 |
+| P02 | `a2e0c943` | 大型列表、时间线和含任务的展示区域保留宿主身份 |
+| P03 | `4c195fb4` | README 空结果、登录提示与错误能够结束骨架 |
+| P04 | `e8c893d7` | Skill 文件快速回切与失败时恢复保留正文 |
+| P05 | `80af1862` | 七处新增展示索引不再逐行扫描集合 |
+| P06 | `cb482a61` | Skill 页签不再额外复制整段内容容器 |
+| P07 | `b947b919` | 旧 Star 请求完成不覆盖当前仓库详情 |
+
+## 本轮自动化验证
+
+收尾记录日期：2026-11-16。下表记录本轮修复后的实际结果；原专题实施阶段的 106 项测试与构建记录仍单独保留，不混算。多轮定向测试存在重复，测试数量不相加。
+
+| 验证 | 结果 | 日志 |
+|------|------|------|
+| P03 定向测试 | 4 个 Suite、34 项通过 | `/tmp/starcat-list-detail-motion-p03-tests.log` |
+| P04 定向测试 | 4 个 Suite、26 项通过 | `/tmp/starcat-list-detail-motion-p04-tests-rerun.log` |
+| P05 定向测试 | 6 个 Suite、58 项通过 | `/tmp/starcat-list-detail-motion-p05-tests.log` |
+| 最终定向测试 | 4 个 Suite、43 项通过，包含本轮新增的 8 个状态回归测试 | `/tmp/starcat-list-detail-motion-final-tests.log` |
+| `make build-direct` | 构建与产物校验通过，未启动应用 | `/tmp/starcat-list-detail-motion-build-direct.log` |
+| `make build-appstore` | 构建与产物校验通过，未启动应用 | `/tmp/starcat-list-detail-motion-build-appstore.log` |
+| 提交与文档静态检查 | 七个修复提交的 `git log --check` 通过，专题 115 个本地 Markdown 链接目标存在 | 当前 worktree 的 Git 与文档检查结果 |
+
+最终定向测试覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`。状态归属和业务契约由测试校验；帧率、主线程停顿、内存峰值及动画观感仍需上方人工验收与实际测量。
+
+七项修复的最终代码提交为 `b947b919`；本轮工作均保留在当前分支，没有合并或推送。构建所在 worktree 保留了此前独立的 `Starcat/Features/Home/SidebarItem.swift` 图标改动，该文件未混入性能修复提交。验证记录与实施清单措辞更新作为独立文档提交收尾，不关闭整个专题。
 
 ## 修复与验证记录
 
