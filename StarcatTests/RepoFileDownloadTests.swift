@@ -117,13 +117,11 @@ struct RepoFileTreeBuilderTests {
 @Suite("RepoFileTypeIcon")
 struct RepoFileTypeIconTests {
 
-    private static let code = BusinessIcon.Source.business(.codeContext)
-
     @Test("常见扩展名映射到对应类型图标，大小写不敏感")
     func mapsCommonExtensions() {
-        #expect(RepoFileTypeIcon.iconSource(forFileName: "eslint.config.js") == Self.code)
-        #expect(RepoFileTypeIcon.iconSource(forFileName: "main.SWIFT") == Self.code)
-        #expect(RepoFileTypeIcon.iconSource(forFileName: "README.md") == .business(.file))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "eslint.config.js") == .asset("javascript"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "main.SWIFT") == .asset("swift"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "README.md") == .business(.readme))
         #expect(RepoFileTypeIcon.iconSource(forFileName: "logo.png") == .business(.image))
         #expect(RepoFileTypeIcon.iconSource(forFileName: "dist.tar.gz") == .business(.fileArchive))
         #expect(RepoFileTypeIcon.iconSource(forFileName: "alert.mp3") == .business(.audio))
@@ -132,16 +130,40 @@ struct RepoFileTypeIconTests {
 
     @Test("dotfile 取点号后的整段当扩展名，无扩展名走整名匹配")
     func mapsDotfilesAndBareNames() {
-        #expect(RepoFileTypeIcon.iconSource(forFileName: ".gitignore") == Self.code)
-        #expect(RepoFileTypeIcon.iconSource(forFileName: "Makefile") == Self.code)
-        #expect(RepoFileTypeIcon.iconSource(forFileName: "Dockerfile") == Self.code)
-        #expect(RepoFileTypeIcon.iconSource(forFileName: "LICENSE") == .business(.file))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: ".gitignore") == .asset("git"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "Makefile") == .system("hammer.fill"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "Dockerfile") == .asset("docker"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "LICENSE") == .business(.license))
     }
 
     @Test("未知类型退回默认 doc 图标")
     func fallsBackToDefault() {
         #expect(RepoFileTypeIcon.iconSource(forFileName: "data.unknownext") == .business(.file))
         #expect(RepoFileTypeIcon.iconSource(forFileName: "") == .business(.file))
+    }
+
+    @Test("特殊文档名称优先，但不能把同名源代码误识别为文档")
+    func specialNamesAndCompoundExtensions() {
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "README.zh-CN.md") == .business(.readme))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "readme.swift") == .asset("swift"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "LICENSE.txt") == .business(.license))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "license.js") == .asset("javascript"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "CHANGELOG.md") == .business(.recentUpdate))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "todo.md") == .system("checklist"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "settings.gradle.kts") == .asset("kotlin"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "build.gradle") == .asset("gradle"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "package.json") == .asset("npm"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "file.json") == .asset("json"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "Dockerfile.md") == .asset("markdown"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: "gradle.properties") == .asset("gradle"))
+        #expect(RepoFileTypeIcon.iconSource(forFileName: ".tool-versions") == .business(.general))
+    }
+
+    @MainActor
+    @Test("所有引用的品牌图标都已内置在应用资源中")
+    func assetsExist() {
+        let assets = Set(RepoFileTypeIcon.technologyAssets.values).union(["git", "docker", "npm", "yarn", "gradle"])
+        for asset in assets { #expect(NSImage(named: asset) != nil, "Missing asset: \(asset)") }
     }
 }
 
@@ -398,6 +420,52 @@ private struct RequiredFileToken: GitHubTokenProviding {
 @Suite("RepoFileBrowserViewModel")
 @MainActor
 struct RepoFileBrowserViewModelTests {
+
+    @Test("Markdown 资源绑定树提交，源码切换不重新请求，过期失败回调被忽略")
+    func markdownSnapshotAndModes() async throws {
+        let mock = MockGitHubAPIClient()
+        mock.repositoryLatestCommitHandler = { _, _, path, _ in
+            GitHubCommitSummaryDTO(sha: path.isEmpty ? "tree-commit" : "old-file-commit",
+                                   commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil))
+        }
+        mock.repositoryGitTreeHandler = { _, _, ref in
+            #expect(ref == "tree-commit")
+            return GitHubGitTreeDTO(sha: "tree-object", truncated: false, tree: [
+                GitHubGitTreeEntryDTO(path: "docs/guide.MD", mode: "100644", type: "blob",
+                                     sha: "blob", size: 100, url: nil)
+            ])
+        }
+        let viewModel = RepoFileBrowserViewModel(
+            target: RepoFileBrowserTarget(owner: "owner", name: "repo", fullName: "owner/repo", ref: "main"),
+            apiClient: mock, downloader: PreviewStubDownloader(preview: .text("# Guide\n\n![Logo](../logo.png)")),
+            folderPicker: FixedFolderPicker(url: nil), treeCache: RepoFileTreeSessionCache()
+        )
+        await viewModel.loadTree()
+        viewModel.reveal(try #require(RepoFileTreeBuilder.find(path: "docs/guide.MD", in: viewModel.nodes)))
+        for _ in 0..<100 {
+            if case .ready = viewModel.markdown { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .ready(let document) = viewModel.markdown else {
+            Issue.record("Markdown document did not become ready")
+            return
+        }
+        #expect(document.html.contains("https://raw.githubusercontent.com/owner/repo/tree-commit/logo.png"))
+        #expect(viewModel.githubRawURL?.absoluteString.contains("/tree-commit/") == true)
+        let revision = viewModel.previewRevision
+        viewModel.previewMode = .source
+        viewModel.previewMode = .rendered
+        #expect(viewModel.previewRevision == revision)
+        #expect(viewModel.markdown == .ready(document))
+        viewModel.markdownFailed(documentID: "old-document")
+        #expect(viewModel.markdown == .ready(document))
+        viewModel.markdownFailed(documentID: document.id)
+        if case .failed = viewModel.markdown {} else { Issue.record("Current failure must be surfaced") }
+        #expect(viewModel.previewText?.hasPrefix("# Guide") == true)
+        await viewModel.selectBranch("dev")
+        #expect(viewModel.previewedPath == nil)
+        #expect(viewModel.markdown == .idle)
+    }
 
     @Test("loadTree 成功后可以勾选并下载到指定目录")
     func loadAndDownload() async throws {

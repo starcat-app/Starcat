@@ -146,10 +146,15 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     func fetchRepoIdsWithNonEmptyContent() async throws -> Set<Int64> {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT repo_id FROM repo_notes
-                WHERE content IS NOT NULL AND TRIM(content) != ''
+                SELECT repo_id, content FROM repo_notes WHERE content IS NOT NULL
                 """)
-            return Set(rows.map { $0["repo_id"] as Int64 })
+            // SQLite TRIM 默认只去 ASCII 空格；与编辑器相同的 Foundation 规则
+            // 才能排除仅含换行、Tab 或全角空格的笔记，状态专用行也不会误报。
+            return Set(rows.compactMap { row in
+                let content: String = row["content"]
+                return content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? nil : row["repo_id"] as Int64
+            })
         }
     }
 

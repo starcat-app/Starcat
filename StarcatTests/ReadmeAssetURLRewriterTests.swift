@@ -16,6 +16,32 @@ import Foundation
 @Suite("ReadmeAssetURLRewriter")
 struct ReadmeAssetURLRewriterTests {
 
+    @Test("显式文件上下文支持子目录、仓库根、父目录、链接、picture 与不可变提交")
+    func rewriteFileAtCommit() {
+        let html = #"""
+        <img src="./image a.png">
+        <img src="../logo.png">
+        <img src="/assets/root.svg">
+        <img src="https://example.com/external.png">
+        <picture><source srcset="../light.png 1x, ./dark.png 2x"><img src="fallback.png"></picture>
+        <a href="./next.md">Next</a><a href="#section">Section</a>
+        """#
+        let result = ReadmeAssetURLRewriter.rewrite(
+            in: html, owner: "o", repo: "r", ref: "commit123", filePath: "docs/guide.md"
+        )
+        #expect(result.contains("https://raw.githubusercontent.com/o/r/commit123/docs/image%20a.png"))
+        #expect(result.contains("https://raw.githubusercontent.com/o/r/commit123/logo.png"))
+        #expect(result.contains("https://raw.githubusercontent.com/o/r/commit123/assets/root.svg"))
+        #expect(result.contains("https://example.com/external.png"))
+        #expect(result.contains("https://raw.githubusercontent.com/o/r/commit123/light.png 1x"))
+        #expect(result.contains("https://raw.githubusercontent.com/o/r/commit123/docs/dark.png 2x"))
+        #expect(result.contains("https://github.com/o/r/blob/commit123/docs/next.md"))
+        #expect(result.contains("href=\"#section\""))
+        #expect(!result.contains("/HEAD/"))
+        #expect(ReadmeAssetURLRewriter.rewrite(in: result, owner: "o", repo: "r", ref: "commit123",
+                                             filePath: "docs/guide.md") == result)
+    }
+
     // MARK: - rewrite (HTML 整体扫描)
 
     @Test("相对路径图片重写为 raw.githubusercontent.com")

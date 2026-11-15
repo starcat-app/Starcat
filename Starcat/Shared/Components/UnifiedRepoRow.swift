@@ -144,6 +144,8 @@ struct UnifiedRepoRow: View {
     /// 当前仓库是否至少存在一份 AI 摘要。
     /// 默认关闭，只有星标管理列表显式注入，避免 Trending / Weekly 等共享行误显示本地状态。
     let hasAISummary: Bool
+    /// 仅管理列表注入已保存的非空正文，不从卡片自行查询持久化层。
+    let hasNote: Bool
 
     /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
@@ -171,6 +173,7 @@ struct UnifiedRepoRow: View {
         showLibraryBadge: Bool = true,
         showReadStatusBadge: Bool = true,
         hasAISummary: Bool = false,
+        hasNote: Bool = false,
         trailingReservedWidth: CGFloat = 0
     ) {
         self.card = card
@@ -181,6 +184,7 @@ struct UnifiedRepoRow: View {
         self.showLibraryBadge = showLibraryBadge
         self.showReadStatusBadge = showReadStatusBadge
         self.hasAISummary = hasAISummary
+        self.hasNote = hasNote
         self.trailingReservedWidth = trailingReservedWidth
     }
 
@@ -278,6 +282,13 @@ struct UnifiedRepoRow: View {
                                 hit: semanticHit,
                                 formatKey: semanticScoreFormatKey
                             )
+                        }
+                        if hasNote {
+                            MetaBadge(
+                                businessIcon: .notes, text: "", tint: .secondary,
+                                iconOnly: true, accessibilityLabel: "repo.notes.available"
+                            )
+                            .help(String.l10n("repo.notes.available"))
                         }
                     }
                     .lineLimit(1)

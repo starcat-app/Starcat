@@ -27,6 +27,8 @@ import SwiftUI
 struct RepoIssuesWorkspaceView: View {
     let repo: Repo
     let listViewModel: RepoIssuesViewModel
+    var onClose: (() -> Void)?
+    @Environment(AppDependencies.self) private var dependencies
 
     @State private var viewModel: RepoIssuesWorkspaceViewModel
 
@@ -36,10 +38,12 @@ struct RepoIssuesWorkspaceView: View {
         inbox: GitHubNotificationInboxService,
         threadRepository: any GitHubNotificationThreadRepositoryProtocol,
         apiClient: any GitHubAPIClientProtocol,
-        aiService: RepoAIInsightService
+        aiService: RepoAIInsightService,
+        onClose: (() -> Void)? = nil
     ) {
         self.repo = repo
         self.listViewModel = listViewModel
+        self.onClose = onClose
         _viewModel = State(
             initialValue: RepoIssuesWorkspaceViewModel(
                 repo: repo,
@@ -53,7 +57,7 @@ struct RepoIssuesWorkspaceView: View {
     }
 
     var body: some View {
-        RepoIssuesWorkspaceContent(viewModel: viewModel)
+        RepoIssuesWorkspaceContent(viewModel: viewModel, onClose: onClose)
             .task(id: repo.fullName) {
                 // 旧浮层迁移时漏掉的锚点：VM 是挂载时创建的，owner/repoName 为空，
                 // 必须 prepare 复位到当前仓库，否则 loadFirstPage 的空仓库守卫静默返回
@@ -68,6 +72,7 @@ struct RepoIssuesWorkspaceView: View {
             .onDisappear {
                 viewModel.flushCreateDraft()
             }
+            .onChange(of: dependencies.databaseScopeRevision) { _, _ in onClose?() }
             // 评论成功 / hydrate 完成：重建右栏详情项并同步左栏评论数（交互契约 ③）。
             .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
                 Task { await viewModel.reloadDetailAfterInboxChange() }
@@ -79,18 +84,10 @@ struct RepoIssuesWorkspaceView: View {
 /// 工作台内容（Preview 直接以种子 VM 实例化，便于 UI 迭代）。
 struct RepoIssuesWorkspaceContent: View {
     @State var viewModel: RepoIssuesWorkspaceViewModel
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.starcatReduceMotion) private var reduceMotion
-
-    /// 尺寸（2026-11-01 dong4j 反馈首版过大）：宽 ~1040、高 ~660，按宿主屏幕可见区钳制。
-    private static var workspaceSize: CGSize {
-        let visible = NSScreen.main?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 1_440, height: 900)
-        let width = min(1_040, max(880, visible.width - 200))
-        let height = min(660, max(520, visible.height - 220))
-        return CGSize(width: width, height: height)
-    }
 
     private static let leftColumnWidth: CGFloat = 320
 
@@ -104,27 +101,19 @@ struct RepoIssuesWorkspaceContent: View {
                 rightPane
             }
         }
-        .frame(width: Self.workspaceSize.width, height: Self.workspaceSize.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .appLocaleEnvironment()
+        .onExitCommand {
+            viewModel.flushCreateDraft()
+            if let onClose { onClose() } else { dismiss() }
+        }
     }
 
     // MARK: - 顶栏
 
     private var topBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "circle.circle")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.green)
-            Text(String.l10n("repo.issues.popover.title", defaultValue: "Issues"))
-                .font(.headline)
-            Text(verbatim: viewModel.repo.fullName)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(viewModel.repo.fullName)
-            Spacer()
+        RepoWorkspaceHeader(target: RepoFileBrowserTarget(repo: viewModel.repo)) {
             SyncIconButton(
                 isRefreshing: viewModel.listViewModel.isLoading,
                 tooltip: String.l10n("repo.issues.workspace.refresh", defaultValue: "刷新 Issues")
@@ -150,11 +139,9 @@ struct RepoIssuesWorkspaceContent: View {
             .disabled(viewModel.isCreating)
             SheetCloseButton {
                 viewModel.flushCreateDraft()
-                dismiss()
+                if let onClose { onClose() } else { dismiss() }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
     // MARK: - 左栏
