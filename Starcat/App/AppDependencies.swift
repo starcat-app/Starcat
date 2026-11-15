@@ -2074,6 +2074,7 @@ final class AppDependencies {
     /// 全流程只动本机，不调用 GitHub / CloudKit / 自建后端删除远端数据。
     func resetLocalAppData(for target: AppDataResetTarget) async throws {
         mcpService.stop()
+        defer { dailyRecommendationPreparation.resume() }
 
         let resetter = AppDataResetService(
             database: database,
@@ -2081,6 +2082,12 @@ final class AppDependencies {
         )
         try await resetter.resetLocalData(
             for: target,
+            prepareAccountReset: {
+                // JSON 与理由目录不在账号 DB 内；先停生成并排空反馈写入，再删文件、注销和切库。
+                await self.dailyRecommendationPreparation.suspendAndWait()
+                try await self.dailyRecommendationStore.clearForFactoryReset(accountID: target.userID)
+                try await self.dailyRecommendationExplanationStore.clearForFactoryReset(accountID: target.userID)
+            },
             releaseCurrentSession: { [authSession] in
                 await authSession.signOut()
             },

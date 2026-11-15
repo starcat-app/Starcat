@@ -19,6 +19,7 @@ final class DailyRecommendationPreparation {
     }
 
     private(set) var isRunning = false
+    private var isSuspended = false
     private var task: Task<Bool, Never>?
     private var taskID: UUID?
     private var key: String?
@@ -29,7 +30,7 @@ final class DailyRecommendationPreparation {
         key: String, origin: Origin,
         operation: @escaping @MainActor () async -> Bool
     ) async -> Bool {
-        guard !Task.isCancelled else { return false }
+        guard !Task.isCancelled, !isSuspended else { return false }
         if let task {
             if self.key == key {
                 let value = await result(of: task, cancelsWithCaller: origin == .user && self.origin == .user)
@@ -62,6 +63,20 @@ final class DailyRecommendationPreparation {
     /// 账号切换或宿主销毁不保留旧身份任务。
     func cancel() {
         task?.cancel()
+    }
+
+    /// 恢复出厂期间拒绝新准备；等待已有任务退出后才能删除账号文件。
+    func suspendAndWait() async {
+        isSuspended = true
+        let previousID = taskID
+        task?.cancel()
+        _ = await task?.value
+        if taskID == previousID { finish() }
+    }
+
+    /// 重置编排结束（包括失败）后解除屏障，后续登录可以正常准备。
+    func resume() {
+        isSuspended = false
     }
 
     private func finish() {

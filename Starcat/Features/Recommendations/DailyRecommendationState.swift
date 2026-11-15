@@ -208,4 +208,13 @@ actor DailyRecommendationDiskStore {
         try JSONEncoder().encode(state).write(to: root.appendingPathComponent("\(accountID).json"), options: .atomic)
         revisions[accountID] = revision
     }
+
+    /// 与保存共用 actor 串行边界，只删除指定账号的批次和隔离文件。
+    func remove(accountID: Int64) throws {
+        for name in ["\(accountID).json", "\(accountID).corrupt.json"] {
+            let url = root.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
+        revisions[accountID] = nil
+    }
 }

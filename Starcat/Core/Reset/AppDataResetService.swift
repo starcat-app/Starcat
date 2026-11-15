@@ -67,11 +67,13 @@ final class AppDataResetService {
     ///
     /// - Parameters:
     ///   - target: 当前已登录 GitHub 用户；调用方必须来自 AuthSession 的真实登录态。
+    ///   - prepareAccountReset: 关闭数据库前停止账号任务并排空写入；校验目标后才执行。
     ///   - releaseCurrentSession: 通常传 `AuthSession.signOut()`，用于清登录态并切到匿名库。
     ///   - clearGeneratedCaches: 清 README 以外的全局磁盘缓存 / 生成物。README 在当前用户
     ///     SQLite 中，删除用户 DB 目录即可一并清掉。
     func resetLocalData(
         for target: AppDataResetTarget,
+        prepareAccountReset: @MainActor () async throws -> Void = {},
         releaseCurrentSession: @MainActor () async -> Void,
         clearGeneratedCaches: @MainActor () async -> Void = {}
     ) async throws {
@@ -80,6 +82,7 @@ final class AppDataResetService {
             throw AppDataResetError.notAuthenticated
         }
 
+        try await prepareAccountReset()
         await releaseCurrentSession()
         try await database.reopen(userId: nil)
         await clearGeneratedCaches()

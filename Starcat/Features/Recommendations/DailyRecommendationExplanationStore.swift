@@ -75,6 +75,16 @@ final class DailyRecommendationExplanationStore {
         return explanations[key] == nil && retryAfter[key] != nil
     }
 
+    /// 先取消生成、使迟到结果失效，再串行删除账号目录；其他账号的理由保持不变。
+    func clearForFactoryReset(accountID: Int64) async throws {
+        if self.accountID == accountID {
+            let pending = Array(tasks.values)
+            activate(accountID: nil, revision: revision ?? 0)
+            for task in pending { _ = await task.value }
+        }
+        try await disk.remove(accountID: accountID)
+    }
+
     /// 历史详情只恢复已保存理由，缺缓存时展示基础依据，绝不隐式发出 LLM 请求。
     func loadSaved(
         items: [RepoRecommendationItem], accountID: Int64, revision: UInt64, locale: String, isPro: Bool
@@ -241,6 +251,14 @@ private actor DailyRecommendationExplanationDisk {
         let url = file(accountID: accountID, key: key)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(text).write(to: url, options: .atomic)
+    }
+
+    /// 删除与保存使用同一 actor；已进入写入的任务先完成，取消后的迟到生成不能再写盘。
+    func remove(accountID: Int64) throws {
+        let directory = root.appendingPathComponent(String(accountID))
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
     }
 
     private func file(accountID: Int64, key: String) -> URL {

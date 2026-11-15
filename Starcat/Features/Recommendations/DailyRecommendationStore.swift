@@ -349,6 +349,14 @@ final class DailyRecommendationStore {
         await persist()
     }
 
+    /// 恢复出厂先使内存意图失效，再排空串行写队列；必须在账号数据库关闭前执行。
+    /// 调用方同时暂停准备任务，防止文件删除后被旧批次或反馈写回。
+    func clearForFactoryReset(accountID: Int64) async throws {
+        if self.accountID == accountID { activate(accountID: nil, scopeRevision: scopeRevision ?? 0) }
+        _ = await persistenceTask?.value
+        try await disk.remove(accountID: accountID)
+    }
+
     private func persist() async {
         guard let accountID, hasLoadedState else { return }
         revision &+= 1
