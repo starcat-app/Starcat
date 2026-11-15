@@ -127,11 +127,13 @@ private struct DiscoveryScaffoldShell: View {
             try await dependencies.starActionService.toggle(repo: repo)
         }
 
-        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
+        // Star 请求可能在用户切到另一仓库后才结束；只更新当前展示快照，
+        // 不能把闭包捕获的旧 repo / item 写回稳定宿主，也不为 Star 状态重载 README。
+        if let currentRepo = displayRepo {
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: currentRepo)
+        }
 
         await homeViewModel.refreshAfterExternalStarChange()
-        await resolveRepo()
-        loadReadmeIfNeeded()
     }
 
     private func ensureReadmeViewModel() -> ReadmeViewModel {

@@ -19,13 +19,13 @@
 - [x] P04 · 修复 Skill 文件预览中断：快速 A → B → A 时先恢复保留的当前文件；刷新失败保留正文和错误反馈，取消 / 过期结果仍由原请求身份守门。
 - [x] P05 · 消除新增行索引重复扫描：Skill 分类 / 来源 / Agent 名称、Agent 历史 / 产物、洞察及标签候选共七处行渲染改为传递展示索引；保持稳定业务 ID，不引入派生状态缓存。
 - [x] P06 · 核对骨架与其他交接：保留每组共享的骨架时钟和 Reduce Motion；Skill overview / files 页签移除额外的整容器身份切换与全区模糊，其余已有交接保持原职责。
-- [ ] P07 · 隔离探索详情的 Star 请求回写：稳定宿主下，A 的异步 Star 结束后不能用捕获的旧 Repo / item 覆盖已选择的 B，也不应再次加载 A 的 README；登记本轮源码审查新增的实际路径。
+- [x] P07 · 隔离探索详情的 Star 请求回写：请求仍作用于点击时的仓库，完成后只对当前展示快照应用 Registry；不使用旧 item 覆盖当前选择，也不重新加载旧 README。
 
 每项记录填写：触发条件、源码证据、修改方式、验证结果与提交。仅已验证适用项打勾；确认不需修改的候选记录原因。
 
 ## 验证任务
 
-- [ ] V01 · 检查所有新增或修改的交接路径与状态机；有实际状态逻辑的修复增加相应回归测试。
+- [x] V01 · 核对本轮修改路径的任务身份、终态和取消门禁；README / Skill 预览状态补充回归测试，探索详情的实际连续点击场景保留人工验收。
 - [ ] V02 · 运行相关定向测试；涉及状态管理 / 新 Swift 文件时按 Makefile 完成双渠道构建，不操作桌面。
 - [ ] V03 · 每个提交检查暂存内容与 `git diff --cached --check`，不夹带无关改动。
 - [ ] V04 · 回读提交历史、剩余修改与 checklist，给出仍待人工验证的场景。
@@ -68,3 +68,9 @@
 `ListLoadingSkeleton` 每组只使用一个既有 `SkeletonAnimatedPhase`，没有新增逐行计时器；列表 / 详情骨架由加载分支挂载，Reduce Motion 时使用静态 phase。仓库 Skills 安装窗口与 RAG 的既有交接保持原实现。
 
 Skill 内容页已有条目级交接、文件退场及独立加载任务，overview / files 页签原先再用 `nativeDetailTransition` 给整段内容换身份并模糊。此次只把这一层改为稳定身份的轻量淡化，避免额外复制内容容器；读取任务和展示快照仍由外层持有。其余小型纯展示详情没有发现需重复修改的同类任务归属问题。`git diff --check` 通过，无对应页签动画单测；编译随后续双渠道构建核对，视觉效果保持待验收。
+
+### P07 · 探索详情 Star 完成后的展示归属
+
+触发：A 发起异步 Star 后选择 B，A 的回调仍持有旧 `repo` 和 `item`；稳定宿主使其原先的 `displayRepo = oldRepo`、`resolveRepo()` 与 `loadReadmeIfNeeded()` 能重新覆盖当前详情并读回旧 README。完成后改为对当前 `displayRepo` 应用 Registry 展示状态，然后沿用全局列表刷新；不把旧选择重新写入，也不新增一套请求协调器。
+
+通过 `make test` 运行 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`：4 个 Suite、43 个测试通过，涵盖本轮新增的 8 个状态回归测试及已有 Star / 探索契约。此处未为简单的当前快照更新新增抽象或测试替身；A Star → 切 B → A 请求返回的真实界面顺序仍列入人工验收，测试不证明 GUI 无闪回。
