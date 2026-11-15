@@ -1276,8 +1276,15 @@ struct SidebarView: View {
                         selection: .linuxDo,
                         count: dependencies.linuxDoStore.provenance?.payload.origins?.count ?? 0
                     ) {
-                        // 社区来源使用单气泡，复用分类字号与字重，避免独立缩放造成笔画不一致。
-                        exploreSidebarBusinessIcon(.linuxDo, color: .indigo)
+                        // 官方圆形占画布的 5/6；17.6pt 画布使可见直径与相邻 16pt 业务图标一致。
+                        // 外层仍用原来的 16pt 图标槽，品牌原色不参与选中态染色。
+                        Image("LinuxDoOfficialLogo")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 17.6 * interfaceScale.multiplier, height: 17.6 * interfaceScale.multiplier)
+                            .frame(width: 16, height: 16)
+                            .accessibilityHidden(true)
                     } title: {
                         HStack(spacing: 4) {
                             Text(verbatim: "Linux.do")
