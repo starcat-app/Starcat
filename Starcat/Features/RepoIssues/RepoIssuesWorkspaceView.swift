@@ -361,7 +361,7 @@ struct RepoIssuesWorkspaceContent: View {
                         guard viewModel.detailItem?.id == item.id else { return }
                         viewModel.detailItem = $0
                     }
-                ), showsHeroTint: false,
+                ), showsHeroTint: false, showsRepositoryHeader: false,
                    commentComposerBackground: AnyShapeStyle(Color(nsColor: .windowBackgroundColor)))
                 .background(Color(nsColor: .windowBackgroundColor))
                 .disabled(viewModel.isCreating || viewModel.detailItem?.id != item.id)

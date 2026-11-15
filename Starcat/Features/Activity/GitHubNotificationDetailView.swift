@@ -24,6 +24,8 @@ struct GitHubNotificationDetailView: View {
     /// 顶部语言色光晕开关：活动-Issues 详情页保留；RepoIssues 工作台复用本组件时关闭
     /// （渐变属于活动详情页的设计语言，工作台详情页不携带，2026-11-01 dong4j 决策）。
     var showsHeroTint: Bool = true
+    /// 仓库工作台已有整窗仓库顶栏，可关闭重复行；活动时间线默认保留原有对齐。
+    var showsRepositoryHeader: Bool = true
     /// README Issues 工作台可对齐窗口底色；默认保留活动通知原有的系统背景样式。
     var commentComposerBackground: AnyShapeStyle = AnyShapeStyle(.background)
     @State private var isComposerExpanded = false
@@ -70,11 +72,13 @@ struct GitHubNotificationDetailView: View {
         // 观察者 / toast 必须挂在独立子表达式：下面这条链已顶到 Swift 类型检查器上限，
         // 直接内联新 modifier 会让整个 VStack 报 "unable to type-check in reasonable time"。
         let content = VStack(spacing: 0) {
-            // 仓库名占中栏筛选条同一高度，横线才能和中栏对齐。
-            if let payload = item.notification {
-                headerRepoRow(payload)
+            if showsRepositoryHeader {
+                // 活动时间线中，仓库名和分隔线仍与中栏筛选条对齐。
+                if let payload = item.notification {
+                    headerRepoRow(payload)
+                }
+                Divider()
             }
-            Divider()
             // Issue / PR 行在横线下，对应中栏时间线从分割线之下开始。
             headerToolbar(item)
             if let doneError, !doneError.isEmpty {

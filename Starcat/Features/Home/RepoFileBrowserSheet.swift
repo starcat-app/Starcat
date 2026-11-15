@@ -739,9 +739,6 @@ struct RepoFileBrowserSheet: View {
                 Button { NSWorkspace.shared.open(url) } label: {
                     Label("repo.files.inspector.viewOnGitHub", systemImage: "arrow.up.right.square")
                 }
-                Button { NSWorkspace.shared.open(url) } label: {
-                    Label("repo.files.inspector.openInBrowser", systemImage: "globe")
-                }
             }
         } label: {
             Image(systemName: "ellipsis")
