@@ -44,7 +44,8 @@ enum SidebarRootPage: String, CaseIterable, Identifiable {
         case .manage:   return .business(.stars)
         case .trending: return .business(.discovery)
         case .activity: return .business(.notifications)
-        case .insights: return .business(.repositoryInsights)
+        // 四格仪表盘上下占位更均衡，避免半圆 gauge 在一级入口中显得偏矮。
+        case .insights: return .business(.dashboard)
         }
     }
 }
