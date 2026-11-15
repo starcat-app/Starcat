@@ -57,6 +57,11 @@ final class RepoFileBrowserViewModel {
     private(set) var preview: PreviewPhase = .idle
     private(set) var previewCommit: GitHubCommitSummaryDTO?
     private(set) var isRefreshing = false
+    /// treeCommit 只来自根目录提交；不能使用 previewCommit（文件最后修改版本）。
+    private(set) var treeCommit: String?
+    private(set) var markdown: MarkdownPhase = .idle
+    private(set) var previewRevision: UInt64 = 0
+    var previewMode: PreviewMode = .rendered
     var selectedPaths: Set<String> = []
     var searchQuery: String = ""
     var sidebarTab: SidebarTab = .files
@@ -84,6 +89,23 @@ final class RepoFileBrowserViewModel {
         case tooLarge(Int)
         case gitLFS(Int)
         case failed(String)
+    }
+
+    enum PreviewMode: Hashable { case rendered, source }
+    enum MarkdownPhase: Equatable {
+        case idle
+        case preparing
+        case ready(RepoFileMarkdownDocument)
+        case failed(String)
+    }
+
+    var isMarkdownPreview: Bool {
+        RepoFileMarkdownRenderer.supports(fileName: previewedFile?.name ?? "") && previewText != nil
+    }
+
+    func markdownFailed(documentID: String) {
+        guard case .ready(let document) = markdown, document.id == documentID else { return }
+        markdown = .failed(String.l10n("repo.files.markdown.failed"))
     }
 
     var displayedNodes: [RepoFileNode] {
@@ -197,9 +219,12 @@ final class RepoFileBrowserViewModel {
     func reveal(_ node: RepoFileNode) {
         guard !node.isDirectory, let sha = node.blobSHA else { return }
         previewTask?.cancel()
+        previewRevision &+= 1
         previewedPath = node.path
         preview = .loading
         previewCommit = nil
+        markdown = .idle
+        previewMode = .rendered
         previewTask = Task { [weak self] in
             await self?.loadPreview(path: node.path, sha: sha, hintedSize: node.size)
         }
@@ -266,8 +291,18 @@ final class RepoFileBrowserViewModel {
                 scope: apiClient.fileTreeCacheScope, api: apiClient, force: force,
                 expectedGeneration: cacheGeneration
             )
+            try Task.checkCancellation()
+            let previousBlob = previewedFile?.blobSHA
+            treeCommit = commit?.sha
             apply(dto)
             pruneSelectionAndPreview()
+            // 同路径内容更新也必须重读，不能让新树配上旧 blob；提交改变时相对资源也更新。
+            if let file = previewedFile, let sha = file.blobSHA,
+               previousBlob != sha || force {
+                let retainedMode = previewMode
+                reveal(file)
+                previewMode = retainedMode
+            }
         } catch is CancellationError {
             isRefreshing = false
             return
@@ -303,6 +338,8 @@ final class RepoFileBrowserViewModel {
         previewedPath = nil
         preview = .idle
         previewCommit = nil
+        treeCommit = nil
+        markdown = .idle
         selectedPaths = []
     }
 
@@ -316,6 +353,7 @@ final class RepoFileBrowserViewModel {
             previewedPath = nil
             preview = .idle
             previewCommit = nil
+            markdown = .idle
         }
     }
 
@@ -332,6 +370,19 @@ final class RepoFileBrowserViewModel {
             switch result {
             case .text(let text):
                 preview = .text(text)
+                if RepoFileMarkdownRenderer.supports(fileName: path) {
+                    if let treeCommit {
+                        markdown = .preparing
+                        let document = try await RepoFileMarkdownRenderer.shared.prepare(
+                            text: text, target: target, commit: treeCommit, path: path, blobSHA: sha
+                        )
+                        guard !Task.isCancelled, previewedPath == path else { return }
+                        markdown = .ready(document)
+                    } else {
+                        // 无根提交时不能猜测 HEAD 展示另一版本的相对资源；源码仍然可读。
+                        markdown = .failed(String.l10n("repo.files.markdown.failed"))
+                    }
+                }
             case .image(let data):
                 preview = .image(data)
             case .binary:
@@ -346,7 +397,11 @@ final class RepoFileBrowserViewModel {
             return
         } catch {
             guard !Task.isCancelled, previewedPath == path else { return }
-            preview = .failed(error.localizedDescription)
+            if isMarkdownPreview {
+                markdown = .failed(String.l10n("repo.files.markdown.failed"))
+            } else {
+                preview = .failed(error.localizedDescription)
+            }
         }
     }
 
@@ -377,7 +432,7 @@ final class RepoFileBrowserViewModel {
 
     private func fileWebURL(kind: FileWebKind) -> URL? {
         guard let path = previewedPath, RepoFileTreeBuilder.isSafeRelativePath(path) else { return nil }
-        let encodedRef = currentRef
+        let encodedRef = (treeCommit ?? currentRef)
             .split(separator: "/", omittingEmptySubsequences: false)
             .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? String($0) }
             .joined(separator: "/")

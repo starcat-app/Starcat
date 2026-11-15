@@ -141,16 +141,7 @@ struct RepoSkillSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            RemoteAvatar(urlString: RepoAvatarURL.from(owner: session.repo.owner), size: 28, showBorder: false)
-                .accessibilityHidden(true)
-            Text(verbatim: session.repo.fullName)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(session.repo.fullName)
-            Spacer(minLength: 12)
+        RepoWorkspaceHeader(target: RepoFileBrowserTarget(repo: session.repo)) {
             if DistributionChannel.current.isDirect, let preview {
                 Button("skills.import.addToLibrary") {
                     try? SkillWorkspaceSceneCoordinator.shared.openRepositoryImport(.init(repo: session.repo, skill: preview)) { sceneID in
@@ -167,7 +158,7 @@ struct RepoSkillSheet: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: 180)
                     .accessibilityLabel(Text(verbatim: progress))
             }
             SyncIconButton(isRefreshing: session.isLoading, disabled: session.isInstalling,
@@ -176,8 +167,6 @@ struct RepoSkillSheet: View {
             }
             SheetCloseButton(action: onClose)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
     }
 
     private var footer: some View {

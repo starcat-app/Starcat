@@ -4,7 +4,7 @@
 //
 //  详情页「下载文件」Sheet：按原型做成顶栏身份 + 三张抬起卡片（左树 / 中预览 / 右详情）。
 //
-//  必须由 `RepoListView` 根节点 `.sheet(item:)` 呈现，不能挂在 toolbar 菜单子树上。
+//  从 RepoListView 的实际宿主窗口交给共用 AppKit 画布，避免工具栏菜单的 sheet 尺寸协商。
 //  左栏 checkbox 与展开是两个独立 Button；点文件名只拉预览，不改勾选。
 //  原型没有 checkbox，但批量下载需要勾选，所以树行左侧保留。
 //  Sheet 规范仍要求右上角 `SheetCloseButton`；原型窗口红绿灯在 AppKit chrome 上，这里补关闭钮。
@@ -15,24 +15,30 @@
 import SwiftUI
 import AppKit
 
-struct RepoFileBrowserSheetItem: Identifiable {
-    let id = UUID()
-    let target: RepoFileBrowserTarget
-}
-
 struct RepoFileBrowserSheet: View {
     let target: RepoFileBrowserTarget
     let apiClient: any GitHubAPIClientProtocol
+    var onClose: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppDependencies.self) private var dependencies
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var viewModel: RepoFileBrowserViewModel
+    @State private var readingLayout = RepoFileReadingLayout()
+    @State private var expandedPaths: Set<String> = []
+    @State private var presentedPreview: RepoFileBrowserViewModel.PreviewPhase = .idle
+    @State private var presentedMarkdown: RepoFileBrowserViewModel.MarkdownPhase = .idle
+    @State private var presentedRevision: UInt64 = 0
+    @State private var isContentVisible = false
+    @Namespace private var selectionNamespace
     @FocusState private var searchFocused: Bool
 
-    init(target: RepoFileBrowserTarget, apiClient: any GitHubAPIClientProtocol) {
+    init(target: RepoFileBrowserTarget, apiClient: any GitHubAPIClientProtocol, onClose: (() -> Void)? = nil) {
         self.target = target
         self.apiClient = apiClient
+        self.onClose = onClose
         _viewModel = State(initialValue: RepoFileBrowserViewModel(target: target, apiClient: apiClient))
     }
 
@@ -41,16 +47,44 @@ struct RepoFileBrowserSheet: View {
         VStack(spacing: 0) {
             header
             columns
-            footer
+            if !readingLayout.isExpanded || viewModel.isDownloading { footer }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .frame(width: 1020, height: 660)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.loadTree()
             await viewModel.loadBranches()
         }
         .onDisappear {
             viewModel.stop()
+        }
+        .onChange(of: dependencies.databaseScopeRevision) { _, _ in closeWorkspace() }
+        .onChange(of: viewModel.currentRef) { _, _ in
+            readingLayout.isExpanded = false
+            expandedPaths = []
+        }
+        .onChange(of: viewModel.previewedPath) { _, path in
+            if path == nil { readingLayout.isExpanded = false }
+        }
+        .onExitCommand {
+            if !readingLayout.handleEscape() { closeWorkspace() }
+        }
+        .task(id: viewModel.previewRevision) {
+            // 保留旧快照直到退场完成；数据请求已在点击时立即开始，不能被动画串行拖慢。
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12), completionCriteria: .removed) {
+                    isContentVisible = false
+                } completion: { continuation.resume() }
+            }
+            guard !Task.isCancelled else { return }
+            presentedRevision = viewModel.previewRevision
+            publishPreview()
+        }
+        .onChange(of: viewModel.preview) { _, _ in
+            if presentedRevision == viewModel.previewRevision { publishPreview() }
+        }
+        .onChange(of: viewModel.markdown) { _, _ in
+            if presentedRevision == viewModel.previewRevision { publishPreview() }
         }
         .toast(
             message: $viewModel.toastMessage,
@@ -68,34 +102,7 @@ struct RepoFileBrowserSheet: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // 顶栏身份用仓库 owner 头像；来源缺字段时兜底 `github.com/{owner}.png`
-            // （GitHub 官方头像端点，RemoteAvatar 已按域名注入 size 参数并走 Kingfisher 缓存）。
-            RemoteAvatar(
-                urlString: target.ownerAvatar ?? "https://github.com/\(target.owner).png",
-                size: 28,
-                showBorder: false
-            )
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(verbatim: target.fullName)
-                        .font(.title3.weight(.semibold))
-                        .lineLimit(1)
-                    Text(target.isPrivate ? "repo.files.visibility.private" : "repo.files.visibility.public")
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
-                        .foregroundStyle(.secondary)
-                }
-                if let summary = target.summary, !summary.isEmpty {
-                    Text(verbatim: summary)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 12)
+        RepoWorkspaceHeader(target: target) {
             RepoFileBranchPicker(
                 branches: viewModel.branchPickerNames,
                 selection: viewModel.currentRef,
@@ -110,11 +117,8 @@ struct RepoFileBrowserSheet: View {
                 Task { await viewModel.selectBranch(name) }
             }
             searchField
-            SheetCloseButton(action: { dismiss() })
+            SheetCloseButton(action: closeWorkspace)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 10)
     }
 
     /// 点过文件才展开预览栏。打开页、切分支清空预览后都只留文件树。
@@ -125,30 +129,51 @@ struct RepoFileBrowserSheet: View {
     /// 未选文件时树占满内容区；选中后树收到 240，预览+详情从右侧滑入。
     /// 动画跟 RAG / Agent 收起 Inspector 同一档：短 easeInOut，减少动态效果时直接切。
     private var columns: some View {
-        HStack(spacing: 12) {
-            sidebar
-                .frame(minWidth: 240)
-                .frame(maxWidth: isPreviewPresented ? 240 : .infinity)
-                .frame(maxHeight: .infinity)
-                .fileBrowserCard()
-
-            if isPreviewPresented {
-                HStack(spacing: 12) {
+        GeometryReader { geometry in
+            let expanded = readingLayout.isExpanded && isPreviewPresented
+            let overlay = readingLayout.usesInspectorOverlay(availableWidth: geometry.size.width)
+            HStack(spacing: expanded ? 0 : 12) {
+                // 不移除树，放大还原后目录展开、勾选及滚动位置继续保留。
+                sidebar
+                    .frame(width: isPreviewPresented ? 240 : nil)
+                    .frame(maxWidth: isPreviewPresented ? nil : .infinity, maxHeight: .infinity)
+                    .fileBrowserCard()
+                    .frame(width: expanded ? 0 : nil)
+                    .opacity(expanded ? 0 : 1)
+                    .clipped()
+                    .allowsHitTesting(!expanded)
+                    .accessibilityHidden(expanded)
+                if isPreviewPresented {
                     previewColumn
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .fileBrowserCard()
-                    inspector
-                        .frame(width: 260)
-                        .fileBrowserCard()
+                        .overlay(alignment: .trailing) {
+                            if !expanded && overlay && readingLayout.showsInspector {
+                                inspectorPanel
+                                    .padding(8)
+                                    .padding(.top, 106)
+                                    .shadow(color: .black.opacity(0.12), radius: 8)
+                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                            }
+                        }
+                    if !expanded && !overlay && readingLayout.showsInspector { inspectorPanel }
                 }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isPreviewPresented)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: readingLayout)
+    }
+
+    private var inspectorPanel: some View {
+        ScrollView { inspector }
+            .frame(width: 260)
+            .frame(maxHeight: .infinity)
+            .fileBrowserCard()
     }
 
     private var searchField: some View {
@@ -211,8 +236,7 @@ struct RepoFileBrowserSheet: View {
     private var treeArea: some View {
         switch viewModel.phase {
         case .loading:
-            ProgressView("repo.files.loading")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            treeSkeleton
         case .failed(let message):
             VStack(spacing: 12) {
                 Text(verbatim: message)
@@ -241,11 +265,18 @@ struct RepoFileBrowserSheet: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(viewModel.displayedNodes) { node in
+                            ForEach(Array(visibleTreeRows.enumerated()), id: \.element.node.path) { index, row in
                                 RepoFileTreeRow(
-                                    node: node,
+                                    node: row.node,
                                     viewModel: viewModel,
-                                    forceExpanded: viewModel.isSearchActive
+                                    isExpanded: Binding(
+                                        get: { viewModel.isSearchActive || expandedPaths.contains(row.node.path) },
+                                        set: { expanded in
+                                            if expanded { expandedPaths.insert(row.node.path) }
+                                            else { expandedPaths.remove(row.node.path) }
+                                        }
+                                    ),
+                                    rowIndex: index, depth: row.depth, selectionNamespace: selectionNamespace
                                 )
                             }
                         }
@@ -253,6 +284,8 @@ struct RepoFileBrowserSheet: View {
                         .padding(.bottom, 8)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.82),
+                               value: viewModel.previewedPath)
                 }
             }
         }
@@ -267,6 +300,16 @@ struct RepoFileBrowserSheet: View {
                 Divider()
             }
             previewBody
+                .blur(radius: reduceMotion || isContentVisible ? 0 : 10)
+                .opacity(isContentVisible ? 1 : 0)
+                .allowsHitTesting(isContentVisible && presentedRevision == viewModel.previewRevision)
+                .accessibilityHidden(!isContentVisible)
+                .overlay {
+                    if !isContentVisible {
+                        ReadmeSkeletonView()
+                            .transition(.opacity)
+                    }
+                }
         }
     }
 
@@ -305,15 +348,19 @@ struct RepoFileBrowserSheet: View {
 
     private var previewHeader: some View {
         HStack(alignment: .center, spacing: 10) {
-            BusinessIcon(source: previewedFileIcon, pointSize: 24)
-                .foregroundStyle(.secondary)
+            RepoFileIcon(name: viewModel.previewedFile?.name ?? "", size: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: viewModel.previewedFile?.name ?? "")
                     .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(viewModel.previewedFile?.name ?? "")
                 Text(verbatim: previewMetaLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 8)
             if let text = viewModel.previewText {
                 CopyFeedbackButton(
@@ -337,6 +384,15 @@ struct RepoFileBrowserSheet: View {
                         .foregroundStyle(didCopy ? Color.green : Color.secondary)
                 }
             }
+            if viewModel.isMarkdownPreview {
+                Picker("repo.files.markdown.mode", selection: $viewModel.previewMode) {
+                    Text("repo.files.markdown.rendered").tag(RepoFileBrowserViewModel.PreviewMode.rendered)
+                    Text("repo.files.markdown.source").tag(RepoFileBrowserViewModel.PreviewMode.source)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+            }
             if let rawURL = viewModel.githubRawURL {
                 Button("repo.files.preview.raw") {
                     NSWorkspace.shared.open(rawURL)
@@ -344,6 +400,7 @@ struct RepoFileBrowserSheet: View {
                 .buttonStyle(.bordered)
                 .focusEffectDisabled()
             }
+            previewLayoutButtons
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -365,17 +422,20 @@ struct RepoFileBrowserSheet: View {
 
     @ViewBuilder
     private var previewBody: some View {
-        switch viewModel.preview {
+        switch presentedPreview {
         case .idle:
             Text("repo.files.preview.empty")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .loading:
-            ProgressView("repo.files.preview.loading")
+            ReadmeSkeletonView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .text(let content):
-            codeView(content)
+            RepoFileTextPreview(
+                text: content, markdown: presentedMarkdown,
+                mode: viewModel.previewMode, onFailure: viewModel.markdownFailed
+            )
         case .image(let data):
             imagePreview(data)
         case .binary:
@@ -408,10 +468,6 @@ struct RepoFileBrowserSheet: View {
         }
     }
 
-    private func codeView(_ content: String) -> some View {
-        RepoFileSourcePreview(text: content)
-    }
-
     private func imagePreview(_ data: Data) -> some View {
         Group {
             if let image = NSImage(data: data), image.isValid {
@@ -433,8 +489,7 @@ struct RepoFileBrowserSheet: View {
         VStack(spacing: 16) {
             if let file = viewModel.previewedFile {
                 VStack(spacing: 8) {
-                    BusinessIcon(source: previewedFileIcon, pointSize: 48)
-                        .foregroundStyle(.secondary)
+                    RepoFileIcon(name: file.name, size: 48)
                     Text(verbatim: file.name)
                         .font(.title3.weight(.semibold))
                         .multilineTextAlignment(.center)
@@ -505,12 +560,6 @@ struct RepoFileBrowserSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
-    }
-
-    /// 预览 header 与右侧详情大图标共用：按文件名取类型图标，未选中时退回默认文档。
-    private var previewedFileIcon: BusinessIcon.Source {
-        guard let file = viewModel.previewedFile else { return .business(.file) }
-        return RepoFileTypeIcon.iconSource(forFileName: file.name)
     }
 
     private var inspectorType: String {
@@ -604,7 +653,7 @@ struct RepoFileBrowserSheet: View {
                     viewModel.cancelDownload()
                 }
             } else {
-                Button("common.cancel") { dismiss() }
+                Button("common.cancel", action: closeWorkspace)
                 Button("repo.files.downloadSelected") {
                     viewModel.startDownload()
                 }
@@ -616,14 +665,140 @@ struct RepoFileBrowserSheet: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
     }
+
+    /// 更新当前快照时不重建阅读器，模式与尺寸变更不会触发文件下载。
+    private func publishPreview() {
+        presentedPreview = viewModel.preview
+        presentedMarkdown = viewModel.markdown
+        withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12)) { isContentVisible = true }
+    }
+
+    private func closeWorkspace() {
+        viewModel.stop()
+        if let onClose { onClose() } else { dismiss() }
+    }
+
+    private var previewLayoutButtons: some View {
+        HStack(spacing: 4) {
+            Button {
+                viewModel.startDownloadPreviewed()
+            } label: {
+                Image(systemName: "arrow.down.to.line")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("repo.files.inspector.download")
+            .accessibilityLabel(Text("repo.files.inspector.download"))
+            .disabled(viewModel.isDownloading || viewModel.previewedFile?.blobSHA == nil)
+            previewMoreMenu
+            if !readingLayout.isExpanded {
+                Button {
+                    readingLayout.showsInspector.toggle()
+                } label: {
+                    Image(systemName: "sidebar.right")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(readingLayout.showsInspector ? "repo.files.inspector.hide" : "repo.files.inspector.show")
+                .accessibilityLabel(Text(readingLayout.showsInspector ? "repo.files.inspector.hide" : "repo.files.inspector.show"))
+                .accessibilityValue(Text(readingLayout.showsInspector ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"))
+            }
+            Button {
+                readingLayout.isExpanded.toggle()
+            } label: {
+                Image(systemName: readingLayout.isExpanded
+                      ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand")
+            .accessibilityLabel(Text(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand"))
+            .disabled(!readingLayout.isExpanded && viewModel.previewText == nil && viewModel.previewImageData == nil)
+        }
+    }
+
+    /// 右栏收起或放大时仍能访问当前文件操作；批量勾选状态不会被这些操作改变。
+    private var previewMoreMenu: some View {
+        Menu {
+            if let rawURL = viewModel.githubRawURL {
+                CopyFeedbackButton(
+                    providesContent: { rawURL.absoluteString },
+                    tooltip: "repo.files.inspector.copyRawURL"
+                ) { didCopy in
+                    Label("repo.files.inspector.copyRawURL",
+                          systemImage: didCopy ? "checkmark.circle.fill" : "link")
+                }
+            }
+            if let url = viewModel.githubBlobURL {
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Label("repo.files.inspector.viewOnGitHub", systemImage: "arrow.up.right.square")
+                }
+                Button { NSWorkspace.shared.open(url) } label: {
+                    Label("repo.files.inspector.openInBrowser", systemImage: "globe")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 28)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("repo.files.preview.more")
+        .accessibilityLabel(Text("repo.files.preview.more"))
+        .disabled(viewModel.githubBlobURL == nil && viewModel.githubRawURL == nil)
+    }
+
+    /// 按真正可见的树顺序分配条纹；折叠与筛选后索引重新连续，不改原树数据。
+    private var visibleTreeRows: [(node: RepoFileNode, depth: Int)] {
+        func flatten(_ nodes: [RepoFileNode], depth: Int) -> [(node: RepoFileNode, depth: Int)] {
+            nodes.flatMap { node in
+                [(node: node, depth: depth)] + (
+                    node.isDirectory && (viewModel.isSearchActive || expandedPaths.contains(node.path))
+                        ? flatten(node.children ?? [], depth: depth + 1) : []
+                )
+            }
+        }
+        return flatten(viewModel.displayedNodes, depth: 0)
+    }
+
+    private var treeSkeleton: some View {
+        SkeletonAnimatedPhase { phase in
+            let palette = SkeletonPalette.forColorScheme(colorScheme)
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(0..<10) { index in
+                    HStack(spacing: 8) {
+                        SkeletonBlock(width: 14, height: 14, phase: phase, palette: palette)
+                        SkeletonBlock(width: index.isMultiple(of: 2) ? 150 : 110, height: 12,
+                                      phase: phase, palette: palette)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 /// 单个树节点。checkbox 与展开是两个独立 Button，满足整行折叠规范。
 private struct RepoFileTreeRow: View {
     let node: RepoFileNode
     var viewModel: RepoFileBrowserViewModel
-    var forceExpanded: Bool
-    @State private var isExpanded = false
+    @Binding var isExpanded: Bool
+    let rowIndex: Int
+    let depth: Int
+    let selectionNamespace: Namespace.ID
+    @State private var isHovered = false
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -635,25 +810,27 @@ private struct RepoFileTreeRow: View {
                     fileLabel
                 }
             }
+            .padding(.leading, CGFloat(depth) * 14)
             .padding(.vertical, 4)
             .padding(.horizontal, 4)
-            .background(
-                viewModel.previewedPath == node.path
-                    ? Color.accentColor.opacity(0.12)
-                    : Color.clear,
-                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-            )
-
-            if node.isDirectory, showsChildren, let children = node.children, !children.isEmpty {
-                ForEach(children) { child in
-                    RepoFileTreeRow(node: child, viewModel: viewModel, forceExpanded: forceExpanded)
-                        .padding(.leading, 14)
+            .background {
+                if viewModel.previewedPath == node.path {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.accentColor.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor.opacity(0.3)))
+                        .matchedGeometryEffect(id: "file-selection", in: selectionNamespace)
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(isHovered ? 0.07 : (rowIndex.isMultiple(of: 2) ? 0 : 0.025)))
                 }
+            }
+            .onHover { hovered in
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) { isHovered = hovered }
             }
         }
     }
 
-    private var showsChildren: Bool { forceExpanded || isExpanded }
+    private var showsChildren: Bool { isExpanded }
 
     private var checkboxButton: some View {
         let state = RepoFileTreeBuilder.checkState(of: node, selected: viewModel.selectedPaths)
@@ -700,8 +877,7 @@ private struct RepoFileTreeRow: View {
             viewModel.reveal(node)
         } label: {
             HStack(spacing: 6) {
-                BusinessIcon(source: RepoFileTypeIcon.iconSource(forFileName: node.name), pointSize: 15)
-                    .foregroundStyle(.secondary)
+                RepoFileIcon(name: node.name)
                 Text(verbatim: node.name)
                     .lineLimit(1)
                     .truncationMode(.middle)

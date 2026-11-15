@@ -533,7 +533,7 @@ struct RepoListView: View {
     @State private var codeFlowSheetItem: CodeGraphSheetItem?
     @State private var codebaseMemorySheetItem: CodeGraphSheetItem?
     /// 按文件勾选下载。与 CodeFlow 一样挂在页面根节点，避免 toolbar 重建把 sheet 闪回来。
-    @State private var fileBrowserSheetItem: RepoFileBrowserSheetItem?
+    @State private var workspaceWindow = WorkspaceSceneWindowReference()
     /// GitHub 组织可限制第三方 OAuth App 访问仓库节点；这类错误需要结构化解释原因。
     @State private var gitHubStarListOAuthRestrictedRepo: Repo?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
@@ -545,6 +545,7 @@ struct RepoListView: View {
     @State private var navigationMetrics = RepoListNavigationMetrics()
     /// 摘要存在状态与导航计数同样局部观察，避免摘要生成后重算整个页面根视图。
     @State private var aiSummaryAvailability = RepoListAISummaryAvailability()
+    @State private var noteAvailability = RepoListNoteAvailability()
     /// 已成功补齐徽章缓存的列表前缀。append 不 bump revision，因此可只加载新增页；
     /// reset / filter / sort 导致 revision 变化时会从 0 重新核对新列表。
     @State private var badgeCacheLoadedItemsRevision: Int?
@@ -623,14 +624,7 @@ struct RepoListView: View {
                 .id(item.id)
                 .appSheetRootEnvironment(dependencies)
         }
-        .sheet(item: $fileBrowserSheetItem) { item in
-            RepoFileBrowserSheet(
-                target: item.target,
-                apiClient: dependencies.apiClient
-            )
-            .id(item.id)
-            .appSheetRootEnvironment(dependencies)
-        }
+        .background(WorkspaceSceneWindowReader(reference: workspaceWindow, minimumContentSize: nil))
         .onAppear {
             // Browser Plugin 请求可能先于主窗口恢复到达；窗口重新挂载时需要补消费
             // 已保存的 pendingRequest，否则用户关闭主窗口后点击 Open in Starcat 无响应。
@@ -1425,7 +1419,12 @@ struct RepoListView: View {
             },
             onOpenFileBrowser: { target in
                 AppLog.ui.info("Open file browser selection=\(target.fullName, privacy: .public) ref=\(target.ref, privacy: .public)")
-                fileBrowserSheetItem = RepoFileBrowserSheetItem(target: target)
+                RepoWorkspaceWindowController.present(
+                    identifier: "files", title: target.fullName,
+                    parent: workspaceWindow.window, dependencies: dependencies
+                ) { close in
+                    RepoFileBrowserSheet(target: target, apiClient: dependencies.apiClient, onClose: close)
+                }
             }
         )
         .id(actionIdentity)
@@ -1956,6 +1955,7 @@ struct RepoListView: View {
                             repo: pinned,
                             viewModel: viewModel,
                             aiSummaryAvailability: aiSummaryAvailability,
+                            noteAvailability: noteAvailability,
                             isSelected: selection.wrappedValue == pinned.id
                         )
                     }
@@ -1990,6 +1990,7 @@ struct RepoListView: View {
                             repo: repo,
                             viewModel: viewModel,
                             aiSummaryAvailability: aiSummaryAvailability,
+                            noteAvailability: noteAvailability,
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
                                 : (selection.wrappedValue == repo.id)
@@ -2054,7 +2055,13 @@ struct RepoListView: View {
             .task(id: dependencies.databaseScopeRevision) {
                 // 以数据库真正完成 reopen 为准，不能使用可能提前恢复的登录 profile 作为切库信号。
                 aiSummaryAvailability.resetForDatabaseChange()
+                noteAvailability.resetForDatabaseChange()
+                await noteAvailability.reload(from: dependencies.repoNoteRepository)
                 await aiSummaryAvailability.reload(from: dependencies.aiSummaryRepository)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .repoNoteContentDidChange)) { notification in
+                guard let repoID = notification.userInfo?["repoId"] as? Int64 else { return }
+                noteAvailability.apply(repoID: repoID, content: notification.userInfo?["content"] as? String)
             }
             .task {
                 await observeAISummaryChanges()
@@ -2980,6 +2987,7 @@ private struct ManageRepoRowContent: View {
     let repo: Repo
     let viewModel: HomeViewModel
     let aiSummaryAvailability: RepoListAISummaryAvailability
+    let noteAvailability: RepoListNoteAvailability
     let isSelected: Bool
 
     @Environment(AppDependencies.self) private var dependencies
@@ -3002,7 +3010,8 @@ private struct ManageRepoRowContent: View {
             isPinned: viewModel.isRepoPinned(repo.id),
             semanticHit: viewModel.semanticHit(for: repo.id),
             showLibraryBadge: !isKnowledgeLibraryList,
-            hasAISummary: aiSummaryAvailability.contains(repo.id)
+            hasAISummary: aiSummaryAvailability.contains(repo.id),
+            hasNote: noteAvailability.contains(repo.id)
         )
     }
 

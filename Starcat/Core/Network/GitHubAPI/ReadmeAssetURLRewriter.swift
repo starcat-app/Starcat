@@ -103,6 +103,41 @@ enum ReadmeAssetURLRewriter {
         )
     }
 
+    /// 文件预览必须绑定整棵树的提交，而不是 HEAD 或该文件的最近提交。
+    /// 显式目录入口不使用 README wrapper 推断和旧 HEAD 缓存修复，避免重复补目录。
+    static func rewrite(in html: String, owner: String, repo: String, ref: String, filePath: String) -> String {
+        let rawRoot = "https://raw.githubusercontent.com/\(owner)/\(repo)/\(ref)/"
+        let blobRoot = "https://github.com/\(owner)/\(repo)/blob/\(ref)/"
+        guard let rawFile = URL(string: rawRoot)?.appendingPathComponent(filePath),
+              let blobFile = URL(string: blobRoot)?.appendingPathComponent(filePath) else { return html }
+        let stable = rewriteGitHubAttachmentSources(in: rewriteCamoProxiedImages(in: html))
+        let images = rewriteImageSources(in: stable, rawBase: rawRoot, rawRoot: rawRoot,
+                                         documentDirectory: "", fileBaseURL: rawFile)
+        let pictures = rewritePictureSourceSets(in: images, rawBase: rawRoot, rawRoot: rawRoot,
+                                                documentDirectory: "", fileBaseURL: rawFile)
+        guard let regex = try? NSRegularExpression(pattern: #"<a\b[^>]*\shref="([^"]*)""#,
+                                                  options: .caseInsensitive) else { return pictures }
+        let original = pictures as NSString
+        var result = pictures
+        for match in regex.matches(in: pictures, range: NSRange(location: 0, length: original.length)).reversed() {
+            let link = original.substring(with: match.range(at: 1))
+            let resolved = resolveFileURL(link, fileBaseURL: blobFile, repositoryRoot: blobRoot)
+            guard let range = Range(match.range(at: 1), in: result) else { continue }
+            result.replaceSubrange(range, with: resolved)
+        }
+        return result
+    }
+
+    /// 绝对资源与页内锚点保留；根路径以仓库根为准，../ 由 Foundation 规范化。
+    private static func resolveFileURL(_ source: String, fileBaseURL: URL, repositoryRoot: String) -> String {
+        guard !source.isEmpty, !source.hasPrefix("#"), !source.hasPrefix("//"),
+              URL(string: source)?.scheme == nil else { return source }
+        if let githubRawURL = githubRootRawURL(from: source) { return githubRawURL }
+        let base = source.hasPrefix("/") ? URL(string: repositoryRoot) : fileBaseURL
+        let relative = source.hasPrefix("/") ? String(source.dropFirst()) : source
+        return URL(string: relative, relativeTo: base)?.absoluteURL.standardized.absoluteString ?? source
+    }
+
     /// 把 GitHub camo 代理的 `<img src>` / `<source srcset>` 改写回 `data-canonical-src`
     /// 保留的原始地址。
     ///
@@ -217,7 +252,8 @@ enum ReadmeAssetURLRewriter {
         in html: String,
         rawBase: String,
         rawRoot: String,
-        documentDirectory: String
+        documentDirectory: String,
+        fileBaseURL: URL? = nil
     ) -> String {
         // <img ...src="xxx"...> ；捕获 1 = src 前的属性串，捕获 2 = src 值
         let pattern = #"<img\b([^>]*?)\bsrc\s*=\s*"([^"]+)""#
@@ -236,7 +272,9 @@ enum ReadmeAssetURLRewriter {
 
             let prefix = nsHtml.substring(with: m.range(at: 1))
             let originalSrc = nsHtml.substring(with: m.range(at: 2))
-            let rewritten = rewriteOne(
+            let rewritten = fileBaseURL.map {
+                resolveFileURL(originalSrc, fileBaseURL: $0, repositoryRoot: rawRoot)
+            } ?? rewriteOne(
                 originalSrc,
                 rawBase: rawBase,
                 rawRoot: rawRoot,
@@ -258,7 +296,8 @@ enum ReadmeAssetURLRewriter {
         in html: String,
         rawBase: String,
         rawRoot: String,
-        documentDirectory: String
+        documentDirectory: String,
+        fileBaseURL: URL? = nil
     ) -> String {
         guard let pictureRegex = try? NSRegularExpression(
             pattern: #"<picture\b[^>]*>.*?</picture\s*>"#,
@@ -281,7 +320,8 @@ enum ReadmeAssetURLRewriter {
                     srcset,
                     rawBase: rawBase,
                     rawRoot: rawRoot,
-                    documentDirectory: documentDirectory
+                    documentDirectory: documentDirectory,
+                    fileBaseURL: fileBaseURL
                 )
                 guard rewritten != srcset, let range = Range(source.range, in: result) else { continue }
                 result.replaceSubrange(range, with: replaceAttributeValue(named: "srcset", inTag: tag, with: rewritten))
@@ -300,12 +340,14 @@ enum ReadmeAssetURLRewriter {
         _ srcset: String,
         rawBase: String,
         rawRoot: String,
-        documentDirectory: String
+        documentDirectory: String,
+        fileBaseURL: URL? = nil
     ) -> String {
         rewriteSourceSet(srcset) { url in
             if let stableURL = stableGitHubAttachmentURL(from: url) { return stableURL }
             guard !url.isEmpty, !url.hasPrefix("//"), !url.hasPrefix("#"),
                   URL(string: url)?.scheme == nil else { return url }
+            if let fileBaseURL { return resolveFileURL(url, fileBaseURL: fileBaseURL, repositoryRoot: rawRoot) }
             return rewriteOne(url, rawBase: rawBase, rawRoot: rawRoot, documentDirectory: documentDirectory)
         }
     }

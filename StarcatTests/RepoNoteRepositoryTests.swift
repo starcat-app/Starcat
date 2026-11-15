@@ -24,6 +24,19 @@ struct RepoNoteRepositoryTests {
 
     // MARK: - 查询
 
+    @Test("非空笔记批量读取排除所有空白和仅有阅读状态的行")
+    func noteAvailabilityMatchesEditorWhitespace() async throws {
+        let (repository, database) = try makeRepo()
+        for repoID: Int64 in 1...4 { try await database.insertRepoFixture(id: repoID) }
+        try await repository.updateContent(repoId: 1, content: "\n\t \u{3000}\u{00A0}")
+        try await repository.updateStatus(repoId: 2, status: .read)
+        try await repository.updateContent(repoId: 3, content: " \n真正的笔记\t ")
+        try await repository.updateContent(repoId: 4, content: "")
+        #expect(try await repository.fetchRepoIdsWithNonEmptyContent() == [3])
+        try await repository.updateContent(repoId: 3, content: nil)
+        #expect(try await repository.fetchRepoIdsWithNonEmptyContent().isEmpty)
+    }
+
     @Test("find: 未写过返回 nil")
     func findMiss() async throws {
         let (repo, db) = try makeRepo()
