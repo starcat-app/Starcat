@@ -23,6 +23,7 @@ struct DailyRecommendationHost: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @State private var preparedIdentity: String?
     @State private var preparationRevision: UInt64 = 0
+    @State private var syncCompletionTask: Task<Void, Never>?
     @State private var isParentWindowReady = false
     @State private var isOverlayWindowReady = false
     @State private var isCardContentReady = false
@@ -95,6 +96,7 @@ struct DailyRecommendationHost: ViewModifier {
             preparationRevision &+= 1
         }
         .onChange(of: accountIdentity) { _, _ in
+            syncCompletionTask?.cancel()
             dependencies.dailyRecommendationPreparation.cancel()
             isPresented = false
             isReadyToPresent = false
@@ -126,7 +128,15 @@ struct DailyRecommendationHost: ViewModifier {
             // 包括取数失败和未登录的原有空态；LLM 失败本身不会让 prepare 失败。
             isReadyToPresent = true
         }
-        .onDisappear { dependencies.dailyRecommendationPreparation.cancel() }
+        .onDisappear {
+            syncCompletionTask?.cancel()
+            dependencies.dailyRecommendationPreparation.cancel()
+        }
+        .onChange(of: dependencies.syncManager.state) { _, state in
+            // 只消费最终完成边沿，不能在第一页写入时使用不完整 Stars 兴趣快照。
+            guard case .completed = state, !TestEnvironment.isRunning else { return }
+            prepareAfterInitialStarsSync()
+        }
         .onChange(of: dependencies.starredRegistry.ids) { _, ids in
             let account = accountIdentity
             Task {
@@ -139,6 +149,22 @@ struct DailyRecommendationHost: ViewModifier {
     /// 每次请求先固定账号和服务作用域；账号切换会让 Store 的 generation 失效。
     private func load() async {
         _ = await prepare(replacingCurrentBatch: false, origin: .user)
+    }
+
+    /// 无有效种子的准备允许在首次同步后补试；已冻结或单纯网络失败的批次不自动换牌。
+    private func prepareAfterInitialStarsSync() {
+        let attempt = identity
+        syncCompletionTask?.cancel()
+        syncCompletionTask = Task {
+            await dependencies.dailyRecommendationPreparation.waitUntilIdle()
+            guard !Task.isCancelled, identity == attempt, accountID != nil, !onboarding,
+                  dependencies.dailyRecommendationStore.needsInitialStars else { return }
+            guard await prepare(replacingCurrentBatch: false, origin: isPresented ? .user : .background),
+                  !Task.isCancelled, identity == attempt else { return }
+            preparedIdentity = attempt
+            if isPresented { isReadyToPresent = true }
+            presentAutomaticallyIfReady()
+        }
     }
 
     /// 保存失败重试当前选择；取数失败延续原操作，避免“换批失败 → 重试”只恢复旧缓存。

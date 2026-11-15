@@ -37,6 +37,8 @@ final class DailyRecommendationStore {
     private(set) var hasLoadedState = false
     /// 重试延续失败操作；重开入口始终恢复当前批次，不顺带执行上次失败的换批。
     private(set) var retryReplacesCurrentBatch = false
+    /// 冷启动先于首次 Stars 同步时没有公开种子；只在同步成功收尾后补试，不按分页触发。
+    private(set) var needsInitialStars = false
     /// 完整数据库快照之外，合并请求等待期间注册表收到的新 Star，防止迟到候选重新露出。
     private var observedStarredIDs: Set<Int64> = []
 
@@ -69,6 +71,7 @@ final class DailyRecommendationStore {
         batchMessageKey = nil
         emptyKey = "recommendations.daily.empty"
         retryReplacesCurrentBatch = false
+        needsInitialStars = false
         observedStarredIDs = []
     }
 
@@ -123,6 +126,7 @@ final class DailyRecommendationStore {
         errorKey = nil
         batchMessageKey = nil
         retryReplacesCurrentBatch = replacingCurrentBatch
+        needsInitialStars = false
         defer { if token == generation { isLoading = false } }
         guard await loadPreferences(accountID: accountID, scopeRevision: scopeRevision) else { return false }
         // 候选池留在 catch 可见的作用域，后续页失败也能保存前面已成功取得的位置。
@@ -161,6 +165,7 @@ final class DailyRecommendationStore {
                 if replacingCurrentBatch {
                     batchMessageKey = emptyKey
                 } else {
+                    needsInitialStars = true
                     state.items = []
                     state.hasGeneratedBatch = false
                     state.revealedIDs = []

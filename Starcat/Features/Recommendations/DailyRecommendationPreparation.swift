@@ -68,15 +68,20 @@ final class DailyRecommendationPreparation {
     /// 恢复出厂期间拒绝新准备；等待已有任务退出后才能删除账号文件。
     func suspendAndWait() async {
         isSuspended = true
-        let previousID = taskID
         task?.cancel()
-        _ = await task?.value
-        if taskID == previousID { finish() }
+        await waitUntilIdle()
     }
 
     /// 重置编排结束（包括失败）后解除屏障，后续登录可以正常准备。
     func resume() {
         isSuspended = false
+    }
+
+    /// 首次同步可能恰在空种子查询返回前完成；先等当前准备收尾，再决定是否需要补试。
+    func waitUntilIdle() async {
+        let previousID = taskID
+        _ = await task?.value
+        if taskID == previousID { finish() }
     }
 
     private func finish() {

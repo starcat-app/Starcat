@@ -1214,6 +1214,66 @@ struct DailyRecommendationTests {
         #expect(!preparation.isRunning)
     }
 
+    @Test("首次同步与空种子准备交错，收尾后可补试且不改变已冻结批次")
+    func initialSyncRetriesColdStartAfterPreparationSettles() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        let preparation = DailyRecommendationPreparation()
+        var query: CheckedContinuation<[Repo], Never>?
+        let initial = Task {
+            await preparation.run(key: "today", origin: .background) {
+                await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                                 fetchStars: { await withCheckedContinuation { query = $0 } },
+                                 fetchCandidates: { _, _ in Issue.record("空种子不能请求推荐"); return response([]) })
+            }
+        }
+        while query == nil { await Task.yield() }
+        var requests = 0
+        let syncFinished = Task {
+            await preparation.waitUntilIdle()
+            guard store.needsInitialStars else { return false }
+            return await preparation.run(key: "today", origin: .background) {
+                await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                                 fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+                    requests += 1
+                    return response([item(100)])
+                })
+            }
+        }
+        query?.resume(returning: [])
+        #expect(!(await initial.value))
+        #expect(await syncFinished.value)
+        #expect(requests == 1)
+        #expect(!store.needsInitialStars)
+        #expect(store.visibleItems.map(\.repoID) == [100])
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1), repo(2)] }, fetchCandidates: { _, _ in
+            Issue.record("同步新增 Star 不能重建已冻结批次")
+            return response([])
+        })
+        #expect(store.visibleItems.map(\.repoID) == [100])
+        #expect(!store.needsInitialStars)
+    }
+
+    @Test("仅有私有或归档 Stars 时继续等待有效种子，不请求推荐", arguments: [false, true])
+    func initialSyncRequiresEligibleStars(archived: Bool) async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        var seed = repo(1)
+        seed.isPrivate = !archived
+        seed.isArchived = archived
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [seed] }, fetchCandidates: { _, _ in
+            Issue.record("无有效公开种子不能请求推荐")
+            return response([])
+        })
+        #expect(store.needsInitialStars)
+        #expect(store.emptyKey == "recommendations.daily.coldStart")
+        #expect(store.visibleItems.isEmpty)
+    }
+
     /// 同一测试重启 Store 时复用磁盘库；切账号显式模拟 AppDependencies 的数据库切换。
     private let historyDatabases = HistoryTestDatabases()
 
