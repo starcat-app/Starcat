@@ -96,6 +96,7 @@ struct GitHubStarListAIGroupingResultList: View, Equatable {
                             onRetryAutomaticallyIgnored: { onRetryAutomaticallyIgnored(item.id) }
                         )
                         .equatable()
+                        .listRowSurface(index: index)
                         .automaticListPagination(
                             appearingIndex: index,
                             visibleItemCount: items.count,

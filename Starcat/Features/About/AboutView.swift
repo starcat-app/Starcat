@@ -73,6 +73,7 @@ struct AboutView: View {
                         .padding(24)
                         .frame(minHeight: 328, alignment: .topLeading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .nativeDetailTransition(value: selectedPage)
                 }
                 .background(Color(nsColor: .textBackgroundColor).opacity(0.52))
             }
@@ -746,6 +747,7 @@ private struct CreditsList: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(dependencies.enumerated()), id: \.element.id) { index, dependency in
                     DependencyRow(dependency: dependency)
+                        .listRowSurface(index: index)
 
                     if index != dependencies.count - 1 {
                         Divider()

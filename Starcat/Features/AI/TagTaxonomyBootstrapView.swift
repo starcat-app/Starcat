@@ -74,6 +74,7 @@ final class TagTaxonomyBootstrapReviewModel {
 }
 
 struct TagTaxonomyBootstrapView: View {
+    @Namespace private var selectionSpace
     @Bindable var model: TagTaxonomyBootstrapReviewModel
 
     @Environment(\.colorScheme) private var colorScheme
@@ -86,6 +87,7 @@ struct TagTaxonomyBootstrapView: View {
             HStack(alignment: .top, spacing: AIOrganizationLayout.gap) {
                 candidatePanel
                 evidencePanel
+                    .nativeDetailTransition(value: model.focusedCandidateID)
             }
             .frame(width: AIOrganizationLayout.innerWidth, height: AIOrganizationLayout.panelHeight, alignment: .top)
         }
@@ -156,8 +158,8 @@ struct TagTaxonomyBootstrapView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(model.candidates) { candidate in
-                            candidateRow(candidate)
+                        ForEach(Array(model.candidates.enumerated()), id: \.element.id) { index, candidate in
+                            candidateRow(candidate, rowIndex: index)
                         }
                     }
                 }
@@ -170,7 +172,7 @@ struct TagTaxonomyBootstrapView: View {
         .overlay(panelBorder)
     }
 
-    private func candidateRow(_ candidate: TagTaxonomyCandidate) -> some View {
+    private func candidateRow(_ candidate: TagTaxonomyCandidate, rowIndex: Int) -> some View {
         let isSelected = model.selectedCandidateIDs.contains(candidate.id)
         let isFocused = model.focusedCandidateID == candidate.id
 
@@ -221,10 +223,8 @@ struct TagTaxonomyBootstrapView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 36)
-        .background(
-            isFocused ? Color.accentColor.opacity(0.10) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
+        .listRowSurface(index: rowIndex,
+                        isSelected: isFocused, selectionNamespace: selectionSpace)
         .contentShape(Rectangle())
         .onTapGesture { model.focusedCandidateID = candidate.id }
     }

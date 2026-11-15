@@ -32,6 +32,7 @@ private enum AgentRuntimeNarrativeRow: Identifiable {
 }
 
 struct AgentMessageTimelineView: View {
+    @Namespace private var selectionSpace
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var expandedItemIDs: Set<String> = []
     @State private var traceMode: AgentTraceTimelineMode = .process
@@ -459,16 +460,8 @@ struct AgentMessageTimelineView: View {
         .padding(.horizontal, 7)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            if viewModel.selectedTraceEventID == event.id {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.09))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(Color.accentColor.opacity(0.24), lineWidth: 0.5)
-                    }
-            }
-        }
+        .listRowSurface(index: event.sequence, isSelected: viewModel.selectedTraceEventID == event.id,
+                        selectionNamespace: selectionSpace)
     }
 
     private func traceRowLabel(

@@ -24,6 +24,7 @@ struct MyInsightsView: View {
     var headerHeight: CGFloat = InsightsColumnChrome.minimumHeaderHeight
 
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
@@ -31,6 +32,41 @@ struct MyInsightsView: View {
 
     private var snapshot: MyInsightsSnapshot {
         viewModel.snapshot
+    }
+
+    /// 与洞察内容的指标卡、图表和行动行保持相同节奏；刷新快照仍沿用已显示的内容。
+    private var insightsSkeleton: some View {
+        SkeletonAnimatedPhase { phase in
+            let palette = SkeletonPalette.forColorScheme(colorScheme)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 12) {
+                            SkeletonBlock(maxWidth: 64, height: 12, phase: phase, palette: palette)
+                            SkeletonBlock(maxWidth: 50, height: 26, phase: phase, palette: palette)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                SkeletonBlock(height: 156, cornerRadius: 10, phase: phase, palette: palette)
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        HStack(spacing: 12) {
+                            SkeletonBlock(width: 22, height: 22, phase: phase, palette: palette)
+                            SkeletonBlock(height: 14, phase: phase, palette: palette)
+                            SkeletonBlock(width: 40, height: 14, phase: phase, palette: palette)
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, InsightsColumnChrome.contentTopPadding)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     var body: some View {
@@ -49,14 +85,11 @@ struct MyInsightsView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 320)
                 } else if viewModel.isInitialLoading {
-                    // 首次加载保留内容区高度；反馈交给右上角 SyncIconButton，
-                    // 避免居中转圈或顶栏进度条抢戏。
-                    Color.clear
-                        .frame(maxWidth: .infinity, minHeight: 320)
-                        .accessibilityHidden(true)
+                    insightsSkeleton
+                        .transition(.opacity)
                 } else {
                     // 与 RepoDetail / Activity 同款：ZStack + .id + detailContentTransition，
-                    // 中栏切换「健康概览 / 安全风险」等时详情轻轻落下，避免瞬切。
+                    // 中栏切换「健康概览 / 安全风险」时淡化交接，保持卡片位置稳定。
                     ZStack(alignment: .topLeading) {
                         LazyVStack(spacing: 14) {
                             if viewModel.showsStaleWarning {
@@ -78,11 +111,13 @@ struct MyInsightsView: View {
                         .detailContentTransition()
                     }
                     .animation(
-                        reduceMotion ? nil : .easeOut(duration: 0.4),
+                        .easeOut(duration: reduceMotion ? 0.12 : 0.24),
                         value: selection
                     )
+                    .transition(.opacity)
                 }
             }
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.isInitialLoading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -543,6 +578,7 @@ struct MyInsightsView: View {
                             Divider().padding(.leading, 30)
                         }
                         priorityRepositoryRow(repository)
+                            .listRowSurface(index: index)
                     }
                 }
             }
@@ -790,6 +826,7 @@ struct MyInsightsView: View {
             )
         }
         .contentShape(Rectangle())
+        .listRowSurface(index: rowIndex)
 
         if let action, item.id != "other" {
             Button(action: action) {
@@ -818,6 +855,7 @@ struct MyInsightsView: View {
                         Divider().padding(.leading, 34)
                     }
                     actionRow(item)
+                        .listRowSurface(index: index, isSelected: selectedAction?.id == item.id)
                 }
             }
         }

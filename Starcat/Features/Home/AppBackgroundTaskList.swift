@@ -17,8 +17,9 @@ struct AppBackgroundTaskList: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ForEach(tasks) { task in
+                ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
                     AppBackgroundTaskRow(task: task, onOpen: { onOpen(task.id) }, onCancel: { onCancel(task.id) })
+                        .listRowSurface(index: index)
                     if task.id != tasks.last?.id { Divider() }
                 }
             }

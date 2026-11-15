@@ -140,3 +140,41 @@ struct SkeletonBlock: View {
             .skeletonShimmer(phase: effectivePhase, palette: palette)
     }
 }
+
+/// 紧凑行列表的首屏占位。整组共用一个时钟，行高与图标列由真实列表决定。
+struct ListLoadingSkeleton: View {
+    var rowCount = 6
+    var rowHeight: CGFloat = 44
+    var showsIcon = true
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let palette = SkeletonPalette.forColorScheme(colorScheme)
+        SkeletonAnimatedPhase { phase in
+            VStack(spacing: 0) {
+                ForEach(0..<rowCount, id: \.self) { index in
+                    HStack(spacing: 10) {
+                        if showsIcon {
+                            SkeletonBlock(width: 24, height: 24, phase: phase, palette: palette)
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            SkeletonBlock(maxWidth: index.isMultiple(of: 2) ? 200 : 150,
+                                          height: 12, phase: phase, palette: palette)
+                            if rowHeight >= 44 {
+                                SkeletonBlock(maxWidth: 260, height: 9, phase: phase, palette: palette)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: rowHeight)
+                    .background(Color.primary.opacity(index.isMultiple(of: 2) ? 0 : 0.045),
+                                in: RoundedRectangle(cornerRadius: 7))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}

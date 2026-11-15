@@ -21,6 +21,7 @@ enum SkillDetailTab: String, CaseIterable, Identifiable {
 
 /// 消费稳定条目快照，切换选择时不会保留上一条目的正文。
 struct SkillDetailView: View {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(AppDependencies.self) private var dependencies: AppDependencies?
     @AppStorage("skillWorkspace.selectedTab") private var selectedTab = SkillDetailTab.overview
@@ -43,7 +44,8 @@ struct SkillDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                 }
-                .id(item.id)
+                // 条目自己的内容仍按 item.id 重置，外层滚动宿主无需再复制一次。
+                .stableDetailTransition(value: item.id)
             }
             .padding(20)
         } else if viewModel.selectedIDs.count > 1 {
@@ -117,25 +119,34 @@ struct SkillDetailView: View {
 
     @ViewBuilder
     private func detail(_ item: SkillLibraryItem) -> some View {
-        switch selectedTab {
-        case .overview, .files:
-            SkillContentView(item: item, tab: selectedTab, refreshID: viewModel.contentRefreshID)
-                .id(item.id)
-        case .assignments:
-            SkillAssignmentsView(item: item, viewModel: viewModel).id(item.id)
-        case .versions:
-            if item.managementKind == .managed, viewModel.libraryEnvironment != nil {
-                HStack {
-                    Button("skills.update.review") { review(item.id, rollback: false) }
-                    Button("skills.update.rollback") { review(item.id, rollback: true) }
+        ZStack(alignment: .topLeading) {
+            switch selectedTab {
+            case .overview, .files:
+                SkillContentView(item: item, tab: selectedTab, refreshID: viewModel.contentRefreshID)
+                    .id(item.id)
+                    .detailContentTransition()
+            case .assignments:
+                SkillAssignmentsView(item: item, viewModel: viewModel)
+                    .id(item.id)
+                    .detailContentTransition()
+            case .versions:
+                VStack(alignment: .leading) {
+                    if item.managementKind == .managed, viewModel.libraryEnvironment != nil {
+                        HStack {
+                            Button("skills.update.review") { review(item.id, rollback: false) }
+                            Button("skills.update.rollback") { review(item.id, rollback: true) }
+                        }
+                    }
+                    if let revision = item.revision {
+                        Text(verbatim: revision).font(interfaceScale.font(.code))
+                    } else {
+                        Text("skills.detail.version.unknown").foregroundStyle(.secondary)
+                    }
                 }
-            }
-            if let revision = item.revision {
-                Text(verbatim: revision).font(interfaceScale.font(.code))
-            } else {
-                Text("skills.detail.version.unknown").foregroundStyle(.secondary)
+                .detailContentTransition()
             }
         }
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: selectedTab)
     }
 
     private func remove(_ entryID: UUID) {

@@ -83,6 +83,7 @@ struct RepoIssuesWorkspaceView: View {
 
 /// 工作台内容（Preview 直接以种子 VM 实例化，便于 UI 迭代）。
 struct RepoIssuesWorkspaceContent: View {
+    @Namespace private var selectionSpace
     @State var viewModel: RepoIssuesWorkspaceViewModel
     var onClose: (() -> Void)? = nil
 
@@ -250,6 +251,8 @@ struct RepoIssuesWorkspaceContent: View {
                                 issue: issue,
                                 isSelected: !viewModel.isCreating
                                     && viewModel.selectedIssue?.id == issue.id,
+                                rowIndex: index,
+                                selectionNamespace: selectionSpace,
                                 onSelect: { viewModel.select(issue) }
                             )
                             .automaticListPagination(
@@ -361,7 +364,7 @@ struct RepoIssuesWorkspaceContent: View {
         ZStack {
             if viewModel.isCreating {
                 RepoIssueCreatePane(viewModel: viewModel)
-                    .transition(.opacity)
+                    .detailContentTransition()
             } else if let item = viewModel.detailItem {
                 // 淡出期间保留旧帖快照，但立即禁用交互，避免旧评论目标在切帖后仍可操作。
                 // 身份按会话区分；同帖的评论刷新不会重建编辑器或重复触发切换动画。
@@ -382,15 +385,15 @@ struct RepoIssuesWorkspaceContent: View {
                 .disabled(viewModel.isCreating || viewModel.detailItem?.id != item.id)
                 .allowsHitTesting(!viewModel.isCreating && viewModel.detailItem?.id == item.id)
                 .id(item.id)
-                .transition(.opacity)
+                .detailContentTransition()
             } else {
                 emptySelectionPlaceholder
-                    .transition(.opacity)
+                    .detailContentTransition()
             }
         }
         // 既监听模式，也监听异步物化后的会话身份；仅监听 paneMode 不会覆盖 Issue 间切换。
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: viewModel.paneMode)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: viewModel.detailItem?.id)
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.paneMode)
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.detailItem?.id)
     }
 
     private var emptySelectionPlaceholder: some View {
@@ -413,9 +416,9 @@ struct RepoIssuesWorkspaceContent: View {
 private struct RepoIssueListRow: View {
     let issue: GitHubRepoIssue
     let isSelected: Bool
+    var rowIndex = 0
+    var selectionNamespace: Namespace.ID? = nil
     let onSelect: () -> Void
-
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: onSelect) {
@@ -465,21 +468,7 @@ private struct RepoIssueListRow: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .onHover { isHovered = $0 }
-        .background(rowBackground)
-        .animation(.easeOut(duration: 0.1), value: isHovered)
-    }
-
-    private var rowBackground: some View {
-        Group {
-            if isSelected {
-                Color.accentColor.opacity(0.10)
-            } else if isHovered {
-                Color.primary.opacity(0.05)
-            } else {
-                Color.clear
-            }
-        }
+        .listRowSurface(index: rowIndex, isSelected: isSelected, selectionNamespace: selectionNamespace)
     }
 
     /// GitHub 惯例配色：open 绿圈 / closed 紫色对勾。

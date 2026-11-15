@@ -613,12 +613,7 @@ struct RAGWorkspaceInspector: View {
                 }
             }
         } else {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("rag.workspace.inspector.metadata.loading")
-                    .font(ragFont(.caption))
-                    .foregroundStyle(.secondary)
-            }
+            ListLoadingSkeleton(rowCount: 4, rowHeight: 30, showsIcon: false)
             .padding(.vertical, 4)
         }
     }
@@ -3941,7 +3936,7 @@ struct RAGWorkspaceInspector: View {
         let chunks = viewModel.indexIssueChunks(for: kind)
         VStack(alignment: .leading, spacing: 8) {
             if viewModel.isLoadingIndexIssue(kind), chunks.isEmpty {
-                ProgressView().controlSize(.small)
+                ListLoadingSkeleton(rowCount: 3, rowHeight: 62, showsIcon: false)
             } else if chunks.isEmpty {
                 Text("rag.workspace.index.issues.empty")
                     .font(ragFont(.caption))

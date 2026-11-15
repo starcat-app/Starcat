@@ -15,6 +15,7 @@ struct DailyRadarRelatedProjectRow: View {
     let onOpen: () -> Void
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var scale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: onOpen) {
@@ -53,8 +54,17 @@ struct DailyRadarRelatedProjectRow: View {
                             Image(systemName: "exclamationmark.circle")
                             Text("error.loadFailed")
                         } else {
-                            ProgressView().controlSize(.mini)
-                            Text("weekly.detail.loadingRepo")
+                            // 仓库身份已知，只为尚未返回的统计留占位，避免整张卡退回空骨架。
+                            SkeletonAnimatedPhase { phase in
+                                let palette = SkeletonPalette.forColorScheme(colorScheme)
+                                HStack(spacing: 8) {
+                                    SkeletonBlock(width: 56, height: 9, phase: phase, palette: palette)
+                                    SkeletonBlock(width: 42, height: 9, phase: phase, palette: palette)
+                                    SkeletonBlock(width: 62, height: 9, phase: phase, palette: palette)
+                                }
+                            }
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                         }
                     }
                     .font(scale.font(.caption))

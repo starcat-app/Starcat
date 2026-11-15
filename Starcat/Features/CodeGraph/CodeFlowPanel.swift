@@ -385,7 +385,7 @@ private struct CodeFlowBranchPicker: View {
                     .textFieldStyle(.roundedBorder)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(filtered) { branch in
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, branch in
                             Button {
                                 onSelect(branch.name)
                                 isPresented = false
@@ -404,6 +404,7 @@ private struct CodeFlowBranchPicker: View {
                             .focusEffectDisabled()
                             .padding(.horizontal, 6)
                             .padding(.vertical, 5)
+                            .listRowSurface(index: index, isSelected: branch.name == selection)
                         }
                     }
                 }

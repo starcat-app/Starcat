@@ -156,6 +156,7 @@ private struct SkillLibrarySidebar: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @Bindable var viewModel: SkillWorkspaceViewModel
+    @Namespace private var selectionSpace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,7 +166,7 @@ private struct SkillLibrarySidebar: View {
 
             List(selection: $viewModel.navigation) {
                 Section("skills.workspace.library") {
-                    ForEach(SkillWorkspaceFilter.allCases) { filter in
+                    ForEach(Array(SkillWorkspaceFilter.allCases.enumerated()), id: \.element.id) { index, filter in
                         HStack {
                             Label(LocalizedStringKey(filter.titleKey), systemImage: filter.systemImage)
                             Spacer(minLength: 8)
@@ -173,24 +174,38 @@ private struct SkillLibrarySidebar: View {
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                         }
+                        .listRowSurface(
+                            index: index,
+                            isSelected: viewModel.navigation == .library(filter),
+                            selectionNamespace: selectionSpace
+                        )
                         .tag(SkillWorkspaceNavigation.library(filter))
+                        .listRowBackground(Color.clear)
                     }
                 }
                 if !viewModel.agentNames.isEmpty {
                     Section("skills.workspace.agents") {
-                        ForEach(viewModel.agentNames, id: \.self) { name in
+                        ForEach(Array(viewModel.agentNames.enumerated()), id: \.element) { index, name in
                             Label(name, systemImage: "terminal")
+                                .listRowSurface(index: index,
+                                                isSelected: viewModel.navigation == .agent(name),
+                                                selectionNamespace: selectionSpace)
                                 .tag(SkillWorkspaceNavigation.agent(name))
+                                .listRowBackground(Color.clear)
                         }
                     }
                 }
                 if !viewModel.sources.isEmpty {
                     Section("skills.workspace.sources") {
-                        ForEach(viewModel.sources, id: \.self) { source in
+                        ForEach(Array(viewModel.sources.enumerated()), id: \.element) { index, source in
                             Label(source, systemImage: "arrow.triangle.branch")
                                 .lineLimit(1)
                                 .truncationMode(.middle)
+                                .listRowSurface(index: index,
+                                                isSelected: viewModel.navigation == .source(source),
+                                                selectionNamespace: selectionSpace)
                                 .tag(SkillWorkspaceNavigation.source(source))
+                                .listRowBackground(Color.clear)
                         }
                     }
                 }
@@ -207,6 +222,7 @@ private struct SkillLibraryList: View {
     @Bindable var viewModel: SkillWorkspaceViewModel
     @State private var isCheckingUpdates = false
     @State private var updateMessage: String?
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -283,8 +299,8 @@ private struct SkillLibraryList: View {
                 .font(interfaceScale.font(.caption))
             }
             if viewModel.loadState == .loading && viewModel.items.isEmpty {
-                ProgressView("skills.workspace.loading")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ListLoadingSkeleton(rowHeight: 88, showsIcon: false)
+                    .frame(maxHeight: .infinity, alignment: .top)
             } else if case .failed(let message) = viewModel.loadState, viewModel.items.isEmpty {
                 ContentUnavailableView {
                     Label("repo.skills.status.failed", systemImage: "exclamationmark.triangle")
@@ -303,14 +319,18 @@ private struct SkillLibraryList: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $viewModel.selectedIDs) {
-                    ForEach(viewModel.visibleItems) { item in
+                    ForEach(Array(viewModel.visibleItems.enumerated()), id: \.element.id) { index, item in
                         SkillLibraryRow(item: item)
+                            .listRowSurface(index: index, isSelected: viewModel.selectedIDs.contains(item.id))
                             .tag(item.id)
                     }
                 }
                 .listStyle(.inset)
+                // 原生多选 List 保留身份，避免每次分类切换重建全部行与滚动宿主。
+                .stableDetailTransition(value: viewModel.navigation)
             }
         }
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.items.isEmpty)
         .padding(16)
     }
 

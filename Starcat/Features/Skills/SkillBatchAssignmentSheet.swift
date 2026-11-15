@@ -40,7 +40,7 @@ struct SkillBatchAssignmentSheet: View {
                 .disabled(isBusy)
                 if action == .assign {
                     Text("skills.batch.targets").font(.headline)
-                    ForEach(targets) { target in
+                    ForEach(Array(targets.enumerated()), id: \.element.id) { index, target in
                         Toggle(isOn: Binding(
                             get: { targetIDs.contains(target.id) },
                             set: { if $0 { targetIDs.insert(target.id) } else { targetIDs.remove(target.id) } }
@@ -51,6 +51,8 @@ struct SkillBatchAssignmentSheet: View {
                             }
                         }
                         .disabled(isBusy)
+                        .padding(5)
+                        .listRowSurface(index: index, isSelected: targetIDs.contains(target.id))
                     }
                     if targets.isEmpty { Text("skills.assignment.noTargets").foregroundStyle(.secondary) }
                 }
@@ -61,7 +63,7 @@ struct SkillBatchAssignmentSheet: View {
                     Spacer()
                     Text(verbatim: "\(rows.filter { $0.result != nil }.count)/\(rows.count)").monospacedDigit()
                 }
-                List(rows) { row in
+                List(Array(rows.enumerated()), id: \.element.id) { index, row in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(verbatim: row.name).font(.headline)
@@ -85,11 +87,12 @@ struct SkillBatchAssignmentSheet: View {
                         }
                     }
                     .padding(.vertical, 6)
+                    .listRowSurface(index: index)
                 }
                 .listStyle(.inset)
             }
             if let message { Text(verbatim: message).font(.caption).foregroundStyle(.secondary) }
-            if isBusy && !isRunning { ProgressView().controlSize(.small) }
+            if isBusy && !isRunning && rows.isEmpty { ListLoadingSkeleton(rowCount: 3) }
             Divider()
             HStack {
                 Spacer()

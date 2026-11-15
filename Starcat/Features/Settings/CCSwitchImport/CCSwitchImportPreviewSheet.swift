@@ -50,7 +50,7 @@ struct CCSwitchImportPreviewSheet: View {
     @State private var outcome: CCSwitchImportOutcome?
     @State private var importTask: Task<Void, Never>?
 
-    private enum Phase {
+    private enum Phase: Hashable {
         case preview
         case progress
         case result
@@ -75,6 +75,7 @@ struct CCSwitchImportPreviewSheet: View {
             header
             Divider()
             content
+                .nativeDetailTransition(value: phase)
             Divider()
             footer
         }
@@ -136,6 +137,7 @@ struct CCSwitchImportPreviewSheet: View {
                             }
                         }
                         .toggleStyle(.checkbox)
+                        .listRowSurface(isSelected: selectedIDs.contains(candidate.id))
                     }
                 }
             }
@@ -150,6 +152,7 @@ struct CCSwitchImportPreviewSheet: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        .listRowSurface()
                     }
                 }
             }
@@ -168,6 +171,8 @@ struct CCSwitchImportPreviewSheet: View {
                 Section("settings.ai.provider.importCCSwitch.result.success") {
                     ForEach(outcome.succeeded) { row in
                         Text(row.displayName)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .listRowSurface()
                     }
                 }
             }
@@ -189,6 +194,7 @@ struct CCSwitchImportPreviewSheet: View {
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
+                        .listRowSurface()
                     }
                 }
             }

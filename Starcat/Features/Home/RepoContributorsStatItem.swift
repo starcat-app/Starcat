@@ -150,6 +150,7 @@ struct RepoContributorsStatItem: View {
                                 total: total
                             )
                         )
+                        .listRowSurface(index: index)
                         if index < ranked.count - 1 {
                             Divider()
                         }

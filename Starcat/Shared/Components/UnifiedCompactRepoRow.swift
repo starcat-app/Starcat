@@ -28,6 +28,7 @@ struct UnifiedCompactRepoRow<AdditionalMetadata: View>: View {
 
     /// 达到选择上限时降低未选项视觉，但仍由外层 Button 决定是否可点击。
     let isEnabled: Bool
+    let rowIndex: Int
 
     private let additionalMetadata: AdditionalMetadata
 
@@ -42,6 +43,7 @@ struct UnifiedCompactRepoRow<AdditionalMetadata: View>: View {
         isChecked: Bool,
         isHighlighted: Bool,
         isEnabled: Bool = true,
+        rowIndex: Int = 0,
         @ViewBuilder additionalMetadata: () -> AdditionalMetadata
     ) {
         self.fullName = fullName
@@ -52,13 +54,14 @@ struct UnifiedCompactRepoRow<AdditionalMetadata: View>: View {
         self.isChecked = isChecked
         self.isHighlighted = isHighlighted
         self.isEnabled = isEnabled
+        self.rowIndex = rowIndex
         self.additionalMetadata = additionalMetadata()
     }
 
     var body: some View {
         // 紧凑选择器与完整仓库卡片共享语言色背景，让高密度列表仍能快速建立
         // 仓库的视觉辨识；左侧勾选继续使用系统 accent，单独表达多选状态。
-        RepoRowSurface(isSelected: isHighlighted, accentColor: accentColor) {
+        RepoRowSurface(isSelected: isHighlighted, accentColor: accentColor, rowIndex: rowIndex) {
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "checkmark")
                     .font(interfaceScale.font(.caption, weight: .semibold))

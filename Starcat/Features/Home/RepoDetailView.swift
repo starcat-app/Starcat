@@ -331,6 +331,12 @@ struct ReadmeStateView: View {
     /// loading 阶段短暂保留上一份文档，让同一个 WKWebView 实例留在视图树中。
     /// 骨架是不透明的，保留内容不会被用户看到，也不会接收点击或进入辅助功能树。
     @State private var retainedReadmeDocument: PresentedReadmeDocument?
+    @State private var renderedReadmeDocumentID: String?
+    @State private var failedReadmeDocumentID: String?
+    /// WebKit 失败后即使网络返回相同缓存，也需要新的文档身份重新导航。
+    @State private var readmeRetryGeneration = 0
+    @State private var isReadmeContentVisible = false
+    @State private var isReadmeSkeletonVisible = true
 
     /// 非 Manage 的 README 详情页通过显式 repo 开启同一套 Star History DOM 状态机；
     /// Manage 仍由 `ManageDetailContent` 持有，避免同一份 README 产生两个加载器。
@@ -391,10 +397,8 @@ struct ReadmeStateView: View {
         static let contentRevealSeconds = 0.36
     }
 
-    /// README 渲染层的轻量文档快照。
-    ///
-    /// `identity` 使用 scope + 缓存时间 + 字节数：它只用于本地视图更新判定，不承担
-    /// 持久化校验，因此不需要在 SwiftUI body 中反复计算整份 HTML 的 SHA-256。
+    /// README 渲染层的轻量文档快照。身份复用 VM 文档与本地渲染重试序号，
+    /// 不在 SwiftUI body 中反复计算整份 HTML 的 SHA-256。
     private struct PresentedReadmeDocument {
         let html: String
         let cachedAt: Date
@@ -402,28 +406,64 @@ struct ReadmeStateView: View {
         let baseURL: URL?
     }
 
+    /// 交接任务既跟随文档，也跟随等待结束；终态没有 documentID，不能与 loading 共用身份。
+    /// 只保存短身份与阶段，避免在 body 重算时比较 HTML 或因缓存时间更新而重播过渡。
+    struct HandoffKey: Equatable {
+        enum Phase: Equatable {
+            case waiting
+            case document(String)
+            case resolved
+        }
+
+        let scopeIdentity: String
+        let phase: Phase
+
+        init(scopeIdentity: String, state: ReadmeViewModel.LoadState,
+             documentIdentity: String?, isStateStale: Bool) {
+            self.scopeIdentity = scopeIdentity
+            if isStateStale {
+                phase = .waiting
+            } else {
+                switch state {
+                case .idle, .loading:
+                    phase = .waiting
+                case .loaded:
+                    phase = documentIdentity.map(Phase.document) ?? .waiting
+                case .empty, .requiresLogin, .error:
+                    phase = .resolved
+                }
+            }
+        }
+    }
+
     var body: some View {
         let currentDocument = currentReadmeDocument
-        let presentedDocument = currentDocument
-            ?? (showsReadmePlaceholder ? retainedReadmeDocument : nil)
 
         ZStack(alignment: .topLeading) {
-            if let presentedDocument {
+            if let presentedDocument = retainedReadmeDocument {
                 loadedReadmeContent(presentedDocument)
-                    .opacity(showsReadmePlaceholder ? 0 : 1)
-                    .allowsHitTesting(!showsReadmePlaceholder)
-                    .accessibilityHidden(showsReadmePlaceholder)
-                    .transition(readmeContentTransition)
+                    .opacity(isReadmeContentVisible ? 1 : 0)
+                    .blur(radius: reduceMotion || isReadmeContentVisible ? 0 : 10)
+                    .allowsHitTesting(isReadmeContentVisible && presentedDocument.identity == currentDocument?.identity)
+                    .accessibilityHidden(!isReadmeContentVisible || presentedDocument.identity != currentDocument?.identity)
                     .zIndex(0)
             }
 
-            if showsReadmePlaceholder {
+            if isReadmeSkeletonVisible {
                 readmePlaceholder
                     .transition(readmePlaceholderTransition)
                     .zIndex(1)
             }
 
-            if !showsReadmePlaceholder, currentDocument == nil {
+            if let failedReadmeDocumentID, failedReadmeDocumentID == currentDocument?.identity {
+                ContentUnavailableView {
+                    Label("error.loadFailed", systemImage: "exclamationmark.triangle")
+                } actions: {
+                    Button("action.retry", action: retryReadme)
+                }
+                .transition(readmeContentTransition)
+                .zIndex(1)
+            } else if retainedReadmeDocument == nil, !isReadmeSkeletonVisible, currentDocument == nil {
                 resolvedNonLoadedContent
                     .transition(readmeContentTransition)
                     .zIndex(1)
@@ -432,9 +472,17 @@ struct ReadmeStateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
         .animation(
-            reduceMotion ? nil : .easeOut(duration: ReadmeRevealTiming.contentRevealSeconds),
-            value: showsReadmePlaceholder
+            .easeOut(duration: reduceMotion ? 0.12 : ReadmeRevealTiming.contentRevealSeconds),
+            value: isReadmeSkeletonVisible
         )
+        .task(id: HandoffKey(
+            scopeIdentity: refreshCommandIdentity,
+            state: state,
+            documentIdentity: currentDocument?.identity,
+            isStateStale: isStateStaleForScope
+        )) {
+            await handOffReadmeDocument()
+        }
         .task(id: readmeStarHistoryPreloadIdentity) {
             await preloadReadmeStarHistoryIfNeeded()
         }
@@ -481,18 +529,10 @@ struct ReadmeStateView: View {
             identity: "\(refreshCommandIdentity)-\(readmeVM.isRefreshing)",
             title: String.l10n("commands.actions.refreshCurrentDetail"),
             isEnabled: !readmeVM.isRefreshing,
-            action: onRetry
+            action: retryReadme
         )
         .onChange(of: translationSyncKey, initial: true) { _, _ in
             syncSharedTranslationToCurrentRepo()
-        }
-        .onChange(of: readmeDocumentToken, initial: true) { _, _ in
-            if let currentReadmeDocument {
-                retainedReadmeDocument = currentReadmeDocument
-            } else if !showsReadmePlaceholder {
-                // empty / error / requiresLogin 是终态，不再为它们保留旧 WebView。
-                retainedReadmeDocument = nil
-            }
         }
         .onChange(of: settings.readmeTranslationLanguage) { _, newLanguage in
             applyTranslationLanguage(newLanguage)
@@ -517,16 +557,84 @@ struct ReadmeStateView: View {
     }
 
     private var readmePlaceholderTransition: AnyTransition {
-        reduceMotion ? .identity : .opacity
+        .opacity
     }
 
-    /// 内容从略缩小 + 透明淡入，骨架同步 opacity 淡出，形成轻微 crossfade。
+    /// 空态和错误内容使用淡化；正文在稳定的 WebView 外层完成模糊与透明度交接。
     private var readmeContentTransition: AnyTransition {
-        guard !reduceMotion else { return .identity }
-        return .asymmetric(
-            insertion: .opacity.combined(with: .scale(scale: 0.992, anchor: .topLeading)),
-            removal: .opacity
-        )
+        .opacity
+    }
+
+    /// 请求已在 VM 中立即开始；这里仅等旧页退场再更新 DOM，保持同一个 WKWebView。
+    /// HTML 到达后继续等当前 documentID 的导航完成，快速切换取消的任务不得发布旧快照。
+    private func handOffReadmeDocument() async {
+        if retainedReadmeDocument != nil {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12), completionCriteria: .removed) {
+                    isReadmeContentVisible = false
+                } completion: {
+                    continuation.resume()
+                }
+            }
+        }
+        guard !Task.isCancelled else { return }
+        failedReadmeDocumentID = nil
+        if let document = currentReadmeDocument {
+            if retainedReadmeDocument?.identity != document.identity {
+                renderedReadmeDocumentID = nil
+            }
+            retainedReadmeDocument = document
+            updateReadmeVisibility()
+        } else if showsReadmePlaceholder {
+            withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.18)) {
+                isReadmeSkeletonVisible = true
+            }
+        } else {
+            // 空内容、登录提示和请求失败都是终态，必须结束骨架并保留重试入口。
+            retainedReadmeDocument = nil
+            renderedReadmeDocumentID = nil
+            withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
+                isReadmeSkeletonVisible = false
+            }
+        }
+    }
+
+    /// 缓存回切仍在当前 WebView 中时无需再次导航；其余正文必须等待对应 ready。
+    private func updateReadmeVisibility() {
+        let isReady = currentReadmeDocument?.identity == retainedReadmeDocument?.identity
+            && renderedReadmeDocumentID != nil
+            && renderedReadmeDocumentID == retainedReadmeDocument?.identity
+        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
+            isReadmeContentVisible = isReady
+            isReadmeSkeletonVisible = !isReady
+        }
+    }
+
+    private func receiveReadmeReady(_ documentID: String) {
+        guard documentID == retainedReadmeDocument?.identity,
+              documentID == currentReadmeDocument?.identity else { return }
+        renderedReadmeDocumentID = documentID
+        failedReadmeDocumentID = nil
+        updateReadmeVisibility()
+    }
+
+    /// 渲染失败不能无限显示骨架；保留宿主并展示可恢复的错误入口。
+    private func receiveReadmeFailure(_ documentID: String) {
+        guard documentID == retainedReadmeDocument?.identity,
+              documentID == currentReadmeDocument?.identity else { return }
+        failedReadmeDocumentID = documentID
+        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
+            isReadmeContentVisible = false
+            isReadmeSkeletonVisible = false
+        }
+    }
+
+    /// 重试只刷新当前失败的文档身份，不重建阅读器宿主或同仓库的其它编辑区域。
+    private func retryReadme() {
+        if failedReadmeDocumentID != nil {
+            readmeRetryGeneration += 1
+        }
+        onRetry()
     }
 
     /// 切换 repo 时 `state` 可能仍停留在上一个 `.loaded`（onChange 晚于 body 一帧）；
@@ -549,7 +657,7 @@ struct ReadmeStateView: View {
         return PresentedReadmeDocument(
             html: html,
             cachedAt: cachedAt,
-            identity: "\(refreshCommandIdentity)|\(readmeVM.activeDocumentID ?? "unidentified")",
+            identity: "\(refreshCommandIdentity)|\(readmeVM.activeDocumentID ?? "unidentified")|retry:\(readmeRetryGeneration)",
             baseURL: baseURL
         )
     }
@@ -801,7 +909,9 @@ struct ReadmeStateView: View {
                     translationSourceSnapshot = snapshot
                 },
                 starHistoryRenderState: effectiveStarHistoryRenderState,
-                onApproachingBottom: effectiveOnApproachingBottom
+                onApproachingBottom: effectiveOnApproachingBottom,
+                onDocumentReady: receiveReadmeReady,
+                onDocumentFailed: receiveReadmeFailure
             )
             // 与 ActivityReleaseDetailContent 对齐：body slot 必须吃满 Scaffold 剩余
             // 高度，否则 WKWebView 在 VStack 里按零 intrinsic 高度布局 → 闪一下后空白。

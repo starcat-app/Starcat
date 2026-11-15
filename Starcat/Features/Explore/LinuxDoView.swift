@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct LinuxDoView: View {
+    @Namespace private var selectionSpace
     let store: LinuxDoStore
     @Binding var selectedRepoID: Int64?
     @Binding var selectedRepo: DiscoveryRepoDTO?
@@ -170,7 +171,11 @@ struct LinuxDoView: View {
                     if selection.isActive { selection.toggle(SelectionSnapshot(ghRepoId: repo.repoID, owner: repo.owner, name: repo.name)) }
                     else { selectedRepoID = repo.repoID; selectedRepo = repo }
                 } label: {
-                    UnifiedRepoRow(card: repo.asCardData(registry: dependencies.starredRegistry, isInLibrary: libraryStates[repo.repoID] == .inLibrary), isSelected: selection.isActive ? selection.contains(ghRepoId: repo.repoID) : selectedRepoID == repo.repoID)
+                    UnifiedRepoRow(
+                        card: repo.asCardData(registry: dependencies.starredRegistry, isInLibrary: libraryStates[repo.repoID] == .inLibrary),
+                        isSelected: selection.isActive ? selection.contains(ghRepoId: repo.repoID) : selectedRepoID == repo.repoID,
+                        selectionNamespace: selection.isActive ? nil : selectionSpace
+                    )
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()

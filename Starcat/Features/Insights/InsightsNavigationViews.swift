@@ -22,6 +22,7 @@ enum InsightsColumnChrome {
 
 /// 洞察中心中栏：当前主题的摘要和可下钻问题集合。
 struct InsightsListView: View {
+    @Namespace private var selectionSpace
 
     @Binding var topic: InsightsTopic
     @Binding var selection: InsightsSelection
@@ -42,15 +43,16 @@ struct InsightsListView: View {
             ZStack(alignment: .topLeading) {
                 List(selection: $selection) {
                     Section("insights.list.section.analysis") {
-                        ForEach(topic.contentSelections) { item in
-                            row(item, count: nil)
+                        ForEach(Array(topic.contentSelections.enumerated()), id: \.element.id) { index, item in
+                            row(item, count: nil, rowIndex: index)
                         }
                     }
 
                     if !attentionSelections.isEmpty {
                         Section("insights.list.section.attention") {
-                            ForEach(attentionSelections) { item in
-                                row(item, count: count(for: item))
+                            ForEach(Array(attentionSelections.enumerated()), id: \.element.id) { index, item in
+                                // 第二组延续完整展示顺序，行身份仍使用业务 ID。
+                                row(item, count: count(for: item), rowIndex: topic.contentSelections.count + index)
                             }
                         }
                     }
@@ -62,7 +64,7 @@ struct InsightsListView: View {
                 .detailContentTransition()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: topic)
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: topic)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         // 原生导航标题可能在内容的 locale 环境外解析 Text，
@@ -103,7 +105,7 @@ struct InsightsListView: View {
     }
 
     @ViewBuilder
-    private func row(_ item: InsightsSelection, count: Int?) -> some View {
+    private func row(_ item: InsightsSelection, count: Int?, rowIndex: Int) -> some View {
         HStack(spacing: 10) {
             BusinessIcon(source: item.iconSource, pointSize: (item.iconSource.isAsset ? 16 : 13) * interfaceScale.multiplier)
                 .foregroundStyle(InsightsColor.resolve(item.tintName))
@@ -122,6 +124,8 @@ struct InsightsListView: View {
             }
         }
         .padding(.vertical, 3)
+        .listRowSurface(index: rowIndex,
+                        isSelected: selection == item, selectionNamespace: selectionSpace)
         .tag(item)
     }
 

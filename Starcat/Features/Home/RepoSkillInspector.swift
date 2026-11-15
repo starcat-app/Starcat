@@ -61,8 +61,9 @@ struct RepoSkillInspector: View {
                 .padding(12)
             }
             VStack(spacing: 0) {
-                ForEach(session.destinations.filter { $0.preset == nil }) { destination in
+                ForEach(Array(session.destinations.filter { $0.preset == nil }.enumerated()), id: \.element.id) { index, destination in
                     destinationRow(destination)
+                        .listRowSurface(index: index)
                 }
                 if session.destinations.isEmpty {
                     Text("repo.skills.destination.choose")
@@ -225,7 +226,10 @@ struct RepoSkillInspector: View {
                                 .foregroundStyle(.secondary)
                                 .monospacedDigit()
                         }
-                        ForEach(items) { progressRow($0) }
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                            progressRow(item)
+                                .listRowSurface(index: index)
+                        }
                     }
                 }
                 if session.displayedQueue.isEmpty {
@@ -289,7 +293,7 @@ struct RepoSkillInspector: View {
                 .font(interfaceScale.font(.caption))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            ForEach(session.conflicts) { item in
+            ForEach(Array(session.conflicts.enumerated()), id: \.element.id) { index, item in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: item.skill.name)
                         .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
@@ -307,7 +311,7 @@ struct RepoSkillInspector: View {
                     .controlSize(.small)
                 }
                 .padding(10)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+                .listRowSurface(index: index, cornerRadius: 6)
             }
         }
         .padding(12)

@@ -91,7 +91,8 @@ struct SystemTranslationLanguageManagerSheet: View {
     @ViewBuilder
     private var content: some View {
         if !catalog.isLoaded(for: resolvedTarget) {
-            ProgressView("settings.translation.system.readiness.loading")
+            ListLoadingSkeleton(rowCount: 8, rowHeight: 44)
+                .padding(16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if sortedLanguages.isEmpty {
             ContentUnavailableView(
@@ -110,6 +111,7 @@ struct SystemTranslationLanguageManagerSheet: View {
                         downloadDisabled: pendingSourceIdentifier != nil || catalog.isRefreshing,
                         onDownload: { requestDownload(for: language) }
                     )
+                    .listRowSurface()
                 }
             }
             .listStyle(.inset(alternatesRowBackgrounds: true))

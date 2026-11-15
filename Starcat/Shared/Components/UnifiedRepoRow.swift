@@ -150,7 +150,7 @@ struct UnifiedRepoRow: View {
     /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
     let trailingReservedWidth: CGFloat
-    /// 单选历史列表用共享背景滑动；既有调用未提供 namespace 时保持原样。
+    /// 持续单选列表共享背景滑动；未提供 namespace 时保留各行独立选中。
     let selectionNamespace: Namespace.ID?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme

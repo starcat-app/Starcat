@@ -19,7 +19,10 @@ struct AIUsageDashboardView: View {
 
     @State var viewModel: AIUsageDashboardViewModel
     @State private var detailTab: DetailTab = .feature
+    @State private var hasLoadedSnapshot = false
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(AppSettings.self) private var settings
 
@@ -27,27 +30,32 @@ struct AIUsageDashboardView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            Group {
-                if viewModel.snapshot.summary.callCount == 0, !viewModel.isLoading, viewModel.errorMessage == nil {
+            ZStack {
+                if !hasLoadedSnapshot || viewModel.isLoading,
+                   viewModel.snapshot.summary.callCount == 0, viewModel.errorMessage == nil {
+                    dashboardSkeleton
+                        .transition(.opacity)
+                } else if viewModel.snapshot.summary.callCount == 0, !viewModel.isLoading, viewModel.errorMessage == nil {
                     emptyState
+                        .transition(.opacity)
                 } else {
                     dashboard
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay {
-                if viewModel.isLoading, viewModel.snapshot.summary.callCount == 0 {
-                    ProgressView()
-                        .controlSize(.large)
-                }
-            }
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.isLoading)
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: hasLoadedSnapshot)
         }
         .frame(minWidth: 980, minHeight: 640)
         // AppKit 恢复较大窗口时，内容必须填满 hosting view 并钉在顶部；
         // 否则空状态只有最小固有高度，会在窗口中垂直居中，形成大块顶部留白。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
-        .task { await viewModel.reload() }
+        .task {
+            await viewModel.reload()
+            hasLoadedSnapshot = true
+        }
     }
 
     private var header: some View {
@@ -165,6 +173,44 @@ struct AIUsageDashboardView: View {
         .help(tooltip ?? selection)
         .accessibilityLabel(Text(title) + Text(": ") + Text(selection))
         .fixedSize()
+    }
+
+    /// 首次读取沿用六张指标、趋势图和明细区域；已有统计刷新时保留图表与原生 Table。
+    private var dashboardSkeleton: some View {
+        ScrollView {
+            SkeletonAnimatedPhase { phase in
+                let palette = SkeletonPalette.forColorScheme(colorScheme)
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        ForEach(0..<6, id: \.self) { _ in
+                            VStack(alignment: .leading, spacing: 12) {
+                                SkeletonBlock(width: 60, height: 12, phase: phase, palette: palette)
+                                SkeletonBlock(width: 70, height: 24, cornerRadius: 5, phase: phase, palette: palette)
+                                SkeletonBlock(width: 70, height: 10, phase: phase, palette: palette)
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                    SkeletonBlock(height: 220, cornerRadius: 10, phase: phase, palette: palette)
+                    VStack(alignment: .leading, spacing: 16) {
+                        SkeletonBlock(width: 160, height: 22, cornerRadius: 5, phase: phase, palette: palette)
+                        ForEach(0..<5, id: \.self) { _ in
+                            HStack(spacing: 16) {
+                                SkeletonBlock(width: 140, height: 12, phase: phase, palette: palette)
+                                SkeletonBlock(height: 12, phase: phase, palette: palette)
+                                SkeletonBlock(width: 64, height: 12, phase: phase, palette: palette)
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .padding(24)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var dashboard: some View {
@@ -354,7 +400,7 @@ struct AIUsageDashboardView: View {
     private func dimensionRows(_ points: [AIUsageDimensionPoint], kind: DimensionKind) -> some View {
         let maxTokens = max(1, points.map(\.totalTokens).max() ?? 1)
         return LazyVStack(spacing: 0) {
-            ForEach(points) { point in
+            ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
                 Button {
                     switch kind {
                     case .feature:
@@ -400,6 +446,7 @@ struct AIUsageDashboardView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .listRowSurface(index: index)
                 if point.id != points.last?.id { Divider() }
             }
         }

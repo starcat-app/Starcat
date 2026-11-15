@@ -251,7 +251,7 @@ struct LocalAIModelsSection: View {
         _ type: LocalAIModelType, selected: LocalAIModelCatalogEntry
     ) -> some View {
         VStack(spacing: 2) {
-            ForEach(LocalAIModelCatalog.entries(of: type)) { entry in
+            ForEach(Array(LocalAIModelCatalog.entries(of: type).enumerated()), id: \.element.id) { index, entry in
                 let isSelected = entry.id == selected.id
                 Button {
                     settings.localAIModelSelections[type.rawValue] = entry.id
@@ -287,10 +287,7 @@ struct LocalAIModelsSection: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(
-                        isSelected ? Color.accentColor.opacity(0.12) : .clear,
-                        in: RoundedRectangle(cornerRadius: 5)
-                    )
+                    .listRowSurface(index: index, isSelected: isSelected)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

@@ -89,8 +89,10 @@ struct SmartCollectionMultiSelectField: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(options) { option in
+                    ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                         Toggle(option.label, isOn: toggleBinding(for: option.id))
+                            .padding(5)
+                            .listRowSurface(index: index, isSelected: selectedIDs.contains(option.id))
                     }
                 }
             }

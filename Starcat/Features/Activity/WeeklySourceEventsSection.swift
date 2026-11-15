@@ -83,8 +83,9 @@ struct WeeklySourceEventsSection: View {
 
     @ViewBuilder
     private var eventRows: some View {
-        ForEach(events) { event in
+        ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
             eventRow(event)
+                .listRowSurface(index: index)
             if event.id != events.last?.id {
                 Divider().padding(.leading, 42)
             }

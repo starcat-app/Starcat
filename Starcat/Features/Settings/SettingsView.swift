@@ -1585,7 +1585,7 @@ struct InterestedLanguagesSettingsSection: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(contains(language) ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .listRowSurface(index: searchResults.firstIndex(of: language) ?? 0, isSelected: contains(language))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

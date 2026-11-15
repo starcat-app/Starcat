@@ -55,11 +55,13 @@ struct LocalAIStatusSection: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            ForEach(models) { row in
+            ForEach(Array(models.enumerated()), id: \.element.id) { index, row in
                 modelRow(row)
+                    .listRowSurface(index: index)
             }
             if showsLaya {
                 layaModelRow
+                    .listRowSurface(index: models.count)
             }
             Text("toolbar.localai.memoryHelp")
                 .font(interfaceScale.font(.captionSmall))

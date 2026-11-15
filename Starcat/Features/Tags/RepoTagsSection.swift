@@ -274,11 +274,14 @@ struct TagPickerView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         let tags = filteredTags(mergedTags)
-                        if tags.isEmpty {
+                        if isLoading && tags.isEmpty {
+                            ListLoadingSkeleton(rowCount: 6, rowHeight: 30, showsIcon: false)
+                        } else if tags.isEmpty {
                             emptyPickerMessage
                         } else {
-                            ForEach(tags) { tag in
+                            ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
                                 pickerRow(tag: tag)
+                                    .listRowSurface(index: index, isSelected: selected.contains(tag.id))
                             }
                         }
                     }
@@ -303,11 +306,6 @@ struct TagPickerView: View {
         .presentationBackground(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             selected = initiallySelected
-        }
-        .overlay {
-            if isLoading {
-                ProgressView().controlSize(.small)
-            }
         }
     }
 

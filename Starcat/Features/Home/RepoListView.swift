@@ -467,6 +467,7 @@ private struct RepoBadgeCacheLoadIdentity: Hashable {
 }
 
 struct RepoListView: View {
+    @Namespace private var selectionSpace
 
     private static let navigationBreadcrumbSeparator = " › "
     private static let navigationBreadcrumbSegmentLimit = 24
@@ -2002,7 +2003,8 @@ struct RepoListView: View {
                             viewModel: viewModel,
                             aiSummaryAvailability: aiSummaryAvailability,
                             noteAvailability: noteAvailability,
-                            isSelected: selection.wrappedValue == pinned.id
+                            isSelected: selection.wrappedValue == pinned.id,
+                            selectionNamespace: store.isActive ? nil : selectionSpace
                         )
                     }
                     .buttonStyle(.plain)
@@ -2039,7 +2041,8 @@ struct RepoListView: View {
                             noteAvailability: noteAvailability,
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
-                                : (selection.wrappedValue == repo.id)
+                                : (selection.wrappedValue == repo.id),
+                            selectionNamespace: store.isActive ? nil : selectionSpace
                         )
                         .background {
                             if item.index == 0 {
@@ -2904,7 +2907,7 @@ struct RepoListView: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             } else {
-                List(results, id: \.self) { language in
+                List(Array(results.enumerated()), id: \.element) { index, language in
                     Button {
                         toggleInterestedLanguageFromFilter(language)
                     } label: {
@@ -2921,6 +2924,7 @@ struct RepoListView: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .listRowSurface(index: index, isSelected: isInterestedLanguage(language))
                 }
                 .listStyle(.plain)
             }
@@ -3045,6 +3049,7 @@ private struct ManageRepoRowContent: View {
     let aiSummaryAvailability: RepoListAISummaryAvailability
     let noteAvailability: RepoListNoteAvailability
     let isSelected: Bool
+    var selectionNamespace: Namespace.ID? = nil
 
     @Environment(AppDependencies.self) private var dependencies
 
@@ -3067,7 +3072,8 @@ private struct ManageRepoRowContent: View {
             semanticHit: viewModel.semanticHit(for: repo.id),
             showLibraryBadge: !isKnowledgeLibraryList,
             hasAISummary: aiSummaryAvailability.contains(repo.id),
-            hasNote: noteAvailability.contains(repo.id)
+            hasNote: noteAvailability.contains(repo.id),
+            selectionNamespace: selectionNamespace
         )
     }
 
