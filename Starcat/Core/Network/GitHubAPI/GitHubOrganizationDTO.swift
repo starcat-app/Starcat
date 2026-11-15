@@ -2,12 +2,12 @@
 //  GitHubOrganizationDTO.swift
 //  Starcat
 //
-//  用户公开组织列表的最小模型，与个人资料一起缓存；不读取私密成员关系。
+//  GitHub 组织的最小模型；公开列表与当前用户授权列表使用相同的响应字段。
 //
 
 import Foundation
 
-/// `/users/{login}/orgs` 返回的公开组织，使用稳定 ID 保持头像更新时的视图身份。
+/// 组织是否公开取决于查询端点；私有成员关系仅由账户浮层持有，不写回公开个人资料 DTO。
 struct GitHubOrganizationDTO: Codable, Equatable, Identifiable, Sendable {
     let id: Int64
     let login: String

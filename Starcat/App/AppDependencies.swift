@@ -453,6 +453,8 @@ final class AppDependencies {
     /// 装配顺序约束：service 必须在 AuthSession 之后建（service.authSession = session 反向 weak 引用）；
     /// 同时 session.userProfileService = service（强引用，session 持有 service）。
     let userProfileService: UserProfileService
+    /// 浮层专属资料与公开分享资料分开存储，首次打开时才拉取。
+    let profileExtrasService: ProfileExtrasService
 
     /// 分享卡开发语言统计服务（当前用户拥有的公开、非 fork 仓库语言聚合）。
     ///
@@ -1774,6 +1776,8 @@ final class AppDependencies {
         userProfileSvc.authSession = session
         session.userProfileService = userProfileSvc
         self.userProfileService = userProfileSvc
+        let profileExtrasSvc = ProfileExtrasService(api: api)
+        self.profileExtrasService = profileExtrasSvc
 
         // 分享卡开发语言服务：从用户拥有的公开仓库聚合 `/languages` 字节数。
         // 与 ContributionService 同样持有具体 GitHubAPIClient，避免把分享卡专属端点扩进全局 mock 协议。
@@ -1893,6 +1897,8 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            // 启动校验 401 不经过 onSignOut；在共用会话出口清理，覆盖退出和凭据失效。
+            if userId == nil { self.profileExtrasService.reset() }
             self.externalStarInbox.resetForAccountChange()
             // 自定义索引跨账号共用同一名称。真实登出/切号必须先清空；冷启动从
             // anonymous 占位库恢复同一账号时可保留到切库后的内容指纹核验。

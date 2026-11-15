@@ -304,6 +304,105 @@ struct GitHubAPIClientTests {
         #expect(user.organizations?.map(\.login) == (statusFails ? ["example-org"] : nil))
     }
 
+    /// 公开列表和授权列表都必须完整分页，组织 ID 去重后仍包含非公开成员关系。
+    @Test("账户组织合并公开和非公开列表", arguments: [false, true])
+    func profileOrganizationsMergeAllPages(forceRefresh: Bool) async throws {
+        let client = makeClient(token: "org-token")
+        URLProtocolStub.requestHandler = { request in
+            let isPublic = request.url?.path == "/users/alice/orgs"
+            let isFirst = request.url?.query?.contains("page=1&") == true
+            let headers = isFirst && !isPublic
+                ? ["Link": #"<https://api.test.invalid/user/orgs?page=3>; rel="next""#] : [:]
+            let body = isPublic ? #"[{"id":1,"login":"public-org"}]"#
+                : (isFirst ? #"[{"id":1,"login":"public-org"},{"id":2,"login":"private-org"}]"#
+                    : #"[{"id":3,"login":"another-private-org"}]"#)
+            return (httpResponse(200, request.url!, headers), Data(body.utf8))
+        }
+        let result = try await client.getProfileOrganizations(login: "alice", forceRefresh: forceRefresh)
+        #expect(result.organizations.map(\.id) == [1, 2, 3])
+        #expect(!result.accessLimited)
+        let requests = URLProtocolStub.receivedRequests
+        #expect(requests.count == 3)
+        #expect(requests.last?.url?.query?.contains("page=3") == true)
+        for request in requests {
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer org-token")
+            #expect(request.cachePolicy == (forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy))
+        }
+    }
+
+    /// 权限不足和 SSO 部分结果都要保留公开组织，并明确标记可见范围可能不完整。
+    @Test("组织权限限制保留公开结果", arguments: [403, 200])
+    func profileOrganizationsReportLimitedAccess(statusCode: Int) async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            if request.url?.path == "/users/alice/orgs" {
+                return (httpResponse(200, request.url!), Data(#"[{"id":1,"login":"public-org"}]"#.utf8))
+            }
+            let body = statusCode == 403 ? #"{"message":"Resource protected by organization restrictions"}"#
+                : #"[{"id":2,"login":"authorized-org"}]"#
+            return (
+                httpResponse(statusCode, request.url!, [
+                    "X-GitHub-SSO": "partial-results; organizations=99", "X-RateLimit-Remaining": "100"
+                ]),
+                Data(body.utf8)
+            )
+        }
+        let result = try await client.getProfileOrganizations(login: "alice", forceRefresh: false)
+        #expect(result.accessLimited)
+        #expect(result.organizations.first?.login == "public-org")
+        #expect(result.organizations.count == (statusCode == 403 ? 1 : 2))
+    }
+
+    /// Sponsors 的两个方向分别分页；GitHub union 中的用户和组织都需要解码。
+    @Test("Sponsors 两个方向完整分页")
+    func profileSponsorsFollowBothConnections() async throws {
+        let client = makeClient()
+        URLProtocolStub.requestHandler = { request in
+            let requestBody = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            let query = requestBody["query"] as! String
+            let variables = requestBody["variables"] as? [String: String]
+            let isSponsors = query.contains("accounts: sponsors(")
+            let isFirst = variables?["after"] == nil
+            let accountID = isSponsors ? (isFirst ? "user-1" : "org-2") : "maintainer-3"
+            let hasNextPage = isSponsors && isFirst
+            let body = """
+            {"data":{"viewer":{"hasSponsorsListing":true,"accounts":{
+              "nodes":[null,{"id":"\(accountID)","login":"\(accountID)","avatarUrl":null}],
+              "pageInfo":{"hasNextPage":\(hasNextPage),"endCursor":\(hasNextPage ? "\"cursor-1\"" : "null")}
+            }}}}
+            """
+            return (httpResponse(200, request.url!), Data(body.utf8))
+        }
+        let result = try await client.getProfileSponsors()
+        #expect(result.hasSponsorsListing)
+        #expect(result.sponsors.map(\.id) == ["user-1", "org-2"])
+        #expect(result.sponsoring.map(\.id) == ["maintainer-3"])
+        #expect(URLProtocolStub.receivedRequests.count == 3)
+    }
+
+    /// 网页抓取必须保持匿名，且把强制刷新策略传到 HTML 请求。
+    @Test("成就网页不携带 API Token")
+    func achievementsPageIsAnonymous() async throws {
+        URLProtocolStub.reset()
+        #expect(GitHubAchievementsClient.anonymousSession.configuration.httpCookieStorage == nil)
+        #expect(!GitHubAchievementsClient.anonymousSession.configuration.httpShouldSetCookies)
+        URLProtocolStub.requestHandler = { request in
+            let html = """
+            <meta content="profiles_achievements"><turbo-frame id="user-profile-frame"></turbo-frame>
+            """
+            return (httpResponse(200, request.url!), Data(html.utf8))
+        }
+        let result = try await GitHubAchievementsClient.fetch(
+            login: "alice", forceRefresh: true, session: URLProtocolStub.ephemeralSession()
+        )
+        #expect(result.isEmpty)
+        let request = try #require(URLProtocolStub.receivedRequests.first)
+        #expect(request.url?.host == "github.com")
+        #expect(request.url?.query == "tab=achievements")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+    }
+
     @Test("getUserSocialAccounts: 使用公开用户端点并解码 X 与通用链接")
     func getUserSocialAccountsDecodesPublicLinks() async throws {
         let client = makeClient(token: nil)
