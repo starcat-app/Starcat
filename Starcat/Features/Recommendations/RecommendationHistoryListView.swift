@@ -14,7 +14,6 @@ struct RecommendationHistoryListView: View {
     let onCountChange: (Int) -> Void
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
-    @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var quickSearchDraft = ""
     @State private var isQuickSearchExpanded = false
@@ -26,7 +25,7 @@ struct RecommendationHistoryListView: View {
         return id
     }
     private var scope: String { "\(accountID.map(String.init) ?? "anonymous")|\(dependencies.databaseScopeRevision)" }
-    private var queryIdentity: String { "\(model.filter.rawValue)|\(model.search)" }
+    private var queryIdentity: String { "\(model.dateScope.identity)|\(model.filter.rawValue)|\(model.search)" }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -156,7 +155,7 @@ struct RecommendationHistoryListView: View {
             UnifiedRepoRow(
                 card: item.asCardData(
                     registry: dependencies.starredRegistry,
-                    inlineMetadata: RepoCardInlineMetadata(systemImage: "clock", text: entry.dateText(locale: locale)),
+                    inlineMetadata: nil,
                     footerMetadata: entry.feedback(starredIDs: dependencies.starredRegistry.ids) == .dismissed
                         ? RepoCardInlineMetadata(systemImage: "hand.thumbsdown", text: String.l10n("recommendations.history.dismissed")) : nil
                 ),
@@ -167,7 +166,7 @@ struct RecommendationHistoryListView: View {
             RepoRowSurface(isSelected: model.selectedID == entry.id, selectionNamespace: selectionNamespace) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("recommendations.history.unavailable").font(.subheadline.weight(.semibold))
-                    Text("#\(entry.id) · \(entry.dateText(locale: locale))").font(.caption).foregroundStyle(.secondary)
+                    Text("#\(entry.id)").font(.caption).foregroundStyle(.secondary)
                     if entry.feedback(starredIDs: dependencies.starredRegistry.ids) == .dismissed {
                         Text("recommendations.history.dismissed").font(.caption).foregroundStyle(.secondary)
                     }
@@ -190,22 +189,5 @@ struct RecommendationHistoryListView: View {
     private func rebuild() {
         model.rebuild(entries: store.historyEntries, starredIDs: dependencies.starredRegistry.ids)
         onCountChange(model.filtered.count)
-    }
-}
-
-extension RecommendationHistoryEntry {
-    /// “推荐于”明确区别于仓库更新时间；旧记录只有日期时不补造时分秒。
-    func dateText(locale: Locale) -> String {
-        let date: Date?
-        if let recommendedAt { date = recommendedAt }
-        else if let day = recommendedDay {
-            let parts = day.split(separator: "-").compactMap { Int($0) }
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = .current
-            date = parts.count == 3 ? calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) : nil
-        } else { date = nil }
-        guard let date else { return String.l10n("recommendations.history.unknownDate") }
-        return String(format: String.l10n("recommendations.history.dateFormat"),
-                      date.formatted(.dateTime.year().month().day().locale(locale)))
     }
 }

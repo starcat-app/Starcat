@@ -2453,10 +2453,13 @@ struct RepoListView: View {
 
     private var exploreNavigationTitle: Text {
         if selectedExploreMode == .recommendations {
+            let dateTitle = recommendationHistoryModel.dateScope.title(locale: locale)
+            let scopeTitle = recommendationHistoryModel.filter == .all ? dateTitle
+                : "\(dateTitle) · \(String.l10n(recommendationHistoryModel.filter.titleKey))"
             return highlightedNavigationTitle(
                 prefix: [String.l10n("nav.trending"), selectedExploreMode.localizedTitle]
                     .joined(separator: Self.navigationBreadcrumbSeparator),
-                thirdLevelTitle: String.l10n(recommendationHistoryModel.filter.titleKey)
+                thirdLevelTitle: scopeTitle
             )
         }
         let presentation = ExploreNavigationPresentation.make(

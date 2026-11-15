@@ -1427,6 +1427,7 @@ struct HomeView: View {
             currentActivityTintColor: derivedActivityTintColor,
             dailyRadarPreviewPresentation: dailyRadarPreviewPresentation,
             dailyRadarModel: dailyRadarModel,
+            recommendationHistoryModel: recommendationHistoryModel,
             newFeatureBadgeStore: newFeatureBadgeStore,
             onOpenFollowGraph: { relation in
                 followGraphRelation = relation

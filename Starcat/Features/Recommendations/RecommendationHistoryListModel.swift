@@ -14,6 +14,7 @@ import Observation
 final class RecommendationHistoryListModel {
     var search = ""
     var filter: RecommendationHistoryFilter = .all
+    var dateScope: RecommendationHistoryDateScope = .all
     var selectedID: Int64?
     private(set) var filtered: [RecommendationHistoryEntry] = []
     private(set) var visibleLimit = 100
@@ -32,6 +33,7 @@ final class RecommendationHistoryListModel {
         self.scope = scope
         search = ""
         filter = .all
+        dateScope = .all
         selectedID = nil
         filtered = []
         visibleLimit = 100
@@ -40,17 +42,18 @@ final class RecommendationHistoryListModel {
         revision &+= 1
     }
 
-    /// 日期沿用仓储顺序；只有搜索与反馈筛选参与本地查询，不混入其它探索模式的语言/分类。
+    /// 首次推荐日、搜索与反馈共同筛选；保持仓储顺序，不混入其它探索模式的语言/分类。
     func rebuild(entries: [RecommendationHistoryEntry], starredIDs: Set<Int64>) {
         let previousIDs = filtered.map(\.id)
         let query = QuickSearchTextMatcher.normalized(search)
-        let identity = "\(filter.rawValue)|\(query)"
+        let identity = "\(dateScope.identity)|\(filter.rawValue)|\(query)"
         if lastQuery != identity {
             visibleLimit = 100
             lastQuery = identity
             paginationIdentity = UUID()
         }
         filtered = entries.filter { entry in
+            guard dateScope.includes(entry) else { return false }
             guard filter == .all || entry.feedback(starredIDs: starredIDs) == filter else { return false }
             guard !query.isEmpty else { return true }
             let text = [entry.item?.fullName, entry.item?.description, entry.item?.language, String(entry.id)]

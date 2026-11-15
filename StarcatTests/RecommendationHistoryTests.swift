@@ -179,6 +179,54 @@ struct RecommendationHistoryTests {
         #expect(json["items"] != nil)
     }
 
+    @Test("最近五个自然日与更早日期正确分组，跨月和日期不详不误排")
+    func dateGroups() throws {
+        let zone = try #require(TimeZone(secondsFromGMT: 0))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-11-03T12:00:00Z"))
+        let entries = [
+            entry(1, day: "2026-11-3"), entry(2, day: "2026-11-1"),
+            entry(3, day: "2026-10-30"), entry(4, day: "2026-10-29"),
+            entry(5, day: nil), entry(6, day: "2026-02-30")
+        ]
+        let dates = RecommendationHistoryDates(entries: entries, now: now, timeZone: zone)
+        #expect(dates.recent.map(\.day) == ["2026-11-3", "2026-11-1", "2026-10-30"])
+        #expect(dates.older.map(\.day) == ["2026-10-29"])
+        #expect(dates.unknownCount == 2)
+    }
+
+    @Test("日期与搜索反馈组合，切日期重置分页并清除不可见选择")
+    func dateSelectionAndPagination() {
+        let model = RecommendationHistoryListModel()
+        model.activate(scope: "42|1")
+        let entries = (1...120).map { entry(Int64($0), day: "2026-11-15") }
+            + [entry(121, day: "2026-11-14"), entry(122, day: nil)]
+        model.rebuild(entries: entries, starredIDs: [121])
+        model.loadMore()
+        #expect(model.rows.count == 122)
+        let identity = model.paginationIdentity
+        model.selectedID = 1
+        model.dateScope = .day("2026-11-14")
+        model.filter = .starred
+        model.search = "repo121"
+        model.rebuild(entries: entries, starredIDs: [121])
+        #expect(model.rows.map(\.id) == [121])
+        #expect(model.selectedID == nil)
+        #expect(model.visibleLimit == 100)
+        #expect(model.paginationIdentity != identity)
+        model.dateScope = .unknown
+        model.filter = .all
+        model.search = ""
+        model.rebuild(entries: entries, starredIDs: [])
+        #expect(model.rows.map(\.id) == [122])
+        model.activate(scope: "99|2")
+        #expect(model.dateScope == .all)
+    }
+
+    private func entry(_ id: Int64, day: String?) -> RecommendationHistoryEntry {
+        RecommendationHistoryEntry(id: id, item: item(id), recommendedAt: nil,
+                                   recommendedDay: day, batchID: nil, isDismissed: false)
+    }
+
     private func item(_ id: Int64) -> RepoRecommendationItem {
         RepoRecommendationItem(repoID: id, fullName: "owner/repo\(id)", description: "Offline description",
                                language: "Swift", stars: 10, forks: 1, archived: false,
