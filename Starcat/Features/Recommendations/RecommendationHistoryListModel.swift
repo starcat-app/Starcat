@@ -17,13 +17,14 @@ final class RecommendationHistoryListModel {
     var dateScope: RecommendationHistoryDateScope = .all
     var selectedID: Int64?
     private(set) var filtered: [RecommendationHistoryEntry] = []
+    /// 当前页只在数据或分页变化时重建；每行读取分页计数不能再次复制整页数组。
+    private(set) var rows: [RecommendationHistoryEntry] = []
     private(set) var visibleLimit = 100
     private(set) var revision = 0
     private(set) var paginationIdentity = UUID()
     private var scope = ""
     private var lastQuery = ""
 
-    var rows: [RecommendationHistoryEntry] { Array(filtered.prefix(visibleLimit)) }
     var hasMore: Bool { visibleLimit < filtered.count }
     var selectedEntry: RecommendationHistoryEntry? { filtered.first { $0.id == selectedID } }
 
@@ -36,6 +37,7 @@ final class RecommendationHistoryListModel {
         dateScope = .all
         selectedID = nil
         filtered = []
+        rows = []
         visibleLimit = 100
         lastQuery = ""
         paginationIdentity = UUID()
@@ -62,10 +64,18 @@ final class RecommendationHistoryListModel {
         }
         if let selectedID, !filtered.contains(where: { $0.id == selectedID }) { self.selectedID = nil }
         if filtered.map(\.id) != previousIDs { revision &+= 1 }
+        // ID 相同也可能更新简介或反馈，不能只按 ID 变化刷新页面内容。
+        refreshRows()
     }
 
+    /// 追加当前筛选的下一页，不改变选择、分页身份或行入场修订号。
     func loadMore() {
         guard hasMore else { return }
         visibleLimit += 100
+        refreshRows()
+    }
+
+    private func refreshRows() {
+        rows = Array(filtered.prefix(visibleLimit))
     }
 }

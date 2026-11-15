@@ -117,8 +117,9 @@ struct RecommendationHistoryListView: View {
     }
 
     private var historyList: some View {
-        List {
-            ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, entry in
+        let rows = model.rows
+        return List {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, entry in
                 Button {
                     withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82)) {
                         model.selectedID = entry.id
@@ -133,8 +134,8 @@ struct RecommendationHistoryListView: View {
                 .listRowBackground(Color.clear)
                 .listRowReveal(index: index, snapshotID: model.revision)
                 .automaticListPagination(
-                    appearingIndex: index, visibleItemCount: model.rows.count,
-                    loadedItemCount: model.rows.count, hasMore: model.hasMore, isLoading: false,
+                    appearingIndex: index, visibleItemCount: rows.count,
+                    loadedItemCount: rows.count, hasMore: model.hasMore, isLoading: false,
                     identity: model.paginationIdentity.uuidString
                 ) { model.loadMore() }
             }
@@ -144,7 +145,7 @@ struct RecommendationHistoryListView: View {
         .scrollContentBackground(.hidden)
         .id(model.paginationIdentity)
         .automaticListPaginationFill(
-            visibleItemCount: model.rows.count, loadedItemCount: model.rows.count,
+            visibleItemCount: rows.count, loadedItemCount: rows.count,
             hasMore: model.hasMore, isLoading: false, identity: model.paginationIdentity.uuidString
         ) { model.loadMore() }
     }
