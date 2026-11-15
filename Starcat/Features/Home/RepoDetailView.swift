@@ -406,6 +406,36 @@ struct ReadmeStateView: View {
         let baseURL: URL?
     }
 
+    /// 交接任务既跟随文档，也跟随等待结束；终态没有 documentID，不能与 loading 共用身份。
+    /// 只保存短身份与阶段，避免在 body 重算时比较 HTML 或因缓存时间更新而重播过渡。
+    struct HandoffKey: Equatable {
+        enum Phase: Equatable {
+            case waiting
+            case document(String)
+            case resolved
+        }
+
+        let scopeIdentity: String
+        let phase: Phase
+
+        init(scopeIdentity: String, state: ReadmeViewModel.LoadState,
+             documentIdentity: String?, isStateStale: Bool) {
+            self.scopeIdentity = scopeIdentity
+            if isStateStale {
+                phase = .waiting
+            } else {
+                switch state {
+                case .idle, .loading:
+                    phase = .waiting
+                case .loaded:
+                    phase = documentIdentity.map(Phase.document) ?? .waiting
+                case .empty, .requiresLogin, .error:
+                    phase = .resolved
+                }
+            }
+        }
+    }
+
     var body: some View {
         let currentDocument = currentReadmeDocument
 
@@ -445,7 +475,12 @@ struct ReadmeStateView: View {
             .easeOut(duration: reduceMotion ? 0.12 : ReadmeRevealTiming.contentRevealSeconds),
             value: isReadmeSkeletonVisible
         )
-        .task(id: readmeDocumentToken) {
+        .task(id: HandoffKey(
+            scopeIdentity: refreshCommandIdentity,
+            state: state,
+            documentIdentity: currentDocument?.identity,
+            isStateStale: isStateStaleForScope
+        )) {
             await handOffReadmeDocument()
         }
         .task(id: readmeStarHistoryPreloadIdentity) {

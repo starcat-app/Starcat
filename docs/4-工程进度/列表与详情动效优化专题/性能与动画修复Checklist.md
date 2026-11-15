@@ -7,7 +7,7 @@
 
 ## 范围与提交顺序
 
-原始专题实现仍为未提交改动。先将原实现保存为可比较的基线，再按下表逐项核对和修复，每项修复与相应记录一起提交。此前独立的洞察图标修改不混入性能修复。只在本 worktree 工作，不合并 dev、不推送、不修改主进度总览或 Changelog。
+原始专题实现已保存为可比较的基线 `86629936`，再按下表逐项核对和修复，每项修复与相应记录一起提交。此前独立的洞察图标修改不混入性能修复。只在本 worktree 工作，不合并 dev、不推送、不修改主进度总览或 Changelog。
 
 源码可证明多余重建、重复扫描或状态遗漏，但不能证明已经发生彩虹圈；没有线程采样或界面测量时不作该结论。主窗口最左侧分类导航与用户暂缓的全局筛选图标问题均不在本次修复范围。
 
@@ -15,7 +15,7 @@
 
 - [x] P01 · 隔离行背景动画：将 `ListRowSurface` / `RepoRowSurface` 的 hover、spring 限定在背景、描边和指示条；移除包裹正文的动画及 hover 的全子树交易，保留共享选中与 Reduce Motion。
 - [x] P02 · 保留大型展示宿主：Skill 原生多选 List、Agent / RAG / Repo AI 时间线、知识库 / 通知 ScrollView 及含读取任务的 Repo 标题改为稳定身份的轻量淡化；保留原有滚动与加载交接。
-- [ ] P03 · 修复 README 交接终态：核对 idle / loading / empty / error / requiresLogin 是否正确触发状态收口，以及缓存回切与 ready / failure 回调归属；错误或空态必须结束骨架。
+- [x] P03 · 修复 README 交接终态：任务身份区分等待、当前文档与终态；核对缓存回切与 ready / failure 回调归属，空结果、登录提示及错误能够触发骨架收口。
 - [ ] P04 · 修复 Skill 文件预览中断：核对快速 A → B → A、当前文件刷新失败和取消后可见性；读取结果与当前选择一致，旧退场不能留下透明正文。
 - [ ] P05 · 消除新增行索引重复扫描：核对 Skill 来源 / Agent 名称、Agent 历史 / 产物及洞察行的 `firstIndex`，传递展示索引；保持稳定业务 ID，不引入派生状态缓存。
 - [ ] P06 · 核对骨架与其他交接：检查新增骨架时钟数量、停止边界、原生页签叠加、业务任务归属；只对可确认问题做最小修复，保留既有已完成路径。
@@ -43,3 +43,9 @@
 触发：原生 List、消息时间线、Repo 标题挂上 `nativeDetailTransition` 后，选择变化会通过 `.id` 重建子树；离场和入场并存期间可能重复创建滚动区、解析长正文或重启标题内的读取任务。改用 `stableDetailTransition`，只在选择变化时短暂降低现有树的不透明度并恢复，不复制长内容、不整区模糊。Agent 历史加载期间保留时间线宿主，在骨架下隐藏并禁用交互；RAG 沿用原有骨架交接。Skill 实际条目读取仍按条目身份重置。
 
 这类宿主采用稳定树上的轻量淡化，替代保留两份长正文的交叉模糊；小型纯展示区域继续沿用原有完整出入场。检查没有新增随机身份、计时等待或业务任务；`git diff --check` 通过。无对应视觉单测，本轮后续状态修复的定向测试与双渠道构建一并核对编译。
+
+### P03 · README 无文档终态
+
+触发：同一仓库的 `.loading` 转为 `.empty`、`.requiresLogin` 或 `.error` 时，原任务 token 都是 `scope|unloaded`，SwiftUI 不会重启交接任务，骨架可能持续遮住终态。改为使用 `ReadmeStateView.HandoffKey`，以仓库范围、等待 / 文档 / 终态驱动交接；仅缓存时间或错误文案变化不重播，未对齐范围的旧状态继续等待。原文档 ready / failure 的双重身份校验、WebKit 失败重试代次和稳定宿主均保留。
+
+新增 `ReadmeHandoffTests` 覆盖无文档终态、范围未对齐、缓存时间变化、重试身份与快速回切的任务归属。通过 `make test` 定向运行 `ReadmeHandoffTests`、`ReadmeWebViewTests`、`SkillContentReaderTests`、`AgentRunInspectorPresentationTests`：4 个 Suite、34 个测试通过。测试验证状态身份和既有读取 / 文档契约，未代替真实 WebView 导航与视觉验收。
