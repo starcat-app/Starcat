@@ -1,8 +1,8 @@
 # 列表与详情动效性能修复 Checklist
 
-> 状态：七项代码修复、自动化验证及本地 dev 集成已完成，功能 worktree 和分支已清理；实机流畅度待验收，专题保持开放。
+> 状态：七项代码修复、自动化验证及本地 dev 集成已完成，功能 worktree 和分支已清理；2026-11-16 dong4j 明确确认全部验证通过，七项人工验收均已勾选。
 > 授权：2026-11-15，dong4j 要求登记任务、逐项完成、每个修复单独提交。
-> 原开发工作区：`Starcat-list-detail-motion` / `codex/list-detail-motion`，原始基线 `b91e22c1`；后续在主工作区 `Starcat` / `dev` 验收。
+> 原开发工作区：`Starcat-list-detail-motion` / `codex/list-detail-motion`，原始基线 `b91e22c1`；现已合入主工作区 `Starcat` / `dev` 并获用户验收通过。
 > 关联：[实施 Checklist](实施Checklist.md)、[优化方案](列表与详情动效优化方案与Checklist.md)、[动效规范](../../5-规范/UI-动效规范.md)。
 
 ## 范围与提交顺序
@@ -25,22 +25,22 @@
 
 ## 验证任务
 
-- [x] V01 · 核对本轮修改路径的任务身份、终态和取消门禁；README / Skill 预览状态补充回归测试，探索详情的实际连续点击场景保留人工验收。
+- [x] V01 · 核对本轮修改路径的任务身份、终态和取消门禁；README / Skill 预览状态补充回归测试，探索详情的实际连续点击场景已由 dong4j 确认验收通过。
 - [x] V02 · 运行相关定向测试；涉及状态管理 / 新 Swift 文件时按 Makefile 完成双渠道构建，不操作桌面。
 - [x] V03 · 每个提交检查暂存内容与 `git diff --cached --check`，不夹带无关改动。
-- [x] V04 · 回读提交历史、剩余修改与 checklist，给出仍待人工验证的场景。
+- [x] V04 · 回读提交历史、剩余修改与 checklist，分别记录自动化结果和 dong4j 的人工验收确认。
 
 ### 人工验收
 
-以下项目未执行；没有 GUI 操作授权或实机性能测量，不能以构建和状态测试通过代替。
+2026-11-16 dong4j 明确表示“全部给我勾选，我已经验证通过了”，以下七项按本次用户确认登记通过。验收来源为 dong4j，本轮 Agent 未操作 GUI，也未新增性能采样数据。
 
-- [ ] 大列表滚动与连续选中：在较多已加载行中快速滚动、悬停和跨行选择，确认正文不随背景弹簧拉伸，分页、键盘、多选和拖拽保持原行为。
-- [ ] 长 Agent / RAG / Repo AI 会话：切换会话、查看流式内容和 Inspector，确认滚动位置、草稿及读取任务不因展示淡化反复重建。
-- [ ] 快速 A → B → A：分别检查仓库 README、独立 Skill 条目及文件，确认当前内容正确、没有永久透明或迟到内容覆盖。
-- [ ] 加载终态与恢复：慢网、空结果、需要登录、读取失败及重试后，骨架能够结束；已有缓存或同文件刷新保留可用正文。
-- [ ] 探索 Star 请求：A 发起 Star 后立即选 B，等待 A 完成，确认 B 详情与 README 保持当前选择，A 的操作结果仍正确反映到列表。
-- [ ] Reduce Motion：启用减少动态效果后，不出现跨行弹簧与整区模糊；淡化、加载终态及选择反馈仍可用。
-- [ ] 明暗主题与视觉状态：检查斑马纹、整行 hover、彩色图标及语言色；确认选择、勾选和键盘聚焦可区分。
+- [x] 大列表滚动与连续选中：在较多已加载行中快速滚动、悬停和跨行选择，确认正文不随背景弹簧拉伸，分页、键盘、多选和拖拽保持原行为。
+- [x] 长 Agent / RAG / Repo AI 会话：切换会话、查看流式内容和 Inspector，确认滚动位置、草稿及读取任务不因展示淡化反复重建。
+- [x] 快速 A → B → A：分别检查仓库 README、独立 Skill 条目及文件，确认当前内容正确、没有永久透明或迟到内容覆盖。
+- [x] 加载终态与恢复：慢网、空结果、需要登录、读取失败及重试后，骨架能够结束；已有缓存或同文件刷新保留可用正文。
+- [x] 探索 Star 请求：A 发起 Star 后立即选 B，等待 A 完成，确认 B 详情与 README 保持当前选择，A 的操作结果仍正确反映到列表。
+- [x] Reduce Motion：启用减少动态效果后，不出现跨行弹簧与整区模糊；淡化、加载终态及选择反馈仍可用。
+- [x] 明暗主题与视觉状态：检查斑马纹、整行 hover、彩色图标及语言色；确认选择、勾选和键盘聚焦可区分。
 
 ## 提交映射
 
@@ -68,9 +68,9 @@
 | `make build-appstore` | 构建与产物校验通过，未启动应用 | `/tmp/starcat-list-detail-motion-build-appstore.log` |
 | 提交与文档静态检查 | 七个修复提交的 `git log --check` 通过，专题 115 个本地 Markdown 链接目标存在 | 当前 worktree 的 Git 与文档检查结果 |
 
-最终定向测试覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`。状态归属和业务契约由测试校验；帧率、主线程停顿、内存峰值及动画观感仍需上方人工验收与实际测量。
+最终定向测试覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`。状态归属和业务契约由测试校验；流畅度与动画观感已由 dong4j 确认验收通过，本记录不包含帧率、主线程停顿或内存峰值的量化测量。
 
-七项修复的最终代码提交为 `b947b919`；性能修复阶段没有合并或推送。此前独立的 `Starcat/Features/Home/SidebarItem.swift` 图标改动未混入七个性能修复提交；验证记录与实施清单措辞更新由 `de07b6ce` 单独收尾。追加授权后的图标补交、集成与清理见下一节，专题不因合并而自动关闭。
+七项修复的最终代码提交为 `b947b919`；性能修复阶段没有合并或推送。此前独立的 `Starcat/Features/Home/SidebarItem.swift` 图标改动未混入七个性能修复提交；验证记录与实施清单措辞更新由 `de07b6ce` 单独收尾。追加授权后的图标补交、集成与清理见下一节；人工验收完成的依据为 2026-11-16 dong4j 的明确确认。
 
 ## 合入 dev 与本地清理
 
@@ -88,13 +88,15 @@
 | `make build-direct` | 构建与产物校验通过，build-only | `/tmp/starcat-list-detail-motion-merge-build-direct.log` |
 | `make build-appstore` | 构建与产物校验通过，build-only | `/tmp/starcat-list-detail-motion-merge-build-appstore.log` |
 
-本次定向回归覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`ReadmeWebViewTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`、`DailyRecommendationTests`、`RecommendationHistoryListTests`、`RepoIssuesViewModelTests`、`RepoIssuesWorkspaceViewModelTests`。这次结果与上方性能修复阶段的记录分开统计；人工验收项继续保持未勾选，不以合并或自动化结果替代。
+本次定向回归覆盖 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`ReadmeWebViewTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`、`DailyRecommendationTests`、`RecommendationHistoryListTests`、`RepoIssuesViewModelTests`、`RepoIssuesWorkspaceViewModelTests`。这次结果与上方性能修复阶段的记录分开统计；人工验收项根据 dong4j 在 2026-11-16 的明确确认勾选，未以合并或自动化结果替代。
 
 ## 修复与验证记录
 
+以下保留修复阶段的触发条件、代码选择和当时验证边界；其人工验收结果已于 2026-11-16 按 dong4j 的明确确认补记。
+
 ### P01 · 行背景动画边界
 
-触发：Agent 流式事件行的正文或高度更新与 hover / 选中同帧发生时，原先行根部 `.animation` 会把布局更新一并纳入动画。此次把动画下沉到绘制背景与 overlay，行内容不再接收这些新增交易。`git diff --check` 通过；该绘制改动没有对应单测，不额外构建或操作 GUI。真实滚动与选择观感待人工验收。
+触发：Agent 流式事件行的正文或高度更新与 hover / 选中同帧发生时，原先行根部 `.animation` 会把布局更新一并纳入动画。此次把动画下沉到绘制背景与 overlay，行内容不再接收这些新增交易。`git diff --check` 通过；该绘制改动没有对应单测，不额外构建或操作 GUI。真实滚动与选择观感已于 2026-11-16 由 dong4j 确认验收通过。
 
 原专题测试和构建记录见实施 Checklist，不自动视为本轮修复后的验证结果。
 
@@ -108,28 +110,28 @@
 
 触发：同一仓库的 `.loading` 转为 `.empty`、`.requiresLogin` 或 `.error` 时，原任务 token 都是 `scope|unloaded`，SwiftUI 不会重启交接任务，骨架可能持续遮住终态。改为使用 `ReadmeStateView.HandoffKey`，以仓库范围、等待 / 文档 / 终态驱动交接；仅缓存时间或错误文案变化不重播，未对齐范围的旧状态继续等待。原文档 ready / failure 的双重身份校验、WebKit 失败重试代次和稳定宿主均保留。
 
-新增 `ReadmeHandoffTests` 覆盖无文档终态、范围未对齐、缓存时间变化、重试身份与快速回切的任务归属。通过 `make test` 定向运行 `ReadmeHandoffTests`、`ReadmeWebViewTests`、`SkillContentReaderTests`、`AgentRunInspectorPresentationTests`：4 个 Suite、34 个测试通过。测试验证状态身份和既有读取 / 文档契约，未代替真实 WebView 导航与视觉验收。
+新增 `ReadmeHandoffTests` 覆盖无文档终态、范围未对齐、缓存时间变化、重试身份与快速回切的任务归属。通过 `make test` 定向运行 `ReadmeHandoffTests`、`ReadmeWebViewTests`、`SkillContentReaderTests`、`AgentRunInspectorPresentationTests`：4 个 Suite、34 个测试通过。测试验证状态身份和既有读取 / 文档契约，未代替真实 WebView 导航与视觉验收；后者已于 2026-11-16 由 dong4j 确认通过。
 
 ### P04 · Skill 预览回切恢复
 
 触发：B 的文件切换把 A 设为透明但尚未清空快照，此时回切 A 被视为同文件刷新；原逻辑只有读取成功才恢复可见，刷新失败后正文和错误一起留在透明层。将已有文件、正文、错误与可见性收为局部 `PreviewPresentation` 快照，开始同文件刷新时先恢复保留正文，不依赖成功回调。不同文件仍先退场再更新快照；读取并行、取消检查、请求身份与 loading 收口保持原有约束。
 
-新增 `SkillPreviewHandoffTests` 覆盖中断退场后回切、同文件刷新、不同文件快照和首载边界。通过 `make test` 运行该 Suite、`SkillContentReaderTests`、`SkillWorkspaceTests`、`SkillWorkspaceSnapshotTests`：4 个 Suite、26 个测试通过。测试验证展示快照和真实文件读取，不冒充实际快速点击的视觉验收。
+新增 `SkillPreviewHandoffTests` 覆盖中断退场后回切、同文件刷新、不同文件快照和首载边界。通过 `make test` 运行该 Suite、`SkillContentReaderTests`、`SkillWorkspaceTests`、`SkillWorkspaceSnapshotTests`：4 个 Suite、26 个测试通过。测试验证展示快照和真实文件读取；实际快速点击的视觉验收已于 2026-11-16 由 dong4j 确认通过。
 
 ### P05 · 展示索引只枚举一次
 
 触发：新增行底色在每行调用来源集合的 `firstIndex`，整批重算时反复线性扫描；Skill 来源 / Agent 名称的派生集合也被每行重新读取。改为在当前 `ForEach` 上枚举，并把行号传给绘制函数，消除七处新增扫描。`ForEach` 仍使用原业务 ID；洞察第二组接续第一组的展示索引，历史折叠沿用原有前缀顺序。标签编辑真正修改候选时的 `firstIndex` 保留，不扩大到业务重构。
 
-通过 `make test` 运行 `AgentWorkspaceViewModelTests`、`AgentRunInspectorPresentationTests`、`InsightsModelsTests`、`InsightsDrillDownTests`、`SkillWorkspaceTests`、`TagTaxonomyBootstrapServiceTests`：6 个 Suite、58 个测试通过。本项没有新增仅复刻枚举实现的测试；实际行配色、懒加载滑动与流畅度仍待人工验收。
+通过 `make test` 运行 `AgentWorkspaceViewModelTests`、`AgentRunInspectorPresentationTests`、`InsightsModelsTests`、`InsightsDrillDownTests`、`SkillWorkspaceTests`、`TagTaxonomyBootstrapServiceTests`：6 个 Suite、58 个测试通过。本项没有新增仅复刻枚举实现的测试；实际行配色、懒加载滑动与流畅度已于 2026-11-16 由 dong4j 确认验收通过。
 
 ### P06 · 骨架时钟和 Skill 页签边界
 
 `ListLoadingSkeleton` 每组只使用一个既有 `SkeletonAnimatedPhase`，没有新增逐行计时器；列表 / 详情骨架由加载分支挂载，Reduce Motion 时使用静态 phase。仓库 Skills 安装窗口与 RAG 的既有交接保持原实现。
 
-Skill 内容页已有条目级交接、文件退场及独立加载任务，overview / files 页签原先再用 `nativeDetailTransition` 给整段内容换身份并模糊。此次只把这一层改为稳定身份的轻量淡化，避免额外复制内容容器；读取任务和展示快照仍由外层持有。其余小型纯展示详情没有发现需重复修改的同类任务归属问题。`git diff --check` 通过，无对应页签动画单测；编译随后续双渠道构建核对，视觉效果保持待验收。
+Skill 内容页已有条目级交接、文件退场及独立加载任务，overview / files 页签原先再用 `nativeDetailTransition` 给整段内容换身份并模糊。此次只把这一层改为稳定身份的轻量淡化，避免额外复制内容容器；读取任务和展示快照仍由外层持有。其余小型纯展示详情没有发现需重复修改的同类任务归属问题。`git diff --check` 通过，无对应页签动画单测；编译随后续双渠道构建核对，视觉效果已于 2026-11-16 由 dong4j 确认验收通过。
 
 ### P07 · 探索详情 Star 完成后的展示归属
 
 触发：A 发起异步 Star 后选择 B，A 的回调仍持有旧 `repo` 和 `item`；稳定宿主使其原先的 `displayRepo = oldRepo`、`resolveRepo()` 与 `loadReadmeIfNeeded()` 能重新覆盖当前详情并读回旧 README。完成后改为对当前 `displayRepo` 应用 Registry 展示状态，然后沿用全局列表刷新；不把旧选择重新写入，也不新增一套请求协调器。
 
-通过 `make test` 运行 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`：4 个 Suite、43 个测试通过，涵盖本轮新增的 8 个状态回归测试及已有 Star / 探索契约。此处未为简单的当前快照更新新增抽象或测试替身；A Star → 切 B → A 请求返回的真实界面顺序仍列入人工验收，测试不证明 GUI 无闪回。
+通过 `make test` 运行 `ReadmeHandoffTests`、`SkillPreviewHandoffTests`、`StarringSubsystemTests`、`ExploreDiscoveryViewModelTests`：4 个 Suite、43 个测试通过，涵盖本轮新增的 8 个状态回归测试及已有 Star / 探索契约。此处未为简单的当前快照更新新增抽象或测试替身；A Star → 切 B → A 请求返回的真实界面顺序已于 2026-11-16 由 dong4j 确认验收通过，验收来源与自动化测试分开记录。

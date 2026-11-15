@@ -1,12 +1,12 @@
 # 列表与详情动效实施 Checklist
 
-> 状态：82 个场景源码核对与适用改造、106 项定向测试及双渠道构建校验已完成；后续性能修复见[性能与动画修复 Checklist](性能与动画修复Checklist.md)，人工视觉验收待进行，专题保持开放。
+> 状态：82 个场景的源码核对与适用处理、七项性能修复和本地 dev 集成已完成；2026-11-16 dong4j 明确确认全部验证通过，人工视觉验收完成。
 > 授权与日期：2026-11-15，dong4j 要求基于本地 dev 使用独立 worktree 完整执行专题，先建清单、逐项看代码，避免重复实现。
 > 基线：`dev@b91e22c1`；分支：`codex/list-detail-motion`。
-> Worktree：`/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-list-detail-motion`。
-> 范围来源：[方案与原始 Checklist](列表与详情动效优化方案与Checklist.md)；效果标准：[列表与详情规范](../../5-规范/UI-列表与详情切换动效规范.md)、[通用动效规范](../../5-规范/UI-动效规范.md)。
+> 原 Worktree：`/Users/dong4j/Developer/1.AI/ai-incubator/Starcat-list-detail-motion`，已按授权合入 dev 并清理。
+> 范围来源与进度入口：[方案与 Checklist](列表与详情动效优化方案与Checklist.md)；效果标准：[列表与详情规范](../../5-规范/UI-列表与详情切换动效规范.md)、[通用动效规范](../../5-规范/UI-动效规范.md)。
 
-勾选表示已核对源码并完成该项适用的代码工作，不代表人工视觉验收通过。“已有”必须记录实际实现依据，“不适用”必须说明交互语义。没有核对的项保留未勾选；测试、构建、人工验收分别登记。
+场景勾选表示已核对源码并完成该项适用的代码工作；人工验收以第 7 节的独立记录为准。2026-11-16 dong4j 明确表示“全部给我勾选，我已经验证通过了”，本清单与主方案、性能修复清单同步登记验收通过。“已有”与“不适用”保留各自依据，不计作新增改造；测试、构建与用户验收分别记录。
 
 ## 1. 范围与准备
 
@@ -120,17 +120,17 @@
 ## 7. 验证与交付
 
 - [x] 全部 82 个场景均有源码核对与处理记录；脚本验证编号集合完整、无重复、无“待核对”项。
-- [x] 单选背景仅在绘制层共享几何身份；多选、键盘、拖拽、分页原有调用保留，实际操作验收另列。
-- [x] 详情交接检查展示身份、取消与 ready / failure 路径；错误 / 空态可结束占位，实际连续切换待实机查看。
+- [x] 单选背景仅在绘制层共享几何身份；多选、键盘、拖拽、分页原有调用保留，实际操作已由 dong4j 确认验收通过。
+- [x] 详情交接检查展示身份、取消与 ready / failure 路径；错误 / 空态可结束占位，实际连续切换已由 dong4j 确认验收通过。
 - [x] 首载复用对应布局骨架；已有结果刷新保留内容；新代码没有使用固定 `sleep` 制造等待。
 - [x] Reduce Motion、主题与彩色图标源码检查；共享表面不重写前景色，骨架时钟读取统一环境。
 - [x] 定向测试：12 个 Suite、106 项通过，命令及边界见下表。
 - [x] 新增 Swift 文件及展示状态改动已通过 `make build-direct` / `make build-appstore` 最终构建与产物校验，未启动应用。
 - [x] `git diff --check`、专题本地链接与清单完整性检查通过。
 - [x] `SidebarView`、`RepoSkillSelectionPane`、`RepoSkillDetailPane` 没有 diff；设置改动仅涉及语言候选行。
-- [ ] 人工视觉验收（需 dong4j 查看；当前无 GUI 操作授权）。
+- [x] 人工视觉验收：2026-11-16 dong4j 明确确认全部验证通过，覆盖方案中的适用场景及性能修复人工验收项；验收来源为用户确认，Agent 本轮未操作 GUI。
 - [x] 原实施与性能修复阶段的授权边界已落实：2026-11-15 获准本地提交原实现基线与逐项性能修复，当时保留 worktree 与分支、不合并 / 推送，未改 Changelog 或 `docs/功能实现总览.md`。
-- [x] 2026-11-16 按追加授权经 `fd3c66b7` 合入本地 dev，145 项集成回归与双渠道构建通过，功能 worktree 和分支已非强制清理；人工验收继续开放，详情见[性能修复 Checklist](性能与动画修复Checklist.md)的集成记录。
+- [x] 2026-11-16 按追加授权经 `fd3c66b7` 合入本地 dev，145 项集成回归与双渠道构建通过，功能 worktree 和分支已非强制清理；人工验收随后由 dong4j 确认通过，详情见[性能修复 Checklist](性能与动画修复Checklist.md)的集成记录。
 
 ### 验证记录
 
@@ -141,7 +141,7 @@
 | 构建 | `make build-appstore` 最终增量 | 构建与产物校验通过 | 稳定版 Xcode，App Store / 沙箱专用缓存；未启动应用 |
 | 构建 | `make build-direct` 最终增量 | 构建与产物校验通过 | 初轮依赖拉取中断已恢复；Direct 专用缓存，未启动应用 |
 | 静态 | `git diff --check`、82 项集合检查、Markdown 本地链接检查 | 通过 | 主侧栏 / 安装窗口主流程 / 受控 SPM 锁 / 国际化目录 / 主总览无 diff |
-| 人工 | 待 dong4j 查看 | 未执行 | 未进行视觉验收；曾误调用环境枚举后立即停止，未截图或读取 AX |
+| 人工 | 方案全部适用场景与性能修复人工验收项 | 2026-11-16 dong4j 确认验证通过 | 来源为 dong4j 的本轮明确确认；Agent 本轮未操作 GUI。原实施阶段曾误调用环境枚举后立即停止，未截图或读取 AX |
 
 ### 定向测试命令
 
@@ -161,4 +161,4 @@ make test TEST_ARGS="\
 -only-testing:StarcatTests/RAGConversationHistoryWindowTests"
 ```
 
-日志：`/tmp/starcat-list-detail-motion-tests.log`、`/tmp/starcat-list-detail-motion-build-direct-final.log`、`/tmp/starcat-list-detail-motion-build-appstore-final.log`。这些是本次本地验证日志，不能代替后续提交与人工验收记录。
+日志：`/tmp/starcat-list-detail-motion-tests.log`、`/tmp/starcat-list-detail-motion-build-direct-final.log`、`/tmp/starcat-list-detail-motion-build-appstore-final.log`。这些日志记录原实施阶段的本地验证；后续提交、合并验证及人工验收分别见本节与性能修复清单，不把多轮测试数量相加。
