@@ -172,9 +172,6 @@ struct SidebarView: View {
     /// 顶部三入口点击反馈。用计数 token 驱动 symbolEffect，避免把动效状态混进业务 selection。
     @State private var rootNavigationBounceTokens: [SidebarRootPage: Int] = [:]
 
-    /// 顶部选择立即生效，下方 List 在旧内容淡出后才切换展示分支。
-    @State private var rootContentTransition = SidebarContentTransition<SidebarRootPage>()
-
     @State private var exploreContentTransition = SidebarContentTransition<ExploreSidebarContext>()
     @State private var manageFacetTransition = SidebarContentTransition<ManageSidebarFacetPresentation>()
 
@@ -250,39 +247,50 @@ struct SidebarView: View {
                 // macOS Sheet 不会让宿主窗口退出前台。AI 分组窗口展示期间把侧栏的
                 // 12/20 FPS 装饰时钟切成静态分支，让出转场渲染预算。
                 .environment(\.starcatContinuousAnimationsPaused, showGitHubStarListAIGroupingSheet)
-            sidebarList
-                .opacity(rootContentTransition.opacity)
-                .allowsHitTesting(rootContentTransition.displayedSelection == selectedPage)
+            // 两个板块在同一时段交接，不先把导航淡到全透明；固定容器避免列表尺寸参与过渡。
+            ZStack(alignment: .topLeading) {
+                sidebarList(for: selectedPage)
+                    .id(selectedPage)
+                    .transition(reduceMotion ? .identity : .opacity)
+                    .zIndex(1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selectedPage)
+            // 加载任务位于稳定容器，离场列表不会额外保留或重启同一份查询。
+            .task(id: selectedPage == .manage ? viewModel.sidebarFacetQuery : nil) {
+                guard selectedPage == .manage else { return }
+                await viewModel.refreshSidebarFacetCounts()
+            }
+            .task(id: selectedPage == .trending ? dailyRadarScope : nil) {
+                guard selectedPage == .trending else { return }
+                await prepareDailyRadarSidebar()
+            }
             // 后台任务区统一承载自动/手动整理与面板已关闭的单仓摘要。
             // 手动整理会抢占本轮自动整理，因此两者不会同时出现。
             backgroundTaskFooter
         }
         .background(.bar)
-        .onChange(of: selectedPage, initial: true) { _, page in
-            rootContentTransition.update(to: page, reduceMotion: reduceMotion)
+        .onChange(of: selectedPage, initial: true) { _, _ in
             // 跨板块已有整块淡化；子分类直接对齐，避免进入后再播放第二轮。
             exploreContentTransition.update(to: exploreSidebarContext, reduceMotion: true)
             manageFacetTransition.update(to: manageFacetPresentation, reduceMotion: true)
         }
         .onChange(of: exploreSidebarContext, initial: true) { _, context in
             let isExploreVisible = selectedPage == .trending
-                && rootContentTransition.displayedSelection == .trending
             exploreContentTransition.update(to: context, reduceMotion: reduceMotion || !isExploreVisible)
         }
         .onChange(of: manageFacetPresentation, initial: true) { _, presentation in
             let isCategoryChange = selectedPage == .manage
-                && rootContentTransition.displayedSelection == .manage
                 && manageFacetTransition.displayedSelection?.selection != presentation.selection
             // 同分类的计数刷新仍即时更新，只在基础分类变化时播放子分类过渡。
             manageFacetTransition.update(to: presentation, reduceMotion: reduceMotion || !isCategoryChange)
         }
         .onChange(of: reduceMotion) { _, _ in
-            rootContentTransition.update(to: selectedPage, reduceMotion: reduceMotion)
             exploreContentTransition.update(to: exploreSidebarContext, reduceMotion: reduceMotion)
             manageFacetTransition.update(to: manageFacetPresentation, reduceMotion: reduceMotion)
         }
         .onDisappear {
-            rootContentTransition.update(to: selectedPage, reduceMotion: true)
             exploreContentTransition.update(to: exploreSidebarContext, reduceMotion: true)
             manageFacetTransition.update(to: manageFacetPresentation, reduceMotion: true)
         }
@@ -1074,8 +1082,16 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private var sidebarList: some View {
-        switch rootContentTransition.displayedSelection ?? selectedPage {
+    private func sidebarList(for page: SidebarRootPage) -> some View {
+        sidebarListContent(for: page)
+            .allowsHitTesting(page == selectedPage)
+            .accessibilityHidden(page != selectedPage)
+    }
+
+    /// 每个板块保留原生 List 的选择语义；外层身份只用于板块之间的交叉淡化。
+    @ViewBuilder
+    private func sidebarListContent(for page: SidebarRootPage) -> some View {
+        switch page {
         case .manage:
             List(selection: Binding(
                 get: { viewModel.selection },
@@ -1084,9 +1100,6 @@ struct SidebarView: View {
                 manageSidebarContent
             }
             .listStyle(.sidebar)
-            .task(id: viewModel.sidebarFacetQuery) {
-                await viewModel.refreshSidebarFacetCounts()
-            }
         case .trending:
             List(selection: exploreSidebarSelectionBinding) {
                 exploreModeSidebarContent
@@ -1101,9 +1114,6 @@ struct SidebarView: View {
                     .allowsHitTesting(displayedExploreSidebarContext == exploreSidebarContext)
             }
             .listStyle(.sidebar)
-            .task(id: dailyRadarScope) {
-                await prepareDailyRadarSidebar()
-            }
         case .activity:
             List(selection: $selectedActivityCategory) {
                 activitySidebarContent
