@@ -644,8 +644,8 @@ struct RepoIssuesViewModelTests {
     }
 }
 
-/// 用 continuation 固定响应顺序；请求可以忽略取消，确保 VM 自身的身份守卫真正生效。
-private actor RepoIssuesResponseGate<Value: Sendable> {
+/// 列表与工作台测试共用受控响应；请求可以忽略取消，确保 VM 自身的身份守卫真正生效。
+actor RepoIssuesResponseGate<Value: Sendable> {
     private var requested = false
     private var requestWaiter: CheckedContinuation<Void, Never>?
     private var responseWaiter: CheckedContinuation<Value, Error>?

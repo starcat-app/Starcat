@@ -237,35 +237,45 @@ struct RepoIssuesWorkspaceContent: View {
 
     private var issueList: some View {
         let displayed = viewModel.listViewModel.displayedIssues
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if viewModel.listViewModel.isLoading && displayed.isEmpty {
-                    RepoIssuesListSkeleton()
-                } else if displayed.isEmpty {
-                    emptyListState
-                } else {
-                    ForEach(Array(displayed.enumerated()), id: \.element.id) { index, issue in
-                        RepoIssueListRow(
-                            issue: issue,
-                            isSelected: !viewModel.isCreating
-                                && viewModel.selectedIssue?.id == issue.id,
-                            onSelect: { viewModel.select(issue) }
-                        )
-                        .automaticListPagination(
-                            appearingIndex: index,
-                            visibleItemCount: displayed.count,
-                            loadedItemCount: viewModel.listViewModel.issues.count,
-                            hasMore: viewModel.listViewModel.hasMore,
-                            isLoading: viewModel.listViewModel.isLoading
-                                || viewModel.listViewModel.isLoadingMore,
-                            identity: "repo-issues-\(viewModel.repo.fullName)|\(viewModel.listViewModel.stateFilter.rawValue)|\(viewModel.listViewModel.normalizedSearchText)"
-                        ) {
-                            await viewModel.listViewModel.loadMoreIfNeeded()
-                        }
-                        if index < displayed.count - 1 {
-                            Divider().padding(.leading, 34)
+        return ScrollViewReader { scrollProxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if viewModel.listViewModel.isLoading && displayed.isEmpty {
+                        RepoIssuesListSkeleton()
+                    } else if displayed.isEmpty {
+                        emptyListState
+                    } else {
+                        ForEach(Array(displayed.enumerated()), id: \.element.id) { index, issue in
+                            RepoIssueListRow(
+                                issue: issue,
+                                isSelected: !viewModel.isCreating
+                                    && viewModel.selectedIssue?.id == issue.id,
+                                onSelect: { viewModel.select(issue) }
+                            )
+                            .automaticListPagination(
+                                appearingIndex: index,
+                                visibleItemCount: displayed.count,
+                                loadedItemCount: viewModel.listViewModel.issues.count,
+                                hasMore: viewModel.listViewModel.hasMore,
+                                isLoading: viewModel.listViewModel.isLoading
+                                    || viewModel.listViewModel.isLoadingMore,
+                                identity: "repo-issues-\(viewModel.repo.fullName)|\(viewModel.listViewModel.stateFilter.rawValue)|\(viewModel.listViewModel.normalizedSearchText)"
+                            ) {
+                                await viewModel.listViewModel.loadMoreIfNeeded()
+                            }
+                            .id(issue.id)
+                            if index < displayed.count - 1 {
+                                Divider().padding(.leading, 34)
+                            }
                         }
                     }
+                }
+            }
+            .onChange(of: viewModel.selectedIssue?.id) { _, issueID in
+                guard let issueID, displayed.contains(where: { $0.id == issueID }) else { return }
+                // 箭头跨过可见边界时同步露出选中行，不强制把每次点击的行移到列表中央。
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
+                    scrollProxy.scrollTo(issueID)
                 }
             }
         }
@@ -362,7 +372,12 @@ struct RepoIssuesWorkspaceContent: View {
                         viewModel.detailItem = $0
                     }
                 ), showsHeroTint: false, showsRepositoryHeader: false,
-                   commentComposerBackground: AnyShapeStyle(Color(nsColor: .windowBackgroundColor)))
+                   commentComposerBackground: AnyShapeStyle(Color(nsColor: .windowBackgroundColor)),
+                   onSelectAdjacent: { delta in
+                       Task { await viewModel.selectAdjacentIssue(delta) }
+                   },
+                   canSelectPrevious: viewModel.canSelectAdjacentIssue(-1),
+                   canSelectNext: viewModel.canSelectAdjacentIssue(1))
                 .background(Color(nsColor: .windowBackgroundColor))
                 .disabled(viewModel.isCreating || viewModel.detailItem?.id != item.id)
                 .allowsHitTesting(!viewModel.isCreating && viewModel.detailItem?.id == item.id)

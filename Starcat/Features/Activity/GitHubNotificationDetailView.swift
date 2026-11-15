@@ -28,6 +28,13 @@ struct GitHubNotificationDetailView: View {
     var showsRepositoryHeader: Bool = true
     /// README Issues 工作台可对齐窗口底色；默认保留活动通知原有的系统背景样式。
     var commentComposerBackground: AnyShapeStyle = AnyShapeStyle(.background)
+    /// 仓库工作台提供自己的列表导航；未注入时保留活动通知的 Inbox 切换语义。
+    var onSelectAdjacent: ((Int) -> Void)? = nil
+    var canSelectPrevious: Bool = true
+    var canSelectNext: Bool = true
+
+    private static let conversationPadding: CGFloat = 18
+
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
     @State private var isDoneHelpPresented = false
@@ -154,7 +161,8 @@ struct GitHubNotificationDetailView: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(.horizontal, Self.conversationPadding)
+            .padding(.bottom, Self.conversationPadding)
         }
     }
 
@@ -352,6 +360,7 @@ struct GitHubNotificationDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .disabled(!canSelectPrevious)
                 .toolbarIconHover()
                 .help(GitHubNotificationMapper.copy(locale, zh: "上一条", en: "Previous notification"))
 
@@ -366,12 +375,14 @@ struct GitHubNotificationDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .disabled(!canSelectNext)
                 .toolbarIconHover()
                 .help(GitHubNotificationMapper.copy(locale, zh: "下一条", en: "Next notification"))
             }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        .padding(.vertical, 8)
+        // 把原先评论区顶部的留白纳入工具行，整行在分隔线与首张卡片之间垂直居中。
+        .frame(height: ManageListFilterBarMetrics.barHeight + Self.conversationPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 透明，让根节点语言色光晕透到 chip 行背后。
         .background(.clear)
@@ -804,6 +815,10 @@ struct GitHubNotificationDetailView: View {
     }
 
     private func selectAdjacent(_ delta: Int) {
+        if let onSelectAdjacent {
+            onSelectAdjacent(delta)
+            return
+        }
         Task {
             guard let current = selectedItem?.notification?.threadId,
                   let next = await adjacentThreadId(after: current, delta: delta)

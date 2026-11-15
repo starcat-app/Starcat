@@ -12,6 +12,161 @@ import Testing
 @MainActor
 @Suite("RepoIssuesWorkspaceViewModel")
 struct RepoIssuesWorkspaceViewModelTests {
+    @Test("前后切换遵循左栏顺序，边界不循环，新建时不可导航")
+    func adjacentIssuesFollowDisplayedOrder() async {
+        let first = makeIssue(id: 30)
+        let second = makeIssue(id: 10)
+        let third = makeIssue(id: 20)
+        let vm = makeViewModel()
+        vm.listViewModel.seedPreviewIssues([first, second, third])
+        vm.seedPreviewState(selected: first)
+
+        #expect(!vm.canSelectAdjacentIssue(-1))
+        #expect(vm.canSelectAdjacentIssue(1))
+        await vm.selectAdjacentIssue(-1)
+        #expect(vm.selectedIssue?.id == first.id)
+        await vm.selectAdjacentIssue(1)
+        #expect(vm.selectedIssue?.id == second.id)
+        await vm.selectAdjacentIssue(1)
+        #expect(vm.selectedIssue?.id == third.id)
+        #expect(!vm.canSelectAdjacentIssue(1))
+        await vm.selectAdjacentIssue(1)
+        #expect(vm.selectedIssue?.id == third.id)
+        await vm.selectAdjacentIssue(-1)
+        #expect(vm.selectedIssue?.id == second.id)
+        vm.startCreating()
+        #expect(!vm.canSelectAdjacentIssue(-1))
+        #expect(!vm.canSelectAdjacentIssue(1))
+    }
+
+    @Test("搜索后的前后切换跳过未显示的 Issue")
+    func adjacentIssuesRespectSearch() async {
+        let first = makeIssue(id: 1, title: "Keep first")
+        let hidden = makeIssue(id: 2, title: "Unrelated")
+        let third = makeIssue(id: 3, title: "Keep third")
+        let vm = makeViewModel()
+        vm.listViewModel.seedPreviewIssues([first, hidden, third])
+        vm.listViewModel.searchText = "keep"
+        vm.seedPreviewState(selected: first)
+
+        await vm.selectAdjacentIssue(1)
+        #expect(vm.selectedIssue?.id == third.id)
+        await vm.selectAdjacentIssue(-1)
+        #expect(vm.selectedIssue?.id == first.id)
+        vm.select(hidden)
+        #expect(!vm.canSelectAdjacentIssue(-1))
+        #expect(!vm.canSelectAdjacentIssue(1))
+    }
+
+    @Test("列表末尾切下一条先续页，真正末尾禁用")
+    func adjacentIssueLoadsNextPage() async {
+        let first = makeIssue(id: 1)
+        let next = makeIssue(id: 2)
+        let firstPage = listResponse([first], nextPage: 2)
+        let nextPage = listResponse([next])
+        let client = MockGitHubAPIClient()
+        client.repoIssuesHandler = { owner, repo, state, page, _ in
+            #expect(owner == "example" && repo == "repo" && state == .open)
+            return page == 1 ? firstPage : nextPage
+        }
+        let list = RepoIssuesViewModel(client: client)
+        list.prepare(owner: "example", repo: "repo")
+        await list.loadFirstPage()
+        let vm = makeViewModel(listViewModel: list)
+        vm.seedPreviewState(selected: first)
+
+        #expect(vm.canSelectAdjacentIssue(1))
+        await vm.selectAdjacentIssue(1)
+        #expect(vm.selectedIssue?.id == next.id)
+        #expect(list.displayedIssues.map(\.id) == [first.id, next.id])
+        #expect(client.repoIssuesCalls.count == 2)
+        #expect(!vm.canSelectAdjacentIssue(1))
+    }
+
+    @Test("筛选后的末尾续页跳过不匹配页，选择下一条匹配 Issue")
+    func adjacentIssueSkipsNonmatchingPages() async {
+        let first = makeIssue(id: 1, title: "Keep first")
+        let hidden = makeIssue(id: 2, title: "Unrelated")
+        let next = makeIssue(id: 3, title: "Keep next")
+        let pages = [
+            listResponse([first], nextPage: 2),
+            listResponse([hidden], nextPage: 3),
+            listResponse([next])
+        ]
+        let client = MockGitHubAPIClient()
+        client.repoIssuesHandler = { _, _, _, page, _ in pages[page - 1] }
+        let list = RepoIssuesViewModel(client: client)
+        list.prepare(owner: "example", repo: "repo")
+        await list.loadFirstPage()
+        list.searchText = "keep"
+        let vm = makeViewModel(listViewModel: list)
+        vm.seedPreviewState(selected: first)
+
+        await vm.selectAdjacentIssue(1)
+        #expect(vm.selectedIssue?.id == next.id)
+        #expect(list.displayedIssues.map(\.id) == [first.id, next.id])
+        #expect(client.repoIssuesCalls.count == 3)
+    }
+
+    @Test("分页等待中手动切帖再切回，旧导航不能接管选择")
+    func lateAdjacentIssueKeepsManualSelection() async {
+        let first = makeIssue(id: 1)
+        let next = makeIssue(id: 2)
+        let firstPage = listResponse([first], nextPage: 2)
+        let nextPage = listResponse([next])
+        let gate = RepoIssuesResponseGate<APIResponse<[GitHubRepoIssue]>>()
+        let client = MockGitHubAPIClient()
+        client.repoIssuesHandler = { _, _, _, page, _ in
+            if page == 1 { return firstPage }
+            return try await gate.response()
+        }
+        let list = RepoIssuesViewModel(client: client)
+        list.prepare(owner: "example", repo: "repo")
+        await list.loadFirstPage()
+        let vm = makeViewModel(listViewModel: list)
+        vm.seedPreviewState(selected: first)
+
+        let navigation = Task { await vm.selectAdjacentIssue(1) }
+        await gate.waitUntilRequested()
+        vm.select(makeIssue(id: 99))
+        vm.select(first)
+        await gate.finish(.success(nextPage))
+        await navigation.value
+        #expect(vm.selectedIssue?.id == first.id)
+    }
+
+    @Test("分页等待中搜索 A → B → A，旧导航不在同名搜索里自动跳转")
+    func lateAdjacentIssueKeepsSearchRevision() async {
+        let first = makeIssue(id: 1, title: "Keep first")
+        let next = makeIssue(id: 2, title: "Keep next")
+        let firstPage = listResponse([first], nextPage: 2)
+        let nextPage = listResponse([next])
+        let gate = RepoIssuesResponseGate<APIResponse<[GitHubRepoIssue]>>()
+        let client = MockGitHubAPIClient()
+        client.repoIssuesHandler = { _, _, _, page, _ in
+            if page == 1 { return firstPage }
+            return try await gate.response()
+        }
+        let list = RepoIssuesViewModel(client: client)
+        list.prepare(owner: "example", repo: "repo")
+        await list.loadFirstPage()
+        list.searchText = "keep"
+        let vm = makeViewModel(listViewModel: list)
+        vm.seedPreviewState(selected: first)
+
+        let navigation = Task { await vm.selectAdjacentIssue(1) }
+        await gate.waitUntilRequested()
+        list.searchText = "other"
+        list.searchTextChanged()
+        list.searchText = "keep"
+        list.searchTextChanged()
+        await gate.finish(.success(nextPage))
+        await navigation.value
+        #expect(vm.selectedIssue?.id == first.id)
+        list.searchText = ""
+        list.searchTextChanged()
+    }
+
     @Test("旧 Issue 的数据库响应不能覆盖后来选中的详情")
     func lateDetailKeepsCurrentSelection() async {
         let first = makeIssue(id: 1)
@@ -102,11 +257,12 @@ struct RepoIssuesWorkspaceViewModelTests {
     private func makeViewModel(
         threadRepository: (any GitHubNotificationThreadRepositoryProtocol)? = nil,
         draftCache: DiskIssueDraftCache? = nil,
-        apiClient: (any GitHubAPIClientProtocol)? = nil
+        apiClient: (any GitHubAPIClientProtocol)? = nil,
+        listViewModel: RepoIssuesViewModel? = nil
     ) -> RepoIssuesWorkspaceViewModel {
         RepoIssuesWorkspaceViewModel(
             repo: makeRepo(),
-            listViewModel: RepoIssuesViewModel(client: MockGitHubAPIClient()),
+            listViewModel: listViewModel ?? RepoIssuesViewModel(client: MockGitHubAPIClient()),
             threadRepository: threadRepository,
             apiClient: apiClient,
             draftCache: draftCache ?? DiskIssueDraftCache(
@@ -126,9 +282,18 @@ struct RepoIssuesWorkspaceViewModelTests {
         )
     }
 
-    private func makeIssue(id: Int64) -> GitHubRepoIssue {
+    private func listResponse(
+        _ issues: [GitHubRepoIssue], nextPage: Int? = nil
+    ) -> APIResponse<[GitHubRepoIssue]> {
+        APIResponse(
+            value: issues, linkHeader: LinkHeader(nextPage: nextPage, lastPage: nextPage),
+            rateLimit: .empty, statusCode: 200, etag: nil
+        )
+    }
+
+    private func makeIssue(id: Int64, title: String? = nil) -> GitHubRepoIssue {
         GitHubRepoIssue(
-            id: id, number: Int(id), title: "Issue \(id)", state: .open,
+            id: id, number: Int(id), title: title ?? "Issue \(id)", state: .open,
             body: "Description", htmlURL: URL(string: "https://github.com/example/repo/issues/\(id)")!,
             authorLogin: "author", labels: [], commentsCount: 0,
             createdAt: nil, updatedAt: nil, closedAt: nil

@@ -93,6 +93,43 @@ final class RepoIssuesWorkspaceViewModel {
         Task { await materializeDetail(for: issue, generation: generation) }
     }
 
+    /// 箭头按左栏实际展示顺序导航；远程搜索结果不使用普通 Issues 列表的分页游标。
+    func canSelectAdjacentIssue(_ delta: Int) -> Bool {
+        guard delta == -1 || delta == 1,
+              !isCreating, !listViewModel.isLoading,
+              let selectedIssue,
+              let index = listViewModel.displayedIssues.firstIndex(where: { $0.id == selectedIssue.id })
+        else { return false }
+        return listViewModel.displayedIssues.indices.contains(index + delta)
+            || (delta == 1 && canLoadMoreForNavigation)
+    }
+
+    /// 末尾按需续页；等待期间手动切帖或换筛选后，旧箭头操作不能夺回详情选择。
+    func selectAdjacentIssue(_ delta: Int) async {
+        guard canSelectAdjacentIssue(delta) else { return }
+        let generation = detailGeneration
+        let revision = listViewModel.navigationRevision
+        while !Task.isCancelled {
+            let displayed = listViewModel.displayedIssues
+            guard let selectedIssue,
+                  let index = displayed.firstIndex(where: { $0.id == selectedIssue.id })
+            else { return }
+            if displayed.indices.contains(index + delta) {
+                select(displayed[index + delta])
+                return
+            }
+            guard delta == 1, canLoadMoreForNavigation else { return }
+            await listViewModel.loadMoreIfNeeded()
+            guard detailGeneration == generation, !isCreating,
+                  listViewModel.navigationRevision == revision else { return }
+        }
+    }
+
+    private var canLoadMoreForNavigation: Bool {
+        listViewModel.remoteSearchResults == nil && listViewModel.hasMore
+            && !listViewModel.isLoading && !listViewModel.isLoadingMore
+    }
+
     /// 列表落地后自动选中第一条（交互契约：打开工作台即有内容可看）。
     func autoSelectFirstIssueIfNeeded() {
         guard !isCreating, selectedIssue == nil else { return }
