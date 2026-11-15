@@ -38,7 +38,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 24)
+        #expect(tools.count == 25)
         #expect(tools.contains { $0["name"] as? String == "starcat.get_capabilities" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_overview_statistics" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_ai_usage_statistics" })
@@ -53,8 +53,7 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.contains { $0["name"] as? String == "starcat.unstar_repo" })
         #expect(tools.contains { $0["name"] as? String == "starcat.list_repos_by_tag" })
         #expect(tools.contains { $0["name"] as? String == "starcat.batch_organize_repos" })
-        // knowledge.search 当前只完成内部共享 capability；不能在没有独立 MCP 契约评审时
-        // 偷偷扩张已发布的公共 tool catalog。
+        // 轻量 Runtime fixture 不装配 AppDependencies；扩展目录在完整 App 中单独装配。
         #expect(tools.contains { $0["name"] as? String == "starcat.search_knowledge" } == false)
         let searchTool = try #require(tools.first { $0["name"] as? String == "starcat.search_repos" })
         let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
@@ -291,7 +290,7 @@ struct StarcatMCPRuntimeTests {
         let structuredError = try #require(invalidGlobalSearchResult["structuredContent"] as? [String: Any])
         #expect(structuredError["schema_version"] as? Int == 1)
         #expect(structuredError["code"] as? String == "INVALID_ARGUMENTS")
-        #expect(structuredError["message"] as? String == "limit must be between 1 and 50")
+        #expect(structuredError["message"] as? String == "arguments.limit: above maximum")
 
         let unsupportedToolCall = await runtime.handle(Self.request(
             id: 27,
@@ -341,7 +340,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 3, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 24)
+        #expect(tools.count == 25)
     }
 
     @Test("临时 Runtime 只暴露 Agent allowlist 并拒绝越权调用")
@@ -509,6 +508,28 @@ struct StarcatMCPRuntimeTests {
         #expect(result["isError"] as? Bool == true)
         let structured = try #require(result["structuredContent"] as? [String: Any])
         #expect((structured["summary"] as? String)?.contains("not allowed") == true)
+    }
+
+    @Test("资源 URI 的 starred 和 knowledge 范围必须与真实归属一致")
+    func resourcesRespectRepositoryScope() async throws {
+        let runtime = try await Self.makeRuntime()
+        defer { Task { @MainActor in await runtime.shutdown() } }
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+        let allowed = await runtime.handle(Self.request(
+            id: 2, method: "resources/read",
+            params: ["uri": "starcat://repos/knowledge/openai/codex"]
+        ))
+        #expect(try Self.jsonObject(from: allowed)["result"] != nil)
+        for (index, uri) in [
+            "starcat://repos/starred/openai/codex",
+            "starcat://repos/knowledge/apple/swift",
+            "starcat://repos/all/apple/swift/unknown"
+        ].enumerated() {
+            let denied = await runtime.handle(Self.request(
+                id: index + 3, method: "resources/read", params: ["uri": uri]
+            ))
+            #expect(try Self.jsonObject(from: denied)["error"] != nil)
+        }
     }
 
     @Test("关闭私有笔记读取后知识库统计不返回笔记数量")

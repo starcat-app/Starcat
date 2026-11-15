@@ -27,6 +27,7 @@ final class StarcatMCPFacade {
     private let knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache
     private let entitlementGate: EntitlementGate
     private let settings: AppSettings
+    var publicCapabilities: StarcatMCPPublicFacade?
 
     init(
         repoRepository: any RepoRepositoryProtocol,
@@ -294,6 +295,12 @@ final class StarcatMCPFacade {
         let all = Array(SemanticIndexScope.selectCandidates(scope: .all, starred: starred, knowledge: knowledge).prefix(20))
         var out = [
             MCPResourceDescriptor(
+                uri: "starcat://capabilities",
+                name: "Starcat Public Capabilities",
+                description: "Versioned public tools, schemas, permissions and process-local task semantics",
+                mimeType: "application/json"
+            ),
+            MCPResourceDescriptor(
                 uri: "starcat://tags",
                 name: "Starcat Tags",
                 description: "All user-defined Starcat tags",
@@ -331,15 +338,27 @@ final class StarcatMCPFacade {
             throw StarcatMCPError.invalidArguments("Unknown resource URI: \(uri)")
         }
         var parts = components.path.split(separator: "/").map(String.init)
-        if let first = parts.first, SemanticIndexScope(rawValue: first) != nil {
+        var scope = SemanticIndexScope.all
+        if let first = parts.first, let selected = SemanticIndexScope(rawValue: first) {
+            scope = selected
             parts.removeFirst()
         }
-        guard parts.count >= 2 else {
+        guard parts.count == 2 || (parts.count == 3 && parts[2] == "readme") else {
             throw StarcatMCPError.invalidArguments("Repo resource must be starcat://repos/{owner}/{repo}")
         }
         let owner = parts[0]
         let name = parts[1]
-        if parts.count >= 3, parts[2] == "readme" {
+        // URI 中的 scope 是数据范围，不能只剥掉路径后按 all 读取。
+        let repository = try await RepositoryReadCapabilityExecutor(source: repositoryReadSource(scope: scope)).get(
+            RepositoryCapabilitySelector(repoID: nil, owner: owner, name: name)
+        )
+        // all 的单仓定位允许任意缓存；资源目录只列 Star / Knowledge 联集，需另验成员。
+        if scope == .all {
+            guard try await fetchRepos(scope: scope).contains(where: { $0.id == repository.id }) else {
+                throw StarcatMCPError.notFound("Repo is outside the requested resource scope")
+            }
+        }
+        if parts.count == 3 {
             let value = try await getReadme(repoID: nil, owner: owner, name: name)
             return ("application/json", try Self.prettyJSON(value))
         }

@@ -17,7 +17,7 @@ import Foundation
 /// `initialize.serverInfo.version` 与 `starcat.get_capabilities.server_version`
 /// 都必须复用此值，避免客户端在同一会话里观察到互相矛盾的 Server 版本。
 enum StarcatMCPServerMetadata {
-    static let version = "0.5.0"
+    static let version = "0.6.0"
 }
 
 /// MCP 对外暴露的 repo 摘要。
@@ -345,6 +345,11 @@ struct MCPRepoContextDTO: Codable, Sendable {
 
 /// MCP 当前能力快照。只暴露权限状态，不包含 Local API Key 或其它凭据。
 struct MCPCapabilitiesDTO: Codable, Sendable {
+    /// v2 是公开行为升级：写入省略 dry_run 统一预览；客户端应显式发送 false 执行。
+    let contract_version = 2
+    let write_default = "preview"
+    let public_catalog = true
+    let process_local_tasks = true
     let server_version: String
     let loopback_only: Bool
     let private_notes_read: Bool

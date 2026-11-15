@@ -23,6 +23,12 @@ struct GRDBReleaseRepository: ReleaseRepositoryProtocol {
 
     // MARK: - 查询
 
+    func find(id: Int64) async throws -> ReleaseRecord? {
+        try await database.writer.read { db in
+            try ReleaseRecord.fetchOne(db, key: id)
+        }
+    }
+
     func latest(forRepo repoId: Int64) async throws -> ReleaseRecord? {
         try await database.writer.read { db in
             try ReleaseRecord.fetchOne(

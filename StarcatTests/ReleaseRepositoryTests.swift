@@ -167,8 +167,9 @@ struct ReleaseRepositoryTests {
             makeRecord(id: 2, repoId: 10, tag: "v2"),
         ], isReadDefault: false)
 
+        #expect(try await repo.find(id: 999) == nil)
         try await repo.markRead(releaseId: 1, isRead: true)
-        let one = try #require(try await repo.fetch(forRepo: 10, limit: 50).first { $0.id == 1 })
+        let one = try #require(try await repo.find(id: 1))
         #expect(one.isRead == true)
 
         try await repo.markAllRead(forRepo: 10)
