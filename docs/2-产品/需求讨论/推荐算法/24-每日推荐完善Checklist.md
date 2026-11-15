@@ -113,3 +113,9 @@
 - C10.5：仅完整 Stars 同步成功后检查无有效种子的空态，先等待先前准备收尾再补试；私有／归档 Stars 不发推荐请求，已有冻结批次不重建。49 项 / 2 套件通过（`/tmp/starcat-daily-closeout-c5-tests.log`），覆盖同步完成先于空种子查询返回的交错顺序及后续普通 Star 变更。
 - C10.6：主窗口底部在手动准备期间显示局部进度与取消按钮，不提前创建覆盖窗口或禁用其余内容。48 项 / 1 套件通过（`/tmp/starcat-daily-closeout-c6-tests.log`），验证取消不发布批次、不登记历史或展示资格，再次打开复用未消费的候选；文案复用既有 17 语言 key，状态条布局仍待人工查看。
 - C10.7：当前页快照只在筛选、反馈内容刷新或分页时重建，行内分页计数复用同一数组；相同 ID 的简介／反馈更新仍刷新可见内容。14 项 / 2 套件通过（`/tmp/starcat-daily-closeout-c7-tests.log`），新增 10,050 条分页、无重复、查询重置与反馈刷新回归。
+
+### C10 收尾验证
+
+- 2026-11-15：推荐相关最终回归 94 项 / 7 套件通过（`/tmp/starcat-daily-closeout-final-tests.log`）；`make build-direct` 与 `make build-appstore` 均通过构建及产物校验（`/tmp/starcat-daily-closeout-build-direct.log`、`/tmp/starcat-daily-closeout-build-appstore.log`）。
+- 2026-11-15：网页离线检查 8 项通过；两渠道内嵌 `daily-discovery.html` 与源码一致，4 个复用 key × 17 语言的 136 个编译值一致，本轮 Catalog 相对 C10 基线零改动（`/tmp/starcat-daily-closeout-resources.log`）。`git diff --check` 通过。
+- 2026-11-15：七项分别提交为 `1568560c`、`96a5eb28`、`abbfc8ae`、`169267fd`、`92ce8a77`、`e8a3bb15`、`d2e9bc00`。未启动 App、未操作 GUI、未调用真实付费 LLM，状态条观感、取消交互和大列表滚动仍需人工验收。
