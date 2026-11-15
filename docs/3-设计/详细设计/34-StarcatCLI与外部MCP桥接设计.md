@@ -2,7 +2,7 @@
 
 > 范围更新（2026-10-07）：#119 的 MCP 配对时间剩余跟进取消；已有配对时间显示、连接修复和安全边界保留，不影响其他 CLI / MCP 工作。 逐项见[任务取消与范围同步](../../4-工程进度/2026-10-07-任务取消与范围同步.md)；本说明优先于下文同范围的旧排期与验收要求。
 
-> 状态：v3 实现中（2026-07-20）
+> 状态：公共契约 v2 已在专项 worktree 实施，自动化与双渠道构建结果见专项记录；真实连接及发布独立验收（2026-11-15）
 >
 > 目标：让 macOS、Linux、Windows 上的 Codex、Claude Code 等 Agent 安全操作另一台 Mac 上的 Starcat。
 
@@ -12,7 +12,7 @@ Starcat 对外能力收口为三层：
 
 1. **Starcat App MCP Service**：唯一业务实现，负责数据访问、Pro、隐私开关、写权限、dry-run、审计和 AI Provider。
 2. **`starcat-app/starcat-cli`**：Go 跨平台协议适配器。CLI 命令和 `starcat mcp` 都调用同一组 MCP Tools。
-3. **`starcat-app/starcat-skill`**：只描述 Agent 工作流，统一执行 `starcat` CLI，不携带 Python HTTP client 或 Starcat 凭据。
+3. **`starcat-app/starcat-skill`**：描述 MCP 与结构化 CLI 两种 Agent 工作流，统一经过 `starcat`，不携带 HTTP client 或 Starcat 凭据。
 
 两个外部项目在开发机分别位于 `supports/starcat-cli` 和 `supports/starcat-skill`，均拥有独立 Git history，不进入 Starcat 主仓库版本控制。
 
@@ -60,6 +60,11 @@ Codex / Claude Code / 其它 Agent（macOS / Linux / Windows）
 starcat pair "starcat-pair://..."
 starcat doctor
 starcat capabilities
+starcat tools list --json
+starcat tools describe starcat.get_repo
+starcat tools call starcat.get_repo --input request.json
+starcat resources read starcat://capabilities
+starcat stats --json
 starcat repo search "local RAG" --semantic
 starcat repo context owner/repo
 starcat repo summary owner/repo --generate
@@ -71,7 +76,7 @@ starcat mcp
 约束：
 
 - `help`、`version`、`pair`、`unpair`、`doctor`、`update` 默认输出终端文本；数据命令输出 JSON；`starcat mcp` 的 stdout 只承载 JSON-RPC。
-- `doctor` 只输出适合终端阅读的诊断文本；脚本或 Agent 需要结构化结果时统一通过 MCP 工具获取。
+- `doctor` 输出终端文本；`stats` 支持 `--json`，所有公共工具与资源均有通用 CLI 入口。
 - 所有错误只写 stderr，未知 flag 必须报错，不能静默忽略。
 - 写命令默认 `dry_run=true`，显式 `--apply` 才持久化。
 - 笔记正文只从 stdin 读取，不进入进程参数。
@@ -127,15 +132,17 @@ starcat-skill/
     └── workflows.md
 ```
 
-Skill 不包含 Python 脚本、`.env` 或 endpoint/key 配置。每个工作流先运行 `starcat capabilities`，写入先 dry-run，正式写入后重新读取 context 验证。
+Skill 的 Python 脚本只校验开发契约，不承担业务调用；不包含 `.env` 或 endpoint/key 配置。每个工作流先发现当前能力，写入先 dry-run，正式写入后按业务回读验证。
 
 ## 8. MCP 工具边界
 
-读取和生成：`starcat.get_capabilities`、`starcat.search_repos`、`starcat.semantic_search`、`starcat.get_repo`、`starcat.get_repo_context`、`starcat.get_repo_summary`、`starcat.generate_repo_summary`、`starcat.get_readme`、`starcat.list_tags`、`starcat.get_repo_note`。
+App 目录由 `StarcatMCPToolRegistry` 与 `StarcatMCPPublicCatalog` 维护，本次基线 24 个工具扩展为 69 个。逐动作、权限、副作用和暂缓项见[能力覆盖清单](../../4-工程进度/CLI与MCP能力开放专项/能力覆盖清单.md)。CLI 和 Skill 读取实时目录，不复制业务执行，也不以工具数量代替 App 业务覆盖率。
 
-写入：`starcat.upsert_repo_note`、`starcat.set_repo_status`、`starcat.create_tag`、`starcat.add_repo_tags`、`starcat.remove_repo_tags`、`starcat.set_repo_tags`。
+`starcat://capabilities` 与 `get_capability_catalog` 返回目录及契约版本。App server `0.6.0` / `contract_version=2` 将省略 `dry_run` 的写入统一为预览；旧 MCP 消费方须在授权后显式传 `false`。通用 CLI 始终按 `--apply` 决定预览，不能从输入 JSON 绕过。
 
-CLI 和 Skill 不增加业务语义，只映射上述工具。
+长任务由 App 持有，断开客户端继续运行；完成结果保留一小时，最多 100 个句柄，不持久化恢复。切号先阻止新请求，再等待已接受请求和任务结束后切库。取消能力来自真实执行器。导出返回内容，路径由 CLI 设备解释。详细契约与验证见[专项记录](../../4-工程进度/CLI与MCP能力开放专项/验证与交付记录.md)。
+
+浏览器配对使用独立 Companion 设备 token。Chrome 可通过 `starcat browser-host` 代理 loopback 请求与 SSE；该长度前缀协议独立于 MCP stdio。Safari 当前仍为 background HTTP 通道例外；有限发现只覆盖保存地址与固定候选端口，不代表任意端口免地址。
 
 ## 9. 验收
 
@@ -148,7 +155,8 @@ CLI 和 Skill 不增加业务语义，只映射上述工具。
 ## 10. 暂不做
 
 - 公网 relay、云端转发或 Starcat 托管服务。
-- GitHub 远端 star/unstar。
-- 真正的 batch tool。
+- 备份恢复、公开发布、任意代码执行等暂缓项，见本次覆盖清单的接入条件。
 - Stateful SSE/server push。
 - 直接数据库 CLI 或第二套 REST 业务 API。
+
+新增业务必须按[CLI 与 MCP 能力暴露规范](../../5-规范/CLI与MCP能力暴露规范.md)主动评估双入口、权限、预览和任务；自动检查脚本只验证已登记项，未登记动作仍需评审。

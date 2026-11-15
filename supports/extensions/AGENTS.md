@@ -16,7 +16,7 @@ Starcat 主仓库提交。
 - 两端均使用 WebExtension Manifest V3 与原生 JavaScript、HTML、CSS，不需要构建步骤。
 - Chrome 使用 `chrome.*`；Safari 使用 `globalThis.browser || globalThis.chrome` 兼容层。
 - 插件只能通过 loopback `/plugin/v1/*` 与 Starcat macOS Companion API 通信。
-- Safari content script 必须经 `src/background/background.js` 访问本地 API，以适配更严格的 CORS。
+- 两端 content script 必须经 `src/background/background.js` 访问本地 API，不接触新设备 token 或配对秘密。Chrome 可选经 CLI Native Messaging，Safari 当前保留 background HTTP 通道。
 - 禁止绕过 Companion API 直连 GitHub、Starcat 云端、AI Provider 或读取本地数据库。
 
 ## 双端同步铁律
