@@ -1141,6 +1141,66 @@ struct DailyRecommendationTests {
         #expect(store.historyEntries.isEmpty)
     }
 
+    @Test("宿主关闭传递取消至独立换批任务，不替换已展示批次")
+    func hostCancellationReachesReplacement() async {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                         fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in
+            response((100...119).map { item(Int64($0)) })
+        })
+        await store.markPresented()
+        let preparation = DailyRecommendationPreparation()
+        var waiting: CheckedContinuation<Void, Never>?
+        let caller = Task {
+            await preparation.run(key: "replacement", origin: .user) {
+                await store.load(
+                    accountID: 42, scopeRevision: 1, serviceScope: "test", replacingCurrentBatch: true,
+                    fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in response([item(200)]) },
+                    prepareItems: { _ in await withCheckedContinuation { waiting = $0 } }
+                )
+            }
+        }
+        while waiting == nil { await Task.yield() }
+        // 与 Host 关闭分支相同；即使 Provider 暂不响应取消，迟到结果也不能替换当前批次。
+        preparation.cancelUserPreparation()
+        caller.cancel()
+        waiting?.resume()
+        #expect(!(await caller.value))
+        #expect(store.visibleItems.map(\.repoID) == (100...109).map(Int64.init))
+        #expect(Set(store.historyEntries.map(\.id)) == Set((100...109).map(Int64.init)))
+        #expect(!preparation.isRunning)
+    }
+
+    @Test("手动关闭不取消已经共享的后台预取")
+    func closingDoesNotCancelBackgroundPreparation() async {
+        let preparation = DailyRecommendationPreparation()
+        var waiting: CheckedContinuation<Void, Never>?
+        var shared = false
+        let background = Task {
+            await preparation.run(key: "today", origin: .background) {
+                await withCheckedContinuation { waiting = $0 }
+                return !Task.isCancelled
+            }
+        }
+        while waiting == nil { await Task.yield() }
+        let manual = Task {
+            shared = true
+            return await preparation.run(key: "today", origin: .user) {
+                Issue.record("同一批次不能重复准备")
+                return false
+            }
+        }
+        while !shared { await Task.yield() }
+        preparation.cancelUserPreparation()
+        manual.cancel()
+        waiting?.resume()
+        #expect(await background.value)
+        _ = await manual.value
+        #expect(!preparation.isRunning)
+    }
+
     /// 同一测试重启 Store 时复用磁盘库；切账号显式模拟 AppDependencies 的数据库切换。
     private let historyDatabases = HistoryTestDatabases()
 

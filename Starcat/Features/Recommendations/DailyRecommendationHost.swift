@@ -28,10 +28,6 @@ struct DailyRecommendationHost: ViewModifier {
     @State private var isCardContentReady = false
     /// 外部 Binding 是“请求打开”，只有批次理由已保存或明确兜底才真正创建推荐窗口。
     @State private var isReadyToPresent = false
-    /// 启动预取与手动点击共用一个准备任务，点击不能绕过正在进行的整批生成。
-    @State private var preparationTask: Task<Bool, Never>?
-    @State private var preparationTaskID: UUID?
-    @State private var preparationKey: String?
 
     private var accountID: Int64? {
         guard let id = authSession.state.user?.id, dependencies.database.currentUserId == id else { return nil }
@@ -60,7 +56,7 @@ struct DailyRecommendationHost: ViewModifier {
                     onClose: { isPresented = false },
                     onOpen: onOpen,
                     onRetry: retry,
-                    onNextBatch: { await prepare(replacingCurrentBatch: true) },
+                    onNextBatch: { await prepare(replacingCurrentBatch: true, origin: .user) },
                     onPresented: {
                         isCardContentReady = true
                         recordPresentation()
@@ -99,10 +95,7 @@ struct DailyRecommendationHost: ViewModifier {
             preparationRevision &+= 1
         }
         .onChange(of: accountIdentity) { _, _ in
-            preparationTask?.cancel()
-            preparationTask = nil
-            preparationTaskID = nil
-            preparationKey = nil
+            dependencies.dailyRecommendationPreparation.cancel()
             isPresented = false
             isReadyToPresent = false
             preparedIdentity = nil
@@ -113,6 +106,7 @@ struct DailyRecommendationHost: ViewModifier {
         }
         .onChange(of: isPresented) { _, presented in
             if !presented {
+                dependencies.dailyRecommendationPreparation.cancelUserPreparation()
                 isReadyToPresent = false
                 preparedIdentity = nil
                 isCardContentReady = false
@@ -132,7 +126,7 @@ struct DailyRecommendationHost: ViewModifier {
             // 包括取数失败和未登录的原有空态；LLM 失败本身不会让 prepare 失败。
             isReadyToPresent = true
         }
-        .onDisappear { preparationTask?.cancel() }
+        .onDisappear { dependencies.dailyRecommendationPreparation.cancel() }
         .onChange(of: dependencies.starredRegistry.ids) { _, ids in
             let account = accountIdentity
             Task {
@@ -144,7 +138,7 @@ struct DailyRecommendationHost: ViewModifier {
 
     /// 每次请求先固定账号和服务作用域；账号切换会让 Store 的 generation 失效。
     private func load() async {
-        _ = await prepare(replacingCurrentBatch: false)
+        _ = await prepare(replacingCurrentBatch: false, origin: .user)
     }
 
     /// 保存失败重试当前选择；取数失败延续原操作，避免“换批失败 → 重试”只恢复旧缓存。
@@ -153,7 +147,7 @@ struct DailyRecommendationHost: ViewModifier {
         if store.errorKey == "recommendations.daily.saveFailed" {
             await store.retrySaving()
         } else {
-            _ = await prepare(replacingCurrentBatch: store.retryReplacesCurrentBatch)
+            _ = await prepare(replacingCurrentBatch: store.retryReplacesCurrentBatch, origin: .user)
         }
     }
 
@@ -168,27 +162,15 @@ struct DailyRecommendationHost: ViewModifier {
     }
 
     /// 自动准备、失败重试与主动换批共用取数路径；换批的成功结果只用于重置舞台动画。
-    private func prepare(replacingCurrentBatch: Bool) async -> Bool {
+    private func prepare(
+        replacingCurrentBatch: Bool, origin: DailyRecommendationPreparation.Origin = .background
+    ) async -> Bool {
         guard let accountID, !TestEnvironment.isRunning else { return false }
         let key = "\(identity)|\(replacingCurrentBatch)"
-        if let task = preparationTask {
-            if preparationKey == key { return await task.value }
-            let previousID = preparationTaskID
-            task.cancel()
-            _ = await task.value
-            if preparationTaskID == previousID {
-                preparationTask = nil
-                preparationTaskID = nil
-                preparationKey = nil
-            }
-            guard !Task.isCancelled else { return false }
-            return await prepare(replacingCurrentBatch: replacingCurrentBatch)
-        }
         let revision = dependencies.databaseScopeRevision
         let language = locale.identifier
         let isPro = dependencies.entitlementGate.isProUser
-        let taskID = UUID()
-        let task = Task { @MainActor in
+        return await dependencies.dailyRecommendationPreparation.run(key: key, origin: origin) {
             let scope = await dependencies.recommendAPI.recommendationCacheScope()
             guard accountID == self.accountID, revision == dependencies.databaseScopeRevision,
                   !Task.isCancelled else { return false }
@@ -218,16 +200,6 @@ struct DailyRecommendationHost: ViewModifier {
             )
             return prepared
         }
-        preparationTask = task
-        preparationTaskID = taskID
-        preparationKey = key
-        let result = await task.value
-        if preparationTaskID == taskID {
-            preparationTask = nil
-            preparationTaskID = nil
-            preparationKey = nil
-        }
-        return result
     }
 
     /// 手动和自动入口共用实际呈现回调；关闭或切换账号后不登记尚未展示的批次

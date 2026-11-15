@@ -40,6 +40,8 @@ final class AppDependencies {
     let dailyRecommendationStore: DailyRecommendationStore
     /// 可重建 AI 理由缓存与长期历史分离，卡片和历史详情共享同一份生成结果。
     let dailyRecommendationExplanationStore = DailyRecommendationExplanationStore()
+    /// 原生宿主共用可取消的准备任务，关闭用户换批不依赖 SwiftUI 的任务继承。
+    let dailyRecommendationPreparation = DailyRecommendationPreparation()
     /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
     let aiUsageRepository: any AIUsageRepositoryProtocol
     /// D-02：注入类型从 actor 改为协议，便于 Preview / 测试替换为 Mock。
