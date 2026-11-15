@@ -32,7 +32,7 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
             forks = item.forks
             let basis = DailyRecommendationReason(reasons: item.reasons)
             reason = String.l10n(basis.localizationKey)
-            reasonDetail = String.l10n(basis.detailLocalizationKey)
+            reasonDetail = item.basicRecommendationReason
             // 模型兜底和未知类型只有通用说明，不应占用暗示“详细个性化理由”的重型分区。
             compactReason = basis == .model || basis == .unspecified
             self.revealed = revealed

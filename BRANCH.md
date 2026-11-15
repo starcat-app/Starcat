@@ -87,6 +87,13 @@ Git 元数据不再依赖旧专项目录，本地配置、图片缓存与发布�
 
 ## 推荐数据链路跨仓分支
 
+2026-11-15 为每日推荐真实依据创建推荐后端专项 worktree：
+`supports/starcat-recommend-api` 使用独立仓分支 `codex/daily-recommendation-evidence`，
+位于 `../Starcat-daily-recommendation-cards/supports/starcat-recommend-api`，
+基线为该独立仓 `dev@1ad1c21`。状态为开发中，只实现与测试来源证据字段；
+验收后另行合回该仓 dev，不自动推送、部署或修改主工作区支持仓。
+
+
 2026-08-29 已按 dong4j 授权清理：Starcat `../Starcat-collection-pipeline` worktree 与各仓需求分支均已删除。独立仓库仍各自保留 `dev` / `main`，不由主仓库管理其 Git 历史。
 
 ## 近期已清理分支

@@ -188,19 +188,33 @@ final class DailyRecommendationStore {
                     throw error
                 }
                 guard token == generation, !Task.isCancelled else { return false }
+                // 只展示当前正向公开 Stars 中真实命中的来源；保留本地名称快照而非推测种子关系。
+                let sourceRepos = Dictionary(repos.filter { seeds.contains($0.id) }.map { ($0.id, $0) },
+                                             uniquingKeysWith: { first, _ in first })
+                let pageItems = page.items.map { item in
+                    var copy = item
+                    var seen = Set<Int64>()
+                    copy.matchedSeeds = item.matchedSeeds?.compactMap { seed in
+                        guard let repo = sourceRepos[seed.repoID], seen.insert(seed.repoID).inserted else { return nil }
+                        return RecommendationSeed(repoID: seed.repoID, fullName: repo.fullName,
+                                                  description: repo.description, language: repo.language,
+                                                  reasons: seed.reasons)
+                    }.prefix(3).map { $0 }
+                    return copy
+                }
                 // 只探测第一页确认当天活动模型；版本不变时保留已推进的位置，不能每天回到前 100 条
                 if cursor == nil, var current = pool, current.modelVersion == page.modelVersion {
-                    current.items = page.items + current.items
+                    current.items = pageItems + current.items
                     current.checkedDay = day
                     pool = current
                 } else if cursor == nil {
                     pool = DailyRecommendationCandidatePool(
                         seedIDs: seeds, serviceScope: serviceScope, modelVersion: page.modelVersion,
-                        checkedDay: day, items: page.items, hasMore: page.hasMore, nextCursor: page.nextCursor
+                        checkedDay: day, items: pageItems, hasMore: page.hasMore, nextCursor: page.nextCursor
                     )
                 } else {
                     guard pool?.modelVersion == page.modelVersion else { pool = nil; continue }
-                    pool?.items.append(contentsOf: page.items)
+                    pool?.items.append(contentsOf: pageItems)
                     pool?.hasMore = page.hasMore
                     pool?.nextCursor = page.nextCursor
                 }

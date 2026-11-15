@@ -1005,6 +1005,30 @@ struct DailyRecommendationTests {
         #expect(store.canAutomaticallyPresent())
     }
 
+    @Test("来源仅接受当前公开种子，并随历史保存而不依赖后续 Star")
+    func persistsRealSourceEvidence() async throws {
+        let root = temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        var candidate = item(100)
+        let source = RecommendationSeed(repoID: 1, fullName: "wrong/name", description: nil,
+                                        language: nil, reasons: ["costar"])
+        candidate.matchedSeeds = [source, source,
+            RecommendationSeed(repoID: 999, fullName: "unrelated/project", description: nil,
+                               language: nil, reasons: nil)]
+        let page = response([candidate])
+        #expect(await store.load(accountID: 42, scopeRevision: 1, serviceScope: "test",
+                                 fetchStars: { [repo(1)] }, fetchCandidates: { _, _ in page }))
+        let sources = try #require(store.visibleItems.first?.matchedSeeds)
+        #expect(sources.count == 1)
+        #expect(sources.first?.fullName == "owner/repo1")
+        await store.markPresented()
+        let restored = makeStore(root: root)
+        #expect(await restored.loadPreferences(accountID: 42, scopeRevision: 1))
+        #expect(restored.historyEntries.first?.item?.matchedSeeds == sources)
+        #expect(restored.historyEntries.first?.item?.basicRecommendationReason.contains("owner/repo1") == true)
+    }
+
     /// 同一测试重启 Store 时复用磁盘库；切账号显式模拟 AppDependencies 的数据库切换。
     private let historyDatabases = HistoryTestDatabases()
 

@@ -61,3 +61,19 @@ enum DailyRecommendationReason: Equatable {
         }
     }
 }
+
+extension RepoRecommendationItem {
+    /// 基础依据只列真实来源；通用“模型筛选”没有个性化信息，不再当成详细理由。
+    var basicRecommendationReason: String {
+        let names = (matchedSeeds ?? []).map(\.fullName).filter { !$0.isEmpty }
+        if !names.isEmpty {
+            return String(format: String.l10n("recommendations.daily.basedOnStars"),
+                          names.joined(separator: " · "))
+        }
+        let basis = DailyRecommendationReason(reasons: reasons)
+        if basis == .model || basis == .unspecified {
+            return String.l10n("recommendations.history.reasonUnavailable")
+        }
+        return String.l10n(basis.detailLocalizationKey)
+    }
+}

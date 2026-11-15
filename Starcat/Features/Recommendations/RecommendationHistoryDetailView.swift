@@ -43,10 +43,7 @@ struct RecommendationHistoryDetailView: View {
                 }
             }
             Text("recommendations.daily.reasonTitle").fontWeight(.semibold)
-            Text(LocalizedStringKey(
-                item.reasons.isEmpty ? "recommendations.history.reasonUnavailable"
-                    : DailyRecommendationReason(reasons: item.reasons).detailLocalizationKey
-            ))
+            Text(verbatim: item.basicRecommendationReason)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }

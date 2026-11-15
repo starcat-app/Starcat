@@ -30,6 +30,8 @@ struct RepoRecommendationItem: Codable, Identifiable, Sendable, Equatable {
     let displayScore: Double?
     let source: String
     let reasons: [String]
+    /// 实际正向来源的公开快照；旧服务尚未部署此字段时保持缺省，不能由客户端猜测关联。
+    var matchedSeeds: [RecommendationSeed]?
 
     init(
         repoID: Int64,
@@ -42,7 +44,8 @@ struct RepoRecommendationItem: Codable, Identifiable, Sendable, Equatable {
         score: Double,
         displayScore: Double? = nil,
         source: String,
-        reasons: [String]
+        reasons: [String],
+        matchedSeeds: [RecommendationSeed]? = nil
     ) {
         self.repoID = repoID
         self.fullName = fullName
@@ -55,6 +58,7 @@ struct RepoRecommendationItem: Codable, Identifiable, Sendable, Equatable {
         self.displayScore = displayScore
         self.source = source
         self.reasons = reasons
+        self.matchedSeeds = matchedSeeds
     }
 
     var id: Int64 { repoID }
@@ -75,6 +79,21 @@ struct RepoRecommendationItem: Codable, Identifiable, Sendable, Equatable {
         case displayScore = "display_score"
         case source
         case reasons
+        case matchedSeeds = "matched_seeds"
+    }
+}
+
+/// 一条推荐边的来源资料随历史保存，来源取消 Star 后仍能解释当时的推荐事实。
+struct RecommendationSeed: Codable, Sendable, Equatable {
+    let repoID: Int64
+    let fullName: String
+    let description: String?
+    let language: String?
+    let reasons: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case repoID = "repo_id", fullName = "full_name"
+        case description, language, reasons
     }
 }
 

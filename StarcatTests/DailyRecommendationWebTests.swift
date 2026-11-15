@@ -82,7 +82,7 @@ struct DailyRecommendationWebTests {
         #expect(item.description.isEmpty)
         #expect(item.language == nil)
         #expect(item.reason == String.l10n("recommendations.daily.reason"))
-        #expect(item.reasonDetail == item.reason)
+        #expect(item.reasonDetail == String.l10n("recommendations.history.reasonUnavailable"))
         #expect(item.compactReason)
         #expect(!item.revealed)
     }
