@@ -30,6 +30,68 @@ import GRDB
 @Suite("ActivityViewModel SWR")
 struct ActivityViewModelTests {
 
+    /// 精确挂起读库，验证首帧骨架与已有内容刷新，而不是依赖一次真实数据库读取的耗时。
+    @Test("取消星标首次加载显示骨架，刷新与失败保留已有记录")
+    func undoStarLoadingKeepsExistingRows() async throws {
+        let suiteName = "UndoStarLoadingTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        let repository = UndoStarLoadingRepository()
+        let model = UndoStarViewModel(repository: repository, settings: settings)
+        let record = UndoStarRecord(
+            ghRepoId: 42, owner: "test", name: "project", fullName: "test/project",
+            starsCount: 5, forksCount: 0, watchersCount: 0,
+            htmlUrl: "https://github.com/test/project", unstarredAt: "2026-11-17T00:00:00Z"
+        )
+        #expect(model.showsSkeleton)
+        let initialLoad = Task { await model.load() }
+        await repository.waitForFetch()
+        #expect(model.isLoading)
+        #expect(model.showsSkeleton)
+        await repository.finishFetch(.success([record]))
+        await initialLoad.value
+        #expect(!model.showsSkeleton)
+        #expect(!model.isLoading)
+        #expect(model.records == [record])
+        let revision = model.rowRevealRevision
+
+        let refresh = Task { await model.reload() }
+        await repository.waitForFetch()
+        #expect(model.isLoading)
+        #expect(!model.showsSkeleton)
+        #expect(model.records == [record])
+        await repository.finishFetch(.failure(URLError(.cannotLoadFromNetwork)))
+        await refresh.value
+        #expect(!model.isLoading)
+        #expect(!model.showsSkeleton)
+        #expect(model.records == [record])
+        #expect(model.loadError != nil)
+        #expect(model.rowRevealRevision == revision)
+    }
+
+    @Test("取消星标空结果和失败均结束首屏骨架")
+    func undoStarEmptyAndFailedLoadsFinishSkeleton() async throws {
+        let suiteName = "UndoStarEmptyLoadingTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let repository = UndoStarLoadingRepository()
+        let model = UndoStarViewModel(
+            repository: repository,
+            settings: AppSettings(defaults: defaults, keychain: InMemoryKeychain())
+        )
+        for result: Result<[UndoStarRecord], any Error> in [.success([]), .failure(URLError(.cannotLoadFromNetwork))] {
+            let load = Task { await model.reload() }
+            await repository.waitForFetch()
+            #expect(model.showsSkeleton)
+            await repository.finishFetch(result)
+            await load.value
+            #expect(!model.showsSkeleton)
+            #expect(!model.isLoading)
+            #expect(model.records.isEmpty)
+        }
+    }
+
     @Test("Repo List 行动画严格只覆盖前 15 行")
     func rowRevealLimitIsExactlyFifteen() {
         #expect(ListRowRevealMetrics.animatedRowLimit == 15)
@@ -1170,4 +1232,36 @@ struct ActivityViewModelTests {
             cachedAt: nil
         )
     }
+}
+
+/// 只控制 fetchAll 的就绪时机；其余协议操作不访问生产数据库或触发通知。
+private actor UndoStarLoadingRepository: UndoStarHistoryRepositoryProtocol {
+    private var pendingFetch: CheckedContinuation<[UndoStarRecord], any Error>?
+    private var fetchWaiter: CheckedContinuation<Void, Never>?
+
+    func fetchAll(sort: UndoStarSortOption) async throws -> [UndoStarRecord] {
+        try await withCheckedThrowingContinuation { continuation in
+            pendingFetch = continuation
+            fetchWaiter?.resume()
+            fetchWaiter = nil
+        }
+    }
+
+    /// 等待真实读库入口挂起，避免用 sleep 猜测 MainActor 调度顺序。
+    func waitForFetch() async {
+        guard pendingFetch == nil else { return }
+        await withCheckedContinuation { fetchWaiter = $0 }
+    }
+
+    func finishFetch(_ result: Result<[UndoStarRecord], any Error>) {
+        pendingFetch?.resume(with: result)
+        pendingFetch = nil
+    }
+
+    func record(_ record: UndoStarRecord) async throws {}
+    func remove(ghRepoId: Int64) async throws {}
+    func clearAll() async throws {}
+    func cleanupExpired(before cutoff: String) async throws -> Int { 0 }
+    func fetchRepo(ghRepoId: Int64) async throws -> Repo? { nil }
+    func countExpired(before cutoff: String) async throws -> Int { 0 }
 }

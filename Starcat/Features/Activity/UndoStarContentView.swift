@@ -13,10 +13,16 @@ import SwiftUI
 @Observable
 final class UndoStarViewModel {
     private(set) var records: [UndoStarRecord] = []
-    private(set) var isLoading = false
+    // View 首帧早于 .task，初始即处于加载态，避免短暂显示“没有取消星标记录”。
+    private(set) var isLoading = true
     private(set) var loadError: String?
     /// 即将被清理的记录数
     private(set) var expiringCount: Int = 0
+    private(set) var rowRevealRevision = 0
+    private var loadedSortOption: UndoStarSortOption?
+
+    /// 只有没有可浏览记录时才用骨架；刷新和排序期间保留原列表及其选择状态。
+    var showsSkeleton: Bool { isLoading && records.isEmpty }
 
     var sortOption: UndoStarSortOption = .unstarredAtDesc {
         didSet { Task { await reload() } }
@@ -33,8 +39,15 @@ final class UndoStarViewModel {
     func reload() async {
         isLoading = true
         loadError = nil
+        let requestedSort = sortOption
         do {
-            records = try await repository.fetchAll(sort: sortOption)
+            let fetched = try await repository.fetchAll(sort: requestedSort)
+            // 排序结果真正就绪后才重播行入场，避免对仍在显示的旧顺序提前播放。
+            if loadedSortOption != requestedSort {
+                loadedSortOption = requestedSort
+                rowRevealRevision &+= 1
+            }
+            records = fetched
             await refreshExpiringCount()
         } catch {
             loadError = error.localizedDescription
@@ -85,6 +98,7 @@ struct UndoStarContentView: View {
     @Namespace private var selectionSpace
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @State private var viewModel: UndoStarViewModel
     @State private var toastMessage: String?
@@ -124,6 +138,7 @@ struct UndoStarContentView: View {
             filterBar
             Divider()
             content
+                .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.showsSkeleton)
         }
         .toast(message: $toastMessage, icon: "checkmark.circle.fill")
         .alert("activity.undoStar.clearAll.confirmTitle", isPresented: $showClearAllConfirm) {
@@ -298,9 +313,10 @@ struct UndoStarContentView: View {
 
     @ViewBuilder
     private var content: some View {
-        if viewModel.isLoading {
+        if viewModel.showsSkeleton {
             RepoSkeletonListView(rowCount: 5)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
         } else if let error = viewModel.loadError, viewModel.records.isEmpty {
             emptyState(systemImage: "exclamationmark.triangle", text: error)
         } else if viewModel.records.isEmpty {
@@ -309,6 +325,7 @@ struct UndoStarContentView: View {
             emptyState(systemImage: "magnifyingglass", titleKey: "list.quickSearch.empty")
         } else {
             recordList
+                .transition(.opacity)
         }
     }
 
@@ -330,8 +347,10 @@ struct UndoStarContentView: View {
 
     private var recordList: some View {
         let store = dependencies.undoStarMultiSelectionStore
+        // 只在查询变化时重播；恢复星标、计数更新和后台刷新不重播整列。
+        let snapshotID = "\(viewModel.rowRevealRevision):\(quickSearchQuery)".hashValue
         return List {
-            ForEach(visibleRecords) { record in
+            ForEach(Array(visibleRecords.enumerated()), id: \.element.id) { index, record in
                 let isStarring = starringRepoIDs.contains(record.ghRepoId)
                 Button {
                     if store.isActive {
@@ -354,6 +373,7 @@ struct UndoStarContentView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .listRowReveal(index: index, snapshotID: snapshotID, replayAfterSnapshotCommit: true)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 // 单个 Star 操作（非多选模式下的行内 Star 按钮需要额外处理，
@@ -363,7 +383,7 @@ struct UndoStarContentView: View {
         .listStyle(.inset)
         .alternatingRowBackgrounds()
         .scrollContentBackground(.hidden)
-        .animation(.easeOut(duration: 0.3), value: visibleRecords.map(\.id))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: visibleRecords.map(\.id))
         .background {
             let store = dependencies.undoStarMultiSelectionStore
             Button {
