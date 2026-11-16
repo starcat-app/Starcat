@@ -867,30 +867,47 @@ struct RepoShareTaskSheet: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
-                // 整行都是复制命中区；右侧图标承担 1.5s 绿色成功反馈，不再新增提示行。
-                CopyFeedbackButton(
-                    providesContent: { url },
-                    tooltip: "repo.share.success.copyLink"
-                ) { didCopy in
-                    HStack(spacing: 10) {
-                        Text(verbatim: url)
-                            .font(.callout.monospaced())
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        // 固定布局盒消除两个 Symbol 固有尺寸差异，同时恢复项目统一的
-                        // replace 过渡；动画只发生在盒内，不再触发链接行或 Sheet 重排。
+                HStack(spacing: 8) {
+                    Text(verbatim: url)
+                        .font(.callout.monospaced())
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // 两个独立命中区避免按钮嵌套，复制仍使用统一的 1.5 秒成功反馈。
+                    CopyFeedbackButton(
+                        providesContent: { url },
+                        tooltip: "repo.share.success.copyLink"
+                    ) { didCopy in
                         Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(didCopy ? Color.green : Color.secondary)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
                             .contentTransition(.symbolEffect(.replace))
                     }
-                    .padding(10)
-                    .contentShape(Rectangle())
-                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel(Text("repo.share.success.copyLink"))
+                    .pressableHover()
+
+                    Button {
+                        if let target = URL(string: url) { NSWorkspace.shared.open(target) }
+                    } label: {
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .pressableHover()
+                    .help(Text("repo.share.success.openInBrowser"))
+                    .accessibilityLabel(Text("repo.share.success.openInBrowser"))
                 }
+                .padding(10)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
             }
 
         case .failure(let message):
@@ -933,14 +950,8 @@ struct RepoShareTaskSheet: View {
                     Label("repo.share.progress.cancel", systemImage: "xmark.circle")
                 }
 
-            case .success(let url):
-                Button {
-                    if let target = URL(string: url) {
-                        NSWorkspace.shared.open(target)
-                    }
-                } label: {
-                    Label("repo.share.success.openInBrowser", systemImage: "arrow.up.right.square")
-                }
+            case .success:
+                EmptyView()
 
             case .failure:
                 Button {
