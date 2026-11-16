@@ -31,10 +31,9 @@ struct RepoRecommendButton: View {
 
     var body: some View {
         Button(action: action) {
-            // 推荐图标保留 accentColor 语义色，背景使用 Hero 共用的中性色，
-            // 避免高对比底色放大视觉体积，也避免背景与图标同色。
+            // 深色玻璃底会降低系统蓝的可读性，使用更亮的同族蓝保持轮廓清晰。
             BusinessIcon(.recommendations, pointSize: 16, weight: .semibold)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(colorScheme == .dark ? Color.fromHex6(0x78BEFF) : Color.accentColor)
                 .frame(width: 28, height: 28)
                 .heroActionIconSurface(colorScheme: colorScheme)
         }

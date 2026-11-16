@@ -16,20 +16,20 @@ import SwiftUI
 /// Wiki 入口统一品牌色：indigo 族，light / dark 各一档 hex，与搜索详情 wiki chip 同族。
 enum WikiAccent {
     static func foreground(colorScheme: ColorScheme) -> Color {
-        Color.fromHex6(colorScheme == .dark ? 0x818CF8 : 0x4F46E5)
+        Color.fromHex6(colorScheme == .dark ? 0xB4BCFF : 0x4F46E5)
     }
 
 }
 
-/// Wiki 入口统一 SF Symbol：`doc.text.magnifyingglass` 表达「可查的外部文档」，
-/// 与编程语言 / 普通书本图标区分。详情 hero `RepoWikiMenu` 与搜索卡 wikis 行共用。
+/// 用轮廓简洁的书本表达项目 Wiki，避免文档叠放大镜在小尺寸下过密。
+/// 详情 hero 与搜索卡共用图形及主题色，深色玻璃背景上提高前景亮度。
 struct WikiEntryIcon: View {
     var size: CGFloat = 13
 
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Image(systemName: "doc.text.magnifyingglass")
+        Image(systemName: "book.closed")
             .font(.system(size: size, weight: .semibold))
             .foregroundStyle(WikiAccent.foreground(colorScheme: colorScheme))
     }
@@ -59,7 +59,7 @@ struct RepoWikiMenu: View {
                 }
             }
         } label: {
-            WikiEntryIcon(size: 13)
+            WikiEntryIcon(size: 15)
                 .frame(width: 28, height: 28)
                 .heroActionIconSurface(colorScheme: colorScheme)
                 .contentShape(Capsule())
