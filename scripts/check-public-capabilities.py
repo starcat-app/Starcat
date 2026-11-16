@@ -34,6 +34,14 @@ def main() -> None:
     registry = read(directory + "StarcatMCPToolRegistry.swift")
     catalog = read(directory + "StarcatMCPPublicCatalog.swift")
     facade = read(directory + "StarcatMCPPublicFacade.swift")
+    for filename in [
+        "StarcatMCPAppOperations.swift", "StarcatMCPLocalOperations.swift",
+        "StarcatMCPRAGOperations.swift", "StarcatMCPAgentOperations.swift",
+        "StarcatMCPCodeGraphOperations.swift",
+    ]:
+        source = read(directory + filename)
+        catalog += "\n" + source
+        facade += "\n" + source
     document = read("docs/4-工程进度/CLI与MCP能力开放专项/能力覆盖清单.md")
     existing = re.findall(r'name:\s*"starcat\.([a-z][a-z0-9_]*)"', registry)
     additional = re.findall(r'\.init\(name:\s*"([a-z][a-z0-9_]*)"', catalog)
@@ -43,20 +51,22 @@ def main() -> None:
     dispatched = set()
     for group in re.findall(r'^\s*case\s+((?:"[^"]+"(?:,\s*)?)+)\s*:', facade, re.M):
         dispatched.update(re.findall(r'"([^"]+)"', group))
+    dispatched.update(re.findall(r'\bname\s*==\s*"([a-z][a-z0-9_]*)"', facade))
     require(set(additional) <= dispatched, f"新增工具缺少执行器：{sorted(set(additional) - dispatched)}")
     documented = set(re.findall(r'`starcat\.([a-z][a-z0-9_]*)`', document))
     require(documented == registered, f"文档与目录不一致：{sorted(documented ^ registered)}")
-    identifiers = re.findall(r'^\| ((?:CAP|RES|DEFER|FUTURE|UI)-\d+) \|', document, re.M)
+    identifiers = re.findall(r'^\| ((?:CAP|RES|REVIEW|FUTURE|UI)-\d+) \|', document, re.M)
     require(len(identifiers) == len(set(identifiers)), "覆盖清单编号重复")
-    rows = [line for line in document.splitlines() if re.match(r"\| (?:CAP|DEFER)-\d+ \|", line)]
+    rows = [line for line in document.splitlines() if re.match(r"\| CAP-\d+ \|", line)]
     require(all(any(f"| {decision} |" in line for decision in [
         "已有覆盖", "本次开放", "暂缓开放", "不适用"
     ]) for line in rows), "覆盖动作存在未评估结论")
     require('defaultValue: false' not in "\n".join(
         line for line in registry.splitlines() if '"dry_run"' in line
     ), "已有写入仍使用省略即执行的默认行为")
-    require('"contract_version": .int(2)' in registry, "缺少当前公共契约版本")
-    require('"write_default": .string("preview")' in registry, "缺少预览迁移声明")
+    require('"contract_version": .int(3)' in registry, "缺少当前公共契约版本")
+    require('"write_default": .string("app_contract")' in registry, "缺少 App 默认执行契约")
+    require('"preview_supported"' in registry, "缺少逐工具预览声明")
     for target in [
         "AGENTS.md", "supports/starcat-cli/AGENTS.md", "supports/starcat-skill/AGENTS.md",
         "docs/4-工程进度/任务录入规范.md",
@@ -72,11 +82,9 @@ def main() -> None:
                 f"Skill 未登记命令：{phrase}")
     for uri in ["starcat://capabilities", "starcat://tags", "starcat://repos/"]:
         require(uri in read(directory + "StarcatMCPFacade.swift"), f"资源被移除：{uri}")
-    business = [line for line in rows if "基础设施" not in line]
-    opened = [line for line in business if re.search(r"\| (?:已有覆盖|本次开放) \|", line)]
     print(f"PASS: {len(BASELINE)} baseline + {len(registered) - len(BASELINE)} added = {len(registered)} tools")
-    print(f"PASS: {len(identifiers)} registered actions/resources; {len(business)} existing business actions assessed")
-    print(f"Static dual-entry registration: {len(opened)}/{len(business)} assessed business actions")
+    print(f"PASS: {len(identifiers)} registered tool/resource/review/planning records")
+    print("Static dual-entry registration matches dispatch and documentation; no whole-App coverage percentage is inferred.")
     print("Runtime availability, real App connections and GUI acceptance require separate evidence.")
 
 

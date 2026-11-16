@@ -11,12 +11,9 @@
 
 import Foundation
 
-/// MCP 写入权限等级。
+/// 所有写操作使用同一授权，操作种类由 action 字段区分。
 enum StarcatMCPWritePermission: String, Codable, Sendable {
-    case localWrite = "local_write"
-    case githubStarWrite = "github_star_write"
-    case batchWrite = "batch_write"
-    case destructiveWrite = "destructive_write"
+    case write
 }
 
 /// GitHub Star 写入结果。
@@ -44,7 +41,7 @@ struct MCPStarWriteResult: Codable, Sendable {
         self.ok = true
         self.dry_run = dryRun
         self.changed = changed
-        self.permission = StarcatMCPWritePermission.githubStarWrite.rawValue
+        self.permission = StarcatMCPWritePermission.write.rawValue
         self.action = action
         self.target_full_name = targetFullName
         self.repo = repo.map(MCPRepoDTO.init(repo:))
@@ -93,7 +90,7 @@ struct MCPBatchOrganizeResult: Codable, Sendable {
     init(dryRun: Bool, results: [MCPBatchOrganizeItemResult]) {
         self.ok = results.allSatisfy(\.ok)
         self.dry_run = dryRun
-        self.permission = StarcatMCPWritePermission.batchWrite.rawValue
+        self.permission = StarcatMCPWritePermission.write.rawValue
         self.action = "batch_organize_repos"
         self.requested_count = results.count
         self.succeeded_count = results.filter { $0.ok }.count

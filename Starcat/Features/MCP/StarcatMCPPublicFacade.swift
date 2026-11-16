@@ -17,6 +17,9 @@ final class StarcatMCPPublicFacade {
     private weak var facade: StarcatMCPFacade?
     let tasks = StarcatMCPTaskStore()
     private var sessionChanging = false
+    /// 导出只返回随机身份；分块读取 App 生成的文件，不接受客户端提供本机文件路径。
+    var diagnosticExports: [String: (url: URL, createdAt: Date)] = [:]
+    var agentExecutions: [String: AgentWorkspaceViewModel] = [:]
 
     init(dependencies: AppDependencies, facade: StarcatMCPFacade) {
         self.dependencies = dependencies
@@ -27,6 +30,9 @@ final class StarcatMCPPublicFacade {
     func prepareForAccountChange() async {
         sessionChanging = true
         await tasks.cancelAllAndWait()
+        agentExecutions.removeAll()
+        for artifact in diagnosticExports.values { try? FileManager.default.removeItem(at: artifact.url) }
+        diagnosticExports.removeAll()
     }
 
     func finishAccountChange(succeeded: Bool) {
@@ -52,6 +58,12 @@ final class StarcatMCPPublicFacade {
     func call(name: String, arguments: [String: Value]) async throws -> Value {
         try requireReadySession()
         guard let app = dependencies else { throw StarcatMCPError.unsupported("App services are unavailable.") }
+        if StarcatMCPPublicCatalog.specs.first(where: { $0.name == name })?.permission == "write" {
+            try StarcatMCPAccess.requireWrite(app.settings)
+        }
+        if name == "list_agent_runs" || StarcatMCPPublicCatalog.agentSpecs.contains(where: { $0.name == name }) {
+            return try await callAgentOperation(name: name, arguments: arguments, app: app)
+        }
         let limit = arguments["limit"]?.intValue ?? 20
         let offset = arguments["offset"]?.intValue ?? 0
         let dryRun = arguments["dry_run"]?.boolValue ?? true
@@ -61,16 +73,21 @@ final class StarcatMCPPublicFacade {
                 "channel": .string(DistributionChannel.current.rawValue),
                 "signed_in": .bool(app.authSession.state.user != nil),
                 "companion_enabled": .bool(CompanionConfiguration.shared.isEnabled),
-                "contract_version": .int(2),
+                "contract_version": .int(3),
+                "read": .bool(true), "write": .bool(app.settings.mcpAllowWrites),
+                "notifications_enabled": .bool(app.settings.notificationsEnabled),
+                "external_search_allow_private_repos": .bool(app.settings.externalSearchAllowPrivateRepos),
+                "auto_tidy": try StarcatMCPJSON.value(app.settings.autoTidySettings),
                 "secrets_included": .bool(false)
             ])
+        case "list_ai_providers", "configure_ai_provider", "get_local_models", "install_local_model", "pause_local_model", "delete_local_model",
+             "get_cache_statistics", "clear_cache", "list_managed_skills", "import_skill", "update_skill",
+             "remove_skill", "check_skill_updates", "set_public_settings", "export_diagnostics", "read_export_chunk":
+            return try await callLocalOperation(name: name, arguments: arguments, app: app)
         case "get_task_status":
             return try tasks.status(id: arguments["task_id"]?.stringValue ?? "")
         case "get_task_result":
-            return try tasks.result(
-                id: arguments["task_id"]?.stringValue ?? "",
-                privateNotesAllowed: app.settings.mcpExposePrivateNotes
-            )
+            return try tasks.result(id: arguments["task_id"]?.stringValue ?? "")
         case "cancel_task":
             try requireLocalWrites(app)
             let id = arguments["task_id"]?.stringValue ?? ""
@@ -214,7 +231,6 @@ final class StarcatMCPPublicFacade {
         case "list_knowledge_chunks":
             let repo = try await resolve(arguments, app: app, scope: .knowledge)
             let includeNotes = arguments["include_private_notes"]?.boolValue ?? false
-            if includeNotes && !app.settings.mcpExposePrivateNotes { throw StarcatMCPError.privateNotesDisabled }
             let rows = try await app.ragChunkRepository.fetchKnowledgeChunks(repoId: repo.id)
             let visible = rows.filter { includeNotes || $0.source != .notes }
             let values = visible.map { chunk in
@@ -278,9 +294,6 @@ final class StarcatMCPPublicFacade {
             guard let state = arguments["state"]?.stringValue.flatMap(LibraryState.init(rawValue:)) else {
                 throw StarcatMCPError.invalidArguments("A valid library state is required.")
             }
-            if state == .outsideLibrary, !app.settings.mcpAllowDestructiveWrites {
-                throw StarcatPublicCapabilityError(code: "DESTRUCTIVE_WRITES_DISABLED", message: "Enable destructive MCP writes to remove Knowledge membership.")
-            }
             let target: Value = .object([
                 "repo_id": .int(Int(repo.id)), "before": .string(before.rawValue), "after": .string(state.rawValue)
             ])
@@ -335,18 +348,6 @@ final class StarcatMCPPublicFacade {
                 }
             }
             return pageValues(models, limit: limit, offset: offset)
-        case "list_agent_runs":
-            guard DistributionChannel.current == .direct else {
-                throw StarcatPublicCapabilityError(code: "CHANNEL_UNSUPPORTED", message: "Agent runs are available in Starcat Direct.")
-            }
-            let rows = try await app.agentRunRepository.recentRuns(limit: offset + limit + 1)
-            return pageValues(rows.map { row in
-                .object([
-                    "id": .string(row.id), "agent_id": .string(row.agentId), "state": .string(row.status),
-                    "model": row.model.map(Value.string) ?? .null, "created_at": .string(row.createdAt),
-                    "finished_at": row.finishedAt.map(Value.string) ?? .null
-                ])
-            }, limit: limit, offset: offset)
         case "get_diagnostic_health":
             let snapshot = await DiagnosticLogStore.shared.snapshot()
             return .object([
@@ -358,7 +359,6 @@ final class StarcatMCPPublicFacade {
         case "start_note_draft":
             let repo = try await resolve(arguments, app: app)
             let includeNotes = arguments["include_private_notes"]?.boolValue ?? false
-            if includeNotes && !app.settings.mcpExposePrivateNotes { throw StarcatMCPError.privateNotesDisabled }
             if dryRun {
                 return preview(name, target: .object([
                     "repo_id": .int(Int(repo.id)), "includes_private_notes": .bool(includeNotes),
@@ -367,17 +367,15 @@ final class StarcatMCPPublicFacade {
             }
             // 沿用 App 的就绪检查、README 预处理和生成器；草稿不能绕过笔记的确认写入。
             try app.repoAIInsightService.ensureNoteGenerationReady()
-            return try tasks.start(kind: name, containsPrivateNotes: includeNotes) {
-                guard let markdown = try await app.readmeRepository.findContent(repoId: repo.id) else {
-                    throw StarcatPublicCapabilityError(code: "CACHE_MISS", message: "Read the repository README in Starcat before generating a draft.")
-                }
+            return try tasks.start(kind: name) {
+                let provider = RepoNoteAIReadmeProvider(repository: app.readmeRepository, readmeAPI: app.readmeAPI)
+                let markdown = try await provider.markdown(for: repo)
                 let prepared = ReadmePreprocessor.process(
                     markdown: markdown, maxLength: ReadmePreprocessor.defaultMaxLength
                 ).trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !prepared.isEmpty else { throw AIClientError.emptyResponse }
                 var existingNote = ""
                 if includeNotes {
-                    guard app.settings.mcpExposePrivateNotes else { throw StarcatMCPError.privateNotesDisabled }
                     existingNote = try await app.repoNoteRepository.find(repoId: repo.id)?.content ?? ""
                 }
                 let draft = try await app.repoAIInsightService.generateNoteDraft(
@@ -508,7 +506,7 @@ final class StarcatMCPPublicFacade {
                 "file_owner": .string("cli_device")
             ])
         default:
-            throw StarcatMCPError.unsupported("Unknown public capability: \(name)")
+            return try await callAppOperation(name: name, arguments: arguments, app: app)
         }
     }
 
@@ -545,7 +543,7 @@ final class StarcatMCPPublicFacade {
         ["repo_id", "owner", "name"].contains { arguments[$0] != nil }
     }
 
-    private func resolve(_ arguments: [String: Value], app: AppDependencies, scope: SemanticIndexScope = .all) async throws -> Repo {
+    func resolve(_ arguments: [String: Value], app: AppDependencies, scope: SemanticIndexScope = .all) async throws -> Repo {
         let source = DatabaseRepositoryReadCapabilitySource(repository: app.repoRepository, scope: scope)
         return try await RepositoryReadCapabilityExecutor(source: source).get(
             RepositoryCapabilitySelector(
@@ -557,12 +555,10 @@ final class StarcatMCPPublicFacade {
 
     private func requireLocalWrites(_ app: AppDependencies) throws {
         try app.entitlementGate.requirePro(.mcpService)
-        guard app.settings.mcpAllowLocalWrites else {
-            throw StarcatPublicCapabilityError(code: "LOCAL_WRITES_DISABLED", message: "Enable MCP local writes in Starcat Settings.")
-        }
+        try StarcatMCPAccess.requireWrite(app.settings)
     }
 
-    private func preview(_ name: String, target: Value) -> Value {
+    func preview(_ name: String, target: Value) -> Value {
         .object(["operation": .string(name), "dry_run": .bool(true), "applied": .bool(false), "target": target])
     }
 
@@ -679,7 +675,6 @@ final class StarcatMCPPublicFacade {
         let repoIDs = Array(Set(arguments["repo_ids"]?.arrayValue?.compactMap(\.intValue).map(Int64.init) ?? [])).sorted()
         for id in repoIDs { _ = try await resolve(["repo_id": .int(Int(id))], app: app, scope: .knowledge) }
         let includeNotes = arguments["include_private_notes"]?.boolValue ?? false
-        if includeNotes && !app.settings.mcpExposePrivateNotes { throw StarcatMCPError.privateNotesDisabled }
         let executor = try app.makeMCPKnowledgeSearchExecutor(includePrivateNotes: includeNotes)
         let result = try await executor.execute(.init(
             query: arguments["query"]?.stringValue ?? "", repositoryScopeIDs: repoIDs,

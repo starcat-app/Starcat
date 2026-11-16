@@ -23,11 +23,11 @@ final class StarcatMCPTaskStore {
         let kind: String
         let createdAt: Date
         let supportsCancellation: Bool
-        let containsPrivateNotes: Bool
         var state = "queued"
         var finishedAt: Date?
         var result: Value?
         var errorCode: String?
+        var errorMessage: String?
         var task: Task<Void, Never>?
     }
 
@@ -66,7 +66,6 @@ final class StarcatMCPTaskStore {
     func start(
         kind: String,
         supportsCancellation: Bool = true,
-        containsPrivateNotes: Bool = false,
         operation: @escaping @MainActor () async throws -> Value
     ) throws -> Value {
         prune()
@@ -79,7 +78,7 @@ final class StarcatMCPTaskStore {
         let id = UUID().uuidString.lowercased()
         jobs[id] = Job(
             id: id, kind: kind, createdAt: now(),
-            supportsCancellation: supportsCancellation, containsPrivateNotes: containsPrivateNotes
+            supportsCancellation: supportsCancellation
         )
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -96,6 +95,7 @@ final class StarcatMCPTaskStore {
                 } else {
                     self.jobs[id]?.state = "failed"
                     self.jobs[id]?.errorCode = (error as? StarcatPublicCapabilityError)?.code ?? "OPERATION_FAILED"
+                    self.jobs[id]?.errorMessage = error.localizedDescription
                 }
             }
             self.jobs[id]?.finishedAt = self.now()
@@ -116,13 +116,13 @@ final class StarcatMCPTaskStore {
             "supports_cancellation": .bool(job.supportsCancellation),
             "restart_resumable": .bool(false),
             "result_retention_seconds": .int(3600),
-            "error_code": job.errorCode.map(Value.string) ?? .null
+            "error_code": job.errorCode.map(Value.string) ?? .null,
+            "error_message": job.errorMessage.map(Value.string) ?? .null
         ])
     }
 
-    func result(id: String, privateNotesAllowed: Bool) throws -> Value {
+    func result(id: String) throws -> Value {
         let job = try lookup(id)
-        guard !job.containsPrivateNotes || privateNotesAllowed else { throw StarcatMCPError.privateNotesDisabled }
         guard ["succeeded", "failed", "cancelled"].contains(job.state) else {
             throw StarcatPublicCapabilityError(code: "TASK_RESULT_NOT_READY", message: "The task is still running.")
         }

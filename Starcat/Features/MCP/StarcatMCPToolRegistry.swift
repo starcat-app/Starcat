@@ -130,7 +130,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.get_knowledge_base_statistics",
                 title: "Get Starcat knowledge-base statistics",
-                description: "Read local knowledge-base organization, source coverage, RAG chunk counts, and index health. Private-note counts follow the private_notes_read capability.",
+                description: "Read local knowledge-base organization, source coverage, RAG chunk counts and index health. Read access includes private-note counts.",
                 inputSchema: Self.objectSchema([:]),
                 annotations: .init(readOnlyHint: true, openWorldHint: false)
             ),
@@ -248,7 +248,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.star_repo",
                 title: "Star a GitHub repository",
-                description: "Star a repository on the user's GitHub account. owner/name may reference a GitHub search result that is not yet cached locally. Requires MCP GitHub Star writes in Starcat Settings.",
+                description: "Star a repository on the user's GitHub account. owner/name may reference a GitHub search result that is not yet cached locally. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "dry_run": Self.booleanSchema("Validate the remote write without changing GitHub or local data.", defaultValue: true)
@@ -259,7 +259,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.unstar_repo",
                 title: "Unstar a GitHub repository",
-                description: "Unstar a repository on the user's GitHub account while preserving its Starcat tags, notes, summaries, and other local data. Requires MCP GitHub Star writes in Starcat Settings.",
+                description: "Unstar a repository on the user's GitHub account while preserving its Starcat tags, notes, summaries and other local data. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "dry_run": Self.booleanSchema("Validate the remote write without changing GitHub or local data.", defaultValue: true)
@@ -270,7 +270,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.upsert_repo_note",
                 title: "Write private repo note",
-                description: "Write or clear a repository private note. Requires MCP local writes in Starcat Settings. Passing an empty content clears the note body.",
+                description: "Write or clear a repository private note. Requires Allow Writes in Starcat Settings. Passing an empty content clears the note body.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "content": Self.stringSchema("Markdown note content. Empty string clears the note body."),
@@ -282,7 +282,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.set_repo_status",
                 title: "Set repo reading status",
-                description: "Set a repository status to unread, read, or using. Requires MCP local writes in Starcat Settings.",
+                description: "Set a repository status to unread, read, or using. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "status": Self.stringSchema("Repository reading status.", enumValues: ["unread", "read", "using"]),
@@ -295,7 +295,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.create_tag",
                 title: "Create Starcat tag",
-                description: "Create a user tag. Existing tag names are returned as unchanged. Requires MCP local writes in Starcat Settings.",
+                description: "Create a user tag. Existing tag names are returned as unchanged. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema([
                     "name": Self.stringSchema("Tag name."),
                     "color": Self.stringSchema("Optional hex color, e.g. #0A84FF."),
@@ -307,7 +307,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.add_repo_tags",
                 title: "Add repo tags",
-                description: "Add one or more tags to a repository. Missing tags are created by default. Requires MCP local writes in Starcat Settings.",
+                description: "Add one or more tags to a repository. Missing tags are created by default. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "tags": Self.stringArraySchema("Tag names to add."),
@@ -321,7 +321,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.batch_organize_repos",
                 title: "Batch organize repositories",
-                description: "Add tags and/or update private notes for up to 100 local repositories in one request. The entire request is preflighted before writes begin. Requires MCP local and batch writes in Starcat Settings.",
+                description: "Add tags and/or update private notes for up to 100 local repositories in one request. The entire request is preflighted before writes begin. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema([
                     "items": Self.arraySchema(
                         "Repository operations. Each item must provide repo_id or owner/name plus non-empty tags and/or note.",
@@ -343,7 +343,7 @@ final class StarcatMCPToolRegistry {
             Tool(
                 name: "starcat.remove_repo_tags",
                 title: "Remove repo tags",
-                description: "Remove one or more tags from a repository. Missing tag names are ignored. Requires MCP local writes in Starcat Settings.",
+                description: "Remove one or more tags from a repository. Missing tag names are ignored. Requires Allow Writes in Starcat Settings.",
                 inputSchema: Self.objectSchema(
                     Self.repoSelectorProperties().merging([
                         "tags": Self.stringArraySchema("Tag names to remove."),
@@ -401,6 +401,9 @@ final class StarcatMCPToolRegistry {
             }
             guard let definition = tools.first(where: { $0.name == params.name }) else {
                 throw StarcatMCPError.unsupported("Unknown tool: \(params.name)")
+            }
+            if definition.annotations.readOnlyHint != true {
+                try facade.requireWriteAccess()
             }
             try StarcatMCPInputValidator.validate(.object(params.arguments ?? [:]), schema: definition.inputSchema)
             switch params.name {
@@ -614,8 +617,8 @@ final class StarcatMCPToolRegistry {
     /// 目录随实际注册工具生成，受限 Runtime 只能看到自身 allowlist；不另维护工具名副本。
     var capabilityCatalog: Value {
         .object([
-            "contract_version": .int(2), "server_version": .string(StarcatMCPServerMetadata.version),
-            "write_default": .string("preview"), "availability": (try? StarcatMCPJSON.value(facade.getCapabilities())) ?? .null,
+            "contract_version": .int(3), "server_version": .string(StarcatMCPServerMetadata.version),
+            "write_default": .string("app_contract"), "availability": (try? StarcatMCPJSON.value(facade.getCapabilities())) ?? .null,
             "tasks": .object([
                 "owner": .string("app_process"), "disconnect_cancels": .bool(false),
                 "restart_resumable": .bool(false), "retention_seconds": .int(3600)
@@ -625,7 +628,8 @@ final class StarcatMCPToolRegistry {
                 return .object([
                     "name": .string(tool.name), "input_schema": tool.inputSchema,
                     "transport": .string("cli_connection"), "executor": .string("starcat_app"),
-                    "permission": .string(spec?.permission ?? (tool.inputSchema.objectValue?["properties"]?.objectValue?["dry_run"] == nil ? "read_or_explicit_generation" : "write")),
+                    "permission": .string(definitionPermission(tool)),
+                    "preview_supported": .bool(tool.inputSchema.objectValue?["properties"]?.objectValue?["dry_run"] != nil),
                     "network": .string(spec?.network ?? "tool_specific"),
                     "long_task": .bool(spec?.task ?? false),
                     "requires": .array([.string("mcp_service_enabled"), .string("mcp_pro"), .string("authenticated_connection")])
@@ -673,8 +677,6 @@ final class StarcatMCPToolRegistry {
                 return "INVALID_ARGUMENTS"
             case .notFound:
                 return "NOT_FOUND"
-            case .privateNotesDisabled:
-                return "PRIVATE_NOTES_DISABLED"
             case .unsupported:
                 return "UPGRADE_REQUIRED"
             }
@@ -692,6 +694,11 @@ final class StarcatMCPToolRegistry {
             return "REQUIRES_PRO"
         }
         return "INTERNAL_ERROR"
+    }
+
+    /// 权限只由真实工具注解推导；network/task 是执行语义，不再充当额外权限。
+    private func definitionPermission(_ tool: Tool) -> String {
+        tool.annotations.readOnlyHint == true ? "read" : "write"
     }
 
     private static func result<T: Codable>(_ value: T) throws -> CallTool.Result {

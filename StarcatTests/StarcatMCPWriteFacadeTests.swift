@@ -19,10 +19,7 @@ struct StarcatMCPWriteFacadeTests {
 
     private func makeSUT(
         isPro: Bool = true,
-        allowLocalWrites: Bool = true,
-        allowBatchWrites: Bool = false,
-        allowDestructiveWrites: Bool = false,
-        allowGitHubStarWrites: Bool = false,
+        allowWrites: Bool = true,
         starMutationService: MCPStarMutationServiceStub? = nil
     ) throws -> (
         StarcatMCPWriteFacade,
@@ -34,10 +31,7 @@ struct StarcatMCPWriteFacadeTests {
     ) {
         let db = try InMemoryDatabaseManager()
         let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.\(UUID().uuidString)")!)
-        settings.mcpAllowLocalWrites = allowLocalWrites
-        settings.mcpAllowBatchWrites = allowBatchWrites
-        settings.mcpAllowDestructiveWrites = allowDestructiveWrites
-        settings.mcpAllowGitHubStarWrites = allowGitHubStarWrites
+        settings.mcpAllowWrites = allowWrites
 
         let gate = EntitlementGate(
             entitlementProvider: TestProEntitlementProvider(isPro: isPro),
@@ -90,7 +84,7 @@ struct StarcatMCPWriteFacadeTests {
     @Test("GitHub Star 写入关闭时拒绝调用远端 Service")
     func githubStarWriteDisabledRejectsMutation() async throws {
         let starService = MCPStarMutationServiceStub()
-        let (facade, _, _, _, _, _) = try makeSUT(starMutationService: starService)
+        let (facade, _, _, _, _, _) = try makeSUT(allowWrites: false, starMutationService: starService)
 
         do {
             _ = try await facade.starRepo(
@@ -114,7 +108,6 @@ struct StarcatMCPWriteFacadeTests {
         starred.isStarred = true
         let starService = MCPStarMutationServiceStub(starResult: starred)
         let (facade, _, _, _, _, _) = try makeSUT(
-            allowGitHubStarWrites: true,
             starMutationService: starService
         )
 
@@ -135,7 +128,6 @@ struct StarcatMCPWriteFacadeTests {
     func unstarRepoDelegatesToStarActionBoundary() async throws {
         let starService = MCPStarMutationServiceStub()
         let (facade, _, _, _, db, _) = try makeSUT(
-            allowGitHubStarWrites: true,
             starMutationService: starService
         )
         try await db.insertRepoFixture(id: 7, owner: "octo", name: "remove-me")
@@ -155,7 +147,6 @@ struct StarcatMCPWriteFacadeTests {
     func starRepoDryRunDoesNotCallRemoteService() async throws {
         let starService = MCPStarMutationServiceStub()
         let (facade, _, _, _, _, _) = try makeSUT(
-            allowGitHubStarWrites: true,
             starMutationService: starService
         )
 
@@ -174,7 +165,7 @@ struct StarcatMCPWriteFacadeTests {
 
     @Test("本地写入关闭时 upsert_repo_note 被拒绝且不写库")
     func localWriteDisabledRejectsNote() async throws {
-        let (facade, noteRepo, _, _, db, _) = try makeSUT(allowLocalWrites: false)
+        let (facade, noteRepo, _, _, db, _) = try makeSUT(allowWrites: false)
         try await db.insertRepoFixture(id: 1)
 
         do {
@@ -319,7 +310,7 @@ struct StarcatMCPWriteFacadeTests {
 
     @Test("批量写入关闭时拒绝整批操作且不修改仓库")
     func batchWriteDisabledRejectsAllMutations() async throws {
-        let (facade, noteRepo, _, tagRepo, db, _) = try makeSUT()
+        let (facade, noteRepo, _, tagRepo, db, _) = try makeSUT(allowWrites: false)
         try await db.insertRepoFixture(id: 1)
 
         do {
@@ -345,7 +336,7 @@ struct StarcatMCPWriteFacadeTests {
 
     @Test("批量整理可在一次请求中为多个仓库添加标签和更新笔记")
     func batchOrganizeWritesTagsAndNotes() async throws {
-        let (facade, noteRepo, repoTagRepo, tagRepo, db, _) = try makeSUT(allowBatchWrites: true)
+        let (facade, noteRepo, repoTagRepo, tagRepo, db, _) = try makeSUT()
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
         try await db.insertRepoFixture(id: 2, owner: "openai", name: "codex")
 
@@ -384,7 +375,7 @@ struct StarcatMCPWriteFacadeTests {
 
     @Test("批量整理 dry-run 只校验且不写入标签或笔记")
     func batchOrganizeDryRunDoesNotPersist() async throws {
-        let (facade, noteRepo, repoTagRepo, tagRepo, db, _) = try makeSUT(allowBatchWrites: true)
+        let (facade, noteRepo, repoTagRepo, tagRepo, db, _) = try makeSUT()
         try await db.insertRepoFixture(id: 1)
 
         let result = try await facade.batchOrganizeRepos(
@@ -410,7 +401,7 @@ struct StarcatMCPWriteFacadeTests {
 
     @Test("批量整理任一项目预检失败时整批不写入")
     func batchOrganizePreflightFailurePreventsAllWrites() async throws {
-        let (facade, noteRepo, _, tagRepo, db, _) = try makeSUT(allowBatchWrites: true)
+        let (facade, noteRepo, _, tagRepo, db, _) = try makeSUT()
         try await db.insertRepoFixture(id: 1)
 
         do {
@@ -447,7 +438,7 @@ struct StarcatMCPWriteFacadeTests {
 
     @Test("批量整理单次最多处理一百个仓库")
     func batchOrganizeRejectsMoreThanOneHundredItems() async throws {
-        let (facade, _, _, _, _, _) = try makeSUT(allowBatchWrites: true)
+        let (facade, _, _, _, _, _) = try makeSUT()
         let items = (0..<101).map { index in
             MCPBatchOrganizeItemInput(
                 repoID: Int64(index + 1),

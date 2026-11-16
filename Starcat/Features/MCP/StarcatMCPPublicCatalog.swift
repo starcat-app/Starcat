@@ -94,7 +94,7 @@ enum StarcatMCPPublicCatalog {
         .init(name: "get_repo_recommendations", summary: "Read cached similar repositories in the current recommendation service scope.", properties: selector.merging(pagination) { _, new in new }),
         .init(name: "get_repo_skills", summary: "Read already loaded repository Skill evidence without starting a scan or installing files.", properties: selector),
         .init(name: "get_repo_library_state", summary: "Read Knowledge membership without returning the private note body.", properties: selector),
-        .init(name: "set_repo_library_state", summary: "Preview or change Knowledge membership for a local repository. Existing App index follow-up may run; removal requires destructive writes.", properties: selector.merging(preview) { _, new in new }.merging([
+        .init(name: "set_repo_library_state", summary: "Preview or change Knowledge membership using write access. Existing App index follow-up may run.", properties: selector.merging(preview) { _, new in new }.merging([
             "state": string(LibraryState.allCases.map(\.rawValue))
         ]) { _, new in new }, required: ["state"], permission: "write", network: "configured_index_follow_up"),
         .init(name: "get_repo_translation", summary: "Read an existing README translation cache; never start translation, a WebView or a system permission prompt.", properties: selector.merging([
@@ -112,21 +112,21 @@ enum StarcatMCPPublicCatalog {
                     "additionalProperties": .bool(false)
                 ])
             ])
-        ]) { _, new in new }, required: ["target_language", "segments"], permission: "generate", network: "configured_ai", task: true),
+        ]) { _, new in new }, required: ["target_language", "segments"], permission: "write", network: "configured_ai", task: true),
         .init(name: "list_ai_models", summary: "Read configured provider/model availability, without keys, endpoints, parameters or connection tests.", properties: pagination),
-        .init(name: "list_agent_runs", summary: "Read Direct-channel run identifiers and states, without prompts, context, traces or artifacts.", properties: pagination),
+        .init(name: "list_agent_runs", summary: "Read persisted Agent run history with pagination. Use get_agent_run for messages and artifacts.", properties: pagination),
         .init(name: "get_diagnostic_health", summary: "Read aggregate diagnostic storage health only; no raw log, file path or refresh.", properties: [:]),
-        .init(name: "list_knowledge_chunks", summary: "Read bounded indexed Knowledge content; private notes require explicit permission.", properties: selector.merging(pagination) { _, new in new }.merging([
+        .init(name: "list_knowledge_chunks", summary: "Read bounded indexed Knowledge content; include_private_notes selects note content within normal read access.", properties: selector.merging(pagination) { _, new in new }.merging([
             "include_private_notes": boolean
         ]) { _, new in new }),
         .init(name: "knowledge_search", summary: "Retrieve evidence and citations within explicit Knowledge repository IDs; no answer generation or index rebuild.", properties: [
             "query": string(), "repo_ids": ids, "include_private_notes": boolean
         ], required: ["query", "repo_ids"], network: "configured_embedding_and_reranker"),
-        .init(name: "start_summary", summary: "Explicitly start cached-or-generated repository summary as an App-owned task; may consume AI quota.", properties: selector.merging(preview) { _, new in new }, permission: "generate", network: "configured_ai", task: true),
-        .init(name: "start_tag_suggestions", summary: "Explicitly generate tag suggestions; suggestions are never automatically applied.", properties: selector.merging(preview) { _, new in new }, permission: "generate", network: "configured_ai", task: true),
-        .init(name: "start_note_draft", summary: "Explicitly generate a note draft from cached README. Optional existing notes require private-note permission. Returns a draft and never saves the user's note.", properties: selector.merging(preview) { _, new in new }.merging([
+        .init(name: "start_summary", summary: "Explicitly start cached-or-generated repository summary as an App-owned task; may consume AI quota.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "configured_ai", task: true),
+        .init(name: "start_tag_suggestions", summary: "Explicitly generate tag suggestions; suggestions are never automatically applied.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "configured_ai", task: true),
+        .init(name: "start_note_draft", summary: "Generate a note draft using the App README cache/download workflow. Returns a draft without saving the note.", properties: selector.merging(preview) { _, new in new }.merging([
             "include_private_notes": boolean
-        ]) { _, new in new }, permission: "generate", network: "configured_ai", task: true),
+        ]) { _, new in new }, permission: "write", network: "github_and_configured_ai", task: true),
         .init(name: "start_sync", summary: "Start a real GitHub Stars synchronization. Query task status after timeout; never blindly replay.", properties: preview.merging(["force": boolean]) { _, new in new }, permission: "write", network: "github", task: true),
         .init(name: "get_sync_status", summary: "Read the real Stars sync state and known progress; no fabricated percentages.", properties: [:]),
         .init(name: "start_knowledge_index", summary: "Explicitly rebuild Knowledge sources and configured indexes as an App task; may download README and consume embedding quota. Optional selector limits to one Knowledge repository.", properties: selector.merging(preview) { _, new in new }, permission: "write", network: "github_and_configured_indexes", task: true),
@@ -143,7 +143,7 @@ enum StarcatMCPPublicCatalog {
         .init(name: "export_repositories", summary: "Render a bounded Starred or Knowledge collection as Markdown/HTML. Returns content; the CLI caller owns output files. Does not include private notes.", properties: [
             "scope": string(["starred", "knowledge"]), "format": string(["markdown", "html"]), "limit": integer(1, 1000)
         ])
-    ]
+    ] + operationSpecs + localSpecs + agentSpecs + codeGraphSpecs
 }
 
 /// 公共工具入口再次验证结构与范围。CLI 校验仅用于早反馈，不能成为 App 的信任边界。

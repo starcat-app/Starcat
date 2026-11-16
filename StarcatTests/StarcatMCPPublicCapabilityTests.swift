@@ -20,11 +20,39 @@ struct StarcatMCPPublicCapabilityTests {
         #expect(Set(specs.map(\.name)).count == specs.count)
         #expect(specs.count >= 30)
         for spec in specs {
+            #expect(["read", "write"].contains(spec.permission))
             #expect(spec.schema.objectValue?["additionalProperties"]?.boolValue == false)
             if spec.permission != "read" {
                 #expect(spec.properties["dry_run"]?.objectValue?["default"]?.boolValue == true)
             }
             #expect(spec.tool.name == "starcat.\(spec.name)")
+        }
+    }
+
+    @Test("默认读、默认关闭写；唯一开关覆盖全部写种类并即时生效")
+    func twoPermissionBoundary() throws {
+        let settings = AppSettings(defaults: UserDefaults(suiteName: "test.public.access.\(UUID())")!)
+        #expect(settings.mcpAllowWrites == false)
+        #expect(throws: StarcatPublicCapabilityError.self) { try StarcatMCPAccess.requireWrite(settings) }
+        settings.mcpAllowWrites = true
+        try StarcatMCPAccess.requireWrite(settings)
+        settings.mcpAllowWrites = false
+        #expect(throws: StarcatPublicCapabilityError.self) { try StarcatMCPAccess.requireWrite(settings) }
+    }
+
+    @Test("旧本地写设置只迁移一次，不保留细分权限；旧 Star 单独授权不扩大权限")
+    func oldPermissionsMigrateOnce() throws {
+        for (oldLocal, oldStar, expected) in [(true, false, true), (false, true, false)] {
+            let defaults = UserDefaults(suiteName: "test.public.migration.\(UUID())")!
+            defaults.set(oldLocal, forKey: "settings.mcp.allowLocalWrites.v1")
+            defaults.set(oldStar, forKey: "settings.mcp.allowGitHubStarWrites.v1")
+            defaults.set(false, forKey: "settings.mcp.exposePrivateNotes.v1")
+            let settings = AppSettings(defaults: defaults)
+            #expect(settings.mcpAllowWrites == expected)
+            #expect(defaults.object(forKey: "settings.mcp.allowLocalWrites.v1") == nil)
+            #expect(defaults.object(forKey: "settings.mcp.exposePrivateNotes.v1") == nil)
+            settings.mcpAllowWrites = !expected
+            #expect(AppSettings(defaults: defaults).mcpAllowWrites == !expected)
         }
     }
 
@@ -53,11 +81,11 @@ struct StarcatMCPPublicCapabilityTests {
         let handle = try store.start(kind: "fixture") { .object(["answer": .int(42)]) }
         let id = try #require(handle.objectValue?["task_id"]?.stringValue)
         #expect(throws: StarcatPublicCapabilityError.self) {
-            try store.result(id: id, privateNotesAllowed: true)
+            try store.result(id: id)
         }
         for _ in 0..<10 { await Task.yield() }
         #expect(try store.status(id: id).objectValue?["state"]?.stringValue == "succeeded")
-        #expect(try store.result(id: id, privateNotesAllowed: true).objectValue?["result"]?.objectValue?["answer"]?.intValue == 42)
+        #expect(try store.result(id: id).objectValue?["result"]?.objectValue?["answer"]?.intValue == 42)
         clock = clock.addingTimeInterval(3601)
         #expect(throws: StarcatPublicCapabilityError.self) { try store.status(id: id) }
     }
@@ -107,15 +135,14 @@ struct StarcatMCPPublicCapabilityTests {
         await store.cancelAllAndWait()
     }
 
-    @Test("不可取消和私有结果按实际能力拒绝，错误不伪装成成功")
+    @Test("不可取消任务明确拒绝，笔记结果按默认读权限返回，错误不伪装成功")
     func unsupportedCancellationAndPrivacy() async throws {
         let store = StarcatMCPTaskStore()
-        let handle = try store.start(kind: "fixture", supportsCancellation: false, containsPrivateNotes: true) { .string("private fixture") }
+        let handle = try store.start(kind: "fixture", supportsCancellation: false) { .string("private fixture") }
         let id = try #require(handle.objectValue?["task_id"]?.stringValue)
         #expect(throws: StarcatPublicCapabilityError.self) { try store.cancel(id: id) }
         for _ in 0..<10 { await Task.yield() }
-        #expect(throws: StarcatMCPError.self) { try store.result(id: id, privateNotesAllowed: false) }
-        #expect(try store.result(id: id, privateNotesAllowed: true).objectValue?["result"]?.stringValue == "private fixture")
+        #expect(try store.result(id: id).objectValue?["result"]?.stringValue == "private fixture")
         let failed = try store.start(kind: "failed") {
             throw StarcatPublicCapabilityError(code: "FIXTURE_FAILURE", message: "fixture")
         }

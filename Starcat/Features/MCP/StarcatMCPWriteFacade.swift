@@ -164,7 +164,7 @@ final class StarcatMCPWriteFacade {
     ) async throws -> MCPBatchOrganizeResult {
         let affectedTags = items.flatMap(\.tagNames)
         do {
-            try validate(.batchWrite)
+            try validate(.write)
             guard !items.isEmpty else {
                 throw StarcatMCPError.invalidArguments("items must contain at least one repository")
             }
@@ -231,7 +231,7 @@ final class StarcatMCPWriteFacade {
                 for (prepared, result) in zip(preparedItems, results) {
                     await auditLog.record(
                         tool: "starcat.batch_organize_repos",
-                        permission: .batchWrite,
+                        permission: .write,
                         dryRun: true,
                         success: true,
                         repo: prepared.repo,
@@ -288,7 +288,7 @@ final class StarcatMCPWriteFacade {
                     results.append(result)
                     await auditLog.record(
                         tool: "starcat.batch_organize_repos",
-                        permission: .batchWrite,
+                        permission: .write,
                         dryRun: false,
                         success: true,
                         repo: prepared.repo,
@@ -313,7 +313,7 @@ final class StarcatMCPWriteFacade {
                     results.append(result)
                     await auditLog.record(
                         tool: "starcat.batch_organize_repos",
-                        permission: .batchWrite,
+                        permission: .write,
                         dryRun: false,
                         success: false,
                         repo: prepared.repo,
@@ -329,7 +329,7 @@ final class StarcatMCPWriteFacade {
             let outwardError = Self.mapCapabilityError(error)
             await auditLog.record(
                 tool: "starcat.batch_organize_repos",
-                permission: .batchWrite,
+                permission: .write,
                 dryRun: dryRun,
                 success: false,
                 repo: nil,
@@ -351,7 +351,7 @@ final class StarcatMCPWriteFacade {
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         return try await perform(
             tool: "starcat.upsert_repo_note",
-            permission: .localWrite,
+            permission: .write,
             dryRun: dryRun,
             repo: repo,
             affectedTags: []
@@ -364,7 +364,7 @@ final class StarcatMCPWriteFacade {
             return MCPWriteResult(
                 dryRun: dryRun,
                 changed: mutation.changed,
-                permission: .localWrite,
+                permission: .write,
                 action: "upsert_repo_note",
                 repo: mutation.repository,
                 note: mutation.note
@@ -382,7 +382,7 @@ final class StarcatMCPWriteFacade {
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         return try await perform(
             tool: "starcat.set_repo_status",
-            permission: .localWrite,
+            permission: .write,
             dryRun: dryRun,
             repo: repo,
             affectedTags: []
@@ -395,7 +395,7 @@ final class StarcatMCPWriteFacade {
             return MCPWriteResult(
                 dryRun: dryRun,
                 changed: mutation.changed,
-                permission: .localWrite,
+                permission: .write,
                 action: "set_repo_status",
                 repo: mutation.repository,
                 note: mutation.note
@@ -411,7 +411,7 @@ final class StarcatMCPWriteFacade {
     ) async throws -> MCPWriteResult {
         return try await perform(
             tool: "starcat.create_tag",
-            permission: .localWrite,
+            permission: .write,
             dryRun: dryRun,
             repo: nil,
             affectedTags: [name]
@@ -425,7 +425,7 @@ final class StarcatMCPWriteFacade {
             return MCPWriteResult(
                 dryRun: dryRun,
                 changed: mutation.changed,
-                permission: .localWrite,
+                permission: .write,
                 action: "create_tag",
                 tags: mutation.tags,
                 warnings: mutation.warnings
@@ -444,7 +444,7 @@ final class StarcatMCPWriteFacade {
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         return try await perform(
             tool: "starcat.add_repo_tags",
-            permission: .localWrite,
+            permission: .write,
             dryRun: dryRun,
             repo: repo,
             affectedTags: tagNames
@@ -458,7 +458,7 @@ final class StarcatMCPWriteFacade {
             return MCPWriteResult(
                 dryRun: dryRun,
                 changed: mutation.changed,
-                permission: .localWrite,
+                permission: .write,
                 action: "add_repo_tags",
                 repo: mutation.repository,
                 tags: mutation.tags,
@@ -477,7 +477,7 @@ final class StarcatMCPWriteFacade {
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         return try await perform(
             tool: "starcat.remove_repo_tags",
-            permission: .localWrite,
+            permission: .write,
             dryRun: dryRun,
             repo: repo,
             affectedTags: tagNames
@@ -490,7 +490,7 @@ final class StarcatMCPWriteFacade {
             return MCPWriteResult(
                 dryRun: dryRun,
                 changed: mutation.changed,
-                permission: .localWrite,
+                permission: .write,
                 action: "remove_repo_tags",
                 repo: mutation.repository,
                 tags: mutation.tags,
@@ -510,7 +510,7 @@ final class StarcatMCPWriteFacade {
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         return try await perform(
             tool: "starcat.set_repo_tags",
-            permission: .destructiveWrite,
+            permission: .write,
             dryRun: dryRun,
             repo: repo,
             affectedTags: tagNames
@@ -524,7 +524,7 @@ final class StarcatMCPWriteFacade {
             return MCPWriteResult(
                 dryRun: dryRun,
                 changed: mutation.changed,
-                permission: .destructiveWrite,
+                permission: .write,
                 action: "set_repo_tags",
                 repo: mutation.repository,
                 tags: mutation.tags,
@@ -594,26 +594,7 @@ final class StarcatMCPWriteFacade {
 
     private func validate(_ permission: StarcatMCPWritePermission) throws {
         try entitlementGate.requirePro(.mcpService)
-        switch permission {
-        case .localWrite:
-            guard settings.mcpAllowLocalWrites else {
-                throw StarcatMCPError.invalidArguments("MCP local writes are disabled in Starcat Settings.")
-            }
-        case .githubStarWrite:
-            guard settings.mcpAllowGitHubStarWrites else {
-                throw StarcatMCPError.invalidArguments(
-                    "MCP GitHub Star writes are disabled in Starcat Settings."
-                )
-            }
-        case .batchWrite:
-            guard settings.mcpAllowLocalWrites, settings.mcpAllowBatchWrites else {
-                throw StarcatMCPError.invalidArguments("MCP batch writes are disabled in Starcat Settings.")
-            }
-        case .destructiveWrite:
-            guard settings.mcpAllowLocalWrites, settings.mcpAllowDestructiveWrites else {
-                throw StarcatMCPError.invalidArguments("MCP replace/delete writes are disabled in Starcat Settings.")
-            }
-        }
+        try StarcatMCPAccess.requireWrite(settings)
     }
 
     private func resolveRepo(repoID: Int64?, owner: String?, name: String?) async throws -> Repo {
@@ -661,11 +642,11 @@ final class StarcatMCPWriteFacade {
         operation: () async throws -> MCPStarWriteResult
     ) async throws -> MCPStarWriteResult {
         do {
-            try validate(.githubStarWrite)
+            try validate(.write)
             let result = try await operation()
             await auditLog.record(
                 tool: tool,
-                permission: .githubStarWrite,
+                permission: .write,
                 dryRun: dryRun,
                 success: true,
                 repo: nil,
@@ -680,7 +661,7 @@ final class StarcatMCPWriteFacade {
             let outwardError = Self.mapCapabilityError(error)
             await auditLog.record(
                 tool: tool,
-                permission: .githubStarWrite,
+                permission: .write,
                 dryRun: dryRun,
                 success: false,
                 repo: nil,

@@ -7,7 +7,7 @@
 //  设计约束：
 //  - MCP handler 不直接碰多个 Repository，统一走本 facade，方便以后加 audit / 权限审批；
 //  - 当前 P0 只开放只读能力，写入类工具（改笔记 / 打标签）后续必须先补用户确认机制；
-//  - 私有笔记默认不暴露，必须用户在设置中显式开启。
+//  - 读取默认开放，所有修改共用 App 设置中的唯一写权限。
 //
 
 import Foundation
@@ -28,6 +28,11 @@ final class StarcatMCPFacade {
     private let entitlementGate: EntitlementGate
     private let settings: AppSettings
     var publicCapabilities: StarcatMCPPublicFacade?
+
+    /// HTTP、stdio 与普通 CLI 最终进入同一 App 授权边界。
+    func requireWriteAccess() throws {
+        try StarcatMCPAccess.requireWrite(settings)
+    }
 
     init(
         repoRepository: any RepoRepositoryProtocol,
@@ -67,13 +72,10 @@ final class StarcatMCPFacade {
         MCPCapabilitiesDTO(
             server_version: StarcatMCPServerMetadata.version,
             loopback_only: !settings.mcpAllowRemoteConnections,
-            private_notes_read: settings.mcpExposePrivateNotes,
+            read: true,
+            write: settings.mcpAllowWrites,
             statistics_read: true,
             global_repository_search: globalRepositorySearchService != nil,
-            local_writes: settings.mcpAllowLocalWrites,
-            github_star_writes: settings.mcpAllowGitHubStarWrites,
-            batch_writes: settings.mcpAllowLocalWrites && settings.mcpAllowBatchWrites,
-            destructive_writes: settings.mcpAllowLocalWrites && settings.mcpAllowDestructiveWrites,
             ai_summary_generation: entitlementGate.isProUser
         )
     }
@@ -117,7 +119,7 @@ final class StarcatMCPFacade {
     func getKnowledgeBaseStatistics() async throws -> MCPKnowledgeBaseStatisticsDTO {
         MCPKnowledgeBaseStatisticsDTO(
             snapshot: try await knowledgeBaseMetadataSnapshot(),
-            privateNotesExposed: settings.mcpExposePrivateNotes
+            privateNotesExposed: true
         )
     }
 
@@ -234,9 +236,6 @@ final class StarcatMCPFacade {
     }
 
     func getRepoNote(repoID: Int64?, owner: String?, name: String?) async throws -> MCPRepoNoteDTO? {
-        guard settings.mcpExposePrivateNotes else {
-            throw StarcatMCPError.privateNotesDisabled
-        }
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         return try await repoNoteRepository.find(repoId: repo.id).map(MCPRepoNoteDTO.init(note:))
     }
@@ -245,14 +244,12 @@ final class StarcatMCPFacade {
     func getRepoContext(repoID: Int64?, owner: String?, name: String?) async throws -> MCPRepoContextDTO {
         let repo = try await resolveRepo(repoID: repoID, owner: owner, name: name)
         let tags = try await repoTagRepository.fetchTags(forRepo: repo.id).map(MCPTagDTO.init(tag:))
-        let note = settings.mcpExposePrivateNotes
-            ? try await repoNoteRepository.find(repoId: repo.id).map(MCPRepoNoteDTO.init(note:))
-            : nil
+        let note = try await repoNoteRepository.find(repoId: repo.id).map(MCPRepoNoteDTO.init(note:))
         let summary = try await cachedSummary(for: repo)
         return MCPRepoContextDTO(
             repo: MCPRepoDTO(repo: repo),
             tags: tags,
-            private_notes_exposed: settings.mcpExposePrivateNotes,
+            private_notes_exposed: true,
             note: note,
             summary: summary
         )
@@ -442,7 +439,6 @@ enum StarcatMCPError: Error, LocalizedError, Equatable {
     case unauthorized
     case invalidArguments(String)
     case notFound(String)
-    case privateNotesDisabled
     case unsupported(String)
 
     var errorDescription: String? {
@@ -455,8 +451,6 @@ enum StarcatMCPError: Error, LocalizedError, Equatable {
             return "Missing or invalid Starcat Local API Key."
         case .invalidArguments(let message), .notFound(let message), .unsupported(let message):
             return message
-        case .privateNotesDisabled:
-            return "Private notes are not exposed to MCP. Enable this in Starcat Settings first."
         }
     }
 }
