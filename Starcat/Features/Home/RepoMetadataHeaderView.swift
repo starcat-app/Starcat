@@ -706,24 +706,33 @@ struct RepoShareButton: View {
     @Environment(RepoShareTaskStore.self) private var taskStore
     @Environment(\.presentRepoShare) private var presentRepoShare
     @Environment(\.colorScheme) private var colorScheme
+    @State private var hasExistingShare = false
 
     var body: some View {
         // 探索和独立详情可能持有旧快照；统一读 registry，确保 Star / 取消 Star 后
         // 立即切换点击行为，不把入口绑定到侧边栏分类或快照里的旧 isStarred。
         let targetRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
-        if targetRepo.isStarred {
-            shareMenu(for: targetRepo)
-        } else {
-            CopyFeedbackButton(
-                providesContent: { publicURL.absoluteString },
-                tooltip: "repo.share.link.copy.help",
-                onCopied: onLinkCopied
-            ) { didCopy in
-                shareIcon(didCopy: didCopy)
+        Group {
+            if targetRepo.isStarred {
+                shareMenu(for: targetRepo)
+            } else {
+                CopyFeedbackButton(
+                    providesContent: { publicURL.absoluteString },
+                    tooltip: "repo.share.link.copy.help",
+                    onCopied: onLinkCopied
+                ) { didCopy in
+                    shareIcon(didCopy: didCopy)
+                }
+                .accessibilityLabel(Text("repo.share.link.copy"))
+                .pressableHover()
+                .fixedSize()
             }
-            .accessibilityLabel(Text("repo.share.link.copy"))
-            .pressableHover()
-            .fixedSize()
+        }
+        .task(id: "\(repo.fullName)|\(dependencies.settings.customServiceURL(for: .sharing) ?? "")|\(taskStore.latestCompletion?.id.uuidString ?? "")") {
+            // 重新进入详情、重启或其它窗口发布成功时，从同一持久记录恢复空心 / 实心状态。
+            let existing = await dependencies.shareAPI.cachedRepoShare(fullName: repo.fullName)
+            guard !Task.isCancelled else { return }
+            hasExistingShare = existing != nil
         }
     }
 
@@ -752,7 +761,7 @@ struct RepoShareButton: View {
                             .controlSize(.small)
                     }
                 } else {
-                    let isShared = taskStore.isSuccessful(repoID: targetRepo.id)
+                    let isShared = hasExistingShare
                     Label(
                         isShared ? "repo.share.ai.created" : "repo.share.ai.create",
                         systemImage: isShared ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack"
@@ -775,7 +784,7 @@ struct RepoShareButton: View {
 
     /// 沿用 Hero 操作的 28pt 点击区域与 13pt 图标，和知识库 / Wiki 入口保持一致。
     private func shareIcon(didCopy: Bool = false) -> some View {
-        Image(systemName: didCopy ? "checkmark.circle.fill" : "square.and.arrow.up")
+        Image(systemName: didCopy ? "checkmark.circle.fill" : (hasExistingShare ? "square.and.arrow.up.fill" : "square.and.arrow.up"))
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(didCopy ? Color.green : Color.secondary)
             .frame(width: 28, height: 28)

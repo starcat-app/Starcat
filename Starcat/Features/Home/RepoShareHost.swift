@@ -2,7 +2,7 @@
 //  RepoShareHost.swift
 //  Starcat
 //
-//  仓库详情的窗口会话级分享宿主：统一持有任务、进度 Sheet、付费墙和完成反馈。
+//  仓库详情的分享宿主：连接应用级任务与当前窗口的 Sheet、付费墙和完成反馈。
 //  宿主挂在详情栏的场景分支外，Hero 只触发动作；切换仓库或收起 Sheet 不会销毁任务。
 //
 
@@ -27,7 +27,8 @@ struct RepoSharePresenter {
 /// 不能把本 modifier 挂到 `.id(repo.id)` 的子树内，否则切换仓库会丢失进度与恢复入口。
 struct RepoShareHost: ViewModifier {
     @Environment(AppDependencies.self) private var dependencies
-    @State private var taskStore = RepoShareTaskStore()
+    private var taskStore: RepoShareTaskStore { dependencies.repoShareTaskStore }
+    @State private var presentedRepoIDs: Set<Int64> = []
     @State private var presentation: RepoSharePresentation?
     @State private var completionMessage: String?
     @State private var paywallContext: ProPaywallContext?
@@ -51,7 +52,8 @@ struct RepoShareHost: ViewModifier {
                 ProPaywallSheet.hosted(context: context, dependencies: dependencies)
             }
             .onChange(of: taskStore.latestCompletion) { _, completion in
-                guard let completion, presentation?.repoID != completion.repoID else { return }
+                guard let completion, presentedRepoIDs.contains(completion.repoID),
+                      presentation?.repoID != completion.repoID else { return }
                 let key: String
                 switch completion.outcome {
                 case .success:
@@ -68,6 +70,7 @@ struct RepoShareHost: ViewModifier {
     @MainActor
     private func presentOrStartShare(_ repo: Repo) {
         guard authorizeAIShare() else { return }
+        presentedRepoIDs.insert(repo.id)
         taskStore.start(repo: repo, operations: shareOperations)
         presentation = RepoSharePresentation(repoID: repo.id)
     }

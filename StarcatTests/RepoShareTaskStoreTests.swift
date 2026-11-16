@@ -19,6 +19,52 @@ import Testing
 @MainActor
 struct RepoShareTaskStoreTests {
 
+    @Test("已有链接在摘要检查之前返回，UI 与公共调用共用运行中任务")
+    func existingLinkSkipsAIAndPublishing() async throws {
+        let store = RepoShareTaskStore()
+        let repo = Repo.makeMinimal(owner: "starcat", name: "existing-share")
+        var cacheLookup: CheckedContinuation<ShareCreateResponse?, Never>?
+        var lookupCount = 0
+        let operations = RepoShareOperations(
+            cachedShare: { _ in
+                lookupCount += 1
+                return await withCheckedContinuation { cacheLookup = $0 }
+            },
+            cachedInsight: { _ in Issue.record("已有分享不应读取摘要"); return nil },
+            generateInsight: { _ in Issue.record("已有分享不应生成摘要"); return makeInsight(oneLiner: "") },
+            createShare: { _ in Issue.record("已有分享不应重复发布"); return makeResponse(url: "") }
+        )
+        store.start(repo: repo, operations: operations)
+        #expect(await waitUntil { cacheLookup != nil })
+        var waiting = false
+        let caller = Task {
+            waiting = true
+            return try await store.createAndWait(repo: repo, operations: operations)
+        }
+        #expect(await waitUntil { waiting })
+        cacheLookup?.resume(returning: makeResponse(url: "https://starcat.ink/s/existing"))
+        #expect(try await caller.value == "https://starcat.ink/s/existing")
+        #expect(lookupCount == 1)
+    }
+
+    @Test("成功任务再次打开会重查持久记录，避免永久保留过期结果")
+    func completedJobRechecksLinkRecord() async throws {
+        let store = RepoShareTaskStore()
+        let repo = Repo.makeMinimal(owner: "starcat", name: "recheck-share")
+        var lookups = 0
+        let operations = RepoShareOperations(
+            cachedShare: { _ in
+                lookups += 1
+                return makeResponse(url: "https://starcat.ink/s/\(lookups)")
+            },
+            cachedInsight: { _ in nil },
+            generateInsight: { _ in makeInsight(oneLiner: "") },
+            createShare: { _ in makeResponse(url: "") }
+        )
+        #expect(try await store.createAndWait(repo: repo, operations: operations) == "https://starcat.ink/s/1")
+        #expect(try await store.createAndWait(repo: repo, operations: operations) == "https://starcat.ink/s/2")
+    }
+
     @Test("公共分享取消等待原生成任务退出，迟到结果不能创建链接")
     func publicCancellationWaitsForUnderlyingTask() async throws {
         let store = RepoShareTaskStore()

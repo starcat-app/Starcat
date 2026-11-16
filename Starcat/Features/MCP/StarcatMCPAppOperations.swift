@@ -61,7 +61,7 @@ extension StarcatMCPPublicFacade {
             if dryRun { return preview(name, target: .object(["repository": .string(repo.fullName), "public_link": .bool(true)])) }
             try app.entitlementGate.requirePro(.aiSummary, usesLocalOnly: app.settings.isSummaryTaskResolvedToLocalAI)
             return try tasks.start(kind: name) {
-                let store = RepoShareTaskStore()
+                let store = app.repoShareTaskStore
                 let url = try await store.createAndWait(repo: repo, operations: app.makeRepoShareOperations())
                 return .object(["url": .string(url), "repo_id": .int(Int(repo.id))])
             }

@@ -56,6 +56,9 @@ actor ShareAPI {
     private let dailyRadarCacheDirectory: URL
     private var dailyRadarShares: [String: DailyRadarShareResponse] = [:]
     private var dailyRadarShareTasks: [String: Task<DailyRadarShareResponse, Error>] = [:]
+    private let repoShareDirectory: URL
+    private var repoShares: [String: ShareCreateResponse] = [:]
+    private var repoShareTasks: [String: Task<ShareCreateResponse, Error>] = [:]
 
     /// - Parameters:
     ///   - baseURL: 后端裸 host（**不含** `/api` 后缀，R-03.1 起与其它自建后端对齐）；
@@ -67,10 +70,15 @@ actor ShareAPI {
         baseURL: URL,
         apiKey: String? = nil,
         session: URLSession? = nil,
-        dailyRadarCacheDirectory: URL? = nil
+        dailyRadarCacheDirectory: URL? = nil,
+        repoShareDirectory: URL? = nil
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        // 已发布的链接属于长期记录，放 Application Support，避免清理网络缓存后重复发布。
+        self.repoShareDirectory = repoShareDirectory ??
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Starcat/RepoShares", isDirectory: true)
         self.dailyRadarCacheDirectory = dailyRadarCacheDirectory ??
             FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("Starcat/DailyRadarShares", isDirectory: true)
@@ -104,12 +112,61 @@ actor ShareAPI {
         dailyRadarShares.removeAll()
     }
 
+    /// 在 AI 工作开始前读取已有链接；服务地址参与身份，不跨自定义后端复用。
+    func cachedRepoShare(fullName: String) -> ShareCreateResponse? {
+        let key = repoShareKey(fullName: fullName)
+        if let cached = repoShares[key], cached.isReusable() { return cached }
+        let file = repoShareDirectory.appendingPathComponent(key + ".json")
+        guard let bytes = try? Data(contentsOf: file),
+              let cached = try? decoder.decode(ShareCreateResponse.self, from: bytes),
+              cached.isReusable() else {
+            repoShares[key] = nil
+            return nil
+        }
+        repoShares[key] = cached
+        return cached
+    }
+
+    /// 统计数字与摘要语言变化不改变链接身份，已创建的分享始终复用原公开快照。
+    private func repoShareKey(fullName: String) -> String {
+        let identity = baseURL.absoluteString + "|" + fullName.lowercased()
+        return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 复用本地记录并合并同一仓库正在提交的请求，避免多窗口重复发布。
+    func shareRepo(request: ShareRepoRequest) async throws -> ShareCreateResponse {
+        if let cached = cachedRepoShare(fullName: request.repo.fullName) { return cached }
+        let key = repoShareKey(fullName: request.repo.fullName)
+        if let pending = repoShareTasks[key] { return try await pending.value }
+        let serviceURL = baseURL
+        let credential = apiKey
+        let pending = Task {
+            try await self.createRepoShare(request: request, serviceURL: serviceURL, credential: credential)
+        }
+        repoShareTasks[key] = pending
+        defer { repoShareTasks[key] = nil }
+        let result = try await withTaskCancellationHandler {
+            try await pending.value
+        } onCancel: {
+            pending.cancel()
+        }
+        repoShares[key] = result
+        do {
+            try FileManager.default.createDirectory(at: repoShareDirectory, withIntermediateDirectories: true)
+            try encoder.encode(result).write(to: repoShareDirectory.appendingPathComponent(key + ".json"), options: .atomic)
+        } catch {
+            // 服务端已经发布成功，保留可复制结果；记录落盘失败，避免静默冒充跨重启可恢复。
+            AppLog.network.error("Repo share record persistence failed: \(error.localizedDescription, privacy: .public)")
+        }
+        return result
+    }
+
     /// 创建分享链接。
     ///
     /// 网络错误统一抛 `StarcatEnvelopeNetworkError`（详见 StarcatEnvelope.swift）。
     /// 401 时 `error.isUnauthorized == true`，UI 应引导用户去设置页检查 API Key。
-    func shareRepo(request: ShareRepoRequest) async throws -> ShareCreateResponse {
-        let url = AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.share, to: baseURL)
+    private func createRepoShare(request: ShareRepoRequest, serviceURL: URL, credential: String?) async throws -> ShareCreateResponse {
+        let url = AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.share, to: serviceURL)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -117,7 +174,7 @@ actor ShareAPI {
         urlRequest.setValue("Starcat/1.0", forHTTPHeaderField: "User-Agent")
 
         // R-01 v1.2：后端强制 Bearer Auth；apiKey 为 nil/空时不发头（后端会 401）。
-        if let key = apiKey, !key.isEmpty {
+        if let key = credential, !key.isEmpty {
             urlRequest.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         }
         StarcatGatewayRouting.applyServiceHeader(to: &urlRequest, service: .sharing)

@@ -332,6 +332,8 @@ final class AppDependencies {
     /// 本地联调改 env 即可；② `RepoMetadataHeaderView` 通过 environment 拿到这个实例，
     /// 不再 new；③ 未来要做 ShareAPI 单测，从 environment 注入 mock 即可。
     let shareAPI: ShareAPI
+    /// UI 多窗口与 CLI 共用任务，连 AI 准备阶段也只运行一次。
+    let repoShareTaskStore = RepoShareTaskStore()
 
     // MARK: - Wiki 外部文档索引
 
@@ -2048,6 +2050,7 @@ final class AppDependencies {
     func switchUserDatabase(to userId: Int64?) async throws {
         let previousUserId = database.currentUserId
         if previousUserId != userId {
+            await repoShareTaskStore.resetForAccountChange()
             await repoSkillStore.resetForAccountChange()
             await RepoFileTreeSessionCache.shared.reset()
             // 先阻断旧账号计数回写，再 await 数据库切换；新账号恢复不依赖活动页是否打开。

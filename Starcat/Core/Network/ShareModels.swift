@@ -120,6 +120,18 @@ struct ShareCreateResponse: Codable, Sendable, Equatable {
     let expiresAt: String?
     let createdAt: String
 
+    /// 只复用仍有效的公开链接；无法解析的有效期不能当作永不过期。
+    func isReusable(at date: Date = Date()) -> Bool {
+        guard let url = URL(string: shareUrl),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil else { return false }
+        guard let expiresAt else { return true }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let expiration = formatter.date(from: expiresAt) ?? ISO8601DateFormatter().date(from: expiresAt)
+        return expiration.map { $0 > date } ?? false
+    }
+
     enum CodingKeys: String, CodingKey {
         case shareUrl = "share_url"
         case shareId = "share_id"

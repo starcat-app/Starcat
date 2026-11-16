@@ -13,6 +13,58 @@ import Testing
 @testable import Starcat
 
 struct DailyRadarSharingTests {
+    /// 仓库分享复用稳定身份；换服务隔离，重启恢复，并发点击只发布一次。
+    @Test func repoSharesPersistAndRespectIdentity() async throws {
+        let fixture = SharingFixture()
+        defer { fixture.clean() }
+        let api = fixture.api()
+        let request = ShareRepoRequest(
+            repo: ShareRepoDTO(
+                fullName: "owner/project", description: nil, language: nil, starsCount: 1,
+                forksCount: 0, subscribersCount: 0, topics: [], homepage: nil,
+                url: "https://github.com/owner/project"
+            ),
+            aiSummary: ShareAISummaryDTO(
+                oneLiner: "Summary", summary: "Summary", platforms: [], suitableFor: [],
+                strengths: [], risks: [], suggestedTags: []
+            )
+        )
+        async let first = api.shareRepo(request: request)
+        async let second = api.shareRepo(request: request)
+        let results = try await [first, second]
+        #expect(results[0] == results[1])
+        #expect(fixture.state.requests.count == 1)
+        let restarted = fixture.api()
+        #expect(await restarted.cachedRepoShare(fullName: "OWNER/PROJECT") == results[0])
+        #expect(try await restarted.shareRepo(request: request) == results[0])
+        #expect(fixture.state.requests.count == 1)
+        await restarted.updateBaseURL(URL(string: "https://different.invalid")!)
+        #expect(await restarted.cachedRepoShare(fullName: "owner/project") == nil)
+        await restarted.updateBaseURL(fixture.baseURL)
+        #expect(await restarted.cachedRepoShare(fullName: "owner/project") == results[0])
+        let files = try FileManager.default.contentsOfDirectory(
+            at: fixture.directory.appendingPathComponent("repos"), includingPropertiesForKeys: nil
+        )
+        let expired = ShareCreateResponse(
+            shareUrl: results[0].shareUrl, shareId: "expired",
+            expiresAt: "2020-01-01T00:00:00Z", createdAt: "2019-01-01T00:00:00Z"
+        )
+        try JSONEncoder().encode(expired).write(to: #require(files.first))
+        #expect(await fixture.api().cachedRepoShare(fullName: "owner/project") == nil)
+    }
+
+    @Test func repoShareExpirationValidation() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        func response(_ expiration: String?, url: String = "https://share.example/s/repo") -> ShareCreateResponse {
+            ShareCreateResponse(shareUrl: url, shareId: "repo", expiresAt: expiration, createdAt: "")
+        }
+        #expect(response(nil).isReusable(at: now))
+        #expect(response("2099-01-01T00:00:00.123Z").isReusable(at: now))
+        #expect(!response("2020-01-01T00:00:00Z").isReusable(at: now))
+        #expect(!response("invalid").isReusable(at: now))
+        #expect(!response(nil, url: "file:///tmp/share").isReusable(at: now))
+    }
+
     /// 结构化正文剥离 metadata/H1，私有项目与外部封面地址不进入公开 DTO。
     @Test func snapshotContainsOnlyPublicReportFields() throws {
         let report = try makeReport()
@@ -283,7 +335,10 @@ private struct SharingFixture {
     func api() -> ShareAPI {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SharingTestProtocol.self]
-        return ShareAPI(baseURL: baseURL, apiKey: "test-secret", session: URLSession(configuration: configuration), dailyRadarCacheDirectory: directory)
+        return ShareAPI(
+            baseURL: baseURL, apiKey: "test-secret", session: URLSession(configuration: configuration),
+            dailyRadarCacheDirectory: directory, repoShareDirectory: directory.appendingPathComponent("repos")
+        )
     }
 
     func clean() {

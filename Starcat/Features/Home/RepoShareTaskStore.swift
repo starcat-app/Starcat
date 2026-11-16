@@ -2,7 +2,7 @@
 //  RepoShareTaskStore.swift
 //  Starcat
 //
-//  AI 分享页创建任务的窗口会话级状态中心。
+//  AI 分享页创建任务的应用会话级状态中心，窗口与 CLI 共用。
 //
 //  模块职责：
 //  - 以 repoID 隔离多个分享任务，防止用户切换仓库后异步结果串仓；
@@ -14,7 +14,7 @@
 //  关键约束：
 //  - 每次状态回写同时校验 repoID + taskID。旧任务即使晚到，也不能覆盖重试任务；
 //  - 同一仓库只保留一个任务。重复点击只负责重新打开 Sheet，不重复消耗 AI 配额；
-//  - “后台继续”只指 Starcat 进程内继续，不做跨进程持久化或系统后台调度。
+//  - 运行中任务只在进程内继续；成功链接由 ShareAPI 单独持久化，不做系统后台调度。
 //
 
 import Foundation
@@ -26,6 +26,7 @@ import Observation
 /// 单测，同时生产环境仍直接复用现有 AI service 与 ShareAPI，不引入第二套业务实现。
 @MainActor
 struct RepoShareOperations {
+    var cachedShare: @MainActor (Repo) async -> ShareCreateResponse? = { _ in nil }
     let cachedInsight: @MainActor (Repo) async throws -> RepoAIInsight?
     let generateInsight: @MainActor (Repo) async throws -> RepoAIInsight
     let createShare: @MainActor (ShareRepoRequest) async throws -> ShareCreateResponse
@@ -127,10 +128,19 @@ final class RepoShareTaskStore {
         }
     }
 
-    /// 首次创建。已有运行中、成功或失败结果时都不重复提交，由调用方直接打开现有 Sheet。
+    /// 运行中直接恢复；成功结果再次打开时重查持久记录，允许过期链接重新创建。
     func start(repo: Repo, operations: RepoShareOperations) {
-        guard jobs[repo.id] == nil else { return }
+        guard jobs[repo.id] == nil || jobs[repo.id]?.state.isSuccessful == true else { return }
         launch(repo: repo, operations: operations)
+    }
+
+    /// AI 摘要属于账号数据库；切号前必须取消并等待，公开分享链接记录继续保留。
+    func resetForAccountChange() async {
+        let pending = Array(tasks.values)
+        for repoID in Array(tasks.keys) { cancel(repoID: repoID) }
+        for task in pending { await task.value }
+        jobs.removeAll()
+        latestCompletion = nil
     }
 
     /// 失败或用户取消后允许重新创建；运行中与成功态保持单任务语义。
@@ -175,6 +185,11 @@ final class RepoShareTaskStore {
         }
 
         do {
+            if let existing = await operations.cachedShare(repo) {
+                try Task.checkCancellation()
+                finish(repo: repo, taskID: taskID, state: .success(existing.shareUrl), outcome: .success)
+                return
+            }
             let insight: RepoAIInsight
             if let cached = try await operations.cachedInsight(repo) {
                 try Task.checkCancellation()
@@ -264,6 +279,7 @@ extension AppDependencies {
     /// UI 和公共接口从同一处装配分享用例，避免缓存/生成选择与 API 版本逐渐分叉。
     func makeRepoShareOperations() -> RepoShareOperations {
         RepoShareOperations(
+            cachedShare: { await self.shareAPI.cachedRepoShare(fullName: $0.fullName) },
             cachedInsight: { try await self.repoAIInsightService.cachedInsightFast(for: $0) },
             generateInsight: { (try await self.repoAIInsightService.generateInsight(for: $0)).insight },
             createShare: { try await self.shareAPI.shareRepo(request: $0) }
