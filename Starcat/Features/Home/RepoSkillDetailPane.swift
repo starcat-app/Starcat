@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 /// 阅读区独立滚动，切换 Skill 只重置阅读位置，不影响安装选择或右侧队列。
 struct RepoSkillDetailPane: View {
@@ -21,6 +22,7 @@ struct RepoSkillDetailPane: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
     @State private var tab = Tab.manifest
+    @State private var showsManifestSource = false
     @State private var expandedFolders: Set<String> = ["references", "templates", "assets", "scripts"]
     @State private var previewedFile: RepoSkillFile?
     @State private var document: RepoSkillReadingCache.Document?
@@ -52,7 +54,8 @@ struct RepoSkillDetailPane: View {
     }
 
     private var isContentReady: Bool {
-        document?.skillID == skill.id && (tab != .manifest || renderedDocumentID == skill.id)
+        document?.skillID == skill.id
+            && (tab != .manifest || showsManifestSource || renderedDocumentID == skill.id)
     }
 
     /// 文件清单与正文保留同一份展示快照，避免旧页尚未退场时先换成新 Skill 的附件。
@@ -89,29 +92,17 @@ struct RepoSkillDetailPane: View {
     var body: some View {
         @Bindable var session = session
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                if isPreviewExpanded {
-                    Text(verbatim: "SKILL.md")
-                        .font(interfaceScale.font(.caption, weight: .semibold))
-                } else {
-                    CountedSegmentedControl(
-                        items: Tab.allCases, selection: $tab, totalCount: skill.files.count,
-                        title: { $0.title },
-                        count: { $0 == .files ? skill.files.count : nil },
-                        accessibilityLabel: "repo.skills.preview.selection",
-                        symbol: { $0.symbol },
-                        tint: { $0.tint }
-                    )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    contentTabs
+                    Spacer(minLength: 8)
+                    if tab == .manifest { manifestToolbar }
                 }
-                Spacer(minLength: 0)
-                if tab == .manifest {
-                    ReadmeTranslationFooterButton(
-                        control: translationControl,
-                        sourceHtml: document?.skillID == skill.id ? document?.html ?? "" : "",
-                        sourceSnapshot: translationSourceDocumentID == skill.id && renderedDocumentID == skill.id
-                            ? translationSourceSnapshot : .empty
-                    )
-                    previewSizeButton
+                VStack(alignment: .leading, spacing: 8) {
+                    contentTabs
+                    if tab == .manifest {
+                        HStack { Spacer(minLength: 0); manifestToolbar }
+                    }
                 }
             }
             // 放大按钮固定在这行，不因切换到文件或目录而让正文上下跳动。
@@ -205,6 +196,7 @@ struct RepoSkillDetailPane: View {
             renderedDocumentID = nil
             updateContentVisibility()
         }
+        .onChange(of: showsManifestSource) { _, _ in updateContentVisibility() }
         .onChange(of: translationSyncKey, initial: true) { _, _ in prepareTranslation() }
         .onDisappear {
             // prepare(nil) 同时取消缓存读取和翻译任务，关窗后不能再发布部分译文或付费提示。
@@ -245,6 +237,89 @@ struct RepoSkillDetailPane: View {
                 // 快速点选会取消旧任务；旧正文不能在新标题下回填。
             }
         }
+    }
+
+    @ViewBuilder private var contentTabs: some View {
+        if isPreviewExpanded {
+            Text(verbatim: "SKILL.md")
+                .font(interfaceScale.font(.caption, weight: .semibold))
+        } else {
+            CountedSegmentedControl(
+                items: Tab.allCases, selection: $tab, totalCount: skill.files.count,
+                title: { $0.title },
+                count: { $0 == .files ? skill.files.count : nil },
+                accessibilityLabel: "repo.skills.preview.selection",
+                symbol: { $0.symbol }, tint: { $0.tint }
+            )
+        }
+    }
+
+    /// 所有操作绑定扫描时的提交；复制和下载始终使用原文，不受阅读层译文影响。
+    private var manifestToolbar: some View {
+        HStack(spacing: 6) {
+            CopyFeedbackButton(
+                providesContent: { skill.manifest }, tooltip: "repo.files.preview.copy", style: .bordered
+            ) { didCopy in
+                Image(systemName: didCopy ? "checkmark.circle.fill" : "square.on.square")
+                    .foregroundStyle(didCopy ? Color.green : Color.secondary)
+            }
+            Picker("repo.files.markdown.mode", selection: $showsManifestSource) {
+                Text("repo.files.markdown.rendered").tag(false)
+                Text("repo.files.markdown.source").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Button("repo.files.preview.raw") {
+                if let url = contentBaseURL(raw: true)?.appendingPathComponent("SKILL.md") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+            .buttonStyle(.bordered)
+            if let file = skill.files.first(where: { $0.path == "SKILL.md" }) {
+                fileDownloadButton(file)
+            }
+            manifestMoreMenu
+            ReadmeTranslationFooterButton(
+                control: translationControl,
+                sourceHtml: document?.skillID == skill.id ? document?.html ?? "" : "",
+                sourceSnapshot: translationSourceDocumentID == skill.id && renderedDocumentID == skill.id
+                    ? translationSourceSnapshot : .empty
+            )
+            .disabled(showsManifestSource)
+            previewSizeButton
+        }
+        .disabled(document?.skillID != skill.id || !isContentVisible)
+        .fixedSize()
+    }
+
+    private var manifestMoreMenu: some View {
+        Menu {
+            if let rawURL = contentBaseURL(raw: true)?.appendingPathComponent("SKILL.md") {
+                CopyFeedbackButton(
+                    providesContent: { rawURL.absoluteString }, tooltip: "repo.files.inspector.copyRawLink"
+                ) { didCopy in
+                    Label("repo.files.inspector.copyRawLink",
+                          systemImage: didCopy ? "checkmark.circle.fill" : "link")
+                }
+            }
+            Button {
+                if let url = contentBaseURL(raw: false)?.appendingPathComponent("SKILL.md") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("repo.files.inspector.viewOnGitHub", systemImage: "arrow.up.right.square")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 28)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("repo.files.preview.more")
+        .accessibilityLabel(Text("repo.files.preview.more"))
     }
 
     /// 占位布局跟随当前 Tab，文件与目录不会在等待期间显示成正文段落。
@@ -325,17 +400,28 @@ struct RepoSkillDetailPane: View {
     @ViewBuilder
     private var manifest: some View {
         if let document {
-            ReadmeWebView(
-                htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
-                floatingToolbarBottomInset: 40,
-                translationRenderState: document.skillID == skill.id
-                    ? translationVM.visibleRenderState(matching: translationControl.identity) : .hidden,
-                onTranslationSourceChange: { snapshot in
-                    receiveTranslationSource(snapshot, documentID: document.skillID)
-                },
-                onDocumentReady: revealManifest
-            )
-            // 由外层统一淡化，保持 WKWebView 身份稳定，不能用 Skill 的 .id 重建阅读器。
+            ZStack {
+                ReadmeWebView(
+                    htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
+                    floatingToolbarBottomInset: 40,
+                    translationRenderState: document.skillID == skill.id
+                        ? translationVM.visibleRenderState(matching: translationControl.identity) : .hidden,
+                    onTranslationSourceChange: { snapshot in
+                        receiveTranslationSource(snapshot, documentID: document.skillID)
+                    },
+                    onDocumentReady: revealManifest,
+                    registersFindShortcut: !showsManifestSource
+                )
+                .opacity(showsManifestSource ? 0 : 1)
+                .allowsHitTesting(!showsManifestSource)
+                .accessibilityHidden(showsManifestSource)
+                if showsManifestSource {
+                    RepoFileSourcePreview(text: contentSkill.manifest)
+                        .transition(.opacity)
+                }
+            }
+            // 源码切换仅隐藏阅读层，保留 WebView 与滚动位置，不重复下载或渲染 Markdown。
+            .animation(.easeOut(duration: reduceMotion ? 0.06 : 0.12), value: showsManifestSource)
         } else {
             Color.clear
         }
