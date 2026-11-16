@@ -21,7 +21,7 @@ import Foundation
 import SwiftUI
 import Observation
 
-/// 同仓 Markdown 链接的互斥打开方式；默认仍交给系统浏览器。
+/// 同仓 Markdown 链接的互斥打开方式；默认使用独立阅读窗口。
 enum RepositoryMarkdownOpenMode: String, CaseIterable, Identifiable {
     case browser
     case newWindow
@@ -1988,11 +1988,14 @@ final class AppSettings {
         self.openFirstDetailOnCategoryChange = defaults.object(
             forKey: Keys.openFirstDetailOnCategoryChange
         ) as? Bool ?? false
-        // 将已发布的二态开关一次迁移为三态偏好，保留用户原先的新窗口选择。
-        // 迁移后删除旧 key，不长期双写两套设置。
+        // 将已发布的二态开关一次迁移为三态偏好，保留显式的浏览器 / 新窗口选择。
+        // 旧 key 缺失才采用新默认值，迁移后删除旧 key，不长期双写两套设置。
         let markdownOpenMode = defaults.string(forKey: Keys.repositoryMarkdownOpenMode)
             .flatMap(RepositoryMarkdownOpenMode.init(rawValue:))
-            ?? (defaults.bool(forKey: Keys.legacyOpenRepositoryMarkdownInApp) ? .newWindow : .browser)
+            ?? (defaults.object(forKey: Keys.legacyOpenRepositoryMarkdownInApp) as? Bool).map {
+                $0 ? .newWindow : .browser
+            }
+            ?? .newWindow
         self.repositoryMarkdownOpenMode = markdownOpenMode
         defaults.set(markdownOpenMode.rawValue, forKey: Keys.repositoryMarkdownOpenMode)
         defaults.removeObject(forKey: Keys.legacyOpenRepositoryMarkdownInApp)
@@ -2487,7 +2490,7 @@ final class AppSettings {
         lastActivityCategoryRaw = ""
         listPreferenceValues = [:]
         openFirstDetailOnCategoryChange = false
-        repositoryMarkdownOpenMode = .browser
+        repositoryMarkdownOpenMode = .newWindow
 
         let provider = AIServiceProvider.openAICompatible
         let baseURL = provider.defaultBaseURL
