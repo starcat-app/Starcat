@@ -2,7 +2,7 @@
 //  RepoSkillFilePreview.swift
 //  Starcat
 //
-//  安装前核对固定提交的附件，复用现有源码预览和 blob 大小限制，不执行文件内容。
+//  阅读区底部附件预览，Markdown 复用正文渲染，其他文件保留源码与 blob 大小限制。
 //
 
 import AppKit
@@ -15,8 +15,15 @@ struct RepoSkillFilePreview: View {
     let session: RepoSkillSession
     let onClose: () -> Void
 
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var value: RepoFilePreview?
     @State private var error: String?
+    @State private var markdown: RepoFileMarkdownDocument?
+    @State private var renderedDocumentID: String?
+
+    private var isContentReady: Bool {
+        error != nil || (value != nil && (markdown == nil || renderedDocumentID == markdown?.id))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,28 +37,64 @@ struct RepoSkillFilePreview: View {
             }
             .padding(14)
             Divider()
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(isContentReady ? 1 : 0)
+                .allowsHitTesting(isContentReady)
+                .accessibilityHidden(!isContentReady)
+                .overlay {
+                    if !isContentReady {
+                        RepoSkillSkeletonView(layout: .manifest)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: isContentReady)
         }
-        .frame(width: 560, height: 420)
         .task(id: "\(skill.id):\(file.id)") {
             value = nil
             error = nil
+            markdown = nil
+            renderedDocumentID = nil
             do {
-                value = try await session.preview(file: file, skill: skill)
+                let preview = try await session.preview(file: file, skill: skill)
+                var preparedMarkdown: RepoFileMarkdownDocument?
+                if case .text(let text) = preview, RepoFileMarkdownRenderer.supports(fileName: file.name) {
+                    preparedMarkdown = try await RepoFileMarkdownRenderer.shared.prepare(
+                        text: text, target: RepoFileBrowserTarget(repo: session.repo),
+                        commit: skill.commitSHA, path: skill.directory + file.path, blobSHA: file.sha
+                    )
+                }
+                // 关闭、换文件或切换 Skill 后不得发布迟到内容；渲染只读取扫描时的提交。
+                try Task.checkCancellation()
+                markdown = preparedMarkdown
+                value = preview
             } catch {
                 if !Task.isCancelled { self.error = error.localizedDescription }
             }
         }
     }
 
-    /// 文本用只读 NSTextView；图片仅解码预览，二进制、LFS 和大文件沿用下载功能的提示。
+    /// 正文就绪即入场，不等待图片等资源；渲染失败回到已读到的源码，避免永久骨架。
     @ViewBuilder private var content: some View {
         if let error {
             Text(verbatim: error).foregroundStyle(.secondary).padding()
         } else if let value {
             switch value {
             case .text(let text):
-                RepoFileSourcePreview(text: text)
+                if let markdown {
+                    ReadmeWebView(
+                        htmlFragment: markdown.html, documentID: markdown.id, baseURL: markdown.baseURL,
+                        onDocumentReady: { documentID in
+                            if documentID == self.markdown?.id { renderedDocumentID = documentID }
+                        },
+                        onDocumentFailed: { documentID in
+                            if documentID == self.markdown?.id { self.markdown = nil }
+                        },
+                        allowsSameDocumentAnchors: true
+                    )
+                } else {
+                    RepoFileSourcePreview(text: text)
+                }
             case .image(let data):
                 if let image = NSImage(data: data) {
                     Image(nsImage: image).resizable().scaledToFit().padding()
@@ -70,7 +113,7 @@ struct RepoSkillFilePreview: View {
                     .foregroundStyle(.secondary).padding()
             }
         } else {
-            ProgressView("repo.files.preview.loading")
+            Color.clear
         }
     }
 }

@@ -14,6 +14,7 @@ struct RepoSkillDetailPane: View {
     let session: RepoSkillSession
     @Binding var isPreviewExpanded: Bool
     @Binding var isInspectorPresented: Bool
+    @Binding var previewedFile: RepoSkillFile?
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
@@ -24,7 +25,7 @@ struct RepoSkillDetailPane: View {
     @State private var tab = Tab.manifest
     @State private var showsManifestSource = false
     @State private var expandedFolders: Set<String> = ["references", "templates", "assets", "scripts"]
-    @State private var previewedFile: RepoSkillFile?
+    @State private var hoveredFileRow: String?
     @State private var document: RepoSkillReadingCache.Document?
     @State private var renderedDocumentID: String?
     @State private var presentedSkill: RepoSkill?
@@ -40,12 +41,14 @@ struct RepoSkillDetailPane: View {
     init(
         skill: RepoSkill, session: RepoSkillSession,
         translationService: any ReadmeTranslationServiceProtocol,
-        isPreviewExpanded: Binding<Bool>, isInspectorPresented: Binding<Bool>
+        isPreviewExpanded: Binding<Bool>, isInspectorPresented: Binding<Bool>,
+        previewedFile: Binding<RepoSkillFile?>
     ) {
         self.skill = skill
         self.session = session
         _isPreviewExpanded = isPreviewExpanded
         _isInspectorPresented = isInspectorPresented
+        _previewedFile = previewedFile
         _translationVM = State(initialValue: ReadmeTranslationViewModel(service: translationService))
     }
 
@@ -155,9 +158,10 @@ struct RepoSkillDetailPane: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .popover(item: $previewedFile) { file in
-            RepoSkillFilePreview(skill: contentSkill, file: file, session: session) { previewedFile = nil }
-                .appLocaleEnvironment()
+        .allowsHitTesting(previewedFile == nil)
+        .accessibilityHidden(previewedFile != nil)
+        .overlay {
+            filePreviewOverlay
         }
         .sheet(item: translationPaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
@@ -237,6 +241,38 @@ struct RepoSkillDetailPane: View {
                 // 快速点选会取消旧任务；旧正文不能在新标题下回填。
             }
         }
+    }
+
+    /// 浮层限于阅读区，保留顶部上下文和底层滚动状态；窗口统一处理 Escape 的关闭顺序。
+    private var filePreviewOverlay: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                if let file = previewedFile {
+                    Color.black.opacity(0.14)
+                        .contentShape(Rectangle())
+                        .onTapGesture { previewedFile = nil }
+                        .accessibilityHidden(true)
+                        .transition(.opacity)
+                    RepoSkillFilePreview(skill: contentSkill, file: file, session: session) {
+                        previewedFile = nil
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: geometry.size.height * 0.8)
+                    .background(RepoSkillPanelStyle.panelColor(colorScheme))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.primary.opacity(0.12))
+                    }
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(1)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: previewedFile?.id)
+            .allowsHitTesting(previewedFile != nil)
+        }
+        .clipped()
     }
 
     @ViewBuilder private var contentTabs: some View {
@@ -410,7 +446,7 @@ struct RepoSkillDetailPane: View {
                         receiveTranslationSource(snapshot, documentID: document.skillID)
                     },
                     onDocumentReady: revealManifest,
-                    registersFindShortcut: !showsManifestSource
+                    registersFindShortcut: !showsManifestSource && previewedFile == nil
                 )
                 .opacity(showsManifestSource ? 0 : 1)
                 .allowsHitTesting(!showsManifestSource)
@@ -497,7 +533,7 @@ struct RepoSkillDetailPane: View {
 
     private var fileList: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(contentSkill.files) { file in
+            ForEach(Array(contentSkill.files.enumerated()), id: \.element.id) { rowIndex, file in
                 HStack(spacing: 10) {
                     Button {
                         previewedFile = file
@@ -520,7 +556,11 @@ struct RepoSkillDetailPane: View {
                     .help(file.path)
                     fileDownloadButton(file)
                 }
+                .padding(.horizontal, 6)
                 .padding(.vertical, 10)
+                .background(fileRowBackground(index: rowIndex, key: "file:\(file.path)"))
+                .onHover { hoveredFileRow = $0 ? "file:\(file.path)" : nil }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hoveredFileRow)
                 Divider()
             }
             Label("repo.skills.content.complete", systemImage: "shippingbox")
@@ -553,6 +593,7 @@ struct RepoSkillDetailPane: View {
 
     /// 标题整行是折叠触发区，目录只表达完整复制范围，不支持把 Skill 拆散安装。
     private var fileTree: some View {
+        let rowIndices = treeRowIndices
         return LazyVStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label {
@@ -583,7 +624,7 @@ struct RepoSkillDetailPane: View {
                 .accessibilityLabel(Text("repo.files.inspector.download"))
             }
             ForEach(document?.rootFiles ?? []) { file in
-                treeFile(file)
+                treeFile(file, rowIndex: rowIndices["file:\(file.path)", default: 0])
                     .padding(.leading, 20)
             }
             ForEach(document?.folders ?? []) { group in
@@ -612,12 +653,17 @@ struct RepoSkillDetailPane: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .background(fileRowBackground(index: rowIndices["folder:\(folder)", default: 0], key: "folder:\(folder)"))
+                    .onHover { hoveredFileRow = $0 ? "folder:\(folder)" : nil }
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hoveredFileRow)
                     .accessibilityValue(Text(LocalizedStringKey(
                         expandedFolders.contains(folder) ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"
                     )))
                     if expandedFolders.contains(folder) {
                         ForEach(group.files) { file in
-                            treeFile(file)
+                            treeFile(file, rowIndex: rowIndices["file:\(file.path)", default: 0])
                                 .padding(.leading, 36)
                         }
                     }
@@ -627,7 +673,33 @@ struct RepoSkillDetailPane: View {
         }
     }
 
-    private func treeFile(_ file: RepoSkillFile) -> some View {
+    /// 条纹按实际展开后的展示顺序连续计算，不以仓库原始文件顺序打乱相邻行底色。
+    private var treeRowIndices: [String: Int] {
+        var indices: [String: Int] = [:]
+        var rowIndex = 0
+        for file in document?.rootFiles ?? [] {
+            indices["file:\(file.path)"] = rowIndex
+            rowIndex += 1
+        }
+        for folder in document?.folders ?? [] {
+            indices["folder:\(folder.id)"] = rowIndex
+            rowIndex += 1
+            if expandedFolders.contains(folder.id) {
+                for file in folder.files {
+                    indices["file:\(file.path)"] = rowIndex
+                    rowIndex += 1
+                }
+            }
+        }
+        return indices
+    }
+
+    private func fileRowBackground(index: Int, key: String) -> some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(RepoSkillRowChrome.background(rowIndex: index, isSelected: false, isHovered: hoveredFileRow == key))
+    }
+
+    private func treeFile(_ file: RepoSkillFile, rowIndex: Int) -> some View {
         Button {
             previewedFile = file
         } label: {
@@ -636,10 +708,17 @@ struct RepoSkillDetailPane: View {
                 Text(verbatim: file.path)
                     .font(interfaceScale.font(.code))
                     .lineLimit(1)
+                Spacer(minLength: 0)
             }
+            .contentShape(Rectangle())
             .help(file.path)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(fileRowBackground(index: rowIndex, key: "file:\(file.path)"))
+        .onHover { hoveredFileRow = $0 ? "file:\(file.path)" : nil }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hoveredFileRow)
     }
 }

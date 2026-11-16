@@ -20,6 +20,7 @@ struct RepoSkillSheet: View {
     @State private var previewID = ""
     @State private var isPreviewExpanded = false
     @State private var isInspectorPresented = false
+    @State private var previewedFile: RepoSkillFile?
 
     private var preview: RepoSkill? {
         session.skills.first { $0.id == previewID } ?? session.skills.first
@@ -62,7 +63,8 @@ struct RepoSkillSheet: View {
                                 skill: preview, session: session,
                                 translationService: dependencies.readmeTranslationService,
                                 isPreviewExpanded: $isPreviewExpanded,
-                                isInspectorPresented: $isInspectorPresented
+                                isInspectorPresented: $isInspectorPresented,
+                                previewedFile: $previewedFile
                             )
                         } else {
                             ContentUnavailableView(
@@ -92,7 +94,10 @@ struct RepoSkillSheet: View {
         .foregroundStyle(.primary)
         .background(Color(nsColor: .windowBackgroundColor))
         .task { await session.load() }
-        .onChange(of: preview?.id, initial: true) { _, id in session.focusSkill(id) }
+        .onChange(of: preview?.id, initial: true) { _, id in
+            previewedFile = nil
+            session.focusSkill(id)
+        }
         .onDisappear { session.close() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await session.refreshDestination() }
@@ -104,6 +109,8 @@ struct RepoSkillSheet: View {
         .onExitCommand {
             if isInspectorPresented {
                 isInspectorPresented = false
+            } else if previewedFile != nil {
+                previewedFile = nil
             } else if isPreviewExpanded {
                 isPreviewExpanded = false
             } else {
@@ -191,7 +198,8 @@ struct RepoSkillSheet: View {
             Button(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"), action: onClose)
                 .lineLimit(1)
                 .help(LocalizedStringKey(session.isInstalling ? "common.close" : "common.cancel"))
-                .keyboardShortcut(isInspectorPresented ? nil : .cancelAction)
+                // 浮层在最上方时由 onExitCommand 先收起，不能让底栏快捷键直接关闭整个窗口。
+                .keyboardShortcut(isInspectorPresented || previewedFile != nil ? nil : .cancelAction)
 
             Button(LocalizedStringKey(primaryKey), action: primaryAction)
                 .lineLimit(1)
