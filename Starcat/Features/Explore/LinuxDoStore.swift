@@ -81,6 +81,17 @@ final class LinuxDoStore {
             await load(.catalog, force: true)
         }
     }
+
+    /// 启动时只恢复目录缓存，不预先联网；进入分类可直接准备首屏，过期校验仍走原刷新入口。
+    func restoreCatalog() async {
+        let identity = await repository.providerIdentity()
+        guard !Task.isCancelled else { return }
+        adoptProvider(identity)
+        if let cached = await repository.cached(.catalog, providerID: identity), providerID == identity {
+            apply(cached, resource: .catalog)
+        }
+    }
+
     func refreshCatalog(force: Bool = false) async {
         async let index: Void = load(.provenance, force: force)
         await load(.catalog, force: force)

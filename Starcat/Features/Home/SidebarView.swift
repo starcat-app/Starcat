@@ -262,6 +262,7 @@ struct SidebarView: View {
         }
         .background(.bar)
         .task {
+            await dependencies.linuxDoStore.restoreCatalog()
             // 公共来源索引不依赖进入发现页；长期前台使用也按 TTL 低频更新。
             while !Task.isCancelled {
                 await dependencies.linuxDoStore.refreshProvenance()

@@ -10,6 +10,32 @@ import Testing
 @testable import Starcat
 
 struct LinuxDoRepositoryTests {
+    /// 启动预恢复直接使用已落盘目录，既不发请求，也不把其他服务的缓存带入当前服务。
+    @Test @MainActor func restoringCatalogUsesDiskWithoutNetworkAndIsolatesProvider() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let api = LinuxDoAPIFake()
+        await api.setResponse(LinuxDoResponse(
+            payload: LinuxDoPayload(revision: 7, generatedAt: "", complete: true, repositories: [], promotionDates: [:]),
+            etag: "catalog-v7"
+        ))
+        let original = LinuxDoRepository(api: api, directory: directory)
+        _ = try await original.refresh(.catalog, providerID: "one")
+        await api.setFailure(true)
+        let store = LinuxDoStore(repository: LinuxDoRepository(api: api, directory: directory))
+        await store.restoreCatalog()
+        #expect(store.catalog?.payload.revision == 7)
+        #expect(!store.isRefreshingCatalog)
+        #expect(store.failed.isEmpty)
+        #expect(await api.calls == 1)
+
+        await api.switchProvider("two")
+        await store.restoreCatalog()
+        #expect(store.providerID == "two")
+        #expect(store.catalog == nil)
+        #expect(await api.calls == 1)
+    }
+
     @Test func conditionalRefreshPersistsValidEmptySnapshot() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
