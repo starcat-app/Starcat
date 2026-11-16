@@ -230,80 +230,11 @@ struct AgentWorkspaceRunSurface: View {
             reasoningEffort: runtimeReasoningEffort,
             isAvailable: runtimeSelectionAvailable
         )
-        let externalSearchTool = ExternalSearchAgentTool(
-            collector: AppSettingsAgentExternalSearchCollector(settings: dependencies.settings)
-        )
-        let knowledgeSearcher: any AgentKnowledgeSearching
-        do {
-            knowledgeSearcher = try dependencies.makeAgentKnowledgeCapabilityAdapter(
-                selectedModelID: viewModel.selectedModelID
-            )
-        } catch {
-            // RAG 配置或权益异常只关闭 knowledge_search；周刊的冻结元数据工具与 Artifact
-            // 仍然可用，避免一个可选增强能力让整个 Agent Runtime 无法启动。
-            AppLog.ai.warning("Agent knowledge tool unavailable: \(error.localizedDescription, privacy: .public)")
-            knowledgeSearcher = UnavailableAgentKnowledgeSearcher()
-        }
-        var runtimes: [AgentRuntimeBackend: any AgentRuntime] = [:]
-        let toolRegistry: AgentToolRegistry?
-        do {
-            toolRegistry = try AgentToolRegistry(tools: GitHubWeeklyReportAgentTools.makeAll(
-                externalSearchTool: externalSearchTool,
-                knowledgeTool: AgentKnowledgeTool(searcher: knowledgeSearcher),
-                // 与 MCP 走同一组 Capability 装配规则，避免 Agent 写标签后漏掉语义索引刷新。
-                additionalTools: UntaggedTidyAgentTools.make(executor: dependencies.makeRepositoryTagCapability())
-            ))
-        } catch {
-            toolRegistry = nil
-            runtimes[.builtinLoop] = UnavailableAgentRuntime(message: error.localizedDescription)
-        }
-
-        if let toolRegistry {
-            do {
-                let modelClient = try AgentLoopModelClientFactory.make(
-                    settings: dependencies.settings,
-                    selectedModelID: viewModel.selectedModelID
-                )
-                runtimes[.builtinLoop] = LoopAgentRuntime(
-                    modelClient: modelClient,
-                    toolRegistry: toolRegistry,
-                    runRepository: dependencies.agentRunRepository,
-                    mode: viewModel.selectedAgent?.workflow.executionMode ?? .readonlyPlanning,
-                    localeIdentifier: locale.identifier,
-                    preferredLanguage: preferredOutputLanguage,
-                    externalSearchPolicy: AgentExternalSearchPolicy.current(settings: dependencies.settings)
-                )
-            } catch {
-                runtimes[.builtinLoop] = UnavailableAgentRuntime(message: error.localizedDescription)
-            }
-        }
-
-        if preferredBackend != .builtinLoop {
-            do {
-                let adapter = try ExternalAgentRuntimePreferences.makeAdapter(
-                    backend: preferredBackend,
-                    settings: dependencies.settings
-                )
-                runtimes[preferredBackend] = ExternalAgentRuntime(
-                    adapter: adapter,
-                    distributionGate: dependencies.distributionGate,
-                    selectedModelName: runtimeModelName,
-                    reasoningEffort: runtimeReasoningEffort,
-                    localeIdentifier: locale.identifier,
-                    preferredLanguage: preferredOutputLanguage,
-                    toolRegistry: toolRegistry,
-                    runRepository: dependencies.agentRunRepository,
-                    mcpBridgeFactory: { toolSet in
-                        try await dependencies.mcpService.makeTransientBridge(toolSet: toolSet)
-                    }
-                )
-            } catch {
-                runtimes[preferredBackend] = UnavailableAgentRuntime(message: error.localizedDescription)
-            }
-        }
-        viewModel.configureRuntime(AgentRuntimeRouter(
-            preferredBackend: preferredBackend,
-            runtimes: runtimes
+        viewModel.configureRuntime(dependencies.makeWorkspaceAgentRuntime(
+            modelID: viewModel.selectedModelID, backend: preferredBackend,
+            modelName: runtimeModelName, reasoningEffort: runtimeReasoningEffort,
+            mode: viewModel.selectedAgent?.workflow.executionMode ?? .readonlyPlanning,
+            localeIdentifier: locale.identifier, preferredLanguage: preferredOutputLanguage
         ))
     }
 

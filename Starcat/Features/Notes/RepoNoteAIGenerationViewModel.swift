@@ -15,6 +15,16 @@ protocol RepoNoteAIReadmeProviding: AnyObject {
     func downloadMarkdown(for repo: Repo) async throws -> String
 }
 
+extension RepoNoteAIReadmeProviding {
+    /// 界面与公共接口共用缓存未命中后的下载路径；回调仅用于 UI 步骤展示。
+    func markdown(for repo: Repo, onCacheResolved: (Bool) -> Void = { _ in }) async throws -> String {
+        let cached = try await cachedMarkdown(repoID: repo.id)
+        onCacheResolved(cached != nil)
+        if let cached { return cached }
+        return try await downloadMarkdown(for: repo)
+    }
+}
+
 /// 生产 README 适配器：仅读取 `readme_contents.content`，不把渲染 HTML 当 AI 输入。
 @MainActor
 final class RepoNoteAIReadmeProvider: RepoNoteAIReadmeProviding {
@@ -213,18 +223,17 @@ final class RepoNoteAIGenerationViewModel {
             setStepState(.completed, for: .checkingAI)
 
             setRunning(.readingReadme)
-            let cached = try await readmeProvider.cachedMarkdown(repoID: repo.id)
+            let markdown = try await readmeProvider.markdown(for: repo) { cacheHit in
+                guard generationID == runID else { return }
+                setStepState(.completed, for: .readingReadme)
+                if cacheHit {
+                    setStepState(.skipped, for: .downloadingReadme)
+                } else {
+                    setRunning(.downloadingReadme)
+                }
+            }
             try validate(runID)
-            setStepState(.completed, for: .readingReadme)
-
-            let markdown: String
-            if let cached {
-                markdown = cached
-                setStepState(.skipped, for: .downloadingReadme)
-            } else {
-                setRunning(.downloadingReadme)
-                markdown = try await readmeProvider.downloadMarkdown(for: repo)
-                try validate(runID)
+            if stepStates[.downloadingReadme] == .running {
                 setStepState(.completed, for: .downloadingReadme)
             }
 

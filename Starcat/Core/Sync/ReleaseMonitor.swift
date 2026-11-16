@@ -53,6 +53,42 @@ struct ReleaseMonitorReport: @unchecked Sendable {
 /// 线程模型：actor 隔离，所有 GitHub API + DB 操作在 actor 内串行；
 /// 调用方（poller / UI）`await` 即可。
 actor ReleaseMonitor {
+    /// 公共入口与 UI 共用订阅 priming。通知系统授权仍只由用户界面发起。
+    func subscribe(repo: Repo) async throws {
+        try await Self.subscribe(
+            repoId: repo.id, owner: repo.owner, repoName: repo.name, apiClient: apiClient,
+            subscriptionRepo: subscriptionRepo, releaseRepo: releaseRepo
+        )
+    }
+
+    /// 把现有最新版本写成已读并初始化游标，避免首个轮询把历史版本误报成新发布。
+    static func subscribe(
+        repoId: Int64, owner: String, repoName: String,
+        apiClient: any GitHubAPIClientProtocol,
+        subscriptionRepo: any ReleaseSubscriptionRepositoryProtocol,
+        releaseRepo: any ReleaseRepositoryProtocol
+    ) async throws {
+        let dtos: [GitHubReleaseDTO]
+        do {
+            dtos = try await apiClient.releases(owner: owner, repo: repoName, perPage: 100).value
+        } catch NetworkError.notFound {
+            dtos = []
+        }
+        try Task.checkCancellation()
+        let now = ISO8601DateFormatter.shared.string(from: Date())
+        let records = dtos.map { dto in
+            ReleaseRecord(
+                id: dto.id, repoId: repoId, tagName: dto.tagName, name: dto.name,
+                bodyMarkdown: dto.body, htmlUrl: dto.htmlUrl, isPrerelease: dto.prerelease,
+                isDraft: dto.draft, publishedAt: dto.publishedAt, createdAtRemote: dto.createdAt,
+                assetsJson: ReleaseAssetCodec.encode(dto.assets?.map(Self.dtoToAsset)),
+                isRead: true, fetchedAt: now
+            )
+        }
+        try await subscriptionRepo.subscribe(repoId: repoId, primingReleaseId: dtos.first?.id, primingTagName: dtos.first?.tagName)
+        try await releaseRepo.upsertMany(records, isReadDefault: true)
+        await MainActor.run { NotificationCenter.default.post(name: .releaseSubscriptionDidChange, object: nil) }
+    }
 
     private let apiClient: any GitHubAPIClientProtocol
     private let subscriptionRepo: any ReleaseSubscriptionRepositoryProtocol

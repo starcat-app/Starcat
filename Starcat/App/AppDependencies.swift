@@ -20,6 +20,12 @@ import Foundation
 @MainActor
 @Observable
 final class AppDependencies {
+    /// 窗口拥有工作台；公共 API 仅复用其业务编排，不负责创建窗口或延长窗口生命周期。
+    @ObservationIgnored weak var activeKnowledgeRAGWorkspace: KnowledgeRAGWorkspaceViewModel?
+    /// 公共后台请求与窗口可能同时存活；弱集合协调同一会话的取消，不延长窗口生命周期。
+    @ObservationIgnored let knowledgeRAGWorkspaces = NSHashTable<KnowledgeRAGWorkspaceViewModel>.weakObjects()
+    /// 删除等待旧回答退出时，所有入口都不能再为该会话启动新回答。
+    @ObservationIgnored var deletingRAGConversationIDs: Set<UUID> = []
 
     // MARK: - 配置
 

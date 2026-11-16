@@ -107,6 +107,17 @@ final class SkillLibraryEnvironment {
         }
     }
 
+    /// 无窗口调用也等待同一轮恢复与扫描；结束后停止临时监听，不把“已排队”当扫描成功。
+    func refreshAndWait() async throws {
+        let wasActive = active
+        if wasActive { refresh() } else { start() }
+        defer { if !wasActive { stop() } }
+        if let scanTask {
+            await withTaskCancellationHandler { await scanTask.value } onCancel: { scanTask.cancel() }
+        }
+        try Task.checkCancellation()
+    }
+
     /// 关闭只停止索引工作；M2 已确认的文件事务由独立操作协调器持有。
     func stop() {
         active = false

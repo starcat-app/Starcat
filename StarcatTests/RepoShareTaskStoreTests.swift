@@ -19,6 +19,60 @@ import Testing
 @MainActor
 struct RepoShareTaskStoreTests {
 
+    @Test("公共分享取消等待原生成任务退出，迟到结果不能创建链接")
+    func publicCancellationWaitsForUnderlyingTask() async throws {
+        let store = RepoShareTaskStore()
+        let repo = Repo.makeMinimal(owner: "starcat", name: "cancel-public-share")
+        let insight = makeInsight(oneLiner: "late")
+        var generation: CheckedContinuation<RepoAIInsight, Never>?
+        var finished = false
+        var createCount = 0
+        let operation = Task {
+            defer { finished = true }
+            do {
+                _ = try await store.createAndWait(repo: repo, operations: RepoShareOperations(
+                    cachedInsight: { _ in nil },
+                    generateInsight: { _ in await withCheckedContinuation { generation = $0 } },
+                    createShare: { _ in
+                        createCount += 1
+                        return makeResponse(url: "https://starcat.ink/s/late")
+                    }
+                ))
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                return false
+            }
+        }
+        let started = await waitUntil { generation != nil }
+        #expect(started)
+        operation.cancel()
+        let cancelled = await waitUntil { isCancelled(store.job(for: repo.id)?.state) }
+        #expect(cancelled)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(!finished)
+        generation?.resume(returning: insight)
+        #expect(await operation.value)
+        #expect(createCount == 0)
+    }
+
+    @Test("公共等待接口复用缓存路径并返回真实分享地址")
+    func publicWaitUsesOriginalPipeline() async throws {
+        let store = RepoShareTaskStore()
+        let repo = Repo.makeMinimal(owner: "starcat", name: "public-share")
+        let insight = makeInsight(oneLiner: "cached")
+        var generated = false
+        let url = try await store.createAndWait(repo: repo, operations: RepoShareOperations(
+            cachedInsight: { _ in insight },
+            generateInsight: { _ in generated = true; return insight },
+            createShare: { _ in makeResponse(url: "https://starcat.ink/s/public") }
+        ))
+        #expect(url == "https://starcat.ink/s/public")
+        #expect(!generated)
+        #expect(store.isSuccessful(repoID: repo.id))
+    }
+
     @Test("已有摘要直接创建链接且同仓重复点击不重复提交")
     func cachedInsightSkipsGenerationAndDeduplicates() async {
         let store = RepoShareTaskStore()

@@ -263,52 +263,15 @@ final class RepoReleaseSectionViewModel {
         isMutating = true
         defer { isMutating = false }
         do {
-            // 首次订阅时取满 GitHub 单页上限，给「活动 → 发行版」聚合详情页提供
-            // 尽可能完整的近期历史；不在这里做无限翻页，避免一次订阅消耗过多 rate limit。
-            let response = try await apiClient.releases(owner: owner, repo: repoName, perPage: 100)
-            let dtos = response.value
-            let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-            let records = dtos.map { dto in
-                ReleaseRecord(
-                    id: dto.id,
-                    repoId: repoId,
-                    tagName: dto.tagName,
-                    name: dto.name,
-                    bodyMarkdown: dto.body,
-                    htmlUrl: dto.htmlUrl,
-                    isPrerelease: dto.prerelease,
-                    isDraft: dto.draft,
-                    publishedAt: dto.publishedAt,
-                    createdAtRemote: dto.createdAt,
-                    assetsJson: ReleaseAssetCodec.encode(dto.assets?.map(Self.dtoToAsset)),
-                    isRead: true,
-                    fetchedAt: nowISO
-                )
-            }
-
-            // priming：取最新 release id 作为游标
-            let primingId = dtos.first?.id
-            let primingTag = dtos.first?.tagName
-
-            try await subscriptionRepository.subscribe(repoId: repoId, primingReleaseId: primingId, primingTagName: primingTag)
-            try await releaseRepository.upsertMany(records, isReadDefault: true)
-            NotificationCenter.default.post(name: .releaseSubscriptionDidChange, object: nil)
+            try await ReleaseMonitor.subscribe(
+                repoId: repoId, owner: owner, repoName: repoName, apiClient: apiClient,
+                subscriptionRepo: subscriptionRepository, releaseRepo: releaseRepository
+            )
 
             // 主动请求一次通知授权（首次订阅时弹系统对话框）
             await notificationService.ensureAuthorized()
 
             await loadFor(repo: makeRepoStub(id: repoId, owner: owner, name: repoName))
-        } catch NetworkError.notFound {
-            // 仓库无 Release：仍允许订阅（未来作者发布会被识别为新）
-            do {
-                try await subscriptionRepository.subscribe(repoId: repoId, primingReleaseId: nil, primingTagName: nil)
-                NotificationCenter.default.post(name: .releaseSubscriptionDidChange, object: nil)
-                await notificationService.ensureAuthorized()
-                await loadFor(repo: makeRepoStub(id: repoId, owner: owner, name: repoName))
-            } catch {
-                presentPaywallIfNeeded(error)
-                errorMessage = String.l10n("releases.error.subscribeFailed")
-            }
         } catch {
             presentPaywallIfNeeded(error)
             errorMessage = String.l10n("releases.error.subscribeFailed")

@@ -262,6 +262,14 @@ final class KeychainManager: KeychainManaging, @unchecked Sendable {
         AppLog.keychain.info("AI provider key stored securely")
     }
 
+    /// 设置页与公共操作共用相同的空值、清理和安全保存语义；调用方不能读取或回显密钥。
+    func persistAIProviderKey(_ rawKey: String, providerID: String, allowsEmpty: Bool) throws {
+        let trimmed = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty && !allowsEmpty { throw AIClientError.missingAPIKey }
+        if trimmed.isEmpty { try deleteAIKey(forProvider: providerID) }
+        else { try storeAIKey(trimmed, forProvider: providerID) }
+    }
+
     func loadAIKey(forProvider providerID: String) throws -> String? {
         // 迁移兼容：如果新 profile 维度还没有 Key，回退读取旧版全局 AI Key。
         value(forAccount: Account.aiKey(providerID: providerID)) ?? value(forAccount: Account.aiKey)

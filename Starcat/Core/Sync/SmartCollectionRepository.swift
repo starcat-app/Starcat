@@ -8,6 +8,11 @@
 import Foundation
 import GRDB
 
+extension Notification.Name {
+    /// 成功落库后通知所有窗口；CLI/MCP 写入也沿用 App 的侧栏与当前集合刷新。
+    static let smartCollectionsDidChange = Notification.Name("smartCollectionsDidChange")
+}
+
 /// 用户自定义智能集合持久化错误。
 enum SmartCollectionRepositoryError: Error, LocalizedError, Equatable {
     case notFound(id: String)
@@ -52,12 +57,14 @@ struct GRDBSmartCollectionRepository: SmartCollectionRepositoryProtocol {
             var copy = collection
             try copy.insert(db)
         }
+        await notifyChange(id: collection.id)
     }
 
     func update(_ collection: UserSmartCollection) async throws {
         try await database.writer.write { db in
             try collection.update(db)
         }
+        await notifyChange(id: collection.id)
     }
 
     func delete(id: String) async throws {
@@ -65,6 +72,14 @@ struct GRDBSmartCollectionRepository: SmartCollectionRepositoryProtocol {
             guard try UserSmartCollection.deleteOne(db, key: id) else {
                 throw SmartCollectionRepositoryError.notFound(id: id)
             }
+        }
+        await notifyChange(id: id)
+    }
+
+    /// 在事务完成后发布，观察者随后查询时才能读到最新结果。
+    private func notifyChange(id: String) async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .smartCollectionsDidChange, object: nil, userInfo: ["collectionID": id])
         }
     }
 }

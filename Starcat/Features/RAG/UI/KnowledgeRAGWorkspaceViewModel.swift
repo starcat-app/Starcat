@@ -399,6 +399,7 @@ final class KnowledgeRAGWorkspaceViewModel {
         let contextSummary: RAGConversationContextSummary?
         let isDebugEnabled: Bool
         let debugEndpoint: String?
+        var approvesRemoteContext = false
     }
     @ObservationIgnored private var conversationTitleGenerations: [UUID: ConversationTitleGeneration] = [:]
     /// store 读取未必会合作响应取消；generation 是提交结果前的第二道保护。
@@ -668,6 +669,8 @@ final class KnowledgeRAGWorkspaceViewModel {
         if dependencies.settings.ragWorkspaceSelectedModelID != trimmed {
             dependencies.settings.ragWorkspaceSelectedModelID = trimmed
         }
+        dependencies.activeKnowledgeRAGWorkspace = self
+        dependencies.knowledgeRAGWorkspaces.add(self)
     }
 
     /// 优先恢复上次选用且仍可用的模型；否则对齐全局 chat task；再否则取列表首项。
@@ -1454,42 +1457,113 @@ final class KnowledgeRAGWorkspaceViewModel {
     }
 
     func deleteConversation(_ id: UUID) async {
+        do {
+            try await deleteConversationOperation(id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// UI 与公共 API 共用删除用例；API 必须能收到实际失败，不能只依赖窗口上的错误提示。
+    func deleteConversationOperation(_ id: UUID) async throws {
+        guard dependencies.deletingRAGConversationIDs.insert(id).inserted else {
+            throw StarcatPublicCapabilityError(code: "CONVERSATION_BUSY", message: "This conversation is being deleted.")
+        }
+        defer { dependencies.deletingRAGConversationIDs.remove(id) }
         // 删除后的请求结果没有合法归属，必须丢弃而不是在取消回调中再补写用户消息。
-        discardedAnswerConversationIDs.insert(id)
-        cancelAnswer(for: id)
-        cancelConversationTitleGeneration(for: id)
+        let workspaces = dependencies.knowledgeRAGWorkspaces.allObjects
+        let runningTasks = workspaces.compactMap { $0.answerGenerations[id]?.task }
+        for workspace in workspaces {
+            workspace.discardedAnswerConversationIDs.insert(id)
+            workspace.cancelAnswer(for: id)
+            workspace.cancelConversationTitleGeneration(for: id)
+        }
+        for task in runningTasks { await task.value }
         do {
             try await conversationStore.deleteConversation(id: id)
             // Debug 文件是可丢弃数据：删除失败不能让已成功的会话删除回滚或报错。
             try? await debugFileStore.delete(conversationID: id)
-            conversations.removeAll { $0.id == id }
-            conversationPresentationCache.remove(id)
             dependencies.ragComposerDraftStore.remove(id)
-            if selectedConversationID == id {
-                if let next = conversations.first {
-                    selectedConversationID = nil
-                    await selectConversation(next.id)
-                } else {
-                    await newConversation()
+            for workspace in workspaces {
+                workspace.conversations.removeAll { $0.id == id }
+                workspace.conversationPresentationCache.remove(id)
+                if workspace.selectedConversationID == id {
+                    if let next = workspace.conversations.first {
+                        workspace.selectedConversationID = nil
+                        await workspace.selectConversation(next.id)
+                    } else {
+                        await workspace.newConversation()
+                    }
                 }
             }
         } catch {
-            discardedAnswerConversationIDs.remove(id)
-            errorMessage = error.localizedDescription
+            for workspace in workspaces { workspace.discardedAnswerConversationIDs.remove(id) }
+            throw error
         }
+    }
+
+    /// 公共问答复用同一个完整 runQuestion：会话历史、压缩、Planner、上下文与落库均保留。
+    /// 请求冻结独立上下文，不读取其它会话正在编辑的附件或改变窗口当前选中项。
+    func answerConversationOperation(id: UUID, question: String, repos: [Repo]) async throws -> RAGConversationDetail {
+        guard let detail = try await conversationStore.loadConversation(id: id) else {
+            throw StarcatMCPError.notFound("RAG conversation not found.")
+        }
+        try Task.checkCancellation()
+        // 读库会让出主执行器；必须在返回后检查所有工作台，防止两个请求同时读到空闲。
+        guard !dependencies.deletingRAGConversationIDs.contains(id),
+              !dependencies.knowledgeRAGWorkspaces.allObjects.contains(where: { $0.answerGenerations[id] != nil }) else {
+            throw StarcatPublicCapabilityError(code: "CONVERSATION_BUSY", message: "This conversation is already answering.")
+        }
+        try dependencies.entitlementGate.requirePro(.knowledgeRAG, usesLocalOnly: dependencies.settings.isRAGPipelineResolvedToLocalAI)
+        let snapshot = QuestionRequestSnapshot(
+            composerContext: RAGComposerContext(
+                explicitRepoIDs: repos.map(\.id),
+                explicitRepoReferences: repos.map { RAGPlannerRepoReference(id: $0.id, fullName: $0.fullName) },
+                selectedModelID: selectedModelID
+            ),
+            modelID: selectedModelID, modelDisplayName: selectedModelDisplayName,
+            modelParameters: selectedModelParameters, contextSummary: detail.contextSummary,
+            isDebugEnabled: false, debugEndpoint: nil, approvesRemoteContext: true
+        )
+        let generationID = UUID()
+        discardedAnswerConversationIDs.remove(id)
+        startAnswerTiming(for: id)
+        updateRuntimeState(for: id) { $0.answerState = .planning }
+        let answerTask = Task {
+            await runQuestion(question, conversationID: id, priorMessages: detail.messages, requestSnapshot: snapshot, generationID: generationID)
+        }
+        answerGenerations[id] = ConversationAnswerGeneration(id: generationID, task: answerTask)
+        await withTaskCancellationHandler {
+            await answerTask.value
+        } onCancel: {
+            answerTask.cancel()
+        }
+        try Task.checkCancellation()
+        if answerTask.isCancelled { throw CancellationError() }
+        if case .failed(let message) = conversationRuntimeStates[id]?.answerState {
+            throw StarcatPublicCapabilityError(code: "RAG_FAILED", message: message)
+        }
+        if case .cancelled = conversationRuntimeStates[id]?.answerState { throw CancellationError() }
+        guard let result = try await conversationStore.loadConversation(id: id) else { throw CancellationError() }
+        return result
     }
 
     /// 用户手动重命名：立刻写库但保持当前顺序；若自动标题仍在生成则取消，避免覆盖。
     func renameConversation(id: UUID, title: String) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        cancelConversationTitleGeneration(for: id)
+        for workspace in dependencies.knowledgeRAGWorkspaces.allObjects {
+            workspace.cancelConversationTitleGeneration(for: id)
+        }
         do {
             try await conversationStore.renameConversation(id: id, title: trimmed)
-            conversationPresentationCache.remove(id)
-            updateConversationTitle(title: trimmed, for: id)
             // 重命名不改变 updated_at / pinned_at；回读只同步规范化标题与权威状态，顺序必须保持不变。
-            conversations = try await conversationStore.listConversations()
+            let updated = try await conversationStore.listConversations()
+            for workspace in dependencies.knowledgeRAGWorkspaces.allObjects {
+                workspace.conversationPresentationCache.remove(id)
+                workspace.updateConversationTitle(title: trimmed, for: id)
+                workspace.conversations = updated
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1547,8 +1621,11 @@ final class KnowledgeRAGWorkspaceViewModel {
         }
         do {
             try await conversationStore.setConversationPinned(id: id, isPinned: isPinned)
-            conversationPresentationCache.remove(id)
-            conversations = try await conversationStore.listConversations()
+            let refreshed = try await conversationStore.listConversations()
+            for workspace in dependencies.knowledgeRAGWorkspaces.allObjects {
+                workspace.conversationPresentationCache.remove(id)
+                workspace.conversations = refreshed
+            }
         } catch {
             errorMessage = error.localizedDescription
             // 写库失败时回读权威列表，撤销乐观态。
@@ -1660,6 +1737,8 @@ final class KnowledgeRAGWorkspaceViewModel {
               !question.isEmpty,
               !isAnswering,
               composerBlockingReason == nil else { return }
+        guard !dependencies.deletingRAGConversationIDs.contains(conversationID),
+              !dependencies.knowledgeRAGWorkspaces.allObjects.contains(where: { $0.answerGenerations[conversationID] != nil }) else { return }
         do {
             try dependencies.entitlementGate.requirePro(.knowledgeRAG, usesLocalOnly: dependencies.settings.isRAGPipelineResolvedToLocalAI)
         } catch {
@@ -1793,6 +1872,9 @@ final class KnowledgeRAGWorkspaceViewModel {
         guard let messageID = editingUserMessageID else { return }
         let question = editingUserDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !isAnswering else { return }
+        guard let conversationID = selectedConversationID,
+              !dependencies.deletingRAGConversationIDs.contains(conversationID),
+              !dependencies.knowledgeRAGWorkspaces.allObjects.contains(where: { $0.answerGenerations[conversationID] != nil }) else { return }
         do {
             try dependencies.entitlementGate.requirePro(.knowledgeRAG, usesLocalOnly: dependencies.settings.isRAGPipelineResolvedToLocalAI)
         } catch {
@@ -1804,7 +1886,6 @@ final class KnowledgeRAGWorkspaceViewModel {
         messages.removeAll { $0.id == messageID }
         rebuildConversationDerivedPresentation()
         conversationContextSummary = nil
-        guard let conversationID = selectedConversationID else { return }
         conversationPresentationCache.remove(conversationID)
         startAnswerTiming(for: conversationID)
         updateRuntimeState(for: conversationID) { $0.answerState = .planning }
@@ -3128,6 +3209,11 @@ final class KnowledgeRAGWorkspaceViewModel {
                         repoContextDocument = document
                     }
                 case .remoteContextConfirmation(let workItems):
+                    if requestSnapshot.approvesRemoteContext {
+                        // 调用方已用写权限明确提交本轮问答；仍由各领域服务执行原有隐私设置。
+                        await consent.resolve(Set(workItems.map(\.id)))
+                        continue
+                    }
                     pendingRemoteWorkItemsByConversation[conversationID] = workItems
                     approvedRemoteWorkItemIDsByConversation[conversationID] = Set(workItems.map(\.id))
                     if selectedConversationID == conversationID {
