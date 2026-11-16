@@ -341,6 +341,19 @@ struct RepoCardViewDataTests {
         #expect(repo.updatedAt != nil)
     }
 
+    @Test("探索详情同仓反馈使用新说明，切仓退场保留旧说明")
+    func discoveryHeaderUsesLiveValueOnlyForDisplayedRepository() {
+        #expect(DiscoveryHeaderSnapshotPolicy.resolve(
+            displayedID: 1, selectedID: 1, current: "恢复", snapshot: "不感兴趣"
+        ) == "恢复")
+        #expect(DiscoveryHeaderSnapshotPolicy.resolve(
+            displayedID: 1, selectedID: 2, current: "新仓说明", snapshot: "旧仓说明"
+        ) == "旧仓说明")
+        #expect(DiscoveryHeaderSnapshotPolicy.resolve(
+            displayedID: 2, selectedID: 2, current: nil as String?, snapshot: "旧仓说明"
+        ) == nil)
+    }
+
     // MARK: - Helpers
 
     private func sampleRepo(id: Int64, isStarred: Bool) -> Repo {

@@ -123,7 +123,9 @@ struct LinuxDoView: View {
 
     @ViewBuilder
     private var catalogContent: some View {
-        if store.catalog == nil && store.isRefreshingCatalog {
+        // 首帧任务尚未开始、或缓存快照还未生成本地行时也应显示骨架，避免闪过空目录。
+        if store.catalog == nil && !store.failed.contains(.catalog)
+            || model.rows.isEmpty && model.identity != queryIdentity {
             RepoSkeletonListView(rowCount: 10)
         } else if store.catalog == nil && store.failed.contains(.catalog) {
             // 没有缓存时，加载失败就是当前页面的主状态；不要再叠加“空目录”，
@@ -165,6 +167,8 @@ struct LinuxDoView: View {
 
     private var repoList: some View {
         let selection = dependencies.exploreMultiSelectionStore
+        // 不包含目录 revision 或结果 ID；后台刷新和分页不重播首屏，用户切换条件才重播。
+        let snapshotID = "\(store.providerID):\(store.selectedLanguage ?? ""):\(search):\(recentPromotionFirst):\(settings.skillScanFilterIdentity):\(settings.interestedLanguages)".hashValue
         return List {
             ForEach(Array(model.rows.enumerated()), id: \.element.repoID) { index, repo in
                 Button {
@@ -179,6 +183,7 @@ struct LinuxDoView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .listRowReveal(index: index, snapshotID: snapshotID, replayAfterSnapshotCommit: true)
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .automaticListPagination(appearingIndex: index, visibleItemCount: model.rows.count, loadedItemCount: model.rows.count, hasMore: model.hasMore, isLoading: false, identity: model.identity) { model.loadMore() }

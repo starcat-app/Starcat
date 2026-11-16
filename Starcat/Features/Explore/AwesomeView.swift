@@ -197,26 +197,40 @@ struct AwesomeView: View {
 
     private var repositoryList: some View {
         let multiStore = dependencies.exploreMultiSelectionStore
+        let groups = sectionGroups
+        // 按实际章节顺序只登记首屏 15 项；不能在每个章节重新从 0 播放，或逐行扫描整个列表。
+        let revealIndices = Dictionary(uniqueKeysWithValues: groups.lazy.flatMap(\.items)
+            .prefix(ListRowRevealMetrics.animatedRowLimit)
+            .enumerated().map { ($0.element.id, $0.offset) })
+        // 数据追加和后台刷新不改变动画身份，避免正在阅读的卡片反复退场。
+        let snapshotID = "\(store.selectedSourceID ?? ""):\(searchText):\(selectedSection ?? ""):\(sort):\(settings.skillScanFilterIdentity)".hashValue
         return List {
-            ForEach(sectionGroups) { group in
+            ForEach(groups) { group in
                 Section(group.title) {
                     ForEach(group.items) { item in
-                        switch item {
-                        case .repository(let repo):
-                            repositoryRow(repo)
-                                .automaticListPagination(
-                                    appearingIndex: store.repositories.firstIndex(where: { $0.id == repo.id }) ?? 0,
-                                    visibleItemCount: store.repositories.count,
-                                    loadedItemCount: store.repositories.count,
-                                    hasMore: store.hasMoreRepositories && !requiresCompleteRepositorySet,
-                                    isLoading: store.isLoading || store.isRefreshing || store.isLoadingMoreRepositories,
-                                    identity: "awesome-\(store.selectedSourceID ?? "__all__")"
-                                ) {
-                                    await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: repo.id)
-                                }
-                        case .resource(let resource):
-                            resourceRow(resource)
+                        Group {
+                            switch item {
+                            case .repository(let repo):
+                                repositoryRow(repo)
+                                    .automaticListPagination(
+                                        appearingIndex: store.repositories.firstIndex(where: { $0.id == repo.id }) ?? 0,
+                                        visibleItemCount: store.repositories.count,
+                                        loadedItemCount: store.repositories.count,
+                                        hasMore: store.hasMoreRepositories && !requiresCompleteRepositorySet,
+                                        isLoading: store.isLoading || store.isRefreshing || store.isLoadingMoreRepositories,
+                                        identity: "awesome-\(store.selectedSourceID ?? "__all__")"
+                                    ) {
+                                        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: repo.id)
+                                    }
+                            case .resource(let resource):
+                                resourceRow(resource)
+                            }
                         }
+                        .listRowReveal(
+                            index: revealIndices[item.id] ?? ListRowRevealMetrics.animatedRowLimit,
+                            snapshotID: snapshotID,
+                            replayAfterSnapshotCommit: true
+                        )
                     }
                 }
             }
