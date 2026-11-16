@@ -73,8 +73,7 @@ final class RepoDetailWindowController: NSWindowController, NSWindowDelegate {
     /// 显示给定 repo 的详情独立窗；已开则把窗口带到前台。
     ///
     /// - Parameters:
-    ///   - repo: 推荐卡片指向的本地 starred repo（必须有完整 Repo 数据，
-    ///     因为详情 viewData 从 `Repo` 派生 hero / starHelp / readmeVM 等）。
+    ///   - repo: 已缓存的完整仓库，允许尚未 Star 的公开来源；浏览不创建用户归属。
     ///   - dependencies: 应用级依赖，注入到 SwiftUI 子树的 `@Environment` 里。
     ///   - homeViewModel: 主窗的 HomeViewModel，让新窗口能共享 StarredRegistry 等
     ///     全局状态（star/unstar 后两窗同步刷新）。
@@ -243,26 +242,37 @@ struct RepoDetailWindowContent: View {
     }
 
     var body: some View {
+        // 推荐来源可以尚未 Star；窗口保留自己的阅读状态，只共享 registry 的实时真值。
+        let displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
+        let displayData = RepoDetailViewData(
+            hero: RepoDetailHero(repo: displayRepo),
+            trailingActions: displayRepo.isStarred ? viewData.trailingActions : [.share],
+            translation: viewData.translation,
+            backendHint: viewData.backendHint
+        )
         RepoDetailScaffold(
-            repo: repo,
-            viewData: viewData,
-            starHelpKey: "repo.unstar",
+            repo: displayRepo,
+            viewData: displayData,
+            starHelpKey: displayRepo.isStarred ? "repo.unstar" : "repo.star",
             showsRepoHealthEntry: true,
             // Issues 入口（2026-11-01）：独立详情窗与主窗 Manage 详情同构开放；
             // 私有仓库在 Scaffold 内再隐藏。
             showsIssuesEntry: true,
             onStarTapped: { cleanupScope in
-                // 推荐窗里的 star 点击：本地已 star → 触发 unstar。
-                // StarredRegistry @Observable 变更会自动驱动主窗 list + 主窗 hero
-                // 同步刷新（AppDependencies 共享）。
-                try await dependencies.starActionService.unstar(
-                    repo: repo,
-                    cleanupScope: cleanupScope ?? .keepKnowledgeLibrary
-                )
+                guard dependencies.authSession.state.isAuthenticated else {
+                    dependencies.authSession.requestLoginSheet()
+                    return
+                }
+                if let cleanupScope, displayRepo.isStarred {
+                    try await dependencies.starActionService.unstar(repo: displayRepo, cleanupScope: cleanupScope)
+                } else {
+                    try await dependencies.starActionService.toggle(repo: displayRepo)
+                }
+                await homeViewModel.refreshAfterExternalStarChange()
             },
             heroExtension: { EmptyView() },
             body: { onScrollReport in
-                ManageDetailContent(repo: repo, onScrollReport: onScrollReport)
+                ManageDetailContent(repo: displayRepo, onScrollReport: onScrollReport)
             }
         )
         // 先把单 repo VM 注入 environment（`appHostEnvironment` 链不覆盖它们），

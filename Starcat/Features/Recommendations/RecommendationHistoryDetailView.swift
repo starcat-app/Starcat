@@ -53,6 +53,9 @@ private struct RecommendationEvidenceHeader: View {
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isExpanded = false
+    @State private var openingSourceID: Int64?
+    @State private var sourceTask: Task<Void, Never>?
+    @State private var sourceError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -95,6 +98,9 @@ private struct RecommendationEvidenceHeader: View {
                     } else {
                         evidenceText(item.basicRecommendationReason)
                     }
+                    if openingSourceID != nil {
+                        ProgressView().controlSize(.small)
+                    }
                 }
                 .font(.callout)
                 .padding(.horizontal, 20)
@@ -103,6 +109,8 @@ private struct RecommendationEvidenceHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
+        .toast(message: $sourceError, icon: "exclamationmark.triangle")
+        .onDisappear { sourceTask?.cancel() }
     }
 
     /// 复用已有行内头像渲染器，保持正文自然换行；来源只认服务端提供的真实项目。
@@ -112,15 +120,35 @@ private struct RecommendationEvidenceHeader: View {
                 guard let source = item.matchedSeeds?.first(where: {
                     url == GitHubURLs.repo(fullName: $0.fullName)
                 }) else { return .handled }
-                Task {
-                    let parts = source.fullName.split(separator: "/", maxSplits: 1).map(String.init)
-                    guard parts.count == 2,
-                          let repo = try? await dependencies.repoRepository.findByOwnerName(owner: parts[0], name: parts[1])
-                    else { return }
-                    RepoDetailWindowController.show(repo: repo, dependencies: dependencies, homeViewModel: homeViewModel)
-                }
+                openSource(source)
                 return .handled
             })
+    }
+
+    /// 查询和公开资料补齐都不改主窗口选择；异步完成后只把 Repo 交给独立窗口。
+    private func openSource(_ source: RecommendationSeed) {
+        guard openingSourceID == nil else { return }
+        let parts = source.fullName.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        openingSourceID = source.repoID
+        sourceError = nil
+        let revision = dependencies.databaseScopeRevision
+        sourceTask = Task {
+            defer { openingSourceID = nil }
+            do {
+                let repo = try await PublicRepoMetadataResolver.resolve(
+                    owner: parts[0], name: parts[1],
+                    repository: dependencies.repoRepository, apiClient: dependencies.apiClient,
+                    isCurrent: { dependencies.databaseScopeRevision == revision }
+                )
+                try Task.checkCancellation()
+                RepoDetailWindowController.show(repo: repo, dependencies: dependencies, homeViewModel: homeViewModel)
+            } catch is CancellationError {
+                return
+            } catch {
+                sourceError = error.localizedDescription
+            }
+        }
     }
 
     @ViewBuilder
