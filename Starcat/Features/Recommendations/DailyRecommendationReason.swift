@@ -81,10 +81,15 @@ extension RepoRecommendationItem {
 /// 将纯文本中的真实来源链接化；先转义 Markdown，不能让模型插入额外外链或远程图片。
 enum RecommendationEvidenceMarkdown {
     static func make(text: String, sources: [RecommendationSeed]) -> String {
-        let names = Array(Set(sources.map(\.fullName).filter {
-            $0.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"#,
-                     options: .regularExpression) != nil
-        })).sorted { $0.count == $1.count ? $0 < $1 : $0.count > $1.count }
+        let validNames: [String] = sources.map(\.fullName).filter { name in
+            name.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"#,
+                       options: .regularExpression) != nil
+        }
+        let uniqueNames = Set(validNames)
+        let names: [String] = uniqueNames.sorted { left, right in
+            if left.count == right.count { return left < right }
+            return left.count > right.count
+        }
         guard !names.isEmpty else { return escape(text) }
         let pattern = #"(?<![A-Za-z0-9_./-])("#
             + names.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
