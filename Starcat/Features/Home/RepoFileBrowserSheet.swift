@@ -534,7 +534,7 @@ struct RepoFileBrowserSheet: View {
 
                 VStack(spacing: 8) {
                     inspectorLink(
-                        title: "repo.files.inspector.copyRawURL",
+                        title: "repo.files.inspector.copyRawLink",
                         systemImage: "link",
                         copy: viewModel.githubRawURL?.absoluteString
                     )
@@ -729,9 +729,9 @@ struct RepoFileBrowserSheet: View {
             if let rawURL = viewModel.githubRawURL {
                 CopyFeedbackButton(
                     providesContent: { rawURL.absoluteString },
-                    tooltip: "repo.files.inspector.copyRawURL"
+                    tooltip: "repo.files.inspector.copyRawLink"
                 ) { didCopy in
-                    Label("repo.files.inspector.copyRawURL",
+                    Label("repo.files.inspector.copyRawLink",
                           systemImage: didCopy ? "checkmark.circle.fill" : "link")
                 }
             }
@@ -746,6 +746,7 @@ struct RepoFileBrowserSheet: View {
                 .frame(width: 24, height: 28)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("repo.files.preview.more")
         .accessibilityLabel(Text("repo.files.preview.more"))
