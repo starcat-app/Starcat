@@ -137,7 +137,7 @@ struct ForksMenu: View {
 
     private var statLabel: some View {
         RepoStatItem(
-            label: "repo.forks",
+            label: "repo.stats.forks",
             value: repo.forksCount,
             businessIcon: .forkCount,
             tint: forkTint

@@ -176,7 +176,7 @@ struct RepoReleaseStatItem: View {
             .focusEffectDisabled()
             .pressableHover()
         } else {
-            Text("releases.section.title")
+            Text("repo.stats.releases")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }

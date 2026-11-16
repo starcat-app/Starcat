@@ -116,7 +116,7 @@ struct StarStatChipButton: View {
                     .monospacedDigit()
                     .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
             }
-            Text("repo.stars")
+            Text("repo.stats.stars")
                 .font(interfaceScale.font(.captionSmall))
                 .foregroundStyle(.secondary)
         }

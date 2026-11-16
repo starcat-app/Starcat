@@ -1553,6 +1553,7 @@ private struct StatItem: View {
     let value: Int?
     let systemImage: String
     let tint: Color
+    @Environment(\.locale) private var locale
 
     var body: some View {
         VStack(alignment: .center, spacing: 2) {
@@ -1560,7 +1561,7 @@ private struct StatItem: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
                     .font(.system(size: 14))
-                Text(value.map { $0.formatted() } ?? "-")
+                Text(value.map { $0.formatted(.number.locale(locale)) } ?? "-")
                     .monospacedDigit()
                     .font(.system(size: 14, weight: .medium))
             }
@@ -1672,7 +1673,7 @@ struct WatchersMenu: View {
                 }
             }
         } label: {
-            StatItem(label: "repo.watchers", value: repo.subscribersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
+            StatItem(label: "repo.stats.watchers", value: repo.subscribersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

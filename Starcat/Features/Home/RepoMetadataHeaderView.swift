@@ -326,8 +326,8 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 
             WatchersMenu(repo: repo)
 
-            RepoDateStatItem(label: "repo.created", value: repo.createdAt, systemImage: "calendar.badge.plus")
-            RepoDateStatItem(label: "repo.updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
+            RepoDateStatItem(label: "repo.stats.created", value: repo.createdAt, systemImage: "calendar.badge.plus")
+            RepoDateStatItem(label: "repo.stats.updated", value: repo.updatedAt, systemImage: "clock.arrow.circlepath")
             // v2.0(2026-06-12,dong4j 反馈)：原本独立成段的 Releases 订阅区被压缩为这一列紧凑 stat,
             // 与 Stars / Forks / Watchers / Created / Updated 同行展示。详见
             // `Starcat/Features/Releases/RepoReleaseSection.swift` 文件头 v2.0 演化说明。
@@ -1193,6 +1193,7 @@ private struct RepoDateStatItem: View {
     let value: String?
     let systemImage: String
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.locale) private var locale
 
     var body: some View {
         // dong4j 2026-06-12 反馈:hero stats 行字号要统一。
@@ -1206,7 +1207,7 @@ private struct RepoDateStatItem: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(.secondary)
                     .font(interfaceScale.font(.bodyEmphasis))
-                Text(repoDateStatLabel(from: value))
+                Text(repoDateStatLabel(from: value, locale: locale))
                     .monospacedDigit()
                     .lineLimit(1)
                     .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
@@ -1223,9 +1224,9 @@ private struct RepoDateStatItem: View {
 ///
 /// Awesome 会先把服务端时间解析成 `Date`，再通过带毫秒的 formatter 写回 DTO；
 /// 因此这里必须同时兼容 `...56Z` 与 `...56.000Z`，不能使用只接受前一种格式的默认解析器。
-func repoDateStatLabel(from value: String?) -> String {
+func repoDateStatLabel(from value: String?, locale: Locale = .current) -> String {
     guard let date = ISO8601DateFormatter.githubDate(from: value) else {
         return "-"
     }
-    return date.formatted(.iso8601.year().month().day())
+    return date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).locale(locale))
 }
