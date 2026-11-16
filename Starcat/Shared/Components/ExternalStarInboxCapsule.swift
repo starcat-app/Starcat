@@ -6,7 +6,7 @@
 //
 //  关键约束：
 //  - 只覆盖列表顶部，不改列表高度，也不挡住顶栏刷新按钮。
-//  - 无箭头；最多 3 个头像，超出用 +N。
+//  - 向上箭头提示点击后立即回顶；最多 3 个头像，超出用 +N。
 //  - 出现 / 消失 / 队列变长都要过渡；减少动态效果时只保留透明度。
 //  - 点击走 ExternalStarInbox.apply()，复用现有增量同步。
 //
@@ -27,12 +27,20 @@ struct ExternalStarInboxCapsule: View {
             items.count
         )
         Button(action: onTap) {
-            HStack(spacing: -Self.overlap) {
-                ForEach(
-                    Array(ExternalStarInboxPresentation.slots(from: items).enumerated()),
-                    id: \.offset
-                ) { _, slot in
-                    slotView(slot)
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up")
+                    .font(.caption.weight(.semibold))
+                    // 蓝色胶囊中的操作图标使用 on-accent 白色，保持明暗主题下的对比度。
+                    .foregroundStyle(.white)
+                    .accessibilityHidden(true)
+
+                HStack(spacing: -Self.overlap) {
+                    ForEach(
+                        Array(ExternalStarInboxPresentation.slots(from: items).enumerated()),
+                        id: \.offset
+                    ) { _, slot in
+                        slotView(slot)
+                    }
                 }
             }
             .padding(.horizontal, 10)

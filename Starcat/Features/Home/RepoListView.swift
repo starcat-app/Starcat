@@ -552,6 +552,8 @@ struct RepoListView: View {
     @State private var gitHubStarListOAuthRestrictedRepo: Repo?
     /// 列表顶栏「同步于」文案；会话内跟 `SyncManager.state`，冷启动读 DB `last_sync_at`。
     @State private var lastSyncedAt: Date?
+    /// 胶囊点击立即请求回顶；不监听同步完成，避免网络返回后再次打断用户滚动。
+    @State private var externalStarInboxScrollRequestRevision = 0
     /// Manage 仓库卡片分类共用快速搜索；草稿与已提交查询分离，避免每次输入都触发 FTS。
     @State private var isManageQuickSearchExpanded = false
     @State private var manageQuickSearchDraft = ""
@@ -1623,6 +1625,7 @@ struct RepoListView: View {
                    viewModel.selection == .allStars,
                    !externalStarInbox.pending.isEmpty {
                     ExternalStarInboxCapsule(items: externalStarInbox.pending) {
+                        externalStarInboxScrollRequestRevision &+= 1
                         externalStarInbox.apply()
                     }
                     .padding(.top, 10)
@@ -2094,6 +2097,20 @@ struct RepoListView: View {
             .environment(\.starcatListInteractionSuppressed, listInteractionController.isSuppressed)
             .onDisappear {
                 listInteractionController.cancel()
+            }
+            .onChange(of: externalStarInboxScrollRequestRevision) { _, _ in
+                // 临时定位卡片可能独立于分页列表存在，回顶必须定位实际第一行。
+                let firstRepoID: Int64?
+                if let pinned = viewModel.temporaryPinnedRepo,
+                   !viewModel.items.contains(where: { $0.id == pinned.id }) {
+                    firstRepoID = pinned.id
+                } else {
+                    firstRepoID = viewModel.items.first?.id
+                }
+                guard let firstRepoID else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(firstRepoID, anchor: .top)
+                }
             }
             // 阅读状态 v2（2026-06-12）：订阅 .repoStatusDidChange，详情页改 status 后
             // HomeViewModel.statusMap 局部更新 → UnifiedRepoRow.readStatus 重渲染 → 角标即时刷新。
