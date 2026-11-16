@@ -17,6 +17,7 @@ struct ExploreView: View {
     var githubAPIClient: (any GitHubAPIClientProtocol)?
     /// 由 Repo List 窗口会话持有，跨 Manage / Explore / Activity 切换不销毁。
     let discoveryViewModel: ExploreDiscoveryViewModel
+    let linuxDoListModel: LinuxDoListModel
     let recommendationHistoryModel: RecommendationHistoryListModel
     let onShowDailyRecommendations: () -> Void
     @Binding var trendingViewModel: TrendingViewModel?
@@ -58,6 +59,7 @@ struct ExploreView: View {
                 if selectedMode == .discover && dependencies.linuxDoStore.selectedSource == .linuxDo {
                     LinuxDoView(
                         store: dependencies.linuxDoStore,
+                        model: linuxDoListModel,
                         selectedRepoID: $selectedDiscoveryRepoID,
                         selectedRepo: $selectedDiscoveryRepo,
                         onRepoCountChange: onLinuxDoRepoCountChange

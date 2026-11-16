@@ -192,19 +192,23 @@ final class LinuxDoStore {
     }
 }
 
-/// 本地分页状态独立于网络刷新；搜索/排序/来源身份改变后重新建立稳定 ID 顺序。
+/// 窗口会话持有派生列表与筛选快照，分类回切不重复筛选排序；分页不与其他窗口共享。
 @MainActor @Observable
 final class LinuxDoListModel {
     private(set) var rows: [DiscoveryRepoDTO] = []
     private(set) var total = 0
     private(set) var identity = ""
+    var libraryStates: [Int64: LibraryState] = [:]
+    var wikiAvailability: [Int64: Bool] = [:]
     private var matching: [DiscoveryRepoDTO] = []
     var hasMore: Bool { rows.count < matching.count }
 
-    func reset(repositories: [DiscoveryRepoDTO], promotionDates: [String: String], search: String, recentPromotionFirst: Bool, identity: String) {
+    /// 延迟求值让相同查询真正跳过全量筛选；保留已加载页，只有输入身份变化才从首批开始。
+    func reset(repositories: @autoclosure () -> [DiscoveryRepoDTO], promotionDates: [String: String], search: String, recentPromotionFirst: Bool, identity: String) {
+        guard self.identity != identity else { return }
         self.identity = identity
         let term = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        matching = repositories.filter { term.isEmpty || $0.fullName.localizedCaseInsensitiveContains(term) || ($0.description?.localizedCaseInsensitiveContains(term) ?? false) }
+        matching = repositories().filter { term.isEmpty || $0.fullName.localizedCaseInsensitiveContains(term) || ($0.description?.localizedCaseInsensitiveContains(term) ?? false) }
         matching.sort { a, b in
             if recentPromotionFirst, promotionDates[String(a.repoID)] != promotionDates[String(b.repoID)] {
                 return (promotionDates[String(a.repoID)] ?? "") > (promotionDates[String(b.repoID)] ?? "")

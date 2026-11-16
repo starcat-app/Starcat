@@ -576,6 +576,7 @@ struct RepoListView: View {
     /// Explore / Activity 的 View 会随 `selectedPage` 条件分支创建和销毁；这里只持有
     /// ViewModel 与数据快照，不常驻隐藏的 List，从而兼顾模块回切缓存和稳定布局成本。
     @State private var discoveryViewModel = ExploreDiscoveryViewModel()
+    @State private var linuxDoListModel = LinuxDoListModel()
     @State private var trendingViewModel: TrendingViewModel?
     @State private var weeklyViewModel: WeeklyContentViewModel?
     @State private var activityViewModel: ActivityViewModel?
@@ -1500,6 +1501,7 @@ struct RepoListView: View {
                     trendingRepository: trendingRepository,
                     githubAPIClient: githubAPIClient,
                     discoveryViewModel: discoveryViewModel,
+                    linuxDoListModel: linuxDoListModel,
                     recommendationHistoryModel: recommendationHistoryModel,
                     onShowDailyRecommendations: onShowDailyRecommendations,
                     trendingViewModel: $trendingViewModel,
@@ -1548,6 +1550,7 @@ struct RepoListView: View {
     /// 账号 / 用户数据库边界必须硬失效，禁止跨用户复用 Explore / Activity 快照。
     private func resetRepoListModuleSession() {
         discoveryViewModel = ExploreDiscoveryViewModel()
+        linuxDoListModel = LinuxDoListModel()
         trendingViewModel = nil
         weeklyViewModel = nil
         activityViewModel = nil

@@ -139,6 +139,45 @@ struct LinuxDoLanguageTests {
         #expect(!model.hasMore)
     }
 
+    /// 分类回切保持窗口内已加载页；使用带计数的输入确认命中时连全量筛选也不会执行。
+    @Test func sameQueryReusesPreparedRowsAndLoadedPages() throws {
+        let repos = try repositories(Array(repeating: "Swift", count: 95))
+        let model = LinuxDoListModel()
+        var preparations = 0
+        func prepare() -> [DiscoveryRepoDTO] {
+            preparations += 1
+            return repos
+        }
+        model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:7:Swift")
+        model.loadMore()
+        let loadedIDs = model.rows.map(\.repoID)
+        model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:7:Swift")
+        #expect(preparations == 1)
+        #expect(model.rows.map(\.repoID) == loadedIDs)
+        #expect(model.rows.count == 80)
+        #expect(model.hasMore)
+
+        model.reset(repositories: prepare(), promotionDates: [:], search: "", recentPromotionFirst: false, identity: "provider:8:Swift")
+        #expect(preparations == 2)
+        #expect(model.rows.count == 40)
+        #expect(model.total == 95)
+    }
+
+    /// 搜索与排序变化必须失效旧结果，推广时间排序不能被星标排序缓存覆盖。
+    @Test func changedQueryRebuildsSearchAndPromotionOrder() throws {
+        let repos = try repositories(["Swift", "Rust", "Go"])
+        let model = LinuxDoListModel()
+        let dates = ["1": "2026-11-17T00:00:00Z"]
+        model.reset(repositories: repos, promotionDates: dates, search: "", recentPromotionFirst: false, identity: "stars")
+        #expect(model.rows.map(\.repoID) == [3, 2, 1])
+        model.reset(repositories: repos, promotionDates: dates, search: "", recentPromotionFirst: true, identity: "promoted")
+        #expect(model.rows.map(\.repoID) == [1, 3, 2])
+        model.reset(repositories: repos, promotionDates: dates, search: "repo-1", recentPromotionFirst: true, identity: "promoted:repo-1")
+        #expect(model.rows.map(\.repoID) == [2])
+        #expect(model.total == 1)
+        #expect(!model.hasMore)
+    }
+
     /// 通过现有 API 解码契约生成最小公开仓库样本，不依赖生产目录的数量或语言分布。
     private func repositories(_ languages: [String?]) throws -> [DiscoveryRepoDTO] {
         try languages.enumerated().map { index, language in
