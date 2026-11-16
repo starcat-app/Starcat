@@ -61,6 +61,30 @@ final class DiagnosticLogStore: @unchecked Sendable {
     private var fingerprints: [String: Date] = [:]
     private var sessionRecords: [DiagnosticSessionRecord]?
     private var sessionLastSaved = Date.distantPast
+    /// 只缓存有界日志中的严重故障；确认标记和时间窗口仍在每次查询时重新应用。
+    private var issueCache: IssueCache?
+
+    /// 文件签名覆盖追加、轮转和外部修改，不能只靠进程内写入通知判断缓存有效性。
+    private struct IssueLogFile: Equatable {
+        let url: URL
+        let size: Int
+        let modifiedAt: Date?
+    }
+
+    private struct IssueCache {
+        let files: [IssueLogFile]
+        let events: [(event: DiagnosticEvent, date: Date)]
+        let damagedLines: Int
+    }
+
+    /// 锁内取得队列截点，交给 writer 后不再读取这些跨线程计数。
+    private struct WriteCheckpoint: Sendable {
+        let sequence: UInt64
+        let dropped: Int
+        let peakQueue: Int
+        let peakQueueBytes: Int
+    }
+
     private let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -128,6 +152,32 @@ final class DiagnosticLogStore: @unchecked Sendable {
     /// 入队和安排截点在同一锁内完成，保证截点前事件先于快照落盘。
     /// 截点之后的事件继续正常写入；序号缺口结合 dropped 解释，不伪装完整。
     func snapshot() async -> DiagnosticSnapshot {
+        await withFlushedEvents { [self] checkpoint in
+            let text = files().compactMap { url -> String? in
+                do { return try String(contentsOf: url, encoding: .utf8) }
+                catch { readFailures += 1; return nil }
+            }.joined(separator: "\n")
+            let damaged = text.split(separator: "\n").filter {
+                (try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8))) == nil
+            }.count
+            let sessions = loadSessions()
+            return DiagnosticSnapshot(
+                text: text, cutoffSequence: checkpoint.sequence,
+                capturedAt: ISO8601DateFormatter.shared.string(from: Date()),
+                health: ["droppedEvents": checkpoint.dropped, "writeFailures": writeFailures, "readFailures": readFailures,
+                         "rotationFailures": rotationFailures, "damagedLines": damaged, "peakQueue": checkpoint.peakQueue,
+                         "expiredEvents": expiredEvents,
+                         "peakQueueBytes": checkpoint.peakQueueBytes, "queueBudgetBytes": queueByteLimit,
+                         "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)],
+                sessions: try? encoder.encode(sessions ?? []))
+        }
+    }
+
+    /// 复用 FIFO 屏障而不强制生成导出快照。锁内仅截取待写批次并排队；
+    /// 文件读取、重复批次落盘和回调都在 writer 上，后续事件不能越过此截点。
+    private func withFlushedEvents<Value: Sendable>(
+        _ body: @escaping @Sendable (WriteCheckpoint) -> Value
+    ) async -> Value {
         await withCheckedContinuation { continuation in
             lock.lock()
             let batch = pending
@@ -136,38 +186,12 @@ final class DiagnosticLogStore: @unchecked Sendable {
             // 使尚未开始的 drain 失效，后续入队安排在快照之后，避免跨越截点。
             drainGeneration += 1
             scheduled = false
-            let cutoff = sequence
-            let lost = dropped
-            let peak = peakQueue
-            let peakBytes = peakQueueBytes
+            let checkpoint = WriteCheckpoint(sequence: sequence, dropped: dropped,
+                                             peakQueue: peakQueue, peakQueueBytes: peakQueueBytes)
             writer.async { [self] in
                 batch.forEach(write)
                 flushRepeats()
-                let text = files().compactMap { url -> String? in
-                    do { return try String(contentsOf: url, encoding: .utf8) }
-                    catch { readFailures += 1; return nil }
-                }.joined(separator: "\n")
-                let damaged = text.split(separator: "\n").filter {
-                    (try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8))) == nil
-                }.count
-                // 没有新事件的会话仍要导出既有环境，不能把未加载当成空记录。
-                var sessions = sessionRecords
-                let sessionsURL = directoryURL.appendingPathComponent("sessions.json")
-                if sessions == nil, fileManager.fileExists(atPath: sessionsURL.path) {
-                    do {
-                        sessions = try JSONDecoder().decode([DiagnosticSessionRecord].self,
-                            from: Data(contentsOf: sessionsURL))
-                    } catch { readFailures += 1 }
-                }
-                continuation.resume(returning: DiagnosticSnapshot(
-                    text: text, cutoffSequence: cutoff,
-                    capturedAt: ISO8601DateFormatter.shared.string(from: Date()),
-                    health: ["droppedEvents": lost, "writeFailures": writeFailures, "readFailures": readFailures,
-                             "rotationFailures": rotationFailures, "damagedLines": damaged, "peakQueue": peak,
-                             "expiredEvents": expiredEvents,
-                             "peakQueueBytes": peakBytes, "queueBudgetBytes": queueByteLimit,
-                             "queueLimit": queueLimit, "diskBudgetBytes": segmentBytes * (segmentCount + 1)],
-                    sessions: try? encoder.encode(sessions ?? [])))
+                continuation.resume(returning: body(checkpoint))
             }
             lock.unlock()
         }
@@ -184,56 +208,96 @@ final class DiagnosticLogStore: @unchecked Sendable {
     }
 
     func markIssuesAcknowledged(upTo date: Date = Date()) async {
-        // 先截断重复批次，确认之后的新故障不能被并回已经忽略的旧摘要。
-        _ = await snapshot()
-        await withCheckedContinuation { continuation in
-            writer.async { [self] in
-                do {
-                    try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-                    try ISO8601DateFormatter.shared.string(from: date).write(to: acknowledgedURL, atomically: true, encoding: .utf8)
-                    notify()
-                } catch { writeFailures += 1; notify() }
-                continuation.resume()
-            }
+        // 确认只需截断重复批次并保存标记，不能为了排空写入解码全部历史证据。
+        await withFlushedEvents { [self] _ in
+            do {
+                try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+                try ISO8601DateFormatter.shared.string(from: date).write(to: acknowledgedURL, atomically: true, encoding: .utf8)
+                notify()
+            } catch { writeFailures += 1; notify() }
         }
     }
 
     func issueSummary(since cutoff: Date = Date().addingTimeInterval(-86400)) async -> DiagnosticLogSummary {
-        let snapshot = await snapshot()
-        let acknowledgement: (Date?, Bool) = await withCheckedContinuation { continuation in
-            writer.async { [self] in
-                guard fileManager.fileExists(atPath: acknowledgedURL.path) else {
-                    continuation.resume(returning: (nil, false))
-                    return
-                }
+        await withFlushedEvents { [self] checkpoint in
+            let cache = loadIssueCache()
+            // 状态面板仍需反映会话元数据损坏，但不编码或拼接整个导出包。
+            _ = loadSessions()
+            let formatter = ISO8601DateFormatter.shared
+            var acknowledgedAt: Date?
+            if fileManager.fileExists(atPath: acknowledgedURL.path) {
                 do {
                     let value = try String(contentsOf: acknowledgedURL, encoding: .utf8)
-                    guard let date = ISO8601DateFormatter.shared.date(from: value) else {
-                        readFailures += 1
-                        continuation.resume(returning: (nil, true))
-                        return
-                    }
-                    continuation.resume(returning: (date, false))
-                } catch {
-                    readFailures += 1
-                    continuation.resume(returning: (nil, true))
-                }
+                    acknowledgedAt = formatter.date(from: value)
+                    if acknowledgedAt == nil { readFailures += 1 }
+                } catch { readFailures += 1 }
+            }
+            // 缓存只省解析；时间窗口和确认标记变化不能复用旧计数。
+            let eligible = cache.events.filter { entry in
+                entry.date >= cutoff && (acknowledgedAt.map { entry.date > $0 } ?? true)
+            }
+            let groups = Dictionary(grouping: eligible, by: \.event.issueFingerprint)
+            let latest = eligible.max { $0.date < $1.date }?.event
+            return DiagnosticLogSummary(issueCount: groups.count, latestIssue: latest,
+                occurrenceCount: eligible.reduce(0) { $0 + max(1, $1.event.occurrenceCount) },
+                latestOccurrenceCount: latest.flatMap { groups[$0.issueFingerprint] }?.reduce(0) {
+                    $0 + max(1, $1.event.occurrenceCount)
+                } ?? 0,
+                storageUnavailable: writeFailures > 0 || readFailures > 0 || rotationFailures > 0
+                    || checkpoint.dropped > 0 || cache.damagedLines > 0)
+        }
+    }
+
+    /// 首次或日志变化时逐文件解码一次。未变化的历史证据不再反复解析，
+    /// 损坏行仍逐行核验；读取失败不缓存，下一次查询可以重新尝试。
+    private func loadIssueCache() -> IssueCache {
+        var failed = false
+        let signatures = files().compactMap { url -> IssueLogFile? in
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: url.path)
+                return IssueLogFile(url: url, size: attributes[.size] as? Int ?? 0,
+                                    modifiedAt: attributes[.modificationDate] as? Date)
+            } catch {
+                readFailures += 1
+                failed = true
+                return nil
             }
         }
-        let events = snapshot.text.split(separator: "\n").compactMap { try? JSONDecoder().decode(DiagnosticEvent.self, from: Data($0.utf8)) }
-            .filter { $0.isSevereFailure
-                && $0.date >= cutoff }
-        // marker 为可选值，直接用分支避免把“尚未确认”误解为“没有问题”。
-        let eligible = events.filter { event in acknowledgement.0.map { event.date > $0 } ?? true }
-        let groups = Dictionary(grouping: eligible, by: \.issueFingerprint)
-        let latest = eligible.max { $0.date < $1.date }
-        return DiagnosticLogSummary(issueCount: groups.count, latestIssue: latest,
-            occurrenceCount: eligible.reduce(0) { $0 + max(1, $1.occurrenceCount) },
-            latestOccurrenceCount: latest.flatMap { groups[$0.issueFingerprint] }?.reduce(0) {
-                $0 + max(1, $1.occurrenceCount)
-            } ?? 0,
-            storageUnavailable: acknowledgement.1 || snapshot.health.contains { $0.key.hasSuffix("Failures") && $0.value > 0 }
-                || (snapshot.health["droppedEvents"] ?? 0) > 0 || (snapshot.health["damagedLines"] ?? 0) > 0)
+        if !failed, let issueCache, issueCache.files == signatures { return issueCache }
+
+        let decoder = JSONDecoder()
+        let formatter = ISO8601DateFormatter.shared
+        var events: [(event: DiagnosticEvent, date: Date)] = []
+        var damagedLines = 0
+        for file in signatures {
+            do {
+                let text = try String(contentsOf: file.url, encoding: .utf8)
+                for line in text.split(separator: "\n") {
+                    guard let event = try? decoder.decode(DiagnosticEvent.self, from: Data(line.utf8)) else {
+                        damagedLines += 1
+                        continue
+                    }
+                    if event.isSevereFailure {
+                        events.append((event, formatter.date(from: event.timestamp) ?? .distantPast))
+                    }
+                }
+            } catch {
+                readFailures += 1
+                failed = true
+            }
+        }
+        let result = IssueCache(files: signatures, events: events, damagedLines: damagedLines)
+        issueCache = failed ? nil : result
+        return result
+    }
+
+    /// 没有新事件的会话仍需读取既有环境；失败只累计健康计数，保留原始文件。
+    private func loadSessions() -> [DiagnosticSessionRecord]? {
+        if let sessionRecords { return sessionRecords }
+        let url = directoryURL.appendingPathComponent("sessions.json")
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        do { return try JSONDecoder().decode([DiagnosticSessionRecord].self, from: Data(contentsOf: url)) }
+        catch { readFailures += 1; return nil }
     }
 
     private func files() -> [URL] {

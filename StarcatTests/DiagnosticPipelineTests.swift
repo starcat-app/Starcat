@@ -11,6 +11,25 @@ import Testing
 
 @Suite("Diagnostic pipeline")
 struct DiagnosticPipelineTests {
+    /// 以磁盘访问验证清理路径不再扫描日志，避免依赖机器负载不稳定的耗时阈值。
+    private final class TrackingFileManager: FileManager, @unchecked Sendable {
+        private let countLock = NSLock()
+        private var reads = 0
+
+        var directoryReads: Int {
+            countLock.lock()
+            defer { countLock.unlock() }
+            return reads
+        }
+
+        override func contentsOfDirectory(atPath path: String) throws -> [String] {
+            countLock.lock()
+            reads += 1
+            countLock.unlock()
+            return try super.contentsOfDirectory(atPath: path)
+        }
+    }
+
     private func root() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("diagnostic-\(UUID())")
     }
@@ -221,6 +240,100 @@ struct DiagnosticPipelineTests {
             level: .error, visibility: .issue, category: "test", operation: "repeated", message: "Failure",
             summaryKey: DiagnosticIssue.generic.rawValue, outcome: .failed, impact: .blocked))
         #expect(await store.issueSummary().issueCount == 1)
+    }
+
+    /// 模拟旧版大量 context 留存；计时只作性能证据，断言业务结果与原始证据完整性。
+    @Test("六万条历史记录下清理保留证据，新故障仍可提醒")
+    func acknowledgeWithLargeHistory() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        var legacy = Self.fault("legacy", timestamp: Date().addingTimeInterval(-60))
+        legacy.schemaVersion = 2
+        legacy.visibility = .context
+        let legacyLine = String(decoding: try encoder.encode(legacy), as: UTF8.self) + "\n"
+        let oldIssue = Self.fault("before", timestamp: Date().addingTimeInterval(-10))
+        let text = String(repeating: legacyLine, count: 60_000)
+            + String(decoding: try encoder.encode(oldIssue), as: UTF8.self) + "\n"
+        let file = directory.appendingPathComponent("diagnostic-log.jsonl")
+        try text.write(to: file, atomically: true, encoding: .utf8)
+        let fileManager = TrackingFileManager()
+        let store = DiagnosticLogStore(fileManager: fileManager, directoryURL: directory)
+        let coldStart = ContinuousClock.now
+        #expect(await store.issueSummary().issueCount == 1)
+        let coldDuration = coldStart.duration(to: .now)
+        let initialReads = fileManager.directoryReads
+        let clearStart = ContinuousClock.now
+        await store.markIssuesAcknowledged()
+        #expect(fileManager.directoryReads == initialReads)
+        let cleared = await store.issueSummary()
+        let clearDuration = clearStart.duration(to: .now)
+        #expect(cleared.issueCount == 0)
+        #expect(!cleared.storageUnavailable)
+        #expect(try String(contentsOf: file, encoding: .utf8) == text)
+
+        store.enqueue(Self.fault("after", timestamp: Date().addingTimeInterval(1)))
+        let updated = await store.issueSummary()
+        #expect(updated.issueCount == 1)
+        #expect(updated.latestIssue?.operation == "after")
+        #expect(!updated.storageUnavailable)
+        print("DIAGNOSTIC_CLEAR history=60000 cold=\(coldDuration) clearAndRefresh=\(clearDuration)")
+    }
+
+    @Test("摘要缓存重新应用确认标记和时间窗口")
+    func cachedSummaryReappliesAcknowledgementAndCutoff() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DiagnosticLogStore(directoryURL: directory)
+        let base = Date().addingTimeInterval(-60)
+        store.enqueue(Self.fault("first", timestamp: base))
+        store.enqueue(Self.fault("second", timestamp: base.addingTimeInterval(10)))
+        #expect(await store.issueSummary(since: base.addingTimeInterval(-1)).issueCount == 2)
+        #expect(await store.issueSummary(since: base.addingTimeInterval(5)).issueCount == 1)
+        await store.markIssuesAcknowledged(upTo: base.addingTimeInterval(5))
+        let remaining = await store.issueSummary(since: base.addingTimeInterval(-1))
+        #expect(remaining.issueCount == 1)
+        #expect(remaining.latestIssue?.operation == "second")
+        #expect(await store.issueSummary(since: base.addingTimeInterval(20)).issueCount == 0)
+    }
+
+    @Test("摘要缓存识别外部等长替换、轮转、损坏和文件删除")
+    func cachedSummaryTracksFileChanges() async throws {
+        let directory = root()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("diagnostic-log.jsonl")
+        let encoder = JSONEncoder()
+        let first = Self.fault("first")
+        let original = try encoder.encode(first)
+        try original.write(to: file)
+        let store = DiagnosticLogStore(directoryURL: directory)
+        #expect(await store.issueSummary().latestIssue?.operation == "first")
+
+        var second = first
+        second.operation = "other"
+        let replacement = try encoder.encode(second)
+        #expect(replacement.count == original.count)
+        try replacement.write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(1)],
+                                              ofItemAtPath: file.path)
+        #expect(await store.issueSummary().latestIssue?.operation == "other")
+
+        let rotated = directory.appendingPathComponent("diagnostic-log.1.jsonl")
+        try FileManager.default.moveItem(at: file, to: rotated)
+        let newText = String(decoding: try encoder.encode(Self.fault("new")), as: UTF8.self)
+        try (newText + "\ndamaged\n").write(to: file, atomically: true, encoding: .utf8)
+        let damaged = await store.issueSummary()
+        #expect(damaged.issueCount == 2)
+        #expect(damaged.storageUnavailable)
+        #expect(await store.issueSummary().storageUnavailable)
+
+        try FileManager.default.removeItem(at: rotated)
+        try FileManager.default.removeItem(at: file)
+        let empty = await store.issueSummary()
+        #expect(empty.issueCount == 0)
+        #expect(!empty.storageUnavailable)
     }
 
     @Test("日志风暴保持队列上限，所有未保留事件均计入丢弃数")
