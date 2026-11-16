@@ -1,7 +1,7 @@
 # 浏览器配对执行 Checklist
 
 > 状态：B1 与 Chrome 可选 CLI 通道已实施，真实浏览器与原生分发组合待验收
-> 工作区：`../Starcat-cli-browser-access`，App / Chrome / Safari / CLI 各自独立 worktree
+> 原实施工作区：`../Starcat-cli-browser-access`；2026-11-16 已合入各仓 `dev` 并清理，当前使用主工作区，见[合并与清理记录](2026-11-16-dev合并与worktree清理记录.md)。
 > 子方案：[浏览器免输Key配对与自动发现子方案.md](浏览器免输Key配对与自动发现子方案.md)
 
 ## 执行批次

@@ -1,7 +1,7 @@
 # CLI 能力开放执行 Checklist
 
 > 状态：代码、契约、规则、自动化与双渠道构建完成；真实连接验收另列
-> 工作区：`../Starcat-cli-browser-access`，主仓与 CLI / Skill 分支均为 `codex/cli-browser-access`
+> 原实施工作区：`../Starcat-cli-browser-access`；2026-11-16 已合入各仓 `dev` 并清理，当前使用主工作区，见[合并与清理记录](2026-11-16-dev合并与worktree清理记录.md)。
 > 总清单：[CLI与MCP能力开放Checklist.md](CLI与MCP能力开放Checklist.md)
 > 本页保留 2026-11-15 首轮交付证据。当前契约 v3、127 个工具及旧 32 项复查以[整改 Checklist](全能力审查与读写权限整改Checklist.md)和[覆盖表](能力覆盖清单.md)为准，下列旧数字不代表当前状态。
 
