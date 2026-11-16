@@ -773,6 +773,44 @@ struct ReadmeAPINetworkTests {
         #expect(mock.readmeHTMLCalls.count == 1)
     }
 
+    @Test("同仓 Markdown: 嵌套文件按 ref 解析资源，刷新绕过会话缓存且不覆盖默认 README")
+    func repositoryMarkdownResolvesFileResourcesAndRefreshes() async throws {
+        let (api, mock, repo, readmeRepo, _) = try await makeAPI()
+        let cache = RepositoryMarkdownSessionCache()
+        let original = makeReadme(repoId: repo.id, html: "<p>default README</p>")
+        try await readmeRepo.upsert(original)
+        mock.repositoryFileHTMLHandler = { _, _, path, ref, _ in
+            #expect(path == "docs/README.zh.md")
+            #expect(ref == "v2")
+            return BytesResponse.ok(
+                data: Data(#"<img src="./images/logo.png"><a href="../guide.md">guide</a><a href="/other/repo/blob/main/README.md">external</a>"#.utf8),
+                etag: "\"linked\""
+            )
+        }
+        let html = try await api.fetchRenderedRepositoryMarkdown(
+            owner: repo.owner, repo: repo.name, path: "docs/README.zh.md", ref: "v2", cache: cache
+        )
+        #expect(html.contains("https://raw.githubusercontent.com/alice/foo/v2/docs/images/logo.png"))
+        #expect(html.contains(#"href="../guide.md""#))
+        #expect(html.contains(#"href="/other/repo/blob/main/README.md""#))
+        let document = RepositoryMarkdownLinkTarget(owner: repo.owner, repo: repo.name, ref: "v2", path: "docs/README.zh.md")
+        let relativeLink = try #require(URL(string: "../guide.md", relativeTo: document.contentBaseURL)?.absoluteURL)
+        #expect(RepositoryMarkdownLink.classify(relativeLink, owner: repo.owner, repo: repo.name)?.path == "guide.md")
+
+        mock.repositoryFileHTMLHandler = { _, _, _, _, _ in
+            BytesResponse.ok(data: Data("<p>updated linked document</p>".utf8), etag: "\"updated\"")
+        }
+        let refreshed = try await api.fetchRenderedRepositoryMarkdown(
+            owner: repo.owner, repo: repo.name, path: "docs/README.zh.md", ref: "v2",
+            forceRefresh: true, cache: cache
+        )
+        #expect(refreshed.contains("updated linked document"))
+        #expect(await cache.html(for: RepositoryMarkdownLinkTarget(
+            owner: repo.owner, repo: repo.name, ref: "v2", path: "docs/README.zh.md"
+        ).cacheKey) == refreshed)
+        #expect(try await readmeRepo.find(repoId: repo.id)?.renderedHtml == original.renderedHtml)
+    }
+
     @Test("同仓 Markdown: Contents HTML 进会话缓存且不写 readmes 表")
     func fetchRenderedRepositoryMarkdownUsesSessionCacheOnly() async throws {
         let (api, mock, repo, readmeRepo, _) = try await makeAPI()

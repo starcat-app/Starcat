@@ -118,12 +118,12 @@ struct ReadmeWebView: View {
     /// 为调用方附加的底部操作预留空间；只移动浮动工具条，不改变 WebView 的尺寸与身份。
     var floatingToolbarBottomInset: CGFloat = 0
 
-    /// 当前 README 所属仓库。有值且设置打开「应用内打开仓库文档」时，
+    /// 当前 README 所属仓库。有值且设置选择应用内打开时，
     /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
     var markdownLinkRepositoryOwner: String? = nil
     var markdownLinkRepositoryName: String? = nil
 
-    /// 打开同仓 Markdown 独立窗。nil 时即使开关打开也回退浏览器。
+    /// 调用方按设置在当前详情页或独立窗口打开；nil 时回退浏览器。
     var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)? = nil
 
     /// 当前翻译渲染状态。默认隐藏，普通 README 调用方无需感知翻译能力。
@@ -174,7 +174,7 @@ struct ReadmeWebView: View {
             onDocumentReady: onDocumentReady,
             onDocumentFailed: onDocumentFailed,
             allowsSameDocumentAnchors: allowsSameDocumentAnchors,
-            openRepositoryMarkdownInApp: settings.openRepositoryMarkdownInApp,
+            openRepositoryMarkdownInApp: settings.repositoryMarkdownOpenMode != .browser,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
             onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
@@ -1815,7 +1815,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 return
             }
 
-            // 1. 用户点链接 → 一律转系统浏览器
+            // 1. 用户点链接 → 同仓 Markdown 按偏好交给调用方，其余转系统浏览器
             //
             // 历史 bug：之前默认策略是 `.cancel`，导致 `loadHTMLString(_, baseURL: repo.htmlUrl)`
             // 触发的主框架首次导航（url == baseURL，navigationType == .other）也被 cancel，
@@ -1871,7 +1871,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             decisionHandler(.allow)
         }
 
-        /// 设置打开且不是 ⌘-点击时，把同仓 Markdown 交给独立窗。
+        /// 选择应用内打开且不是 ⌘-点击时，把同仓 Markdown 交给阅读区路由。
         ///
         /// ⌘-点击故意保留浏览器逃生口，避免偶发误拦。开关关闭时本方法直接 false，
         /// 行为与改之前完全一致。

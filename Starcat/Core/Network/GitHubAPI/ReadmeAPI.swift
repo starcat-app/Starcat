@@ -709,10 +709,11 @@ struct ReadmeAPI {
         repo: String,
         path: String,
         ref: String,
+        forceRefresh: Bool = false,
         cache: RepositoryMarkdownSessionCache = .shared
     ) async throws -> String {
         let target = RepositoryMarkdownLinkTarget(owner: owner, repo: repo, ref: ref, path: path)
-        if let cached = await cache.html(for: target.cacheKey) {
+        if !forceRefresh, let cached = await cache.html(for: target.cacheKey) {
             return cached
         }
 
@@ -734,7 +735,9 @@ struct ReadmeAPI {
             throw NetworkError.invalidResponse
         }
 
-        let rewritten = ReadmeAssetURLRewriter.rewrite(in: html, owner: owner, repo: repo)
+        let rewritten = ReadmeAssetURLRewriter.rewriteFileAssets(
+            in: html, owner: owner, repo: repo, ref: ref, filePath: path
+        )
         await cache.store(rewritten, for: target.cacheKey)
         return rewritten
     }

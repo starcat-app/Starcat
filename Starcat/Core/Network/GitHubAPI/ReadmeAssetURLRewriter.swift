@@ -106,15 +106,9 @@ enum ReadmeAssetURLRewriter {
     /// 文件预览必须绑定整棵树的提交，而不是 HEAD 或该文件的最近提交。
     /// 显式目录入口不使用 README wrapper 推断和旧 HEAD 缓存修复，避免重复补目录。
     static func rewrite(in html: String, owner: String, repo: String, ref: String, filePath: String) -> String {
-        let rawRoot = "https://raw.githubusercontent.com/\(owner)/\(repo)/\(ref)/"
         let blobRoot = "https://github.com/\(owner)/\(repo)/blob/\(ref)/"
-        guard let rawFile = URL(string: rawRoot)?.appendingPathComponent(filePath),
-              let blobFile = URL(string: blobRoot)?.appendingPathComponent(filePath) else { return html }
-        let stable = rewriteGitHubAttachmentSources(in: rewriteCamoProxiedImages(in: html))
-        let images = rewriteImageSources(in: stable, rawBase: rawRoot, rawRoot: rawRoot,
-                                         documentDirectory: "", fileBaseURL: rawFile)
-        let pictures = rewritePictureSourceSets(in: images, rawBase: rawRoot, rawRoot: rawRoot,
-                                                documentDirectory: "", fileBaseURL: rawFile)
+        guard let blobFile = URL(string: blobRoot)?.appendingPathComponent(filePath) else { return html }
+        let pictures = rewriteFileAssets(in: html, owner: owner, repo: repo, ref: ref, filePath: filePath)
         guard let regex = try? NSRegularExpression(pattern: #"<a\b[^>]*\shref="([^"]*)""#,
                                                   options: .caseInsensitive) else { return pictures }
         let original = pictures as NSString
@@ -126,6 +120,18 @@ enum ReadmeAssetURLRewriter {
             result.replaceSubrange(range, with: resolved)
         }
         return result
+    }
+
+    /// GitHub 服务端 HTML 只修复图片资源，链接继续由文档 baseURL 解析。
+    /// 服务端的 `/owner/repo/blob/...` 已是站点路径，不能再次当作仓库根相对路径补前缀。
+    static func rewriteFileAssets(in html: String, owner: String, repo: String, ref: String, filePath: String) -> String {
+        let rawRoot = "https://raw.githubusercontent.com/\(owner)/\(repo)/\(ref)/"
+        guard let rawFile = URL(string: rawRoot)?.appendingPathComponent(filePath) else { return html }
+        let stable = rewriteGitHubAttachmentSources(in: rewriteCamoProxiedImages(in: html))
+        let images = rewriteImageSources(in: stable, rawBase: rawRoot, rawRoot: rawRoot,
+                                         documentDirectory: "", fileBaseURL: rawFile)
+        return rewritePictureSourceSets(in: images, rawBase: rawRoot, rawRoot: rawRoot,
+                                        documentDirectory: "", fileBaseURL: rawFile)
     }
 
     /// 绝对资源与页内锚点保留；根路径以仓库根为准，../ 由 Foundation 规范化。

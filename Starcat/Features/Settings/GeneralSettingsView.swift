@@ -181,12 +181,15 @@ struct GeneralSettingsView: View {
             )
             Divider()
 
-            preferenceToggle(
-                "settings.general.openRepositoryMarkdownInApp.title",
-                description: "settings.general.openRepositoryMarkdownInApp.help",
-                showsDescription: false,
-                isOn: $settings.openRepositoryMarkdownInApp
-            )
+            Picker(selection: $settings.repositoryMarkdownOpenMode) {
+                ForEach(RepositoryMarkdownOpenMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            } label: {
+                Text("settings.general.markdownLinks.title")
+            }
+            .pickerStyle(.menu)
+            .help(Text("settings.general.markdownLinks.help"))
             Divider()
 
             preferenceToggle(

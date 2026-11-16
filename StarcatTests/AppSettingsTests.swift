@@ -217,7 +217,7 @@ struct AppSettingsTests {
         settings.setExternalSearchSettings(anySearchSettings, for: .anySearch)
         settings.notificationsEnabled = false
         settings.githubIssueEventTimelineEnabled = true
-        settings.openRepositoryMarkdownInApp = true
+        settings.repositoryMarkdownOpenMode = .currentDetail
         settings.hideDockIcon = true
         settings.snakeStyle = .greedy
         settings.keyboardShortcutsEnabled = false
@@ -255,7 +255,7 @@ struct AppSettingsTests {
         #expect(settings.externalSearchSettings(for: .anySearch).isEnabled == false)
         #expect(settings.notificationsEnabled == true)
         #expect(settings.githubIssueEventTimelineEnabled == false)
-        #expect(settings.openRepositoryMarkdownInApp == false)
+        #expect(settings.repositoryMarkdownOpenMode == .browser)
         #expect(settings.hideDockIcon == false)
         #expect(settings.snakeStyle == .off)
         #expect(settings.keyboardShortcutsEnabled == true)
@@ -284,16 +284,42 @@ struct AppSettingsTests {
         #expect(restored.githubIssueEventTimelineEnabled == true)
     }
 
-    @Test("同仓 Markdown 应用内打开: 默认关闭并持久化")
-    func openRepositoryMarkdownInAppDefaultsOffAndPersists() {
+    @Test("同仓 Markdown 打开方式: 默认浏览器，三种方式均持久化")
+    func repositoryMarkdownOpenModeDefaultsToBrowserAndPersists() {
         let defaults = makeIsolatedDefaults()
         let settings = AppSettings(defaults: defaults)
-        #expect(settings.openRepositoryMarkdownInApp == false)
+        #expect(settings.repositoryMarkdownOpenMode == .browser)
 
-        settings.openRepositoryMarkdownInApp = true
+        for mode in RepositoryMarkdownOpenMode.allCases {
+            settings.repositoryMarkdownOpenMode = mode
+            #expect(AppSettings(defaults: defaults).repositoryMarkdownOpenMode == mode)
+        }
+    }
 
-        let restored = AppSettings(defaults: defaults)
-        #expect(restored.openRepositoryMarkdownInApp == true)
+    @Test("同仓 Markdown 旧开关一次迁移，已选的新方式优先")
+    func repositoryMarkdownOpenModeMigratesLegacyPreference() {
+        let legacyKey = "settings.readme.openRepositoryMarkdownInApp.v1"
+        let currentKey = "settings.readme.repositoryMarkdownOpenMode.v1"
+        for legacyValue in [false, true] {
+            let defaults = makeIsolatedDefaults()
+            defaults.set(legacyValue, forKey: legacyKey)
+            let settings = AppSettings(defaults: defaults)
+            #expect(settings.repositoryMarkdownOpenMode == (legacyValue ? .newWindow : .browser))
+            #expect(defaults.object(forKey: legacyKey) == nil)
+            #expect(defaults.string(forKey: currentKey) == settings.repositoryMarkdownOpenMode.rawValue)
+
+            settings.repositoryMarkdownOpenMode = .currentDetail
+            defaults.set(true, forKey: legacyKey)
+            #expect(AppSettings(defaults: defaults).repositoryMarkdownOpenMode == .currentDetail)
+            #expect(defaults.object(forKey: legacyKey) == nil)
+        }
+    }
+
+    @Test("同仓 Markdown 无效设置回到浏览器")
+    func repositoryMarkdownOpenModeRejectsUnknownValue() {
+        let defaults = makeIsolatedDefaults()
+        defaults.set("unknown", forKey: "settings.readme.repositoryMarkdownOpenMode.v1")
+        #expect(AppSettings(defaults: defaults).repositoryMarkdownOpenMode == .browser)
     }
 
     @Test("macOS 集成: 隐藏 Dock 图标默认关闭并持久化")
