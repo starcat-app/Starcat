@@ -12,6 +12,25 @@ import Testing
 @Suite("每日推荐 AI 理由")
 @MainActor
 struct DailyRecommendationExplanationTests {
+    @Test("推荐正文仅链接真实来源，未点名来源保留简洁链接，模型外链被转义")
+    func inlineEvidenceLinks() {
+        let sources = [
+            RecommendationSeed(repoID: 1, fullName: "owner/repo", description: nil, language: nil, reasons: []),
+            RecommendationSeed(repoID: 2, fullName: "other/tool", description: nil, language: nil, reasons: [])
+        ]
+        let markdown = RecommendationEvidenceMarkdown.make(
+            text: "试试 owner/repo，与 owner/repository 不同。[外链](https://example.com)", sources: sources
+        )
+        #expect(markdown.contains("[owner/repo](https://github.com/owner/repo)"))
+        #expect(markdown.contains("[other/tool](https://github.com/other/tool)"))
+        #expect(!markdown.contains("[owner/repository]"))
+        #expect(markdown.contains("\\[外链\\]"))
+        #expect(!markdown.contains("基于你"))
+        let avatars = RAGMarkdownText.prepareForDisplay(markdown, citations: [])
+        #expect(avatars.contains("starcat-rag-avatar://owner"))
+        #expect(avatars.contains("starcat-rag-avatar://other"))
+    }
+
     @Test("非 Pro 或无实际来源不调用 LLM，也不读取 Pro 缓存")
     func requiresProAndEvidence() async {
         let root = temporaryRoot()

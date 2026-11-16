@@ -77,3 +77,46 @@ extension RepoRecommendationItem {
         return String.l10n(basis.detailLocalizationKey)
     }
 }
+
+/// 将纯文本中的真实来源链接化；先转义 Markdown，不能让模型插入额外外链或远程图片。
+enum RecommendationEvidenceMarkdown {
+    static func make(text: String, sources: [RecommendationSeed]) -> String {
+        let names = Array(Set(sources.map(\.fullName).filter {
+            $0.range(of: #"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"#,
+                     options: .regularExpression) != nil
+        })).sorted { $0.count == $1.count ? $0 < $1 : $0.count > $1.count }
+        guard !names.isEmpty else { return escape(text) }
+        let pattern = #"(?<![A-Za-z0-9_./-])("#
+            + names.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
+            + #")(?![A-Za-z0-9_./-])"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return escape(text) }
+        var result = ""
+        var cursor = text.startIndex
+        var mentioned = Set<String>()
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            let name = String(text[range])
+            result += escape(String(text[cursor..<range.lowerBound])) + link(name)
+            mentioned.insert(name)
+            cursor = range.upperBound
+        }
+        result += escape(String(text[cursor...]))
+        // AI 未点名的来源仍可查看，但不再重复整句“基于你 Star 过的项目推荐”。
+        let remaining = names.filter { !mentioned.contains($0) }
+        if !remaining.isEmpty {
+            result += "\n\n" + remaining.map(link).joined(separator: " · ")
+        }
+        return result
+    }
+
+    private static func link(_ name: String) -> String {
+        "[\(name)](https://github.com/\(name))"
+    }
+
+    private static func escape(_ text: String) -> String {
+        text.reduce(into: "") { result, character in
+            if "\\`*_{}[]()#+-.!>|".contains(character) { result.append("\\") }
+            result.append(character)
+        }
+    }
+}

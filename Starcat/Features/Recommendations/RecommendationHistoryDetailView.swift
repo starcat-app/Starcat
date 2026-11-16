@@ -49,6 +49,7 @@ private struct RecommendationEvidenceHeader: View {
     let entry: RecommendationHistoryEntry
     let item: RepoRecommendationItem
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isExpanded = false
@@ -90,11 +91,10 @@ private struct RecommendationEvidenceHeader: View {
                         for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser
                     ) {
                         Text("recommendations.daily.aiReasonTitle").font(.caption).foregroundStyle(.secondary)
-                        Text(verbatim: explanation).fixedSize(horizontal: false, vertical: true)
+                        evidenceText(explanation)
+                    } else {
+                        evidenceText(item.basicRecommendationReason)
                     }
-                    Text(verbatim: item.basicRecommendationReason)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .font(.callout)
                 .padding(.horizontal, 20)
@@ -103,6 +103,24 @@ private struct RecommendationEvidenceHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
+    }
+
+    /// 复用已有行内头像渲染器，保持正文自然换行；来源只认服务端提供的真实项目。
+    private func evidenceText(_ text: String) -> some View {
+        RAGMarkdownText(content: RecommendationEvidenceMarkdown.make(text: text, sources: item.matchedSeeds ?? []))
+            .environment(\.openURL, OpenURLAction { url in
+                guard let source = item.matchedSeeds?.first(where: {
+                    url == GitHubURLs.repo(fullName: $0.fullName)
+                }) else { return .handled }
+                Task {
+                    let parts = source.fullName.split(separator: "/", maxSplits: 1).map(String.init)
+                    guard parts.count == 2,
+                          let repo = try? await dependencies.repoRepository.findByOwnerName(owner: parts[0], name: parts[1])
+                    else { return }
+                    RepoDetailWindowController.show(repo: repo, dependencies: dependencies, homeViewModel: homeViewModel)
+                }
+                return .handled
+            })
     }
 
     @ViewBuilder
