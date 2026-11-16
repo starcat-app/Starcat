@@ -418,7 +418,8 @@ struct WeeklyContentView: View {
                 // 为胶囊描边及系统常显滚动条留出空间，不让右侧控件贴住滚动边缘。
                 .padding(12)
             }
-            .frame(maxHeight: 400 * interfaceScale.multiplier)
+            // 默认筛选内容约为 410pt；430pt 留出少量余量，避免仅底部一行被裁掉。
+            .frame(maxHeight: 430 * interfaceScale.multiplier)
             .fixedSize(horizontal: false, vertical: true)
 
             Divider()
