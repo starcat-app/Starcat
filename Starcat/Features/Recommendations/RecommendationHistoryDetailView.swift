@@ -20,7 +20,8 @@ struct RecommendationHistoryDetailView: View {
         if let entry, let item = entry.item {
             DiscoveryDetailView(
                 item: item.historyDiscoveryItem,
-                supplementalHeader: AnyView(historyHeader(entry, item: item))
+                supplementalHeader: AnyView(historyHeader(entry, item: item)),
+                requiresCompleteMetadata: true
             )
             .task(id: explanationIdentity) {
                 guard let accountID = dependencies.database.currentUserId else { return }

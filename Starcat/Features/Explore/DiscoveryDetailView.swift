@@ -17,16 +17,21 @@ struct DiscoveryDetailView: View {
 
     let item: DiscoveryRepoDTO?
     let supplementalHeader: AnyView?
+    let requiresCompleteMetadata: Bool
 
-    init(item: DiscoveryRepoDTO?, supplementalHeader: AnyView? = nil) {
+    init(item: DiscoveryRepoDTO?, supplementalHeader: AnyView? = nil, requiresCompleteMetadata: Bool = false) {
         self.item = item
         self.supplementalHeader = supplementalHeader
+        self.requiresCompleteMetadata = requiresCompleteMetadata
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let item {
-                DiscoveryScaffoldShell(item: item, supplementalHeader: supplementalHeader)
+                DiscoveryScaffoldShell(
+                    item: item, supplementalHeader: supplementalHeader,
+                    requiresCompleteMetadata: requiresCompleteMetadata
+                )
                     // 元数据更新交给 task(id: item)，保持 Scaffold 与 README WebView 身份。
                     .detailContentTransition()
             } else {
@@ -42,6 +47,7 @@ private struct DiscoveryScaffoldShell: View {
 
     let item: DiscoveryRepoDTO
     let supplementalHeader: AnyView?
+    let requiresCompleteMetadata: Bool
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
@@ -53,6 +59,7 @@ private struct DiscoveryScaffoldShell: View {
     /// 来源说明和仓库使用同一份展示快照，旧页退场时不能提前换成下一仓库的证据。
     @State private var displayedSupplementalHeader: AnyView?
     @State private var isContentVisible = false
+    @State private var metadataFailed = false
 
     private var contentAnimation: Animation {
         .easeOut(duration: reduceMotion ? 0.06 : 0.12)
@@ -72,6 +79,12 @@ private struct DiscoveryScaffoldShell: View {
                             isContentVisible = true
                         }
                     }
+            } else if metadataFailed {
+                ContentUnavailableView {
+                    Label("recommendations.daily.failed", systemImage: "wifi.exclamationmark")
+                } actions: {
+                    Button("action.retry") { Task { await resolveRepo() } }
+                }
             } else {
                 VStack(spacing: 16) {
                     ListLoadingSkeleton(rowCount: 1, rowHeight: 110)
@@ -150,9 +163,27 @@ private struct DiscoveryScaffoldShell: View {
         // Discovery 详情必须以服务端最新公共元数据为准。若先返回本地 starred 缓存，
         // 老记录中缺失的 subscribers / created_at / updated_at 会永久遮蔽 API 真值。
         // star/unstar 后的数字走 Registry 会话 overlay，不能只用接口快照。
-        displayRepo = dependencies.starredRegistry.applyingDisplayState(
-            to: item.toEphemeralRepo(isStarred: false)
-        )
+        metadataFailed = false
+        var resolved = item.toEphemeralRepo(isStarred: false)
+        if requiresCompleteMetadata {
+            let revision = dependencies.databaseScopeRevision
+            do {
+                resolved = try await PublicRepoMetadataResolver.resolve(
+                    owner: item.owner, name: item.name,
+                    repository: dependencies.repoRepository, apiClient: dependencies.apiClient,
+                    isCurrent: { dependencies.databaseScopeRevision == revision }
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                displayRepo = nil
+                metadataFailed = true
+                return
+            }
+        }
+        guard !Task.isCancelled else { return }
+        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: resolved)
         displayedSupplementalHeader = supplementalHeader
         loadReadmeIfNeeded()
         // 新页先展示元信息与真实加载状态，README 自身仍等当前文档 ready 才交出骨架。

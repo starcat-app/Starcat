@@ -82,6 +82,10 @@ struct GRDBRepoRepository {
             var writtenIDs: Set<Int64> = []
             for dto in dtos where !protectedIDs.contains(dto.repo.id) {
                 var repo = Self.repoFromDTO(dto.repo, starredAt: dto.starredAt, cachedAt: cachedAtISO)
+                // Stars 列表不返回 subscribers_count，不能清掉详情补齐的真实关注者数。
+                if repo.subscribersCount == nil {
+                    repo.subscribersCount = try Repo.fetchOne(db, key: repo.id)?.subscribersCount
+                }
                 try repo.save(db)
 
                 var starred = StarredRepo(
@@ -1476,12 +1480,10 @@ struct GRDBRepoRepository {
             //   过去 mapper 没传 → `repos.owner_avatar` 列对所有同步入库的 repo 都是 NULL，
             //   逼着搜索弹窗 / 详情页只能用 `https://github.com/{login}.png` 拼凑。
             //   现在搭车每次同步自然回填，不增加任何 API 调用。
-            // - `subscribersCount` 仅 `/repos/{owner}/{name}` 端点返回，stars / search
-            //   嵌套 repo 都不含 → 保持 nil（保留为 Optional 字段供后续 D-21 之类的
-            //   懒加载场景填）。
+            // - `subscribersCount` 仅详情端点返回；列表缺省为 nil，不能用 Stars 数代替。
             // - `defaultBranch` / `openIssuesCount`：DTO 已扩，搭车回填。
             ownerAvatar: dto.owner.avatarUrl,
-            subscribersCount: nil,
+            subscribersCount: dto.subscribersCount,
             defaultBranch: dto.defaultBranch,
             openIssuesCount: dto.openIssuesCount
         )

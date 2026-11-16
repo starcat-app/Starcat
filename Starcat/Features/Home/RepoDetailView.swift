@@ -1550,7 +1550,7 @@ struct ReadmeTranslationFooterButton: View {
 
 private struct StatItem: View {
     let label: LocalizedStringKey
-    let value: Int
+    let value: Int?
     let systemImage: String
     let tint: Color
 
@@ -1560,7 +1560,7 @@ private struct StatItem: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(tint)
                     .font(.system(size: 14))
-                Text(value, format: .number)
+                Text(value.map { $0.formatted() } ?? "-")
                     .monospacedDigit()
                     .font(.system(size: 14, weight: .medium))
             }
@@ -1672,7 +1672,7 @@ struct WatchersMenu: View {
                 }
             }
         } label: {
-            StatItem(label: "repo.watchers", value: repo.watchersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
+            StatItem(label: "repo.watchers", value: repo.subscribersCount, systemImage: "eye.fill", tint: StatSemanticColor.watchers.resolved(colorScheme: colorScheme))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()

@@ -176,6 +176,68 @@ struct RepoResolverChainTests {
         #expect(resolution.repo.starsCount == 1)
     }
 
+    @Test("推荐补齐日期和关注者并持久化，重开详情不重复请求")
+    func recommendationMetadataIsCached() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let api = CountingMockClient()
+        api.repoHandler = { owner, name in self.makeRepoDTO(id: 908, owner: owner, name: name) }
+        let first = try await PublicRepoMetadataResolver.resolve(
+            owner: "alice", name: "foo", repository: repository, apiClient: api
+        )
+        let second = try await PublicRepoMetadataResolver.resolve(
+            owner: "alice", name: "foo", repository: repository, apiClient: api
+        )
+        #expect(first.subscribersCount == 7)
+        #expect(first.createdAt != nil && first.updatedAt != nil)
+        #expect(second == first)
+        #expect(api.repoCalls == 1)
+        #expect(try await repository.starredCount() == 0)
+        #expect(try await repository.knowledgeCount() == 0)
+
+        // 常规 Stars 同步缺少 subscribers_count 时，已补齐值仍应保留。
+        let listDTO = GitHubRepoDTO(
+            id: 908, name: "foo", fullName: "alice/foo", owner: makeRepoDTO(id: 908, owner: "alice", name: "foo").owner,
+            description: nil, language: nil, stargazersCount: 12, forksCount: 0, watchersCount: 12,
+            topics: nil, license: nil, homepage: nil, htmlUrl: first.htmlUrl, cloneUrl: nil, sshUrl: nil,
+            isPrivate: false, fork: false, archived: false, pushedAt: nil,
+            createdAt: first.createdAt, updatedAt: first.updatedAt,
+            openIssuesCount: nil, defaultBranch: nil, disabled: nil, isTemplate: nil, score: nil
+        )
+        try await repository.upsertStarred(
+            [StarredRepoDTO(starredAt: "2026-11-17T00:00:00Z", repo: listDTO)],
+            userID: 42, syncedAt: Date()
+        )
+        #expect(try await repository.findById(908)?.subscribersCount == 7)
+    }
+
+    @Test("补齐失败不能保存伪造零值，切号后不能落库")
+    func failedMetadataDoesNotCreateSnapshot() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBRepoRepository(database: database)
+        let api = CountingMockClient()
+        do {
+            _ = try await PublicRepoMetadataResolver.resolve(
+                owner: "alice", name: "foo", repository: repository, apiClient: api
+            )
+            Issue.record("无完整缓存且网络失败时应抛错")
+        } catch {}
+        #expect(try await repository.findByOwnerName(owner: "alice", name: "foo") == nil)
+        var current = true
+        api.repoHandler = { owner, name in
+            current = false
+            return self.makeRepoDTO(id: 909, owner: owner, name: name)
+        }
+        do {
+            _ = try await PublicRepoMetadataResolver.resolve(
+                owner: "alice", name: "foo", repository: repository, apiClient: api,
+                isCurrent: { current }
+            )
+            Issue.record("切号后应取消补齐")
+        } catch is CancellationError {} catch { Issue.record("\(error)") }
+        #expect(try await repository.findById(909) == nil)
+    }
+
     // MARK: - Helpers
 
     private func makeRepoDTO(id: Int64, owner: String, name: String) -> GitHubRepoDTO {
@@ -190,10 +252,10 @@ struct RepoResolverChainTests {
             topics: nil, license: nil, homepage: nil,
             htmlUrl: "https://github.com/\(owner)/\(name)", cloneUrl: nil, sshUrl: nil,
             isPrivate: false, fork: false, archived: false,
-            pushedAt: nil, createdAt: nil, updatedAt: nil,
+            pushedAt: nil, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-11-17T00:00:00Z",
             // SEARCH-RICH 2026-06-14：5 个新字段对此 chain 测试无意义，置 nil。
             openIssuesCount: nil, defaultBranch: nil,
-            disabled: nil, isTemplate: nil, score: nil
+            disabled: nil, isTemplate: nil, score: nil, subscribersCount: 7
         )
     }
 }
