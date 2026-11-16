@@ -151,7 +151,7 @@ struct RepoSkillDetailPane: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                downloadButton
+                installButton
                     .padding(.trailing, 10)
                     .padding(.bottom, 14)
             }
@@ -292,12 +292,12 @@ struct RepoSkillDetailPane: View {
         .accessibilityLabel(Text(helpKey))
     }
 
-    /// 下载入口常驻三个内容 Tab；这里只切换浮层，实际写入仍需用户确认开始安装。
-    private var downloadButton: some View {
+    /// 安装入口常驻三个内容 Tab；这里只切换配置浮层，与文件保存入口区分。
+    private var installButton: some View {
         Button {
             isInspectorPresented.toggle()
         } label: {
-            Label("repo.files.inspector.download", systemImage: "arrow.down.to.line")
+            Label("repo.skills.install.title", systemImage: "arrow.down.to.line")
                 .labelStyle(.iconOnly)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
@@ -311,7 +311,7 @@ struct RepoSkillDetailPane: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .help("repo.files.inspector.download")
+        .help("repo.skills.install.title")
         .accessibilityValue(Text(LocalizedStringKey(
             isInspectorPresented ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"
         )))

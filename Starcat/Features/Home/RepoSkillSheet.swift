@@ -120,7 +120,7 @@ struct RepoSkillSheet: View {
     private var installationPanel: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("repo.files.inspector.download", systemImage: "arrow.down.to.line")
+                Label("repo.skills.install.title", systemImage: "arrow.down.to.line")
                     .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
                 Spacer(minLength: 8)
                 SheetCloseButton { isInspectorPresented = false }
