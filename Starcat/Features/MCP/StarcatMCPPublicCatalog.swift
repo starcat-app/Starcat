@@ -93,6 +93,9 @@ enum StarcatMCPPublicCatalog {
         ], required: ["id", "language", "revision"]),
         .init(name: "get_repo_recommendations", summary: "Read cached similar repositories in the current recommendation service scope.", properties: selector.merging(pagination) { _, new in new }),
         .init(name: "get_repo_skills", summary: "Read already loaded repository Skill evidence without starting a scan or installing files.", properties: selector),
+        .init(name: "export_repo_skill_file", summary: "Export one file from loaded Skill evidence at its pinned blob. Returns a task and a one-hour artifact for read_export_chunk; never installs or accepts local paths.", properties: selector.merging(preview) { _, new in new }.merging([
+            "skill_id": string(), "path": string()
+        ]) { _, new in new }, required: ["skill_id", "path"], permission: "write", network: "github", task: true),
         .init(name: "get_repo_library_state", summary: "Read Knowledge membership without returning the private note body.", properties: selector),
         .init(name: "set_repo_library_state", summary: "Preview or change Knowledge membership using write access. Existing App index follow-up may run.", properties: selector.merging(preview) { _, new in new }.merging([
             "state": string(LibraryState.allCases.map(\.rawValue))

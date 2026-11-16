@@ -87,6 +87,7 @@ struct RepoSkillDetailPane: View {
     }
 
     var body: some View {
+        @Bindable var session = session
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if isPreviewExpanded {
@@ -181,6 +182,8 @@ struct RepoSkillDetailPane: View {
             message: $translationNoticeToast, icon: "checkmark.circle.fill",
             duration: 5, bottomPadding: 30
         )
+        .toast(message: $session.exportError, icon: "exclamationmark.triangle.fill", iconColor: .orange)
+        .toast(message: $session.exportNotice, icon: "checkmark.circle.fill")
         .onChange(of: translationVM.errorMessage) { _, message in
             translationToast = message
         }
@@ -409,25 +412,28 @@ struct RepoSkillDetailPane: View {
     private var fileList: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(contentSkill.files) { file in
-                Button {
-                    previewedFile = file
-                } label: {
-                    HStack(spacing: 10) {
-                    RepoFileIcon(name: file.name)
-                    Text(verbatim: file.path)
-                        .font(interfaceScale.font(.code))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    Text(verbatim: "\(file.sizeKB) KB")
-                        .font(interfaceScale.font(.caption))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    Button {
+                        previewedFile = file
+                    } label: {
+                        HStack(spacing: 10) {
+                            RepoFileIcon(name: file.name)
+                            Text(verbatim: file.path)
+                                .font(interfaceScale.font(.code))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(verbatim: "\(file.sizeKB) KB")
+                                .font(interfaceScale.font(.caption))
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .help(file.path)
+                    fileDownloadButton(file)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(file.path)
                 .padding(.vertical, 10)
                 Divider()
             }
@@ -436,6 +442,27 @@ struct RepoSkillDetailPane: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 14)
         }
+    }
+
+    /// 下载独立于行选择，点击图标不会同时打开预览或改变安装勾选。
+    private func fileDownloadButton(_ file: RepoSkillFile) -> some View {
+        Button { session.save(file: file, skill: contentSkill) } label: {
+            Group {
+                if session.exportingID == "\(contentSkill.id)|\(file.path)" {
+                    ProgressView(value: session.exportProgress).progressViewStyle(.circular).controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.down.to.line")
+                }
+            }
+            .foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(session.exportingID != nil)
+        .help("repo.files.inspector.download")
+        .accessibilityLabel(Text("repo.files.inspector.download"))
     }
 
     /// 标题整行是折叠触发区，目录只表达完整复制范围，不支持把 Skill 拆散安装。

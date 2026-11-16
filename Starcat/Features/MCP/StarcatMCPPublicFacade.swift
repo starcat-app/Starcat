@@ -280,10 +280,44 @@ final class StarcatMCPPublicFacade {
                     .object([
                         "id": .string(skill.id), "name": .string(skill.name), "summary": .string(skill.summary),
                         "directory": .string(skill.directory), "manifest": .string(skill.manifest),
-                        "file_count": .int(skill.files.count), "size_kb": .int(skill.sizeKB)
+                        "file_count": .int(skill.files.count), "size_kb": .int(skill.sizeKB),
+                        "files": .array(skill.files.map { .object([
+                            "path": .string($0.path), "sha": .string($0.sha),
+                            "size": $0.size.map(Value.int) ?? .null
+                        ]) })
                     ])
                 })
             ]))
+        case "export_repo_skill_file":
+            let repo = try await resolve(arguments, app: app)
+            guard let skill = app.repoSkillStore.scans[repo.id]?.skills.first(where: {
+                $0.id == arguments["skill_id"]?.stringValue
+            }), let file = skill.files.first(where: { $0.path == arguments["path"]?.stringValue }) else {
+                throw StarcatMCPError.notFound("Loaded Skill or file not found; use get_repo_skills first.")
+            }
+            if dryRun {
+                return preview(name, target: .object([
+                    "skill_id": .string(skill.id), "path": .string(file.path), "sha": .string(file.sha)
+                ]))
+            }
+            pruneDiagnosticExports()
+            let exporter = RepoSkillExporter(downloader: app.repoSkillStore.downloader(for: repo))
+            return try tasks.start(kind: name) {
+                let artifact = try await exporter.export(file: file, skill: skill, repo: repo)
+                do {
+                    try Task.checkCancellation()
+                    let bytes = try artifact.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                    let artifactID = UUID().uuidString.lowercased()
+                    self.diagnosticExports[artifactID] = (artifact, Date())
+                    return .object([
+                        "artifact_id": .string(artifactID), "filename": .string(file.name),
+                        "bytes": .int(bytes), "retention_seconds": .int(3600)
+                    ])
+                } catch {
+                    try? FileManager.default.removeItem(at: artifact)
+                    throw error
+                }
+            }
         case "get_repo_library_state", "set_repo_library_state":
             let repo = try await resolve(arguments, app: app)
             let before = try await app.repoNoteRepository.fetchLibraryState(repoId: repo.id)

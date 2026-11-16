@@ -40,6 +40,23 @@ struct StarcatMCPPublicCapabilityTests {
         #expect(throws: StarcatPublicCapabilityError.self) { try StarcatMCPAccess.requireWrite(settings) }
     }
 
+    @Test("仓库 Skill 文件导出使用写权限和默认预览，不接受客户端路径")
+    func skillFileExportContract() throws {
+        let spec = try #require(StarcatMCPPublicCatalog.specs.first { $0.name == "export_repo_skill_file" })
+        #expect(spec.permission == "write")
+        #expect(spec.task)
+        let input: Value = .object([
+            "repo_id": .int(1), "skill_id": .string("1:commit:skills/review/"), "path": .string("SKILL.md")
+        ])
+        try StarcatMCPInputValidator.validate(input, schema: spec.schema)
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPInputValidator.validate(.object([
+                "repo_id": .int(1), "skill_id": .string("id"), "path": .string("SKILL.md"),
+                "destination": .string("/tmp/client")
+            ]), schema: spec.schema)
+        }
+    }
+
     @Test("旧本地写设置只迁移一次，不保留细分权限；旧 Star 单独授权不扩大权限")
     func oldPermissionsMigrateOnce() throws {
         for (oldLocal, oldStar, expected) in [(true, false, true), (false, true, false)] {

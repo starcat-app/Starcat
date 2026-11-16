@@ -53,6 +53,7 @@ final class RepoSkillSession {
     @ObservationIgnored let readingCache = RepoSkillReadingCache()
     private let store: RepoSkillStore
     private let installer: RepoSkillInstaller
+    private let exporter: RepoSkillExporter
     private let accountRevision: UInt64
     @ObservationIgnored private let defaults: UserDefaults
     private(set) var destinations: [RepoSkillDestination]
@@ -61,6 +62,10 @@ final class RepoSkillSession {
     private(set) var checks: [String: DestinationCheck] = [:]
     private(set) var scan: RepoSkillScan?
     private(set) var error: String?
+    private(set) var exportingID: String?
+    private(set) var exportProgress = 0.0
+    var exportError: String?
+    var exportNotice: String?
     private(set) var isLoading = false
     private(set) var isCheckingDestination = false
     private(set) var selectedIDs: Set<String> = []
@@ -83,6 +88,8 @@ final class RepoSkillSession {
     private(set) var listRevision: UInt64 = 0
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var scanTask: Task<Void, Never>?
+    @ObservationIgnored private var exportTask: Task<Void, Never>?
+    @ObservationIgnored private var exportPanel: NSSavePanel?
     @ObservationIgnored private var destinationRevision: UInt64 = 0
     @ObservationIgnored private var scopedURLs: [String: URL] = [:]
     @ObservationIgnored private var isClosed = false
@@ -101,6 +108,7 @@ final class RepoSkillSession {
         self.store = store
         self.accountRevision = store.accountRevision
         self.installer = RepoSkillInstaller(downloader: store.downloader(for: repo))
+        self.exporter = RepoSkillExporter(downloader: store.downloader(for: repo))
         self.defaults = defaults
         self.destinations = destinations ?? []
         self.directoriesPrepared = destinations != nil
@@ -194,6 +202,50 @@ final class RepoSkillSession {
         try Task.checkCancellation()
         guard !isClosed, store.accountRevision == accountRevision, !store.isChangingAccount else { throw CancellationError() }
         return value
+    }
+
+    /// 保存面板只授权当前文件；关窗或切号会取消下载，发布前再次核对会话。
+    func save(file: RepoSkillFile, skill: RepoSkill) {
+        guard exportingID == nil, !isClosed, !store.isChangingAccount,
+              store.accountRevision == accountRevision else { return }
+        let exportID = "\(skill.id)|\(file.path)"
+        exportingID = exportID
+        exportProgress = 0
+        exportError = nil
+        exportNotice = nil
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = file.name
+        panel.canCreateDirectories = true
+        exportPanel = panel
+        exportTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.exportingID = nil; self.exportTask = nil; self.exportPanel = nil }
+            guard !Task.isCancelled, !self.isClosed else { return }
+            let response = await withCheckedContinuation { continuation in
+                panel.begin { continuation.resume(returning: $0) }
+            }
+            guard response == .OK, let destination = panel.url, !Task.isCancelled else { return }
+            let scoped = destination.startAccessingSecurityScopedResource()
+            defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
+            do {
+                let artifact = try await self.exporter.export(file: file, skill: skill, repo: self.repo) { progress in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.exportingID == exportID else { return }
+                        self.exportProgress = progress
+                    }
+                }
+                defer { try? FileManager.default.removeItem(at: artifact) }
+                try Task.checkCancellation()
+                guard !self.isClosed, self.store.accountRevision == self.accountRevision,
+                      !self.store.isChangingAccount else { throw CancellationError() }
+                try await self.exporter.save(artifact, to: destination)
+                self.exportNotice = String(format: String.l10n("repo.files.savedToFormat"), destination.path)
+            } catch {
+                if !Task.isCancelled, !(error is CancellationError) {
+                    self.exportError = String.l10n("repo.files.downloadFailed")
+                }
+            }
+        }
     }
 
     func refreshDestination() async {
@@ -427,6 +479,8 @@ final class RepoSkillSession {
         isClosed = true
         destinationRevision &+= 1
         scanTask?.cancel()
+        exportTask?.cancel()
+        exportPanel?.cancel(nil)
         cancel()
         if !isInstalling { stopAccessingDirectories() }
     }
