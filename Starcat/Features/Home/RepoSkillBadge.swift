@@ -12,6 +12,7 @@ struct RepoSkillBadge: View {
     let repo: Repo
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.colorScheme) private var colorScheme
     @State private var workspaceWindow = WorkspaceSceneWindowReference()
 
     var body: some View {
@@ -34,8 +35,8 @@ struct RepoSkillBadge: View {
                     }
                     .foregroundStyle(.primary)
                     .modifier(RepoMetadataCapsuleStyle(
-                        background: Color.accentColor.opacity(0.12),
-                        border: Color.accentColor.opacity(0.25)
+                        background: Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08),
+                        border: Color.primary.opacity(colorScheme == .dark ? 0.24 : 0.18)
                     ))
                 }
                 .buttonStyle(.plain)
