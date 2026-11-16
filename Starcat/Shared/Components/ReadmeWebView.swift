@@ -139,7 +139,7 @@ struct ReadmeWebView: View {
     /// 文档距离底部不超过两个 viewport 时触发。Coordinator 对每份文档只回调一次。
     var onApproachingBottom: () -> Void = {}
 
-    /// 当前导航完成后回传实际文档身份，供阅读区衔接淡入；HTML 准备好不代表 WebKit 已替换旧 DOM。
+    /// 当前正文 DOM 与布局就绪后回传文档身份，供阅读区淡入；不等待图片、视频等外部资源。
     var onDocumentReady: (String) -> Void = { _ in }
     /// 独立文件阅读器可接管错误并切回源码；默认不改变 README 和 Skills 的行为。
     var onDocumentFailed: (String) -> Void = { _ in }
@@ -338,7 +338,8 @@ struct ReadmeWebView: View {
     }
 }
 
-private struct ReadmeWebContentView: NSViewRepresentable {
+/// 保持 internal，使无窗口回归测试能覆盖生产 Coordinator 的导航与就绪桥接。
+struct ReadmeWebContentView: NSViewRepresentable {
     let htmlFragment: String
     let accountID: Int64?
     let documentID: String?
@@ -579,8 +580,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 
         weak var webView: WKWebView?
         var lastLoadedKey: ReadmeKey?
-        /// 用导航对象识别当前加载，避免快速切换时把旧导航完成事件当成新文档就绪。
+        /// 用导航对象识别当前加载失败；正文就绪另由逐导航的 JS 令牌校验。
         var documentNavigation: WKNavigation?
+        /// 每次导航独立令牌：主题重载也可能沿用 documentID，不能只按业务文档身份验收 JS 消息。
+        private var documentReadyToken: String?
         var lastScrollToTopRequestID = 0
         var onScrollReportChange: (RepoDetailScrollReport) -> Void = { _ in }
         var onTranslationSourceChange: (ReadmeTranslationSourceSnapshot) -> Void = { _ in }
@@ -652,7 +655,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         var expectsInitialLoad: Bool = false
         var diagnosticOperation: DiagnosticOperation?
 
-        /// 构造带 README 阅读增强脚本的 content controller。
+        /// 构造 README 阅读增强桥接；脚本在每次导航准备时携带独立令牌安装。
         ///
         /// 为什么不用 NSScrollView 观察：macOS `WKWebView` 没有公开 `scrollView` 属性，
         /// 并且不同 WebKit 版本的内部 NSView 子树并不稳定。直接从文档里监听 `scroll`
@@ -667,15 +670,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         /// - message handler 对滚动 payload 和段落数组分别做类型、长度校验。
         func makeUserContentController() -> WKUserContentController {
             let controller = WKUserContentController()
-            let script = WKUserScript(
-                source: ReadmeWebView.readmeEnhancementScript,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            )
-            controller.addUserScript(script)
             controller.add(self, name: ReadmeWebViewConstants.scrollMessageName)
             controller.add(self, name: ReadmeWebViewConstants.translationSourceMessageName)
             controller.add(self, name: ReadmeWebViewConstants.mermaidRequestMessageName)
+            controller.add(self, name: ReadmeWebViewConstants.documentReadyMessageName)
             userContentController = controller
             return controller
         }
@@ -691,6 +689,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             userContentController?.removeScriptMessageHandler(
                 forName: ReadmeWebViewConstants.mermaidRequestMessageName
             )
+            userContentController?.removeScriptMessageHandler(
+                forName: ReadmeWebViewConstants.documentReadyMessageName
+            )
+            documentReadyToken = nil
             starHistoryDOMTask?.cancel()
             starHistoryDOMTask = nil
             mermaidRuntimeTask?.cancel()
@@ -710,7 +712,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             }
         }
 
-        /// 内容或主题重载后，旧 DOM 已消失；导航完成时必须把当前翻译状态重新注入。
+        /// 内容或主题重载后，旧 DOM 已消失；正文就绪时必须把当前翻译状态重新注入。
         /// 同时取消旧文档尚未完成的 Mermaid 任务，避免切换仓库后把图表写进新 DOM。
         func prepareForDocumentReload() {
             diagnosticOperation?.finish(.cancelled)
@@ -723,6 +725,30 @@ private struct ReadmeWebContentView: NSViewRepresentable {
             mermaidDocumentRevision &+= 1
             mermaidRuntimeTask?.cancel()
             mermaidRuntimeTask = nil
+
+            let readyToken = UUID().uuidString
+            documentReadyToken = readyToken
+            // controller 仅承载本阅读器的脚本；逐导航替换，旧 DOM 排队中的消息仍携带旧令牌。
+            userContentController?.removeAllUserScripts()
+            userContentController?.addUserScript(WKUserScript(
+                source: ReadmeWebView.readmeEnhancementScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            ))
+            userContentController?.addUserScript(WKUserScript(
+                source: """
+                (() => {
+                    const article = document.querySelector('body > article');
+                    if (!article) return;
+                    // document-end 已解析正文与本地 CSS；读取布局后即可交接，不等整页 load。
+                    article.getBoundingClientRect();
+                    window.webkit.messageHandlers.\(ReadmeWebViewConstants.documentReadyMessageName)
+                        .postMessage('\(readyToken)');
+                })();
+                """,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            ))
         }
 
         /// 保存最新 SwiftUI 状态，并在当前文档已可用时做无重载 DOM 更新。
@@ -814,7 +840,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                     else { return }
                     self.lastAppliedStarHistoryRevision = revision
                 } catch {
-                    // updateNSView 可能早于 document-end script；didFinish 会再次应用。
+                    // updateNSView 可能早于 document-end script；正文就绪后会再次应用。
                     AppLog.ui.debug("README Star History DOM update deferred: \(error.localizedDescription, privacy: .public)")
                 }
             }
@@ -1702,6 +1728,25 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         """
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == ReadmeWebViewConstants.documentReadyMessageName {
+                guard message.frameInfo.isMainFrame,
+                      let token = message.body as? String,
+                      token == documentReadyToken,
+                      let documentID = lastLoadedKey?.documentID else { return }
+                // 避开 WebKit 回调栈触发 SwiftUI 更新；执行前再次验令牌，防止排队期间已经切仓。
+                Task { @MainActor [weak self] in
+                    guard let self, self.documentReadyToken == token else { return }
+                    self.documentReadyToken = nil
+                    self.diagnosticOperation?.event(phase: "bodyReady")
+                    self.lastAppliedTranslationRevision = nil
+                    self.applyTranslationRenderStateIfNeeded()
+                    self.lastAppliedStarHistoryRevision = nil
+                    self.applyStarHistoryRenderStateIfNeeded()
+                    self.onDocumentReady(documentID)
+                }
+                return
+            }
+
             if message.name == ReadmeWebViewConstants.mermaidRequestMessageName {
                 guard let payload = message.body as? [String: Any],
                       let count = payload["count"] as? NSNumber
@@ -1795,14 +1840,10 @@ private struct ReadmeWebContentView: NSViewRepresentable {
                 diagnostic?.finish(elements > 0 ? .succeeded : .partial)
             }
             PerformanceTracer.shared.mark(.readmeWebViewNavigationFinished)
-            // `updateNSView` 可能先于 document-end script 完成；导航结束后再补一次当前状态。
-            lastAppliedTranslationRevision = nil
+            // 正文就绪时已应用增强状态；这里只补尚未成功的 revision，避免慢媒体结束后重播入场。
             applyTranslationRenderStateIfNeeded()
-            lastAppliedStarHistoryRevision = nil
             applyStarHistoryRenderStateIfNeeded()
-            if navigation === documentNavigation, let documentID = lastLoadedKey?.documentID {
-                onDocumentReady(documentID)
-            }
+            // 整页完成可能等待慢媒体，仅作诊断和增强状态补应用；正文已由 document-end 独立交接。
         }
 
         func webView(
@@ -1908,6 +1949,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
         private func reportDocumentFailure(_ navigation: WKNavigation?, error: Error) {
             guard (error as NSError).code != NSURLErrorCancelled,
                   navigation === documentNavigation, let documentID = lastLoadedKey?.documentID else { return }
+            documentReadyToken = nil
             onDocumentFailed(documentID)
         }
 
@@ -1921,6 +1963,7 @@ private struct ReadmeWebContentView: NSViewRepresentable {
 }
 
 private enum ReadmeWebViewConstants {
+    static let documentReadyMessageName = "readmeDocumentReady"
     static let scrollMessageName = "readmeScroll"
     static let translationSourceMessageName = "readmeTranslationSource"
     static let mermaidRequestMessageName = "readmeMermaidRequest"

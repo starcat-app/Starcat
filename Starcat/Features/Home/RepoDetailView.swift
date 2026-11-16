@@ -604,7 +604,7 @@ struct ReadmeStateView: View {
     }
 
     /// 请求已在 VM 中立即开始；这里仅等旧页退场再更新 DOM，保持同一个 WKWebView。
-    /// HTML 到达后继续等当前 documentID 的导航完成，快速切换取消的任务不得发布旧快照。
+    /// HTML 到达后仅等当前 documentID 的正文 DOM 与布局就绪，不等媒体；取消的任务不得发布旧快照。
     private func handOffReadmeDocument() async {
         if retainedReadmeDocument != nil {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
