@@ -12,10 +12,14 @@
 - [x] BROWSER-04 discover / 配对 / revoke-current 与设备 SSE 终止已实现并有 App 单测
 - [x] BROWSER-05 App 核对 / 名称 / 访问时间 / rename / revoke 已实现；19 key × 17 语言，译文 needs_review
 - [x] BROWSER-06 双端稳定配对页与有限发现已实现；真实 Profile / 后台生命周期仍待验收
-- [x] BROWSER-07 手工 Key、高级地址、旧 5001 和离线仅本地清除已保留，VM 有控制流证据
+- [x] BROWSER-07 手工 Key、高级地址和离线仅本地清除已保留，VM 有控制流证据；按 2026-11-15 要求统一默认端口为 5051
 - [ ] BROWSER-08 验证 Native Messaging / Safari 原生宿主与两渠道矩阵，按可行结果接入 CLI
-- [x] BROWSER-09 App 配对单测及 26 项双端 VM 覆盖终态、来源、隔离、保存失败及多实例明确选择；脚本为 `scripts/test-browser-pairing.mjs`，不冒充真实 Profile
+- [x] BROWSER-09 App 配对单测及 28 项双端 VM 覆盖终态、来源、隔离、保存失败、多实例明确选择及唯一默认端口；脚本为 `scripts/test-browser-pairing.mjs`，不冒充真实 Profile
 - [x] BROWSER-10 双端全部 JS / manifest、App 定向单测与双渠道构建通过，真实浏览器 / Profile / 签名验收门禁已单列
+- [x] BROWSER-11 双端发现总预算 5 秒；Chrome 原生发现超时后只读回退，业务请求 5 秒且不重放
+- [x] BROWSER-12 按 App 到期时间显示 120 秒倒计时；独立到期、终态清理与迟到响应隔离
+- [x] BROWSER-13 区分发现超时、拒绝、过期、连接超时、保存失败；保留重试与手工 Key 并修正获取路径
+- [x] BROWSER-14 VM 回归覆盖发现 / 原生请求挂起、倒计时 / 迟到终态、失败文案与 Key 保存；96 项 VM、双端静态检查通过，真实浏览器待验收
 
 ## 验证记录
 
