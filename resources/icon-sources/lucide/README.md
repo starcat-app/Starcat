@@ -15,9 +15,10 @@ Fork 身份与次数另用 dong4j 确认的定制素材，来源与绘制约束�
 - `BusinessLicense`：`icons/scale.svg`
 - `BusinessEmbedding`：`icons/axis-3d.svg`
 - `BusinessRecommendations`：`icons/scan-search.svg`
-- 七项均不在固定提交的 Feather 衍生图标列表内，适用 ISC；随 App 保留完整声明于 `Starcat/Resources/Licenses/Lucide.txt`，并在 About 开源致谢登记。
+- `BusinessInsightsOverview`：`icons/chart-no-axes-column.svg`
+- 上述清单均不在固定提交的 Feather 衍生图标列表内，适用 ISC；随 App 保留完整声明于 `Starcat/Resources/Licenses/Lucide.txt`，并在 About 开源致谢登记。
 
-SVG 保留上游路径、24×24 设计网格与 2px 圆角描边，仅压缩根元素排版。Asset Catalog 将其作为单色矢量模板编译，不把 24px 设计网格当作显示尺寸。
+SVG 保留上游路径、24×24 设计网格与圆角描边，默认线宽 2px；`BusinessInsightsOverview` 的三条独立直线视觉偏轻，单独加粗至 3px，与相邻主导航图标做光学匹配。Asset Catalog 将其作为单色矢量模板编译，不把 24px 设计网格当作显示尺寸。
 
 ## 业务语义对照
 

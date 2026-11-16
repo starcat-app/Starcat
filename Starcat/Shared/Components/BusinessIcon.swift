@@ -82,6 +82,8 @@ struct BusinessIcon: View {
         case announcement = "BusinessAnnouncement"
         case following = "BusinessFollowing"
         case undoStar = "BusinessUndoStar"
+        // 主导航「洞察」使用无坐标轴柱状图：高度接近前三项，且比 dashboard 四格更轻。
+        case insightsOverview = "BusinessInsightsOverview"
         case dashboard = "BusinessDashboard"
         case organization = "BusinessOrganization"
         // 排序菜单、文件类型、Release 资产与通知筛选补充条目（批次 3）。

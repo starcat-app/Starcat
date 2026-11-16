@@ -83,6 +83,7 @@ struct BusinessIconTests {
     @Test("主侧栏、Agent 来源和 RAG 设置共享业务语义")
     func navigationMappingsStayConsistent() {
         #expect(ExploreMode.awesome.businessIcon == .curatedCollection)
+        #expect(SidebarRootPage.insights.iconSource == .business(.insightsOverview))
         #expect(AgentRepositorySource.discovery.iconSource == .business(ExploreMode.discover.businessIcon))
         #expect(AgentRepositorySource.trending.iconSource == .business(ExploreMode.trending.businessIcon))
         #expect(AgentRepositorySource.weekly.iconSource == .business(ExploreMode.weekly.businessIcon))
