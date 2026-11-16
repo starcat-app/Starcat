@@ -26,6 +26,24 @@ struct SkillLibraryEnvironmentTests {
         }
     }
 
+    @Test("公共扫描等待完整对账再返回，临时会话结束后停止监听")
+    func publicRefreshWaitsForReconciliation() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let scanner = PendingScanner()
+        let model = SkillWorkspaceViewModel()
+        let environment = try fixture.environment(model, scanner: scanner)
+        let task = Task { try await environment.refreshAndWait() }
+        try await eventually { await scanner.count == 1 }
+        await scanner.finish(0, name: "public-skill")
+        try await task.value
+        let snapshot = try await fixture.store.snapshot()
+        #expect(snapshot.entries.contains { $0.manifestName == "public-skill" })
+        let scanCount = await scanner.count
+        environment.refresh()
+        #expect(await scanner.count == scanCount)
+    }
+
     @Test("扫描中重复刷新合并为一次补扫，停止后不再监听")
     func coalescesRefreshes() async throws {
         let fixture = try Fixture()

@@ -25,6 +25,9 @@ protocol ReleaseRepositoryProtocol: Sendable {
 
     // MARK: - 查询
 
+    /// 按缓存 ID 定位单条 Release，用于公共写入预检与回读，缺失不能冒称已修改。
+    func find(id: Int64) async throws -> ReleaseRecord?
+
     /// 取某 repo 缓存到的最新一条 Release（按 published_at desc 取首条）。
     func latest(forRepo repoId: Int64) async throws -> ReleaseRecord?
 

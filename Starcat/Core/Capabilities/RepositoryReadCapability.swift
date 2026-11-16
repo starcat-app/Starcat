@@ -260,10 +260,18 @@ struct DatabaseRepositoryReadCapabilitySource: RepositoryReadCapabilitySource {
     }
 
     func findByID(_ repoID: Int64) async throws -> Repo? {
-        try await repository.findById(repoID)
+        try await scoped(try await repository.findById(repoID))
     }
 
     func findByOwnerName(owner: String, name: String) async throws -> Repo? {
-        try await repository.findByOwnerName(owner: owner, name: name)
+        try await scoped(try await repository.findByOwnerName(owner: owner, name: name))
+    }
+
+    /// 直接查找也要遵守冻结范围；all 保留既有的单仓缓存定位语义。
+    /// 否则 knowledge 分片等调用虽创建了限定 Source，仍能读取已移出知识库的缓存。
+    private func scoped(_ repo: Repo?) async throws -> Repo? {
+        guard let repo else { return nil }
+        guard scope != .all else { return repo }
+        return try await list().contains(where: { $0.id == repo.id }) ? repo : nil
     }
 }

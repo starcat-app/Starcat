@@ -214,7 +214,7 @@ final class CodebaseMemoryViewModel {
 
     // MARK: - 生成管线
 
-    private func generate(removingExisting: Bool, maximumArchiveBytes: Int) {
+    private func generate(removingExisting: Bool, maximumArchiveBytes: Int, opensUI: Bool = true) {
         guard !selectedBranchName.isEmpty else {
             state = .failed(message: String.l10n("codeFlow.error.branchMissing"))
             return
@@ -285,6 +285,11 @@ final class CodebaseMemoryViewModel {
                             : nil
                     }
                     if let verifiedName {
+                        if !opensUI {
+                            storedProject = existing
+                            state = .succeeded
+                            return
+                        }
                         // 全部跳过 → 直接 openBrowser
                         steps.forEach { step in
                             if step.id != .resolveBinary, step.id != .resolveRevision {
@@ -404,30 +409,29 @@ final class CodebaseMemoryViewModel {
                 try Task.checkCancellation()
 
                 // Step 6: 启动 UI
-                state = .startingUI
-                setStep(id: .startUI, status: .running)
-                let launched: CodebaseMemoryUIProcess
-                if usesSharedDaemon {
-                    launched = try await runner.startVerifiedUI(
-                        binaryURL: binaryURL,
-                        projectName: projectName,
-                        workingDirectoryURL: source.sourceURL,
-                        repositoryFullName: repo.fullName
-                    )
+                var launched: CodebaseMemoryUIProcess?
+                if opensUI {
+                    state = .startingUI
+                    setStep(id: .startUI, status: .running)
+                    if usesSharedDaemon {
+                        launched = try await runner.startVerifiedUI(
+                            binaryURL: binaryURL, projectName: projectName,
+                            workingDirectoryURL: source.sourceURL, repositoryFullName: repo.fullName
+                        )
+                    } else {
+                        let port = pickPort()
+                        setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
+                        launched = try await runner.startBundledVerifiedUI(
+                            binaryURL: binaryURL, port: port, cacheDir: cacheDir, repositoryFullName: repo.fullName
+                        )
+                    }
+                    uiProcess = launched?.process
+                    setStep(id: .startUI, status: .succeeded)
                 } else {
-                    let port = pickPort()
-                    setStep(id: .startUI, status: .running, detail: "localhost:\(port)")
-                    launched = try await runner.startBundledVerifiedUI(
-                        binaryURL: binaryURL,
-                        port: port,
-                        cacheDir: cacheDir,
-                        repositoryFullName: repo.fullName
-                    )
+                    // CLI 索引无需启动本机 Web UI；索引业务与 metadata 写入完全保留。
+                    setStep(id: .startUI, status: .skipped)
+                    setStep(id: .openBrowser, status: .skipped)
                 }
-                let port = launched.pageURL.port ?? 9749
-                uiProcess = launched.process
-                AppLog.ui.info("CodebaseMemory UI launched repo=\(self.repo.fullName, privacy: .public) pid=\(launched.process.processIdentifier, privacy: .public) port=\(port, privacy: .public) url=\(launched.pageURL.absoluteString, privacy: .public)")
-                setStep(id: .startUI, status: .succeeded)
 
                 // Step 7: 保存 metadata
                 let metadata = CodebaseMemoryMetadata(
@@ -453,7 +457,7 @@ final class CodebaseMemoryViewModel {
                     ),
                     binaryVersion: "0.0.0",  // 后续从 STARCAT-INTEGRATION.md 读取
                     binarySHA256: "",
-                    lastUIPort: port
+                    lastUIPort: launched.map { $0.pageURL.port ?? 9749 }
                 )
                 _ = try storage.write(metadata: metadata, owner: repo.owner, name: repo.name)
 
@@ -461,7 +465,8 @@ final class CodebaseMemoryViewModel {
                 storedProject = try? storage.existingProject(owner: repo.owner, name: repo.name)
 
                 // Step 8: 打开浏览器
-                await openBrowser(port: port, url: launched.pageURL)
+                if let launched { await openBrowser(port: launched.pageURL.port ?? 9749, url: launched.pageURL) }
+                else { state = .succeeded }
             } catch is CancellationError {
                 restoreCachedState()
             } catch let error as CodebaseMemoryError {
@@ -478,6 +483,17 @@ final class CodebaseMemoryViewModel {
     }
 
     // MARK: - Private helpers
+
+    /// 等待完整索引和 metadata 持久化；任务取消传递到原索引子进程，不伪造分析结果。
+    func indexAndWait(maximumArchiveBytes: Int) async throws -> CodebaseMemoryStoredProject {
+        generate(removingExisting: false, maximumArchiveBytes: maximumArchiveBytes, opensUI: false)
+        let currentTask = task
+        await withTaskCancellationHandler { await currentTask?.value } onCancel: { currentTask?.cancel() }
+        try Task.checkCancellation()
+        if case .failed(let message) = state { throw StarcatPublicCapabilityError(code: "CODE_INDEX_FAILED", message: message) }
+        guard let storedProject else { throw StarcatPublicCapabilityError(code: "CODE_INDEX_FAILED", message: "Index metadata is unavailable.") }
+        return storedProject
+    }
 
     private func openBrowser(port: Int, url: URL) async {
         AppLog.ui.info("CodebaseMemory openBrowser begin repo=\(self.repo.fullName, privacy: .public) port=\(port, privacy: .public) url=\(url.absoluteString, privacy: .public)")

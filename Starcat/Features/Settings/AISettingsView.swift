@@ -1802,15 +1802,7 @@ struct AISettingsTab: View {
     }
 
     private func persistAPIKey(_ rawKey: String, forProvider profileID: String, allowsEmpty: Bool) throws {
-        let trimmed = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty && !allowsEmpty {
-            throw AIClientError.missingAPIKey
-        }
-        if trimmed.isEmpty {
-            try KeychainManager.shared.deleteAIKey(forProvider: profileID)
-        } else {
-            try KeychainManager.shared.storeAIKey(trimmed, forProvider: profileID)
-        }
+        try KeychainManager.shared.persistAIProviderKey(rawKey, providerID: profileID, allowsEmpty: allowsEmpty)
     }
 
     private func apiKey(for profile: AIProviderProfile) -> String {

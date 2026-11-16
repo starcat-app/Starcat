@@ -557,6 +557,14 @@ final class RepositoryInsightsViewModel {
         _ = await loadLocalSections(repoId: repoId)
     }
 
+    /// 公共刷新只准备本地状态，再运行一次完整刷新；避免先自动加载远端又立即强刷同一批请求。
+    func refreshOperation(repo: Repo, isAuthenticated: Bool) async -> Bool {
+        activeRepoIsPrivateFlag = repo.isPrivate
+        _ = await loadLocalSections(repoId: repo.id)
+        guard !Task.isCancelled else { return false }
+        return await refreshAll(repo: repo, isAuthenticated: isAuthenticated)
+    }
+
     /// 返回本次本地加载的 generation，让生产入口在跨入远端阶段前再次确认所有权。
     ///
     /// SwiftUI task cancellation 只是协作式信号：数据库或测试 Provider 可能忽略取消并迟到

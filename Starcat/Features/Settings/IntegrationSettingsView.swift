@@ -92,6 +92,7 @@ struct IntegrationSettingsTab: View {
                 if page == .browserExtensions {
                     browserPluginSection
                         .id(Self.browserPluginAnchor)
+                    CompanionDeviceManagementSection(store: .shared)
                     localAPIKeySection
                         .id(Self.localAPIKeyAnchor)
                     browserInstallationSection

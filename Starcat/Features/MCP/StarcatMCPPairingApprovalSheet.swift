@@ -66,15 +66,18 @@ struct StarcatMCPPairingApprovalSheet: View {
 
 private struct StarcatMCPPairingApprovalPresenter: ViewModifier {
     let store: StarcatMCPDeviceStore
+    let browserStore = CompanionDeviceStore.shared
 
     func body(content: Content) -> some View {
         @Bindable var store = store
         content.sheet(
             isPresented: Binding(
-                get: { store.pendingApproval != nil },
+                get: { store.pendingApproval != nil || browserStore.pendingApproval != nil },
                 set: { isPresented in
                     if !isPresented, store.pendingApproval != nil {
                         store.rejectPendingPairing()
+                    } else if !isPresented, let approval = browserStore.pendingApproval {
+                        browserStore.reject(requestID: approval.id)
                     }
                 }
             )
@@ -87,6 +90,10 @@ private struct StarcatMCPPairingApprovalPresenter: ViewModifier {
                 )
                 .interactiveDismissDisabled()
                 .appLocaleEnvironment()
+            } else if let approval = browserStore.pendingApproval {
+                CompanionPairingApprovalSheet(approval: approval, store: browserStore)
+                    .interactiveDismissDisabled()
+                    .appLocaleEnvironment()
             }
         }
     }

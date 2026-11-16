@@ -1590,44 +1590,10 @@ final class AppSettings {
         didSet { persistBool(key: Keys.mcpAllowRemoteConnections, value: mcpAllowRemoteConnections) }
     }
 
-    /// 是否允许 MCP 读取用户私有笔记。
-    ///
-    /// 默认 false：repo 元数据和 README 是低敏只读上下文，私有笔记属于用户主动写入的
-    /// 私人数据，必须显式开启才暴露给 agent。
-    var mcpExposePrivateNotes: Bool {
-        didSet { persistBool(key: Keys.mcpExposePrivateNotes, value: mcpExposePrivateNotes) }
-    }
-
-    /// 是否允许 MCP 工具写入本地用户数据（notes / status / tags）。
-    ///
-    /// 读取与写入分开授权：用户可能愿意让 agent 整理标签和写新笔记，但不希望它读取
-    /// 已有私有笔记内容。具体工具仍会在 facade 层做二次校验和审计。
-    var mcpAllowLocalWrites: Bool {
-        didSet { persistBool(key: Keys.mcpAllowLocalWrites, value: mcpAllowLocalWrites) }
-    }
-
-    /// 是否允许 MCP 修改用户 GitHub 账号中的 Star 状态。
-    ///
-    /// 远端 Star/Unstar 会调用 GitHub API，影响范围不同于本地 notes/tags 写入，
-    /// 因此必须使用独立且默认关闭的授权，不能随本地写入开关一并放行。
-    var mcpAllowGitHubStarWrites: Bool {
-        didSet { persistBool(key: Keys.mcpAllowGitHubStarWrites, value: mcpAllowGitHubStarWrites) }
-    }
-
-    /// 是否允许 MCP 批量写入。
-    ///
-    /// `batch_organize_repos` 还要求本地写入同时开启，并在 Facade 层限制单次最多
-    /// 100 个仓库；避免 Agent 因一次过大的请求长时间占用本地写队列。
-    var mcpAllowBatchWrites: Bool {
-        didSet { persistBool(key: Keys.mcpAllowBatchWrites, value: mcpAllowBatchWrites) }
-    }
-
-    /// 是否允许 MCP 执行替换式写入（例如 set_repo_tags）。
-    ///
-    /// 替换式操作会删除未出现在新集合里的旧关联，比 add/remove 更容易被 agent 误用，
-    /// 因此单独开关且默认关闭。
-    var mcpAllowDestructiveWrites: Bool {
-        didSet { persistBool(key: Keys.mcpAllowDestructiveWrites, value: mcpAllowDestructiveWrites) }
+    /// CLI 与 MCP 共用的唯一写权限；本地修改、远端修改、生成与刷新均由 App 检查。
+    /// 读取默认开放（包括笔记）；配对和产品权益不通过此开关改变。
+    var mcpAllowWrites: Bool {
+        didSet { persistBool(key: Keys.mcpAllowWrites, value: mcpAllowWrites) }
     }
 
     /// Pro 权益状态镜像（HOM-151 起源于 StoreKit，后续扩展到 Direct License）。
@@ -2367,11 +2333,17 @@ final class AppSettings {
         let storedMCPPort = defaults.object(forKey: Keys.mcpServicePort) as? Int ?? Self.defaultMCPServicePort
         self.mcpServicePort = (1024...65535).contains(storedMCPPort) ? storedMCPPort : Self.defaultMCPServicePort
         self.mcpAllowRemoteConnections = defaults.object(forKey: Keys.mcpAllowRemoteConnections) as? Bool ?? false
-        self.mcpExposePrivateNotes = defaults.object(forKey: Keys.mcpExposePrivateNotes) as? Bool ?? false
-        self.mcpAllowLocalWrites = defaults.object(forKey: Keys.mcpAllowLocalWrites) as? Bool ?? false
-        self.mcpAllowGitHubStarWrites = defaults.object(forKey: Keys.mcpAllowGitHubStarWrites) as? Bool ?? false
-        self.mcpAllowBatchWrites = defaults.object(forKey: Keys.mcpAllowBatchWrites) as? Bool ?? false
-        self.mcpAllowDestructiveWrites = defaults.object(forKey: Keys.mcpAllowDestructiveWrites) as? Bool ?? false
+        let migratedMCPWrites = defaults.object(forKey: Keys.mcpAllowWrites) as? Bool
+            ?? (defaults.object(forKey: "settings.mcp.allowLocalWrites.v1") as? Bool ?? false)
+        self.mcpAllowWrites = migratedMCPWrites
+        defaults.set(migratedMCPWrites, forKey: Keys.mcpAllowWrites)
+        for retiredKey in [
+            "settings.mcp.exposePrivateNotes.v1", "settings.mcp.allowLocalWrites.v1",
+            "settings.mcp.allowGitHubStarWrites.v1", "settings.mcp.allowBatchWrites.v1",
+            "settings.mcp.allowDestructiveWrites.v1"
+        ] {
+            defaults.removeObject(forKey: retiredKey)
+        }
 
         // HOM-126：自动整理偏好。缺失时回落到 `AutoTidySettings.default`（总开关关 +
         // 启动/同步触发 + 50 个 + 最近 star + 仅标签 + 90% 阈值），与任务描述一致。
@@ -2580,11 +2552,7 @@ final class AppSettings {
         mcpServiceEnabled = false
         mcpServicePort = Self.defaultMCPServicePort
         mcpAllowRemoteConnections = false
-        mcpExposePrivateNotes = false
-        mcpAllowLocalWrites = false
-        mcpAllowGitHubStarWrites = false
-        mcpAllowBatchWrites = false
-        mcpAllowDestructiveWrites = false
+        mcpAllowWrites = false
         isProUser = false
         autoTidySettings = .default
         githubStarListAutoGroupingSettings = .default
@@ -3220,11 +3188,7 @@ final class AppSettings {
         static let mcpServiceEnabled = "settings.mcp.enabled.v1"
         static let mcpServicePort = "settings.mcp.port.v1"
         static let mcpAllowRemoteConnections = "settings.mcp.allowRemoteConnections.v1"
-        static let mcpExposePrivateNotes = "settings.mcp.exposePrivateNotes.v1"
-        static let mcpAllowLocalWrites = "settings.mcp.allowLocalWrites.v1"
-        static let mcpAllowGitHubStarWrites = "settings.mcp.allowGitHubStarWrites.v1"
-        static let mcpAllowBatchWrites = "settings.mcp.allowBatchWrites.v1"
-        static let mcpAllowDestructiveWrites = "settings.mcp.allowDestructiveWrites.v1"
+        static let mcpAllowWrites = "settings.mcp.allowWrites.v2"
         static let autoTidySettings = "settings.ai.autoTidy.v1"  // HOM-126
         static let githubStarListAutoGroupingSettings = "settings.ai.githubStarListAutoGrouping.v1"
         static let customServiceURLs = "settings.services.customURLs.v1"  // 2026-06-08
@@ -3331,11 +3295,7 @@ final class AppSettings {
             mcpServiceEnabled,
             mcpServicePort,
             mcpAllowRemoteConnections,
-            mcpExposePrivateNotes,
-            mcpAllowLocalWrites,
-            mcpAllowGitHubStarWrites,
-            mcpAllowBatchWrites,
-            mcpAllowDestructiveWrites,
+            mcpAllowWrites,
             autoTidySettings,
             githubStarListAutoGroupingSettings,
             customServiceURLs,

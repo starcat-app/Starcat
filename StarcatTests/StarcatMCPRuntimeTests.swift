@@ -38,7 +38,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 2, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 24)
+        #expect(tools.count == 25)
         #expect(tools.contains { $0["name"] as? String == "starcat.get_capabilities" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_overview_statistics" })
         #expect(tools.contains { $0["name"] as? String == "starcat.get_ai_usage_statistics" })
@@ -53,8 +53,7 @@ struct StarcatMCPRuntimeTests {
         #expect(tools.contains { $0["name"] as? String == "starcat.unstar_repo" })
         #expect(tools.contains { $0["name"] as? String == "starcat.list_repos_by_tag" })
         #expect(tools.contains { $0["name"] as? String == "starcat.batch_organize_repos" })
-        // knowledge.search 当前只完成内部共享 capability；不能在没有独立 MCP 契约评审时
-        // 偷偷扩张已发布的公共 tool catalog。
+        // 轻量 Runtime fixture 不装配 AppDependencies；扩展目录在完整 App 中单独装配。
         #expect(tools.contains { $0["name"] as? String == "starcat.search_knowledge" } == false)
         let searchTool = try #require(tools.first { $0["name"] as? String == "starcat.search_repos" })
         let inputSchema = try #require(searchTool["inputSchema"] as? [String: Any])
@@ -139,11 +138,11 @@ struct StarcatMCPRuntimeTests {
         let capabilityServerVersion = try #require(capabilities["server_version"] as? String)
         #expect(capabilityServerVersion == StarcatMCPServerMetadata.version)
         #expect(capabilityServerVersion == initializedServerVersion)
-        #expect(capabilities["private_notes_read"] as? Bool == true)
+        #expect(capabilities["read"] as? Bool == true)
         #expect(capabilities["statistics_read"] as? Bool == true)
-        #expect(capabilities["local_writes"] as? Bool == true)
-        #expect(capabilities["batch_writes"] as? Bool == true)
-        #expect(capabilities["github_star_writes"] as? Bool == true)
+        #expect(capabilities["write"] as? Bool == true)
+        #expect(capabilities["local_writes"] == nil)
+        #expect(capabilities["private_notes_read"] == nil)
         #expect(capabilities["loopback_only"] as? Bool == true)
 
         let starDryRunCall = await runtime.handle(Self.request(
@@ -291,7 +290,7 @@ struct StarcatMCPRuntimeTests {
         let structuredError = try #require(invalidGlobalSearchResult["structuredContent"] as? [String: Any])
         #expect(structuredError["schema_version"] as? Int == 1)
         #expect(structuredError["code"] as? String == "INVALID_ARGUMENTS")
-        #expect(structuredError["message"] as? String == "limit must be between 1 and 50")
+        #expect(structuredError["message"] as? String == "arguments.limit: above maximum")
 
         let unsupportedToolCall = await runtime.handle(Self.request(
             id: 27,
@@ -341,7 +340,7 @@ struct StarcatMCPRuntimeTests {
         let list = await runtime.handle(Self.request(id: 3, method: "tools/list"))
         let listJSON = try Self.jsonObject(from: list)
         let tools = try #require((listJSON["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        #expect(tools.count == 24)
+        #expect(tools.count == 25)
     }
 
     @Test("临时 Runtime 只暴露 Agent allowlist 并拒绝越权调用")
@@ -511,9 +510,31 @@ struct StarcatMCPRuntimeTests {
         #expect((structured["summary"] as? String)?.contains("not allowed") == true)
     }
 
-    @Test("关闭私有笔记读取后知识库统计不返回笔记数量")
+    @Test("资源 URI 的 starred 和 knowledge 范围必须与真实归属一致")
+    func resourcesRespectRepositoryScope() async throws {
+        let runtime = try await Self.makeRuntime()
+        defer { Task { @MainActor in await runtime.shutdown() } }
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+        let allowed = await runtime.handle(Self.request(
+            id: 2, method: "resources/read",
+            params: ["uri": "starcat://repos/knowledge/openai/codex"]
+        ))
+        #expect(try Self.jsonObject(from: allowed)["result"] != nil)
+        for (index, uri) in [
+            "starcat://repos/starred/openai/codex",
+            "starcat://repos/knowledge/apple/swift",
+            "starcat://repos/all/apple/swift/unknown"
+        ].enumerated() {
+            let denied = await runtime.handle(Self.request(
+                id: index + 3, method: "resources/read", params: ["uri": uri]
+            ))
+            #expect(try Self.jsonObject(from: denied)["error"] != nil)
+        }
+    }
+
+    @Test("笔记统计属于默认读取，不需要独立权限")
     func knowledgeStatisticsRespectPrivateNotesCapability() async throws {
-        let runtime = try await Self.makeRuntime(exposePrivateNotes: false)
+        let runtime = try await Self.makeRuntime()
         defer { Task { @MainActor in await runtime.shutdown() } }
 
         _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
@@ -526,10 +547,10 @@ struct StarcatMCPRuntimeTests {
         let result = try #require(json["result"] as? [String: Any])
         let statistics = try #require(result["structuredContent"] as? [String: Any])
 
-        #expect(statistics["private_notes_exposed"] as? Bool == false)
-        #expect(statistics["private_note_project_count"] == nil)
-        #expect(statistics["ai_generated_note_project_count"] == nil)
-        #expect(statistics["private_notes_edited_in_last_30_days_project_count"] == nil)
+        #expect(statistics["private_notes_exposed"] as? Bool == true)
+        #expect(statistics["private_note_project_count"] != nil)
+        #expect(statistics["ai_generated_note_project_count"] != nil)
+        #expect(statistics["private_notes_edited_in_last_30_days_project_count"] != nil)
     }
 
     @Test("可信网络 hostname 可访问，未授权 Host 仍返回 421")
@@ -565,12 +586,65 @@ struct StarcatMCPRuntimeTests {
         #expect(body.contains("Host header not allowed"))
     }
 
+    @Test("写关闭后笔记与资源仍可读，生成及所有原有写工具统一拒绝")
+    func readDefaultWriteDisabled() async throws {
+        let runtime = try await Self.makeRuntime(allowWrites: false)
+        defer { Task { @MainActor in await runtime.shutdown() } }
+        _ = await runtime.handle(Self.request(id: 1, method: "initialize", params: Self.initializeParams()))
+        for (index, name) in ["starcat.get_repo_note", "starcat.get_repo_context", "starcat.get_capabilities"].enumerated() {
+            let response = await runtime.handle(Self.request(id: index + 2, method: "tools/call", params: [
+                "name": name, "arguments": name == "starcat.get_capabilities" ? [:] : ["repo_id": 1]
+            ]))
+            let result = try #require(Self.jsonObject(from: response)["result"] as? [String: Any])
+            #expect(result["isError"] as? Bool != true)
+        }
+        let writes: [(String, [String: Any])] = [
+            ("generate_repo_summary", ["repo_id": 1]),
+            ("star_repo", ["owner": "apple", "name": "swift"]),
+            ("unstar_repo", ["repo_id": 1]),
+            ("upsert_repo_note", ["repo_id": 1, "content": "blocked"]),
+            ("set_repo_status", ["repo_id": 1, "status": "to_read"]),
+            ("create_tag", ["name": "blocked"]),
+            ("add_repo_tags", ["repo_id": 1, "tags": ["blocked"]]),
+            ("remove_repo_tags", ["repo_id": 1, "tags": ["blocked"]]),
+            ("set_repo_tags", ["repo_id": 1, "tags": ["blocked"]]),
+            ("batch_organize_repos", ["items": [["repo_id": 1, "note": "blocked"]]])
+        ]
+        for (index, entry) in writes.enumerated() {
+            let response = await runtime.handle(Self.request(id: index + 10, method: "tools/call", params: [
+                "name": "starcat.\(entry.0)", "arguments": entry.1
+            ]))
+            let result = try #require(Self.jsonObject(from: response)["result"] as? [String: Any])
+            #expect(result["isError"] as? Bool == true)
+            let structured = try #require(result["structuredContent"] as? [String: Any])
+            #expect(structured["code"] as? String == "WRITE_DISABLED")
+        }
+        let listed = await runtime.handle(Self.request(id: 30, method: "tools/list", params: [:]))
+        let listing = try #require(Self.jsonObject(from: listed)["result"] as? [String: Any])
+        let tools = try #require(listing["tools"] as? [[String: Any]])
+        let allWrites = tools.filter { ($0["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == false }
+        #expect(allWrites.count == writes.count)
+        for (index, tool) in allWrites.enumerated() {
+            let response = await runtime.handle(Self.request(id: index + 40, method: "tools/call", params: [
+                "name": try #require(tool["name"] as? String), "arguments": [:]
+            ]))
+            let result = try #require(Self.jsonObject(from: response)["result"] as? [String: Any])
+            let structured = try #require(result["structuredContent"] as? [String: Any])
+            #expect(structured["code"] as? String == "WRITE_DISABLED")
+        }
+        let resource = await runtime.handle(Self.request(id: 80, method: "resources/read", params: [
+            "uri": "starcat://capabilities"
+        ]))
+        let resourceResult = try #require(Self.jsonObject(from: resource)["result"] as? [String: Any])
+        #expect(resourceResult["contents"] is [[String: Any]])
+    }
+
     /// 真实 DeepSeek smoke 也复用同一份内存数据，避免为跨进程 MCP 验证再造一套假协议。
     static func makeRuntime(
         originValidator: OriginValidator = .localhost(),
-        exposePrivateNotes: Bool = true,
         allowedToolNames: Set<String>? = nil,
-        exposesResources: Bool = true
+        exposesResources: Bool = true,
+        allowWrites: Bool = true
     ) async throws -> StarcatMCPRuntime {
         let db = try InMemoryDatabaseManager()
         try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
@@ -580,10 +654,7 @@ struct StarcatMCPRuntimeTests {
         }
 
         let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.runtime.\(UUID().uuidString)")!)
-        settings.mcpExposePrivateNotes = exposePrivateNotes
-        settings.mcpAllowLocalWrites = true
-        settings.mcpAllowBatchWrites = true
-        settings.mcpAllowGitHubStarWrites = true
+        settings.mcpAllowWrites = allowWrites
 
         let gate = EntitlementGate(
             entitlementProvider: MCPRuntimeTestEntitlementProvider(isPro: true),

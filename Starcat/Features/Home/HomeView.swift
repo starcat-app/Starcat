@@ -733,6 +733,9 @@ struct HomeView: View {
             await viewModel.observeRepoLibraryStateChanges()
         }
         .task {
+            await viewModel.observeSmartCollectionChanges()
+        }
+        .task {
             await observeReleaseSubscriptionChanges()
         }
         // selection 变化 → 重新加载列表

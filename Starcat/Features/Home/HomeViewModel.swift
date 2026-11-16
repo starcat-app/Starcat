@@ -1246,6 +1246,21 @@ final class HomeViewModel {
         }
     }
 
+    /// 持久化层统一发布变更，外部保存/删除与窗口内操作共享原有列表重载路径。
+    func observeSmartCollectionChanges() async {
+        let stream = NotificationCenter.default.notifications(named: .smartCollectionsDidChange)
+        for await note in stream {
+            guard !Task.isCancelled else { break }
+            guard let collectionID = note.userInfo?["collectionID"] as? String else { continue }
+            await refreshSidebar()
+            guard case .userSmartCollection(let selectedID) = selection, selectedID == collectionID else { continue }
+            if !userSmartCollections.contains(where: { $0.id == selectedID }) {
+                selection = .allStars
+            }
+            await reloadItems(forceRefresh: true)
+        }
+    }
+
     /// 一次跨窗口跳转对应一份临时筛选；anchor 约束它只能活在发起跳转的 Sidebar 分类。
     struct TemporaryGlobalFilterSession: Equatable {
         let requestID: UUID

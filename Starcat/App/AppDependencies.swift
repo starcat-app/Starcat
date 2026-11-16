@@ -20,6 +20,12 @@ import Foundation
 @MainActor
 @Observable
 final class AppDependencies {
+    /// 窗口拥有工作台；公共 API 仅复用其业务编排，不负责创建窗口或延长窗口生命周期。
+    @ObservationIgnored weak var activeKnowledgeRAGWorkspace: KnowledgeRAGWorkspaceViewModel?
+    /// 公共后台请求与窗口可能同时存活；弱集合协调同一会话的取消，不延长窗口生命周期。
+    @ObservationIgnored let knowledgeRAGWorkspaces = NSHashTable<KnowledgeRAGWorkspaceViewModel>.weakObjects()
+    /// 删除等待旧回答退出时，所有入口都不能再为该会话启动新回答。
+    @ObservationIgnored var deletingRAGConversationIDs: Set<UUID> = []
 
     // MARK: - 配置
 
@@ -817,6 +823,24 @@ final class AppDependencies {
             embeddingModel: embeddingSelection?.modelName,
             retrievalSettings: retrievalSettings,
             reranker: reranker
+        )
+    }
+
+    /// 公共检索沿用 RAG 后端与权益，但在召回及 parent packing 前移除未授权笔记来源。
+    /// 没有 Generator 配置仍能走关键词检索；此入口不会启动索引或回答生成。
+    func makeMCPKnowledgeSearchExecutor(includePrivateNotes: Bool) throws -> KnowledgeSearchCapabilityExecutor {
+        try entitlementGate.requirePro(.knowledgeRAG, usesLocalOnly: settings.isRAGPipelineResolvedToLocalAI)
+        var retrieval = settings.ragRetrievalSettings.normalized()
+        if !includePrivateNotes { retrieval.enabledSources.remove(.notes) }
+        let embedding = try? settings.resolveEmbeddingSelection()
+        let chatModel = (try? resolveRAGChatSelection(selectedModelID: nil))?.modelName ?? ""
+        return KnowledgeSearchCapabilityExecutor(
+            candidateProvider: RAGKnowledgeSearchCandidateProvider(repository: ragCandidateRepository),
+            retriever: try makeKnowledgeRAGRetriever(
+                chatModel: chatModel, embeddingSelection: embedding,
+                retrievalSettings: retrieval, usageFeature: .mcp
+            ),
+            maxEvidenceTokens: min(retrieval.evidenceTokenBudget, 1_600)
         )
     }
 
@@ -1867,6 +1891,7 @@ final class AppDependencies {
             }
         )
         self.starsSyncFollowUp = followUp
+        mcpFacade.publicCapabilities = StarcatMCPPublicFacade(dependencies: self, facade: mcpFacade)
         self.syncManager.onSyncSettled = { [session, followUp] userID, trigger in
             guard let user = session.state.user, user.id == userID else { return }
             followUp.schedule(userID: userID, login: user.login, retryPendingMemberships: trigger == .manual)
@@ -1897,6 +1922,8 @@ final class AppDependencies {
         // 还能看到自己的数据，不会进入"无 DB 可用"的死状态。
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
+            // 先等公共任务真实退出，再让任何领域服务切换数据库，避免旧账号句柄串库。
+            await mcpFacade.publicCapabilities?.prepareForAccountChange()
             // 启动校验 401 不经过 onSignOut；在共用会话出口清理，覆盖退出和凭据失效。
             if userId == nil { self.profileExtrasService.reset() }
             self.externalStarInbox.resetForAccountChange()
@@ -1973,6 +2000,7 @@ final class AppDependencies {
                 await self.widgetRefreshCoordinator.publishReady()
                 await self.screensaverRefreshCoordinator.publishReady()
             }
+            mcpFacade.publicCapabilities?.finishAccountChange(succeeded: didSwitchDatabase)
         }
 
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。

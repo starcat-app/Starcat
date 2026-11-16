@@ -100,16 +100,6 @@ struct RepoShareHost: ViewModifier {
     /// 复用既有摘要缓存的语言回退规则，避免分享入口另做缓存选择或重复生成摘要。
     @MainActor
     private var shareOperations: RepoShareOperations {
-        RepoShareOperations(
-            cachedInsight: { repo in
-                try await dependencies.repoAIInsightService.cachedInsightFast(for: repo)
-            },
-            generateInsight: { repo in
-                (try await dependencies.repoAIInsightService.generateInsight(for: repo)).insight
-            },
-            createShare: { request in
-                try await dependencies.shareAPI.shareRepo(request: request)
-            }
-        )
+        dependencies.makeRepoShareOperations()
     }
 }

@@ -657,6 +657,28 @@ final class AgentWorkspaceViewModel {
         }
     }
 
+    /// 公共任务等待完整事件流和持久化结束；取消仍通过原 Runtime command 释放子进程与请求。
+    func runAndWait() async throws {
+        guard canSubmit else {
+            throw StarcatPublicCapabilityError(code: "AGENT_INPUT_UNAVAILABLE", message: "Check the Agent, repository context and configured model.")
+        }
+        run()
+        let currentTask = runTask
+        await withTaskCancellationHandler {
+            await currentTask?.value
+        } onCancel: {
+            currentTask?.cancel()
+            Task { @MainActor in self.cancel() }
+        }
+        try Task.checkCancellation()
+        if status == .cancelled { throw CancellationError() }
+        if status == .failed {
+            throw StarcatPublicCapabilityError(code: "AGENT_FAILED", message: errorMessage ?? "The Agent run failed.")
+        }
+    }
+
+    var executionRunID: UUID? { activeRunID }
+
     func approve(_ approval: AgentApprovalRequest) {
         sendApprovalDecision(approval, decision: .approved)
     }

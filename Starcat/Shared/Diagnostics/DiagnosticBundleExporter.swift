@@ -183,8 +183,7 @@ enum DiagnosticBundleExporter {
             snapshot["disableAnimations"] = String(settings.disableAnimations)
             snapshot["mcpServiceEnabled"] = String(settings.mcpServiceEnabled)
             snapshot["mcpServicePort"] = String(settings.mcpServicePort)
-            snapshot["mcpExposePrivateNotes"] = String(settings.mcpExposePrivateNotes)
-            snapshot["mcpAllowLocalWrites"] = String(settings.mcpAllowLocalWrites)
+            snapshot["mcpAllowWrites"] = String(settings.mcpAllowWrites)
             snapshot["chatHistoryStorageKind"] = settings.chatHistoryStorageKind.rawValue
             snapshot["aiProviderProfileCount"] = String(settings.aiProviderProfiles.count)
         }

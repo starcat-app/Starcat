@@ -141,7 +141,7 @@ final class CodeFlowViewModel {
         restoreCachedState()
     }
 
-    private func generate(removingExisting: Bool, maximumArchiveBytes: Int) {
+    private func generate(removingExisting: Bool, maximumArchiveBytes: Int, opensBrowser: Bool = true) {
         guard !selectedBranchName.isEmpty else {
             state = .failed(message: CodeFlowError.branchMissing.localizedDescription)
             return
@@ -206,6 +206,12 @@ final class CodeFlowViewModel {
                 )
 
                 try Task.checkCancellation()
+                if !opensBrowser {
+                    storedProject = project
+                    versionStatus = .current
+                    state = .succeeded
+                    return
+                }
                 state = .opening
                 let openStartedAt = Date()
                 setStep(id: "openBrowser", status: .running, detail: String.l10n("codeFlow.runtime.handingToBrowser"))
@@ -239,6 +245,17 @@ final class CodeFlowViewModel {
                 state = .failed(message: error.localizedDescription)
             }
         }
+    }
+
+    /// 生成与按钮共用同一快照/页面流水线；公共调用只返回产物，不启动或控制浏览器。
+    func prepareAndWait(maximumArchiveBytes: Int) async throws -> CodeFlowStoredProject {
+        generate(removingExisting: false, maximumArchiveBytes: maximumArchiveBytes, opensBrowser: false)
+        let currentTask = task
+        await withTaskCancellationHandler { await currentTask?.value } onCancel: { currentTask?.cancel() }
+        try Task.checkCancellation()
+        if case .failed(let message) = state { throw StarcatPublicCapabilityError(code: "CODEFLOW_FAILED", message: message) }
+        guard let storedProject else { throw CodeFlowError.templateMissing }
+        return storedProject
     }
 
     /// 已有页面无需重新下载 ZIP 或生成 HTML，直接交给默认浏览器打开。

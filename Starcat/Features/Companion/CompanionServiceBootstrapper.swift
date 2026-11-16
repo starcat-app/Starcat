@@ -103,7 +103,8 @@ enum CompanionServiceBootstrapper {
             actionHandler: actionHandler,
             starStateHandler: starStateHandler,
             recommendationHandler: recommendationHandler,
-            eventHub: eventHub
+            eventHub: eventHub,
+            pairingStore: .shared
         )
         server?.stop()
         server = nextServer

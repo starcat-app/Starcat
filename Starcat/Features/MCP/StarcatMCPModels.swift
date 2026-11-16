@@ -17,7 +17,20 @@ import Foundation
 /// `initialize.serverInfo.version` 与 `starcat.get_capabilities.server_version`
 /// 都必须复用此值，避免客户端在同一会话里观察到互相矛盾的 Server 版本。
 enum StarcatMCPServerMetadata {
-    static let version = "0.5.0"
+    static let version = "0.7.0"
+}
+
+/// 公共入口统一校验写权限；禁止按操作另增 Star、删除、批量或私有笔记开关。
+@MainActor
+enum StarcatMCPAccess {
+    static func requireWrite(_ settings: AppSettings) throws {
+        guard settings.mcpAllowWrites else {
+            throw StarcatPublicCapabilityError(
+                code: "WRITE_DISABLED",
+                message: "Writing is disabled. Open Starcat > Settings > Extensions & Connections > MCP Service and enable Allow Writes."
+            )
+        }
+    }
 }
 
 /// MCP 对外暴露的 repo 摘要。
@@ -294,7 +307,7 @@ struct MCPTagDTO: Codable, Sendable {
     }
 }
 
-/// MCP 私有笔记 DTO。只在用户显式开启 `mcpExposePrivateNotes` 后返回。
+/// MCP 笔记 DTO，与仓库上下文一样属于默认读取能力。
 struct MCPRepoNoteDTO: Codable, Sendable {
     let repo_id: Int64
     let content: String?
@@ -333,8 +346,7 @@ struct MCPRepoSummaryDTO: Codable, Sendable {
 
 /// Agent 一次读取单仓上下文的聚合结果。
 ///
-/// 私有笔记关闭时返回 `private_notes_exposed = false` 和 `note = nil`，而不是让整个
-/// context 请求失败；这样 Agent 仍能读取 repo、标签和摘要，同时明确知道缺失原因。
+/// read 默认包含笔记；`private_notes_exposed` 仅描述内容投影，不再对应独立授权开关。
 struct MCPRepoContextDTO: Codable, Sendable {
     let repo: MCPRepoDTO
     let tags: [MCPTagDTO]
@@ -345,15 +357,17 @@ struct MCPRepoContextDTO: Codable, Sendable {
 
 /// MCP 当前能力快照。只暴露权限状态，不包含 Local API Key 或其它凭据。
 struct MCPCapabilitiesDTO: Codable, Sendable {
+    /// v2 是公开行为升级：写入省略 dry_run 统一预览；客户端应显式发送 false 执行。
+    let contract_version = 3
+    let write_default = "preview"
+    let public_catalog = true
+    let process_local_tasks = true
     let server_version: String
     let loopback_only: Bool
-    let private_notes_read: Bool
+    let read: Bool
+    let write: Bool
     let statistics_read: Bool
     let global_repository_search: Bool
-    let local_writes: Bool
-    let github_star_writes: Bool
-    let batch_writes: Bool
-    let destructive_writes: Bool
     let ai_summary_generation: Bool
 }
 

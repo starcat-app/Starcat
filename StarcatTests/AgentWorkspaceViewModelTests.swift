@@ -310,6 +310,24 @@ struct AgentWorkspaceViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test("公共等待入口等待原 Runtime 事件完成并保留产物")
+    func publicRunWaitsForCompletion() async throws {
+        let runID = UUID()
+        let user = AgentMessage(runID: runID, role: .user, turn: 0, sequence: 0, parts: [.text("生成测试结果")])
+        let artifact = AgentArtifact(type: .markdown, title: "结果", content: "# 完成")
+        let runtime = EventReplayAgentRuntime(events: [
+            .runStarted(title: BuiltInAgents.githubWeeklyReport.title),
+            .messageAppended(user), .artifactCreated(artifact), .runCompleted
+        ])
+        let viewModel = AgentWorkspaceViewModel(runtime: runtime)
+        configureRunnable(viewModel)
+        viewModel.prompt = "生成测试结果"
+        try await viewModel.runAndWait()
+        #expect(viewModel.status == .completed)
+        #expect(viewModel.artifacts.contains { $0.id == artifact.id })
+        #expect(viewModel.executionRunID == runID)
+    }
+
     @Test("Runtime trace lifecycle 在工作台按稳定 id 原位更新")
     func runtimeTraceUpsertsWithoutDuplicatingRows() async throws {
         let runID = UUID()

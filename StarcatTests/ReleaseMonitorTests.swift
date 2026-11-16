@@ -90,6 +90,41 @@ struct ReleaseMonitorTests {
 
     // MARK: - 测试
 
+    @Test("UI 与公共订阅共享 priming：历史全已读，首次刷新不通知")
+    @MainActor
+    func sharedSubscriptionPrimesHistory() async throws {
+        let stack = try makeStack()
+        try await stack.db.insertRepoFixture(id: 42)
+        stack.mock.releasesHandler = { _, _, _ in self.okResponse(self.makeDTOs(ids: [3, 2, 1])) }
+        try await ReleaseMonitor.subscribe(repoId: 42, owner: "apple", repoName: "swift", apiClient: stack.mock,
+                                           subscriptionRepo: stack.subRepo, releaseRepo: stack.releaseRepo)
+        let releases = try await stack.releaseRepo.fetch(forRepo: 42, limit: 50)
+        #expect(releases.count == 3)
+        #expect(releases.allSatisfy { $0.isRead })
+        let report = await stack.monitor.runOnce()
+        #expect(report.notifications.isEmpty)
+        #expect(report.hasNewReleases == false)
+    }
+
+    @Test("没有 Release 的 404 仍能订阅；网络失败不创建订阅")
+    @MainActor
+    func sharedSubscriptionDistinguishesMissingAndFailed() async throws {
+        let stack = try makeStack()
+        try await stack.db.insertRepoFixture(id: 42)
+        stack.mock.releasesHandler = { _, _, _ in throw NetworkError.notFound }
+        try await ReleaseMonitor.subscribe(repoId: 42, owner: "apple", repoName: "swift", apiClient: stack.mock,
+                                           subscriptionRepo: stack.subRepo, releaseRepo: stack.releaseRepo)
+        #expect(try await stack.subRepo.fetchAll().count == 1)
+        try await stack.db.insertRepoFixture(id: 43)
+        stack.mock.releasesHandler = { _, _, _ in throw URLError(.notConnectedToInternet) }
+        do {
+            try await ReleaseMonitor.subscribe(repoId: 43, owner: "other", repoName: "repo", apiClient: stack.mock,
+                                               subscriptionRepo: stack.subRepo, releaseRepo: stack.releaseRepo)
+            Issue.record("网络失败不应伪造订阅成功")
+        } catch {}
+        #expect(try await stack.subRepo.fetchAll().count == 1)
+    }
+
     @Test("首次轮询：cursor 已 priming 至最新 → 无新 Release，不发通知")
     @MainActor
     func firstPollWithPrimingFindsNoNew() async throws {

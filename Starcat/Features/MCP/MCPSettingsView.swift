@@ -71,16 +71,6 @@ struct MCPSettingsTab: View {
                     }
                 }
 
-                Toggle(isOn: $settings.mcpExposePrivateNotes) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.content.service.notesTitle")
-                        Text("settings.mcp.content.service.notesHelp")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
                 LabeledContent("settings.mcp.status") {
                     Text(statusText(for: mcpService.state))
                         .foregroundStyle(statusColor(for: mcpService.state))
@@ -93,47 +83,19 @@ struct MCPSettingsTab: View {
             }
 
             Section {
-                Toggle(isOn: $settings.mcpAllowLocalWrites) {
+                LabeledContent("settings.mcp.access.readTitle") {
+                    Text("settings.mcp.access.readHelp")
+                        .foregroundStyle(.secondary)
+                }
+                Toggle(isOn: $settings.mcpAllowWrites) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.content.permissions.localTitle")
-                        Text("settings.mcp.content.permissions.localHelp")
+                        Text("settings.mcp.access.writeTitle")
+                        Text("settings.mcp.access.writeHelp")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-
-                Toggle(isOn: $settings.mcpAllowGitHubStarWrites) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.content.permissions.starsTitle")
-                        Text("settings.mcp.content.permissions.starsHelp")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                Toggle(isOn: $settings.mcpAllowBatchWrites) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.content.permissions.batchTitle")
-                        Text("settings.mcp.content.permissions.batchHelp")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .disabled(!settings.mcpAllowLocalWrites)
-
-                Toggle(isOn: $settings.mcpAllowDestructiveWrites) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("settings.mcp.content.permissions.destructiveTitle")
-                        Text("settings.mcp.content.permissions.destructiveHelp")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .disabled(!settings.mcpAllowLocalWrites)
             } header: {
                 SettingsSectionHeader(
                     "settings.mcp.section.writes",
@@ -335,6 +297,7 @@ struct MCPSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .animation(.easeInOut(duration: 0.18), value: settings.mcpAllowWrites)
         .onAppear {
             if portDraft.isEmpty {
                 portDraft = String(settings.mcpServicePort)

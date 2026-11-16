@@ -88,7 +88,7 @@ final class StarcatMCPRuntime: StarcatMCPHTTPRuntime {
             name: "starcat",
             version: StarcatMCPServerMetadata.version,
             title: "Starcat",
-            instructions: "Use starcat.get_capabilities before multi-step workflows, starcat.get_overview_statistics for common counts, and starcat.get_repo_context for one-repository reads. Write tools are Pro-only, local-data-only, settings-gated, and audited. Use dry_run before destructive writes. Never expose private notes unless the capability is enabled.",
+            instructions: "Use starcat.get_capabilities before multi-step workflows and starcat.get_repo_context for repository reads. Access has only read and write: reading includes notes; enable Allow Writes in Starcat Settings for mutations, refreshes, generation and tasks. App services enforce existing account, product and system requirements. Tools supporting dry_run default to preview. Long operations return task IDs for status and result queries.",
             capabilities: .init(
                 resources: .init(listChanged: false),
                 tools: .init(listChanged: false)

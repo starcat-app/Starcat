@@ -291,6 +291,34 @@ final class LocalAIModelManager {
         }
     }
 
+    /// 公共任务等待现有状态机完成，不能把“已排队下载”当成“模型已可用”。
+    func installAndWait(entry: LocalAIModelCatalogEntry) async throws {
+        install(entry: entry)
+        if let task = runningInstalls[entry.id] {
+            await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+        }
+        try Task.checkCancellation()
+        switch installState(for: entry.id) {
+        case .installed: return
+        case .failed(let message), .loadFailed(let message):
+            throw StarcatPublicCapabilityError(code: "MODEL_INSTALL_FAILED", message: message)
+        default: throw CancellationError()
+        }
+    }
+
+    /// 删除沿用卸载/跨渠道文件协调，完成后回读状态以暴露真实失败。
+    func deleteAndWait(entryID: String) async throws {
+        delete(entryID: entryID)
+        if let task = runningInstalls[entryID] { await task.value }
+        if case .deleteFailed(let message) = installState(for: entryID) {
+            throw StarcatPublicCapabilityError(code: "MODEL_DELETE_FAILED", message: message)
+        }
+    }
+
     func delete(entryID: String) {
         pause(entryID: entryID)
         guard let manifest = installedModel(id: entryID),

@@ -58,8 +58,10 @@ Starcat Agent 不再按“重新建设一套 AI、上下文、工具和 CLI 集�
 | Workspace | `AgentWorkspaceView` | 已有 Agent Rail、Run Surface、Timeline、Inspector | 保留工作台职责，重做 Composer 接入 |
 | Presentation | `AgentTimelineProjection` / `AgentMessageTimelineView` | 已按 `toolCallID` 合并 call/result，聚合 Activity Group，并分离过程、最终回答和 Markdown Artifact | 保持事实层不变，后续结构化 Artifact 由真实场景驱动 |
 | RAG | `KnowledgeRAGService` / `KnowledgeRAGRetriever` | 已有知识库边界、混合检索、证据、引用、审计 | 作为 Agent Knowledge Tool 的底座 |
-| MCP | `StarcatMCPFacade` / `StarcatMCPWriteFacade` / `StarcatMCPToolRegistry` | 已有 20 个读写工具及权限控制 | 抽取共享能力，避免重复实现 |
+| MCP | `StarcatMCPFacade` / `StarcatMCPWriteFacade` / `StarcatMCPPublicFacade` / `StarcatMCPToolRegistry` | 公共目录 69 个工具；实际权限与渠道由 App 检查 | 复用领域执行器，避免重复实现 |
 | CLI | `supports/starcat-cli` | 已有跨平台 CLI、配对、MCP stdio bridge | 保持外部集成定位 |
+
+2026-11-15 公共能力专项增加动态 tools / resources CLI、限定知识库证据与进程内任务句柄，详见[覆盖清单](../../4-工程进度/CLI与MCP能力开放专项/能力覆盖清单.md)和[正式暴露规范](../../5-规范/CLI与MCP能力暴露规范.md)。公共目录不自动扩大内置 Agent 或 External Runtime 的 allowlist；正式工作台入口、执行审批、Direct-only 与已取消范围继续按本设计控制。账号切换等待公共请求和任务收尾，私有笔记结果在回读时重新鉴权。
 
 ### 2.2 当前产品能力
 

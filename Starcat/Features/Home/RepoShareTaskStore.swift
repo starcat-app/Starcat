@@ -103,6 +103,30 @@ final class RepoShareTaskStore {
         jobs[repoID]?.state.isSuccessful == true
     }
 
+    /// 公共任务等待同一状态机真实完成；保留缓存回退、取消与防止迟到响应创建链接的约束。
+    func createAndWait(repo: Repo, operations: RepoShareOperations) async throws -> String {
+        start(repo: repo, operations: operations)
+        let task = tasks[repo.id]
+        let taskID = jobs[repo.id]?.id
+        return try await withTaskCancellationHandler {
+            // cancelled 是即时 UI 反馈，不能作为底层已退出的证明；切库屏障必须等待原 Task。
+            await task?.value
+            try Task.checkCancellation()
+            guard jobs[repo.id]?.id == taskID else { throw CancellationError() }
+            switch jobs[repo.id]?.state {
+            case .success(let url): return url
+            case .failure(let message): throw StarcatPublicCapabilityError(code: "SHARE_FAILED", message: message)
+            case .cancelled: throw CancellationError()
+            default: throw StarcatPublicCapabilityError(code: "SHARE_FAILED", message: "The share operation did not produce a result.")
+            }
+        } onCancel: {
+            task?.cancel()
+            Task { @MainActor in
+                if self.jobs[repo.id]?.id == taskID { self.cancel(repoID: repo.id) }
+            }
+        }
+    }
+
     /// 首次创建。已有运行中、成功或失败结果时都不重复提交，由调用方直接打开现有 Sheet。
     func start(repo: Repo, operations: RepoShareOperations) {
         guard jobs[repo.id] == nil else { return }
@@ -233,5 +257,16 @@ final class RepoShareTaskStore {
             suggestedTags: tags
         )
         return ShareRepoRequest(repo: repoDTO, aiSummary: summaryDTO)
+    }
+}
+
+extension AppDependencies {
+    /// UI 和公共接口从同一处装配分享用例，避免缓存/生成选择与 API 版本逐渐分叉。
+    func makeRepoShareOperations() -> RepoShareOperations {
+        RepoShareOperations(
+            cachedInsight: { try await self.repoAIInsightService.cachedInsightFast(for: $0) },
+            generateInsight: { (try await self.repoAIInsightService.generateInsight(for: $0)).insight },
+            createShare: { try await self.shareAPI.shareRepo(request: $0) }
+        )
     }
 }

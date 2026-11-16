@@ -13,6 +13,50 @@ import Testing
 @Suite("SmartCollectionRepository")
 struct SmartCollectionRepositoryTests {
 
+    @Test("无窗口 CRUD 成功落库后统一发布集合变更")
+    func mutationsPublishChangesAfterCommit() async throws {
+        let repo = try makeRepo()
+        var collection = try makeCollection(id: UUID().uuidString, name: "Original", sortOrder: 0)
+        try await confirmation("Three committed mutations", expectedCount: 3) { confirm in
+            let collectionID = collection.id
+            let observer = NotificationCenter.default.addObserver(forName: .smartCollectionsDidChange, object: nil, queue: nil) { note in
+                if note.userInfo?["collectionID"] as? String == collectionID { confirm() }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+            try await repo.create(collection)
+            collection.name = "Updated"
+            try await repo.update(collection)
+            try await repo.delete(id: collection.id)
+        }
+        #expect(try await repo.fetchAll().isEmpty)
+    }
+
+    @Test("高级规则在共享仓储校验，外部创建与更新不能绕过 App 原约束")
+    func advancedRulesUseOriginalAppEntitlement() async throws {
+        let base = try makeRepo()
+        let gate = EntitlementGate(
+            entitlementProvider: SmartCollectionTestEntitlementProvider(isPro: false),
+            userIDProvider: { 42 }
+        )
+        let gated = GatedSmartCollectionRepository(base: base, entitlementGate: gate)
+        let basic = try makeCollection(id: UUID().uuidString, name: "Basic", sortOrder: 0)
+        try await gated.create(basic)
+        var advanced = basic
+        var rule = try #require(basic.rule)
+        rule.healthScoreMin = 80
+        advanced.ruleJSON = try SmartCollectionRule.encode(rule)
+        await #expect(throws: EntitlementGateError.self) { try await gated.update(advanced) }
+        advanced.id = UUID().uuidString
+        await #expect(throws: EntitlementGateError.self) { try await gated.create(advanced) }
+        #expect(try await base.count() == 1)
+        #expect(try await base.find(id: basic.id)?.rule?.usesProPredicates == false)
+        // 模拟曾以 Pro 保存的集合：当前改名不改变规则，不应被新增的共享校验额外拦截。
+        try await base.create(advanced)
+        advanced.name = "Renamed"
+        try await gated.update(advanced)
+        #expect(try await base.find(id: advanced.id)?.name == "Renamed")
+    }
+
     @Test("create/fetch/find/delete 保留规则 JSON 并按 sortOrder 排序")
     func crudRoundTrip() async throws {
         let repo = try makeRepo()
