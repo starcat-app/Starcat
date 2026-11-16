@@ -413,8 +413,7 @@ struct RepoSkillDetailPane: View {
                     previewedFile = file
                 } label: {
                     HStack(spacing: 10) {
-                    Image(systemName: file.path == "SKILL.md" ? "doc.text" : "doc")
-                        .foregroundStyle(.secondary)
+                    RepoFileIcon(name: file.name)
                     Text(verbatim: file.path)
                         .font(interfaceScale.font(.code))
                         .lineLimit(1)
@@ -442,7 +441,11 @@ struct RepoSkillDetailPane: View {
     /// 标题整行是折叠触发区，目录只表达完整复制范围，不支持把 Skill 拆散安装。
     private var fileTree: some View {
         return LazyVStack(alignment: .leading, spacing: 10) {
-            Label(contentSkill.directory.isEmpty ? "/" : contentSkill.directory, systemImage: "folder")
+            Label {
+                Text(verbatim: contentSkill.directory.isEmpty ? "/" : contentSkill.directory)
+            } icon: {
+                Image(systemName: "folder.fill").foregroundStyle(.blue)
+            }
                 .font(interfaceScale.font(.code, weight: .semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -464,8 +467,11 @@ struct RepoSkillDetailPane: View {
                             Image(systemName: expandedFolders.contains(folder) ? "chevron.down" : "chevron.right")
                                 .font(interfaceScale.font(.captionSmall))
                                 .frame(width: 10)
-                            Label(folder, systemImage: "folder")
-                                .font(interfaceScale.font(.code))
+                            Label {
+                                Text(verbatim: folder).font(interfaceScale.font(.code))
+                            } icon: {
+                                Image(systemName: "folder.fill").foregroundStyle(.blue)
+                            }
                             Spacer()
                         }
                         .foregroundStyle(.secondary)
@@ -492,10 +498,13 @@ struct RepoSkillDetailPane: View {
         Button {
             previewedFile = file
         } label: {
-            Label(file.path, systemImage: "doc.text")
-                .font(interfaceScale.font(.code))
-                .lineLimit(1)
-                .help(file.path)
+            HStack(spacing: 7) {
+                RepoFileIcon(name: file.name)
+                Text(verbatim: file.path)
+                    .font(interfaceScale.font(.code))
+                    .lineLimit(1)
+            }
+            .help(file.path)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
