@@ -134,8 +134,15 @@ struct DailyRecommendationExplanationTests {
         #expect(input.sources.map(\.repoID) == [1])
         #expect(request.systemPrompt.contains("zh-Hans"))
         #expect(request.systemPrompt.contains("Do not invent"))
+        #expect(request.systemPrompt.contains("not a fixed template"))
+        #expect(request.systemPrompt.contains("Do not force a difference"))
         #expect(request.usageContext?.phase == "recommendation_reason")
         #expect(request.model == "configured-model")
+        let other = try RepoAIInsightService.makeRecommendationReasonRequest(
+            input: DailyRecommendationExplanationInput(item(11)), model: "configured-model",
+            parameters: .defaults(for: .chat), outputLanguage: "zh-Hans"
+        )
+        #expect(request.systemPrompt != other.systemPrompt)
     }
 
     @Test("整批保存完成才返回，生成并发最多三个")

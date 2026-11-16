@@ -30,7 +30,7 @@ struct DailyRecommendationExplanationInput: Codable, Sendable, Equatable {
     func cacheKey(locale: String) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let bytes = try encoder.encode(self) + Data("|v1|\(locale)".utf8)
+        let bytes = try encoder.encode(self) + Data("|v2|\(locale)".utf8)
         return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 }
