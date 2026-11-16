@@ -24,8 +24,17 @@ struct GitHubNotificationDetailView: View {
     /// 顶部语言色光晕开关：活动-Issues 详情页保留；RepoIssues 工作台复用本组件时关闭
     /// （渐变属于活动详情页的设计语言，工作台详情页不携带，2026-11-01 dong4j 决策）。
     var showsHeroTint: Bool = true
+    /// 仓库工作台已有整窗仓库顶栏，可关闭重复行；活动时间线默认保留原有对齐。
+    var showsRepositoryHeader: Bool = true
     /// README Issues 工作台可对齐窗口底色；默认保留活动通知原有的系统背景样式。
     var commentComposerBackground: AnyShapeStyle = AnyShapeStyle(.background)
+    /// 仓库工作台提供自己的列表导航；未注入时保留活动通知的 Inbox 切换语义。
+    var onSelectAdjacent: ((Int) -> Void)? = nil
+    var canSelectPrevious: Bool = true
+    var canSelectNext: Bool = true
+
+    private static let conversationPadding: CGFloat = 18
+
     @State private var isComposerExpanded = false
     @State private var isMarkingDone = false
     @State private var isDoneHelpPresented = false
@@ -70,11 +79,13 @@ struct GitHubNotificationDetailView: View {
         // 观察者 / toast 必须挂在独立子表达式：下面这条链已顶到 Swift 类型检查器上限，
         // 直接内联新 modifier 会让整个 VStack 报 "unable to type-check in reasonable time"。
         let content = VStack(spacing: 0) {
-            // 仓库名占中栏筛选条同一高度，横线才能和中栏对齐。
-            if let payload = item.notification {
-                headerRepoRow(payload)
+            if showsRepositoryHeader {
+                // 活动时间线中，仓库名和分隔线仍与中栏筛选条对齐。
+                if let payload = item.notification {
+                    headerRepoRow(payload)
+                }
+                Divider()
             }
-            Divider()
             // Issue / PR 行在横线下，对应中栏时间线从分割线之下开始。
             headerToolbar(item)
             if let doneError, !doneError.isEmpty {
@@ -102,6 +113,7 @@ struct GitHubNotificationDetailView: View {
         VStack(spacing: 0) {
             if !isComposerExpanded {
                 conversationScroll(item)
+                    .stableDetailTransition(value: item.id)
             }
             if let payload = item.notification,
                GitHubNotificationMapper.canReply(subjectType: payload.subjectType, number: payload.subjectNumber) {
@@ -150,7 +162,8 @@ struct GitHubNotificationDetailView: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(.horizontal, Self.conversationPadding)
+            .padding(.bottom, Self.conversationPadding)
         }
     }
 
@@ -348,6 +361,7 @@ struct GitHubNotificationDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .disabled(!canSelectPrevious)
                 .toolbarIconHover()
                 .help(GitHubNotificationMapper.copy(locale, zh: "上一条", en: "Previous notification"))
 
@@ -362,12 +376,14 @@ struct GitHubNotificationDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                .disabled(!canSelectNext)
                 .toolbarIconHover()
                 .help(GitHubNotificationMapper.copy(locale, zh: "下一条", en: "Next notification"))
             }
         }
         .padding(.horizontal, ManageListFilterBarMetrics.horizontalPadding)
-        .padding(.vertical, 8)
+        // 把原先评论区顶部的留白纳入工具行，整行在分隔线与首张卡片之间垂直居中。
+        .frame(height: ManageListFilterBarMetrics.barHeight + Self.conversationPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 透明，让根节点语言色光晕透到 chip 行背后。
         .background(.clear)
@@ -800,6 +816,10 @@ struct GitHubNotificationDetailView: View {
     }
 
     private func selectAdjacent(_ delta: Int) {
+        if let onSelectAdjacent {
+            onSelectAdjacent(delta)
+            return
+        }
         Task {
             guard let current = selectedItem?.notification?.threadId,
                   let next = await adjacentThreadId(after: current, delta: delta)

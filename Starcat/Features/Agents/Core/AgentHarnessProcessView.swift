@@ -10,6 +10,7 @@ import SwiftUI
 /// 内外滚动拥有独立的跟随状态。内容增量只改变叶子行，禁止逐 token scrollTo
 /// 或整个过程区的高度动画，避免重新引入长 Trace 的 AttributeGraph 布局反馈环。
 struct AgentHarnessProcessView: View {
+    @Namespace private var selectionSpace
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
     @State private var expandedOverride: Bool?
@@ -193,11 +194,8 @@ struct AgentHarnessProcessView: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .accessibilityHint(String.l10n("agent.workspace.inspector.step.subtitle"))
-        .background {
-            if viewModel.selectedTraceEventID == event.id {
-                RoundedRectangle(cornerRadius: 5).fill(Color.accentColor.opacity(0.09))
-            }
-        }
+        .listRowSurface(index: event.sequence, isSelected: viewModel.selectedTraceEventID == event.id,
+                        selectionNamespace: selectionSpace)
     }
 
     @ViewBuilder

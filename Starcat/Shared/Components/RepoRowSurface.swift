@@ -28,7 +28,7 @@
 //  - hover：背景 accent.opacity(0.08) + 边框 accent.opacity(0.18)
 //  - 默认：背景 accent.opacity(0.045) + 边框 accent.opacity(0.10)
 //  - cornerRadius = 10，垂直 padding = 8，水平 padding = 10
-//  - selected 时左侧多让 5pt 给 accent bar
+//  - 左侧恒定预留 5pt 给 accent bar，切换时文字和图标不移动
 //
 //  这些数值与原 `RepoRowSurface` (Manage card 密度) 完全一致，平滑迁移。
 //
@@ -53,6 +53,10 @@ struct RepoRowSurface<Content: View>: View {
     /// Manage / Trending 调用时通常传 `LanguageColor.color(for: repo.language)`，
     /// 其他场景可传 nil 用系统色。
     let accentColor: Color?
+    /// 每个持续单选列表持有自己的共享空间；多选模式传 nil，保留每个选中项。
+    let selectionNamespace: Namespace.ID?
+    /// 紧凑的常规选择器传可见行序号；仓库卡片继续使用原有语义底色。
+    let rowIndex: Int?
 
     private let content: Content
 
@@ -63,10 +67,14 @@ struct RepoRowSurface<Content: View>: View {
     init(
         isSelected: Bool,
         accentColor: Color? = nil,
+        selectionNamespace: Namespace.ID? = nil,
+        rowIndex: Int? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.isSelected = isSelected
         self.accentColor = accentColor
+        self.selectionNamespace = selectionNamespace
+        self.rowIndex = rowIndex
         self.content = content()
     }
 
@@ -83,6 +91,7 @@ struct RepoRowSurface<Content: View>: View {
     private var backgroundOpacity: Double {
         if isSelected { return 0.18 }
         if isHovered { return 0.08 }
+        if let rowIndex, rowIndex.isMultiple(of: 2) { return 0 }
         return 0.045
     }
 
@@ -96,17 +105,35 @@ struct RepoRowSurface<Content: View>: View {
         content
             .padding(.vertical, verticalPadding)
             .padding(.horizontal, horizontalPadding)
-            .padding(.leading, isSelected ? 5 : 0)
+            .padding(.leading, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(resolvedAccent.opacity(backgroundOpacity))
-                    .background {
-                        // 半透明 controlBackgroundColor 让 selected / hover 状态在
-                        // 浅 / 深背景下都能凸显（参考 macOS 原生 List 的视觉手法）
+                Group {
+                    if isSelected, let selectionNamespace, !reduceMotion {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
+                            .fill(resolvedAccent.opacity(backgroundOpacity))
+                            .background {
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.4))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                            }
+                            .matchedGeometryEffect(id: "repo-row-selection", in: selectionNamespace)
+                    } else {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(resolvedAccent.opacity(backgroundOpacity))
+                            .background {
+                                // 半透明底色让浅色、深色背景下的选中与悬停均清晰可见。
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .fill(Color(nsColor: .controlBackgroundColor).opacity(isSelected || isHovered ? 0.40 : 0.0))
+                            }
                     }
+                }
+                // 背景滑动与正文布局分开，选择变化不能给整张卡片注入弹簧交易。
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+                .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
             }
             .overlay(alignment: .leading) {
                 // 选中态左侧 3pt accent bar（设计 §3.1.4）
@@ -115,10 +142,15 @@ struct RepoRowSurface<Content: View>: View {
                     .frame(width: isSelected ? 3 : 0)
                     .padding(.vertical, 8)
                     .opacity(isSelected ? 1 : 0)
+                    .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                if !isSelected || selectionNamespace == nil || reduceMotion {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(resolvedAccent.opacity(borderOpacity), lineWidth: 1)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
+                        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82), value: isSelected)
+                }
             }
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onHover { hovering in
@@ -128,9 +160,7 @@ struct RepoRowSurface<Content: View>: View {
                     }
                     return
                 }
-                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
-                    isHovered = hovering
-                }
+                isHovered = hovering
             }
             .onChange(of: interactionSuppressed) { _, isSuppressed in
                 // 滚动开始时立即清掉旧 hover，避免离开该 row 后仍残留高亮。
@@ -138,6 +168,5 @@ struct RepoRowSurface<Content: View>: View {
                     isHovered = false
                 }
             }
-            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
     }
 }

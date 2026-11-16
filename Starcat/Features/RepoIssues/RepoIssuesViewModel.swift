@@ -97,6 +97,9 @@ final class RepoIssuesViewModel {
     private var searchDebounceTask: Task<Void, Never>?
     private var highlightClearTask: Task<Void, Never>?
 
+    /// 工作台跨分页选择必须核对列表与搜索版本；仅比较关键词无法识别 A → B → A。
+    var navigationRevision: (UInt64, UInt64) { (listGeneration, searchGeneration) }
+
     init(
         client: any GitHubAPIClientProtocol,
         store: RepoIssuesSharedStore = RepoIssuesSharedStore()

@@ -134,6 +134,7 @@ struct AIModelListView: View {
                                     popoverModel = model
                                 }
                             )
+                            .listRowSurface(index: index)
                             .automaticListPagination(
                                 appearingIndex: index,
                                 visibleItemCount: displayedModels.count,

@@ -70,8 +70,9 @@ struct SidebarHeaderView: View {
     /// 点击头像左侧分享图标时打开；sheet 关闭回调置回 false。
     @State private var showShareCardSheet: Bool = false
 
-    /// 原生菜单会复用内容；每次开始显示菜单时更新基准时间，避免相对时间停留在旧值。
+    /// 每次打开资料浮层时更新基准时间，避免刷新提示停留在旧值。
     @State private var accountMenuReferenceDate = Date()
+    @State private var showAccountPopover = false
 
     var body: some View {
         VStack(spacing: 6) {
@@ -137,6 +138,7 @@ struct SidebarHeaderView: View {
             } else {
                 // 登出时强制关闭分享卡（防止后台 sheet 残留显示旧用户信息）
                 showShareCardSheet = false
+                showAccountPopover = false
             }
         }
     }
@@ -419,42 +421,12 @@ struct SidebarHeaderView: View {
         .accessibilityLabel(Text("sharecard.button.help"))
     }
 
-    /// 账户操作菜单。使用 SwiftUI 原生 Menu 组件，自带圆角、hover 反馈等系统样式。
+    /// 复用原有右上角入口；资料和账户操作收进同一个原生 Popover，避免出现两个省略号按钮。
     @ViewBuilder
     private func accountMenu() -> some View {
-        Menu {
-            // 2026-06-06 A 方案 D5-B：手动刷新个人信息入口。
-            // 触发 UserProfileService / ContributionService / DeveloperLanguageService 同时 force refresh。
-            // GitHub Stars List 属于当前账号的远端资料；用户主动刷新个人信息时也顺手同步一次。
-            // 拉到后 profile service 反向 push 给 AuthSession.state，sidebar 自然更新；分享卡数据用 service 快照更新。
-            if let login = authSession.state.user?.login {
-                Button {
-                    userProfileService.load(login: login, force: true)
-                    contributionService.load(login: login, force: true)
-                    developerLanguageService.load(login: login, force: true)
-                    Task { await refreshGitHubStarLists(login: login) }
-                } label: {
-                    Label("sidebar.account.refresh", systemImage: "arrow.clockwise")
-                }
-
-                // 明确告诉用户"什么时候真的拉过一次"，用来区分「刷新没生效」和
-                // 「GitHub 远端就是这个值」——两者在界面上原本完全无法区分。
-                // 菜单项本身是纯信息展示，用 Text 而非禁用的 Button，避免可点击的空操作。
-                if let fetchedAt = userProfileService.lastFetchedAt {
-                    Text(lastRefreshedText(fetchedAt))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Divider()
-
-            Button(role: .destructive) {
-                // signOut 改 async（2026-06-12 多账号 DB 隔离要 await DB 切换完成），
-                // SwiftUI Button action 是同步闭包，包 Task 触发即可。
-                Task { await authSession.signOut() }
-            } label: {
-                Label("auth.signOut", systemImage: "rectangle.portrait.and.arrow.right")
-            }
+        Button {
+            accountMenuReferenceDate = Date()
+            showAccountPopover.toggle()
         } label: {
             Image(systemName: "ellipsis.circle.fill")
                 .font(.system(size: 16))
@@ -463,11 +435,30 @@ struct SidebarHeaderView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        // macOS Menu 的点击手势会被内部按钮消费，使用原生通知覆盖鼠标和键盘打开菜单。
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
-            accountMenuReferenceDate = Date()
+        .popover(isPresented: $showAccountPopover, arrowEdge: .trailing) {
+            if let user = authSession.state.user {
+                ProfileAccountPopover(
+                    user: user,
+                    service: dependencies.profileExtrasService,
+                    lastRefreshed: userProfileService.lastFetchedAt.map(lastRefreshedText),
+                    onRefresh: {
+                        dependencies.profileExtrasService.load(user: user, force: true)
+                        userProfileService.load(login: user.login, force: true)
+                        contributionService.load(login: user.login, force: true)
+                        developerLanguageService.load(login: user.login, force: true)
+                        Task { await refreshGitHubStarLists(login: user.login) }
+                    },
+                    onSignOut: {
+                        showAccountPopover = false
+                        Task { await authSession.signOut() }
+                    }
+                )
+                .id(user.id)
+                .appLocaleEnvironment()
+            }
         }
-        .help(Text("sidebar.account"))
+        .help(Text("profile.extras.title"))
+        .accessibilityLabel(Text("profile.extras.title"))
     }
 
     // MARK: - 显示名 + login
@@ -609,7 +600,7 @@ struct SidebarHeaderView: View {
     private func lastRefreshedText(_ date: Date) -> String {
         let relativeTime = RelativeTimeText.pastEvent(
             date,
-            relativeTo: accountMenuReferenceDate,
+            relativeTo: max(date, accountMenuReferenceDate),
             locale: locale,
             dateTimeStyle: .named
         )

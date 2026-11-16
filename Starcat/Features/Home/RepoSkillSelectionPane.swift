@@ -248,9 +248,12 @@ private struct SkillRow: View {
                         .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .offset(x: isHovered && !isPreviewSelected && !reduceMotion ? 1.5 : 0)
+                    Spacer(minLength: 0)
                     if isInstalled {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                            .foregroundStyle(Color.green)
                             .help(LocalizedStringKey(session.isExport ? "repo.skills.install.exported" : "repo.skills.install.installed"))
                     } else if session.coverage(of: skill.id) > 0 {
                         Text(verbatim: "\(session.coverage(of: skill.id))/\(session.selectedDestinations.count)")
@@ -259,8 +262,7 @@ private struct SkillRow: View {
                             .monospacedDigit()
                     }
                 }
-                // 只移动名称区，复选框保留原位置与独立的批量勾选语义。
-                .offset(x: isHovered && !isPreviewSelected && !reduceMotion ? 1.5 : 0)
+                // 只移动名称，已安装状态固定在行尾，悬停不改变右对齐边界。
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }

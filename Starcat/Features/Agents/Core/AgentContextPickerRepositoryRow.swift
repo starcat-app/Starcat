@@ -18,6 +18,7 @@ struct AgentContextPickerRepositoryRow: View, Equatable {
     let isHighlighted: Bool
     let isEnabled: Bool
     let selectionLimit: Int
+    let rowIndex: Int
     let onToggle: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -30,6 +31,7 @@ struct AgentContextPickerRepositoryRow: View, Equatable {
             && lhs.isHighlighted == rhs.isHighlighted
             && lhs.isEnabled == rhs.isEnabled
             && lhs.selectionLimit == rhs.selectionLimit
+            && lhs.rowIndex == rhs.rowIndex
     }
 
     var body: some View {
@@ -42,7 +44,8 @@ struct AgentContextPickerRepositoryRow: View, Equatable {
                 starsCount: candidate.starsCount,
                 isChecked: isSelected,
                 isHighlighted: isHighlighted,
-                isEnabled: isEnabled
+                isEnabled: isEnabled,
+                rowIndex: rowIndex
             ) {
                 HStack(spacing: 4) {
                     ForEach(sources.prefix(2), id: \.self) { source in

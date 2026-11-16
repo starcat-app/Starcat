@@ -493,7 +493,9 @@ private final class KnowledgeRAGBrowserViewModel {
     private var repoContextGenerationRepo: Repo?
     var hasMoreChunks = false
     var hasMoreRepositories = false
-    var isLoading = false
+    var isLoading = true
+    /// 当前详情数据的归属。区分真实空分片与新仓库读取中，防止旧分片出现在新标题下。
+    var loadedRepositoryID: Int64?
     var isLoadingMoreChunks = false
     var isLoadingMoreRepositories = false
     var isIndexing = false
@@ -1265,6 +1267,7 @@ private final class KnowledgeRAGBrowserViewModel {
         _ = repositorySelectionGate.begin()
         preservesEmptySelection = true
         selectedRepoID = nil
+        loadedRepositoryID = nil
         chunks = []
         repositoryInsightsArtifact = nil
         repoContextDocument = nil
@@ -1284,6 +1287,7 @@ private final class KnowledgeRAGBrowserViewModel {
     private func loadChunks(limit: Int, append: Bool, selectionGeneration: Int? = nil) async {
         guard let selectedRepoID else {
             chunks = []
+            loadedRepositoryID = nil
             repositoryInsightsArtifact = nil
             repoContextDocument = nil
             hasMoreChunks = false
@@ -1324,8 +1328,20 @@ private final class KnowledgeRAGBrowserViewModel {
                 repoContextDocument = loadedRepoContext
             }
             hasMoreChunks = page.hasMore
+            loadedRepositoryID = requestedRepoID
         }
-        catch { errorMessage = error.localizedDescription }
+        catch {
+            guard self.selectedRepoID == requestedRepoID,
+                  selectionGeneration.map(repositorySelectionGate.isCurrent) ?? true else { return }
+            errorMessage = error.localizedDescription
+            if !append, loadedRepositoryID != requestedRepoID {
+                chunks = []
+                repoContextDocument = nil
+                repositoryInsightsArtifact = nil
+                hasMoreChunks = false
+                loadedRepositoryID = requestedRepoID
+            }
+        }
     }
 
     private func loadRepositoryInsightsArtifact(
@@ -1349,6 +1365,7 @@ private struct KnowledgeRAGBrowserScrollOffsetKey: PreferenceKey {
 }
 
 private struct KnowledgeRAGBrowserView: View {
+    @Namespace private var selectionSpace
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -1538,6 +1555,9 @@ private struct KnowledgeRAGBrowserView: View {
                         .padding(.horizontal, 10)
                         .padding(.bottom, 8)
                     LazyVStack(alignment: .leading, spacing: 4) {
+                        if viewModel.isLoading && viewModel.candidates.isEmpty {
+                            ListLoadingSkeleton(rowHeight: 84)
+                        }
                         ForEach(Array(viewModel.candidates.enumerated()), id: \.element.repo.id) { rowIndex, candidate in
                             repositoryRow(candidate)
                                 .id(candidate.repo.id)
@@ -1692,11 +1712,20 @@ private struct KnowledgeRAGBrowserView: View {
 
     private var detail: some View {
         ZStack {
-            if let candidate = viewModel.selectedCandidate {
+            if viewModel.isLoading, viewModel.candidates.isEmpty {
+                RepoSkillSkeletonView(layout: .manifest)
+            } else if let candidate = viewModel.selectedCandidate {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        repositoryDetail(candidate)
-                            .padding(20)
+                        if viewModel.loadedRepositoryID == candidate.repo.id {
+                            repositoryDetail(candidate)
+                                .padding(20)
+                                .detailContentTransition()
+                        } else {
+                            RepoSkillSkeletonView(layout: .manifest)
+                                .padding(20)
+                                .transition(.opacity)
+                        }
                     }
                     .onChange(of: viewModel.revealScrollNonce) { _, nonce in
                         guard nonce > 0, let chunkID = viewModel.highlightedChunkID else { return }
@@ -1706,12 +1735,13 @@ private struct KnowledgeRAGBrowserView: View {
                         }
                     }
                 }
+                .stableDetailTransition(value: candidate.repo.id)
             } else {
                 // 与主窗口详情列共享同一套响应式示意图，窗口缩放时不引入独立图片资产。
                 RepoDetailNoSelectionPlaceholder()
             }
         }
-        .overlay { if viewModel.isLoading { ProgressView().controlSize(.small) } }
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: viewModel.loadedRepositoryID)
     }
 
     /// 索引状态属于整个知识库，放在左侧控制台，切换仓库时不重复呈现。
@@ -2042,7 +2072,10 @@ private struct KnowledgeRAGBrowserView: View {
             if let diagnostics = viewModel.retrievalTestDiagnostics {
                 retrievalTestSummary(diagnostics)
             }
-            if !viewModel.retrievalHits.isEmpty {
+            if viewModel.isTestingRetrieval, viewModel.retrievalHits.isEmpty {
+                ListLoadingSkeleton(rowCount: 3, rowHeight: 44)
+                    .transition(.opacity)
+            } else if !viewModel.retrievalHits.isEmpty {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(viewModel.retrievalHits.enumerated()), id: \.element.chunk.id) { rowIndex, hit in
@@ -2051,6 +2084,7 @@ private struct KnowledgeRAGBrowserView: View {
                     }
                 }
                 .frame(maxHeight: 160)
+                .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.isTestingRetrieval)
             } else if viewModel.hasCompletedRetrievalTest {
                 // 未命中只是一次测试结果，不应使用页面级空状态占据大块垂直空间。
                 VStack(alignment: .leading, spacing: 2) {
@@ -2368,7 +2402,8 @@ private struct KnowledgeRAGBrowserView: View {
                 ),
                 isSelected: selected,
                 showLibraryBadge: false,
-                showReadStatusBadge: false
+                showReadStatusBadge: false,
+                selectionNamespace: selectionSpace
             )
         }
         .buttonStyle(.plain)

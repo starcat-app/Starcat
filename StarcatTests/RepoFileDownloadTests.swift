@@ -423,6 +423,7 @@ struct RepoFileBrowserViewModelTests {
 
     @Test("Markdown 资源绑定树提交，源码切换不重新请求，过期失败回调被忽略")
     func markdownSnapshotAndModes() async throws {
+        let source = "---\nname: guide\ndescription: >\n  Original metadata.\n---\n# Guide\n\n![Logo](../logo.png)"
         let mock = MockGitHubAPIClient()
         mock.repositoryLatestCommitHandler = { _, _, path, _ in
             GitHubCommitSummaryDTO(sha: path.isEmpty ? "tree-commit" : "old-file-commit",
@@ -437,7 +438,7 @@ struct RepoFileBrowserViewModelTests {
         }
         let viewModel = RepoFileBrowserViewModel(
             target: RepoFileBrowserTarget(owner: "owner", name: "repo", fullName: "owner/repo", ref: "main"),
-            apiClient: mock, downloader: PreviewStubDownloader(preview: .text("# Guide\n\n![Logo](../logo.png)")),
+            apiClient: mock, downloader: PreviewStubDownloader(preview: .text(source)),
             folderPicker: FixedFolderPicker(url: nil), treeCache: RepoFileTreeSessionCache()
         )
         await viewModel.loadTree()
@@ -451,6 +452,7 @@ struct RepoFileBrowserViewModelTests {
             return
         }
         #expect(document.html.contains("https://raw.githubusercontent.com/owner/repo/tree-commit/logo.png"))
+        #expect(document.html.contains("class=\"starcat-front-matter\""))
         #expect(viewModel.githubRawURL?.absoluteString.contains("/tree-commit/") == true)
         let revision = viewModel.previewRevision
         viewModel.previewMode = .source
@@ -461,7 +463,7 @@ struct RepoFileBrowserViewModelTests {
         #expect(viewModel.markdown == .ready(document))
         viewModel.markdownFailed(documentID: document.id)
         if case .failed = viewModel.markdown {} else { Issue.record("Current failure must be surfaced") }
-        #expect(viewModel.previewText?.hasPrefix("# Guide") == true)
+        #expect(viewModel.previewText == source)
         await viewModel.selectBranch("dev")
         #expect(viewModel.previewedPath == nil)
         #expect(viewModel.markdown == .idle)

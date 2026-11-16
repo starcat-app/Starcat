@@ -268,7 +268,7 @@ struct MCPSettingsTab: View {
 
             if !dependencies.mcpDeviceStore.devices.isEmpty {
                 Section {
-                    ForEach(dependencies.mcpDeviceStore.devices) { device in
+                    ForEach(Array(dependencies.mcpDeviceStore.devices.enumerated()), id: \.element.id) { index, device in
                         HStack(alignment: .center, spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(device.name)
@@ -286,6 +286,7 @@ struct MCPSettingsTab: View {
                             .buttonStyle(.bordered)
                             .focusEffectDisabled()
                         }
+                        .listRowSurface(index: index)
                     }
                 } header: {
                     SettingsSectionHeader(

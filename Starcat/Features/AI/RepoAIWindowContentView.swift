@@ -93,6 +93,7 @@ extension EnvironmentValues {
 }
 
 struct RepoAIWindowContentView: View {
+    @Namespace private var historySelectionSpace
 
     let repo: Repo
     let autoGenerateSummaryOnOpen: Bool
@@ -1081,7 +1082,7 @@ struct RepoAIWindowContentView: View {
     private func externalContextSourcesBlock(_ sources: [AIExternalContextSource]) -> some View {
         DisclosureGroup(isExpanded: $areExternalContextSourcesExpanded) {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(sources) { source in
+                ForEach(Array(sources.enumerated()), id: \.element.id) { index, source in
                     Button {
                         NSWorkspace.shared.open(source.url)
                     } label: {
@@ -1104,6 +1105,7 @@ struct RepoAIWindowContentView: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .listRowSurface(index: index)
                 }
             }
             .padding(.top, 6)
@@ -1426,8 +1428,8 @@ struct RepoAIWindowContentView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(chat.sessions) { summary in
-                            sessionListRow(summary: summary, chat: chat)
+                        ForEach(Array(chat.sessions.enumerated()), id: \.element.id) { index, summary in
+                            sessionListRow(summary: summary, rowIndex: index, chat: chat)
                             if summary.id != chat.sessions.last?.id {
                                 Divider().opacity(0.4)
                             }
@@ -1440,7 +1442,7 @@ struct RepoAIWindowContentView: View {
         .frame(width: 320)
     }
 
-    private func sessionListRow(summary: ChatSessionSummary, chat: RepoAIChatViewModel) -> some View {
+    private func sessionListRow(summary: ChatSessionSummary, rowIndex: Int, chat: RepoAIChatViewModel) -> some View {
         let isCurrent = summary.id == chat.currentSessionId
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: isCurrent ? "checkmark.circle.fill" : "circle")
@@ -1476,7 +1478,7 @@ struct RepoAIWindowContentView: View {
                 isSessionListPresented = false
             }
         }
-        .background(isCurrent ? Color.accentColor.opacity(0.06) : Color.clear)
+        .listRowSurface(index: rowIndex, isSelected: isCurrent, selectionNamespace: historySelectionSpace)
     }
 
     /// Picker 只表达用户意图，真正切换统一交给 `requestPanelMode(_:)`。
@@ -1608,6 +1610,7 @@ struct RepoAIWindowContentView: View {
                         }
                         .padding(.vertical, 16)
                     }
+                    .stableDetailTransition(value: chat.currentSessionId)
                     .background(Color.clear)
                     .onChange(of: chat.messages.count) { _, _ in
                         scheduleChatTailScroll(proxy: proxy)
@@ -2345,6 +2348,7 @@ private struct AITagSuggestionRow: View {
     let onApply: () -> Void
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var isHovered = false
 
     var body: some View {
@@ -2379,7 +2383,11 @@ private struct AITagSuggestionRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .background(AITagSuggestionRowChrome.background(rowIndex: rowIndex, isHovered: isHovered))
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.14)) {
+                isHovered = hovering
+            }
+        }
         .accessibilityElement(children: .contain)
     }
 

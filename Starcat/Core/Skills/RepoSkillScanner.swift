@@ -153,7 +153,7 @@ struct RepoSkillScanner: Sendable {
                     skills.append(RepoSkill(
                         repositoryID: repo.id, commitSHA: commit.sha, directory: directory,
                         name: metadata.name, summary: metadata.description,
-                        manifest: SkillFrontmatter.stripFrontmatter(markdown), files: files,
+                        manifest: markdown, files: files,
                         installationIssue: !complete ? String.l10n("repo.skills.error.incomplete")
                             : externalReferences ? String.l10n("repo.skills.error.externalReferences")
                             : (unsupported || nested ? String.l10n("repo.skills.error.unsupported") : nil)

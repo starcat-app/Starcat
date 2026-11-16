@@ -264,7 +264,7 @@ struct RAGContextPickerFilterControls: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             } else {
-                List(results, id: \.self) { language in
+                List(Array(results.enumerated()), id: \.element) { index, language in
                     Button {
                         // 多选：点选只增删感兴趣语言，不关闭 popover。
                         toggleInterestedLanguage(language)
@@ -281,6 +281,7 @@ struct RAGContextPickerFilterControls: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .listRowSurface(index: index, isSelected: isInterestedLanguage(language))
                 }
                 .listStyle(.plain)
             }

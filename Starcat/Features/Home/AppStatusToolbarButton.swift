@@ -23,6 +23,7 @@ struct AppStatusToolbarButton: View {
     @Environment(SyncManager.self) private var syncManager
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     let lastSyncedAt: Date?
     let onShowBatchAIPanel: (() -> Void)?
@@ -33,6 +34,11 @@ struct AppStatusToolbarButton: View {
     /// 先结束 popover 的展示生命周期，再交给主窗口挂载模态 sheet。
     @State private var pendingTaskWindow: (id: AppBackgroundTask.ID, accountID: Int64?)?
     @State private var diagnosticSummary: DiagnosticLogSummary = .empty
+    @State private var isClearingDiagnostics = false
+    /// 打开面板、故障通知和清理共用一条刷新任务；期间的新需求合并到下一轮。
+    @State private var diagnosticRefreshTask: Task<Void, Never>?
+    @State private var diagnosticRefreshPending = false
+    @State private var diagnosticRefreshRevision = 0
     /// Toolbar 与设置页必须观察同一个配置实例，端口冲突才能即时反映到全局状态。
     @State private var pluginConfiguration = CompanionConfiguration.shared
 
@@ -79,6 +85,7 @@ struct AppStatusToolbarButton: View {
                     githubStatusMonitor: dependencies.githubStatusMonitor,
                     serviceSummary: dependencies.serviceAvailabilityMonitor.summary,
                     diagnosticSummary: diagnosticSummary,
+                    isClearingDiagnostics: isClearingDiagnostics,
                     aiUsageRepository: dependencies.aiUsageRepository,
                     relativePastDate: relativePastDate,
                     relativeFutureDate: relativeFutureDate,
@@ -123,7 +130,6 @@ struct AppStatusToolbarButton: View {
                 }
             }
             .task {
-                await refreshDiagnostics()
                 await dependencies.serviceAvailabilityMonitor.refreshNow()
                 await dependencies.githubStatusMonitor.refreshNow()
             }
@@ -233,10 +239,33 @@ struct AppStatusToolbarButton: View {
     }
 
     private func refreshDiagnostics() async {
-        diagnosticSummary = await DiagnosticLogStore.shared.issueSummary()
+        diagnosticRefreshPending = true
+        if let diagnosticRefreshTask {
+            await diagnosticRefreshTask.value
+            return
+        }
+        let task = Task { @MainActor in
+            defer { diagnosticRefreshTask = nil }
+            while diagnosticRefreshPending {
+                diagnosticRefreshPending = false
+                let revision = diagnosticRefreshRevision
+                let summary = await DiagnosticLogStore.shared.issueSummary()
+                // 清理前已在途的结果不能重新点亮旧提醒；清理会再请求最新摘要。
+                guard revision == diagnosticRefreshRevision else { continue }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
+                    diagnosticSummary = summary
+                }
+            }
+        }
+        diagnosticRefreshTask = task
+        await task.value
     }
 
     private func clearDiagnostics() async {
+        guard !isClearingDiagnostics else { return }
+        isClearingDiagnostics = true
+        diagnosticRefreshRevision += 1
+        defer { isClearingDiagnostics = false }
         await DiagnosticLogStore.shared.markIssuesAcknowledged()
         await refreshDiagnostics()
     }
@@ -269,6 +298,7 @@ private struct AppStatusPanel: View {
     let githubStatusMonitor: GitHubStatusMonitor
     let serviceSummary: ServiceAvailabilitySummary
     let diagnosticSummary: DiagnosticLogSummary
+    let isClearingDiagnostics: Bool
     let aiUsageRepository: any AIUsageRepositoryProtocol
     let relativePastDate: (Date) -> String
     let relativeFutureDate: (Date) -> String
@@ -292,6 +322,7 @@ private struct AppStatusPanel: View {
     @State private var aiUsagePeakTokens = 0
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -348,12 +379,29 @@ private struct AppStatusPanel: View {
     @ViewBuilder
     private var diagnosticAccessory: some View {
         HStack(spacing: 6) {
-            if diagnosticSummary.issueCount > 0 {
-                Button("toolbar.status.diagnostics.clear") {
+            if diagnosticSummary.issueCount > 0 || isClearingDiagnostics {
+                Button {
                     onClearDiagnostics()
+                } label: {
+                    // 原文案占位保持按钮宽度；处理中立即反馈，减少动态效果时用静态图标。
+                    Text("toolbar.status.diagnostics.clear")
+                        .opacity(isClearingDiagnostics ? 0 : 1)
+                        .overlay {
+                            if isClearingDiagnostics {
+                                if reduceMotion {
+                                    Image(systemName: "hourglass")
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                }
+                            }
+                        }
                 }
                 .controlSize(.small)
+                .disabled(isClearingDiagnostics)
                 .focusEffectDisabled()
+                .accessibilityLabel(Text("toolbar.status.diagnostics.clear"))
             }
             Button("toolbar.status.diagnostics.open") {
                 onOpenDiagnostics()

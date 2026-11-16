@@ -35,6 +35,7 @@ private struct GitHubStarListEditorItem: Identifiable {
 /// / `selectedWeeklyLanguage` 等现有 binding 中，避免把视觉选中态改成新的数据源。
 private enum ExploreSidebarSelection: Hashable {
     case mode(ExploreMode)
+    case recommendationDate(RecommendationHistoryDateScope)
     case topic(String?)
     case platform(String?)
     case language(String?)
@@ -98,6 +99,7 @@ struct SidebarView: View {
     @State private var explorePlatformsExpanded: Bool = true
     /// 每日热点子分类展开/收起状态；「全部主题」行常驻，仅子分类折叠（2026-11-04 对齐其他分组）。
     @State private var dailyRadarCategoriesExpanded: Bool = true
+    @State private var recommendationOlderDatesExpanded = false
     /// Activity 分类列表展开/收起状态。Activity 是独立 root，不能复用 Trending 的展开态。
     @State private var activityCategoriesExpanded: Bool = true
     @Binding var selectedPage: SidebarRootPage
@@ -134,12 +136,12 @@ struct SidebarView: View {
     ///
     /// 只传最终颜色而不传 `ActivityItem`，避免 Sidebar 需要理解 Activity 的详情模型。
     var currentActivityTintColor: Color?
-
     /// 每日热点独立内容区的展示状态由主窗口持有。
     @Binding var dailyRadarPreviewPresentation: Bool
 
     /// 与右侧覆盖层共享的每日热点目录/分类状态；左栏不创建第二套请求。
     @Bindable var dailyRadarModel: DailyRadarWorkspaceViewModel
+    let recommendationHistoryModel: RecommendationHistoryListModel
     /// 新功能标识状态由主窗口持有；侧栏只读展示，并在系统 List 选中时写入首次点击记录。
     var newFeatureBadgeStore: NewFeatureBadgeStore
     var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
@@ -925,6 +927,9 @@ struct SidebarView: View {
 
     private var defaultExploreSidebarSelection: ExploreSidebarSelection {
         switch selectedExploreMode {
+        case .recommendations:
+            return recommendationHistoryModel.dateScope == .all
+                ? .mode(.recommendations) : .recommendationDate(recommendationHistoryModel.dateScope)
         case .discover:
             if dependencies.linuxDoStore.selectedSource == .linuxDo {
                 if let language = dependencies.linuxDoStore.selectedLanguage { return .linuxDoLanguage(language) }
@@ -958,7 +963,11 @@ struct SidebarView: View {
         case .dailyRadarCategory(let id):
             return dailyRadarPreviewPresentation && dailyRadarModel.category == id
         case .mode(let mode):
-            return selectedExploreMode == mode && (mode != .discover || dependencies.linuxDoStore.selectedSource == .catalog)
+            return selectedExploreMode == mode
+                && (mode != .recommendations || recommendationHistoryModel.dateScope == .all)
+                && (mode != .discover || dependencies.linuxDoStore.selectedSource == .catalog)
+        case .recommendationDate(let scope):
+            return selectedExploreMode == .recommendations && recommendationHistoryModel.dateScope == scope
         case .topic(let code):
             return selectedExploreMode == .discover && dependencies.linuxDoStore.selectedSource == .catalog && selectedDiscoveryTopic == code
         case .platform(let code):
@@ -1008,6 +1017,7 @@ struct SidebarView: View {
             dailyRadarModel.selectCategory(id)
         case .mode(let mode):
             selectedExploreMode = mode
+            if mode == .recommendations { recommendationHistoryModel.dateScope = .all }
             if mode == .awesome {
                 guard authSession.state.isAuthenticated else {
                     showLoginSheet = true
@@ -1018,6 +1028,9 @@ struct SidebarView: View {
         case .topic(let code):
             selectedExploreMode = .discover
             selectedDiscoveryTopic = code
+        case .recommendationDate(let scope):
+            recommendationHistoryModel.dateScope = scope
+            selectedExploreMode = .recommendations
         case .platform(let code):
             selectedExploreMode = .discover
             selectedDiscoveryPlatform = code
@@ -1298,6 +1311,11 @@ struct SidebarView: View {
     @ViewBuilder
     private var exploreModeSidebarContent: some View {
         Section("nav.trending") {
+            exploreSelectableRow(selection: .mode(.recommendations), count: dependencies.dailyRecommendationStore.hasLoadedState ? dependencies.dailyRecommendationStore.historyEntries.count : nil) {
+                exploreSidebarBusinessIcon(.recommendations, color: .blue)
+            } title: {
+                Text("recommendations.daily.navigationTitle")
+            }
             if settings.exploreCatalogPreferences.isGroupEnabled("dailyRadar") {
                 exploreSelectableRow(selection: .dailyRadarPreview, count: dailyRadarModel.totalCount) {
                     // 每日热点与 Weekly 拆分图形：雷达 vs 报纸（2026-11-04 图标体系样板决议）。
@@ -1372,6 +1390,8 @@ struct SidebarView: View {
 
     private func exploreModeCount(_ mode: ExploreMode) -> Int? {
         switch mode {
+        case .recommendations:
+            return dependencies.dailyRecommendationStore.historyEntries.count
         case .trending:
             return dependencies.trendingLanguageStore.sidebarTotalCount
         case .discover, .popular, .newReleases:
@@ -1392,6 +1412,8 @@ struct SidebarView: View {
             linuxDoLanguageSidebarContent
         case .mode(let mode):
             switch mode {
+            case .recommendations:
+                recommendationDateSidebarContent
             case .discover:
                 exploreDiscoverySidebarContent
             case .popular, .newReleases:
@@ -1403,6 +1425,50 @@ struct SidebarView: View {
             case .awesome:
                 awesomeSourceSidebarContent
             }
+        }
+    }
+
+    /// 最近五个自然日只占有数据的日期行，更早日期集中折叠；选择与中栏共用窗口模型。
+    private var recommendationDateSidebarContent: some View {
+        let entries = dependencies.dailyRecommendationStore.historyEntries
+        let dates = RecommendationHistoryDates(entries: entries)
+        return Section("recommendations.history.datesTitle") {
+            recommendationDateRow(.all, count: entries.count)
+            ForEach(dates.recent) { group in
+                recommendationDateRow(.day(group.day), count: group.count)
+            }
+            if !dates.older.isEmpty {
+                Button {
+                    withAnimation(disclosureAnimation) { recommendationOlderDatesExpanded.toggle() }
+                } label: {
+                    HStack {
+                        Text(LocalizedStringKey(recommendationOlderDatesExpanded
+                            ? "recommendations.history.lessDates" : "recommendations.history.moreDates"))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .rotationEffect(.degrees(recommendationOlderDatesExpanded ? 90 : 0))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .foregroundStyle(.secondary)
+                if recommendationOlderDatesExpanded {
+                    ForEach(dates.older) { group in
+                        recommendationDateRow(.day(group.day), count: group.count)
+                    }
+                }
+            }
+            if dates.unknownCount > 0 { recommendationDateRow(.unknown, count: dates.unknownCount) }
+        }
+    }
+
+    private func recommendationDateRow(_ scope: RecommendationHistoryDateScope, count: Int) -> some View {
+        exploreSelectableRow(selection: .recommendationDate(scope), count: count) {
+            exploreSidebarSystemIcon(scope == .all ? "clock" : "calendar", color: .blue)
+        } title: {
+            Text(verbatim: scope.title(locale: locale))
         }
     }
 

@@ -1301,19 +1301,22 @@ private struct DirectPassDeviceList: View {
                 .accessibilityLabel(Text("settings.pro.direct.button.validate"))
             }
 
-            if devices.isEmpty {
+            if devices.isEmpty && isLoading {
+                ListLoadingSkeleton(rowCount: 3, rowHeight: 48)
+            } else if devices.isEmpty {
                 Text("settings.pro.direct.devices.empty")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 5) {
-                    ForEach(devices) { device in
+                    ForEach(Array(devices.enumerated()), id: \.element.id) { index, device in
                         DirectPassDeviceRow(device: device) {
                             pendingDeviceDeactivation = device
                             isDeviceDeactivationConfirmationPresented = true
                         }
                         .disabled(isLoading || isDeactivating)
+                        .listRowSurface(index: index)
                     }
                 }
             }

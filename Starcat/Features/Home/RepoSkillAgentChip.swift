@@ -49,6 +49,7 @@ struct RepoSkillAgentChip: View {
                     } else {
                         Image(systemName: hasConflict ? "exclamationmark.circle" : isInstalled ? "checkmark.circle.fill" : "plus")
                             .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                            .foregroundStyle(!hasConflict && isInstalled ? Color.green : .primary)
                     }
                 }
                 .frame(width: 14, height: 14)

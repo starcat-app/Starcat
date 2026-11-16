@@ -106,6 +106,10 @@ final class AgentWorkspaceViewModel {
         didSet { invalidateTimelinePresentation() }
     }
     var historyRuns: [AgentRunRecord] = []
+    /// 历史列表首读与单次详情读取分开，刷新已有列表时不盖住内容。
+    private(set) var hasLoadedHistory = false
+    private(set) var loadingHistoryRunID: String?
+    private var historySelectionGeneration = 0
     var inspectorTab: AgentInspectorTab = .run
     var selectedArtifactID: UUID?
     var selectedToolCallID: String?
@@ -330,6 +334,7 @@ final class AgentWorkspaceViewModel {
     /// 按钮和键盘发送共用同一校验，避免 UI 显示不可发送但 Return 仍启动 run。
     var canSubmit: Bool {
         guard !isRunning,
+              loadingHistoryRunID == nil,
               let selectedAgent,
               selectedAgent.isEnabled,
               runtimeSelectionAvailable,
@@ -365,6 +370,8 @@ final class AgentWorkspaceViewModel {
 
     func selectAgent(_ agent: AgentDefinition) {
         guard !isRunning, agent.id != selectedAgentID else { return }
+        historySelectionGeneration += 1
+        loadingHistoryRunID = nil
         draftsByAgentID[selectedAgentID] = prompt
         selectedAgentID = agent.id
         prompt = draftsByAgentID[agent.id] ?? ""
@@ -477,6 +484,7 @@ final class AgentWorkspaceViewModel {
     }
 
     func reloadHistory(limit: Int = 20) async {
+        defer { hasLoadedHistory = true }
         guard let runRepository else { return }
         do {
             historyRuns = try await runRepository.recentRuns(limit: limit)
@@ -489,6 +497,7 @@ final class AgentWorkspaceViewModel {
     /// Run 结束后的列表刷新也会调用后者，若重复执行就可能把本进程仍在推进的 Run
     /// 误判为上次启动遗留任务。
     func initializeHistory(limit: Int = 20) async {
+        defer { hasLoadedHistory = true }
         guard !hasInitializedHistory, let runRepository else {
             await reloadHistory(limit: limit)
             return
@@ -509,10 +518,19 @@ final class AgentWorkspaceViewModel {
 
     func openHistoryRun(_ run: AgentRunRecord) async {
         guard !isRunning, let runRepository, let runID = UUID(uuidString: run.id) else { return }
+        historySelectionGeneration += 1
+        let generation = historySelectionGeneration
+        loadingHistoryRunID = run.id
+        defer {
+            if historySelectionGeneration == generation { loadingHistoryRunID = nil }
+        }
         do {
             guard let snapshot = try await runRepository.snapshot(runID: runID) else { return }
+            // 左侧可连续点选；只有当前读取能替换骨架和 Inspector，不能让迟到快照回跳。
+            guard !Task.isCancelled, historySelectionGeneration == generation else { return }
             apply(snapshot)
             if case .usageUpdated(let historicalUsage) = await withEstimatedCost(.usageUpdated(usage)) {
+                guard !Task.isCancelled, historySelectionGeneration == generation else { return }
                 usage = historicalUsage
             }
             if snapshot.run.status == AgentRunStatus.waitingForConfirmation.rawValue,
@@ -526,6 +544,7 @@ final class AgentWorkspaceViewModel {
                 resumePendingRun(snapshot, definition: definition)
             }
         } catch {
+            guard !Task.isCancelled, historySelectionGeneration == generation else { return }
             errorMessage = error.localizedDescription
         }
     }

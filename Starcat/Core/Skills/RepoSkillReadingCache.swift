@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import MarkdownUI
 
 /// 阅读缓存属于单个窗口，关闭窗口或切换账号后随会话释放，不共享私有仓库正文。
 actor RepoSkillReadingCache {
@@ -34,7 +33,10 @@ actor RepoSkillReadingCache {
             recent.append(skill.id)
             return cached
         }
-        let html = Self.resolveImages(MarkdownContent(skill.manifest).renderHTML(), baseURL: imageBaseURL)
+        let html = Self.resolveImages(
+            RepoFileMarkdownRenderer.renderHTMLPreservingFrontMatter(skill.manifest),
+            baseURL: imageBaseURL
+        )
         try Task.checkCancellation()
         let grouped = Dictionary(grouping: skill.files, by: \.folder)
         let document = Document(

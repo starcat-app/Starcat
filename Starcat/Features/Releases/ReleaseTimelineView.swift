@@ -174,8 +174,9 @@ struct ReleaseTimelineView: View {
     @ViewBuilder
     private var content: some View {
         if let vm = viewModel {
-            if vm.isLoading {
-                ProgressView()
+            if vm.isLoading && vm.entries.isEmpty {
+                ListLoadingSkeleton(rowCount: 5, rowHeight: 100)
+                    .padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if vm.entries.isEmpty {
                 emptyState
@@ -203,6 +204,7 @@ struct ReleaseTimelineView: View {
                                     )
                                 }
                             )
+                            .listRowSurface(index: index)
                             .id(entry.id)
                             .automaticListPagination(
                                 appearingIndex: index,

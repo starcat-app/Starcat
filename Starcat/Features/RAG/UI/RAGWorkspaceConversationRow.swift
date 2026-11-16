@@ -80,6 +80,7 @@ struct RAGWorkspaceConversationRow: View {
     @Bindable var selectionState: RAGConversationRowSelectionState
     let conversation: RAGConversationSummary
     let rowIndex: Int
+    var selectionNamespace: Namespace.ID? = nil
     /// 分组内的会话行不显示气泡图标；保留同宽占位，使文字与根级行文字对齐。
     let showsIcon: Bool
     let isDragging: Bool
@@ -140,12 +141,8 @@ struct RAGWorkspaceConversationRow: View {
             .frame(width: 32, height: 26)
             .padding(.trailing, 6)
         }
-        .background {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(rowBackground)
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isHovered)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .listRowSurface(index: rowIndex, isSelected: selectionState.isSelected,
+                        selectionNamespace: selectionNamespace)
         .contentShape(RoundedRectangle(cornerRadius: 7))
         .padding(.horizontal, 8)
         // 菜单的挂载与卸载不参与动画；只让背景平滑变化，避免 AppKit 菜单桥接处于中间态。
@@ -162,16 +159,6 @@ struct RAGWorkspaceConversationRow: View {
     /// 菜单挂载条件保持纯函数，既能直接回归，也明确约束列表中同时存在的 AppKit 菜单数量。
     nonisolated static func shouldMountActionMenu(isSelected: Bool, isHovered: Bool) -> Bool {
         isSelected || isHovered
-    }
-
-    private var rowBackground: Color {
-        if selectionState.isSelected {
-            return Color.accentColor.opacity(isHovered ? 0.18 : 0.11)
-        }
-        if isHovered {
-            return Color.accentColor.opacity(0.08)
-        }
-        return rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.045)
     }
 
     private var conversationActionMenu: some View {

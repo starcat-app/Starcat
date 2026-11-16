@@ -150,6 +150,8 @@ struct UnifiedRepoRow: View {
     /// 右侧 overlay 图标需要的内容安全边界。默认 0，只有 Search Center「全部」
     /// Tab 的来源图标会传入，避免长描述延伸到右侧 overlay 下方。
     let trailingReservedWidth: CGFloat
+    /// 持续单选列表共享背景滑动；未提供 namespace 时保留各行独立选中。
+    let selectionNamespace: Namespace.ID?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
     @Environment(AppDependencies.self) private var dependencies
@@ -174,7 +176,8 @@ struct UnifiedRepoRow: View {
         showReadStatusBadge: Bool = true,
         hasAISummary: Bool = false,
         hasNote: Bool = false,
-        trailingReservedWidth: CGFloat = 0
+        trailingReservedWidth: CGFloat = 0,
+        selectionNamespace: Namespace.ID? = nil
     ) {
         self.card = card
         self.isSelected = isSelected
@@ -186,10 +189,11 @@ struct UnifiedRepoRow: View {
         self.hasAISummary = hasAISummary
         self.hasNote = hasNote
         self.trailingReservedWidth = trailingReservedWidth
+        self.selectionNamespace = selectionNamespace
     }
 
     var body: some View {
-        RepoRowSurface(isSelected: isSelected, accentColor: accentColor) {
+        RepoRowSurface(isSelected: isSelected, accentColor: accentColor, selectionNamespace: selectionNamespace) {
             HStack(alignment: .center, spacing: 12) {
 
                 // 头像 + 知识库 ❤️ + 「activity kind icon」徽章覆盖（仅 Activity 场景）

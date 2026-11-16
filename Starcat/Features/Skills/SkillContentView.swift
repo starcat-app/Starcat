@@ -15,12 +15,12 @@ struct SkillContentView: View {
     let tab: SkillDetailTab
     let refreshID: UUID
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Namespace private var selectionSpace
     @State private var snapshot: SkillContentSnapshot?
     @State private var failure: String?
     @State private var selectedFile: String?
-    @State private var preview: SkillContentPreview?
-    @State private var previewFailure: String?
-    @State private var loading = false
+    @State private var preview = PreviewPresentation()
     @State private var previewLoading = false
     @State private var contentID = UUID()
     @State private var loadID = UUID()
@@ -29,6 +29,24 @@ struct SkillContentView: View {
     private struct PreviewRequest: Hashable {
         let contentID: UUID
         let file: String?
+    }
+
+    /// 文件、正文与可见性是同一份展示快照；回切时可以恢复被中断退场的当前文件。
+    struct PreviewPresentation {
+        var file: String?
+        var content: SkillContentPreview?
+        var failure: String?
+        var isVisible = false
+
+        /// 同文件重新读取前先恢复已有正文，后续失败也不依赖成功回调才能看见内容。
+        mutating func begin(file: String) -> Bool {
+            failure = nil
+            let retainsContent = self.file == file && content != nil
+            if retainsContent {
+                isVisible = true
+            }
+            return retainsContent
+        }
     }
 
     var body: some View {
@@ -51,13 +69,17 @@ struct SkillContentView: View {
                 else {
                     ForEach(item.files, id: \.self) { Label($0, systemImage: "doc.text") }
                 }
-            } else if loading {
-                ProgressView("skills.detail.content.loading")
             } else if failure == nil {
-                Text("skills.detail.content.unavailable").foregroundStyle(.secondary)
+                // 首帧 task 尚未启动时也显示占位，不能先闪一次“内容不可用”。
+                RepoSkillSkeletonView(layout: tab == .files ? .files : .manifest)
+                    .frame(minHeight: 320)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // 加载快照与文件选择留在稳定的外层，只交接不同页签的展示内容。
+        // 条目与文件预览已有独立交接，页签不再复制并模糊整段 Markdown / 文件列表。
+        .stableDetailTransition(value: tab)
+        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: snapshot == nil)
         .task(id: refreshID) { await load() }
         .task(id: PreviewRequest(contentID: contentID, file: selectedFile)) { await loadPreview() }
     }
@@ -83,7 +105,7 @@ struct SkillContentView: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(snapshot.files) { file in
+                    ForEach(Array(snapshot.files.enumerated()), id: \.element.id) { index, file in
                         Button {
                             selectedFile = file.path
                         } label: {
@@ -98,6 +120,8 @@ struct SkillContentView: View {
                             .font(interfaceScale.font(.code))
                             .foregroundStyle(selectedFile == file.path ? .primary : .secondary)
                             .padding(.vertical, 4)
+                            .listRowSurface(index: index, isSelected: selectedFile == file.path,
+                                            selectionNamespace: selectionSpace)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -108,25 +132,41 @@ struct SkillContentView: View {
             }
             .frame(height: min(260, CGFloat(snapshot.files.count) * 32))
             Divider()
-            if let selectedFile {
-                Text(verbatim: selectedFile).font(interfaceScale.font(.code)).textSelection(.enabled)
+            if let path = preview.file ?? selectedFile {
+                Text(verbatim: path).font(interfaceScale.font(.code)).textSelection(.enabled)
             }
-            if previewLoading {
-                ProgressView("repo.files.preview.loading")
-            } else if let previewFailure {
-                Text(verbatim: previewFailure).foregroundStyle(.secondary).textSelection(.enabled)
-            } else if let preview {
-                switch preview {
-                case .text(let text):
-                    RepoFileSourcePreview(text: text).frame(minHeight: 320)
-                case .binary:
-                    Text("repo.files.preview.binary").foregroundStyle(.secondary)
-                case .tooLarge:
-                    Text("skills.detail.files.tooLarge").foregroundStyle(.secondary)
+            ZStack(alignment: .topLeading) {
+                if previewLoading && preview.content == nil {
+                    RepoSkillSkeletonView(layout: .manifest).frame(minHeight: 320)
+                        .transition(.opacity)
+                } else if let content = preview.content {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let previewFailure = preview.failure {
+                            Text(verbatim: previewFailure).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
+                        switch content {
+                        case .text(let text):
+                            RepoFileSourcePreview(text: text).frame(minHeight: 320)
+                        case .binary:
+                            Text("repo.files.preview.binary").foregroundStyle(.secondary)
+                        case .tooLarge:
+                            Text("skills.detail.files.tooLarge").foregroundStyle(.secondary)
+                        }
+                    }
+                    .opacity(preview.isVisible ? 1 : 0)
+                    .blur(radius: reduceMotion || preview.isVisible ? 0 : 10)
+                    .detailContentTransition()
+                    .allowsHitTesting(preview.isVisible)
+                    .accessibilityHidden(!preview.isVisible)
+                } else if let previewFailure = preview.failure {
+                    Text(verbatim: previewFailure).foregroundStyle(.secondary).textSelection(.enabled)
+                        .detailContentTransition()
+                } else {
+                    Text("skills.detail.files.select").foregroundStyle(.secondary)
                 }
-            } else {
-                Text("skills.detail.files.select").foregroundStyle(.secondary)
             }
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: previewLoading)
+            .clipped()
         }
     }
 
@@ -135,9 +175,7 @@ struct SkillContentView: View {
         guard item.markdown == nil else { return }
         let run = UUID()
         loadID = run
-        loading = true
         failure = nil
-        defer { if loadID == run { loading = false } }
         do {
             guard let location = item.locations.first(where: { $0.state != .missing }),
                   let path = location.resolvedPath else { throw SkillContentReadError.unavailable }
@@ -160,21 +198,53 @@ struct SkillContentView: View {
     private func loadPreview() async {
         let run = UUID()
         previewID = run
-        previewLoading = false
-        preview = nil
-        previewFailure = nil
-        guard let selectedFile, let snapshot else { return }
+        guard let selectedFile, let snapshot else {
+            preview = PreviewPresentation()
+            previewLoading = false
+            return
+        }
+        let isRefresh = withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
+            preview.begin(file: selectedFile)
+        }
         previewLoading = true
         defer { if previewID == run { previewLoading = false } }
         do {
-            let value = try await SkillContentReader().preview(rootPath: snapshot.rootPath, relativePath: selectedFile)
+            // 读取与退场并行，复用现有请求身份；刷新同一文件时继续显示旧内容。
+            async let preparation = SkillContentReader().preview(
+                rootPath: snapshot.rootPath, relativePath: selectedFile
+            )
+            if !isRefresh {
+                await fadeOutPreview()
+                try Task.checkCancellation()
+                guard previewID == run else { return }
+                preview = PreviewPresentation()
+            }
+            let value = try await preparation
             try Task.checkCancellation()
             guard previewID == run, self.selectedFile == selectedFile else { return }
-            preview = value
+            withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) {
+                preview = PreviewPresentation(file: selectedFile, content: value, isVisible: true)
+                previewLoading = false
+            }
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled, previewID == run, self.selectedFile == selectedFile else { return }
-            previewFailure = error.localizedDescription
+            preview.failure = error.localizedDescription
+        }
+    }
+
+    /// 等实际退场完成后才替换正文，不用固定等待猜测 Markdown 或源码的渲染耗时。
+    private func fadeOutPreview() async {
+        guard preview.content != nil else {
+            preview.isVisible = false
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12), completionCriteria: .removed) {
+                preview.isVisible = false
+            } completion: {
+                continuation.resume()
+            }
         }
     }
 

@@ -117,6 +117,8 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     let weeklyLanguageStore: WeeklyLanguageStore
     let weeklySelectionService: WeeklySelectionService
     let awesomeStore: AwesomeStore
+    let recommendationHistoryStore: DailyRecommendationStore
+    let recommendationHistoryModel: RecommendationHistoryListModel
     let activityCategoryCountService: ActivityCategoryCountService
 
     @Environment(\.locale) private var locale
@@ -187,6 +189,13 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     }
 
     private var exploreRepoCountSubtitle: String {
+        if selectedExploreMode == .recommendations {
+            // 历史有自己的反馈/关键词筛选，不继承其它探索页面的许可证筛选状态。
+            let current = recommendationHistoryModel.filtered.count
+            let total = recommendationHistoryStore.historyEntries.count
+            return current == total ? repoCountSubtitle(current)
+                : String(format: String.l10n("list.filteredRepoCountFormat"), current, total)
+        }
         // 来源 summary 是未过滤目录总数；许可证激活时分子改用完整派生结果，分母保留来源总量。
         if settings.licenseFilter.isActive {
             let current = selectedExploreMode == .discover && linuxDoStore.selectedSource == .linuxDo
@@ -225,6 +234,8 @@ private struct RepoListNavigationSubtitleModifier: ViewModifier {
     /// 后端 summary 没有交叉维度，只能使用列表 ViewModel 已发布的真实交集数量。
     private var exploreRepoCounts: (current: Int, total: Int?) {
         switch selectedExploreMode {
+        case .recommendations:
+            return (recommendationHistoryModel.filtered.count, recommendationHistoryStore.historyEntries.count)
         case .discover:
             // Linux.do 是独立目录，不能沿用普通 Discover 的 total，否则标题会显示
             // 与当前列表无关的全站发现数量。
@@ -456,6 +467,7 @@ private struct RepoBadgeCacheLoadIdentity: Hashable {
 }
 
 struct RepoListView: View {
+    @Namespace private var selectionSpace
 
     private static let navigationBreadcrumbSeparator = " › "
     private static let navigationBreadcrumbSegmentLimit = 24
@@ -481,6 +493,8 @@ struct RepoListView: View {
     var githubAPIClient: (any GitHubAPIClientProtocol)?
 
     let selectedPage: SidebarRootPage
+    let recommendationHistoryModel: RecommendationHistoryListModel
+    let onShowDailyRecommendations: () -> Void
     @Binding var selectedExploreMode: ExploreMode
     @Binding var selectedTrendingLanguage: TrendingLanguage
     /// 当前选中的 Trending repo ID（用于卡片高亮和 README 加载）。
@@ -604,7 +618,8 @@ struct RepoListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toast(message: $toastMessage, icon: "doc.on.clipboard")
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if viewModel.effectiveGlobalFilterState.skillFilter != .any { RepoSkillCoverageBanner() }
+            if !(selectedPage == .trending && selectedExploreMode == .recommendations),
+               viewModel.effectiveGlobalFilterState.skillFilter != .any { RepoSkillCoverageBanner() }
         }
         .onPreferenceChange(RepoLicenseOptionsPreferenceKey.self) { keys in
             navigationMetrics.licenseOptions = keys
@@ -647,7 +662,10 @@ struct RepoListView: View {
         .onChange(of: selectedExploreMode) { _, newMode in
             // 探索模块切换子模式时保留多选开关状态，但清空选中项（不同列表 repo 不同）
             let store = dependencies.exploreMultiSelectionStore
-            if store.isActive {
+            if newMode == .recommendations {
+                // 历史页的选择仅用于回看，不延续其它列表的批量操作。
+                store.exit()
+            } else if store.isActive {
                 store.clearSelection()
             }
             if newMode != .weekly {
@@ -767,6 +785,8 @@ struct RepoListView: View {
                 weeklyLanguageStore: dependencies.weeklyLanguageStore,
                 weeklySelectionService: dependencies.weeklySelectionService,
                 awesomeStore: dependencies.awesomeStore,
+                recommendationHistoryStore: dependencies.dailyRecommendationStore,
+                recommendationHistoryModel: recommendationHistoryModel,
                 activityCategoryCountService: dependencies.activityCategoryCountService
             ))
             .navigationTitle(navigationTitle)
@@ -890,6 +910,10 @@ struct RepoListView: View {
     ///
     /// Explore weekly 走 `WeeklySelectionService` 真源。
     private var listColumnTintColor: Color {
+        if selectedPage == .trending, selectedExploreMode == .recommendations {
+            guard let language = recommendationHistoryModel.selectedEntry?.item?.language else { return .accentColor }
+            return LanguageColor.color(for: language)
+        }
         if selectedPage == .trending, selectedExploreMode == .weekly,
            let project = dependencies.weeklySelectionService.selectedItem {
             return DetailHeroTintBackground.accentColor(
@@ -937,7 +961,7 @@ struct RepoListView: View {
             }
         case .trending:
             let store = exploreMultiSelectionStore
-            if store.isActive {
+            if selectedExploreMode != .recommendations, store.isActive {
                 BatchActionBar(
                     context: .explore,
                     store: store,
@@ -973,6 +997,9 @@ struct RepoListView: View {
         switch selectedPage {
         case .manage:    return makeManageToolbarSpec()
         case .trending:
+            if selectedExploreMode == .recommendations {
+                return makeRecommendationHistoryToolbarSpec()
+            }
             if selectedExploreMode == .trending {
                 return makeTrendingToolbarSpec()
             }
@@ -983,6 +1010,24 @@ struct RepoListView: View {
         case .activity:  return makeActivityToolbarSpec()
         case .insights:  return .empty
         }
+    }
+
+    /// 历史页只发布当前历史项目的操作，不能借用上一次 Discovery 选择或无关的全局筛选。
+    @MainActor
+    private func makeRecommendationHistoryToolbarSpec() -> PageToolbarSpec {
+        let trailing = recommendationHistoryModel.selectedEntry?.item.map { item in
+            let repo = dependencies.starredRegistry.applyingDisplayState(to: item.dailyRecommendationRepo)
+            return AnyView(selectedRepoToolbarActions(
+                selection: ToolbarRepoSelection.from(repo: repo, isStarred: repo.isStarred),
+                codeFlowRepo: repo,
+                repoID: repo.id
+            ))
+        }
+        return PageToolbarSpec(
+            leadingPrimary: nil,
+            trailingPrimary: trailing,
+            searchField: AnyView(globalSearchButton)
+        )
     }
 
     /// Trending 页面 toolbar spec（W12 PR-4）：
@@ -1453,6 +1498,8 @@ struct RepoListView: View {
                     trendingRepository: trendingRepository,
                     githubAPIClient: githubAPIClient,
                     discoveryViewModel: discoveryViewModel,
+                    recommendationHistoryModel: recommendationHistoryModel,
+                    onShowDailyRecommendations: onShowDailyRecommendations,
                     trendingViewModel: $trendingViewModel,
                     weeklyViewModel: $weeklyViewModel,
                     selectedMode: $selectedExploreMode,
@@ -1956,7 +2003,8 @@ struct RepoListView: View {
                             viewModel: viewModel,
                             aiSummaryAvailability: aiSummaryAvailability,
                             noteAvailability: noteAvailability,
-                            isSelected: selection.wrappedValue == pinned.id
+                            isSelected: selection.wrappedValue == pinned.id,
+                            selectionNamespace: store.isActive ? nil : selectionSpace
                         )
                     }
                     .buttonStyle(.plain)
@@ -1993,7 +2041,8 @@ struct RepoListView: View {
                             noteAvailability: noteAvailability,
                             isSelected: store.isActive
                                 ? store.contains(ghRepoId: repo.id)
-                                : (selection.wrappedValue == repo.id)
+                                : (selection.wrappedValue == repo.id),
+                            selectionNamespace: store.isActive ? nil : selectionSpace
                         )
                         .background {
                             if item.index == 0 {
@@ -2413,6 +2462,16 @@ struct RepoListView: View {
     }
 
     private var exploreNavigationTitle: Text {
+        if selectedExploreMode == .recommendations {
+            let dateTitle = recommendationHistoryModel.dateScope.title(locale: locale)
+            let scopeTitle = recommendationHistoryModel.filter == .all ? dateTitle
+                : "\(dateTitle) · \(String.l10n(recommendationHistoryModel.filter.titleKey))"
+            return highlightedNavigationTitle(
+                prefix: [String.l10n("nav.trending"), selectedExploreMode.localizedTitle]
+                    .joined(separator: Self.navigationBreadcrumbSeparator),
+                thirdLevelTitle: scopeTitle
+            )
+        }
         let presentation = ExploreNavigationPresentation.make(
             mode: selectedExploreMode,
             discoverySource: dependencies.linuxDoStore.selectedSource,
@@ -2848,7 +2907,7 @@ struct RepoListView: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             } else {
-                List(results, id: \.self) { language in
+                List(Array(results.enumerated()), id: \.element) { index, language in
                     Button {
                         toggleInterestedLanguageFromFilter(language)
                     } label: {
@@ -2865,6 +2924,7 @@ struct RepoListView: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .listRowSurface(index: index, isSelected: isInterestedLanguage(language))
                 }
                 .listStyle(.plain)
             }
@@ -2989,6 +3049,7 @@ private struct ManageRepoRowContent: View {
     let aiSummaryAvailability: RepoListAISummaryAvailability
     let noteAvailability: RepoListNoteAvailability
     let isSelected: Bool
+    var selectionNamespace: Namespace.ID? = nil
 
     @Environment(AppDependencies.self) private var dependencies
 
@@ -3011,7 +3072,8 @@ private struct ManageRepoRowContent: View {
             semanticHit: viewModel.semanticHit(for: repo.id),
             showLibraryBadge: !isKnowledgeLibraryList,
             hasAISummary: aiSummaryAvailability.contains(repo.id),
-            hasNote: noteAvailability.contains(repo.id)
+            hasNote: noteAvailability.contains(repo.id),
+            selectionNamespace: selectionNamespace
         )
     }
 

@@ -165,6 +165,7 @@ struct RepositoryUnstarDataChoiceSheet: View {
                         .padding(.leading, 46)
                 }
                 deletionRow(item)
+                    .listRowSurface(index: index)
             }
         }
         .padding(14)

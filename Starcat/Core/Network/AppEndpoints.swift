@@ -395,6 +395,8 @@ enum AppEndpoints {
             // —— 用户 ——
             /// `GET /user` —— 当前登录用户。
             static let currentUser = "/user"
+            /// 当前授权可见的组织，包含未公开的成员关系；仅供账户资料浮层使用。
+            static let currentUserOrganizations = "/user/orgs"
             /// `GET /user/repos` —— 当前授权用户拥有 / 协作的仓库列表。
             /// 分享卡只用 `affiliation=owner` 统计用户自己的公开开发语言。
             static let currentUserRepos = "/user/repos"

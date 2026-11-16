@@ -68,6 +68,8 @@ struct TagManagementView: View {
                     onRequestDelete: { showDeleteAlert = true }
                 )
                 .frame(minWidth: 360, idealWidth: 460)
+                // 编辑器原本就按 tag.id 重置草稿；保存同一标签时身份不变，保留表单状态。
+                .nativeDetailTransition(value: viewModel.singleSelected?.id)
             }
             Divider()
             footer
@@ -169,16 +171,17 @@ struct TagManagementView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
-                ForEach(viewModel.tags) { tag in
+                ForEach(Array(viewModel.tags.enumerated()), id: \.element.id) { index, tag in
                     tagRow(tag: tag)
+                        .listRowSurface(index: index, isSelected: viewModel.selection.contains(tag.id))
                         .tag(tag.id)
                 }
             }
         }
         .listStyle(.inset)
         .overlay {
-            if viewModel.isLoading {
-                ProgressView().controlSize(.small)
+            if viewModel.isLoading && viewModel.tags.isEmpty {
+                ListLoadingSkeleton().padding(12)
             }
         }
     }
@@ -288,6 +291,7 @@ struct TagManagementView: View {
 
 /// 多选合并时让用户显式选择保留哪个标签；默认预选列表顺序第一个。
 private struct MergeTagsSheet: View {
+    @Namespace private var selectionSpace
 
     let candidates: [Tag]
     let counts: [String: Int]
@@ -333,7 +337,7 @@ private struct MergeTagsSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(spacing: 2) {
-                ForEach(candidates) { tag in
+                ForEach(Array(candidates.enumerated()), id: \.element.id) { index, tag in
                     Button {
                         targetId = tag.id
                     } label: {
@@ -370,10 +374,8 @@ private struct MergeTagsSheet: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(targetId == tag.id ? Color.accentColor.opacity(0.12) : Color.clear)
-                    )
+                    .listRowSurface(index: index, isSelected: targetId == tag.id,
+                                    selectionNamespace: selectionSpace)
                 }
             }
 

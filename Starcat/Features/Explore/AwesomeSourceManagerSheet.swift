@@ -21,6 +21,8 @@ struct AwesomeSourceManagerSheet: View {
     let store: AwesomeStore
 
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var enabledIDs: Set<String>
     @State private var customSourceInput = ""
     @State private var searchQuery = ""
@@ -52,6 +54,7 @@ struct AwesomeSourceManagerSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     errorBanner
                     sourceSections
+                        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: store.isLoading || store.isRefreshing)
                     customSourceSection
                 }
                 .padding(20)
@@ -151,8 +154,8 @@ struct AwesomeSourceManagerSheet: View {
     @ViewBuilder
     private var sourceSections: some View {
         if store.sources.isEmpty, store.isLoading || store.isRefreshing {
-            ProgressView("awesome.sources.loading")
-                .frame(maxWidth: .infinity, minHeight: 180)
+            sourceGridSkeleton
+                .transition(.opacity)
         } else if selectableSources.isEmpty {
             emptySourceState
         } else if filteredManagedSources.isEmpty, filteredCustomSources.isEmpty {
@@ -192,6 +195,30 @@ struct AwesomeSourceManagerSheet: View {
                 )
             }
         }
+    }
+
+    /// 骨架沿用真实两列与 222pt 卡片高度；目录刷新已有内容时继续保留勾选草稿。
+    private var sourceGridSkeleton: some View {
+        SkeletonAnimatedPhase { phase in
+            let palette = SkeletonPalette.forColorScheme(colorScheme)
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                ForEach(0..<4, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 0) {
+                        SkeletonBlock(height: 160, cornerRadius: 0, phase: phase, palette: palette)
+                        VStack(alignment: .leading, spacing: 8) {
+                            SkeletonBlock(width: 150, height: 13, phase: phase, palette: palette)
+                            SkeletonBlock(width: 100, height: 10, phase: phase, palette: palette)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 222)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var filteredManagedSources: [AwesomeSource] {

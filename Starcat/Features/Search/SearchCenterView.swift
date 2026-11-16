@@ -10,6 +10,7 @@ import SwiftUI
 import AppKit
 
 struct SearchCenterView: View {
+    @Namespace private var selectionSpace
     @Bindable var viewModel: SearchCenterViewModel
     /// 直接复用 Manage 本地 Star 仓库的语言统计，避免搜索筛选维护第二份固定语言表。
     let languages: [LanguageStat]
@@ -847,7 +848,8 @@ struct SearchCenterView: View {
                         trailingReservedWidth: trailingReservedWidth(
                             source: source,
                             hasDiscovery: repo.discovery != nil
-                        )
+                        ),
+                        selectionNamespace: selectionSpace
                     )
                 }
             case .reference(let reference):
@@ -857,7 +859,7 @@ struct SearchCenterView: View {
                 // accentColor: .blue 是"Web 类目色"，与 WebSourceBadge / RemoteFavicon
                 // 背景蓝同源；hover 反馈不再单独叠加，全部走 RepoRowSurface 内置逻辑。
                 rowWithSourceIndicator(source: source) {
-                    RepoRowSurface(isSelected: isSelected, accentColor: .blue) {
+                    RepoRowSurface(isSelected: isSelected, accentColor: .blue, selectionNamespace: selectionSpace) {
                         HStack(alignment: .top, spacing: 12) {
                             // 左侧 32pt 容器 + 内嵌 18pt favicon。
                             // 容器 cornerRadius 6 / favicon cornerRadius 4 与 UnifiedRepoRow

@@ -42,6 +42,7 @@
 import SwiftUI
 
 struct ActivityView: View {
+    @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
 
     @Environment(AppDependencies.self) private var dependencies
@@ -528,7 +529,8 @@ struct ActivityView: View {
                     isInLibrary: isInLibrary(repo.id),
                     openSSFScore: dependencies.openSSFScoreStore.badge(for: repo.id)
                 ).overlayingSessionStars(dependencies.starredRegistry),
-                isSelected: isSelected
+                isSelected: isSelected,
+                selectionNamespace: selectionSpace
             )
             // HOM-201 P1-1（2026-06-14）：activity 行 hover 500ms 后预拉 manage 表的 README，
             // active 详情走 loadInternal 同 manage 复用 `readmes` 表；softTtl 短路在 API 层做。
@@ -538,7 +540,8 @@ struct ActivityView: View {
         } else {
             ActivityRowView(
                 item: item,
-                isSelected: isSelected
+                isSelected: isSelected,
+                selectionNamespace: selectionSpace
             )
         }
     }
@@ -761,11 +764,13 @@ struct ActivityView: View {
 private struct ActivityRowView: View {
     let item: ActivityItem
     let isSelected: Bool
+    let selectionNamespace: Namespace.ID
     @Environment(AppDependencies.self) private var dependencies
 
     var body: some View {
         // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，直接渲染 card。
-        ActivityRowSurface(item: item, isSelected: isSelected) {
+        RepoRowSurface(isSelected: isSelected, accentColor: item.accentColor,
+                       selectionNamespace: selectionNamespace) {
             card
         }
     }
@@ -863,62 +868,5 @@ private struct ActivityRowView: View {
                 .foregroundStyle(tint)
         }
         .frame(width: size, height: size)
-    }
-}
-
-private struct ActivityRowSurface<Content: View>: View {
-    let item: ActivityItem
-    let isSelected: Bool
-    private let content: Content
-
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-    @State private var isHovered = false
-
-    init(item: ActivityItem, isSelected: Bool, @ViewBuilder content: () -> Content) {
-        self.item = item
-        self.isSelected = isSelected
-        self.content = content()
-    }
-
-    private var accentColor: Color {
-        item.accentColor
-    }
-
-    private var backgroundOpacity: Double {
-        if isSelected { return 0.18 }
-        if isHovered { return 0.08 }
-        // R-01 §3.1.1：RepoListDensity 已删，统一使用 card 密度的非 hover/selected 透明度。
-        return 0.045
-    }
-
-    var body: some View {
-        // R-01 §3.1.1（2026-06-10 P1）：RepoListDensity 已删，全部走 card 密度
-        // 的视觉常量（vertical 8 / horizontal 10 / cornerRadius 10）。
-        content
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .padding(.leading, isSelected ? 5 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(accentColor.opacity(backgroundOpacity))
-            }
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(accentColor)
-                    .frame(width: isSelected ? 3 : 0)
-                    .padding(.vertical, 8)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(accentColor.opacity(isSelected ? 0.42 : (isHovered ? 0.18 : 0.10)), lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .onHover { hovering in
-                withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.14)) {
-                    isHovered = hovering
-                }
-            }
-            .animation(reduceMotion ? nil : .spring(response: 0.22, dampingFraction: 0.82), value: isSelected)
     }
 }

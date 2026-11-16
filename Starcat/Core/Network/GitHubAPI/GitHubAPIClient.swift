@@ -62,6 +62,8 @@ struct APIResponse<T: Sendable>: Sendable {
     let rateLimit: RateLimitInfo
     let statusCode: Int
     let etag: String?
+    /// 多组织请求可能以 200 返回部分结果；保留 SSO 提示，避免将缺失组织误报为完整列表。
+    var githubSSO: String? = nil
 }
 
 /// 裸字节响应包装。
@@ -488,7 +490,11 @@ actor GitHubAPIClient {
         case 200...299:
             do {
                 let decoded = try decoder.decode(T.self, from: data)
-                return APIResponse(value: decoded, linkHeader: linkHeader, rateLimit: rateLimit, statusCode: http.statusCode, etag: etag)
+                return APIResponse(
+                    value: decoded, linkHeader: linkHeader, rateLimit: rateLimit,
+                    statusCode: http.statusCode, etag: etag,
+                    githubSSO: http.value(forHTTPHeaderField: "X-GitHub-SSO")
+                )
             } catch {
                 AppLog.network.error("Decoding failed for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)")
                 DiagnosticContext.current?.capture(DiagnosticEvent(

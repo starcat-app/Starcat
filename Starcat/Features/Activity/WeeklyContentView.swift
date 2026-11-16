@@ -45,6 +45,7 @@ import AppKit
 
 /// Explore Weekly 分类的内容视图。
 struct WeeklyContentView: View {
+    @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
 
     /// Weekly 筛选 popover 固定宽度。
@@ -562,7 +563,8 @@ struct WeeklyContentView: View {
                         ),
                         isSelected: multiStore.isActive
                             ? multiStore.contains(ghRepoId: project.ghRepoId)
-                            : (selection.selectedItem?.id == project.id)
+                            : (selection.selectedItem?.id == project.id),
+                        selectionNamespace: multiStore.isActive ? nil : selectionSpace
                     )
                 }
                 .buttonStyle(.plain)

@@ -36,8 +36,9 @@ struct GitHubStarListAIMultiGroupPicker: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(selectableLists) { list in
+                        ForEach(Array(selectableLists.enumerated()), id: \.element.id) { index, list in
                             groupButton(list)
+                                .listRowSurface(index: index, isSelected: item.selectedListIDs.contains(list.id))
                         }
                     }
                 }

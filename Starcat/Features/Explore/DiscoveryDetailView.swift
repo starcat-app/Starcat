@@ -27,9 +27,7 @@ struct DiscoveryDetailView: View {
         ZStack(alignment: .topLeading) {
             if let item {
                 DiscoveryScaffoldShell(item: item, supplementalHeader: supplementalHeader)
-                    // 同一仓库刷新后 repoID 不变，但 description 和 GitHub 时间可能补齐；
-                    // 完整快照作为 identity 可重建内部 @State，避免继续显示旧的空元数据。
-                    .id(item)
+                    // 元数据更新交给 task(id: item)，保持 Scaffold 与 README WebView 身份。
                     .detailContentTransition()
             } else {
                 RepoDetailNoSelectionPlaceholder(messageKey: "explore.detail.empty")
@@ -57,7 +55,11 @@ private struct DiscoveryScaffoldShell: View {
             if let displayRepo, let readmeVM {
                 scaffold(for: displayRepo, readmeVM: readmeVM)
             } else {
-                ProgressView()
+                VStack(spacing: 16) {
+                    ListLoadingSkeleton(rowCount: 1, rowHeight: 110)
+                    ReadmeSkeletonView()
+                }
+                    .padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -66,6 +68,12 @@ private struct DiscoveryScaffoldShell: View {
         .task(id: item) {
             await resolveRepo()
             loadReadmeIfNeeded()
+        }
+        .onChange(of: dependencies.starredRegistry.ids) { _, _ in
+            // 历史列表不随 Star 消失；来自其它窗口或同步的变化也必须立即反映在当前详情。
+            if let displayRepo {
+                self.displayRepo = dependencies.starredRegistry.applyingDisplayState(to: displayRepo)
+            }
         }
     }
 
@@ -125,11 +133,15 @@ private struct DiscoveryScaffoldShell: View {
             try await dependencies.starActionService.toggle(repo: repo)
         }
 
-        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: repo)
+        // Star 请求可能在用户切到另一仓库后才结束；只更新当前展示快照，
+        // 不能把闭包捕获的旧 repo / item 写回稳定宿主，也不为 Star 状态重载 README。
+        if let currentRepo = displayRepo {
+            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: currentRepo)
+        }
+        // 只有远端 Star/Unstar 成功才同步反馈；失败不能清掉用户原有的“不感兴趣”。
+        await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
 
         await homeViewModel.refreshAfterExternalStarChange()
-        await resolveRepo()
-        loadReadmeIfNeeded()
     }
 
     private func ensureReadmeViewModel() -> ReadmeViewModel {

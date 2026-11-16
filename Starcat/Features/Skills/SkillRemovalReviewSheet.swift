@@ -32,7 +32,7 @@ struct SkillRemovalReviewSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let plan {
                         Text(verbatim: plan.entry.manifestName).font(.title3)
-                        ForEach(plan.assignments) { assignment in
+                        ForEach(Array(plan.assignments.enumerated()), id: \.element.id) { index, assignment in
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(verbatim: assignment.target.names).font(.headline)
                                 ForEach(assignment.target.configuredPaths, id: \.self) { path in
@@ -46,6 +46,8 @@ struct SkillRemovalReviewSheet: View {
                                     }
                                 }
                             }
+                            .padding(6)
+                            .listRowSurface(index: index)
                         }
                         Divider()
                         ForEach(plan.discoveredPaths, id: \.self) { path in
@@ -61,7 +63,8 @@ struct SkillRemovalReviewSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
             }
-            if isBusy { ProgressView().controlSize(.small) }
+            if isBusy && plan == nil { ListLoadingSkeleton(rowCount: 4, rowHeight: 64) }
+            if isCommitting { ProgressView().controlSize(.small) }
             Divider()
             HStack {
                 Spacer()

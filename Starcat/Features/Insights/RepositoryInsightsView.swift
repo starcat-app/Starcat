@@ -2854,9 +2854,10 @@ struct RepositoryInsightsView: View {
                         destinationURL: insight.advisories.first?.htmlURL
                     )
                 }
-                ForEach(Array(insight.advisories.prefix(Self.visibleSecurityAdvisoryLimit))) { advisory in
+                ForEach(Array(insight.advisories.prefix(Self.visibleSecurityAdvisoryLimit).enumerated()), id: \.element.id) { index, advisory in
                     Divider().padding(.leading, 28)
                     securityAdvisoryRow(advisory)
+                        .listRowSurface(index: index)
                 }
                 if !insight.advisories.isEmpty {
                     Divider().padding(.leading, 28)
@@ -2901,7 +2902,6 @@ struct RepositoryInsightsView: View {
     private func securityAdvisoryRow(_ advisory: RepositorySecurityAdvisory) -> some View {
         let severityColor = securityAdvisorySeverityColor(advisory.severity)
         let isTappable = advisory.htmlURL != nil
-        let isHovered = hoveredLocalSignalID == advisory.id
         let content = HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.shield")
                 .frame(width: 18)
@@ -2936,19 +2936,7 @@ struct RepositoryInsightsView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(isHovered && isTappable ? 0.08 : 0))
-        )
         .contentShape(Rectangle())
-        .onHover { hovering in
-            guard isTappable else { return }
-            if hovering {
-                hoveredLocalSignalID = advisory.id
-            } else if hoveredLocalSignalID == advisory.id {
-                hoveredLocalSignalID = nil
-            }
-        }
 
         if let destinationURL = advisory.htmlURL {
             Button {
@@ -3242,6 +3230,7 @@ struct RepositoryInsightsView: View {
                                 Divider().padding(.leading, 34)
                             }
                             timelineRow(item)
+                                .listRowSurface(index: index)
                         }
                     }
 

@@ -33,6 +33,8 @@ struct AppSettingsTests {
         restored.resetListPreferences(login: "dong4j")
         #expect(restored.exploreCatalogPreferences == preferences)
         #expect(preferences.isGroupEnabled("linuxDo"), "Linux.do 不继承普通发现的显隐")
+        #expect(!preferences.isGroupEnabled("discover"))
+        #expect(!preferences.isGroupEnabled("awesome"))
         #expect(preferences.visibleDailyRadarCategories([
             .init(id: "ai-cli", title: "AI CLI", period: "daily"),
             .init(id: "ai-agents", title: "AI Agents", period: "daily")
@@ -48,6 +50,25 @@ struct AppSettingsTests {
         let preferences = ExploreCatalogPreferences(hiddenModes: Set(ExploreCatalogPreferences.groupIDs))
         #expect(preferences.visibleGroupIDs == ["discover"])
         #expect(ExploreCatalogPreferences().weeklyQuerySources(availableCodes: ["weekly"]) == nil)
+    }
+
+    @Test("推荐历史在默认及持久化隐藏设置下始终可进入", arguments: [
+        Set<String>(),
+        Set(["discover"]),
+        Set(ExploreCatalogPreferences.groupIDs + ["recommendations"])
+    ])
+    func recommendationHistoryNavigationStaysEnabled(hiddenModes: Set<String>) throws {
+        let preferences = ExploreCatalogPreferences(hiddenModes: hiddenModes)
+        let restored = try JSONDecoder().decode(
+            ExploreCatalogPreferences.self, from: JSONEncoder().encode(preferences)
+        )
+
+        // HomeView 点击和恢复导航均用此校验；固定历史入口不能被回退到其它目录。
+        #expect(preferences.isGroupEnabled(ExploreMode.recommendations.rawValue))
+        #expect(restored.isGroupEnabled(ExploreMode.recommendations.rawValue))
+        #expect(!ExploreCatalogPreferences.groupIDs.contains(ExploreMode.recommendations.rawValue))
+        #expect(restored.hiddenModes == hiddenModes)
+        #expect(!restored.isGroupEnabled("unknown-group"))
     }
 
     @Test("新增每日热点偏好后仍保留旧版保存的隐藏分类和来源")

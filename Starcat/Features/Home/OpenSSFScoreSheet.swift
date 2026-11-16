@@ -274,7 +274,7 @@ struct OpenSSFScoreSheet: View {
             Text("openssf.checks.title")
                 .font(interfaceScale.font(.panelTitle))
 
-            ForEach(checks) { check in
+            ForEach(Array(checks.enumerated()), id: \.element.id) { index, check in
                 let reason = OpenSSFCheckLocalization.reason(for: check)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -310,6 +310,7 @@ struct OpenSSFScoreSheet: View {
                     }
                 }
                 .padding(8)
+                .listRowSurface(index: index)
                 .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             }
         }
@@ -334,8 +335,7 @@ struct OpenSSFScoreSheet: View {
 
     private var loadingContent: some View {
         VStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.large)
+            ListLoadingSkeleton(rowCount: 5, rowHeight: 60)
             Text("openssf.loading")
                 .font(interfaceScale.font(.panelTitle))
             Text("openssf.loading.hint")

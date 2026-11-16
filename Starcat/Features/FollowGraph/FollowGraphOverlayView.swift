@@ -238,7 +238,7 @@ struct FollowGraphOverlayView: View {
                 if model.results.isEmpty {
                     Text("followGraph.search.empty").foregroundStyle(.secondary).padding(8)
                 }
-                ForEach(model.results) { node in
+                ForEach(Array(model.results.enumerated()), id: \.element.id) { index, node in
                     Button {
                         model.select(node.id)
                         model.focus(node.id)
@@ -255,6 +255,7 @@ struct FollowGraphOverlayView: View {
                     }
                     .buttonStyle(.plain)
                     .focusEffectDisabled()
+                    .listRowSurface(index: index)
                     .focused($focusedControl, equals: "result.\(node.id)")
                 }
             }
@@ -275,7 +276,7 @@ struct FollowGraphOverlayView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         // 只淡换卡片内容，不把外框尺寸或位置变化纳入切换动画。
-        .animation(.easeInOut(duration: 0.16), value: node.id)
+        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.24), value: node.id)
         .frame(width: width, height: height)
         .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
         .clipShape(RoundedRectangle(cornerRadius: 16))
