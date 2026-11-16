@@ -48,15 +48,15 @@ struct WeeklyContentView: View {
     @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
 
-    /// Weekly 筛选 popover 固定宽度。
-    ///
-    /// 这里不跟随系统 popover 内容自适应：筛选项都是短标签，过宽会在右侧留下大片空白。
-    /// 220pt 能容纳当前中英文最长项，后续文案变长时由 row 内 `lineLimit` 兜底省略。
-    private static let filterPopoverWidth: CGFloat = 220
+    /// 固定面板宽度，让胶囊换行与分段控件在切换筛选时保持同一布局。
+    private static let filterPopoverWidth: CGFloat = 320
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(AppSettings.self) private var settings
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedLanguage: String?
 
@@ -284,8 +284,21 @@ struct WeeklyContentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .foregroundStyle(.secondary)
+                    // 激活态只改变绘制属性，不把条件数和结果数拼进按钮挤动工具栏。
+                    .background {
+                        Circle()
+                            .fill(Color.accentColor.opacity(viewModel.hasActiveFilters ? 0.18 : 0))
+                            .padding(-3)
+                    }
+                    .overlay {
+                        Circle()
+                            .strokeBorder(
+                                Color.accentColor.opacity(viewModel.hasActiveFilters ? 0.8 : 0),
+                                lineWidth: 1
+                            )
+                            .padding(-3)
+                    }
                 Text("weekly.filter.title")
-                Text(viewModel.filterSummaryTitle)
                 Image(systemName: "chevron.down")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -296,164 +309,306 @@ struct WeeklyContentView: View {
         .controlSize(.regular)
         .fixedSize()
         .help("weekly.filter.title")
+        .accessibilityValue(Text(verbatim: viewModel.filterSummaryTitle))
         .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .bottom) {
             weeklyFilterPopover(viewModel)
                 .appLocaleEnvironment()
         }
     }
 
+    /// 摘要与重置区始终占位；仅中间条件滚动，避免筛选计数改变弹层锚点。
     private func weeklyFilterPopover(_ viewModel: WeeklyContentViewModel) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                weeklyFilterSection("weekly.filter.source") {
-                    ForEach(viewModel.availableSourceFilters) { source in
-                        weeklyFilterRow(
-                            title: source.localizedTitle,
-                            trailingCount: source.count,
-                            isSelected: source == viewModel.selectedSource
-                        ) {
-                            clearWeeklyDetailSelectionIfChanging(source != viewModel.selectedSource)
-                            viewModel.changeSource(to: source)
-                        }
-                    }
-                }
-
-                weeklyFilterDivider
-
-                weeklyFilterSection("weekly.filter.coverage") {
-                    ForEach(WeeklySourceCoverageFilter.allCases) { coverage in
-                        weeklyFilterRow(
-                            title: coverage.localizedTitle,
-                            isSelected: coverage == viewModel.selectedCoverage
-                        ) {
-                            clearWeeklyDetailSelectionIfChanging(coverage != viewModel.selectedCoverage)
-                            viewModel.changeCoverage(to: coverage)
-                        }
-                    }
-                }
-
-                weeklyFilterDivider
-
-                weeklyFilterSection("weekly.filter.repoState") {
-                    weeklyFilterRow(
-                        title: String.l10n("weekly.filter.repoState.hideArchived"),
-                        isSelected: viewModel.hideArchivedRepos
-                    ) {
-                        clearWeeklyDetailSelection()
-                        viewModel.changeHideArchivedRepos(to: !viewModel.hideArchivedRepos)
-                    }
-                    weeklyFilterRow(
-                        title: String.l10n("weekly.filter.repoState.hideForks"),
-                        isSelected: viewModel.hideForkRepos
-                    ) {
-                        clearWeeklyDetailSelection()
-                        viewModel.changeHideForkRepos(to: !viewModel.hideForkRepos)
-                    }
-                }
-
-                weeklyFilterDivider
-
-                weeklyFilterSection("weekly.filter.stars") {
-                    ForEach(WeeklyStarsFilter.allCases) { starsFilter in
-                        weeklyFilterRow(
-                            title: starsFilter.localizedTitle,
-                            isSelected: starsFilter == viewModel.selectedStarsFilter
-                        ) {
-                            clearWeeklyDetailSelectionIfChanging(starsFilter != viewModel.selectedStarsFilter)
-                            viewModel.changeStarsFilter(to: starsFilter)
-                        }
-                    }
-                }
-
-                weeklyFilterDivider
-
-                weeklyFilterSection("weekly.filter.activity") {
-                    ForEach(WeeklyPushedRecencyFilter.allCases) { pushedFilter in
-                        weeklyFilterRow(
-                            title: pushedFilter.localizedTitle,
-                            isSelected: pushedFilter == viewModel.selectedPushedRecency
-                        ) {
-                            clearWeeklyDetailSelectionIfChanging(pushedFilter != viewModel.selectedPushedRecency)
-                            viewModel.changePushedRecency(to: pushedFilter)
-                        }
-                    }
-                }
-
-                weeklyFilterDivider
-
-                Button {
-                    clearWeeklyDetailSelectionIfChanging(viewModel.hasActiveFilters)
-                    viewModel.resetFilters()
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .frame(width: 16)
-                        Text("weekly.filter.reset")
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .opacity(viewModel.hasActiveFilters ? 1 : 0.45)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .disabled(!viewModel.hasActiveFilters)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("weekly.filter.title")
+                    .font(interfaceScale.font(.caption, weight: .semibold))
+                Spacer(minLength: 8)
+                Text(verbatim: viewModel.filterSummaryTitle)
+                    .font(interfaceScale.font(.captionSmall))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help(Text(verbatim: viewModel.filterSummaryTitle))
             }
-            .padding(.vertical, 10)
+            .padding(12)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    weeklyFilterSection("weekly.filter.source") {
+                        TagChipFlowLayout(spacing: 6, constrainsItemWidth: true) {
+                            ForEach(viewModel.availableSourceFilters) { source in
+                                let style = weeklySourceStyle(source)
+                                weeklyFilterChip(
+                                    title: source.localizedTitle,
+                                    symbol: style.symbol,
+                                    color: style.color,
+                                    trailingCount: source.count,
+                                    isSelected: source == viewModel.selectedSource
+                                ) {
+                                    clearWeeklyDetailSelectionIfChanging(source != viewModel.selectedSource)
+                                    viewModel.changeSource(to: source)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    weeklyFilterSection("weekly.filter.coverage") {
+                        weeklyCoverageTabs(viewModel)
+                    }
+
+                    Divider()
+
+                    weeklyFilterSection("weekly.filter.repoState") {
+                        HStack(spacing: 8) {
+                            weeklyRepoStateToggle(
+                                title: "weekly.filter.repoState.hideArchived",
+                                symbol: "archivebox",
+                                color: .orange,
+                                isOn: Binding(
+                                    get: { viewModel.hideArchivedRepos },
+                                    set: { hidden in
+                                        clearWeeklyDetailSelection()
+                                        viewModel.changeHideArchivedRepos(to: hidden)
+                                    }
+                                )
+                            )
+                            weeklyRepoStateToggle(
+                                title: "weekly.filter.repoState.hideForks",
+                                symbol: "arrow.triangle.branch",
+                                color: .purple,
+                                isOn: Binding(
+                                    get: { viewModel.hideForkRepos },
+                                    set: { hidden in
+                                        clearWeeklyDetailSelection()
+                                        viewModel.changeHideForkRepos(to: hidden)
+                                    }
+                                )
+                            )
+                        }
+                    }
+
+                    Divider()
+
+                    weeklyFilterSection("weekly.filter.stars") {
+                        TagChipFlowLayout(spacing: 6, constrainsItemWidth: true) {
+                            ForEach(WeeklyStarsFilter.allCases) { starsFilter in
+                                weeklyFilterChip(
+                                    title: starsFilter.localizedTitle,
+                                    symbol: "star",
+                                    color: weeklyStarsColor(starsFilter),
+                                    isSelected: starsFilter == viewModel.selectedStarsFilter
+                                ) {
+                                    clearWeeklyDetailSelectionIfChanging(starsFilter != viewModel.selectedStarsFilter)
+                                    viewModel.changeStarsFilter(to: starsFilter)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    weeklyFilterSection("weekly.filter.activity") {
+                        weeklyPushedRecencyTabs(viewModel)
+                    }
+                }
+                // 为胶囊描边及系统常显滚动条留出空间，不让右侧控件贴住滚动边缘。
+                .padding(12)
+            }
+            .frame(maxHeight: 400 * interfaceScale.multiplier)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            Button {
+                clearWeeklyDetailSelectionIfChanging(viewModel.hasActiveFilters)
+                viewModel.resetFilters()
+            } label: {
+                Label("weekly.filter.reset", systemImage: "arrow.counterclockwise")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .disabled(!viewModel.hasActiveFilters)
         }
-        .frame(width: Self.filterPopoverWidth, alignment: .leading)
-        .frame(maxHeight: 620)
+        .frame(width: Self.filterPopoverWidth * interfaceScale.multiplier, alignment: .leading)
     }
 
     private func weeklyFilterSection<Content: View>(
         _ title: LocalizedStringKey,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(interfaceScale.font(.caption, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 4)
             content()
         }
     }
 
-    private var weeklyFilterDivider: some View {
-        Divider()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+    /// 复用全局筛选的等宽分段；长翻译按完整文本测宽后回退为彩色图标。
+    private func weeklyCoverageTabs(_ viewModel: WeeklyContentViewModel) -> some View {
+        RepoFilterTabs(
+            label: "weekly.filter.coverage",
+            options: Array(WeeklySourceCoverageFilter.allCases),
+            selection: Binding(
+                get: { viewModel.selectedCoverage },
+                set: { coverage in
+                    clearWeeklyDetailSelectionIfChanging(coverage != viewModel.selectedCoverage)
+                    viewModel.changeCoverage(to: coverage)
+                }
+            ),
+            title: { LocalizedStringKey($0.localizedTitle) },
+            shortTitle: { $0 == .all ? "general.all" : LocalizedStringKey($0.localizedTitle) },
+            symbol: { coverage in
+                switch coverage {
+                case .all: "square.grid.2x2"
+                case .multipleSources: "square.stack.3d.up.fill"
+                case .singleSource: "square.fill"
+                }
+            },
+            color: { coverage in
+                switch coverage {
+                case .all: .blue
+                case .multipleSources: .purple
+                case .singleSource: .teal
+                }
+            }
+        )
     }
 
-    private func weeklyFilterRow(
+    /// 时间档位同样保留单行；图标形状与颜色同时区分，完整含义由 tooltip 和读屏保留。
+    private func weeklyPushedRecencyTabs(_ viewModel: WeeklyContentViewModel) -> some View {
+        RepoFilterTabs(
+            label: "weekly.filter.activity",
+            options: Array(WeeklyPushedRecencyFilter.allCases),
+            selection: Binding(
+                get: { viewModel.selectedPushedRecency },
+                set: { pushedFilter in
+                    clearWeeklyDetailSelectionIfChanging(pushedFilter != viewModel.selectedPushedRecency)
+                    viewModel.changePushedRecency(to: pushedFilter)
+                }
+            ),
+            title: { LocalizedStringKey($0.localizedTitle) },
+            shortTitle: { $0 == .all ? "general.all" : LocalizedStringKey($0.localizedTitle) },
+            symbol: { pushedFilter in
+                switch pushedFilter {
+                case .all: "infinity"
+                case .days30: "clock"
+                case .days90: "calendar"
+                case .days365: "calendar.badge.clock"
+                }
+            },
+            color: { pushedFilter in
+                switch pushedFilter {
+                case .all: .blue
+                case .days30: .green
+                case .days90: .orange
+                case .days365: .purple
+                }
+            }
+        )
+    }
+
+    /// 两个独立复选框均分一行；标签放不下时只替换标签，不缩小点击区或隐藏勾选状态。
+    private func weeklyRepoStateToggle(
+        title: LocalizedStringKey,
+        symbol: String,
+        color: Color,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            ViewThatFits(in: .horizontal) {
+                Text(title)
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: symbol)
+                    // 与分段回退一致，用语义色辅助区分隐藏归档与隐藏 fork。
+                    .foregroundStyle(color)
+            }
+            .lineLimit(1)
+        }
+        .toggleStyle(.checkbox)
+        .font(interfaceScale.font(.captionSmall))
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .help(Text(title))
+        .accessibilityLabel(Text(title))
+    }
+
+    /// 使用系统动态色的低透明底色，明暗主题均保留主文字和辅助计数的语义对比度。
+    private func weeklyFilterChip(
         title: String,
+        symbol: String,
+        color: Color,
         trailingCount: Int? = nil,
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .opacity(isSelected ? 1 : 0)
-                    .frame(width: 16)
-                Text(title)
+            HStack(spacing: 4) {
+                Image(systemName: isSelected ? "checkmark" : symbol)
+                    .frame(width: 12, height: 12)
+                    .foregroundStyle(.primary)
+                Text(verbatim: title)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: 0)
                 if let trailingCount {
                     Text(trailingCount, format: .number)
-                        .font(.caption.monospacedDigit())
+                        .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .fixedSize()
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+            .font(interfaceScale.font(.captionSmall))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                color.opacity(isSelected ? (colorScheme == .dark ? 0.32 : 0.20) : (colorScheme == .dark ? 0.16 : 0.08)),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .strokeBorder(color.opacity(isSelected ? 0.9 : 0.35), lineWidth: 1)
+            }
+            .contentShape(Capsule())
+            // 仅过渡底色与描边，选中前后图标槽位、内边距和胶囊尺寸不变。
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isSelected)
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
+        .help(Text(verbatim: title))
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityValue(trailingCount.map { Text($0, format: .number) } ?? Text(verbatim: ""))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .pressableHover(scale: 1)
+    }
+
+    /// 来源颜色按稳定代码确定，后台排序或新增来源不会改变已有来源的颜色。
+    private func weeklySourceStyle(_ source: WeeklySourceFilter) -> (symbol: String, color: Color) {
+        switch source.source {
+        case nil: ("square.grid.2x2", .accentColor)
+        case .weekly: ("newspaper", .indigo)
+        case .zread: ("book.closed", .green)
+        case .discovery: ("flame", .orange)
+        case .helloGitHub: ("shippingbox", .pink)
+        case .aiIntelligence: ("sparkles", .purple)
+        default: ("link", .teal)
+        }
+    }
+
+    private func weeklyStarsColor(_ filter: WeeklyStarsFilter) -> Color {
+        switch filter {
+        case .all: .accentColor
+        case .min100: .green
+        case .min1000: .orange
+        case .min10000: .pink
+        }
     }
 
     private func weeklySortBinding(_ viewModel: WeeklyContentViewModel) -> Binding<WeeklyFeedSort> {
