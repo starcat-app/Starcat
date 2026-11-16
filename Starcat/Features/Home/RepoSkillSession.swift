@@ -206,15 +206,24 @@ final class RepoSkillSession {
 
     /// 保存面板只授权当前文件；关窗或切号会取消下载，发布前再次核对会话。
     func save(file: RepoSkillFile, skill: RepoSkill) {
+        save(skill: skill, file: file)
+    }
+
+    /// 目录下载与安装分离，只导出当前 Skill 的文件树，不写安装记录。
+    func save(skill: RepoSkill) {
+        save(skill: skill, file: nil)
+    }
+
+    private func save(skill: RepoSkill, file: RepoSkillFile?) {
         guard exportingID == nil, !isClosed, !store.isChangingAccount,
               store.accountRevision == accountRevision else { return }
-        let exportID = "\(skill.id)|\(file.path)"
+        let exportID = "\(skill.id)|\(file?.path ?? "/")"
         exportingID = exportID
         exportProgress = 0
         exportError = nil
         exportNotice = nil
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = file.name
+        panel.nameFieldStringValue = file?.name ?? "\(skill.name).zip"
         panel.canCreateDirectories = true
         exportPanel = panel
         exportTask = Task { [weak self] in
@@ -228,11 +237,17 @@ final class RepoSkillSession {
             let scoped = destination.startAccessingSecurityScopedResource()
             defer { if scoped { destination.stopAccessingSecurityScopedResource() } }
             do {
-                let artifact = try await self.exporter.export(file: file, skill: skill, repo: self.repo) { progress in
+                let onProgress: @Sendable (Double) -> Void = { progress in
                     Task { @MainActor [weak self] in
                         guard let self, self.exportingID == exportID else { return }
                         self.exportProgress = progress
                     }
+                }
+                let artifact: URL
+                if let file {
+                    artifact = try await self.exporter.export(file: file, skill: skill, repo: self.repo, onProgress: onProgress)
+                } else {
+                    artifact = try await self.exporter.export(skill: skill, repo: self.repo, onProgress: onProgress)
                 }
                 defer { try? FileManager.default.removeItem(at: artifact) }
                 try Task.checkCancellation()

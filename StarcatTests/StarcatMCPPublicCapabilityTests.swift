@@ -57,6 +57,21 @@ struct StarcatMCPPublicCapabilityTests {
         }
     }
 
+    @Test("整个 Skill 导出只接受已加载 Skill 标识，不接受本地输出路径")
+    func skillArchiveExportContract() throws {
+        let spec = try #require(StarcatMCPPublicCatalog.specs.first { $0.name == "export_repo_skill" })
+        #expect(spec.permission == "write")
+        #expect(spec.task)
+        try StarcatMCPInputValidator.validate(.object([
+            "repo_id": .int(1), "skill_id": .string("1:commit:skills/review/")
+        ]), schema: spec.schema)
+        #expect(throws: StarcatMCPError.self) {
+            try StarcatMCPInputValidator.validate(.object([
+                "repo_id": .int(1), "skill_id": .string("id"), "path": .string("/tmp/client.zip")
+            ]), schema: spec.schema)
+        }
+    }
+
     @Test("旧本地写设置只迁移一次，不保留细分权限；旧 Star 单独授权不扩大权限")
     func oldPermissionsMigrateOnce() throws {
         for (oldLocal, oldStar, expected) in [(true, false, true), (false, true, false)] {

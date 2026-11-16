@@ -7,6 +7,7 @@
 
 import Foundation
 import Testing
+import ZIPFoundation
 @testable import Starcat
 
 @Suite("Repository Skill exports")
@@ -66,6 +67,44 @@ struct RepoSkillExporterTests {
         let foreign = RepoSkillFile(path: "../outside", sha: "bad", size: 1, mode: "100644")
         await #expect(throws: RepoSkillError.self) {
             try await exporter.export(file: foreign, skill: skill, repo: repo)
+        }
+    }
+
+    @Test("ZIP 剥离仓库父级，解压得到完整 Skill 根目录并保留执行位")
+    func archiveLayout() async throws {
+        let (repo, skill) = try await fixture()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let exporter = RepoSkillExporter(downloader: ExportTestDownloader(), temporaryRoot: root)
+        let artifact = try await exporter.export(skill: skill, repo: repo)
+        let archive = try Archive(url: artifact, accessMode: .read)
+        #expect(Set(archive.filter { $0.type == .file }.map(\.path)) == Set(
+            skill.files.map { "\(skill.name)/\($0.path)" }
+        ))
+        #expect(archive.allSatisfy { !$0.path.hasPrefix("skills/") && !$0.path.contains(".starcat-install.json") })
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).count == 1)
+        let extracted = root.appendingPathComponent("extracted")
+        try FileManager.default.unzipItem(at: artifact, to: extracted)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: extracted.path) == [skill.name])
+        for file in skill.files {
+            let url = extracted.appendingPathComponent(skill.name).appendingPathComponent(file.path)
+            #expect(try Data(contentsOf: url) == Data(file.path.utf8))
+            #expect((try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber)?.intValue
+                    == (file.mode == "100755" ? 0o755 : 0o644))
+        }
+    }
+
+    @Test("整个 Skill 下载失败或取消会清理目录与部分 ZIP")
+    func archiveFailureCleanup() async throws {
+        let (repo, skill) = try await fixture()
+        for downloader in [ExportTestDownloader(corrupted: true), ExportTestDownloader(cancelled: true)] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let exporter = RepoSkillExporter(downloader: downloader, temporaryRoot: root)
+            await #expect(throws: (any Error).self) {
+                try await exporter.export(skill: skill, repo: repo)
+            }
+            #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
         }
     }
 }

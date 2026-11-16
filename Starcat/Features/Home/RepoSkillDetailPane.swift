@@ -468,14 +468,34 @@ struct RepoSkillDetailPane: View {
     /// 标题整行是折叠触发区，目录只表达完整复制范围，不支持把 Skill 拆散安装。
     private var fileTree: some View {
         return LazyVStack(alignment: .leading, spacing: 10) {
-            Label {
-                Text(verbatim: contentSkill.directory.isEmpty ? "/" : contentSkill.directory)
-            } icon: {
-                Image(systemName: "folder.fill").foregroundStyle(.blue)
+            HStack {
+                Label {
+                    Text(verbatim: contentSkill.directory.isEmpty ? "/" : contentSkill.directory)
+                } icon: {
+                    Image(systemName: "folder.fill").foregroundStyle(.blue)
+                }
+                    .font(interfaceScale.font(.code, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                Button { session.save(skill: contentSkill) } label: {
+                    Group {
+                        if session.exportingID == "\(contentSkill.id)|/" {
+                            ProgressView(value: session.exportProgress).progressViewStyle(.circular).controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.down.to.line")
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .disabled(session.exportingID != nil || contentSkill.installationIssue != nil)
+                .help("repo.files.inspector.download")
+                .accessibilityLabel(Text("repo.files.inspector.download"))
             }
-                .font(interfaceScale.font(.code, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
             ForEach(document?.rootFiles ?? []) { file in
                 treeFile(file)
                     .padding(.leading, 20)
