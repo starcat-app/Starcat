@@ -778,141 +778,148 @@ private struct GitHubNotificationFilterMenu: View {
     var body: some View {
         UnifiedFilterMenu(
             isAnyFilterActive: selection.isActive,
-            onReset: { selection = .all }
+            // 默认筛选没有重置操作，不为隐藏的重置按钮预留底部空白。
+            onReset: selection.isActive ? { selection = .all } : nil
         ) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    sectionTitle("activity.notification.filter.events")
-                    Spacer(minLength: 0)
-                    Button("general.all") { selection.eventTypes = [] }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .buttonStyle(.plain)
-                        .focusEffectDisabled()
-                }
-                TagChipFlowLayout(spacing: 6, constrainsItemWidth: true) {
-                    ForEach(GitHubNotificationFilter.eventOptions) { option in
-                        chip(option, selected: $selection.eventTypes)
-                    }
-                }
-            }
+            chipSection(
+                "activity.notification.filter.events",
+                icon: "tray",
+                options: GitHubNotificationFilter.eventOptions,
+                selected: $selection.eventTypes
+            )
 
             Divider()
 
-            compactTabs("activity.notification.filter.read", options: GitHubNotificationFilter.readOptions, binding: $selection.readState)
-            compactTabs("activity.notification.filter.state", options: GitHubNotificationFilter.stateOptions, binding: $selection.issueState)
+            tabSection(
+                "activity.notification.filter.read",
+                icon: "envelope",
+                options: GitHubNotificationFilter.readOptions,
+                binding: $selection.readState
+            )
 
             Divider()
 
-            HStack(spacing: 6) {
-                sectionTitle("activity.notification.filter.reason")
-                    .fixedSize()
-                Spacer(minLength: 0)
-                ForEach(GitHubNotificationFilter.reasonOptions) { option in
-                    chip(option, selected: $selection.reasons)
-                }
-                Button("general.all") { selection.reasons = [] }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .fixedSize()
-            }
+            tabSection(
+                "activity.notification.filter.state",
+                icon: "checkmark.circle",
+                options: GitHubNotificationFilter.stateOptions,
+                binding: $selection.issueState
+            )
 
             Divider()
 
-            compactTabs("list.filter.library", options: GitHubNotificationFilter.libraryOptions, binding: $selection.libraryState)
+            chipSection(
+                "activity.notification.filter.reason",
+                icon: "at",
+                options: GitHubNotificationFilter.reasonOptions,
+                selected: $selection.reasons
+            )
 
-            Text("activity.notification.filter.scope")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+
+            tabSection(
+                "list.filter.library",
+                icon: "heart.text.square",
+                options: GitHubNotificationFilter.libraryOptions,
+                binding: $selection.libraryState
+            )
         }
     }
 
-    private func sectionTitle(_ key: LocalizedStringKey) -> some View {
-        Text(key)
-            .font(.caption.weight(.medium))
+    private func sectionTitle(_ key: LocalizedStringKey, icon: String) -> some View {
+        Label(key, systemImage: icon)
             .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .help(Text(key))
     }
 
-    /// 沿用全局分段的长译文图标回退，保持互斥条件单行展示。
-    private func compactTabs(
-        _ label: LocalizedStringKey,
+    /// 与全局语言筛选复用同一胶囊；空集合由“全部”的实色选中态明确表达。
+    private func chipSection(
+        _ title: LocalizedStringKey,
+        icon: String,
         options: [GitHubNotificationSegment],
-        binding: Binding<GitHubNotificationSegment>
+        selected: Binding<Set<GitHubNotificationSegment>>
     ) -> some View {
-        HStack(spacing: 8) {
-            sectionTitle(label)
-                .fixedSize()
-            tabs(label, options: options, binding: binding)
+        VStack(alignment: .leading, spacing: 4) {
+            sectionTitle(title, icon: icon)
+                .help(Text("activity.notification.filter.scope"))
+            TagChipFlowLayout(spacing: 6, constrainsItemWidth: true) {
+                RepoLanguageFilterChip(
+                    title: String.l10n("general.all"),
+                    isSelected: selected.wrappedValue.isEmpty,
+                    action: { selected.wrappedValue = [] }
+                ) {
+                    Image(systemName: "tray")
+                }
+                ForEach(options) { option in
+                    chip(option, selected: selected)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(3)
         }
     }
 
-    private func tabs(
-        _ label: LocalizedStringKey,
+    /// 标题独立成行、分段占满下一行，与全局筛选保持相同密度和长译文回退。
+    private func tabSection(
+        _ title: LocalizedStringKey,
+        icon: String,
         options: [GitHubNotificationSegment],
         binding: Binding<GitHubNotificationSegment>
     ) -> some View {
-        RepoFilterTabs(
-            label: label,
-            options: options,
-            selection: binding,
-            title: { LocalizedStringKey($0.displayTitle(locale: locale)) },
-            symbol: { $0.systemSymbol }
-        )
+        VStack(alignment: .leading, spacing: 4) {
+            sectionTitle(title, icon: icon)
+                .help(Text("activity.notification.filter.scope"))
+            RepoFilterTabs(
+                label: title,
+                options: options,
+                selection: binding,
+                title: { LocalizedStringKey($0.displayTitle(locale: locale)) },
+                symbol: { $0.systemSymbol }
+            )
+        }
     }
 
     private func chip(_ option: GitHubNotificationSegment, selected: Binding<Set<GitHubNotificationSegment>>) -> some View {
-        GitHubNotificationFilterChip(
-            option: option,
+        let color = chipColor(for: option)
+        let isSelected = selected.wrappedValue.contains(option)
+        return RepoLanguageFilterChip(
             title: option.displayTitle(locale: locale),
-            isSelected: selected.wrappedValue.contains(option)
+            isSelected: isSelected,
+            action: {
+                if selected.wrappedValue.contains(option) {
+                    selected.wrappedValue.remove(option)
+                } else {
+                    selected.wrappedValue.insert(option)
+                }
+            },
+            color: color
         ) {
-            if selected.wrappedValue.contains(option) {
-                selected.wrappedValue.remove(option)
-            } else {
-                selected.wrappedValue.insert(option)
-            }
+            BusinessIcon(source: option.iconSource, pointSize: 14, weight: .medium)
+                .foregroundStyle(isSelected ? TagChipSurface.selectedForeground(for: color) : color)
         }
     }
-}
 
-/// 沿用许可证胶囊表面；动效只作用于选中反馈，不驱动整个浮层反复布局。
-private struct GitHubNotificationFilterChip: View {
-    let option: GitHubNotificationSegment
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-    @Environment(\.starcatReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                if isSelected && differentiateWithoutColor {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .medium))
-                } else {
-                    BusinessIcon(source: option.iconSource, pointSize: 11, weight: .medium)
-                }
-                Text(verbatim: title)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .modifier(TagChipSurface(color: .accentColor, isSelected: isSelected))
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
-            .contentShape(RoundedRectangle(cornerRadius: TagChipSurface.cornerRadius))
+    /// 事件沿用时间线徽章的语义色；讨论、发行与原因补充独立颜色，“全部”仍用强调色。
+    private func chipColor(for option: GitHubNotificationSegment) -> Color {
+        switch option {
+        case .issue:
+            return Color(hex: "#bc4c00") ?? .orange
+        case .pullRequest, .review:
+            return Color(hex: "#8250df") ?? .purple
+        case .discussion:
+            return .blue
+        case .release:
+            return .green
+        case .mention:
+            return .orange
+        case .star:
+            return Color(hex: "#9a6700") ?? .yellow
+        case .unstar:
+            return Color(hex: "#cf222e") ?? .red
+        case .fork:
+            return Color(hex: "#1b7c83") ?? .teal
+        default:
+            return .accentColor
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help(Text(verbatim: title))
-        .accessibilityLabel(Text(verbatim: title))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .pressableHover(scale: 1)
     }
 }
 

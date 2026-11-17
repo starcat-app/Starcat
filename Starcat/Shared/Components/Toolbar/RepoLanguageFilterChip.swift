@@ -12,6 +12,8 @@ struct RepoLanguageFilterChip<Icon: View>: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    /// 默认保留语言筛选的强调色；时间线可传入事件语义色，共用同一套胶囊外观。
+    var color: Color = .accentColor
     var helpText: String? = nil
     @ViewBuilder let icon: Icon
     @Environment(\.starcatReduceMotion) private var reduceMotion
@@ -35,7 +37,7 @@ struct RepoLanguageFilterChip<Icon: View>: View {
                     .truncationMode(.tail)
             }
             // 与许可证共用选中底色、描边和内边距，避免两组胶囊出现不同的视觉密度。
-            .modifier(TagChipSurface(color: .accentColor, isSelected: isSelected))
+            .modifier(TagChipSurface(color: color, isSelected: isSelected))
             .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
             .contentShape(RoundedRectangle(cornerRadius: TagChipSurface.cornerRadius))
         }
