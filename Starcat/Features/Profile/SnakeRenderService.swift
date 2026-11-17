@@ -44,13 +44,14 @@ final class SnakeRenderService {
         animator: SnakeAnimator?,
         payload: ContributionCalendarPayload?,
         colorScheme: ColorScheme,
-        style: ContributionGraphStyle = .standard
+        style: ContributionGraphStyle = .standard,
+        range: ContributionGraphRange = .year
     ) {
         stop()
         let revision = configurationRevision
 
         guard let animator else {
-            renderStatic(payload: payload, colorScheme: colorScheme, style: style)
+            renderStatic(payload: payload, colorScheme: colorScheme, style: style, range: range)
             return
         }
 
@@ -62,7 +63,8 @@ final class SnakeRenderService {
             let baseGrid = SnakeFrameRenderer.renderBaseGrid(
                 payload: payload,
                 colorScheme: colorScheme,
-                style: style
+                style: style,
+                range: range
             )
             var lastRenderedStepToken = Int.min
             var lastFrameHadFood = false
@@ -93,6 +95,7 @@ final class SnakeRenderService {
                     frame: frame,
                     colorScheme: colorScheme,
                     style: style,
+                    range: range,
                     baseGrid: baseGrid
                 )
                 DispatchQueue.main.async {
@@ -121,12 +124,14 @@ final class SnakeRenderService {
     private func renderStatic(
         payload: ContributionCalendarPayload?,
         colorScheme: ColorScheme,
-        style: ContributionGraphStyle
+        style: ContributionGraphStyle,
+        range: ContributionGraphRange
     ) {
         frameImage = SnakeFrameRenderer.renderBaseGrid(
             payload: payload,
             colorScheme: colorScheme,
-            style: style
+            style: style,
+            range: range
         )
         if frameImage != nil {
             readyRevision = configurationRevision

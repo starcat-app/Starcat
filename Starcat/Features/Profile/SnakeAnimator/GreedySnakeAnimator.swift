@@ -31,12 +31,8 @@ import Foundation
 
 final class GreedySnakeAnimator: PathBasedSnakeAnimator, @unchecked Sendable {
 
-    /// - Parameters:
-    ///   - cols: 列数（标准 53）
-    ///   - rows: 行数（标准 7）
-    ///   - weeks: GitHub 贡献周；nil 时退化为 zigzag（无 level 信息可贪）。
-    init(cols: Int, rows: Int, weeks: [ContributionWeek]?) {
-        let grid = ContributionGrid(weeks: weeks, cols: cols, rows: rows)
+    /// 使用显示网格的权重寻路，近期两行与年度网格共享同一算法。
+    init(grid: ContributionGrid) {
         let path = Self.buildGreedyPath(grid: grid)
         // 贪心路径更长（含 BFS 绕路），节奏稍快避免一轮太久；80ms × ~500 步 ≈ 40s
         super.init(path: path, snakeLength: 5, stepDuration: 0.08, pauseDuration: 1.5)

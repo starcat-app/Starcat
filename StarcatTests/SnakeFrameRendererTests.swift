@@ -106,6 +106,48 @@ struct SnakeFrameRendererTests {
         ))
         let displayedGrid = try #require(service.frameImage)
         #expect(pixelData(of: displayedGrid) == pixelData(of: expectedGrid))
+
+        // 范围切换与悬停暂停都重配同一个服务，首帧必须来自当前尺寸和真实静态底图。
+        service.configure(animator: animator, payload: nil, colorScheme: .dark)
+        let recentRevision = service.readyRevision
+        service.configure(animator: nil, payload: nil, colorScheme: .light, range: .recent)
+        #expect(service.readyRevision > recentRevision)
+        let recentGrid = try #require(service.frameImage)
+        let expectedRecentGrid = try #require(SnakeFrameRenderer.renderBaseGrid(
+            payload: nil, colorScheme: .light, range: .recent
+        ))
+        #expect(recentGrid.width == 624)
+        #expect(recentGrid.height == 78)
+        #expect(pixelData(of: recentGrid) == pixelData(of: expectedRecentGrid))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(service.frameImage?.width == 624, "已取消的年度动画不能覆盖近期首帧")
+    }
+
+    @Test("近期网格缓存合成保持颜色和行列方向")
+    func recentCachedBaseGridMatchesFullRender() throws {
+        let payload = ContributionCalendarPayload(
+            totalContributions: 5,
+            weeks: [ContributionWeek(contributionDays: [
+                ContributionDay(date: "2026-10-28", contributionCount: 2, contributionLevel: .firstQuartile, weekday: 3),
+                ContributionDay(date: "2026-10-29", contributionCount: 3, contributionLevel: .thirdQuartile, weekday: 4)
+            ])]
+        )
+        let frame = AnimationFrame(
+            snakes: [[GridPosition(col: 14, row: 1)]],
+            eatenCells: [GridPosition(col: 13, row: 1)],
+            foodCells: [GridPosition(col: 0, row: 0)]
+        )
+        let time = Date(timeIntervalSinceReferenceDate: 123_456.25)
+        let full = try #require(SnakeFrameRenderer.render(
+            payload: payload, frame: frame, colorScheme: .light, range: .recent, time: time
+        ))
+        let base = try #require(SnakeFrameRenderer.renderBaseGrid(
+            payload: payload, colorScheme: .light, range: .recent
+        ))
+        let cached = try #require(SnakeFrameRenderer.render(
+            payload: payload, frame: frame, colorScheme: .light, range: .recent, baseGrid: base, time: time
+        ))
+        #expect(pixelData(of: full) == pixelData(of: cached))
     }
 
     private func pixelData(of image: CGImage) -> Data? {

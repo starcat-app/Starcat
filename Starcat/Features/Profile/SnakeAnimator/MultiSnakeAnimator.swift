@@ -29,21 +29,20 @@ final class MultiSnakeAnimator: SnakeAnimator, Sendable {
     let stepDuration: TimeInterval = 0.08
     let pauseDuration: TimeInterval = 1.5
 
-    init(cols: Int, rows: Int, weeks: [ContributionWeek]?) {
+    init(grid: ContributionGrid) {
+        let cols = grid.cols
         // 按列对半分。奇数列时左多右少（左拿 27、右拿 26）
         let leftCols = cols / 2 + (cols % 2)
         let rightCols = cols - leftCols
 
         // 左半草坪
-        let leftWeeks = Self.sliceWeeks(weeks, fromCol: 0, count: leftCols, totalCols: cols)
-        let leftGrid = ContributionGrid(weeks: leftWeeks, cols: leftCols, rows: rows)
+        let leftGrid = grid.columns(0..<leftCols)
         let leftPath = GreedySnakeAnimator.buildGreedyPath(grid: leftGrid)
         self.leftAnimator = PathBasedSnakeAnimator(path: leftPath, snakeLength: 4,
                                                    stepDuration: 0.08, pauseDuration: 0)
 
         // 右半草坪：路径用右半 grid 算，但坐标要平移回原网格（col += leftCols）
-        let rightWeeks = Self.sliceWeeks(weeks, fromCol: leftCols, count: rightCols, totalCols: cols)
-        let rightGrid = ContributionGrid(weeks: rightWeeks, cols: rightCols, rows: rows)
+        let rightGrid = grid.columns(leftCols..<(leftCols + rightCols))
         let rightPathLocal = GreedySnakeAnimator.buildGreedyPath(grid: rightGrid)
         // 反向：右蛇从右往左吃（视觉对称感强）
         let rightPath = rightPathLocal.reversed().map {
@@ -67,21 +66,4 @@ final class MultiSnakeAnimator: SnakeAnimator, Sendable {
         )
     }
 
-    /// 把原 weeks 数组按"右对齐"裁剪出 [fromCol, fromCol+count) 列。
-    ///
-    /// 注意：GitHub 的 weeks 数组是按时间正序，且 startColumn = max(0, totalCols - weeks.count)。
-    /// 我们要把"网格列 fromCol..<fromCol+count" 对应回 weeks 数组的索引。
-    static func sliceWeeks(_ weeks: [ContributionWeek]?,
-                           fromCol: Int,
-                           count: Int,
-                           totalCols: Int) -> [ContributionWeek]? {
-        guard let weeks else { return nil }
-        let startColumn = max(0, totalCols - weeks.count)
-        // 目标网格列 fromCol..<fromCol+count 对应到 weeks 索引：
-        // weeksIdx = gridCol - startColumn
-        let lo = max(0, fromCol - startColumn)
-        let hi = max(lo, min(weeks.count, fromCol + count - startColumn))
-        if lo >= hi { return [] }
-        return Array(weeks[lo..<hi])
-    }
 }

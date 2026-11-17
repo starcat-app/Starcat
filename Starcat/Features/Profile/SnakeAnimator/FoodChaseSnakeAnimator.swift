@@ -36,8 +36,8 @@ final class FoodChaseSnakeAnimator: SnakeAnimator, Sendable {
     private let frames: [AnimationFrame]
     var totalSteps: Int { frames.count }
 
-    init(cols: Int, rows: Int, weeks: [ContributionWeek]?) {
-        let grid = ContributionGrid(weeks: weeks, cols: cols, rows: rows)
+    /// 按当前显示范围模拟，食物与蛇身都不能落到被裁掉的年度坐标。
+    init(grid: ContributionGrid) {
         self.frames = Self.simulate(grid: grid, maxFrames: 800)
     }
 

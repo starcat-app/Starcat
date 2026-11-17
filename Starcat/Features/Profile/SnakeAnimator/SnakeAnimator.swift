@@ -27,7 +27,7 @@ import Foundation
 
 // MARK: - 网格坐标
 
-/// 草坪格子坐标。col ∈ [0, 53)，row ∈ [0, 7)。
+/// 草坪格子坐标，边界由当前显示范围的 cols / rows 决定。
 ///
 /// 用 struct 而非 tuple 是为了：① `Hashable` 自动合成可放 Set；
 /// ② 在 path 数组中比 `(Int, Int)` tuple 类型签名更清晰。
@@ -219,87 +219,33 @@ enum SnakeStyle: String, CaseIterable, Identifiable, Codable, Sendable {
 /// 返回 nil 表示当前 style 不需要动画（如 `.off`）。
 enum SnakeAnimatorFactory {
 
-    /// 标准草坪尺寸（53 周 × 7 天）。所有 animator 共用，集中在工厂里避免散落。
-    static let cols: Int = 53
-    static let rows: Int = 7
-
     /// - Parameters:
     ///   - style: 用户在 Settings 里选的玩法。
     ///   - weeks: GitHub 返回的贡献周数组；某些玩法（greedy / foodChase）需要依
     ///     contributionLevel 决策路径，其他玩法可以忽略。允许 nil（数据未到时）。
-    static func make(style: SnakeStyle,
-                     weeks: [ContributionWeek]?) -> SnakeAnimator? {
+    static func make(
+        style: SnakeStyle,
+        weeks: [ContributionWeek]?,
+        range: ContributionGraphRange = .year
+    ) -> SnakeAnimator? {
+        let grid = ContributionGrid(weeks: weeks, range: range)
+        let cols = grid.cols
+        let rows = grid.rows
         switch style {
         case .off:
             return nil
         case .zigzag:
             return ZigzagSnakeAnimator(cols: cols, rows: rows)
         case .greedy:
-            return GreedySnakeAnimator(cols: cols, rows: rows, weeks: weeks)
+            return GreedySnakeAnimator(grid: grid)
         case .multiMode:
             return MultiModeSnakeAnimator(cols: cols, rows: rows, weeks: weeks)
         case .foodChase:
-            return FoodChaseSnakeAnimator(cols: cols, rows: rows, weeks: weeks)
+            return FoodChaseSnakeAnimator(grid: grid)
         case .hilbert:
             return HilbertSnakeAnimator(cols: cols, rows: rows)
         case .multiSnake:
-            return MultiSnakeAnimator(cols: cols, rows: rows, weeks: weeks)
+            return MultiSnakeAnimator(grid: grid)
         }
-    }
-}
-
-// MARK: - 共享工具
-
-/// 草坪数据辅助查询。各 animator 复用，避免重复写 `weeks[col].contributionDays[row]` 嵌套。
-struct ContributionGrid {
-
-    /// 53 × 7 二维 level 矩阵；缺失格子（账号较新或不满 53 周）按 `.none` 处理。
-    /// `grid[col][row]` 直接取，0 ≤ col < cols，0 ≤ row < rows。
-    let grid: [[ContributionLevel]]
-    let cols: Int
-    let rows: Int
-
-    init(weeks: [ContributionWeek]?, cols: Int, rows: Int) {
-        self.cols = cols
-        self.rows = rows
-        var g = Array(repeating: Array(repeating: ContributionLevel.none, count: rows), count: cols)
-        guard let weeks else {
-            self.grid = g
-            return
-        }
-        // weeks 可能不足 cols 周：按右对齐填充（GitHub 主页一致，最旧在左、最新在右）。
-        let startColumn = max(0, cols - weeks.count)
-        for (weekIdx, week) in weeks.enumerated() {
-            let col = startColumn + weekIdx
-            guard col < cols else { break }
-            for day in week.contributionDays where day.weekday >= 0 && day.weekday < rows {
-                g[col][day.weekday] = day.contributionLevel
-            }
-        }
-        self.grid = g
-    }
-
-    func level(at pos: GridPosition) -> ContributionLevel {
-        guard pos.col >= 0, pos.col < cols, pos.row >= 0, pos.row < rows else { return .none }
-        return grid[pos.col][pos.row]
-    }
-
-    /// level 的数字权重：none=0, FQ=1, ..., 4Q=4。用于贪心排序。
-    func weight(at pos: GridPosition) -> Int {
-        switch level(at: pos) {
-        case .none:           return 0
-        case .firstQuartile:  return 1
-        case .secondQuartile: return 2
-        case .thirdQuartile:  return 3
-        case .fourthQuartile: return 4
-        }
-    }
-
-    /// 全部格子坐标。
-    var allPositions: [GridPosition] {
-        var out: [GridPosition] = []
-        out.reserveCapacity(cols * rows)
-        for c in 0..<cols { for r in 0..<rows { out.append(GridPosition(col: c, row: r)) } }
-        return out
     }
 }
