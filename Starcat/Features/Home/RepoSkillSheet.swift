@@ -18,6 +18,7 @@ struct RepoSkillSheet: View {
     @Environment(AppDependencies.self) private var dependencies
     @Environment(\.openWindow) private var openWindow
     @State private var previewID = ""
+    @State private var tab = RepoSkillDetailPane.Tab.manifest
     @State private var isPreviewExpanded = false
     @State private var isInspectorPresented = false
     @State private var previewedFile: RepoSkillFile?
@@ -55,13 +56,10 @@ struct RepoSkillSheet: View {
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 8)
                         } else if let preview {
-                            if let issue = preview.installationIssue {
-                                Label(issue, systemImage: "exclamationmark.triangle")
-                                    .font(interfaceScale.font(.caption)).padding(.horizontal, 18)
-                            }
                             RepoSkillDetailPane(
                                 skill: preview, session: session,
                                 translationService: dependencies.readmeTranslationService,
+                                tab: $tab,
                                 isPreviewExpanded: $isPreviewExpanded,
                                 isInspectorPresented: $isInspectorPresented,
                                 previewedFile: $previewedFile
@@ -76,7 +74,7 @@ struct RepoSkillSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .overlay(alignment: .trailing) {
-                    if isInspectorPresented {
+                    if isInspectorPresented && tab == .manifest {
                         installationPanel
                             // 浮层覆盖内容区全高，包含阅读工具栏，不改变正文或底栏的可用尺寸。
                             .frame(width: min(420, geometry.size.width * 0.5), height: geometry.size.height)
@@ -98,7 +96,10 @@ struct RepoSkillSheet: View {
             previewedFile = nil
             session.focusSkill(id)
         }
-        .onDisappear { session.close() }
+        // 语言切换会重建视图；会话由窗口 onDismiss 关闭，不能随 SwiftUI 子树退场失效。
+        .onChange(of: tab) { _, tab in
+            if tab != .manifest { isInspectorPresented = false }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await session.refreshDestination() }
         }
@@ -127,7 +128,7 @@ struct RepoSkillSheet: View {
     private var installationPanel: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("repo.skills.install.title", systemImage: "arrow.down.to.line")
+                Label("repo.skills.install.title", systemImage: "shippingbox")
                     .font(interfaceScale.font(.bodyEmphasis, weight: .semibold))
                 Spacer(minLength: 8)
                 SheetCloseButton { isInspectorPresented = false }
@@ -143,7 +144,11 @@ struct RepoSkillSheet: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .leading) {
-            Divider()
+            // 浮层边界必须明确为竖线；无 Stack 约束的 Divider 会横穿面板中部。
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 1)
+                .allowsHitTesting(false)
         }
     }
 
@@ -276,6 +281,8 @@ struct RepoSkillSheet: View {
         } else if session.phase == .finished && !session.hasFailures && session.plannedItems.isEmpty {
             onClose()
         } else {
+            // 在文件页触发底栏安装时先回到正文，安装浮层只出现在 SKILL.md。
+            tab = .manifest
             isInspectorPresented = true
             session.start()
         }

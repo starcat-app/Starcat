@@ -12,6 +12,7 @@ import AppKit
 struct RepoSkillDetailPane: View {
     let skill: RepoSkill
     let session: RepoSkillSession
+    @Binding var tab: Tab
     @Binding var isPreviewExpanded: Bool
     @Binding var isInspectorPresented: Bool
     @Binding var previewedFile: RepoSkillFile?
@@ -22,7 +23,6 @@ struct RepoSkillDetailPane: View {
     @Environment(\.locale) private var locale
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
-    @State private var tab = Tab.manifest
     @State private var showsManifestSource = false
     @State private var expandedFolders: Set<String> = ["references", "templates", "assets", "scripts"]
     @State private var hoveredFileRow: String?
@@ -36,16 +36,19 @@ struct RepoSkillDetailPane: View {
     @State private var translationSourceSnapshot: ReadmeTranslationSourceSnapshot = .empty
     @State private var translationToast: String?
     @State private var translationNoticeToast: String?
+    @State private var installationIssueToast: String?
 
     /// 只共享翻译服务与设置；窗口拥有自己的 VM，翻译 Skill 不会打断主窗口的 README。
     init(
         skill: RepoSkill, session: RepoSkillSession,
         translationService: any ReadmeTranslationServiceProtocol,
+        tab: Binding<Tab>,
         isPreviewExpanded: Binding<Bool>, isInspectorPresented: Binding<Bool>,
         previewedFile: Binding<RepoSkillFile?>
     ) {
         self.skill = skill
         self.session = session
+        _tab = tab
         _isPreviewExpanded = isPreviewExpanded
         _isInspectorPresented = isInspectorPresented
         _previewedFile = previewedFile
@@ -64,7 +67,7 @@ struct RepoSkillDetailPane: View {
     /// 文件清单与正文保留同一份展示快照，避免旧页尚未退场时先换成新 Skill 的附件。
     private var contentSkill: RepoSkill { presentedSkill ?? skill }
 
-    private enum Tab: CaseIterable {
+    enum Tab: CaseIterable {
         case manifest, files, tree
 
         var title: LocalizedStringKey {
@@ -127,8 +130,6 @@ struct RepoSkillDetailPane: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
-                        // 文件行与目录行也避让右下角常驻安装入口。
-                        .padding(.trailing, 28)
                     }
                     .id("\(contentSkill.id)-\(tab)")
                     .transition(.opacity)
@@ -148,9 +149,11 @@ struct RepoSkillDetailPane: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                installButton
-                    .padding(.trailing, 10)
-                    .padding(.bottom, 14)
+                if tab == .manifest {
+                    installButton
+                        .padding(.trailing, ReadmeWebView.floatingToolbarTrailingInset)
+                        .padding(.bottom, 14)
+                }
             }
             .background(RepoSkillPanelStyle.panelColor(colorScheme), in: RoundedRectangle(cornerRadius: 8))
             .overlay {
@@ -168,6 +171,16 @@ struct RepoSkillDetailPane: View {
         .sheet(item: translationPaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
+        .toast(
+            message: $installationIssueToast, icon: "exclamationmark.triangle.fill",
+            iconColor: .orange, bottomPadding: 30, autoDismiss: false,
+            actionLabel: "repo.files.inspector.viewOnGitHub",
+            onAction: {
+                if let url = contentBaseURL(raw: false)?.appendingPathComponent("SKILL.md") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        )
         .toast(
             message: $translationToast, icon: "exclamationmark.triangle.fill",
             duration: 5, iconColor: .orange, bottomPadding: 30,
@@ -193,10 +206,12 @@ struct RepoSkillDetailPane: View {
         .onChange(of: translationNoticeToast) { _, message in
             if message == nil { translationVM.dismissAlreadyInTargetNotice() }
         }
-        .onChange(of: skill.id) { _, _ in
+        .onChange(of: skill.id, initial: true) { _, _ in
             previewedFile = nil
             translationSourceDocumentID = nil
             translationSourceSnapshot = .empty
+            // 只在切换 Skill 时提示，手动关闭后不因正文重绘或翻译更新再次弹出。
+            installationIssueToast = skill.installationIssue
         }
         .onChange(of: tab) { _, _ in
             renderedDocumentID = nil
@@ -409,7 +424,7 @@ struct RepoSkillDetailPane: View {
         .accessibilityLabel(Text(helpKey))
     }
 
-    /// 安装入口常驻三个内容 Tab；这里只切换配置浮层，与文件保存入口区分。
+    /// 安装入口仅属于 SKILL.md，与 README 的悬浮操作共用贴边间距，不挤占滚动容器。
     private var installButton: some View {
         Button {
             isInspectorPresented.toggle()
@@ -443,7 +458,6 @@ struct RepoSkillDetailPane: View {
                 ReadmeWebView(
                     htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
                     floatingToolbarBottomInset: 40,
-                    contentTrailingInset: 28,
                     translationRenderState: document.skillID == skill.id
                         ? translationVM.visibleRenderState(matching: translationControl.identity) : .hidden,
                     onTranslationSourceChange: { snapshot in
@@ -457,8 +471,6 @@ struct RepoSkillDetailPane: View {
                 .accessibilityHidden(showsManifestSource)
                 if showsManifestSource {
                     RepoFileSourcePreview(text: contentSkill.manifest)
-                        // 源码没有 Markdown 内边距，单独留出安装按钮及其贴边间距。
-                        .padding(.trailing, 40)
                         .transition(.opacity)
                 }
             }

@@ -68,6 +68,9 @@ struct RepoSkillFilePreview: View {
                 try Task.checkCancellation()
                 markdown = preparedMarkdown
                 value = preview
+            } catch is CancellationError {
+                // 会话结束的取消也可能来自下游，未必标记当前 task；结束预览，不能显示内部错误或永留骨架。
+                if !Task.isCancelled { onClose() }
             } catch {
                 if !Task.isCancelled { self.error = error.localizedDescription }
             }
@@ -84,7 +87,6 @@ struct RepoSkillFilePreview: View {
                 if let markdown {
                     ReadmeWebView(
                         htmlFragment: markdown.html, documentID: markdown.id, baseURL: markdown.baseURL,
-                        contentTrailingInset: 28,
                         onDocumentReady: { documentID in
                             if documentID == self.markdown?.id { renderedDocumentID = documentID }
                         },

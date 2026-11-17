@@ -54,6 +54,35 @@ struct RepoSkillTests {
         try #require(!session.isInstalling && !session.isCheckingDestination)
     }
 
+    @Test("取消附件请求不关闭会话，窗口关闭后拒绝新的预览")
+    @MainActor
+    func previewCancellationKeepsSessionUsable() async throws {
+        let session = try await agentSession(destinations: [])
+        defer { session.close() }
+        let skill = try #require(session.skills.first)
+        let file = try #require(skill.files.first)
+        let cancelled = Task {
+            // 确定性模拟附件视图退场，取消读取不能替代窗口拥有的会话清理。
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await session.preview(file: file, skill: skill)
+        }
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
+
+        let preview = try await session.preview(file: file, skill: skill)
+        if case .text(let text) = preview {
+            #expect(text.contains("# Review"))
+        } else {
+            Issue.record("取消后重新打开附件应能正常读取文本")
+        }
+
+        session.close()
+        // 服务主动拒绝已关闭的会话时，调用任务本身仍未取消；UI 必须单独识别 CancellationError。
+        await #expect(throws: CancellationError.self) {
+            try await session.preview(file: file, skill: skill)
+        }
+        #expect(!Task.isCancelled)
+    }
+
     @Test("frontmatter 支持引号、折叠、根目录；拒绝无效名称、重复字段与目录不符")
     func frontmatter() throws {
         let folded = """

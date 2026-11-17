@@ -87,8 +87,9 @@ struct RepoSkillInspector: View {
                 }
                 Spacer()
                 Button("repo.skills.destination.choose") { session.chooseDirectory() }
-                    .controlSize(.small)
             }
+            .font(interfaceScale.font(.body))
+            .controlSize(.regular)
             .padding(10)
             .disabled(session.isInstalling)
             if session.isExport {
@@ -102,55 +103,61 @@ struct RepoSkillInspector: View {
         .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.11)) }
     }
 
-    /// 两行主信息加一条通用目录说明；整个 Toggle 标签均可点击，删除独立放在行尾。
+    /// 删除操作紧跟路径并独立于 Toggle，避免删除目录时误切换勾选状态。
     private func destinationRow(_ destination: RepoSkillDestination) -> some View {
         let isSelected = session.selectedDestinationIDs.contains(destination.id)
         let isPreset = destination.preset != nil
         let check = session.checks[destination.id]
-        return HStack(alignment: .center, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 4) {
             Toggle(isOn: Binding(
                 get: { isSelected },
                 set: { _ in session.toggleDestination(destination.id) }
             )) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(LocalizedStringKey(destinationTitle(destination)))
-                            .font(interfaceScale.font(.body, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 2)
-                        destinationStatus(check)
-                    }
-                    Text(verbatim: destination.displayPath)
-                        .font(interfaceScale.font(.code))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(LocalizedStringKey(destinationTitle(destination)))
+                        .font(interfaceScale.font(.body, weight: .medium))
                         .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(destination.url.path)
-                    if destination.preset == .agents {
-                        Text("repo.skills.target.agentsNote")
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+                    Spacer(minLength: 2)
+                    destinationStatus(check)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 4)
             }
             .toggleStyle(.checkbox)
             .disabled(session.isInstalling)
-            if !isPreset {
-                Button {
-                    session.removeDirectory(destination.id)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text(verbatim: destination.displayPath)
+                    .font(interfaceScale.font(.code))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(destination.url.path)
+                if !isPreset {
+                    Button {
+                        session.removeDirectory(destination.id)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .fixedSize()
+                    .help("repo.skills.target.remove")
+                    .accessibilityLabel(Text("repo.skills.target.remove"))
+                    .disabled(session.isInstalling)
                 }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help("repo.skills.target.remove")
-                .accessibilityLabel(Text("repo.skills.target.remove"))
-                .disabled(session.isInstalling)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 24)
+            if destination.preset == .agents {
+                Text("repo.skills.target.agentsNote")
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .padding(.leading, 24)
             }
         }
         .padding(10)
@@ -261,9 +268,16 @@ struct RepoSkillInspector: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(item.destination.url.path)
-                    Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     if item.status == .copying {
                         RepoSkillItemProgress(item: item, showsBar: false)
+                    } else if item.error == nil {
+                        Text(LocalizedStringKey(session.conflicts.contains { $0.id == item.id }
+                                                 ? "repo.skills.status.blocked" : statusKey(item)))
+                            .font(interfaceScale.font(.captionSmall))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                 }
                 if item.status == .copying {
@@ -273,12 +287,6 @@ struct RepoSkillInspector: View {
                         .font(interfaceScale.font(.captionSmall))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                } else {
-                    Text(LocalizedStringKey(session.conflicts.contains { $0.id == item.id }
-                                             ? "repo.skills.status.blocked" : statusKey(item)))
-                        .font(interfaceScale.font(.captionSmall))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
             }
         }

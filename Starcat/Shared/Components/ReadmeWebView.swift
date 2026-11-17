@@ -118,8 +118,8 @@ struct ReadmeWebView: View {
     /// 为调用方附加的底部操作预留空间；只移动浮动工具条，不改变 WebView 的尺寸与身份。
     var floatingToolbarBottomInset: CGFloat = 0
 
-    /// 仅缩窄正文，悬浮按钮仍贴外层右边缘；叠加 Markdown 自带留白后避免遮挡文字。
-    var contentTrailingInset: CGFloat = 0
+    /// 所有 README 与 Skill 操作浮在滚动条左侧；只内收按钮，WebView 和正文始终占满阅读区。
+    static let floatingToolbarTrailingInset: CGFloat = 20
 
     /// 当前 README 所属仓库。有值且设置选择应用内打开时，
     /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
@@ -184,7 +184,6 @@ struct ReadmeWebView: View {
             markdownLinkRepositoryName: markdownLinkRepositoryName,
             onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
         )
-        .padding(.trailing, contentTrailingInset)
         .id(authSession.state.user?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {
@@ -211,7 +210,7 @@ struct ReadmeWebView: View {
                 openInNewWindow: onOpenInNewWindow,
                 onExportMarkdown: onExportMarkdown
             )
-            .padding(.trailing, 10)
+            .padding(.trailing, Self.floatingToolbarTrailingInset)
             .padding(.bottom, 54 + floatingToolbarBottomInset)
             .opacity(isImagePreviewVisible ? 0 : 1)
             .allowsHitTesting(!isImagePreviewVisible)
@@ -220,7 +219,7 @@ struct ReadmeWebView: View {
         // 回到顶部是独立常驻操作，固定贴在 README 渲染区右下角。
         .overlay(alignment: .bottomTrailing) {
             ReadmeBackToTopButton(action: scrollToTop)
-                .padding(.trailing, 10)
+                .padding(.trailing, Self.floatingToolbarTrailingInset)
                 .padding(.bottom, 14 + floatingToolbarBottomInset)
                 .opacity(isImagePreviewVisible ? 0 : 1)
                 .allowsHitTesting(!isImagePreviewVisible)
@@ -2589,12 +2588,15 @@ private struct ReadmeFloatingToolbar: View {
     /// 「导出 README Markdown」回调。nil 时隐藏该按钮。
     let onExportMarkdown: (() -> Void)?
 
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     /// 鼠标是否悬停在浮窗上。
     ///
     /// dong4j 2026-07-04：浮窗默认占用 README 阅读区右下角，长期 100% 不透明会与正文抢戏。
     /// 在「hover / 展开 / 用户已调整过字号」三种状态下保持 100%，其余降到 45%，
     /// 既不抢阅读视线，也保证在意这个工具的用户能稳定看到反馈。
     @State private var isHovering = false
+    @State private var bounceToken = 0
 
     private var canDecrease: Bool {
         fontSizeAdjustment > AppSettings.readmeFontSizeAdjustmentRange.lowerBound
@@ -2659,25 +2661,38 @@ private struct ReadmeFloatingToolbar: View {
                         .transition(.opacity)
                 }
             }
-            toolbarButton(
-                systemImage: "gearshape",
-                helpKey: "readme.toolbar.fontMenu",
-                isDisabled: false,
-                isActive: isExpanded || fontSizeAdjustment != 0,
-                action: toggleExpanded
-            )
+            Button {
+                if !reduceMotion { bounceToken &+= 1 }
+                toggleExpanded()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .symbolEffect(.bounce, value: bounceToken)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isExpanded || fontSizeAdjustment != 0 ? Color.accentColor.opacity(0.12) : Color.clear)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("readme.toolbar.fontMenu")
+            .accessibilityLabel(Text("readme.toolbar.fontMenu"))
         }
-        .padding(isExpanded ? 4 : 3)
+        // 收起时与回顶、安装入口同为 30pt；展开仅为附加工具保留内边距。
+        .padding(isExpanded ? 4 : 0)
         .starcatInteractiveGlassSurface(.thinMaterial, in: RoundedRectangle(cornerRadius: isExpanded ? 12 : 10, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: isExpanded ? 12 : 10, style: .continuous)
                 .strokeBorder(Color.secondary.opacity(0.16), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.09), radius: 8, x: 0, y: 4)
-        .animation(.easeInOut(duration: 0.16), value: isExpanded)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: isExpanded)
         // idle 变淡：避免常驻浮窗与 README 正文抢视线；hover / 展开 / 已调过字号 时保持不淡。
         .opacity(isIdle ? 0.45 : 1.0)
-        .animation(.easeInOut(duration: 0.18), value: isHovering)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isHovering)
         .onHover { isHovering = $0 }
     }
 
@@ -2685,7 +2700,6 @@ private struct ReadmeFloatingToolbar: View {
         systemImage: String,
         helpKey: LocalizedStringKey,
         isDisabled: Bool,
-        isActive: Bool = false,
         assetImage: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
@@ -2698,20 +2712,12 @@ private struct ReadmeFloatingToolbar: View {
                     .frame(width: 14, height: 14)
                     .foregroundStyle(isDisabled ? Color.secondary.opacity(0.38) : Color.secondary)
                     .frame(width: 26, height: 26)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
-                    )
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             } else {
                 Image(systemName: systemImage)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(isDisabled ? Color.secondary.opacity(0.38) : Color.secondary)
                     .frame(width: 26, height: 26)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(isActive ? Color.accentColor.opacity(0.12) : Color.clear)
-                    )
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
@@ -2726,13 +2732,15 @@ private struct ReadmeFloatingToolbar: View {
 private struct ReadmeBackToTopButton: View {
     let action: () -> Void
 
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
     /// 右下角浮动按钮常驻在阅读区，默认弱化；只有鼠标指向时才完整显示，避免压住 README 正文。
     @State private var isHovering = false
     @State private var bounceToken = 0
 
     var body: some View {
         Button {
-            bounceToken &+= 1
+            if !reduceMotion { bounceToken &+= 1 }
             action()
         } label: {
             Image(systemName: "arrow.up.circle")
@@ -2753,7 +2761,7 @@ private struct ReadmeBackToTopButton: View {
         .accessibilityLabel(Text("readme.toolbar.backToTop"))
         .shadow(color: Color.black.opacity(0.09), radius: 8, x: 0, y: 4)
         .opacity(isHovering ? 1.0 : 0.45)
-        .animation(.easeInOut(duration: 0.18), value: isHovering)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: isHovering)
         .onHover { isHovering = $0 }
     }
 }
