@@ -93,7 +93,6 @@ private struct RecommendationEvidenceHeader: View {
                     if let explanation = dependencies.dailyRecommendationExplanationStore.text(
                         for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser
                     ) {
-                        Text("recommendations.daily.aiReasonTitle").font(.caption).foregroundStyle(.secondary)
                         evidenceText(explanation)
                     } else {
                         evidenceText(item.basicRecommendationReason)
