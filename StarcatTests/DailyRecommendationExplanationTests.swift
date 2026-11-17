@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AppKit
 import Testing
 @testable import Starcat
 
@@ -29,6 +30,46 @@ struct DailyRecommendationExplanationTests {
         let avatars = RAGMarkdownText.prepareForDisplay(markdown, citations: [])
         #expect(avatars.contains("starcat-rag-avatar://owner"))
         #expect(avatars.contains("starcat-rag-avatar://other"))
+    }
+
+    @Test("推荐依据的头像和文字共用项目链接，离线占位与窄栏换行均保留")
+    func evidenceAttachmentsAndWrapping() throws {
+        let sources = [
+            RecommendationSeed(repoID: 1, fullName: "Usagi-org/ai-goofish-monitor", description: nil, language: nil, reasons: []),
+            RecommendationSeed(repoID: 2, fullName: "ultraworkers/claw-code", description: nil, language: nil, reasons: [])
+        ]
+        let markdown = RecommendationEvidenceMarkdown.make(
+            text: "参考 Usagi-org/ai-goofish-monitor，也适合自动推送。", sources: sources
+        )
+        let content = RecommendationEvidenceText.attributedContent(markdown: markdown, avatars: [:], fontSize: 15)
+        var attachmentCount = 0
+        content.enumerateAttribute(.attachment, in: NSRange(location: 0, length: content.length)) { value, range, _ in
+            guard let attachment = value as? NSTextAttachment else { return }
+            attachmentCount += 1
+            #expect(attachment.image != nil)
+            #expect(content.attribute(.link, at: range.location, effectiveRange: nil) is URL)
+        }
+        #expect(attachmentCount == 2)
+        for source in sources {
+            let range = (content.string as NSString).range(of: source.fullName)
+            try #require(range.location != NSNotFound)
+            #expect(content.attribute(.link, at: range.location, effectiveRange: nil) as? URL
+                == GitHubURLs.repo(fullName: source.fullName))
+        }
+        #expect(content.attribute(.link, at: 0, effectiveRange: nil) == nil)
+
+        // 使用 TextKit 实际测高，验证附件参与行内排版，长项目名不会把详情撑出水平边界。
+        func height(width: CGFloat) -> CGFloat {
+            let storage = NSTextStorage(attributedString: content)
+            let layout = NSLayoutManager()
+            let container = NSTextContainer(size: CGSize(width: width, height: .greatestFiniteMagnitude))
+            container.lineFragmentPadding = 0
+            storage.addLayoutManager(layout)
+            layout.addTextContainer(container)
+            layout.ensureLayout(for: container)
+            return layout.usedRect(for: container).height
+        }
+        #expect(height(width: 200) > height(width: 900))
     }
 
     @Test("非 Pro 或无实际来源不调用 LLM，也不读取 Pro 缓存")
