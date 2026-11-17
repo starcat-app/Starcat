@@ -786,7 +786,7 @@ struct RepoShareButton: View {
     private func shareIcon(didCopy: Bool = false) -> some View {
         Image(systemName: didCopy ? "checkmark.circle.fill" : (hasExistingShare ? "square.and.arrow.up.fill" : "square.and.arrow.up"))
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(didCopy ? Color.green : Color.secondary)
+            .foregroundStyle(didCopy ? Color.green : (hasExistingShare ? Color.blue : Color.secondary))
             .frame(width: 28, height: 28)
             .heroActionIconSurface(colorScheme: colorScheme)
             .contentShape(Capsule())
