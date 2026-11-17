@@ -4,7 +4,7 @@
 //
 //  活动页「通知」中栏：Mail 密度时间线（HH:mm + 轴线 + 事件句 + 主体类型 chip）。
 //  「全部」把 GitHub 通知和当前用户 Star / Unstar / Fork 账本按时间混排，SQL UNION 游标翻页。
-//  类型筛选用下拉（默认 All），形态对齐 Manage 排序菜单；账本行点开走仓库详情，不是 Issue 会话。
+//  筛选复用全局浮层，以胶囊多选和紧凑单选组合查询；账本行点开走仓库详情。
 //
 
 import AppKit
@@ -24,7 +24,7 @@ struct GitHubNotificationInboxView: View {
     @State private var hasMore = false
     @State private var isLoadingPage = false
     @State private var pagingGeneration = 0
-    @State private var segment: GitHubNotificationSegment = .all
+    @State private var filter: GitHubNotificationFilter = .all
     @State private var lastFetchedAt: Date?
     @State private var selectedThreadId: String?
     @State private var isShowingHistoryResyncConfirmation = false
@@ -48,7 +48,7 @@ struct GitHubNotificationInboxView: View {
             content
         }
         .task {
-            inbox.listSegment = segment
+            inbox.listFilter = filter
             await inbox.clearDemoThreads()
             if let user = authSession.state.user {
                 await inbox.backfillUserRepoActivity(userID: user.id, login: user.login)
@@ -73,6 +73,12 @@ struct GitHubNotificationInboxView: View {
             // 选中项不在前 40 条时 `reloadFirstPage` 会把 selectedItem 清成 nil，右栏变空白。
             guard let repoId = note.userInfo?["repoId"] as? Int64,
                   let raw = note.userInfo?["libraryState"] as? String else { return }
+            if filter.libraryState != .all {
+                // 入库条件激活后，变化会改变成员资格；保留已加载的页容量，避免选中项无故丢失。
+                let loadedLimit = max(rows.count, GitHubNotificationMapper.timelinePageSize)
+                Task { await reloadFirstPage(limit: loadedLimit) }
+                return
+            }
             rows = GitHubNotificationTimelineLibraryState.apply(
                 rows: rows,
                 repoId: repoId,
@@ -118,7 +124,7 @@ struct GitHubNotificationInboxView: View {
         }
     }
 
-    /// 只保留类型下拉 + 同步行，和星标中栏 `manageFilterBar` 同高。
+    /// 复用全局筛选入口 + 同步行，和星标中栏 `manageFilterBar` 同高。
     /// 总数 / 未读走系统 `navigationSubtitle`（面包屑下一行），不要再叠 `通知 42` 标题。
     @ViewBuilder
     private var toolbar: some View {
@@ -134,10 +140,16 @@ struct GitHubNotificationInboxView: View {
             },
             onClear: { quickSearchQuery = "" }
         ) {
-            GitHubNotificationSegmentMenu(selection: $segment, locale: locale)
-                .onChange(of: segment) { _, newValue in
+            GitHubNotificationFilterMenu(selection: $filter, locale: locale)
+                .onChange(of: filter) { _, newValue in
                     resetQuickSearch()
-                    inbox.listSegment = newValue
+                    inbox.listFilter = newValue
+                    // onChange 到 Task 开始之间也可能返回旧请求，立即使其过期。
+                    pagingGeneration += 1
+                    rows = []
+                    cursor = nil
+                    hasMore = false
+                    isLoadingPage = true
                     Task { await reloadFirstPage() }
                 }
 
@@ -220,12 +232,16 @@ struct GitHubNotificationInboxView: View {
         let visibleRows = visibleRows
         if inbox.missingScope && rows.isEmpty {
             missingScopeEmpty
-        } else if rows.isEmpty && inbox.isSyncing {
+        } else if rows.isEmpty && (inbox.isSyncing || isLoadingPage) {
             ListLoadingSkeleton(rowHeight: 76)
                 .padding(12)
                 .frame(maxHeight: .infinity, alignment: .top)
         } else if rows.isEmpty {
-            emptyState
+            if filter.isActive {
+                filterEmptyState
+            } else {
+                emptyState
+            }
         } else if visibleRows.isEmpty {
             searchEmptyState
         } else {
@@ -295,7 +311,7 @@ struct GitHubNotificationInboxView: View {
                             loadedItemCount: visibleRowCount,
                             hasMore: hasMore,
                             isLoading: isLoadingPage,
-                            identity: "notification-\(String(describing: segment))-\(pagingGeneration)"
+                            identity: "notification-\(filter.identity)-\(pagingGeneration)"
                         ) {
                             await loadNextPageIfNeeded()
                         }
@@ -351,6 +367,15 @@ struct GitHubNotificationInboxView: View {
         }
     }
 
+    private var filterEmptyState: some View {
+        ContentUnavailableView {
+            Label("activity.notification.filter.empty", systemImage: "line.3.horizontal.decrease.circle")
+        } actions: {
+            Button("list.filter.reset") { filter = .all }
+                .focusEffectDisabled()
+        }
+    }
+
     private var missingScopeEmpty: some View {
         VStack(spacing: 12) {
             Image(systemName: "lock.slash")
@@ -372,27 +397,28 @@ struct GitHubNotificationInboxView: View {
         .padding()
     }
 
-    private func reloadFirstPage() async {
+    private func reloadFirstPage(limit: Int = GitHubNotificationMapper.timelinePageSize) async {
         // 首页重载代表列表上下文已变化。递增 generation，让仍在等待的旧分页结果自动失效，
         // 避免切换筛选或同步刷新时把上一份列表的下一页追加到新列表。
         pagingGeneration += 1
         let requestedGeneration = pagingGeneration
+        let requestedFilter = filter
         isLoadingPage = true
         defer {
             if requestedGeneration == pagingGeneration {
                 isLoadingPage = false
             }
         }
-        let page = await inbox.fetchTimelinePage(cursor: nil)
+        let page = await inbox.fetchTimelinePage(cursor: nil, filter: requestedFilter, limit: limit)
         let fetchedAt = await inbox.lastFetchedAt()
-        guard requestedGeneration == pagingGeneration else { return }
+        guard requestedGeneration == pagingGeneration, requestedFilter == filter else { return }
         rows = page.rows
         hasMore = page.hasMore
         cursor = page.rows.last?.cursor
         lastFetchedAt = fetchedAt
         Task { await inbox.prefetchMissingIssueStates(from: page.rows) }
         // 状态筛选必须先出本地结果。补缺放到后台，且同一会话只启动一轮。
-        if inbox.listSegment.issueStateFilter != nil {
+        if requestedFilter.issueState.issueStateFilter != nil {
             Task { await inbox.startMissingIssueStateBackfillIfNeeded() }
         }
         if inbox.pendingOpenThreadId != nil {
@@ -412,19 +438,19 @@ struct GitHubNotificationInboxView: View {
     private func loadNextPageIfNeeded() async {
         guard hasMore, !isLoadingPage, let cursor else { return }
         let requestedGeneration = pagingGeneration
-        let requestedSegment = segment
+        let requestedFilter = filter
         isLoadingPage = true
         defer {
             if requestedGeneration == pagingGeneration {
                 isLoadingPage = false
             }
         }
-        let page = await inbox.fetchTimelinePage(cursor: cursor)
+        let page = await inbox.fetchTimelinePage(cursor: cursor, filter: requestedFilter)
         guard GitHubNotificationTimelinePaging.isCurrentPageRequest(
             requestedGeneration: requestedGeneration,
             currentGeneration: pagingGeneration,
-            requestedSegment: requestedSegment,
-            currentSegment: segment,
+            requestedFilter: requestedFilter,
+            currentFilter: filter,
             requestedCursor: cursor,
             currentCursor: self.cursor
         ) else { return }
@@ -686,17 +712,17 @@ enum GitHubNotificationTimelinePaging {
     }
 
     /// `await` 返回时再次核对请求上下文。只靠 `isLoading` 不能阻止筛选切换或首页重载期间
-    /// 已经发出的旧请求回写，因此 generation、segment 与 cursor 必须同时保持一致。
+    /// 已经发出的旧请求回写，因此 generation、完整筛选与 cursor 必须同时保持一致。
     static func isCurrentPageRequest(
         requestedGeneration: Int,
         currentGeneration: Int,
-        requestedSegment: GitHubNotificationSegment,
-        currentSegment: GitHubNotificationSegment,
+        requestedFilter: GitHubNotificationFilter,
+        currentFilter: GitHubNotificationFilter,
         requestedCursor: GitHubInboxTimelineCursor,
         currentCursor: GitHubInboxTimelineCursor?
     ) -> Bool {
         requestedGeneration == currentGeneration
-            && requestedSegment == currentSegment
+            && requestedFilter == currentFilter
             && requestedCursor == currentCursor
     }
 }
@@ -744,46 +770,149 @@ private enum GitHubNotificationTimelineMetrics {
     }
 }
 
-/// 通知类型下拉。视觉对齐 `UnifiedSortMenu`，图标用筛选而不是排序箭头。
-///
-/// 不用分段控件：状态 / 主体类型 / Mention·Review / 账本会把同步行挤掉。
-/// `Picker` + `.inline` 让当前项带勾。
-private struct GitHubNotificationSegmentMenu: View {
-    @Binding var selection: GitHubNotificationSegment
+/// 与全局筛选共享浮层：事件和原因使用胶囊多选，互斥状态使用单选分段。
+private struct GitHubNotificationFilterMenu: View {
+    @Binding var selection: GitHubNotificationFilter
     let locale: Locale
 
     var body: some View {
-        Menu {
-            Picker(
-                GitHubNotificationMapper.copy(locale, zh: "筛选", en: "Filter"),
-                selection: $selection
-            ) {
-                ForEach(GitHubNotificationSegment.allCases) { item in
-                    if item.showsDividerBefore {
-                        Divider()
+        UnifiedFilterMenu(
+            isAnyFilterActive: selection.isActive,
+            onReset: { selection = .all }
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    sectionTitle("activity.notification.filter.events")
+                    Spacer(minLength: 0)
+                    Button("general.all") { selection.eventTypes = [] }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                }
+                TagChipFlowLayout(spacing: 6, constrainsItemWidth: true) {
+                    ForEach(GitHubNotificationFilter.eventOptions) { option in
+                        chip(option, selected: $selection.eventTypes)
                     }
-                    Label {
-                        Text(verbatim: item.displayTitle(locale: locale))
-                    } icon: {
-                        BusinessIcon(source: item.iconSource, pointSize: 15, weight: .medium)
-                    }
-                    .tag(item)
                 }
             }
-            .pickerStyle(.inline)
-        } label: {
-            // 与共享排序菜单一致，只保留 Menu 自带的系统下拉指示器。
-            HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
+
+            Divider()
+
+            compactTabs("activity.notification.filter.read", options: GitHubNotificationFilter.readOptions, binding: $selection.readState)
+            compactTabs("activity.notification.filter.state", options: GitHubNotificationFilter.stateOptions, binding: $selection.issueState)
+
+            Divider()
+
+            HStack(spacing: 6) {
+                sectionTitle("activity.notification.filter.reason")
+                    .fixedSize()
+                Spacer(minLength: 0)
+                ForEach(GitHubNotificationFilter.reasonOptions) { option in
+                    chip(option, selected: $selection.reasons)
+                }
+                Button("general.all") { selection.reasons = [] }
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(verbatim: selection.displayTitle(locale: locale))
-                    .lineLimit(1)
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .fixedSize()
             }
-            .accessibilityLabel(GitHubNotificationMapper.copy(locale, zh: "筛选", en: "Filter"))
-            .accessibilityValue(selection.displayTitle(locale: locale))
+
+            Divider()
+
+            compactTabs("list.filter.library", options: GitHubNotificationFilter.libraryOptions, binding: $selection.libraryState)
+
+            Text("activity.notification.filter.scope")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .fixedSize()
-        .help(GitHubNotificationMapper.copy(locale, zh: "按类型或状态筛选", en: "Filter by type or status"))
+    }
+
+    private func sectionTitle(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help(Text(key))
+    }
+
+    /// 沿用全局分段的长译文图标回退，保持互斥条件单行展示。
+    private func compactTabs(
+        _ label: LocalizedStringKey,
+        options: [GitHubNotificationSegment],
+        binding: Binding<GitHubNotificationSegment>
+    ) -> some View {
+        HStack(spacing: 8) {
+            sectionTitle(label)
+                .fixedSize()
+            tabs(label, options: options, binding: binding)
+        }
+    }
+
+    private func tabs(
+        _ label: LocalizedStringKey,
+        options: [GitHubNotificationSegment],
+        binding: Binding<GitHubNotificationSegment>
+    ) -> some View {
+        RepoFilterTabs(
+            label: label,
+            options: options,
+            selection: binding,
+            title: { LocalizedStringKey($0.displayTitle(locale: locale)) },
+            symbol: { $0.systemSymbol }
+        )
+    }
+
+    private func chip(_ option: GitHubNotificationSegment, selected: Binding<Set<GitHubNotificationSegment>>) -> some View {
+        GitHubNotificationFilterChip(
+            option: option,
+            title: option.displayTitle(locale: locale),
+            isSelected: selected.wrappedValue.contains(option)
+        ) {
+            if selected.wrappedValue.contains(option) {
+                selected.wrappedValue.remove(option)
+            } else {
+                selected.wrappedValue.insert(option)
+            }
+        }
+    }
+}
+
+/// 沿用许可证胶囊表面；动效只作用于选中反馈，不驱动整个浮层反复布局。
+private struct GitHubNotificationFilterChip: View {
+    let option: GitHubNotificationSegment
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if isSelected && differentiateWithoutColor {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .medium))
+                } else {
+                    BusinessIcon(source: option.iconSource, pointSize: 11, weight: .medium)
+                }
+                Text(verbatim: title)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .modifier(TagChipSurface(color: .accentColor, isSelected: isSelected))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: isSelected)
+            .contentShape(RoundedRectangle(cornerRadius: TagChipSurface.cornerRadius))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(Text(verbatim: title))
+        .accessibilityLabel(Text(verbatim: title))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .pressableHover(scale: 1)
     }
 }
 

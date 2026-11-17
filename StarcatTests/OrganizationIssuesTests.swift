@@ -161,7 +161,7 @@ struct OrganizationIssuesTests {
         #expect(rows[0].unread == false)
 
         let timelineRepository = GRDBUserRepoActivityRepository(database: database)
-        let page = try await timelineRepository.fetchPage(segment: .issue, cursor: nil, limit: 20)
+        let page = try await timelineRepository.fetchPage(filter: .init(eventTypes: [.issue]), cursor: nil, limit: 20)
         #expect(page.rows.map(\.id) == ["thread-1"])
     }
 

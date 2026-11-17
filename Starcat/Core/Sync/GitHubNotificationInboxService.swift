@@ -51,7 +51,7 @@ final class GitHubNotificationInboxService {
     private let syncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol
     private let notificationService: AppNotificationService
     private let settings: AppSettings
-    private let activityRepository: (any UserRepoActivityRepositoryProtocol)?
+    private let activityRepository: any UserRepoActivityRepositoryProtocol
     private let organizationIssueSyncService: OrganizationIssueTimelineSyncService?
     private let userIDProvider: () -> Int64?
     private let isProjectAccessAvailable: () -> Bool
@@ -67,8 +67,8 @@ final class GitHubNotificationInboxService {
     private(set) var lastErrorMessage: String?
     /// 系统通知点击时 inbox 视图可能还没挂上，先记在这里。
     var pendingOpenThreadId: String?
-    /// 中栏当前分段。右栏上下一条要用同一份过滤结果。
-    var listSegment: GitHubNotificationSegment = .all
+    /// 中栏当前组合条件。右栏上下一条使用同一查询，避免导航跳出筛选结果。
+    var listFilter: GitHubNotificationFilter = .all
 
     private var dwellTasks: [String: Task<Void, Never>] = [:]
     /// Issue / PR 的 `open` / `closed` / `merged`。内存是 UI 即时源，库里的 `issue_state` 是冷启动源。
@@ -103,7 +103,7 @@ final class GitHubNotificationInboxService {
         syncStateRepository: any GitHubNotificationSyncStateRepositoryProtocol,
         notificationService: AppNotificationService,
         settings: AppSettings,
-        activityRepository: (any UserRepoActivityRepositoryProtocol)? = nil,
+        activityRepository: any UserRepoActivityRepositoryProtocol,
         projectAPIClient: (any GitHubAPIClientProtocol)? = nil,
         organizationIssueSyncService: OrganizationIssueTimelineSyncService? = nil,
         userIDProvider: @escaping () -> Int64? = { nil },
@@ -131,34 +131,30 @@ final class GitHubNotificationInboxService {
         (try? await threadRepository.fetchAll(limit: limit)) ?? []
     }
 
-    /// 「全部」两表混排；Unread / 主体类型 / Mention / Review 只含通知；Star / Unstar / Fork 只含账本。
+    /// 请求显式携带筛选快照，切换条件不会改变已经发出的查询含义。
     func fetchTimelinePage(
         cursor: GitHubInboxTimelineCursor?,
+        filter: GitHubNotificationFilter,
         limit: Int = GitHubNotificationMapper.timelinePageSize
     ) async -> (rows: [GitHubInboxTimelineRow], hasMore: Bool) {
-        guard let activityRepository else {
-            let threads = (try? await threadRepository.fetchAll(limit: limit + 1)) ?? []
-            let hasMore = threads.count > limit
-            let page = Array(threads.prefix(limit))
-            return (page.map { .notification($0, language: nil) }, hasMore)
-        }
         return (try? await activityRepository.fetchPage(
-            segment: listSegment,
+            filter: filter,
             cursor: cursor,
             limit: limit
         )) ?? ([], false)
     }
 
     func timelineTotalCount() async -> Int {
-        let notifications = (try? await threadRepository.totalCount()) ?? 0
-        guard listSegment == .all else { return notifications }
-        let activities = (try? await activityRepository?.count()) ?? 0
-        return notifications + activities
+        (try? await activityRepository.timelineCount(filter: listFilter)) ?? 0
+    }
+
+    func adjacentThreadID(after id: String, delta: Int) async -> String? {
+        try? await activityRepository.adjacentNotificationID(after: id, delta: delta, filter: listFilter)
     }
 
     /// 把本地仍 star / 仍是自己的 fork 灌进账本。可重复跑。
     func backfillUserRepoActivity(userID: Int64, login: String) async {
-        try? await activityRepository?.backfillFromLocalCaches(
+        try? await activityRepository.backfillFromLocalCaches(
             actor: UserRepoActivityActor(userID: userID, userName: login)
         )
     }
@@ -755,7 +751,7 @@ final class GitHubNotificationInboxService {
             offset = end
             // 只有当前就在状态筛选项时才刷新列表。人在「全部」时补状态只改徽章，
             // 不必整表重载。
-            if listSegment.issueStateFilter != nil {
+            if listFilter.issueState.issueStateFilter != nil {
                 postDidChange()
             }
         }

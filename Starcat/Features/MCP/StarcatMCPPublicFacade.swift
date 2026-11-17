@@ -147,12 +147,14 @@ final class StarcatMCPPublicFacade {
             return try page(await app.releaseSubscriptionRepository.fetchAll(), limit: limit, offset: offset)
         case "list_notifications":
             let rows = try await app.githubNotificationThreadRepository.fetchAll(limit: offset + limit + 1)
-            return pageValues(rows.map(notification), limit: limit, offset: offset)
+            return pageValues(rows.map(Self.notification), limit: limit, offset: offset)
+        case "list_activity_timeline":
+            return try await Self.activityTimeline(arguments, repository: app.userRepoActivityRepository)
         case "get_notification":
             guard let record = try await app.githubNotificationThreadRepository.fetch(id: arguments["id"]?.stringValue ?? "") else {
                 throw StarcatMCPError.notFound("Notification not found.")
             }
-            return notification(record)
+            return Self.notification(record)
         case "list_collections":
             return try page(await app.smartCollectionRepository.fetchAll(), limit: limit, offset: offset)
         case "list_languages":
@@ -628,7 +630,55 @@ final class StarcatMCPPublicFacade {
         ])
     }
 
-    private func notification(_ record: GitHubNotificationThreadRecord) -> Value {
+    /// 公共查询只读取本地缓存，不改变 GUI 筛选，也不启动远端状态补全。
+    static func activityTimeline(
+        _ arguments: [String: Value],
+        repository: any UserRepoActivityRepositoryProtocol
+    ) async throws -> Value {
+        let filter = GitHubNotificationFilter(
+            eventTypes: Set(arguments["events"]?.arrayValue?.compactMap {
+                $0.stringValue.flatMap(GitHubNotificationSegment.init(rawValue:))
+            } ?? []),
+            readState: arguments["read_state"]?.stringValue.flatMap(GitHubNotificationSegment.init(rawValue:)) ?? .all,
+            issueState: arguments["issue_state"]?.stringValue.flatMap(GitHubNotificationSegment.init(rawValue:)) ?? .all,
+            reasons: Set(arguments["reasons"]?.arrayValue?.compactMap {
+                $0.stringValue.flatMap(GitHubNotificationSegment.init(rawValue:))
+            } ?? []),
+            libraryState: arguments["library_state"]?.stringValue.flatMap(GitHubNotificationSegment.init(rawValue:)) ?? .all
+        )
+        let cursor = arguments["cursor"]?.objectValue.map {
+            GitHubInboxTimelineCursor(occurredAt: $0["occurred_at"]?.stringValue ?? "", id: $0["id"]?.stringValue ?? "")
+        }
+        let limit = arguments["limit"]?.intValue ?? 20
+        let page = try await repository.fetchPage(filter: filter, cursor: cursor, limit: limit)
+        let total = try await repository.timelineCount(filter: filter)
+        let items = page.rows.map { row -> Value in
+            let data: Value
+            let source: String
+            switch row {
+            case .notification(let record, _):
+                source = "notification"
+                data = notification(record)
+            case .activity(let item):
+                source = "activity"
+                data = .object([
+                    "id": .string(item.record.id), "kind": .string(item.record.kind.rawValue),
+                    "repo_id": .int(Int(item.record.repoId)), "repository": .string(item.record.fullName),
+                    "url": .string(item.record.htmlUrl)
+                ])
+            }
+            return .object(["source": .string(source), "occurred_at": .string(row.occurredAt), "data": data])
+        }
+        let nextCursor: Value = page.hasMore ? page.rows.last.map {
+            .object(["occurred_at": .string($0.occurredAt), "id": .string($0.id)])
+        } ?? .null : .null
+        return .object([
+            "items": .array(items), "limit": .int(limit), "total": .int(total),
+            "has_more": .bool(page.hasMore), "next_cursor": nextCursor, "network_used": .bool(false)
+        ])
+    }
+
+    private static func notification(_ record: GitHubNotificationThreadRecord) -> Value {
         .object([
             "id": .string(record.id), "repository": .string(record.repositoryFullName),
             "title": .string(record.subjectTitle), "type": .string(record.subjectType),

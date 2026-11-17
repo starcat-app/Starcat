@@ -106,6 +106,93 @@ struct StarcatMCPPublicCapabilityTests {
         }
     }
 
+    @Test("时间线组合筛选限定选项所属分组，并校验游标与分页边界")
+    func activityTimelineSchema() throws {
+        let spec = try #require(StarcatMCPPublicCatalog.specs.first { $0.name == "list_activity_timeline" })
+        #expect(spec.permission == "read")
+        #expect(spec.network == "none")
+        try StarcatMCPInputValidator.validate(.object([
+            "events": .array([.string("issue"), .string("pullRequest"), .string("star")]),
+            "read_state": .string("unread"), "issue_state": .string("open"),
+            "reasons": .array([.string("mention"), .string("review")]),
+            "library_state": .string("inLibrary"), "limit": .int(2),
+            "cursor": .object(["occurred_at": .string("2026-11-17T10:00:00Z"), "id": .string("n-2")])
+        ]), schema: spec.schema)
+        try StarcatMCPInputValidator.validate(.object(["events": .array([]), "reasons": .array([])]), schema: spec.schema)
+        for invalid: Value in [
+            .object(["events": .array([.string("unread")])]),
+            .object(["events": .string("issue")]),
+            .object(["reasons": .array([.string("star")])]),
+            .object(["read_state": .string("closed")]),
+            .object(["issue_state": .string("unread")]),
+            .object(["library_state": .string("open")]),
+            .object(["limit": .int(0)]),
+            .object(["limit": .int(201)]),
+            .object(["cursor": .object(["id": .string("n-2")])]),
+            .object(["cursor": .object(["occurred_at": .string("time"), "id": .string("id"), "offset": .int(1)])]),
+            .object(["offset": .int(0)])
+        ] {
+            #expect(throws: StarcatMCPError.self) {
+                try StarcatMCPInputValidator.validate(invalid, schema: spec.schema)
+            }
+        }
+    }
+
+    @Test("公共时间线复用本地组合查询，返回混合来源、总数和可续页游标")
+    func activityTimelineResults() async throws {
+        let database = try InMemoryDatabaseManager()
+        let repository = GRDBUserRepoActivityRepository(database: database)
+        let threads = GRDBGitHubNotificationThreadRepository(database: database)
+        let timestamp = "2026-11-17T10:00:00Z"
+        let records = [("n-z", "mention"), ("n-m", "team_mention"), ("n-a", "comment")].map { id, reason in
+            GitHubNotificationMapper.record(
+                from: GitHubNotificationThreadDTO(
+                    id: id, unread: true, reason: reason, updatedAt: timestamp,
+                    subject: GitHubNotificationSubjectDTO(
+                        title: id, url: "https://api.github.com/repos/o/r/issues/1",
+                        latestCommentUrl: nil, type: "Issue"
+                    ),
+                    repository: GitHubNotificationRepositoryDTO(
+                        id: 1, fullName: "o/r", name: "r", owner: GitHubNotificationOwnerDTO(login: "o")
+                    )
+                ),
+                fetchedAt: timestamp, firstSeenAt: timestamp
+            )
+        }
+        try await threads.upsertMany(records)
+        try await repository.recordSyncedStars([
+            UserRepoActivityStarDraft(repoID: 1, fullName: "o/r", htmlURL: "https://github.com/o/r", occurredAt: timestamp)
+        ], actor: UserRepoActivityActor(userID: 1, userName: "tester"))
+        let mixed = try await StarcatMCPPublicFacade.activityTimeline([
+            "events": .array([.string("issue"), .string("star")])
+        ], repository: repository)
+        #expect(mixed.objectValue?["total"]?.intValue == 4)
+        #expect(Set(mixed.objectValue?["items"]?.arrayValue?.compactMap {
+            $0.objectValue?["source"]?.stringValue
+        } ?? []) == ["notification", "activity"])
+
+        var arguments: [String: Value] = [
+            "events": .array([.string("issue"), .string("star")]),
+            "read_state": .string("unread"), "reasons": .array([.string("mention")]), "limit": .int(1)
+        ]
+        let first = try await StarcatMCPPublicFacade.activityTimeline(arguments, repository: repository)
+        #expect(first.objectValue?["total"]?.intValue == 2)
+        #expect(first.objectValue?["has_more"]?.boolValue == true)
+        #expect(first.objectValue?["network_used"]?.boolValue == false)
+        #expect(first.objectValue?["items"]?.arrayValue?.first?.objectValue?["data"]?.objectValue?["id"]?.stringValue == "n-z")
+        arguments["cursor"] = try #require(first.objectValue?["next_cursor"])
+        let second = try await StarcatMCPPublicFacade.activityTimeline(arguments, repository: repository)
+        #expect(second.objectValue?["total"]?.intValue == 2)
+        #expect(second.objectValue?["has_more"]?.boolValue == false)
+        #expect(second.objectValue?["next_cursor"] == .null)
+        #expect(second.objectValue?["items"]?.arrayValue?.first?.objectValue?["data"]?.objectValue?["id"]?.stringValue == "n-m")
+        let empty = try await StarcatMCPPublicFacade.activityTimeline([
+            "events": .array([.string("star")]), "read_state": .string("unread")
+        ], repository: repository)
+        #expect(empty.objectValue?["total"]?.intValue == 0)
+        #expect(empty.objectValue?["items"]?.arrayValue?.isEmpty == true)
+    }
+
     @Test("任务由 App 保留结果，完成前不能读取，过期后明确失效")
     func taskResultsAndExpiry() async throws {
         var clock = Date()

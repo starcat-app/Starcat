@@ -118,10 +118,18 @@ protocol UserRepoActivityRepositoryProtocol: Sendable {
     func count() async throws -> Int
 
     func fetchPage(
-        segment: GitHubNotificationSegment,
+        filter: GitHubNotificationFilter,
         cursor: GitHubInboxTimelineCursor?,
         limit: Int
     ) async throws -> (rows: [GitHubInboxTimelineRow], hasMore: Bool)
+
+    func timelineCount(filter: GitHubNotificationFilter) async throws -> Int
+
+    func adjacentNotificationID(
+        after id: String,
+        delta: Int,
+        filter: GitHubNotificationFilter
+    ) async throws -> String?
 }
 
 struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Sendable {
@@ -339,17 +347,55 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
     }
 
     func fetchPage(
-        segment: GitHubNotificationSegment,
+        filter: GitHubNotificationFilter,
         cursor: GitHubInboxTimelineCursor?,
         limit: Int
     ) async throws -> (rows: [GitHubInboxTimelineRow], hasMore: Bool) {
         let safeLimit = max(1, limit)
         let queryLimit = safeLimit + 1
-        let keys = try await fetchKeys(segment: segment, cursor: cursor, limit: queryLimit)
+        let keys = try await fetchKeys(filter: filter, cursor: cursor, limit: queryLimit)
         let hasMore = keys.count > safeLimit
         let pageKeys = Array(keys.prefix(safeLimit))
         let rows = try await hydrate(keys: pageKeys)
         return (rows, hasMore)
+    }
+
+    func timelineCount(filter: GitHubNotificationFilter) async throws -> Int {
+        return try await database.writer.read { db in
+            let query = Self.timelineQuery(filter: filter)
+            return try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM (\(query.sql))",
+                arguments: StatementArguments(query.arguments)
+            ) ?? 0
+        }
+    }
+
+    /// 详情导航同样使用完整 SQL 条件，不受首页 40 条或历史回填 300 条上限影响。
+    func adjacentNotificationID(
+        after id: String,
+        delta: Int,
+        filter: GitHubNotificationFilter
+    ) async throws -> String? {
+        guard delta == 1 || delta == -1 else { return nil }
+        return try await database.writer.read { db in
+            let query = Self.timelineQuery(filter: filter)
+            guard let current = try GitHubNotificationThreadRecord.fetchOne(db, key: id) else { return nil }
+            let comparison = delta == 1 ? "<" : ">"
+            let order = delta == 1 ? "DESC" : "ASC"
+            var arguments = query.arguments
+            arguments.append(contentsOf: [current.updatedAt, current.updatedAt, current.id])
+            return try String.fetchOne(
+                db,
+                sql: """
+                    SELECT id FROM (\(query.sql))
+                    WHERE source = 'notification'
+                      AND (occurred_at \(comparison) ? OR (occurred_at = ? AND id \(comparison) ?))
+                    ORDER BY occurred_at \(order), id \(order) LIMIT 1
+                    """,
+                arguments: StatementArguments(arguments)
+            )
+        }
     }
 
     // MARK: - Private
@@ -444,65 +490,14 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
     }
 
     private func fetchKeys(
-        segment: GitHubNotificationSegment,
+        filter: GitHubNotificationFilter,
         cursor: GitHubInboxTimelineCursor?,
         limit: Int
     ) async throws -> [TimelineKey] {
         try await database.writer.read { db in
-            var sql: String
-            var arguments: [any DatabaseValueConvertible] = []
-
-            if let kind = segment.ledgerKind {
-                // Star / Unstar / Fork：只查账本，不混 GitHub 通知。
-                sql = """
-                    SELECT id, occurred_at, source FROM (
-                        SELECT id, occurred_at, 'activity' AS source
-                        FROM user_repo_activity
-                        WHERE kind = ?
-                    )
-                    """
-                arguments.append(kind.rawValue)
-            } else if let libraryState = segment.libraryStateFilter {
-                // 入库筛只看账本当前仓库的知识库边界，不混 Issue / PR。
-                sql = """
-                    SELECT id, occurred_at, source FROM (
-                        SELECT a.id, a.occurred_at, 'activity' AS source
-                        FROM user_repo_activity a
-                        LEFT JOIN repo_notes n ON n.repo_id = a.repo_id
-                        WHERE \(libraryState == .inLibrary
-                            ? "n.library_state = 'in_library'"
-                            : "COALESCE(n.library_state, 'outside_library') != 'in_library'")
-                    )
-                    """
-            } else if let issueState = segment.issueStateFilter {
-                sql = """
-                    SELECT id, occurred_at, source FROM (
-                        SELECT id, updated_at AS occurred_at, 'notification' AS source
-                        FROM github_notification_threads
-                        WHERE subject_type IN ('Issue', 'PullRequest')
-                          AND issue_state = ?
-                    )
-                    """
-                arguments.append(issueState)
-            } else {
-                sql = """
-                    SELECT id, occurred_at, source FROM (
-                        SELECT id, updated_at AS occurred_at, 'notification' AS source
-                        FROM github_notification_threads
-                        \(Self.notificationWhereSQL(segment))
-                    """
-                arguments.append(contentsOf: Self.notificationWhereArguments(segment))
-                if segment == .all {
-                    sql += """
-                        UNION ALL
-                        SELECT id, occurred_at, 'activity' AS source
-                        FROM user_repo_activity
-                        """
-                }
-                sql += """
-                    )
-                    """
-            }
+            let query = Self.timelineQuery(filter: filter)
+            var sql = "SELECT id, occurred_at, source FROM (\(query.sql)) "
+            var arguments = query.arguments
             if let cursor {
                 sql += """
                     WHERE occurred_at < ?
@@ -529,29 +524,73 @@ struct GRDBUserRepoActivityRepository: UserRepoActivityRepositoryProtocol, Senda
         }
     }
 
-    private static func notificationWhereSQL(_ segment: GitHubNotificationSegment) -> String {
-        switch segment {
-        case .all, .star, .unstar, .fork, .open, .closed, .merged, .inLibrary, .outsideLibrary:
-            return ""
-        case .unread:
-            return "WHERE unread = 1"
-        case .issue:
-            return "WHERE subject_type = 'Issue'"
-        case .pullRequest:
-            return "WHERE subject_type = 'PullRequest'"
-        case .discussion:
-            return "WHERE subject_type = 'Discussion'"
-        case .release:
-            return "WHERE subject_type = 'Release'"
-        case .mention:
-            return "WHERE reason IN ('mention', 'team_mention')"
-        case .review:
-            return "WHERE reason IN ('review_requested', 'review_submitted')"
+    /// 分页、总数、详情导航与 CLI 共用这一查询；所有筛选都先于游标和 LIMIT。
+    private static func timelineQuery(
+        filter: GitHubNotificationFilter
+    ) -> (sql: String, arguments: [any DatabaseValueConvertible]) {
+        var queries: [String] = []
+        var arguments: [any DatabaseValueConvertible] = []
+        if filter.includesNotifications {
+            var clauses: [String] = []
+            let subjectTypes = filter.eventTypes.compactMap(\.subjectType).sorted()
+            if !subjectTypes.isEmpty {
+                clauses.append("n.subject_type IN (\(subjectTypes.map { _ in "?" }.joined(separator: ",")))")
+                arguments.append(contentsOf: subjectTypes)
+            }
+            if filter.readState == .unread { clauses.append("n.unread = 1") }
+            if let state = filter.issueState.issueStateFilter {
+                clauses.append("n.subject_type IN ('Issue', 'PullRequest') AND n.issue_state = ?")
+                arguments.append(state)
+            }
+            let reasons = filter.reasons.flatMap(\.reasonValues).sorted()
+            if !reasons.isEmpty {
+                clauses.append("n.reason IN (\(reasons.map { _ in "?" }.joined(separator: ",")))")
+                arguments.append(contentsOf: reasons)
+            }
+            // ID 优先；通知没有对应缓存 ID 时按 full_name 找本地项目，不能只筛账本。
+            let repoID = """
+                COALESCE(
+                    (SELECT id FROM repos WHERE id = n.repository_id),
+                    (SELECT id FROM repos WHERE full_name = n.repository_full_name COLLATE NOCASE LIMIT 1),
+                    n.repository_id
+                )
+                """
+            if let library = libraryClause(filter.libraryState, repoID: repoID) { clauses.append(library) }
+            queries.append("""
+                SELECT n.id, n.updated_at AS occurred_at, 'notification' AS source
+                FROM github_notification_threads n
+                \(clauses.isEmpty ? "" : "WHERE " + clauses.joined(separator: " AND "))
+                """)
         }
+        if filter.includesActivities {
+            var clauses: [String] = []
+            let kinds = filter.eventTypes.compactMap(\.ledgerKind).map(\.rawValue).sorted()
+            if !kinds.isEmpty {
+                clauses.append("a.kind IN (\(kinds.map { _ in "?" }.joined(separator: ",")))")
+                arguments.append(contentsOf: kinds)
+            }
+            if let library = libraryClause(filter.libraryState, repoID: "a.repo_id") { clauses.append(library) }
+            queries.append("""
+                SELECT a.id, a.occurred_at, 'activity' AS source FROM user_repo_activity a
+                \(clauses.isEmpty ? "" : "WHERE " + clauses.joined(separator: " AND "))
+                """)
+        }
+        // 例如 Star + 未读：两个来源都不匹配，仍返回可计数、可分页的空查询。
+        return (
+            queries.isEmpty
+                ? "SELECT id, occurred_at, 'activity' AS source FROM user_repo_activity WHERE 0"
+                : queries.joined(separator: " UNION ALL "),
+            arguments
+        )
     }
 
-    private static func notificationWhereArguments(_ segment: GitHubNotificationSegment) -> [any DatabaseValueConvertible] {
-        []
+    private static func libraryClause(_ option: GitHubNotificationSegment, repoID: String) -> String? {
+        guard let state = option.libraryStateFilter else { return nil }
+        let membership = """
+            EXISTS (SELECT 1 FROM repo_notes
+                    WHERE repo_id = \(repoID) AND library_state = 'in_library')
+            """
+        return state == .inLibrary ? membership : "NOT \(membership)"
     }
 
     private func hydrate(keys: [TimelineKey]) async throws -> [GitHubInboxTimelineRow] {

@@ -857,14 +857,7 @@ struct GitHubNotificationDetailView: View {
     }
 
     private func adjacentThreadId(after currentId: String, delta: Int) async -> String? {
-        let records = await inbox.fetchCached()
-        let visible = records.filter {
-            GitHubNotificationMapper.matchesSegment($0, segment: inbox.listSegment)
-        }
-        guard let index = visible.firstIndex(where: { $0.id == currentId }) else { return nil }
-        let next = index + delta
-        guard visible.indices.contains(next) else { return nil }
-        return visible[next].id
+        await inbox.adjacentThreadID(after: currentId, delta: delta)
     }
 
     private func doneErrorMessage(_ error: Error) -> String {

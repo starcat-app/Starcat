@@ -62,6 +62,27 @@ enum StarcatMCPPublicCatalog {
         "language": string(), "fallback": boolean, "date_from": string(), "date_to": string(),
         "catalog_revision": string(), "cursor": string(), "limit": integer(1, 100)
     ]
+    /// 分组枚举与 UI 共用，禁止把「未读」等选项当事件类型传入。
+    static let activityTimeline: [String: Value] = [
+        "events": .object([
+            "type": .string("array"), "maxItems": .int(GitHubNotificationFilter.eventOptions.count),
+            "items": string(GitHubNotificationFilter.eventOptions.map(\.rawValue))
+        ]),
+        "read_state": string(GitHubNotificationFilter.readOptions.map(\.rawValue)),
+        "issue_state": string(GitHubNotificationFilter.stateOptions.map(\.rawValue)),
+        "reasons": .object([
+            "type": .string("array"), "maxItems": .int(GitHubNotificationFilter.reasonOptions.count),
+            "items": string(GitHubNotificationFilter.reasonOptions.map(\.rawValue))
+        ]),
+        "library_state": string(GitHubNotificationFilter.libraryOptions.map(\.rawValue)),
+        "limit": integer(),
+        "cursor": .object([
+            "type": .string("object"),
+            "properties": .object(["occurred_at": string(), "id": string()]),
+            "required": .array([.string("occurred_at"), .string("id")]),
+            "additionalProperties": .bool(false)
+        ])
+    ]
 
     static let specs: [StarcatMCPPublicSpec] = [
         .init(name: "get_public_settings", summary: "Read non-secret integration settings and channel information.", properties: [:]),
@@ -75,6 +96,7 @@ enum StarcatMCPPublicCatalog {
         .init(name: "list_releases", summary: "Read cached releases by repository, or the local release timeline.", properties: selector.merging(pagination) { _, new in new }),
         .init(name: "list_release_subscriptions", summary: "Read the local release subscription state.", properties: pagination),
         .init(name: "list_notifications", summary: "Read the cached notification and Issue/PR inbox without remote hydration.", properties: pagination),
+        .init(name: "list_activity_timeline", summary: "Read cached notifications and Star/Unstar/Fork activity with combined filters and cursor pagination. Values within events/reasons are OR; groups are AND. Does not hydrate remote state.", properties: activityTimeline),
         .init(name: "get_notification", summary: "Read one cached notification or Issue/PR conversation.", properties: ["id": string()], required: ["id"]),
         .init(name: "list_collections", summary: "Read local smart collection definitions.", properties: pagination),
         .init(name: "list_languages", summary: "Read language aggregates for Starred or Knowledge repositories.", properties: ["scope": string(["starred", "knowledge"])]),

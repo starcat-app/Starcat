@@ -80,7 +80,7 @@ struct UserRepoActivityRepositoryTests {
         )
 
         #expect(try await env.activity.count() == 3)
-        let page = try await env.activity.fetchPage(segment: .all, cursor: nil, limit: 10)
+        let page = try await env.activity.fetchPage(filter: .all, cursor: nil, limit: 10)
         let kinds = page.rows.compactMap { row -> String? in
             if case .activity(let item) = row { return item.record.kind.rawValue }
             return nil
@@ -111,7 +111,7 @@ struct UserRepoActivityRepositoryTests {
             )
         ])
 
-        let first = try await env.activity.fetchPage(segment: .all, cursor: nil, limit: 2)
+        let first = try await env.activity.fetchPage(filter: .all, cursor: nil, limit: 2)
         #expect(first.hasMore)
         #expect(first.rows.map(\.id) == [
             UserRepoActivityRecord.makeID(
@@ -124,14 +124,14 @@ struct UserRepoActivityRepositoryTests {
         ])
 
         let second = try await env.activity.fetchPage(
-            segment: .all,
+            filter: .all,
             cursor: first.rows.last?.cursor,
             limit: 2
         )
         #expect(!second.hasMore)
         #expect(second.rows.map(\.id) == ["n-old"])
 
-        let unread = try await env.activity.fetchPage(segment: .unread, cursor: nil, limit: 10)
+        let unread = try await env.activity.fetchPage(filter: .init(readState: .unread), cursor: nil, limit: 10)
         #expect(unread.rows.allSatisfy {
             if case .notification = $0 { return true }
             return false
@@ -172,7 +172,7 @@ struct UserRepoActivityRepositoryTests {
             )
         ])
 
-        let stars = try await env.activity.fetchPage(segment: .star, cursor: nil, limit: 10)
+        let stars = try await env.activity.fetchPage(filter: .init(eventTypes: [.star]), cursor: nil, limit: 10)
         #expect(stars.rows.map(\.id) == [
             UserRepoActivityRecord.makeID(
                 kind: .star,
@@ -182,7 +182,7 @@ struct UserRepoActivityRepositoryTests {
             )
         ])
 
-        let unstars = try await env.activity.fetchPage(segment: .unstar, cursor: nil, limit: 10)
+        let unstars = try await env.activity.fetchPage(filter: .init(eventTypes: [.unstar]), cursor: nil, limit: 10)
         #expect(unstars.rows.map(\.id) == [
             UserRepoActivityRecord.makeID(
                 kind: .unstar,
@@ -192,7 +192,7 @@ struct UserRepoActivityRepositoryTests {
             )
         ])
 
-        let forks = try await env.activity.fetchPage(segment: .fork, cursor: nil, limit: 10)
+        let forks = try await env.activity.fetchPage(filter: .init(eventTypes: [.fork]), cursor: nil, limit: 10)
         #expect(forks.rows.map(\.id) == [
             UserRepoActivityRecord.makeID(
                 kind: .fork,
@@ -202,11 +202,11 @@ struct UserRepoActivityRepositoryTests {
             )
         ])
 
-        let mention = try await env.activity.fetchPage(segment: .mention, cursor: nil, limit: 10)
+        let mention = try await env.activity.fetchPage(filter: .init(reasons: [.mention]), cursor: nil, limit: 10)
         #expect(mention.rows.map(\.id) == ["n-1"])
-        let issues = try await env.activity.fetchPage(segment: .issue, cursor: nil, limit: 10)
+        let issues = try await env.activity.fetchPage(filter: .init(eventTypes: [.issue]), cursor: nil, limit: 10)
         #expect(issues.rows.map(\.id) == ["n-1"])
-        let pulls = try await env.activity.fetchPage(segment: .pullRequest, cursor: nil, limit: 10)
+        let pulls = try await env.activity.fetchPage(filter: .init(eventTypes: [.pullRequest]), cursor: nil, limit: 10)
         #expect(pulls.rows.isEmpty)
         if case .notification(_, let language) = mention.rows.first {
             #expect(language == "Swift")
@@ -254,23 +254,23 @@ struct UserRepoActivityRepositoryTests {
             )
         ])
 
-        let issues = try await env.activity.fetchPage(segment: .issue, cursor: nil, limit: 10)
+        let issues = try await env.activity.fetchPage(filter: .init(eventTypes: [.issue]), cursor: nil, limit: 10)
         #expect(issues.rows.map(\.id) == ["n-issue"])
         #expect(issues.rows.allSatisfy {
             if case .notification = $0 { return true }
             return false
         })
 
-        let pulls = try await env.activity.fetchPage(segment: .pullRequest, cursor: nil, limit: 10)
+        let pulls = try await env.activity.fetchPage(filter: .init(eventTypes: [.pullRequest]), cursor: nil, limit: 10)
         #expect(pulls.rows.map(\.id) == ["n-pr"])
         #expect(pulls.rows.allSatisfy {
             if case .notification = $0 { return true }
             return false
         })
 
-        let discussions = try await env.activity.fetchPage(segment: .discussion, cursor: nil, limit: 10)
+        let discussions = try await env.activity.fetchPage(filter: .init(eventTypes: [.discussion]), cursor: nil, limit: 10)
         #expect(discussions.rows.map(\.id) == ["n-disc"])
-        let releases = try await env.activity.fetchPage(segment: .release, cursor: nil, limit: 10)
+        let releases = try await env.activity.fetchPage(filter: .init(eventTypes: [.release]), cursor: nil, limit: 10)
         #expect(releases.rows.map(\.id) == ["n-rel"])
     }
 
@@ -284,7 +284,7 @@ struct UserRepoActivityRepositoryTests {
             actor: Self.actor,
             occurredAt: "2026-08-19T12:05:00Z"
         )
-        let page = try await env.activity.fetchPage(segment: .star, cursor: nil, limit: 1)
+        let page = try await env.activity.fetchPage(filter: .init(eventTypes: [.star]), cursor: nil, limit: 1)
         guard case .activity(let item) = page.rows.first else {
             Issue.record("应有 star 账本行")
             return
@@ -296,7 +296,7 @@ struct UserRepoActivityRepositoryTests {
             try db.execute(sql: "UPDATE user_repo_activity SET user_id = NULL, user_name = NULL")
         }
         try await env.activity.backfillFromLocalCaches(actor: Self.actor)
-        let stamped = try await env.activity.fetchPage(segment: .star, cursor: nil, limit: 1)
+        let stamped = try await env.activity.fetchPage(filter: .init(eventTypes: [.star]), cursor: nil, limit: 1)
         guard case .activity(let restored) = stamped.rows.first else {
             Issue.record("回填后仍应有 star 账本行")
             return
@@ -305,7 +305,137 @@ struct UserRepoActivityRepositoryTests {
         #expect(restored.record.userName == "tester")
     }
 
+    @Test("事件与原因组内 OR，跨组 AND；先筛选再分页与计数")
+    func combinedNotificationFiltersAndPagination() async throws {
+        let env = try makeEnv()
+        try await env.threads.upsertMany([
+            Self.makeThread(id: "match-z", type: "Issue", reason: "team_mention"),
+            Self.makeThread(id: "match-m", type: "PullRequest", reason: "review_requested"),
+            Self.makeThread(id: "match-a", type: "PullRequest", reason: "review_submitted"),
+            Self.makeThread(id: "skip-reason", type: "Issue", reason: "comment"),
+            Self.makeThread(id: "skip-read", type: "Issue", unread: false),
+            Self.makeThread(id: "skip-type", type: "Discussion")
+        ])
+        let filter = GitHubNotificationFilter(
+            eventTypes: [.issue, .pullRequest], readState: .unread, reasons: [.mention, .review]
+        )
+        let first = try await env.activity.fetchPage(filter: filter, cursor: nil, limit: 2)
+        #expect(first.rows.map(\.id) == ["match-z", "match-m"])
+        #expect(first.hasMore)
+        let second = try await env.activity.fetchPage(filter: filter, cursor: first.rows.last?.cursor, limit: 2)
+        #expect(second.rows.map(\.id) == ["match-a"])
+        #expect(!second.hasMore)
+        #expect(try await env.activity.timelineCount(filter: filter) == 3)
+        #expect(try await env.activity.adjacentNotificationID(after: "match-z", delta: 1, filter: filter) == "match-m")
+        #expect(try await env.activity.adjacentNotificationID(after: "match-a", delta: -1, filter: filter) == "match-m")
+        #expect(try await env.activity.adjacentNotificationID(after: "match-a", delta: 1, filter: filter) == nil)
+    }
+
+    @Test("入库条件同时筛通知和账本，通知支持 fullName 回退与无缓存项目")
+    func libraryFiltersAcrossSources() async throws {
+        let env = try makeEnv()
+        let inRepo = try await env.seedStarredRepo(id: 11, name: "in-lib", starredAt: Self.filterTime)
+        let outRepo = try await env.seedStarredRepo(id: 12, name: "out-lib", starredAt: Self.filterTime)
+        try await GRDBRepoNoteRepository(database: env.db).updateLibraryState(repoId: inRepo.id, state: .inLibrary)
+        try await env.activity.recordStar(repo: inRepo, source: .starcat, actor: Self.actor, occurredAt: Self.filterTime)
+        try await env.activity.recordStar(repo: outRepo, source: .starcat, actor: Self.actor, occurredAt: Self.filterTime)
+        try await env.activity.recordFork(repo: outRepo, source: .starcat, actor: Self.actor, occurredAt: Self.filterTime)
+        try await env.threads.upsertMany([
+            Self.makeThread(id: "n-in", repositoryID: 999, fullName: inRepo.fullName.uppercased()),
+            Self.makeThread(id: "n-out", repositoryID: outRepo.id, fullName: outRepo.fullName),
+            Self.makeThread(id: "n-uncached", repositoryID: 998, fullName: "other/missing")
+        ])
+        let outside = GitHubNotificationFilter(eventTypes: [.issue, .star, .fork], libraryState: .outsideLibrary)
+        var collected: [String] = []
+        var cursor: GitHubInboxTimelineCursor?
+        var hasMore = true
+        while hasMore {
+            let page = try await env.activity.fetchPage(filter: outside, cursor: cursor, limit: 2)
+            collected.append(contentsOf: page.rows.map(\.id))
+            cursor = page.rows.last?.cursor
+            hasMore = page.hasMore
+        }
+        #expect(collected.count == 4)
+        #expect(Set(collected).count == 4)
+        #expect(collected.contains("n-out"))
+        #expect(collected.contains("n-uncached"))
+        #expect(!collected.contains("n-in"))
+        #expect(try await env.activity.timelineCount(filter: outside) == 4)
+        let inside = GitHubNotificationFilter(eventTypes: [.issue, .star, .fork], libraryState: .inLibrary)
+        let page = try await env.activity.fetchPage(filter: inside, cursor: nil, limit: 10)
+        #expect(page.rows.count == 2)
+        #expect(page.rows.contains { $0.id == "n-in" })
+        #expect(try await env.activity.timelineCount(filter: inside) == 2)
+    }
+
+    @Test("已合并 PR 与入库取交集，矛盾组合返回空而非忽略条件")
+    func combinedIssueStateAndContradictions() async throws {
+        let env = try makeEnv()
+        let repo = try await env.seedStarredRepo(id: 1, name: "in-lib", starredAt: Self.filterTime)
+        try await GRDBRepoNoteRepository(database: env.db).updateLibraryState(repoId: repo.id, state: .inLibrary)
+        try await env.activity.recordStar(repo: repo, source: .starcat, actor: Self.actor, occurredAt: Self.filterTime)
+        try await env.threads.upsertMany([
+            Self.makeThread(id: "merged", type: "PullRequest", state: "merged"),
+            Self.makeThread(id: "closed", type: "PullRequest", state: "closed"),
+            Self.makeThread(id: "unknown", type: "PullRequest"),
+            Self.makeThread(id: "release", type: "Release", state: "merged"),
+            Self.makeThread(id: "outside", type: "PullRequest", repositoryID: 2, state: "merged")
+        ])
+        let filter = GitHubNotificationFilter(eventTypes: [.pullRequest], issueState: .merged, libraryState: .inLibrary)
+        #expect(try await env.activity.fetchPage(filter: filter, cursor: nil, limit: 10).rows.map(\.id) == ["merged"])
+        for impossible in [
+            GitHubNotificationFilter(eventTypes: [.star], readState: .unread),
+            GitHubNotificationFilter(eventTypes: [.star], reasons: [.mention]),
+            GitHubNotificationFilter(eventTypes: [.star], issueState: .open),
+            GitHubNotificationFilter(eventTypes: [.release], issueState: .merged)
+        ] {
+            let page = try await env.activity.fetchPage(filter: impossible, cursor: nil, limit: 10)
+            #expect(page.rows.isEmpty)
+            #expect(!page.hasMore)
+            #expect(try await env.activity.timelineCount(filter: impossible) == 0)
+        }
+    }
+
+    @Test("详情导航越过 300 条不匹配通知，仍遵循全部组合条件")
+    func navigationBeyondCachedWindow() async throws {
+        let env = try makeEnv()
+        var records = (0..<305).map { index in
+            Self.makeThread(id: String(format: "n-%03d", index), reason: "comment")
+        }
+        records.append(Self.makeThread(id: "z-newest"))
+        records.append(Self.makeThread(id: "a-oldest"))
+        try await env.threads.upsertMany(records)
+        let filter = GitHubNotificationFilter(eventTypes: [.issue], readState: .unread, reasons: [.mention])
+        #expect(try await env.activity.adjacentNotificationID(after: "z-newest", delta: 1, filter: filter) == "a-oldest")
+        #expect(try await env.activity.adjacentNotificationID(after: "a-oldest", delta: -1, filter: filter) == "z-newest")
+        #expect(try await env.activity.timelineCount(filter: filter) == 2)
+    }
+
     // MARK: - Harness
+
+    private static let filterTime = "2026-11-17T10:00:00Z"
+
+    /// 使用相同时间检验 id 游标，同时允许明确构造每个筛选维度。
+    private static func makeThread(
+        id: String,
+        type: String = "Issue",
+        reason: String = "mention",
+        unread: Bool = true,
+        repositoryID: Int64 = 1,
+        fullName: String = "o/r",
+        state: String? = nil
+    ) -> GitHubNotificationThreadRecord {
+        var record = GitHubNotificationMapper.record(
+            from: makeDTO(id: id, updatedAt: filterTime, type: type),
+            fetchedAt: filterTime, firstSeenAt: filterTime
+        )
+        record.reason = reason
+        record.unread = unread
+        record.repositoryId = repositoryID
+        record.repositoryFullName = fullName
+        record.issueState = state
+        return record
+    }
 
     private struct Env {
         let db: InMemoryDatabaseManager

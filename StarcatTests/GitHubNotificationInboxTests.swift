@@ -143,45 +143,22 @@ struct GitHubNotificationMapperTests {
         )
     }
 
-    @Test("账本分段不匹配 GitHub 通知行")
-    func ledgerSegmentsDoNotMatchNotifications() {
-        let record = GitHubNotificationMapper.record(
-            from: GitHubNotificationThreadDTO(
-                id: "n-1",
-                unread: true,
-                reason: "mention",
-                updatedAt: "2026-08-19T10:00:00Z",
-                subject: GitHubNotificationSubjectDTO(
-                    title: "Hello",
-                    url: "https://api.github.com/repos/o/r/issues/1",
-                    latestCommentUrl: nil,
-                    type: "Issue"
-                ),
-                repository: GitHubNotificationRepositoryDTO(
-                    id: 1,
-                    fullName: "o/r",
-                    name: "r",
-                    owner: GitHubNotificationOwnerDTO(login: "o")
-                )
-            ),
-            fetchedAt: "2026-08-19T10:00:00Z",
-            firstSeenAt: "2026-08-19T10:00:00Z"
-        )
-        #expect(GitHubNotificationMapper.matchesSegment(record, segment: .all))
-        #expect(GitHubNotificationMapper.matchesSegment(record, segment: .mention))
-        #expect(GitHubNotificationMapper.matchesSegment(record, segment: .issue))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .pullRequest))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .discussion))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .release))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .star))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .unstar))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .fork))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .open))
-        #expect(!GitHubNotificationMapper.matchesSegment(record, segment: .inLibrary))
+    @Test("组合筛选按来源排除无关账本，集合顺序不改变分页身份")
+    func combinedFilterSourcesAndIdentity() {
+        let mixed = GitHubNotificationFilter(eventTypes: [.issue, .star])
+        #expect(mixed.includesNotifications)
+        #expect(mixed.includesActivities)
+        #expect(!GitHubNotificationFilter(eventTypes: [.star], readState: .unread).includesActivities)
+        #expect(!GitHubNotificationFilter(eventTypes: [.star]).includesNotifications)
+        #expect(!GitHubNotificationFilter(issueState: .merged).includesActivities)
+        #expect(!GitHubNotificationFilter(reasons: [.review]).includesActivities)
+        #expect(GitHubNotificationFilter(libraryState: .inLibrary).includesActivities)
+        #expect(mixed.identity == GitHubNotificationFilter(eventTypes: [.star, .issue]).identity)
+        #expect(mixed.identity != GitHubNotificationFilter(eventTypes: [.star, .issue], readState: .unread).identity)
     }
 
-    @Test("Issue / PR 分段按 subject_type 匹配")
-    func issueAndPullRequestSegmentsMatchSubjectType() {
+    @Test("Issue / PR / Discussion / Release 主体图标按 subject_type 区分")
+    func subjectChipsMatchSubjectType() {
         let issue = GitHubNotificationMapper.record(
             from: GitHubNotificationThreadDTO(
                 id: "n-issue",
@@ -226,12 +203,8 @@ struct GitHubNotificationMapperTests {
             fetchedAt: "2026-08-19T10:00:00Z",
             firstSeenAt: "2026-08-19T10:00:00Z"
         )
-        #expect(GitHubNotificationMapper.matchesSegment(issue, segment: .issue))
-        #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .pullRequest))
-        #expect(GitHubNotificationMapper.matchesSegment(pull, segment: .pullRequest))
-        #expect(!GitHubNotificationMapper.matchesSegment(pull, segment: .issue))
-        #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .discussion))
-        #expect(!GitHubNotificationMapper.matchesSegment(issue, segment: .release))
+        #expect(GitHubNotificationMapper.subjectChip(for: issue) == .issue)
+        #expect(GitHubNotificationMapper.subjectChip(for: pull) == .pullRequest)
 
         let discussion = GitHubNotificationMapper.record(
             from: GitHubNotificationThreadDTO(
@@ -277,12 +250,8 @@ struct GitHubNotificationMapperTests {
             fetchedAt: "2026-08-19T10:00:00Z",
             firstSeenAt: "2026-08-19T10:00:00Z"
         )
-        #expect(GitHubNotificationMapper.matchesSegment(discussion, segment: .discussion))
-        #expect(!GitHubNotificationMapper.matchesSegment(discussion, segment: .release))
-        #expect(!GitHubNotificationMapper.matchesSegment(discussion, segment: .issue))
-        #expect(GitHubNotificationMapper.matchesSegment(release, segment: .release))
-        #expect(!GitHubNotificationMapper.matchesSegment(release, segment: .discussion))
-        #expect(!GitHubNotificationMapper.matchesSegment(release, segment: .issue))
+        #expect(GitHubNotificationMapper.subjectChip(for: discussion) == .discussion)
+        #expect(GitHubNotificationMapper.subjectChip(for: release) == .release)
     }
 
     @Test("评论里的 #20 和 owner/repo#20 收成 GitHub 链接")
@@ -871,8 +840,8 @@ struct GitHubNotificationTimelinePagingTests {
             GitHubNotificationTimelinePaging.isCurrentPageRequest(
                 requestedGeneration: 3,
                 currentGeneration: 3,
-                requestedSegment: .all,
-                currentSegment: .all,
+                requestedFilter: .all,
+                currentFilter: .all,
                 requestedCursor: cursor,
                 currentCursor: cursor
             )
@@ -881,8 +850,8 @@ struct GitHubNotificationTimelinePagingTests {
             GitHubNotificationTimelinePaging.isCurrentPageRequest(
                 requestedGeneration: 2,
                 currentGeneration: 3,
-                requestedSegment: .all,
-                currentSegment: .all,
+                requestedFilter: .all,
+                currentFilter: .all,
                 requestedCursor: cursor,
                 currentCursor: cursor
             ) == false
@@ -891,8 +860,8 @@ struct GitHubNotificationTimelinePagingTests {
             GitHubNotificationTimelinePaging.isCurrentPageRequest(
                 requestedGeneration: 3,
                 currentGeneration: 3,
-                requestedSegment: .all,
-                currentSegment: .unread,
+                requestedFilter: .all,
+                currentFilter: .init(readState: .unread),
                 requestedCursor: cursor,
                 currentCursor: cursor
             ) == false
@@ -901,12 +870,24 @@ struct GitHubNotificationTimelinePagingTests {
             GitHubNotificationTimelinePaging.isCurrentPageRequest(
                 requestedGeneration: 3,
                 currentGeneration: 3,
-                requestedSegment: .all,
-                currentSegment: .all,
+                requestedFilter: .all,
+                currentFilter: .all,
                 requestedCursor: cursor,
                 currentCursor: anotherCursor
             ) == false
         )
+        for changed in [
+            GitHubNotificationFilter(eventTypes: [.star, .issue]),
+            GitHubNotificationFilter(issueState: .merged),
+            GitHubNotificationFilter(reasons: [.mention, .review]),
+            GitHubNotificationFilter(libraryState: .inLibrary)
+        ] {
+            #expect(!GitHubNotificationTimelinePaging.isCurrentPageRequest(
+                requestedGeneration: 3, currentGeneration: 3,
+                requestedFilter: .all, currentFilter: changed,
+                requestedCursor: cursor, currentCursor: cursor
+            ))
+        }
     }
 }
 
@@ -2091,7 +2072,7 @@ struct GitHubNotificationInboxTests {
     @Test("缺失 issue_state 同一会话只补一轮，再切打开/关闭不再打网")
     func missingIssueStateBackfillRunsOncePerSession() async throws {
         let env = try makeEnv()
-        env.inbox.listSegment = .open
+        env.inbox.listFilter = .init(issueState: .open)
         var hydrateCalls = 0
         env.mock.hydrateNotificationSubjectHandler = { _ in
             hydrateCalls += 1
@@ -2122,7 +2103,7 @@ struct GitHubNotificationInboxTests {
         #expect(try await env.threads.fetch(id: "missing-a")?.issueState == "open")
         #expect(try await env.threads.fetch(id: "missing-b")?.issueState == "open")
 
-        env.inbox.listSegment = .closed
+        env.inbox.listFilter = .init(issueState: .closed)
         await env.inbox.startMissingIssueStateBackfillIfNeeded()
         #expect(hydrateCalls == 2)
 
@@ -2133,7 +2114,7 @@ struct GitHubNotificationInboxTests {
                 firstSeenAt: fetchedAt
             )
         ])
-        env.inbox.listSegment = .merged
+        env.inbox.listFilter = .init(issueState: .merged)
         await env.inbox.startMissingIssueStateBackfillIfNeeded()
         #expect(hydrateCalls == 2)
         #expect(try await env.threads.fetch(id: "missing-c")?.issueState == nil)
@@ -2142,7 +2123,7 @@ struct GitHubNotificationInboxTests {
     @Test("还没有缺失状态时不锁定本轮补齐，等同步落库后再补")
     func missingIssueStateBackfillDoesNotLatchWhenEmpty() async throws {
         let env = try makeEnv()
-        env.inbox.listSegment = .open
+        env.inbox.listFilter = .init(issueState: .open)
         var hydrateCalls = 0
         env.mock.hydrateNotificationSubjectHandler = { _ in
             hydrateCalls += 1
@@ -2323,8 +2304,8 @@ struct GitHubNotificationInboxTests {
         }
         env.mock.markNotificationThreadDoneHandler = { _ in }
 
-        env.inbox.listSegment = .all
-        let page = await env.inbox.fetchTimelinePage(cursor: nil)
+        env.inbox.listFilter = .all
+        let page = await env.inbox.fetchTimelinePage(cursor: nil, filter: env.inbox.listFilter)
         #expect(page.rows.contains(where: { $0.id.hasPrefix("star:github_sync:42:") }))
         #expect(page.rows.contains(where: { $0.id == "n1" }))
         #expect(page.rows.first?.id.hasPrefix("star:github_sync:42:") == true)
@@ -2381,20 +2362,16 @@ struct GitHubNotificationInboxTests {
         merged.issueState = "merged"
         try await env.threads.upsertMany([open, closed, merged])
 
-        #expect(GitHubNotificationMapper.matchesSegment(open, segment: .open))
-        #expect(!GitHubNotificationMapper.matchesSegment(merged, segment: .closed))
-        #expect(GitHubNotificationMapper.matchesSegment(merged, segment: .merged))
-
-        env.inbox.listSegment = .open
-        var page = await env.inbox.fetchTimelinePage(cursor: nil)
+        env.inbox.listFilter = .init(issueState: .open)
+        var page = await env.inbox.fetchTimelinePage(cursor: nil, filter: env.inbox.listFilter)
         #expect(page.rows.map(\.id) == ["open-1"])
 
-        env.inbox.listSegment = .closed
-        page = await env.inbox.fetchTimelinePage(cursor: nil)
+        env.inbox.listFilter = .init(issueState: .closed)
+        page = await env.inbox.fetchTimelinePage(cursor: nil, filter: env.inbox.listFilter)
         #expect(page.rows.map(\.id) == ["closed-1"])
 
-        env.inbox.listSegment = .merged
-        page = await env.inbox.fetchTimelinePage(cursor: nil)
+        env.inbox.listFilter = .init(issueState: .merged)
+        page = await env.inbox.fetchTimelinePage(cursor: nil, filter: env.inbox.listFilter)
         #expect(page.rows.map(\.id) == ["merged-1"])
     }
 
@@ -2413,8 +2390,8 @@ struct GitHubNotificationInboxTests {
         let notes = GRDBRepoNoteRepository(database: env.db)
         try await notes.updateLibraryState(repoId: 11, state: .inLibrary)
 
-        env.inbox.listSegment = .inLibrary
-        var page = await env.inbox.fetchTimelinePage(cursor: nil)
+        env.inbox.listFilter = .init(libraryState: .inLibrary)
+        var page = await env.inbox.fetchTimelinePage(cursor: nil, filter: env.inbox.listFilter)
         let inIDs = page.rows.compactMap { row -> Int64? in
             guard case .activity(let item) = row else { return nil }
             return item.record.repoId
@@ -2426,8 +2403,8 @@ struct GitHubNotificationInboxTests {
             Issue.record("expected an activity row")
         }
 
-        env.inbox.listSegment = .outsideLibrary
-        page = await env.inbox.fetchTimelinePage(cursor: nil)
+        env.inbox.listFilter = .init(libraryState: .outsideLibrary)
+        page = await env.inbox.fetchTimelinePage(cursor: nil, filter: env.inbox.listFilter)
         let outIDs = page.rows.compactMap { row -> Int64? in
             guard case .activity(let item) = row else { return nil }
             return item.record.repoId

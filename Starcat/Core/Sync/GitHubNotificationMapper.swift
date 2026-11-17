@@ -507,32 +507,6 @@ enum GitHubNotificationMapper {
         return people
     }
 
-    static func matchesSegment(_ record: GitHubNotificationThreadRecord, segment: GitHubNotificationSegment) -> Bool {
-        switch segment {
-        case .all:
-            return true
-        case .unread:
-            return record.unread
-        case .mention:
-            return chip(forReason: record.reason) == .mention
-        case .review:
-            return chip(forReason: record.reason) == .review
-        case .issue:
-            return record.subjectType == "Issue"
-        case .pullRequest:
-            return record.subjectType == "PullRequest"
-        case .discussion:
-            return record.subjectType == "Discussion"
-        case .release:
-            return record.subjectType == "Release"
-        case .open, .closed, .merged:
-            return normalizedIssueState(record.issueState) == segment.issueStateFilter
-        case .star, .unstar, .fork, .inLibrary, .outsideLibrary:
-            // 账本 / 知识库分段只含 `user_repo_activity`，GitHub thread 永远对不上。
-            return false
-        }
-    }
-
     /// 本机曾插入过 `starcat-demo-` 前缀的演示 thread。永不打 GitHub API。
     static let demoThreadIDPrefix = "starcat-demo-"
     /// 通知时间线每页条数。两表 UNION 游标翻页，对齐 Manage 列表。
@@ -1019,10 +993,7 @@ enum GitHubNotificationMapper {
     }
 }
 
-/// 通知 inbox 类型筛选。选项变多后顶栏用下拉，不再用分段控件。
-///
-/// `all` 两表 UNION；`unread` / 主体类型 / 打开·关闭·合并 / `mention` / `review` 只含 GitHub 通知；
-/// `star` / `unstar` / `fork` / 入库只含账本。
+/// 筛选浮层的选项文案与图标；组合规则由 `GitHubNotificationFilter` 统一表达。
 enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
     case all
     case unread
@@ -1073,9 +1044,35 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 菜单分组：未读 / 主体类型 / 工作状态 / Mention·Review / 账本 / 知识库。
-    var showsDividerBefore: Bool {
-        self == .issue || self == .open || self == .mention || self == .star || self == .inLibrary
+    var subjectType: String? {
+        switch self {
+        case .issue: return "Issue"
+        case .pullRequest: return "PullRequest"
+        case .discussion: return "Discussion"
+        case .release: return "Release"
+        default: return nil
+        }
+    }
+
+    var reasonValues: [String] {
+        switch self {
+        case .mention: return ["mention", "team_mention"]
+        case .review: return ["review_requested", "review_submitted"]
+        default: return []
+        }
+    }
+
+    /// 窄分段控件优先保留文字，放不下时使用可独立辨认的状态图标。
+    var systemSymbol: String {
+        switch self {
+        case .all: return "tray"
+        case .unread, .open: return "circle"
+        case .closed: return "checkmark.circle"
+        case .merged: return "arrow.triangle.merge"
+        case .inLibrary: return "books.vertical"
+        case .outsideLibrary: return "heart"
+        default: return "line.3.horizontal.decrease"
+        }
     }
 
     /// 筛选图标来源：Issue 圆点 / PR 拉取 / 合并 / @ / Fork 等对齐 GitHub 语义图形。
@@ -1100,7 +1097,7 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// All / Unread / Mention / Review 走已有 Catalog；主体类型与账本复用 chip 文案，不新增 key。
+    /// 筛选文案走完整语言目录；Issue / PR 与账本名称保留技术字面量。
     func displayTitle(locale: Locale) -> String {
         switch self {
         case .all:
@@ -1112,9 +1109,9 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         case .pullRequest:
             return GitHubNotificationMapper.chipTitle(for: .pullRequest, locale: locale)
         case .discussion:
-            return GitHubNotificationMapper.chipTitle(for: .discussion, locale: locale)
+            return String.l10n("activity.notification.filter.discussion")
         case .release:
-            return GitHubNotificationMapper.chipTitle(for: .release, locale: locale)
+            return String.l10n("activity.notification.filter.release")
         case .mention:
             return String.l10n("activity.notification.segment.mention")
         case .review:
@@ -1126,16 +1123,56 @@ enum GitHubNotificationSegment: String, CaseIterable, Identifiable, Sendable {
         case .fork:
             return GitHubNotificationMapper.chipTitle(for: .fork, locale: locale)
         case .open:
-            return GitHubNotificationMapper.issueStateTitle(state: "open", locale: locale)
+            return String.l10n("repo.issues.filter.open")
         case .closed:
-            return GitHubNotificationMapper.issueStateTitle(state: "closed", locale: locale)
+            return String.l10n("repo.issues.filter.closed")
         case .merged:
-            return GitHubNotificationMapper.issueStateTitle(state: "merged", locale: locale)
+            return String.l10n("activity.notification.filter.merged")
         case .inLibrary:
-            return GitHubNotificationMapper.libraryStateFilterTitle(state: .inLibrary, locale: locale)
+            return String.l10n("library.state.inLibrary")
         case .outsideLibrary:
-            return GitHubNotificationMapper.libraryStateFilterTitle(state: .outsideLibrary, locale: locale)
+            return String.l10n("library.state.outsideLibrary")
         }
+    }
+}
+
+/// 时间线完整查询值。同组多选取并集，跨组取交集；空集合或 `.all` 表示该组不限。
+///
+/// 选项范围由下面的分组数组约束，UI 与公共 Schema 共用，避免两端出现不同的组合语义。
+struct GitHubNotificationFilter: Equatable, Hashable, Sendable {
+    static let eventOptions: [GitHubNotificationSegment] = [.issue, .pullRequest, .discussion, .release, .star, .unstar, .fork]
+    static let readOptions: [GitHubNotificationSegment] = [.all, .unread]
+    static let stateOptions: [GitHubNotificationSegment] = [.all, .open, .closed, .merged]
+    static let reasonOptions: [GitHubNotificationSegment] = [.mention, .review]
+    static let libraryOptions: [GitHubNotificationSegment] = [.all, .inLibrary, .outsideLibrary]
+    static let all = Self()
+
+    var eventTypes: Set<GitHubNotificationSegment> = []
+    var readState: GitHubNotificationSegment = .all
+    var issueState: GitHubNotificationSegment = .all
+    var reasons: Set<GitHubNotificationSegment> = []
+    var libraryState: GitHubNotificationSegment = .all
+
+    var isActive: Bool { self != .all }
+
+    /// 账本没有未读、通知原因和 Issue 状态；条件矛盾时自然排除，不静默忽略用户选择。
+    var includesActivities: Bool {
+        readState == .all && issueState == .all && reasons.isEmpty
+            && (eventTypes.isEmpty || eventTypes.contains { $0.ledgerKind != nil })
+    }
+
+    var includesNotifications: Bool {
+        eventTypes.isEmpty || eventTypes.contains { $0.subjectType != nil }
+    }
+
+    /// Set 的遍历顺序不稳定，不能把其 description 用作滚动分页身份。
+    var identity: String {
+        [
+            eventTypes.map(\.rawValue).sorted().joined(separator: ","),
+            readState.rawValue, issueState.rawValue,
+            reasons.map(\.rawValue).sorted().joined(separator: ","),
+            libraryState.rawValue
+        ].joined(separator: "|")
     }
 }
 
