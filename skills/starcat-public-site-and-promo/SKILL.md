@@ -23,6 +23,7 @@ description: Starcat 官网部署与推广内容同步流程。用于用户要�
 | 部署 Direct 测试站与 nginx | `cd supports/starcat-site/direct-test && ./deploy.sh` |
 | 生成官网 changelog 页面 | `python3 supports/starcat-site/direct/generate-changelog.py` |
 | 补发已发布 Beta 的官网双语日志 | 从原 `release-notes-X.Y.Z-beta.N/` 快照生成并定向上传两页，见 `references/site-promo-map.md` |
+| 修复 Direct 双语下载或支持页 | 定向同步获授权的静态文件，回读正文/共享脚本并核对 GitHub 与双 feed，见 `references/site-promo-map.md` |
 | 同步 README 推广区块 | `supports/scripts/sync-starcat-readme-promo.py` |
 | Direct 发布时全链路官网/appcast | 使用 `starcat-release` skill 的 `release-direct.sh` |
 
@@ -42,6 +43,9 @@ description: Starcat 官网部署与推广内容同步流程。用于用户要�
    - changelog：`https://starcat.ink/changelog.html`
    - 中文 changelog：`https://starcat.ink/changelog-zh.html`
    - 两页回读正文与本地生成结果逐字节一致，目标版本与 Beta 标识正确、无未来版本或待发布内容；只检查 HTTP 200 不算完成。
+   - 中英文首页下载弹窗：同时提供最新正式版与开发版，默认稳定版；完整 `beta.N` / `dev.N`、历史开发下载、附件 URL/大小与 GitHub 一致。必须读取正式及开发两个 feed，不能按营销版本合并掉不同预发布，不能因只更新 Changelog 而遗漏下载。
+   - 运行 `python3 scripts/verify-direct-downloads.py --version <完整发布版本>`；该门禁用于正式/Beta 新发布、`--resume` 及下载修复，核对线上共享脚本与本地已验证实现一致。下载逻辑变更先跑 `node --test supports/starcat-site/tests/direct-downloads.test.mjs`。
+   - 支持页回归：`/support` 规范化到 `/support/`，英文正文、`/support/zh.html` 中文正文、语言切换和首页支持入口均正确；检查实际正文及资源，避免 SPA 首页兜底的假 200。
    - nginx：`ssh aliyun2 "nginx -t"` 或脚本内校验结果。
 
 ## 参考

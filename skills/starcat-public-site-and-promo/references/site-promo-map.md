@@ -65,6 +65,47 @@ ssh aliyun2 "chmod 644 /var/www/starcat/changelog.html /var/www/starcat/changelo
 不重载 nginx，也不更改默认稳定版下载、正式 feed 或 App Store 页面。
 完成后提交生成页，并按发布收尾约定同步各仓 `dev/main`。
 
+## Direct 下载与支持页的定向修复
+
+双语下载共用 `direct/downloads.js`，同时读取正式 `appcast.xml` 和开发
+`appcast-development.xml`。默认按钮保持最新正式版，可选开发入口随 feed 更新；
+GitHub URL 中的 tag 才是完整身份，不能只展示 `shortVersionString` 而漏掉
+`beta.N` / `dev.N`，也不能把开发 feed 里的稳定版标为 Beta。
+
+修改后从 Starcat 主仓库执行：
+
+```bash
+node --test supports/starcat-site/tests/direct-downloads.test.mjs
+python3 -m unittest scripts/tests/test_direct_downloads.py scripts/tests/test_direct_release_resume.py
+```
+
+下载修复只同步 `index.html`、`index-zh.html`、`downloads.js`；支持页修复按
+实际 diff 追加 `support/`、首页链接与 sitemap。上传使用已核实的服务器连接与
+`/var/www/starcat` 目录，精确列出文件、不用 `--delete`，随后只对目标文件设
+`644` 权限。不运行全站生成器或 `deploy.sh`，避免夹带并行 Changelog 工作稿。
+已有可信主机连接参数可沿用；SSH alias 缺失时先核实既有配置和 known_hosts，
+不得关闭 host key 校验。
+
+部署后执行：
+
+```bash
+python3 scripts/verify-direct-downloads.py --version X.Y.Z-beta.N
+curl -fsSI https://starcat.ink/downloads.js
+curl -fsSI https://starcat.ink/support
+curl -fsSL https://starcat.ink/support/
+curl -fsSL https://starcat.ink/support/zh.html
+```
+
+正式版 `--version` 使用 `X.Y.Z`。核验器检查双语挂载点、线上共享脚本逐字节
+一致、双 feed 最新版本与 GitHub tag/附件/大小一致；再跟随重定向验证两种
+渠道的实际 DMG 可访问。模块须以 JavaScript MIME 返回。下载展示的自动化
+验收应执行已部署脚本和真实双语 HTML/feed 的 DOM 渲染，检查默认稳定、
+开发入口及历史 Beta/Dev；不得把数据核验报告为人工浏览器验收。
+
+支持页检查 `/support` → `/support/` 的规范化、两种正文、语言切换与 CSS，
+确认不是首页兜底的假成功；下载修复同时回归两种语言首页的支持链接。
+定向静态修复不改 feed、双语日志或 nginx，部署前后可用摘要比对确认。
+
 ## README 推广区块同步
 
 ```bash
@@ -136,7 +177,7 @@ curl -fsSI https://starcat.ink/changelog-zh.html
 
 | 问题 | 处理 |
 |---|---|
-| `aliyun2` SSH 不通 | 停止；让用户检查 `~/.ssh/config` |
+| `aliyun2` SSH 不通 | 检查现有 SSH 配置；可使用当前任务已核实的可信连接参数恢复，不关闭 host key 校验；缺少可信参数再向用户确认 |
 | nginx reload 失败 | 不继续静态部署；先修 `starcat.ink.conf` |
 | rsync 删除了远程多余文件 | 这是 `--delete` 预期行为；执行前必须说明 |
 | changelog 源文件不存在 | 检查 `supports/starcat-site/direct/CHANGELOG*.md` 是否存在 |

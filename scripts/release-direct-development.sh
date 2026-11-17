@@ -284,6 +284,9 @@ main() {
   verify_development_appcast
   publish_development_changelog
   verify_development_changelog
+  # 官网消费两个 feed；Beta 发布与恢复都必须验证双语可下载入口，避免日志已新但下载仍旧。
+  run_or_print python3 "$SCRIPT_DIR/verify-direct-downloads.py" \
+    --version "$DEVELOPMENT_VERSION" --site-root "$PAGES_DIR"
   run_or_print python3 "$SCRIPT_DIR/release_changelog.py" finalize \
     --source-root "$PAGES_DIR" --output-root "$RELEASE_NOTES_DIR" \
     --version "$DEVELOPMENT_VERSION"

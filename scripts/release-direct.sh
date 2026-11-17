@@ -525,6 +525,9 @@ verify_remote_urls() {
     return
   fi
 
+  # 恢复发布不上传当前首页草稿，但仍须回读两个语言的下载契约。
+  python3 "$SCRIPT_DIR/verify-direct-downloads.py" \
+    --version "$VERSION" --site-root "$PAGES_DIR"
   log "完成"
   log "tag: ${TAG_NAME}"
   log "appcast: $appcast_url"

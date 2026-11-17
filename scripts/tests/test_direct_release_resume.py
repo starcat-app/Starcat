@@ -170,6 +170,8 @@ elif name == "python3":
         os.execv(sys.executable, [sys.executable] + args)
     if target == "publish-direct-github-release.py":
         sys.exit(int(os.environ.get("PUBLISH_EXIT", "0")))
+    if target == "verify-direct-downloads.py":
+        sys.exit(int(os.environ.get("DOWNLOAD_VERIFY_EXIT", "0")))
     if target not in ("merge-appcast.py", "inject-appcast-release-notes.py"):
         sys.exit(97)
 elif name == "gh":
@@ -252,6 +254,25 @@ elif name == "curl" and "-fsSL" in args:
                     self.assertFalse(any("staple" in cmd for cmd in commands))
                     self.assertFalse(any(cmd[0] == "git" and cmd[1] in ("branch", "status") for cmd in commands))
                     self.assertEqual(sum(cmd[0] == "python3" and Path(cmd[1]).name == "publish-direct-github-release.py" for cmd in commands), 1)
+                    download_checks = [cmd for cmd in commands if Path(cmd[1]).name == "verify-direct-downloads.py"]
+                    self.assertEqual(len(download_checks), 1)
+                    self.assertEqual(download_checks[0][download_checks[0].index("--version") + 1],
+                                     "9.9.9-beta.1" if beta else "9.9.9")
+
+    def test_download_verification_failure_blocks_both_channels_completion(self):
+        """即使日志和 feed 上传成功，任一双语下载契约失败都不能报告发布完成。"""
+        self.env["DOWNLOAD_VERIFY_EXIT"] = "29"
+        for beta in (False, True):
+            with self.subTest(beta=beta):
+                self.log.unlink(missing_ok=True)
+                result = self.run_entry(beta)
+                self.assertEqual(result.returncode, 29, result.stdout + result.stderr)
+                self.assertNotIn("Beta 版发布完成", result.stdout)
+                self.assertNotIn("] 完成\n", result.stdout)
+                checks = [cmd for cmd in self.commands() if Path(cmd[1]).name == "verify-direct-downloads.py"]
+                self.assertEqual(len(checks), 1)
+                if beta:
+                    self.assertIn("## 9.9.9-待发布", (self.site / "direct/CHANGELOG.md").read_text())
 
     def test_github_failure_stops_before_feed_and_is_not_retried(self):
         for beta in (False, True):

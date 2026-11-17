@@ -14,6 +14,8 @@
 | `scripts/build-dmg.sh` | legacy 内测 DMG 构建入口 | 仅供 `release-store.sh` 历史流程使用，输出到 `build/dmg/` |
 | `scripts/publish-direct-github-release.py` | GitHub 草稿上传、回读 SHA256 校验、公开及安全续跑 | 只上传 DMG/SHA256，不操作官网 appcast |
 | `scripts/verify-direct-release-artifacts.py` | 两种 Direct 恢复入口共用的只读校验 | 检查原 tag、最终 DMG/SHA256、公证票据和当前 appcast；不依赖当前 HEAD |
+| `scripts/verify-direct-downloads.py` | 正式/Beta 与恢复入口共用的官网双语下载门禁 | 回读首页挂载点、共享脚本、双 feed，对齐 GitHub 最新完整 tag 与 DMG URL/大小 |
+| `supports/starcat-site/direct/downloads.js` | 双语首页共用下载逻辑 | 同时读取正式与开发 feed，按完整 tag 合并，默认稳定版并保留历史 Beta/Dev |
 | `scripts/inject-appcast-release-notes.py` | 从同次中英文快照注入标准双语说明与应用语言扩展字段 | 缺少任一种目标正文阻止生成；Beta 的 `--version` 使用营销版本 `X.Y.Z` |
 | `scripts/merge-appcast.py` | appcast 合并工具 | 把当前版本 appcast item 合并进 `supports/starcat-site/direct/appcast.xml` |
 | `supports/starcat-site/direct/deploy.sh` | 官网/nginx 部署脚本 | 一次完成 nginx 校验/reload 与静态官网同步 |
@@ -225,7 +227,7 @@ STARCAT_DIRECT_BUILD_NUMBER=1 make run-direct
 - 已有公证票据和 Gatekeeper 接受状态；只 validate/assess，不重新公证、签名或 staple。
 
 恢复不会触碰源码脏状态，也不会创建或推送 tag。Beta 恢复额外从同次快照补发并核验官网双语日志，正式恢复只处理 GitHub 及正式/Beta feed；
-官网静态页和 Homebrew 若尚未发布，作为原发布范围内的剩余阶段单独处理，不能报告整版完成。
+两种恢复均回读核验双语下载入口。官网静态页和 Homebrew 若尚未发布，作为原发布范围内的剩余阶段单独处理，不能报告整版完成。
 
 ### Beta 契约与验收
 
@@ -239,6 +241,11 @@ Beta 允许使用 Direct 对应版本的待发布 Changelog。
 公开下载地址可用，线上 `appcast-development.xml` 与本地发布内容相同；
 `changelog.html` 与 `changelog-zh.html` 从同次说明快照生成，显示本次 `X.Y.Z Beta N`，
 不含未来版本或待发布内容，逐页回读正文与本地逐字节一致。
+中英文下载弹窗的开发入口须对齐最新公开 prerelease 的完整 `X.Y.Z-beta.N` tag
+及其 DMG URL/大小；历史保留 Beta/Dev 序号，不能因营销版本相同丢失条目。
+默认稳定下载不变，开发可选入口随 feed 更新，不能把“稳定默认不变”误解为不展示 Beta。
+运行 `python3 scripts/verify-direct-downloads.py --version X.Y.Z-beta.N`；
+任一语言缺入口、共享脚本仍旧或 feed/GitHub 版本不匹配均阻止完成。
 正式 `appcast.xml`、正式 latest、Homebrew 和 App Store 保持原状。官网仓库的 feed、
 日志 HTML 与源目标节改动按当前任务授权单独提交/推送，并完成所有项目 `dev/main` 同步。
 
