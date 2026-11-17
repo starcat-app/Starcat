@@ -282,22 +282,10 @@ struct WeeklyContentView: View {
             isFilterPopoverPresented.toggle()
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .foregroundStyle(.secondary)
-                    // 激活态只改变绘制属性，不把条件数和结果数拼进按钮挤动工具栏。
-                    .background {
-                        Circle()
-                            .fill(Color.accentColor.opacity(viewModel.hasActiveFilters ? 0.18 : 0))
-                            .padding(-3)
-                    }
-                    .overlay {
-                        Circle()
-                            .strokeBorder(
-                                Color.accentColor.opacity(viewModel.hasActiveFilters ? 0.8 : 0),
-                                lineWidth: 1
-                            )
-                            .padding(-3)
-                    }
+                Image(systemName: viewModel.hasActiveFilters
+                    ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(viewModel.hasActiveFilters ? Color.blue : Color.secondary)
                 Text("weekly.filter.title")
                 Image(systemName: "chevron.down")
                     .font(.caption)

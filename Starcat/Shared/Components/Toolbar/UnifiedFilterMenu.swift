@@ -74,8 +74,6 @@ struct FilterMenuItemsView: View {
 /// `isAnyFilterActive` 决定漏斗图标的"激活态"渲染（实心 vs 空心）。
 struct UnifiedFilterMenu<Content: View>: View {
 
-    @Environment(\.colorScheme) private var colorScheme
-
     @State private var localPresented = false
     /// 可选外绑：调用方需要在 Esc 等路径感知「筛选浮层是否打开」时传入。
     private var externalPresented: Binding<Bool>?
@@ -141,37 +139,13 @@ struct UnifiedFilterMenu<Content: View>: View {
         }
     }
 
-    /// 筛选激活态必须足够明显：仅把 symbol 从空心换成实心，在透明 toolbar 上不容易被注意到。
-    /// 这里只通过颜色与底色表达 active，不加数字 / 文案，避免 toolbar 信息过载。
+    /// 激活态直接以蓝色实心图标表达，不额外绘制外圈或扩大原有点击区域。
     private var filterIcon: some View {
         ToolbarIcon(isAnyFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-            .foregroundStyle(isAnyFilterActive ? activeIconColor : Color.primary)
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(isAnyFilterActive ? Color.blue : Color.primary)
             .accessibilityLabel(accessibilityLabel)
-        .frame(width: ToolbarIconMetrics.frameSize, height: ToolbarIconMetrics.frameSize)
-        .background {
-            if isAnyFilterActive {
-                Circle()
-                    .fill(activeBackgroundColor)
-            }
-        }
-        .overlay {
-            if isAnyFilterActive {
-                Circle()
-                    .stroke(activeBorderColor, lineWidth: 1)
-            }
-        }
-    }
-
-    private var activeIconColor: Color {
-        colorScheme == .dark ? Color.accentColor.opacity(0.95) : Color.accentColor
-    }
-
-    private var activeBackgroundColor: Color {
-        colorScheme == .dark ? Color.accentColor.opacity(0.24) : Color.accentColor.opacity(0.18)
-    }
-
-    private var activeBorderColor: Color {
-        colorScheme == .dark ? Color.accentColor.opacity(0.55) : Color.accentColor.opacity(0.45)
+            .frame(width: ToolbarIconMetrics.frameSize, height: ToolbarIconMetrics.frameSize)
     }
 }
 
