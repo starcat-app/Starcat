@@ -26,7 +26,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var titleKey: LocalizedStringKey {
         switch self {
-        case .recommendations: return "recommendations.daily.navigationTitle"
+        case .recommendations: return "recommendations.daily.navigationTitle.short"
         case .discover: return "explore.mode.discover"
         case .trending: return "explore.mode.trending"
         case .popular: return "explore.mode.popular"
@@ -38,7 +38,7 @@ enum ExploreMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var localizedTitle: String {
         switch self {
-        case .recommendations: return String.l10n("recommendations.daily.navigationTitle")
+        case .recommendations: return String.l10n("recommendations.daily.navigationTitle.short")
         case .discover: return String.l10n("explore.mode.discover")
         case .trending: return String.l10n("explore.mode.trending")
         case .popular: return String.l10n("explore.mode.popular")

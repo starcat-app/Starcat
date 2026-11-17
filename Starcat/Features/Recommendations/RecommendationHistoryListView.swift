@@ -55,7 +55,7 @@ struct RecommendationHistoryListView: View {
             onSubmit: { model.search = QuickSearchTextMatcher.normalized($0) },
             onClear: { model.search = ""; quickSearchDraft = "" }
         ) {
-            Picker("recommendations.daily.navigationTitle", selection: $model.filter) {
+            Picker("recommendations.daily.navigationTitle.short", selection: $model.filter) {
                 ForEach(RecommendationHistoryFilter.allCases) { filter in
                     Text(LocalizedStringKey(filter.titleKey)).tag(filter)
                 }
