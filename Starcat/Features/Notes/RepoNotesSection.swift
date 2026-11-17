@@ -262,6 +262,9 @@ struct RepoNotesSection: View {
                             Text("repo.privateNotes")
                         } icon: {
                             BusinessIcon(hasNoteContent ? .notes : .addNote, pointSize: 14)
+                                // 仅强调有内容的笔记图标；空态保留灰色新建图标，标题与时间不跟随变色。
+                                .foregroundStyle(hasNoteContent ? Color.blue : Color.secondary)
+                                .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hasNoteContent)
                         }
                         .font(.caption)
                         if let edited = viewModel?.note?.editedAt {

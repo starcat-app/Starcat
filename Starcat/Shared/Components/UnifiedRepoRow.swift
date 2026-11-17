@@ -154,6 +154,7 @@ struct UnifiedRepoRow: View {
     let selectionNamespace: Namespace.ID?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(AppDependencies.self) private var dependencies
 
     /// 中栏 Forks 与详情 / Smart Collection 同源：语义蓝。
@@ -288,13 +289,16 @@ struct UnifiedRepoRow: View {
                             )
                         }
                         if hasNote {
+                            // 与详情页共用系统蓝色表达已有笔记，避免深色卡片上的灰色标识不易辨认。
                             MetaBadge(
-                                businessIcon: .notes, text: "", tint: .secondary,
+                                businessIcon: .notes, text: "", tint: .blue,
                                 iconOnly: true, accessibilityLabel: "repo.notes.available"
                             )
                             .help(String.l10n("repo.notes.available"))
+                            .transition(.opacity)
                         }
                     }
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hasNote)
                     .lineLimit(1)
                     .clipped()
                 }
