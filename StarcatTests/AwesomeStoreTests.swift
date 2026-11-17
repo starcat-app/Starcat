@@ -12,6 +12,25 @@ import Testing
 @Suite("Awesome Store")
 struct AwesomeStoreTests {
 
+    @Test("批量 Skills 候选映射保留分支和三种日期")
+    func batchDiscoveryMappingPreservesMetadata() {
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let item = AwesomeRepositoryItem(
+            id: 42, owner: "example", name: "skills", fullName: "example/skills",
+            description: nil, ownerAvatarURL: nil, language: "Swift", stars: 1,
+            defaultBranch: "develop", isArchived: false,
+            pushedAt: date, updatedAt: date, createdAt: date, evidence: []
+        )
+        let formatter = ISO8601DateFormatter.shared
+        let repo = item.discoveryDTO(dateFormatter: formatter).toEphemeralRepo(isStarred: true)
+        #expect(repo.pushedAt == "2023-11-14T22:13:20.000Z")
+        #expect(repo.updatedAt == repo.pushedAt)
+        #expect(repo.createdAt == repo.pushedAt)
+        #expect(repo.defaultBranch == "develop")
+        #expect(repo.isStarred)
+        #expect(item.discoveryDTO.pushedAt == repo.pushedAt)
+    }
+
     @Test("Awesome 来源管理与 AI 整理共用 840 × 560 固定画布")
     @MainActor
     func sourceManagerUsesCompactOrganizationCanvas() {

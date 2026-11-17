@@ -18,7 +18,11 @@ final class AwesomeStore {
     static let repositoryPageSize = 40
 
     private(set) var sources: [AwesomeSource] = []
-    private(set) var repositories: [AwesomeRepositoryItem] = []
+    private(set) var repositories: [AwesomeRepositoryItem] = [] {
+        didSet { repositoryRevision &+= 1 }
+    }
+    /// 任务身份只读取修订号，不能在 SwiftUI body 内为几千个仓库构造 Skills 候选。
+    private(set) var repositoryRevision: UInt64 = 0
     private(set) var resources: [AwesomeResourceItem] = []
     private(set) var repositorySections: [String] = []
     private(set) var repositoryTotalCount = 0

@@ -61,7 +61,7 @@ struct AwesomeView: View {
         .task(id: filteredDisplayItemIDs) {
             await fillVisiblePageIfNeeded()
         }
-        .task(id: "\(skillCandidates.map(\.id)):\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") {
+        .task(id: skillScanTaskIdentity) {
             guard settings.skillFilter != .any else { return }
             dependencies.repoSkillStore.enqueue(skillCandidates, scope: skillScanScope)
             await fillVisiblePageIfNeeded()
@@ -342,9 +342,17 @@ struct AwesomeView: View {
     }
 
     private var skillCandidates: [Repo] {
-        filteredRepositories(includingSkill: false).map {
-            $0.discoveryDTO.toEphemeralRepo(isStarred: dependencies.starredRegistry.contains(ghRepoId: $0.id))
+        // formatter 只在真正启用 Skills 筛选后创建，并在本批次复用；不跨隔离域共享可变实例。
+        let formatter = ISO8601DateFormatter.shared
+        return filteredRepositories(includingSkill: false).map {
+            $0.discoveryDTO(dateFormatter: formatter)
+                .toEphemeralRepo(isStarred: dependencies.starredRegistry.contains(ghRepoId: $0.id))
         }
+    }
+
+    private var skillScanTaskIdentity: String? {
+        guard settings.skillFilter != .any else { return nil }
+        return "\(skillScanScope):\(store.repositoryRevision):\(dependencies.repoSkillStore.paginationRevision)"
     }
 
     private func filteredRepositories(includingSkill: Bool) -> [AwesomeRepositoryItem] {

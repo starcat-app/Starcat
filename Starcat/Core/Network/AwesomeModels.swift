@@ -426,6 +426,11 @@ struct AwesomeRepositoryItem: Identifiable, Hashable, Sendable {
     /// 复用 Discovery 现有统一卡片与详情 scaffold；所有 GitHub 仓库事实都来自
     /// Discovery 中央缓存或用户自定义来源的本地 GitHub 响应，不用占位值伪造。
     var discoveryDTO: DiscoveryRepoDTO {
+        discoveryDTO(dateFormatter: .shared)
+    }
+
+    /// 批量映射时由调用方持有 formatter，避免每条日期都重新创建 Foundation 格式化器。
+    func discoveryDTO(dateFormatter: ISO8601DateFormatter) -> DiscoveryRepoDTO {
         DiscoveryRepoDTO(
             repoID: id,
             fullName: fullName,
@@ -444,9 +449,9 @@ struct AwesomeRepositoryItem: Identifiable, Hashable, Sendable {
             licenseSpdx: licenseSpdx,
             topics: topics,
             platforms: [],
-            pushedAt: pushedAt.map { ISO8601DateFormatter.shared.string(from: $0) },
-            updatedAt: updatedAt.map { ISO8601DateFormatter.shared.string(from: $0) },
-            createdAt: createdAt.map { ISO8601DateFormatter.shared.string(from: $0) },
+            pushedAt: pushedAt.map { dateFormatter.string(from: $0) },
+            updatedAt: updatedAt.map { dateFormatter.string(from: $0) },
+            createdAt: createdAt.map { dateFormatter.string(from: $0) },
             isArchived: isArchived,
             isFork: isFork,
             latestReleaseTag: nil,
