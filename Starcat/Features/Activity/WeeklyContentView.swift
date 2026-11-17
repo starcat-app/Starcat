@@ -453,7 +453,7 @@ struct WeeklyContentView: View {
         }
     }
 
-    /// 复用全局筛选的等宽分段；长翻译按完整文本测宽后回退为彩色图标。
+    /// 分段使用短文案，完整来源含义继续供 tooltip 和读屏使用。
     private func weeklyCoverageTabs(_ viewModel: WeeklyContentViewModel) -> some View {
         RepoFilterTabs(
             label: "weekly.filter.coverage",
@@ -466,7 +466,13 @@ struct WeeklyContentView: View {
                 }
             ),
             title: { LocalizedStringKey($0.localizedTitle) },
-            shortTitle: { $0 == .all ? "general.all" : LocalizedStringKey($0.localizedTitle) },
+            shortTitle: { coverage in
+                switch coverage {
+                case .all: "general.all"
+                case .multipleSources: "weekly.filter.coverage.short.multiple"
+                case .singleSource: "weekly.filter.coverage.short.single"
+                }
+            },
             symbol: { coverage in
                 switch coverage {
                 case .all: "square.grid.2x2"
