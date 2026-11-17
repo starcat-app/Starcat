@@ -75,7 +75,7 @@ enum SnakeFrameRenderer {
                 frame: frame, palette: palette, layout: layout
             )
         } else {
-            drawEatenCells(ctx: ctx, frame: frame, palette: palette, layout: layout)
+            drawEatenCells(ctx: ctx, frame: frame, palette: palette, layout: layout, range: range)
         }
         drawSnakes(ctx: ctx, frame: frame, palette: palette, layout: layout)
         drawFood(ctx: ctx, frame: frame, time: time, layout: layout)
@@ -177,12 +177,17 @@ enum SnakeFrameRenderer {
         ctx: CGContext,
         frame: AnimationFrame,
         palette: ContributionPalette,
-        layout: Layout
+        layout: Layout,
+        range: ContributionGraphRange
     ) {
         guard !frame.eatenCells.isEmpty else { return }
         let color = palette.color(for: .none).cg
         let strokeColor = palette.noneBorder?.cg
         for pos in frame.eatenCells {
+            // 90 天的矩形路径会经过末尾两个空位，不能把它们补画成零贡献日。
+            if let dayCount = range.dayCount, pos.row * layout.cols + pos.col >= dayCount {
+                continue
+            }
             let x = CGFloat(pos.col) * (layout.cellWidth + layout.cellSpacing)
             let y = CGFloat(pos.row) * (layout.cellHeight + layout.cellSpacing)
             let rect = CGRect(x: x, y: y, width: layout.cellWidth, height: layout.cellHeight)
