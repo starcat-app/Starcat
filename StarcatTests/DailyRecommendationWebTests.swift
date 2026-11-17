@@ -65,6 +65,7 @@ struct DailyRecommendationWebTests {
         #expect(object["description"] as? String == description)
         #expect(object["stars"] as? Int == 123)
         #expect(object["forks"] as? Int == 7)
+        #expect(object["coverImageURL"] as? String == "https://github.com/owner.png?size=512")
         #expect(object["score"] == nil)
         #expect(object["source"] == nil)
         #expect(object["signals"] == nil)
@@ -72,6 +73,32 @@ struct DailyRecommendationWebTests {
         #expect(DailyRecommendationWebAction(
             body: ["type": "star", "context": "c", "id": String(id)], context: "c", allowedIDs: [id]
         ) == .star(id))
+    }
+
+    @Test("卡面使用 owner 头像，同一 owner 的不同项目共用头像")
+    func coverUsesOwnerAvatar() {
+        let original = DailyRecommendationWebSnapshot.Item(
+            candidate(fullName: "qbittorrent/qBittorrent"), revealed: false
+        )
+        let refreshed = DailyRecommendationWebSnapshot.Item(
+            candidate(fullName: "qbittorrent/qBittorrent"), revealed: true, explanation: "updated"
+        )
+        let sameOwner = DailyRecommendationWebSnapshot.Item(
+            candidate(fullName: "qbittorrent/another-project"), revealed: false
+        )
+        let differentOwner = DailyRecommendationWebSnapshot.Item(
+            candidate(fullName: "JuliusBrussee/caveman"), revealed: false
+        )
+        #expect(original.coverImageURL == "https://github.com/qbittorrent.png?size=512")
+        #expect(original.coverImageURL == refreshed.coverImageURL)
+        #expect(original.coverImageURL == sameOwner.coverImageURL)
+        #expect(differentOwner.coverImageURL == "https://github.com/JuliusBrussee.png?size=512")
+    }
+
+    @Test("缺失仓库路径时封面回退，不构造无效图片请求", arguments: ["", "owner", "/project", "owner/"])
+    func missingCoverPath(fullName: String) {
+        let item = DailyRecommendationWebSnapshot.Item(candidate(fullName: fullName), revealed: false)
+        #expect(item.coverImageURL == nil)
     }
 
     @Test("空简介与未知理由不补写个性化证据")
@@ -119,7 +146,7 @@ struct DailyRecommendationWebTests {
         #expect(original != DailyRecommendationWebSnapshot.context(accountID: 1, revision: 1, state: state))
     }
 
-    @Test("实际应用包包含透明本地页面，没有设计样例或网络入口")
+    @Test("实际应用包包含透明本地页面，仅允许 owner 头像图片联网")
     func bundledRenderer() throws {
         let url = try #require(Bundle.main.url(forResource: "daily-discovery", withExtension: "html"))
         let html = try String(contentsOf: url, encoding: .utf8)
@@ -128,15 +155,20 @@ struct DailyRecommendationWebTests {
         #expect(html.contains("--sd-luster: .55"))
         #expect(html.contains("background: transparent"))
         #expect(html.contains("connect-src 'none'"))
+        #expect(html.contains("img-src https://github.com https://avatars.githubusercontent.com;"))
+        #expect(!html.contains("opengraph.githubassets.com"))
+        #expect(!html.contains("cover-monogram"))
+        #expect(!html.contains("field(\"avatar\").textContent"))
         #expect(!html.contains("astral-sh"))
         #expect(!html.contains("window.openai"))
         #expect(!html.contains("localStorage"))
         #expect(!html.contains("fetch("))
     }
 
-    private func candidate(id: Int64 = 42, description: String? = nil, reasons: [String] = []) -> RepoRecommendationItem {
+    private func candidate(id: Int64 = 42, fullName: String = "owner/project",
+                           description: String? = nil, reasons: [String] = []) -> RepoRecommendationItem {
         RepoRecommendationItem(
-            repoID: id, fullName: "owner/project", description: description, language: nil,
+            repoID: id, fullName: fullName, description: description, language: nil,
             stars: 123, forks: 7, archived: false, score: 0.9, source: "starcat_trained", reasons: reasons
         )
     }

@@ -2,7 +2,7 @@
 <!-- Local daily discovery renderer. Native owns data, localization and all write operations. -->
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://github.com https://avatars.githubusercontent.com; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Starcat</title><style>
     #starcat-refined {
       color-scheme: light;
@@ -65,6 +65,10 @@
     }
     #starcat-refined .sd-card {
       position: relative;
+      /* 分区尺寸只跟随界面倍率；顶部高度按三行项目描述固定，长文本、理由异步更新或隐藏都不能改变卡面和按钮位置。 */
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      height: calc(430px * var(--sd-scale));
       overflow: hidden;
       border: 1px solid light-dark(#bdb5ad, #76717a);
       border-radius: 16px;
@@ -83,94 +87,75 @@
       background: radial-gradient(ellipse at var(--sd-mx, 30%) var(--sd-my, 10%), light-dark(rgb(255 255 255 / 20%), rgb(255 248 236 / 8%)), transparent 58%);
       opacity: var(--sd-luster);
     }
-    #starcat-refined .sd-card-top { display: grid; grid-template-columns: minmax(150px, 24%) minmax(0, 1fr); min-height: 220px; border-bottom: 1px solid var(--sd-line); }
+    /* 为两行项目名、三行描述及统计预留固定高度；内边距随字号缩放，避免小倍率或长标题挤掉第三行。 */
+    #starcat-refined .sd-card-top { grid-row: 1; display: flex; align-items: stretch; height: calc(254px * var(--sd-scale)); min-height: 0; overflow: hidden; border-bottom: 1px solid var(--sd-line); }
     #starcat-refined .sd-cover {
       position: relative;
+      /* 左侧封面为正方形：高度随三行描述固定，宽度由该高度决定，避免被项目名或描述长度挤变形。 */
+      flex: 0 0 auto;
+      height: 100%;
+      aspect-ratio: 1 / 1;
       overflow: hidden;
-      min-height: 220px;
+      min-height: 0;
       isolation: isolate;
       border-right: 1px solid var(--sd-line);
-      --sd-art-top: light-dark(#dae7ec, #364a57);
-      --sd-art-bottom: light-dark(#b9ccd6, #172432);
-      --sd-art-ink: light-dark(#254553, #d4e5ed);
-      background: radial-gradient(ellipse at 45% 22%, var(--sd-art-top), var(--sd-art-bottom) 85%);
-      color: var(--sd-art-ink);
+      background: var(--sd-background);
     }
-    #starcat-refined .sd-cover[data-tone="1"] { --sd-art-top: light-dark(#e8e4df, #454550); --sd-art-bottom: light-dark(#c6c4c5, #20212b); --sd-art-ink: light-dark(#454451, #eee9e2); }
-    #starcat-refined .sd-cover[data-tone="2"] { --sd-art-top: light-dark(#f3dcc3, #665043); --sd-art-bottom: light-dark(#d6b9a2, #30252a); --sd-art-ink: light-dark(#654736, #f3d8b8); }
-    #starcat-refined .sd-cover[data-tone="3"] { --sd-art-top: light-dark(#d5e4dc, #3a524a); --sd-art-bottom: light-dark(#b1c8bd, #1a2c2b); --sd-art-ink: light-dark(#29473d, #d0e6d5); }
-    #starcat-refined .sd-cover::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      opacity: .32;
-      background:
-        repeating-linear-gradient(0deg, transparent 0 2px, rgb(255 255 255 / 5%) 2px 2.5px),
-        radial-gradient(circle, rgb(255 255 255 / 23%) .65px, transparent .9px);
-      background-size: auto, 12px 12px;
-      mask-image: linear-gradient(transparent, #000 30%, #000 70%, transparent);
+    /* 左侧整块展示 owner 头像，等比完整显示，保持个人和组织头像的辨识度。 */
+    #starcat-refined .sd-cover-image {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; opacity: 0; transition: opacity 180ms ease-out;
     }
-    #starcat-refined .sd-cover::after {
-      content: "";
-      position: absolute;
-      inset: 10px;
-      border: 1px solid rgb(255 255 255 / 12%);
-      border-radius: 7px;
-      pointer-events: none;
+    #starcat-refined .sd-cover-placeholder {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: var(--sd-soft); transition: opacity 180ms ease-out;
     }
-    #starcat-refined .sd-art-label, #starcat-refined .sd-art-caption { position: absolute; z-index: 4; left: 16px; font-size: calc(11px * var(--sd-scale)); letter-spacing: 1.5px; }
-    #starcat-refined .sd-art-label { top: 14px; opacity: .85; }
-    #starcat-refined .sd-art-caption { bottom: 14px; right: 16px; display: flex; justify-content: flex-end; letter-spacing: .5px; }
-    #starcat-refined .sd-art-caption span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-    #starcat-refined .sd-scene {
-      position: absolute;
-      width: 172px;
-      height: 148px;
-      left: 50%;
-      top: 51%;
-      transform: translate(calc(-50% + var(--sd-art-x, 0px)), calc(-50% + var(--sd-art-y, 0px)));
-      transition: transform 260ms var(--sd-ease);
-      perspective: 650px;
-      pointer-events: none;
+    #starcat-refined .sd-cover[data-state="loading"] .sd-cover-placeholder {
+      background: linear-gradient(110deg, var(--sd-soft) 25%, var(--sd-line) 50%, var(--sd-soft) 75%);
+      background-size: 250% 100%; animation: sd-cover-shimmer 1.8s ease-in-out infinite;
     }
-    /* 所有仓库共享一套封面结构；初始字与配色仅来自名称，不要求后端提供图片或用途分类。 */
-    #starcat-refined .sd-identity-plate {
-      position: absolute;
-      left: 32px; top: 23px; width: 108px; height: 102px;
-      border: 1px solid light-dark(rgb(255 255 255 / 85%), rgb(239 235 228 / 42%));
-      border-radius: 14px;
-      background: linear-gradient(140deg, light-dark(#f3f2ef, #74787a), var(--sd-art-top) 52%, var(--sd-art-bottom));
-      box-shadow: inset 0 1px light-dark(#fff, #deded357), 0 6px 0 var(--sd-art-bottom), 0 18px 25px rgb(0 0 0 / 20%);
-      transform: rotateY(-15deg) rotateZ(-11deg);
+    /* 加载失败只保留中性图片占位，不再用项目缩写冒充封面。 */
+    #starcat-refined .sd-cover[data-state="failed"] .sd-cover-placeholder::before {
+      content: ""; width: 44px; height: 34px; border: 2px solid var(--sd-secondary); border-radius: 6px; opacity: .55;
+      background: linear-gradient(135deg, transparent 50%, var(--sd-secondary) 51% 65%, transparent 66%) center / 28px 20px no-repeat;
     }
-    #starcat-refined .sd-identity-plate:nth-child(1) { translate: -22px -8px; opacity: .35; rotate: -7deg; }
-    #starcat-refined .sd-identity-plate:nth-child(2) { translate: 18px 10px; opacity: .6; rotate: 8deg; }
-    #starcat-refined .sd-identity-plate:last-child {
-      z-index: 2; display: grid; place-items: center;
-      box-shadow: inset 0 1px light-dark(#fff, #deded35e), 0 6px 0 var(--sd-art-bottom), 0 22px 28px rgb(0 0 0 / 28%);
+    #starcat-refined .sd-cover[data-state="ready"] .sd-cover-image { opacity: 1; }
+    #starcat-refined .sd-cover[data-state="ready"] .sd-cover-placeholder { opacity: 0; }
+    @keyframes sd-cover-shimmer {
+      from { background-position: 100% 0; }
+      to { background-position: -100% 0; }
     }
-    #starcat-refined .sd-identity-plate:last-child::before {
-      content: ""; position: absolute; inset: 7px; border: 1px solid light-dark(rgb(255 255 255 / 75%), rgb(255 255 255 / 18%)); border-radius: 9px;
+    #starcat-refined .sd-project-info { flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: calc(22px * var(--sd-scale)) calc(24px * var(--sd-scale)); }
+    #starcat-refined .sd-owner { display: flex; flex-shrink: 0; align-items: center; gap: 9px; color: var(--sd-secondary); font-size: calc(12px * var(--sd-scale)); }
+    #starcat-refined .sd-owner [data-field="owner"] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #starcat-refined .sd-avatar { width: calc(25px * var(--sd-scale)); height: calc(25px * var(--sd-scale)); flex: 0 0 auto; border: 1px solid var(--sd-line); border-radius: 7px; background-color: var(--sd-accent-soft); background-position: center; background-size: cover; }
+    /* 固定卡面只展示有限行数摘要；项目描述放宽到三行，避免中英混排时过度裁切。保留完整文本供辅助功能读取，项目全文仍从详情查看。 */
+    #starcat-refined .sd-project-name, #starcat-refined .sd-description, #starcat-refined .sd-reason {
+      display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
     }
-    #starcat-refined .sd-monogram { font-size: calc(32px * var(--sd-scale)); line-height: 1; font-weight: 500; letter-spacing: -2px; text-shadow: 0 1px light-dark(#ffffffb3, #ffffff21); }
-    #starcat-refined .sd-identity-line { position: absolute; left: 19px; bottom: 17px; width: 27px; height: 2px; border-radius: 2px; background: currentColor; opacity: .4; box-shadow: 32px 0 currentColor; }
-    #starcat-refined .sd-project-info { min-width: 0; display: flex; flex-direction: column; padding: 22px 24px; }
-    #starcat-refined .sd-owner { display: flex; align-items: center; gap: 9px; color: var(--sd-secondary); font-size: calc(12px * var(--sd-scale)); overflow-wrap: anywhere; }
-    #starcat-refined .sd-avatar { display: grid; place-items: center; width: 25px; height: 25px; flex: 0 0 auto; border: 1px solid var(--sd-line); border-radius: 7px; background: var(--sd-accent-soft); color: var(--sd-text); font-weight: 600; }
-    #starcat-refined .sd-project-name { margin: 12px 0 10px; font-size: calc(20px * var(--sd-scale)); line-height: 1.4; font-weight: 600; }
+    #starcat-refined .sd-description { -webkit-line-clamp: 3; }
+    #starcat-refined .sd-project-name, #starcat-refined .sd-reason { -webkit-line-clamp: 2; }
+    #starcat-refined .sd-project-name { flex-shrink: 0; height: 2.8em; margin: calc(12px * var(--sd-scale)) 0 calc(10px * var(--sd-scale)); font-size: calc(20px * var(--sd-scale)); line-height: 1.4; font-weight: 600; }
     #starcat-refined .sd-project-name span:first-child { color: var(--sd-secondary); font-weight: 400; }
-    #starcat-refined .sd-description { font-size: calc(14px * var(--sd-scale)); line-height: 1.7; }
-    #starcat-refined .sd-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding-top: 12px; color: var(--sd-secondary); font-size: calc(12px * var(--sd-scale)); }
-    #starcat-refined .sd-language { display: flex; align-items: center; gap: 7px; }
-    #starcat-refined .sd-language::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--sd-lang, var(--sd-secondary)); }
-    #starcat-refined .sd-recommend { padding: 18px 24px 0; }
-    #starcat-refined .sd-reason-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    /* 短描述也占满三行，禁止 flex 压缩导致实际只能显示两行。 */
+    #starcat-refined .sd-description { flex-shrink: 0; height: 5.1em; min-height: 0; font-size: calc(14px * var(--sd-scale)); line-height: 1.7; }
+    /* 与中栏属性条一致：自然宽度胶囊、紧凑间距和图标计数；单行避免统计挤占三行描述的固定空间。 */
+    #starcat-refined .sd-metrics { display: flex; flex-shrink: 0; align-items: center; gap: calc(8px * var(--sd-scale)); margin-top: auto; padding-top: calc(10px * var(--sd-scale)); color: var(--sd-secondary); font-size: calc(11px * var(--sd-scale)); line-height: 1.4; }
+    #starcat-refined .sd-metric { display: inline-flex; flex: 0 0 auto; align-items: center; gap: calc(4px * var(--sd-scale)); padding: calc(3px * var(--sd-scale)) calc(7px * var(--sd-scale)); border-radius: 999px; background: light-dark(rgb(37 38 42 / 8%), rgb(242 240 236 / 12%)); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    #starcat-refined .sd-metric svg { width: 1em; height: 1em; flex: 0 0 auto; }
+    #starcat-refined .sd-language { flex: 0 1 auto; min-width: 0; max-width: calc(110px * var(--sd-scale)); color: var(--sd-text); }
+    #starcat-refined .sd-language [data-field="language"] { overflow: hidden; text-overflow: ellipsis; }
+    #starcat-refined .sd-language::before { content: ""; flex: 0 0 auto; width: calc(7px * var(--sd-scale)); height: calc(7px * var(--sd-scale)); border-radius: 50%; background: var(--sd-lang, var(--sd-secondary)); }
+    #starcat-refined .sd-stars svg { color: var(--sd-text); }
+    #starcat-refined .sd-forks { color: light-dark(#2563eb, #60a5fa); background: light-dark(rgb(37 99 235 / 12%), rgb(96 165 250 / 12%)); }
+    #starcat-refined .sd-recommend { grid-row: 2; min-height: 0; overflow: hidden; display: flex; flex-direction: column; padding: 18px 24px 0; }
+    #starcat-refined .sd-reason-heading { display: flex; flex-shrink: 0; align-items: center; gap: 12px; margin-bottom: 8px; }
     #starcat-refined .sd-reason-heading h3 { font-size: calc(14px * var(--sd-scale)); font-weight: 600; }
-    #starcat-refined .sd-reason { font-size: calc(14px * var(--sd-scale)); line-height: 1.7; }
-    #starcat-refined .sd-recommend.sd-general { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; color: var(--sd-secondary); }
+    #starcat-refined .sd-reason { min-width: 0; min-height: 0; font-size: calc(14px * var(--sd-scale)); line-height: 1.7; }
+    #starcat-refined .sd-recommend.sd-general { display: flex; flex-direction: row; flex-wrap: wrap; align-items: baseline; align-content: flex-start; gap: 4px 12px; color: var(--sd-secondary); }
     #starcat-refined .sd-general .sd-reason-heading { margin: 0; }
     #starcat-refined .sd-general .sd-reason-heading h3, #starcat-refined .sd-general .sd-reason { font-size: calc(12px * var(--sd-scale)); font-weight: 400; }
-    #starcat-refined .sd-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 18px 24px 22px; }
+    #starcat-refined .sd-actions { grid-row: 3; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 18px 24px 22px; }
     #starcat-refined .sd-button {
       position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
       min-height: 36px; padding: 8px 15px; border: 1px solid var(--sd-line); border-radius: 8px;
@@ -180,10 +165,11 @@
       transition: background 160ms, box-shadow 160ms;
     }
     #starcat-refined .sd-button:hover:not(:disabled) { background: var(--sd-line); }
-    #starcat-refined .sd-star { min-width: 113px; border-color: light-dark(#cb976c, #eac7a5); color: var(--sd-on-button); background: linear-gradient(140deg, light-dark(#f0c59c, #f3caa8), var(--sd-button)); box-shadow: inset 0 1px #fff5e957, 0 3px 10px rgb(150 96 54 / 10%); }
+    #starcat-refined .sd-button svg { width: calc(16px * var(--sd-scale)); height: calc(16px * var(--sd-scale)); flex: 0 0 auto; }
+    #starcat-refined .sd-star { gap: 6px; padding-inline: 12px; border-color: light-dark(#cb976c, #eac7a5); color: var(--sd-on-button); background: linear-gradient(140deg, light-dark(#f0c59c, #f3caa8), var(--sd-button)); box-shadow: inset 0 1px #fff5e957, 0 3px 10px rgb(150 96 54 / 10%); }
     #starcat-refined .sd-star:hover { background: var(--sd-button); }
     #starcat-refined .sd-star[aria-pressed="true"] { color: light-dark(#285944, #bfe5cf); background: light-dark(#dfede4, #30473b); border-color: light-dark(#b2cdbe, #5d7868); box-shadow: none; }
-    #starcat-refined .sd-dismiss { margin-inline-start: auto; }
+    #starcat-refined .sd-button.sd-dismiss { flex: 0 0 auto; width: max(36px, calc(36px * var(--sd-scale))); height: max(36px, calc(36px * var(--sd-scale))); margin-inline-start: auto; padding: 0; }
     #starcat-refined .sd-peek {
       position: absolute; z-index: 0; top: 50%; width: 180px; height: calc(100% - 44px); max-height: 360px; padding: 0;
       overflow: hidden; border: 1px solid var(--sd-edge); border-radius: 16px;
@@ -212,30 +198,24 @@
     #starcat-refined .sd-progress-track { display: flex; gap: 5px; }
     @media (max-width: 800px) {
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: calc(100% - 54px); }
-      #starcat-refined .sd-card-top { grid-template-columns: 150px minmax(0, 1fr); }
-      #starcat-refined .sd-project-info { padding: 23px 24px; }
-      #starcat-refined .sd-scene { scale: .88; }
+      #starcat-refined .sd-project-info { padding: calc(23px * var(--sd-scale)) calc(24px * var(--sd-scale)); }
       #starcat-refined .sd-recommend { padding: 22px 24px 0; }
       #starcat-refined .sd-actions { padding: 22px 24px; }
     }
     @media (max-width: 620px) {
       #starcat-refined .sd-stage, #starcat-refined .sd-heading, #starcat-refined .sd-bottom { width: 100%; }
       #starcat-refined .sd-peek { display: none; }
-      #starcat-refined .sd-card-top { grid-template-columns: 1fr; }
-      /* Compact windows keep the full reading area instead of stacking a decorative cover above it. */
+      /* 紧凑窗口保留原有文字阅读宽度，封面只在双栏布局中显示。 */
       #starcat-refined .sd-cover { display: none; }
-      #starcat-refined .sd-project-info { padding: 21px 23px 22px; }
+      #starcat-refined .sd-project-info { padding: calc(21px * var(--sd-scale)) calc(23px * var(--sd-scale)) calc(22px * var(--sd-scale)); }
       #starcat-refined .sd-description { font-size: calc(14px * var(--sd-scale)); }
       #starcat-refined .sd-recommend { padding: 20px 23px 0; }
       #starcat-refined .sd-actions { padding: 20px 23px 22px; gap: 8px; }
       #starcat-refined .sd-button { padding-inline: 12px; }
-      #starcat-refined .sd-dismiss { margin-inline-start: 0; }
       #starcat-refined .sd-bottom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "progress progress" "previous next"; }
     }
     @media (max-width: 380px) {
       #starcat-refined .sd-project-info, #starcat-refined .sd-recommend, #starcat-refined .sd-actions { padding-left: 18px; padding-right: 18px; }
-      #starcat-refined .sd-art-label { left: 18px; }
-      #starcat-refined .sd-art-caption { left: 18px; right: 18px; }
     }
     @media (pointer: coarse) {
     }
@@ -298,15 +278,23 @@
     <button type="button" class="sd-peek sd-peek-left" data-action="previous"></button>
     <div class="sd-main"><div class="sd-tilt"><article class="sd-card" aria-labelledby="project-name">
       <div class="sd-card-top">
-        <div class="sd-cover" data-tone="0" aria-hidden="true"><span class="sd-art-label">STARCAT</span><div class="sd-scene"><div class="sd-identity-plate"></div><div class="sd-identity-plate"></div><div class="sd-identity-plate"><span class="sd-monogram" data-field="cover-monogram"></span><span class="sd-identity-line"></span></div></div><div class="sd-art-caption"><span data-field="edition"></span></div></div>
-        <div class="sd-project-info"><div class="sd-owner"><span class="sd-avatar" data-field="avatar" aria-hidden="true"></span><span data-field="owner"></span><span aria-hidden="true">·</span><span>GitHub</span></div>
+        <div class="sd-cover" aria-hidden="true"><span class="sd-cover-placeholder"></span></div>
+        <div class="sd-project-info"><div class="sd-owner"><span class="sd-avatar" data-field="avatar" aria-hidden="true"></span><span data-field="owner"></span></div>
           <h2 class="sd-project-name" id="project-name"><span data-field="owner-path"></span><span data-field="repo"></span></h2>
           <p class="sd-description" data-field="description"></p>
-          <div class="sd-metrics"><span class="sd-language" data-field="language"></span><span>★ <span data-field="stars"></span> Stars</span><span><span data-field="forks"></span> Forks</span></div>
+          <div class="sd-metrics">
+            <span class="sd-metric sd-language"><span data-field="language"></span></span>
+            <span class="sd-metric sd-stars"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg><span data-field="stars"></span></span>
+            <span class="sd-metric sd-forks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="4" r="2"/><circle cx="18" cy="4" r="2"/><circle cx="12" cy="20" r="2"/><path d="M6 6v3a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V6M12 12v6"/></svg><span data-field="forks"></span></span>
+          </div>
         </div>
       </div>
       <section class="sd-recommend" aria-labelledby="reason-title"><div class="sd-reason-heading"><h3 id="reason-title" data-label="reasonTitle"></h3><button type="button" class="sd-text-button" data-action="retry" data-label="retry" data-retry-explanation hidden></button></div><p class="sd-reason" data-field="reason"></p></section>
-      <div class="sd-actions"><button type="button" class="sd-button sd-star" data-action="star"><span aria-hidden="true">☆</span><span data-label="star"></span></button><button type="button" class="sd-button" data-action="details" data-label="details"></button><button type="button" class="sd-button sd-dismiss" data-action="dismiss" data-label="dismiss"></button></div>
+      <div class="sd-actions">
+        <button type="button" class="sd-button sd-star" data-action="star"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg><span data-label="star"></span></button>
+        <button type="button" class="sd-button" data-action="details" data-label="details"></button>
+        <button type="button" class="sd-button sd-dismiss" data-action="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8ZM3 3l18 18"/></svg></button>
+      </div>
     </article></div></div>
     <button type="button" class="sd-peek sd-peek-right" data-action="next"></button>
   </div>
@@ -343,17 +331,39 @@
   function identity(item) {
     const separator = item.fullName.indexOf("/");
     const owner = item.fullName.slice(0, separator), repo = item.fullName.slice(separator + 1);
-    const monogram = repo.replace(/[^a-z0-9]/gi, "").slice(0, 2).toLowerCase() || "sc";
-    const hash = [...item.fullName].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0);
-    return { owner, repo, monogram, tone: String(hash % 4) };
+    return { owner, repo };
+  }
+  // 两处头像共用原生给出的 owner 图片地址；CSP 仅放行头像入口及其 CDN 重定向。
+  function renderCover(item) {
+    const cover = q(".sd-cover"), url = item?.coverImageURL || "";
+    if (cover.dataset.url === url) return;
+    field("avatar").style.backgroundImage = url ? `url(${JSON.stringify(url)})` : "";
+    cover.dataset.url = url;
+    cover.dataset.state = url ? "loading" : "failed";
+    cover.querySelector("img")?.remove();
+    if (!url) return;
+    const image = new Image();
+    image.className = "sd-cover-image";
+    image.alt = "";
+    image.draggable = false;
+    image.referrerPolicy = "no-referrer";
+    // 快速翻页后旧图可能才返回；只让仍属于当前封面的图片结束骨架状态。
+    const settle = state => {
+      if (!destroyed && image.parentElement === cover) cover.dataset.state = state;
+    };
+    image.addEventListener("load", () => settle(image.naturalWidth > 0 ? "ready" : "failed"),
+      { once: true, signal: listeners.signal });
+    image.addEventListener("error", () => settle("failed"), { once: true, signal: listeners.signal });
+    cover.append(image);
+    image.src = url;
+    // 内存缓存已就绪时直接展示，不人为插入一轮骨架。
+    if (image.complete) settle(image.naturalWidth > 0 ? "ready" : "failed");
   }
   function resetTilt() {
     cancelAnimationFrame(pointerFrame);
     pointerFrame = 0;
     tilt.style.setProperty("--sd-rx", "0deg");
     tilt.style.setProperty("--sd-ry", "0deg");
-    card.style.setProperty("--sd-art-x", "0px");
-    card.style.setProperty("--sd-art-y", "0px");
     card.style.setProperty("--sd-mx", "30%");
     card.style.setProperty("--sd-my", "10%");
   }
@@ -398,6 +408,10 @@
     root.querySelectorAll("[data-label]").forEach(element => {
       element.textContent = snapshot.labels[element.dataset.label] || "";
     });
+    // 图标按钮的本地化语义放在属性上，避免文案刷新覆盖心形斜杠图标。
+    const dismiss = q('[data-action="dismiss"]');
+    dismiss.title = snapshot.labels.dismiss;
+    dismiss.setAttribute("aria-label", snapshot.labels.dismiss);
     const item = active(), empty = !item;
     q(".sd-stage").hidden = empty || summary;
     q(".sd-bottom").hidden = empty || summary;
@@ -421,7 +435,7 @@
     toggle.checked = snapshot.showsOnLaunch;
     toggle.disabled = !snapshot.canSetAutoShow || Boolean(busy());
     q(".sd-preferences").hidden = !snapshot.canSetAutoShow && !snapshot.canChangeBatch;
-    if (empty) return;
+    if (empty) { renderCover(null); return; }
     if (summary) {
       q(".sd-summary-list").replaceChildren(...snapshot.items.map(candidate => {
         const button = document.createElement("button");
@@ -434,15 +448,14 @@
       return;
     }
     const display = identity(item);
-    field("avatar").textContent = display.owner.slice(0, 1).toUpperCase();
     field("owner").textContent = display.owner;
     field("owner-path").textContent = `${display.owner} / `;
     field("repo").textContent = display.repo;
-    field("cover-monogram").textContent = display.monogram;
-    q(".sd-cover").dataset.tone = display.tone;
+    renderCover(item);
     field("description").textContent = item.description || snapshot.labels.noDescription;
     field("language").textContent = item.language || "";
-    field("language").hidden = !item.language;
+    q(".sd-language").hidden = !item.language;
+    q(".sd-language").title = item.language || "";
     field("stars").textContent = compactNumber.format(item.stars);
     field("forks").textContent = compactNumber.format(item.forks);
     field("stars").setAttribute("aria-label", `${plainNumber.format(item.stars)} Stars`);
@@ -454,7 +467,6 @@
     q("[data-retry-explanation]").hidden = !item.canRetryExplanation;
     field("reason").textContent = item.reasonDetail;
     const position = `${String(index() + 1).padStart(2, "0")} / ${String(snapshot.items.length).padStart(2, "0")}`;
-    field("edition").textContent = position;
     field("progress").textContent = position;
     q(".sd-progress-track").setAttribute("aria-label", snapshot.labels.title);
     q(".sd-progress-track").replaceChildren(...snapshot.items.map(candidate => {
@@ -590,8 +602,6 @@
       tilt.style.setProperty("--sd-ry", `${(x - .5) * 4}deg`);
       card.style.setProperty("--sd-mx", `${x * 100}%`);
       card.style.setProperty("--sd-my", `${y * 100}%`);
-      card.style.setProperty("--sd-art-x", `${(x - .5) * 8}px`);
-      card.style.setProperty("--sd-art-y", `${(y - .5) * 6}px`);
     });
   }, { signal: listeners.signal });
   card.addEventListener("pointerleave", resetTilt, { signal: listeners.signal });
