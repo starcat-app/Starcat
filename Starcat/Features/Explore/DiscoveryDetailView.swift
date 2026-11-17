@@ -54,12 +54,11 @@ private struct DiscoveryScaffoldShell: View {
     @Environment(HomeViewModel.self) private var homeViewModel
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
-    @State private var displayRepo: Repo?
+    @State private var presentation = DiscoveryDetailPresentation()
     @State private var readmeVM: ReadmeViewModel?
     /// 来源说明和仓库使用同一份展示快照，旧页退场时不能提前换成下一仓库的证据。
     @State private var displayedSupplementalHeader: AnyView?
     @State private var isContentVisible = false
-    @State private var metadataFailed = false
 
     private var contentAnimation: Animation {
         .easeOut(duration: reduceMotion ? 0.06 : 0.12)
@@ -67,7 +66,7 @@ private struct DiscoveryScaffoldShell: View {
 
     var body: some View {
         Group {
-            if let displayRepo, let readmeVM {
+            if let displayRepo = presentation.repo, let readmeVM {
                 scaffold(for: displayRepo, readmeVM: readmeVM)
                     .opacity(isContentVisible ? 1 : 0)
                     .blur(radius: reduceMotion || isContentVisible ? 0 : 10)
@@ -79,12 +78,6 @@ private struct DiscoveryScaffoldShell: View {
                             isContentVisible = true
                         }
                     }
-            } else if metadataFailed {
-                ContentUnavailableView {
-                    Label("recommendations.daily.failed", systemImage: "wifi.exclamationmark")
-                } actions: {
-                    Button("action.retry") { Task { await resolveRepo() } }
-                }
             } else {
                 VStack(spacing: 16) {
                     ListLoadingSkeleton(rowCount: 1, rowHeight: 110)
@@ -99,10 +92,24 @@ private struct DiscoveryScaffoldShell: View {
         .task(id: item) {
             await resolveRepo()
         }
+        // 资料补齐是独立任务：快照、README 和入场动效均已就绪，网络等待只影响缺失字段。
+        // 重试更换请求身份，SwiftUI 会取消上一任务；宿主和 WebView 始终保持原有身份。
+        .task(id: presentation.metadataRequestID) {
+            guard let requestID = presentation.metadataRequestID,
+                  let repo = presentation.repo else { return }
+            let revision = dependencies.databaseScopeRevision
+            await presentation.resolveMetadata(requestID: requestID, registry: dependencies.starredRegistry) {
+                try await PublicRepoMetadataResolver.resolve(
+                    owner: repo.owner, name: repo.name,
+                    repository: dependencies.repoRepository, apiClient: dependencies.apiClient,
+                    isCurrent: { dependencies.databaseScopeRevision == revision }
+                )
+            }
+        }
         .onChange(of: dependencies.starredRegistry.ids) { _, _ in
             // 历史列表不随 Star 消失；来自其它窗口或同步的变化也必须立即反映在当前详情。
-            if let displayRepo {
-                self.displayRepo = dependencies.starredRegistry.applyingDisplayState(to: displayRepo)
+            if let repo = presentation.repo {
+                presentation.repo = dependencies.starredRegistry.applyingDisplayState(to: repo)
             }
         }
     }
@@ -122,6 +129,19 @@ private struct DiscoveryScaffoldShell: View {
             },
             body: { onScrollReport in
                 VStack(spacing: 0) {
+                    if presentation.metadataFailed {
+                        HStack {
+                            Label("error.loadFailed", systemImage: "wifi.exclamationmark")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("action.retry") {
+                                presentation.retryMetadata()
+                            }
+                        }
+                        .padding(16)
+                        .transition(.opacity)
+                        Divider()
+                    }
                     // 当前仓库使用最新说明；切仓退场时才保留旧快照，避免反馈状态滞后。
                     if let header = DiscoveryHeaderSnapshotPolicy.resolve(
                         displayedID: repo.id,
@@ -135,6 +155,7 @@ private struct DiscoveryScaffoldShell: View {
                     DiscoveryReadmeContent(repo: repo, onScrollReport: onScrollReport)
                         .environment(readmeVM)
                 }
+                .animation(contentAnimation, value: presentation.metadataFailed)
             }
         )
     }
@@ -148,8 +169,8 @@ private struct DiscoveryScaffoldShell: View {
 
     /// 只切换展示快照，不给 Scaffold 或 WebView 加仓库 .id；正文沿用已有文档就绪交接。
     private func resolveRepo() async {
-        let isInitialPresentation = displayRepo == nil
-        if let displayRepo, displayRepo.id != item.repoID {
+        let isInitialPresentation = presentation.repo == nil
+        if let displayRepo = presentation.repo, displayRepo.id != item.repoID {
             // 完成回调仅控制视觉交接；快速连点取消的任务不能再发布旧仓库。
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 withAnimation(contentAnimation, completionCriteria: .removed) {
@@ -160,30 +181,12 @@ private struct DiscoveryScaffoldShell: View {
             }
         }
         guard !Task.isCancelled else { return }
-        // Discovery 详情必须以服务端最新公共元数据为准。若先返回本地 starred 缓存，
-        // 老记录中缺失的 subscribers / created_at / updated_at 会永久遮蔽 API 真值。
-        // star/unstar 后的数字走 Registry 会话 overlay，不能只用接口快照。
-        metadataFailed = false
-        var resolved = item.toEphemeralRepo(isStarred: false)
-        if requiresCompleteMetadata {
-            let revision = dependencies.databaseScopeRevision
-            do {
-                resolved = try await PublicRepoMetadataResolver.resolve(
-                    owner: item.owner, name: item.name,
-                    repository: dependencies.repoRepository, apiClient: dependencies.apiClient,
-                    isCurrent: { dependencies.databaseScopeRevision == revision }
-                )
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-                displayRepo = nil
-                metadataFailed = true
-                return
-            }
-        }
-        guard !Task.isCancelled else { return }
-        displayRepo = dependencies.starredRegistry.applyingDisplayState(to: resolved)
+        // Hero 先使用当前行的真实快照；公共资料由另一 task 补齐，
+        // README 立即走自己的缓存 / 网络 / 文档 ready 链路，不能互相阻塞。
+        presentation.present(
+            item: item, requiresCompleteMetadata: requiresCompleteMetadata,
+            registry: dependencies.starredRegistry
+        )
         displayedSupplementalHeader = supplementalHeader
         loadReadmeIfNeeded()
         // 新页先展示元信息与真实加载状态，README 自身仍等当前文档 ready 才交出骨架。
@@ -211,8 +214,8 @@ private struct DiscoveryScaffoldShell: View {
 
         // Star 请求可能在用户切到另一仓库后才结束；只更新当前展示快照，
         // 不能把闭包捕获的旧 repo / item 写回稳定宿主，也不为 Star 状态重载 README。
-        if let currentRepo = displayRepo {
-            displayRepo = dependencies.starredRegistry.applyingDisplayState(to: currentRepo)
+        if let currentRepo = presentation.repo {
+            presentation.repo = dependencies.starredRegistry.applyingDisplayState(to: currentRepo)
         }
         // 只有远端 Star/Unstar 成功才同步反馈；失败不能清掉用户原有的“不感兴趣”。
         await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
@@ -233,7 +236,7 @@ private struct DiscoveryScaffoldShell: View {
     }
 
     private func loadReadmeIfNeeded() {
-        guard let repo = displayRepo else {
+        guard let repo = presentation.repo else {
             readmeVM?.reset()
             return
         }
