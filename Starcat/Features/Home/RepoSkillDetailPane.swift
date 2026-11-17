@@ -322,7 +322,8 @@ struct RepoSkillDetailPane: View {
                 control: translationControl,
                 sourceHtml: document?.skillID == skill.id ? document?.html ?? "" : "",
                 sourceSnapshot: translationSourceDocumentID == skill.id && renderedDocumentID == skill.id
-                    ? translationSourceSnapshot : .empty
+                    ? translationSourceSnapshot : .empty,
+                isCompact: true
             )
             .disabled(showsManifestSource)
             previewSizeButton

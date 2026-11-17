@@ -896,7 +896,7 @@ struct ReadmeStateView: View {
 
     /// repo + 已对齐文档的轻量身份。scope 未对齐时不算 loaded，避免用 A 的 HTML 给 B prepare。
     private var translationSyncKey: String {
-        let repoKey = translationControl.map { "\($0.repo.owner)/\($0.repo.name)" } ?? "none"
+        let repoKey = translationControl.map { "\($0.owner)/\($0.name)" } ?? "none"
         return "\(repoKey)|\(readmeDocumentToken)"
     }
 
@@ -1237,27 +1237,56 @@ struct ReadmeStateView: View {
 ///   周刊与星标走同一条路径。
 @MainActor
 struct ReadmeTranslationControl {
-    let repo: Repo
+    let owner: String
+    let name: String
+    let repositoryID: Int64?
+    /// Manage 的 Markdown 导出与私有仓库鉴权仍需要完整 Repo；下载窗口仅有仓库身份。
+    private(set) var repo: Repo?
     let translationVM: ReadmeTranslationViewModel
     let settings: AppSettings
 
-    /// nil 表示仓库 README；Skill 传入仓库内路径，复用控件时不能覆盖 README 的缓存。
+    /// nil 表示仓库 README；文件传入仓库内路径，复用控件时不能覆盖 README 的缓存。
     var documentPath: String? = nil
+
+    init(
+        owner: String, name: String, repositoryID: Int64? = nil,
+        translationVM: ReadmeTranslationViewModel, settings: AppSettings, documentPath: String? = nil
+    ) {
+        self.owner = owner
+        self.name = name
+        self.repositoryID = repositoryID
+        self.repo = nil
+        self.translationVM = translationVM
+        self.settings = settings
+        self.documentPath = documentPath
+    }
+
+    /// 下载窗口可能没有入库仓库；身份只取 owner/name/path，不伪造 Repo 或 GitHub ID。
+    init(
+        repo: Repo, translationVM: ReadmeTranslationViewModel,
+        settings: AppSettings, documentPath: String? = nil
+    ) {
+        self.init(
+            owner: repo.owner, name: repo.name, repositoryID: repo.id,
+            translationVM: translationVM, settings: settings, documentPath: documentPath
+        )
+        self.repo = repo
+    }
 
     var identity: String {
         if let documentPath {
-            return "document:\(repo.fullName):\(documentPath)"
+            return "document:\(owner)/\(name):\(documentPath)"
         }
-        return ReadmeTranslationViewModel.readmeIdentity(for: repo)
+        return ReadmeTranslationViewModel.readmeIdentity(owner: owner, repo: name)
     }
 
     var cacheOwner: String {
-        documentPath == nil ? repo.owner : "_starcat-documents"
+        documentPath == nil ? owner : "_starcat-documents"
     }
 
     /// 路径哈希是合法的单层目录名；不含 commit，让正文小改动继续复用已翻译段落。
     var cacheRepo: String {
-        documentPath == nil ? repo.name : ReadmeTranslationService.hash(identity)
+        documentPath == nil ? name : ReadmeTranslationService.hash(identity)
     }
 }
 
@@ -1275,6 +1304,8 @@ struct ReadmeTranslationFooterButton: View {
     let control: ReadmeTranslationControl
     let sourceHtml: String
     let sourceSnapshot: ReadmeTranslationSourceSnapshot
+    /// 文件工具栏沿用 Issues 的紧凑图标；README footer 保留原有文字入口。
+    var isCompact = false
 
     /// 翻译中时按钮 hover 状态——hover 显示 stop 图标 + tooltip 切"停止翻译"。
     ///
@@ -1307,27 +1338,43 @@ struct ReadmeTranslationFooterButton: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            Button {
-                if isTranslatingCurrentDocument {
-                    // 翻译中点击 = 用户主动停止：调 VM.cancelTranslation 取消正在跑的
-                    // Task + 复位 isTranslating + 不弹错误。下方 onHover 会在按钮失焦后
-                    // 把 isHoveringWhileTranslating 复位，恢复默认 icon 形态。
-                    translationVM.cancelTranslation()
-                } else {
-                    translationVM.toggleTranslation(
-                        identity: control.identity,
-                        cacheOwner: control.cacheOwner,
-                        cacheRepo: control.cacheRepo,
-                        repoId: control.repo.id,
-                        sourceHtml: sourceHtml,
-                        sourceSegments: selectedSourceSegments,
-                        targetLanguage: settings.effectiveReadmeTranslationLanguage,
-                        mode: settings.readmeTranslationMode,
-                        engine: settings.readmeTranslationEngine
+        HStack(spacing: isCompact ? 0 : 4) {
+            if isCompact {
+                translationButton.toolbarIconHover()
+            } else {
+                translationButton
+            }
+            languageMenu
+        }
+    }
+
+    private var translationButton: some View {
+        Button {
+            if isTranslatingCurrentDocument {
+                // 翻译中保留点击入口用于取消；已完成段落继续由 VM 保留，稍后可接着翻译。
+                translationVM.cancelTranslation()
+            } else {
+                translationVM.toggleTranslation(
+                    identity: control.identity,
+                    cacheOwner: control.cacheOwner,
+                    cacheRepo: control.cacheRepo,
+                    repoId: control.repositoryID,
+                    sourceHtml: sourceHtml,
+                    sourceSegments: selectedSourceSegments,
+                    targetLanguage: settings.effectiveReadmeTranslationLanguage,
+                    mode: settings.readmeTranslationMode,
+                    engine: settings.readmeTranslationEngine
+                )
+            }
+        } label: {
+            if isCompact {
+                compactIconView
+                    .squareLogoActionChrome(
+                        side: 22,
+                        backgroundColor: isShowingTranslation
+                            ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.10)
                     )
-                }
-            } label: {
+            } else {
                 HStack(spacing: 4) {
                     iconView
                     Text(buttonTitle)
@@ -1335,29 +1382,54 @@ struct ReadmeTranslationFooterButton: View {
                 }
                 .foregroundStyle(isShowingTranslation ? .blue : .secondary)
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            // 翻译中要让点击能落地触发 cancel，所以 disabled 条件改成：
-            //   - 翻译中：永远可点（点击 = 取消）；
-            //   - 非翻译中 + sourceHtml 为空：disabled（无内容可翻译 / 切换）。
-            .disabled(
-                !isTranslatingCurrentDocument
-                    && (sourceHtml.isEmpty || selectedSourceSegments.isEmpty)
-            )
-            .help(buttonTooltip)
-            .onHover { hovering in
-                // 只在翻译中跟踪 hover 切 icon；非翻译态不需要这个状态，确保切回
-                // 普通态时 isHoveringWhileTranslating 也被复位，防止下次进入翻译时
-                // 因残留 true 直接显示 stop 图标（虽然实际 hover 离开会立刻 false，
-                // 但额外守门更稳）。
-                if isTranslatingCurrentDocument {
-                    isHoveringWhileTranslating = hovering
-                } else if isHoveringWhileTranslating {
-                    isHoveringWhileTranslating = false
-                }
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(
+            !isTranslatingCurrentDocument
+                && (sourceHtml.isEmpty || selectedSourceSegments.isEmpty)
+        )
+        .help(buttonTooltip)
+        .accessibilityLabel(Text(isTranslatingCurrentDocument ? "readme.translate.tooltip.stop" : buttonTitle))
+        .onHover { hovering in
+            if isTranslatingCurrentDocument {
+                isHoveringWhileTranslating = hovering
+            } else if isHoveringWhileTranslating {
+                isHoveringWhileTranslating = false
             }
+        }
+    }
 
-            languageMenu
+    /// 与 Issues 同一图标画布和进度环；悬停只切可见层，进度不会重置。
+    @ViewBuilder
+    private var compactIconView: some View {
+        if isTranslatingCurrentDocument {
+            let total = translationVM.totalSegmentCount
+            let fraction = total > 0
+                ? min(max(Double(translationVM.completedSegmentCount) / Double(total), 0), 1) : 0
+            ZStack {
+                ZStack {
+                    Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: fraction)
+                }
+                .opacity(isHoveringWhileTranslating ? 0 : 1)
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.red)
+                    .opacity(isHoveringWhileTranslating ? 1 : 0)
+            }
+            .frame(width: 14, height: 14)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isHoveringWhileTranslating)
+            .accessibilityValue(Text(verbatim: "\(translationVM.completedSegmentCount)/\(total)"))
+        } else {
+            Image(systemName: isShowingTranslation ? "character.bubble.fill" : "character.bubble")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isShowingTranslation ? Color.accentColor : Color.primary)
+                .frame(width: 14, height: 14)
         }
     }
 
@@ -1491,7 +1563,7 @@ struct ReadmeTranslationFooterButton: View {
                     identity: control.identity,
                     cacheOwner: control.cacheOwner,
                     cacheRepo: control.cacheRepo,
-                    repoId: control.repo.id,
+                    repoId: control.repositoryID,
                     sourceHtml: sourceHtml,
                     sourceSegments: selectedSourceSegments,
                     targetLanguage: settings.effectiveReadmeTranslationLanguage,
@@ -1511,17 +1583,19 @@ struct ReadmeTranslationFooterButton: View {
             // 注意：只改 `.caption` / `.caption2` 对 chevron.down 光学差几乎看不出；
             // 用显式 12pt semibold，和排序菜单旁箭头同级可见。
             Image(systemName: "chevron.down")
-                .font(.system(size: 12, weight: .semibold))
+                .font(isCompact ? .caption : .system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 16, height: 16)
+                .frame(width: isCompact ? nil : 16, height: isCompact ? 22 : 16)
+                .padding(.horizontal, isCompact ? 2 : 0)
                 .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         // Menu 默认会把 label 提亮成 primary；强制 secondary，避免比左侧气泡更亮、更抢眼。
         .tint(.secondary)
-        .frame(width: 18)
+        .frame(width: isCompact ? nil : 18, height: isCompact ? 22 : nil)
         .focusEffectDisabled()
+        .clickablePointer()
         .help("readme.translate.menu.tooltip")
         .task(id: settings.effectiveReadmeTranslationLanguage) {
             await refreshAvailableEngines()

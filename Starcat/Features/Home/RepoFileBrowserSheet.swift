@@ -22,6 +22,7 @@ struct RepoFileBrowserSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(AppSettings.self) private var settings
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -32,14 +33,24 @@ struct RepoFileBrowserSheet: View {
     @State private var presentedMarkdown: RepoFileBrowserViewModel.MarkdownPhase = .idle
     @State private var presentedRevision: UInt64 = 0
     @State private var isContentVisible = false
+    @State private var translationVM: ReadmeTranslationViewModel
+    @State private var translationSourceDocumentID: String?
+    @State private var translationSourceSnapshot: ReadmeTranslationSourceSnapshot = .empty
+    @State private var translationToast: String?
+    @State private var translationNoticeToast: String?
     @Namespace private var selectionNamespace
     @FocusState private var searchFocused: Bool
 
-    init(target: RepoFileBrowserTarget, apiClient: any GitHubAPIClientProtocol, onClose: (() -> Void)? = nil) {
+    init(
+        target: RepoFileBrowserTarget, apiClient: any GitHubAPIClientProtocol,
+        translationService: any ReadmeTranslationServiceProtocol, onClose: (() -> Void)? = nil
+    ) {
         self.target = target
         self.apiClient = apiClient
         self.onClose = onClose
         _viewModel = State(initialValue: RepoFileBrowserViewModel(target: target, apiClient: apiClient))
+        // 下载窗口独立拥有翻译状态，不能打断主窗口 README 或另一个 Skills 窗口。
+        _translationVM = State(initialValue: ReadmeTranslationViewModel(service: translationService))
     }
 
     var body: some View {
@@ -57,6 +68,11 @@ struct RepoFileBrowserSheet: View {
         }
         .onDisappear {
             viewModel.stop()
+            translationVM.prepare(
+                repo: nil, sourceHtml: nil,
+                targetLanguage: settings.effectiveReadmeTranslationLanguage,
+                mode: settings.readmeTranslationMode, engine: settings.readmeTranslationEngine
+            )
         }
         .onChange(of: dependencies.databaseScopeRevision) { _, _ in closeWorkspace() }
         .onChange(of: viewModel.currentRef) { _, _ in
@@ -86,6 +102,32 @@ struct RepoFileBrowserSheet: View {
         .onChange(of: viewModel.markdown) { _, _ in
             if presentedRevision == viewModel.previewRevision { publishPreview() }
         }
+        .onChange(of: translationSyncKey, initial: true) { _, _ in prepareTranslation() }
+        .onChange(of: translationVM.errorMessage) { _, message in translationToast = message }
+        .onChange(of: translationToast) { _, message in
+            if message == nil { translationVM.dismissError() }
+        }
+        .onChange(of: translationVM.showsAlreadyInTargetNotice) { _, shown in
+            if shown { translationNoticeToast = "readme.translate.notice.alreadyInTarget" }
+        }
+        .onChange(of: translationNoticeToast) { _, message in
+            if message == nil { translationVM.dismissAlreadyInTargetNotice() }
+        }
+        .sheet(item: translationPaywallBinding) { context in
+            ProPaywallSheet.hosted(context: context, dependencies: dependencies)
+        }
+        .toast(
+            message: $translationToast, icon: "exclamationmark.triangle.fill",
+            duration: 5, iconColor: .orange, bottomPadding: 30,
+            actionLabel: translationVM.translationErrorKind == .aiConfiguration
+                ? "readme.translate.error.goToAISettings" : nil,
+            onAction: translationVM.translationErrorKind == .aiConfiguration
+                ? { AppDelegate.openSettingsWindow(target: "ai") } : nil
+        )
+        .toast(
+            message: $translationNoticeToast, icon: "checkmark.circle.fill",
+            duration: 5, bottomPadding: 30
+        )
         .toast(
             message: $viewModel.toastMessage,
             icon: viewModel.toastFileURL == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
@@ -434,7 +476,10 @@ struct RepoFileBrowserSheet: View {
         case .text(let content):
             RepoFileTextPreview(
                 text: content, markdown: presentedMarkdown,
-                mode: viewModel.previewMode, onFailure: viewModel.markdownFailed
+                mode: viewModel.previewMode, onFailure: viewModel.markdownFailed,
+                translationRenderState: translationDocument == nil
+                    ? .hidden : translationVM.visibleRenderState(matching: translationControl.identity),
+                onTranslationSourceChange: receiveTranslationSource
             )
         case .image(let data):
             imagePreview(data)
@@ -673,6 +718,59 @@ struct RepoFileBrowserSheet: View {
         withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12)) { isContentVisible = true }
     }
 
+    /// 退场快照不能参与新文件的翻译，迟到的 DOM 回调也必须核对同一份文档。
+    private var translationDocument: RepoFileMarkdownDocument? {
+        guard presentedRevision == viewModel.previewRevision,
+              case .ready(let document) = presentedMarkdown else { return nil }
+        return document
+    }
+
+    private var translationControl: ReadmeTranslationControl {
+        ReadmeTranslationControl(
+            owner: target.owner, name: target.name,
+            translationVM: translationVM, settings: settings,
+            documentPath: viewModel.previewedPath ?? ""
+        )
+    }
+
+    private var translationSyncKey: String {
+        let automaticLocale = settings.readmeTranslationLanguage == .auto ? locale.identifier : ""
+        return "\(viewModel.previewRevision)|\(translationDocument?.id ?? "")"
+            + "|\(settings.effectiveReadmeTranslationLanguage.rawValue)|\(settings.readmeTranslationMode.rawValue)"
+            + "|\(settings.readmeTranslationEngine.rawValue)|\(automaticLocale)"
+    }
+
+    /// 与 Skills 使用同一条路径缓存；分支或正文改变时由源哈希判断译文是否过期。
+    private func prepareTranslation() {
+        translationToast = nil
+        translationNoticeToast = nil
+        translationVM.dismissPaywall()
+        if translationSourceDocumentID != translationDocument?.id {
+            translationSourceDocumentID = nil
+            translationSourceSnapshot = .empty
+        }
+        let control = translationControl
+        translationVM.prepare(
+            identity: control.identity, cacheOwner: control.cacheOwner, cacheRepo: control.cacheRepo,
+            sourceHtml: translationDocument?.html,
+            targetLanguage: settings.effectiveReadmeTranslationLanguage,
+            mode: settings.readmeTranslationMode, engine: settings.readmeTranslationEngine
+        )
+    }
+
+    private func receiveTranslationSource(_ snapshot: ReadmeTranslationSourceSnapshot, documentID: String) {
+        guard translationDocument?.id == documentID else { return }
+        translationSourceDocumentID = documentID
+        translationSourceSnapshot = snapshot
+    }
+
+    private var translationPaywallBinding: Binding<ProPaywallContext?> {
+        Binding(
+            get: { translationVM.paywallContext },
+            set: { if $0 == nil { translationVM.dismissPaywall() } }
+        )
+    }
+
     private func closeWorkspace() {
         viewModel.stop()
         if let onClose { onClose() } else { dismiss() }
@@ -693,6 +791,16 @@ struct RepoFileBrowserSheet: View {
             .accessibilityLabel(Text("repo.files.inspector.download"))
             .disabled(viewModel.isDownloading || viewModel.previewedFile?.blobSHA == nil)
             previewMoreMenu
+            if viewModel.isMarkdownPreview {
+                ReadmeTranslationFooterButton(
+                    control: translationControl,
+                    sourceHtml: translationDocument?.html ?? "",
+                    sourceSnapshot: translationSourceDocumentID == translationDocument?.id
+                        ? translationSourceSnapshot : .empty,
+                    isCompact: true
+                )
+                .disabled(viewModel.previewMode == .source || !isContentVisible)
+            }
             if !readingLayout.isExpanded {
                 Button {
                     readingLayout.showsInspector.toggle()

@@ -182,8 +182,8 @@ struct ReadmeTranslationViewModelTests {
         var second = readme
         second.documentPath = "other/review/SKILL.md"
 
-        #expect(readme.identity == ReadmeTranslationViewModel.readmeIdentity(for: readme.repo))
-        #expect(readme.cacheOwner == readme.repo.owner && readme.cacheRepo == readme.repo.name)
+        #expect(readme.identity == ReadmeTranslationViewModel.readmeIdentity(owner: readme.owner, repo: readme.name))
+        #expect(readme.cacheOwner == readme.owner && readme.cacheRepo == readme.name)
         #expect(first.cacheOwner != readme.cacheOwner)
         #expect(first.identity != second.identity && first.cacheRepo != second.cacheRepo)
         #expect(!first.cacheRepo.contains("/"))
@@ -206,6 +206,38 @@ struct ReadmeTranslationViewModelTests {
             #expect(!vm.renderState.isVisible)
             #expect(vm.displayMode == .showingOriginal)
         }
+        fake.finishHangingWork()
+    }
+
+    @Test("下载窗口无需入库仓库，同路径复用 Skill 缓存且不同文件相互隔离")
+    func fileBrowserTranslationIdentity() async throws {
+        let (vm, fake) = makeHarness()
+        var skill = try await makeControl(viewModel: vm)
+        skill.documentPath = "skills/review/SKILL.md"
+        let file = ReadmeTranslationControl(
+            owner: skill.owner, name: skill.name, translationVM: vm, settings: skill.settings,
+            documentPath: skill.documentPath
+        )
+        var other = file
+        other.documentPath = "docs/guide.md"
+        #expect(file.repositoryID == nil)
+        #expect(file.identity == skill.identity && file.cacheRepo == skill.cacheRepo)
+        #expect(other.identity != file.identity && other.cacheRepo != file.cacheRepo)
+        let firstPage = makePage(control: file, translatedText: "FILE")
+        let secondPage = makePage(control: other, translatedText: "GUIDE")
+        fake.store(firstPage)
+        fake.store(secondPage)
+        vm.prepare(page: firstPage)
+        await settle()
+        vm.toggle(page: firstPage)
+        await settle()
+        #expect(vm.visibleRenderState(matching: file.identity).translations.map(\.translatedText) == ["FILE"])
+        vm.prepare(page: secondPage)
+        #expect(!vm.visibleRenderState(matching: file.identity).isVisible)
+        await settle()
+        vm.toggle(page: secondPage)
+        await settle()
+        #expect(vm.visibleRenderState(matching: other.identity).translations.map(\.translatedText) == ["GUIDE"])
         fake.finishHangingWork()
     }
 

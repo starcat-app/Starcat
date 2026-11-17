@@ -1471,7 +1471,10 @@ struct RepoListView: View {
                     identifier: "files", title: target.fullName,
                     parent: workspaceWindow.window, dependencies: dependencies
                 ) { close in
-                    RepoFileBrowserSheet(target: target, apiClient: dependencies.apiClient, onClose: close)
+                    RepoFileBrowserSheet(
+                        target: target, apiClient: dependencies.apiClient,
+                        translationService: dependencies.readmeTranslationService, onClose: close
+                    )
                 }
             }
         )

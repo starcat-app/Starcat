@@ -14,6 +14,8 @@ struct RepoFileTextPreview: View {
     let markdown: RepoFileBrowserViewModel.MarkdownPhase
     let mode: RepoFileBrowserViewModel.PreviewMode
     let onFailure: (String) -> Void
+    var translationRenderState: ReadmeTranslationRenderState = .hidden
+    var onTranslationSourceChange: ((ReadmeTranslationSourceSnapshot, String) -> Void)?
     @State private var renderedID: String?
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
@@ -36,6 +38,10 @@ struct RepoFileTextPreview: View {
             if let document {
                 ReadmeWebView(
                     htmlFragment: document.html, documentID: document.id, baseURL: document.baseURL,
+                    translationRenderState: translationRenderState,
+                    onTranslationSourceChange: { snapshot in
+                        onTranslationSourceChange?(snapshot, document.id)
+                    },
                     onDocumentReady: { identifier in
                         guard identifier == self.document?.id else { return }
                         withAnimation(.easeOut(duration: reduceMotion ? 0.06 : 0.12)) {
