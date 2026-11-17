@@ -118,6 +118,9 @@ struct ReadmeWebView: View {
     /// 为调用方附加的底部操作预留空间；只移动浮动工具条，不改变 WebView 的尺寸与身份。
     var floatingToolbarBottomInset: CGFloat = 0
 
+    /// 仅缩窄正文，悬浮按钮仍贴外层右边缘；叠加 Markdown 自带留白后避免遮挡文字。
+    var contentTrailingInset: CGFloat = 0
+
     /// 当前 README 所属仓库。有值且设置选择应用内打开时，
     /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
     var markdownLinkRepositoryOwner: String? = nil
@@ -179,6 +182,7 @@ struct ReadmeWebView: View {
             markdownLinkRepositoryName: markdownLinkRepositoryName,
             onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
         )
+        .padding(.trailing, contentTrailingInset)
         .id(authSession.state.user?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {

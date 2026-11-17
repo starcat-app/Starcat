@@ -84,6 +84,7 @@ struct RepoSkillFilePreview: View {
                 if let markdown {
                     ReadmeWebView(
                         htmlFragment: markdown.html, documentID: markdown.id, baseURL: markdown.baseURL,
+                        contentTrailingInset: 28,
                         onDocumentReady: { documentID in
                             if documentID == self.markdown?.id { renderedDocumentID = documentID }
                         },

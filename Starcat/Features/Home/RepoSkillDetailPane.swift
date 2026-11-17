@@ -127,6 +127,8 @@ struct RepoSkillDetailPane: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(18)
+                        // 文件行与目录行也避让右下角常驻安装入口。
+                        .padding(.trailing, 28)
                     }
                     .id("\(contentSkill.id)-\(tab)")
                     .transition(.opacity)
@@ -411,7 +413,7 @@ struct RepoSkillDetailPane: View {
         Button {
             isInspectorPresented.toggle()
         } label: {
-            Label("repo.skills.install.title", systemImage: "arrow.down.to.line")
+            Label("repo.skills.install.title", systemImage: "shippingbox")
                 .labelStyle(.iconOnly)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
@@ -440,6 +442,7 @@ struct RepoSkillDetailPane: View {
                 ReadmeWebView(
                     htmlFragment: document.html, documentID: document.skillID, baseURL: document.baseURL,
                     floatingToolbarBottomInset: 40,
+                    contentTrailingInset: 28,
                     translationRenderState: document.skillID == skill.id
                         ? translationVM.visibleRenderState(matching: translationControl.identity) : .hidden,
                     onTranslationSourceChange: { snapshot in
@@ -453,6 +456,8 @@ struct RepoSkillDetailPane: View {
                 .accessibilityHidden(showsManifestSource)
                 if showsManifestSource {
                     RepoFileSourcePreview(text: contentSkill.manifest)
+                        // 源码没有 Markdown 内边距，单独留出安装按钮及其贴边间距。
+                        .padding(.trailing, 40)
                         .transition(.opacity)
                 }
             }
