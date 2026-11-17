@@ -172,31 +172,37 @@ struct GeneralSettingsView: View {
         @Bindable var settings = settings
 
         return Group {
+            // 详情行为的简短说明统一放在标题下方，完整操作细节仍通过 tooltip 提供。
             preferenceToggle(
                 "settings.general.openFirstDetailOnCategoryChange.title",
                 description: "settings.general.openFirstDetailOnCategoryChange.help",
-                showsDescription: false,
                 isOn: $settings.openFirstDetailOnCategoryChange
             )
             Divider()
 
-            Picker(selection: $settings.repositoryMarkdownOpenMode) {
-                ForEach(RepositoryMarkdownOpenMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
+            centeredPreferenceRow(
+                "settings.general.markdownLinks.title",
+                description: "settings.general.markdownLinks.description"
+            ) {
+                Picker(selection: $settings.repositoryMarkdownOpenMode) {
+                    ForEach(RepositoryMarkdownOpenMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                } label: {
+                    Text("settings.general.markdownLinks.title")
                 }
-            } label: {
-                Text("settings.general.markdownLinks.title")
+                .pickerStyle(.menu)
+                // 可见说明只讲作用；⌘ 点击等操作细节仍留在 tooltip。
+                .help(Text("settings.general.markdownLinks.help"))
             }
-            .pickerStyle(.menu)
-            .help(Text("settings.general.markdownLinks.help"))
             Divider()
 
             preferenceToggle(
                 "settings.activity.issueEvents.title",
-                description: "settings.activity.issueEvents.help",
-                showsDescription: false,
+                description: "settings.activity.issueEvents.description",
                 isOn: $settings.githubIssueEventTimelineEnabled
             )
+            .help(Text("settings.activity.issueEvents.help"))
         }
     }
 
@@ -405,7 +411,10 @@ struct GeneralSettingsView: View {
                 Text(description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    // 各语言的简短说明保持单行，空间不足时通过 tooltip 查看全文。
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(Text(description))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -494,7 +503,10 @@ struct GeneralSettingsView: View {
     /// 左侧说明重置对象，右侧统一图标入口；这些动作仍由既有确认或引导流程完成。
     private var preferenceResetRows: some View {
         Group {
-            LabeledContent {
+            centeredPreferenceRow(
+                "settings.listPreferences.reset.title",
+                description: "settings.listPreferences.reset.description"
+            ) {
                 ResetIconButton(
                     help: Text("settings.listPreferences.reset.title"),
                     showsSuccessFeedback: false,
@@ -504,25 +516,20 @@ struct GeneralSettingsView: View {
                 .help(Text(LocalizedStringKey(dependencies.authSession.state.isAuthenticated
                                              ? "settings.listPreferences.reset.title"
                                              : "settings.listPreferences.reset.disabled")))
-            } label: {
-                Text("settings.listPreferences.reset.title")
-                    .lineLimit(1)
-                    .help(Text("settings.listPreferences.reset.title"))
             }
 
             Divider()
 
-            LabeledContent {
+            centeredPreferenceRow(
+                "settings.general.resetOnboarding.label",
+                description: "settings.general.resetOnboarding.description"
+            ) {
                 ResetIconButton(
                     help: Text("settings.general.resetOnboarding.label"),
                     showsSuccessFeedback: false,
                     action: replayOnboarding
                 )
                 .disabled(!FirstRunOnboardingPreferences.canReplayManually)
-            } label: {
-                Text("settings.general.resetOnboarding.label")
-                    .lineLimit(1)
-                    .help(Text("settings.general.resetOnboarding.label"))
             }
         }
     }
