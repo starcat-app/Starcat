@@ -32,7 +32,6 @@ struct GeneralSettingsView: View {
             // 感兴趣语言是长期候选池，保持在 macOS 集成之后，不与显示语言混排。
             InterestedLanguagesSettingsSection(languages: $settings.interestedLanguages)
             ExploreCatalogSettingsSection()
-            dailyRecommendationSection
 
             if DistributionChannel.current.isDirect {
                 directUpdateSection
@@ -234,12 +233,12 @@ struct GeneralSettingsView: View {
     }
 
     /// 设置与抽卡页观察同一个 Store，离线或未打开抽卡页时也能独立读取并保存偏好
-    private var dailyRecommendationSection: some View {
+    private var dailyRecommendationRows: some View {
         let store = dependencies.dailyRecommendationStore
         let accountID = dailyRecommendationAccountID
         let revision = dependencies.databaseScopeRevision
 
-        return Section {
+        return VStack(alignment: .leading, spacing: 12) {
             Toggle("recommendations.daily.autoShow", isOn: Binding(
                 get: { store.state.showsOnLaunch },
                 set: { enabled in
@@ -278,8 +277,6 @@ struct GeneralSettingsView: View {
                     .disabled(accountID == nil || store.isLoading)
                 }
             }
-        } header: {
-            SettingsSectionHeader("recommendations.daily.navigationTitle.short", systemImage: "sparkles")
         }
         .task(id: "\(accountID ?? 0)|\(revision)") {
             guard let accountID, !TestEnvironment.isRunning else { return }
@@ -292,6 +289,15 @@ struct GeneralSettingsView: View {
         Section {
             DisclosureGroup(isExpanded: $isAdvancedExpanded) {
                 // 展开内容位于自定义折叠容器内，需显式补齐标题及设置项之间的分割线。
+                Divider()
+
+                // 仅迁移入口；与推荐窗口共用原 Store 的账号偏好和保存重试。
+                Text("recommendations.daily.navigationTitle.short")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                dailyRecommendationRows
+
                 Divider()
 
                 Text("settings.general.detailBehavior")
