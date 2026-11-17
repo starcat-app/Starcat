@@ -3,7 +3,7 @@
 //  Starcat
 //
 //  README 图片浏览器的窗口级宿主。只传递资源地址与当前索引，独立 WebView
-//  继续使用 README 的图片浏览脚本与附件缓存，不移动原阅读器、不重新解码 GIF。
+//  继续使用 README 的图片浏览脚本与内容图片缓存，不移动原阅读器、不经 NSImage 转码，保留 GIF 动画。
 //
 
 import AppKit
@@ -31,7 +31,7 @@ struct ReadmeImagePreviewRequest: Codable, Equatable {
     }
 }
 
-/// 挂到来源窗口的 contentView，覆盖三栏，而不是挂到右侧 README 的父视图。
+/// 在来源窗口的 AppKit 容器中覆盖三栏与标题栏，而不是挂到右侧 README 的父视图。
 ///
 /// 原 WKWebView 保留 DOM、滚动位置与焦点。浏览层使用独立 WebView，以相同账户
 /// 注册附件 scheme；关闭、换文档和拆除阅读器都显式移除 handler，避免循环持有。
@@ -74,11 +74,12 @@ final class ReadmeImagePreviewController: NSObject, WKScriptMessageHandler, WKNa
     static func configuration(
         request: ReadmeImagePreviewRequest,
         accountID: Int64?,
-        reduceMotion: Bool
+        reduceMotion: Bool,
+        imageCache: ReadmeAttachmentImageCache = .shared
     ) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(
-            ReadmeAttachmentImageSchemeHandler(accountID: accountID),
+            ReadmeAttachmentImageSchemeHandler(accountID: accountID, cache: imageCache),
             forURLScheme: ReadmeAttachmentImageURL.scheme
         )
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -101,7 +102,7 @@ final class ReadmeImagePreviewController: NSObject, WKScriptMessageHandler, WKNa
         return configuration
     }
 
-    /// 布局只依赖窗口内容容器，窗口缩放时约束自动更新；保留标题栏的系统按钮。
+    /// 布局锚定整个窗口容器，连同顶部工具栏一起覆盖，关闭浮层后恢复原窗口。
     func present(over contentView: NSView, restoringFocusTo sourceView: NSView) {
         self.sourceView = sourceView
         previousFirstResponder = sourceView.window?.firstResponder
@@ -116,18 +117,21 @@ final class ReadmeImagePreviewController: NSObject, WKScriptMessageHandler, WKNa
         backdrop.setAccessibilityModal(true)
         webView.translatesAutoresizingMaskIntoConstraints = false
         backdrop.addSubview(webView)
-        contentView.addSubview(backdrop, positioned: .above, relativeTo: nil)
+        // NSHostingView 会在 SwiftUI 状态更新时重排手工添加的子视图，可能把浮层压成零尺寸。
+        // 将浮层放到内容视图的同级 AppKit 容器并覆盖其完整边界，避免顶部工具栏及底色露出。
+        let container = contentView.superview ?? contentView
+        container.addSubview(backdrop, positioned: .above, relativeTo: nil)
         NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            backdrop.topAnchor.constraint(equalTo: contentView.safeAreaLayoutGuide.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            backdrop.topAnchor.constraint(equalTo: container.topAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             webView.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
             webView.topAnchor.constraint(equalTo: backdrop.topAnchor),
             webView.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor)
         ])
-        contentView.layoutSubtreeIfNeeded()
+        container.layoutSubtreeIfNeeded()
         sourceView.window?.makeFirstResponder(webView)
     }
 

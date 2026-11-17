@@ -1010,6 +1010,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
             var previewOverlay = null;
             var previewState = null;
             var previewLabels = \(imagePreviewLabelsJSON);
+            var badgeRules = \(ReadmeImageBadgeRules.json);
 
             \(ReadmeStarHistoryDOM.script)
 
@@ -1160,6 +1161,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
             function closeImagePreview() {
                 if (!previewState) { return; }
                 var state = previewState;
+                cancelPreviewImageChange(state);
                 previewState = null;
                 previewOverlay = null;
                 document.documentElement.style.overflow = state.htmlOverflow;
@@ -1218,22 +1220,40 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 renderPreviewTransform(state);
             }
 
+            // 切图只保留当前展示和最新候选；取消旧候选，迟到回调不能覆盖最后一次选择。
+            function cancelPreviewImageChange(state) {
+                window.clearTimeout(state.loadingTimer);
+                if (state.pendingImage) {
+                    state.pendingImage.remove();
+                    state.pendingImage.removeAttribute('src');
+                    state.pendingImage = null;
+                }
+                if (state.image) {
+                    state.image.getAnimations().forEach(function(animation) { animation.cancel(); });
+                }
+                if (state.fadingImage) {
+                    state.fadingImage.getAnimations().forEach(function(animation) { animation.cancel(); });
+                    state.fadingImage.remove();
+                    state.fadingImage = null;
+                }
+            }
+
             function showPreviewImage(index) {
                 var state = previewState;
                 if (!state || index < 0 || index >= state.images.length) { return; }
+                if (state.index === index && (state.ready || state.pendingImage)) { return; }
+                cancelPreviewImageChange(state);
                 state.index = index;
                 state.ready = false;
                 state.drag = null;
                 state.stage.classList.remove('readme-image-preview-pannable', 'readme-image-preview-dragging');
-                if (state.image) { state.image.remove(); }
                 state.previous.disabled = index === 0;
                 state.next.disabled = index === state.images.length - 1;
                 state.counter.textContent = (index + 1) + ' / ' + state.images.length;
                 state.zoom.textContent = '—';
                 state.zoomButtons.forEach(function(button) { button.disabled = true; });
-                state.status.hidden = false;
-                state.status.textContent = previewLabels.loading;
-                state.status.classList.add('readme-image-preview-loading');
+                state.status.hidden = true;
+                state.status.classList.remove('readme-image-preview-loading');
                 var source = state.images[index];
                 var image = document.createElement('img');
                 image.className = 'readme-image-preview-image';
@@ -1241,11 +1261,21 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 image.draggable = false;
                 image.decoding = 'async';
                 image.hidden = true;
-                state.image = image;
-                // 保留 currentSrc / 自定义附件 scheme；不经过 NSImage，GIF 与 SVG 仍由 WebKit 原样解码。
+                state.pendingImage = image;
+                // 缓存命中也需在独立文档解码；仅真正等待时显示提示，不人为延迟图片就绪。
+                state.loadingTimer = window.setTimeout(function() {
+                    if (previewState !== state || state.pendingImage !== image) { return; }
+                    state.status.hidden = false;
+                    state.status.textContent = previewLabels.loading;
+                    state.status.classList.add('readme-image-preview-loading');
+                }, 180);
                 function loaded() {
-                    if (previewState !== state || state.image !== image || state.ready) { return; }
+                    if (previewState !== state || state.pendingImage !== image) { return; }
                     if (!image.naturalWidth || !image.naturalHeight) { failed(); return; }
+                    window.clearTimeout(state.loadingTimer);
+                    var previous = state.image;
+                    state.pendingImage = null;
+                    state.image = image;
                     state.width = image.naturalWidth;
                     state.height = image.naturalHeight;
                     state.ready = true;
@@ -1254,9 +1284,34 @@ struct ReadmeWebContentView: NSViewRepresentable {
                     image.hidden = false;
                     state.zoomButtons.forEach(function(button) { button.disabled = false; });
                     fitPreview();
+                    // 只过渡透明度，缩放与拖动持续跟手；减少动态效果时直接交接。
+                    var reduced = document.body.classList.contains('readme-reduce-motion')
+                        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    if (!previous || reduced) {
+                        if (previous) { previous.remove(); }
+                        return;
+                    }
+                    state.fadingImage = previous;
+                    previous.setAttribute('aria-hidden', 'true');
+                    previous.style.pointerEvents = 'none';
+                    previous.classList.remove('readme-image-preview-image');
+                    previous.classList.add('readme-image-preview-outgoing');
+                    image.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+                    var exit = previous.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'ease-out' });
+                    // finished Promise 不依赖下一次绘制派发事件，窗口隐藏后也能完成旧图清理。
+                    // 快速切图的 cancel 会拒绝 Promise；旧图已由 cancelPreviewImageChange 同步移除。
+                    exit.finished.then(function() {
+                        previous.remove();
+                        if (state.fadingImage === previous) { state.fadingImage = null; }
+                    }, function() {});
                 }
                 function failed() {
-                    if (previewState !== state || state.image !== image) { return; }
+                    if (previewState !== state || state.pendingImage !== image) { return; }
+                    window.clearTimeout(state.loadingTimer);
+                    state.pendingImage = null;
+                    image.remove();
+                    if (state.image) { state.image.remove(); state.image = null; }
+                    state.status.hidden = false;
                     state.status.classList.remove('readme-image-preview-loading');
                     state.status.textContent = previewLabels.failed;
                 }
@@ -1269,34 +1324,30 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 }
             }
 
-            // 只按来源与明确的徽章端点识别，不按尺寸 / alt 猜测，避免漏掉正常小图。
-            // canonical 地址保留了 GitHub Camo / 附件改写前的来源，代理图也应使用同一规则。
-            function isBadgeImage(image) {
-                var badgeHosts = [
-                    'shields.io', 'badgen.net', 'badge.fury.io', 'badge.buildkite.com',
-                    'img.badgesize.io', 'badge.waffle.io', 'visitor-badge.laobi.icu',
-                    'visitor-badge.glitch.me', 'hits.seeyoufarm.com', 'profile-counter.glitch.me'
-                ];
-                return [image.currentSrc, image.src, image.getAttribute('data-canonical-src')].some(function(source) {
-                    if (!source) { return false; }
-                    var url;
-                    try { url = new URL(source, document.baseURI); } catch (_) { return false; }
-                    var host = url.hostname.toLowerCase();
-                    var path = url.pathname.toLowerCase();
-                    function matchesHost(domain) {
-                        return host === domain || host.endsWith('.' + domain);
+            function matchesBadgeRules(source, rules) {
+                if (!source) { return false; }
+                var url;
+                try {
+                    url = new URL(source, document.baseURI);
+                    if (url.protocol === 'starcat-readme-image:' && url.hostname === 'remote') {
+                        url = new URL(url.searchParams.get('url'));
                     }
-                    if (badgeHosts.some(matchesHost)) { return true; }
-                    if (/(^|\\/)badges?(\\/|\\.(svg|png|gif|webp)$|$)/.test(path)
-                        || /(^|\\/)status\\.(svg|png|gif|webp)$/.test(path)
-                        || path.indexOf('/api/project_badges/') === 0) { return true; }
-                    // Travis 的旧端点没有 badge 路径；其他服务则只认各自的状态端点，
-                    // 避免把同站点上的普通截图、图表也排除。
-                    return (['travis-ci.org', 'travis-ci.com'].some(matchesHost) && /\\.(svg|png)$/.test(path))
-                        || (matchesHost('ci.appveyor.com') && path.indexOf('/api/projects/status/') === 0)
-                        || (matchesHost('komarev.com') && /^\\/ghpvc\\/?$/.test(path))
-                        || (['godoc.org', 'pkg.go.dev'].some(matchesHost) && url.searchParams.has('status.svg'));
+                } catch (_) { return false; }
+                var host = url.hostname.toLowerCase();
+                return rules.some(function(rule) {
+                    return (!rule.hosts.length || rule.hosts.some(function(domain) {
+                        return host === domain || host.endsWith('.' + domain);
+                    })) && new RegExp(rule.path, 'i').test(url.pathname)
+                        && new RegExp(rule.query, 'i').test(url.search.slice(1));
                 });
+            }
+
+            // 来源 / canonical / 明确推广外链共用 Swift 规则，不按尺寸或 alt 猜测普通小图。
+            function isBadgeImage(image) {
+                var linked = image.closest('a[href]');
+                return [image.currentSrc, image.src, image.getAttribute('data-canonical-src')].some(function(source) {
+                    return matchesBadgeRules(source, badgeRules.sources);
+                }) || (linked && matchesBadgeRules(linked.href, badgeRules.links));
             }
 
             function requestImagePreview(image) {
@@ -1383,7 +1434,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
                     overlay: overlay, article: article, images: images, index: index,
                     stage: stage, status: status, previous: previous, next: next, counter: counter,
                     zoom: zoom, zoomOut: zoomOut, zoomIn: zoomIn, zoomButtons: [zoomOut, zoomIn, fit, actual],
-                    image: null, ready: false, scale: 1, offsetX: 0, offsetY: 0, drag: null,
+                    image: null, pendingImage: null, fadingImage: null, loadingTimer: null,
+                    ready: false, scale: 1, offsetX: 0, offsetY: 0, drag: null,
                     focus: document.activeElement, articleInert: article.inert,
                     htmlOverflow: document.documentElement.style.overflow, bodyOverflow: document.body.style.overflow,
                     scrollX: window.scrollX, scrollY: window.scrollY
@@ -3049,7 +3101,8 @@ enum ReadmeCSS {
         touch-action: none;
         user-select: none;
     }
-    .readme-image-preview .readme-image-preview-image {
+    .readme-image-preview .readme-image-preview-image,
+    .readme-image-preview .readme-image-preview-outgoing {
         position: absolute;
         left: 50%;
         top: 50%;
@@ -3060,6 +3113,8 @@ enum ReadmeCSS {
         background: transparent;
         border-radius: 4px;
         box-shadow: 0 18px 60px var(--image-preview-shadow);
+        /* 缩放与拖动必须即时跟手，不能继承正文图片的 transform 渐显过渡。 */
+        transition: none;
     }
     .readme-image-preview-pannable { cursor: grab; }
     .readme-image-preview-dragging { cursor: grabbing; }
@@ -3128,6 +3183,7 @@ enum ReadmeCSS {
     }
     .readme-image-preview-status {
         position: absolute;
+        z-index: 1;
         inset: 0;
         display: flex;
         align-items: center;
@@ -3135,6 +3191,7 @@ enum ReadmeCSS {
         color: var(--muted);
         padding: 16px;
         text-align: center;
+        pointer-events: none;
     }
     .readme-image-preview-status[hidden],
     .readme-image-preview-image[hidden] { display: none; }

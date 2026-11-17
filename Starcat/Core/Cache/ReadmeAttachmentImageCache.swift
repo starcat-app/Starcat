@@ -2,7 +2,7 @@
 //  ReadmeAttachmentImageCache.swift
 //  Starcat
 //
-//  GitHub 附件图片的原始数据缓存。稳定 UUID 是资源身份，临时 JWT 不进入缓存键。
+//  README 图片的原始数据缓存。GitHub 附件使用稳定 UUID，其它内容图使用完整 URL。
 //  使用现有 Kingfisher 磁盘底座管理期限与容量，不经 NSImage 编解码，保留 GIF 动画。
 //
 
@@ -10,27 +10,122 @@ import Foundation
 import ImageIO
 import Kingfisher
 
-/// 受控的附件地址映射；自定义 scheme 只能访问固定 GitHub 附件入口。
+/// 正文路由和浏览器共用一份徽标规则，避免新增来源后只有其中一条路径生效。
+enum ReadmeImageBadgeRules {
+    struct Rule: Encodable {
+        let hosts: [String]
+        let path: String
+        let query: String
+
+        init(hosts: [String], path: String = "", query: String = "") {
+            self.hosts = hosts
+            self.path = path
+            self.query = query
+        }
+    }
+
+    /// 专用徽标域名可以直接识别；综合服务只匹配其徽标端点，保留截图、头像和统计图。
+    static let sources: [Rule] = [
+        Rule(hosts: [
+            "shields.io", "badgen.net", "badge.fury.io", "badge.buildkite.com",
+            "img.badgesize.io", "badge.waffle.io", "visitor-badge.laobi.icu",
+            "visitor-badge.glitch.me", "hits.seeyoufarm.com", "profile-counter.glitch.me",
+            "custom-icon-badges.demolab.com", "badges.gitter.im", "badges.frapsoft.com",
+            "poser.pugx.org", "pypip.in", "hits.dwyl.com"
+        ], path: ""),
+        Rule(hosts: [], path: #"(^|/)badges?(/|\.(svg|png|gif|webp)$|$)|(^|/)status\.(svg|png|gif|webp)$|^/api/project_badges/"#),
+        Rule(hosts: ["skills.sh"], path: #"^/b/"#),
+        Rule(hosts: ["producthunt.com"], path: #"^/widgets/(embed-image|follow-button)(/|$)|^/api/embed/"#),
+        Rule(hosts: ["api.hellogithub.com"], path: #"^/v1/widgets/"#),
+        Rule(hosts: ["colab.research.google.com"], path: #"^/assets/colab-badge\.svg$"#),
+        Rule(hosts: ["gitpod.io"], path: #"^/button/open-in-gitpod\.svg$"#),
+        Rule(hosts: ["mybinder.org"], path: #"^/badge_logo\.svg$"#),
+        Rule(hosts: ["fossa.com"], path: #"^/api/projects/.*\.svg$"#),
+        Rule(hosts: ["travis-ci.org", "travis-ci.com"], path: #"\.(svg|png)$"#),
+        Rule(hosts: ["circleci.com"], path: #"^/(gh|bb)/.*\.svg$"#),
+        Rule(hosts: ["api.cirrus-ci.com"], path: #"^/github/.*\.svg$"#),
+        Rule(hosts: ["ci.appveyor.com"], path: #"^/api/projects/status/"#),
+        Rule(hosts: ["api.netlify.com"], path: #"^/api/v1/badges/"#),
+        Rule(hosts: ["coveralls.io"], path: #"^/repos/.*\.svg$"#),
+        Rule(hosts: ["goreportcard.com"], path: #"^/badge(/|$)"#),
+        Rule(hosts: ["static.pepy.tech"], path: #"^/(badge|personalized-badge)(/|$)"#),
+        Rule(hosts: ["pepy.tech"], path: #"^/badge(/|$)"#),
+        Rule(hosts: ["repostatus.org"], path: #"^/badges/"#),
+        Rule(hosts: ["david-dm.org"], path: #"\.svg$"#),
+        Rule(hosts: ["bettercodehub.com"], path: #"^/edge/badge/"#),
+        Rule(hosts: ["codefactor.io"], path: #"/badge(/|$)"#),
+        Rule(hosts: ["packagephobia.com"], path: #"^/badge(/|$)"#),
+        Rule(hosts: ["hitscounter.dev"], path: #"^/api/hit/?$"#),
+        Rule(hosts: ["komarev.com"], path: #"^/ghpvc/?$"#),
+        Rule(hosts: ["nodei.co"], path: #"^/npm/"#),
+        Rule(hosts: ["godoc.org", "pkg.go.dev"], query: #"(^|&)status\.svg(?:[=&]|$)"#),
+        Rule(hosts: ["opencollective.com"], path: #"^/[^/]+/(backers|sponsors)\.svg$"#)
+    ]
+
+    /// GitHub Camo 会隐藏源站；明确的推广外链可识别自托管徽标，不把整个站点当黑名单。
+    static let links: [Rule] = [
+        Rule(hosts: ["skills.sh"], path: #"^/[^/]+/[^/]+/?$"#),
+        Rule(hosts: ["hellogithub.com"], path: #"^/(?:en/)?repository/"#),
+        Rule(hosts: ["producthunt.com"], query: #"(^|&)utm_(source|medium)=badge[^&]*(?:&|$)"#)
+    ]
+
+    static var json: String {
+        let data = try? JSONEncoder().encode(["sources": sources, "links": links])
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
+
+    /// 动态徽标保持 WebKit 自身的 HTTP 缓存语义，不进入内容图片的长期磁盘缓存。
+    static func isBadge(_ source: String) -> Bool {
+        guard let url = URL(string: source), let host = url.host?.lowercased() else { return false }
+        return sources.contains { rule in
+            (rule.hosts.isEmpty || rule.hosts.contains { host == $0 || host.hasSuffix(".\($0)") })
+                && (rule.path.isEmpty || url.path.lowercased().range(of: rule.path, options: .regularExpression) != nil)
+                && (rule.query.isEmpty || (url.query ?? "").lowercased().range(of: rule.query, options: .regularExpression) != nil)
+        }
+    }
+}
+
+/// 仅对 img / picture 调用的展示映射；正文与独立浏览器使用同一个原始字节缓存。
 enum ReadmeAttachmentImageURL {
     static let scheme = "starcat-readme-image"
 
-    /// 普通图片、徽章、视频和超出附件路径约定的 URL 保持原样。
+    /// 在 HTML 解析前完成路由，防止先下载 HTTPS 图片，再因 JS 换源重复下载。
     static func cachedSource(_ source: String) -> String {
         let normalized = ReadmeAssetURLRewriter.stableGitHubAttachmentURL(from: source) ?? source
-        guard let url = URL(string: normalized), url.scheme?.lowercased() == "https",
-              url.host?.lowercased() == "github.com", url.user == nil, url.port == nil,
-              let uuid = UUID(uuidString: url.lastPathComponent),
-              url.path == "/user-attachments/assets/\(url.lastPathComponent)" else { return source }
-        return "\(scheme)://attachment/\(uuid.uuidString.lowercased())"
+        guard let url = URL(string: normalized), isRemoteImageURL(url),
+              !ReadmeImageBadgeRules.isBadge(normalized) else { return source }
+        if url.scheme?.lowercased() == "https", url.host?.lowercased() == "github.com", url.port == nil,
+           let uuid = UUID(uuidString: url.lastPathComponent),
+           url.path == "/user-attachments/assets/\(url.lastPathComponent)" {
+            return "\(scheme)://attachment/\(uuid.uuidString.lowercased())"
+        }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = "remote"
+        components.path = "/"
+        components.queryItems = [URLQueryItem(name: "url", value: url.absoluteString)]
+        return components.url?.absoluteString ?? source
     }
 
-    /// 从内部 URL 还原稳定 HTTPS 地址，不接受任意域名或路径，避免变成通用代理。
+    /// 不接受文件或其它内部协议，也不转发 URL 凭据、OAuth 和浏览器 Cookie。
     static func remoteURL(for url: URL) -> URL? {
-        guard url.scheme == scheme, url.host == "attachment", url.user == nil, url.port == nil,
-              url.query == nil, url.fragment == nil,
+        guard url.scheme == scheme, url.user == nil,
+              url.port == nil, url.fragment == nil else { return nil }
+        if url.host == "remote", url.path == "/",
+           let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+           items.count == 1, items[0].name == "url", let value = items[0].value,
+           let remote = URL(string: value), isRemoteImageURL(remote) {
+            return remote
+        }
+        guard url.host == "attachment", url.query == nil,
               let uuid = UUID(uuidString: url.lastPathComponent),
               url.path == "/\(url.lastPathComponent)" else { return nil }
         return URL(string: "https://github.com/user-attachments/assets/\(uuid.uuidString.lowercased())")
+    }
+
+    private static func isRemoteImageURL(_ url: URL) -> Bool {
+        ["https", "http"].contains(url.scheme?.lowercased() ?? "")
+            && !(url.host ?? "").isEmpty && url.user == nil
     }
 }
 
@@ -73,10 +168,11 @@ actor ReadmeAttachmentImageCache {
         self.loader = loader ?? Self.download
     }
 
-    /// 缓存键同时包含账户和 UUID；匿名状态独立，不跨账户复用已下载的附件。
+    /// 附件沿用已发布的 UUID 键；普通图片包含完整 URL，避免不同主机、路径或 query 串图。
     func image(for source: URL, accountID: Int64?) async throws -> ReadmeAttachmentImage {
         guard let remote = ReadmeAttachmentImageURL.remoteURL(for: source) else { throw URLError(.unsupportedURL) }
-        let key = "\(accountID.map(String.init) ?? "_anonymous")/\(remote.lastPathComponent)"
+        let identity = source.host == "attachment" ? remote.lastPathComponent : remote.absoluteString
+        let key = "\(accountID.map(String.init) ?? "_anonymous")/\(identity)"
         if let data = try? storage().value(forKey: key, extendingExpiration: .none),
            let image = try? PropertyListDecoder().decode(ReadmeAttachmentImage.self, from: data) {
             return image

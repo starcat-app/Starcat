@@ -358,7 +358,7 @@ enum ReadmeAssetURLRewriter {
         }
     }
 
-    /// 仅展示时路由附件图片；数据库始终保留可在外部打开的 HTTPS 地址。
+    /// 仅展示时路由内容图片；数据库始终保留可在外部打开的 HTTPS 地址。
     ///
     /// 在 WebKit 解析 HTML 前替换，避免 document-end 再换 src 导致同图发两次网络请求。
     /// picture 作为完整块处理，所以视频 / 音频的 source 不会误入图片加载器。
@@ -374,19 +374,48 @@ enum ReadmeAssetURLRewriter {
         for block in blocks.matches(in: html, range: NSRange(location: 0, length: nsHTML.length)).reversed() {
             for match in tags.matches(in: html, range: block.range).reversed() {
                 var tag = nsHTML.substring(with: match.range)
+                // Camo 的实际 src 看不出徽标来源，canonical 命中时也保留原 HTTP 加载语义。
+                if let canonical = attributeValue(named: "data-canonical-src", inTag: tag),
+                   ReadmeImageBadgeRules.isBadge(canonical) { continue }
                 if tag.lowercased().hasPrefix("<img"), let src = attributeValue(named: "src", inTag: tag) {
-                    tag = replaceAttributeValue(named: "src", inTag: tag, with: ReadmeAttachmentImageURL.cachedSource(src))
+                    tag = replaceAttributeValue(named: "src", inTag: tag, with: cachedImageAttributeSource(src))
                 }
                 if let srcset = attributeValue(named: "srcset", inTag: tag) {
                     tag = replaceAttributeValue(
                         named: "srcset", inTag: tag,
-                        with: rewriteSourceSet(srcset, transform: ReadmeAttachmentImageURL.cachedSource)
+                        with: rewriteSourceSet(srcset, transform: cachedImageAttributeSource)
                     )
                 }
                 if let range = Range(match.range, in: result) { result.replaceSubrange(range, with: tag) }
             }
         }
         return result
+    }
+
+    /// 原属性中的实体须先解码再嵌入 URL query，否则 &amp; 会被当成远端参数名的一部分。
+    /// 只做单次实体解码，双重转义的字面量与未改写地址保持原样，不重新格式化整段 HTML。
+    private static func cachedImageAttributeSource(_ source: String) -> String {
+        guard let entities = try? NSRegularExpression(pattern: #"&(?:amp|quot|apos|lt|gt|#[0-9]+|#x[0-9a-fA-F]+);"#) else {
+            return source
+        }
+        let original = source as NSString
+        var decoded = source
+        let named = ["&amp;": "&", "&quot;": "\"", "&apos;": "'", "&lt;": "<", "&gt;": ">"]
+        for match in entities.matches(in: source, range: NSRange(location: 0, length: original.length)).reversed() {
+            let entity = original.substring(with: match.range)
+            let digits = entity.dropFirst(entity.hasPrefix("&#x") ? 3 : 2).dropLast()
+            let number = UInt32(digits, radix: entity.hasPrefix("&#x") ? 16 : 10)
+            let replacement = named[entity] ?? number.flatMap(UnicodeScalar.init).map(String.init)
+            if let replacement, let range = Range(match.range, in: decoded) {
+                decoded.replaceSubrange(range, with: replacement)
+            }
+        }
+        let cached = ReadmeAttachmentImageURL.cachedSource(decoded)
+        guard cached != decoded else { return source }
+        return cached.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 
     /// IO 规范化与展示路由共用候选解析，避免两套逗号 / 描述符规则逐渐漂移。
