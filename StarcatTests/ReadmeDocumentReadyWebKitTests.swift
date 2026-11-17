@@ -67,6 +67,49 @@ struct ReadmeDocumentReadyWebKitTests {
         #expect(fixture.readyDocuments == ["A", "B"])
         #expect(fixture.failedDocuments.isEmpty)
     }
+
+    @Test("图片浏览请求只接受当前文档的完整列表与有效索引")
+    func imagePreviewRequestFollowsCurrentDocument() async throws {
+        let fixture = DocumentFixture()
+        defer { fixture.close() }
+        fixture.load("A")
+        try await fixture.wait { fixture.readyDocuments == ["A"] && fixture.media.pending["/A.gif"] != nil }
+        let oldToken = try #require(
+            try await fixture.webView.evaluateJavaScript("document.body.dataset.readmeDocumentToken") as? String
+        )
+        let images = [["src": "starcat-ready-test://fixture/A.gif", "alt": "Diagram"]]
+        let oldPayload: [String: Any] = ["token": oldToken, "images": images, "index": 0]
+        let request = try #require(fixture.coordinator.imagePreviewRequest(from: oldPayload))
+        #expect(request.index == 0)
+        #expect(request.images.first?.src == images[0]["src"])
+        #expect(request.images.first?.alt == "Diagram")
+        #expect(fixture.coordinator.imagePreviewRequest(from: [
+            "token": oldToken, "images": images, "index": 1
+        ]) == nil)
+        #expect(fixture.coordinator.imagePreviewRequest(from: [
+            "token": oldToken, "images": [["alt": "Missing source"]], "index": 0
+        ]) == nil)
+
+        // 旧 DOM 的点击可能晚于下一次加载准备到达，不能在新文档上打开旧图片。
+        fixture.prepare("B")
+        #expect(fixture.coordinator.imagePreviewRequest(from: oldPayload) == nil)
+        fixture.loadPrepared("B")
+        try await fixture.wait { fixture.readyDocuments == ["A", "B"] }
+        let currentToken = try #require(
+            try await fixture.webView.evaluateJavaScript("document.body.dataset.readmeDocumentToken") as? String
+        )
+        #expect(currentToken != oldToken)
+        #expect(fixture.coordinator.imagePreviewRequest(from: oldPayload) == nil)
+        #expect(fixture.coordinator.imagePreviewRequest(from: [
+            "token": currentToken, "images": [["src": "starcat-ready-test://fixture/B.gif"]], "index": 0
+        ]) != nil)
+
+        fixture.coordinator.updateTranslationRenderState(.hidden, reduceMotion: true)
+        let reduced = try await fixture.webView.evaluateJavaScript(
+            "document.body.classList.contains('readme-reduce-motion')"
+        ) as? Bool
+        #expect(reduced == true)
+    }
 }
 
 /// 直接挂接生产 Coordinator；仅观察 didFinish，不替换生产的 ready / failure 行为。
