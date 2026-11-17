@@ -990,10 +990,23 @@ private struct GitHubNotificationTimelineRow: View {
                 Color.clear
                     .frame(width: GitHubNotificationTimelineMetrics.railWidth)
 
-                GitHubNotificationActorAvatar(
-                    login: display.actorLogin,
-                    size: 24
-                )
+                Group {
+                    if usesRepositoryAvatar {
+                        RemoteAvatar(
+                            urlString: GitHubNotificationMapper.repositoryAvatarURL(
+                                fromFullName: display.fullName
+                            ),
+                            size: 24,
+                            fallbackSymbol: "shippingbox.fill",
+                            showBorder: false
+                        )
+                    } else {
+                        GitHubNotificationActorAvatar(
+                            login: display.actorLogin,
+                            size: 24
+                        )
+                    }
+                }
                 .padding(.top, 1)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1008,14 +1021,16 @@ private struct GitHubNotificationTimelineRow: View {
                     }
 
                     HStack(spacing: 6) {
-                        RemoteAvatar(
-                            urlString: GitHubNotificationMapper.repositoryAvatarURL(
-                                fromFullName: display.fullName
-                            ),
-                            size: 14,
-                            fallbackSymbol: "shippingbox.fill",
-                            showBorder: false
-                        )
+                        if !usesRepositoryAvatar {
+                            RemoteAvatar(
+                                urlString: GitHubNotificationMapper.repositoryAvatarURL(
+                                    fromFullName: display.fullName
+                                ),
+                                size: 14,
+                                fallbackSymbol: "shippingbox.fill",
+                                showBorder: false
+                            )
+                        }
                         Text(verbatim: caption)
                             .font(.callout)
                             .foregroundStyle(.secondary)
@@ -1074,6 +1089,16 @@ private struct GitHubNotificationTimelineRow: View {
                 .frame(width: isSelected ? 3 : 0)
                 .padding(.vertical, 8)
                 .padding(.leading, GitHubNotificationTimelineMetrics.selectedInset)
+        }
+    }
+
+    /// 自己的仓库操作以目标项目为视觉主体；同一条件也用于隐藏次行头像，避免重复。
+    private var usesRepositoryAvatar: Bool {
+        switch display.chip {
+        case .star, .unstar, .fork:
+            return true
+        default:
+            return false
         }
     }
 
