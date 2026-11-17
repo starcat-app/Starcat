@@ -261,6 +261,13 @@ private struct SkillRow: View {
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     }
+                    if let issue = skill.installationIssue {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(interfaceScale.font(.captionSmall, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                            .help(issue)
+                            .accessibilityLabel(Text(verbatim: issue))
+                    }
                 }
                 // 只移动名称，已安装状态固定在行尾，悬停不改变右对齐边界。
                 .frame(maxWidth: .infinity, alignment: .leading)

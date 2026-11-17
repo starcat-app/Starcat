@@ -162,7 +162,7 @@ struct RepoSkillTests {
         #expect(scan.manifestTotal == 3 && scan.manifestChecked == 3)
     }
 
-    @Test("manifest 小并发读取；单个无效候选不吞掉同批有效 Skill")
+    @Test("manifest 小并发读取；无效候选保留预览与告警，不影响同批有效 Skill")
     func concurrentManifestsKeepPartialEvidence() async throws {
         let paths = (1...6).map { "skills/skill-\($0)/SKILL.md" }
         let broken = "skills/skill-3/SKILL.md"
@@ -177,10 +177,47 @@ struct RepoSkillTests {
         let scan = try await RepoSkillScanner(
             api: api, downloader: downloader, cache: RepoFileTreeSessionCache(), cacheScope: "concurrent"
         ).scan(try await repo())
-        #expect(scan.presence == .contains && scan.skills.count == 5)
+        #expect(scan.presence == .contains && scan.skills.count == 6)
+        #expect(!scan.complete && scan.manifestChecked == 6 && scan.manifestTotal == 6)
         #expect(scan.diagnostics.count == 1 && scan.diagnostics[0].contains(broken))
+        let invalidSkill = try #require(scan.skills.first { $0.manifestPath == broken })
+        #expect(invalidSkill.name == "skill-3")
+        #expect(invalidSkill.manifest == "# No frontmatter")
+        #expect(invalidSkill.files.map(\.path) == ["SKILL.md"])
+        #expect(invalidSkill.installationIssue == RepoSkillError.invalidManifest.localizedDescription)
+        #expect(scan.skills.filter { $0.manifestPath != broken }.allSatisfy { $0.installationIssue == nil })
         let stats = downloader.statistics
         #expect(stats.previewCount == 6 && stats.maxActive >= 2 && stats.maxActive <= 4)
+    }
+
+    @Test("根目录与嵌套目录的无效描述仍计入 Skill，原文和附件完整保留",
+          arguments: ["SKILL.md", "skills/in-progress/software-factory/SKILL.md"])
+    func invalidDescriptionsRemainVisible(path: String) async throws {
+        let api = MockGitHubAPIClient()
+        let directory = String(path.dropLast("SKILL.md".count))
+        let attachmentPath = directory + "guide.md"
+        let markdown = "---\nname: software-factory\ndescription: [unsupported, syntax]\n---\n# Original"
+        api.repositoryLatestCommitHandler = { _, _, _, _ in
+            GitHubCommitSummaryDTO(sha: "fixed", commit: GitHubCommitSummaryPayloadDTO(committer: nil, author: nil))
+        }
+        api.repositoryGitTreeHandler = { _, _, _ in
+            GitHubGitTreeDTO(sha: "tree", truncated: false, tree: [
+                skillEntry(path, sha: "manifest"), skillEntry(attachmentPath, sha: "guide")
+            ])
+        }
+        let source = try await repo()
+        let scan = try await RepoSkillScanner(
+            api: api,
+            downloader: ManifestTestDownloader(paths: [path], invalidPath: path, invalidManifest: markdown),
+            cache: RepoFileTreeSessionCache(), cacheScope: UUID().uuidString
+        ).scan(source)
+        let skill = try #require(scan.skills.first)
+        #expect(scan.skills.count == 1 && scan.presence == .contains && !scan.complete)
+        #expect(skill.name == (directory.isEmpty ? source.name : "software-factory"))
+        #expect(skill.manifest == markdown && skill.summary.isEmpty)
+        #expect(Set(skill.files.map(\.path)) == ["SKILL.md", "guide.md"])
+        #expect(skill.installationIssue == RepoSkillError.invalidManifest.localizedDescription)
+        #expect(scan.diagnostics.count == 1 && scan.diagnostics[0].contains(path))
     }
 
     @Test("完整目录安装、执行位、安装记录与本地修改冲突")
@@ -669,10 +706,10 @@ struct RepoSkillTests {
                 (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload,
                  skill_count, is_complete)
                 VALUES (?, ?, ?, ?, ?, ?, 'contains', ?, 1, 1),
-                       (999, 'other', NULL, NULL, 3, 4000000000, 'contains', X'00', 20, 0)
+                       (999, 'other', NULL, NULL, ?, 4000000000, 'contains', X'00', 20, 0)
                 """, arguments: [
                     source.id, scan.commitSHA, source.pushedAt, source.defaultBranch, scan.version,
-                    scan.summary.expiresAt.timeIntervalSince1970, payload
+                    scan.summary.expiresAt.timeIntervalSince1970, payload, RepoSkillScan.rulesVersion
                 ])
         }
         let statements = Mutex<[String]>([])
@@ -1098,6 +1135,7 @@ private struct ManifestDownloadStatistics: Sendable {
 private struct ManifestTestDownloader: RepoFileDownloading {
     let paths: [String]
     var invalidPath: String?
+    var invalidManifest = "# No frontmatter"
     var delay: Duration = .zero
     private let recorder = ManifestDownloadRecorder()
 
@@ -1107,7 +1145,7 @@ private struct ManifestTestDownloader: RepoFileDownloading {
 
     private func manifest(path: String) -> String {
         let name = path.split(separator: "/").dropLast().last.map(String.init) ?? "skill"
-        if path == invalidPath { return "# No frontmatter" }
+        if path == invalidPath { return invalidManifest }
         return "---\nname: \(name)\ndescription: Skill \(name)\n---\n# \(name)"
     }
 

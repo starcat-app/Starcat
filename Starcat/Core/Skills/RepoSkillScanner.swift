@@ -137,9 +137,9 @@ struct RepoSkillScanner: Sendable {
                         continue
                     }
                     let directory = String(entry.path.dropLast("SKILL.md".count))
-                    guard let metadata = try? SkillFrontmatter.parse(markdown, directory: directory) else {
+                    let metadata = try? SkillFrontmatter.parse(markdown, directory: directory)
+                    if metadata == nil {
                         diagnostics.append(entry.path + ": " + RepoSkillError.invalidManifest.localizedDescription)
-                        continue
                     }
                     let contents = Self.contents(in: entries, directory: directory)
                     let unsupported = contents.contains {
@@ -152,9 +152,12 @@ struct RepoSkillScanner: Sendable {
                         .map { RepoSkillFile(path: String($0.path.dropFirst(directory.count)), sha: $0.sha, size: $0.size, mode: $0.mode) }
                     skills.append(RepoSkill(
                         repositoryID: repo.id, commitSHA: commit.sha, directory: directory,
-                        name: metadata.name, summary: metadata.description,
+                        // 元数据无效仍保留原文与附件供查看；目录名兜底只用于展示，不能放开安装。
+                        name: metadata?.name ?? directory.split(separator: "/").last.map(String.init) ?? repo.name,
+                        summary: metadata?.description ?? "",
                         manifest: markdown, files: files,
-                        installationIssue: !complete ? String.l10n("repo.skills.error.incomplete")
+                        installationIssue: metadata == nil ? RepoSkillError.invalidManifest.localizedDescription
+                            : !complete ? String.l10n("repo.skills.error.incomplete")
                             : externalReferences ? String.l10n("repo.skills.error.externalReferences")
                             : (unsupported || nested ? String.l10n("repo.skills.error.unsupported") : nil)
                     ))

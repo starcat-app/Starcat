@@ -64,10 +64,21 @@ struct RepoSkillScanNotice: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Divider()
+            HStack {
+                if !scan.diagnostics.isEmpty {
+                    Text("repo.skills.scan.issues")
+                        .font(interfaceScale.font(.caption, weight: .semibold))
+                }
+                Spacer()
+                Button("repo.skills.scan.detectAgain") {
+                    isPresented = false
+                    Task { await session.load(force: true) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(session.isLoading || session.isInstalling)
+            }
             if !scan.diagnostics.isEmpty {
-                Divider()
-                Text("repo.skills.scan.issues")
-                    .font(interfaceScale.font(.caption, weight: .semibold))
                 // 短列表用自然高度；超出上限才滚动，两种布局都为系统滚动条留出尾部空间。
                 ViewThatFits(in: .vertical) {
                     diagnosticRows(scan.diagnostics)
@@ -78,16 +89,6 @@ struct RepoSkillScanNotice: View {
                     .scrollBounceBehavior(.basedOnSize)
                 }
                 .frame(maxHeight: 280)
-            }
-            Divider()
-            HStack {
-                Spacer()
-                Button("repo.skills.scan.refresh") {
-                    isPresented = false
-                    Task { await session.load(force: true) }
-                }
-                .buttonStyle(.bordered)
-                .disabled(session.isLoading || session.isInstalling)
             }
         }
         .font(interfaceScale.font(.caption))
