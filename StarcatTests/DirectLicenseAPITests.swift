@@ -232,6 +232,37 @@ struct DirectLicenseAPITests {
         #expect(snapshot.activationLimit == nil)
     }
 
+    @Test("带亚秒的 validatedAt 也能成功解码", arguments: [
+        "2026-11-17T08:00:00.123456789Z",
+        "2026-11-17T08:00:00.123Z",
+        "2026-11-17T08:00:00Z"
+    ])
+    func activateAcceptsFractionalValidatedAt(validatedAt: String) async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.requestHandler = { request in
+            Self.jsonResponse(for: request, body: """
+            {
+              "status": "active",
+              "provider": "creem",
+              "validatedAt": "\(validatedAt)"
+            }
+            """)
+        }
+
+        let api = DirectLicenseAPI(
+            baseURL: URL(string: "https://license.test.invalid")!,
+            apiKey: nil,
+            urlSession: URLProtocolStub.ephemeralSession()
+        )
+        let snapshot = try await api.activate(DirectLicenseActivationRequest(
+            licenseKey: "STARCAT-TEST-KEY",
+            deviceID: "Mac · Starcat ABCD",
+            appVersion: "1.0.0"
+        ))
+
+        #expect(snapshot.validatedAt != .distantPast)
+    }
+
     @Test("限流业务码和无 JSON 的 429 均使用固定诊断码且只请求一次", arguments: [
         (429, #"{"code":"RATE_LIMITED","message":"SENSITIVE-LICENSE-KEY"}"#),
         (429, "<html>Too many requests</html>"),

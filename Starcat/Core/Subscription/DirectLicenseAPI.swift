@@ -374,8 +374,31 @@ private struct DirectLicenseErrorResponse: Decodable {
 private extension JSONDecoder {
     static var starcatLicense: JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom(Self.decodeLicenseDate)
         return decoder
+    }
+
+    /// License API 返回的 `validatedAt`/`expiresAt` 既可能是整数秒，也可能带亚秒。
+    ///
+    /// 后端 `time.Time` 默认 JSON 编码使用 RFC3339Nano，会带纳秒；而 macOS 15 的 Foundation
+    /// `.iso8601` 策略对亚秒的接受度不一致，导致 Creem 已成功激活但客户端解码失败。
+    /// 这里自定义解析：先按带亚秒、再按纯整数秒回退，避免依赖客户端系统版本。
+    private static func decodeLicenseDate(from decoder: Decoder) throws -> Date {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) { return date }
+
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        if let date = plain.date(from: raw) { return date }
+
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Invalid license date: \(raw)"
+        )
     }
 }
 
