@@ -281,22 +281,18 @@ struct WeeklyContentView: View {
         Button {
             isFilterPopoverPresented.toggle()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: viewModel.hasActiveFilters
-                    ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(viewModel.hasActiveFilters ? Color.blue : Color.secondary)
-                Text("weekly.filter.title")
-                Image(systemName: "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            ToolbarIcon(viewModel.hasActiveFilters
+                ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(viewModel.hasActiveFilters ? Color.blue : Color.primary)
+                .frame(width: ToolbarIconMetrics.frameSize, height: ToolbarIconMetrics.frameSize)
         }
         .buttonStyle(.bordered)
         // 与相邻排序菜单使用同一标准尺寸，避免 small 控件的高度和上下留白更小。
         .controlSize(.regular)
         .fixedSize()
         .help("weekly.filter.title")
+        .accessibilityLabel("weekly.filter.title")
         .accessibilityValue(Text(verbatim: viewModel.filterSummaryTitle))
         .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .bottom) {
             weeklyFilterPopover(viewModel)
