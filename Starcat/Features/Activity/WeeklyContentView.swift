@@ -478,7 +478,7 @@ struct WeeklyContentView: View {
         )
     }
 
-    /// 时间档位同样保留单行；图标形状与颜色同时区分，完整含义由 tooltip 和读屏保留。
+    /// 时间档位用短文案保持单行，完整推送时间说明继续供 tooltip 和读屏使用。
     private func weeklyPushedRecencyTabs(_ viewModel: WeeklyContentViewModel) -> some View {
         RepoFilterTabs(
             label: "weekly.filter.activity",
@@ -491,7 +491,14 @@ struct WeeklyContentView: View {
                 }
             ),
             title: { LocalizedStringKey($0.localizedTitle) },
-            shortTitle: { $0 == .all ? "general.all" : LocalizedStringKey($0.localizedTitle) },
+            shortTitle: { pushedFilter in
+                switch pushedFilter {
+                case .all: "general.all"
+                case .days30: "weekly.filter.activity.short.days30"
+                case .days90: "weekly.filter.activity.short.days90"
+                case .days365: "weekly.filter.activity.short.year"
+                }
+            },
             symbol: { pushedFilter in
                 switch pushedFilter {
                 case .all: "infinity"
