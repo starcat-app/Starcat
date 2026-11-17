@@ -55,6 +55,29 @@ struct RepoSkill: Identifiable, Codable, Equatable, Sendable {
     var symbol: String { "shippingbox" }
 }
 
+/// 徽标和列表只保留证据摘要；正文与安装文件清单由阅读窗口按仓库读取。
+struct RepoSkillSummary: Equatable, Sendable {
+    let repositoryID: Int64
+    let commitSHA: String
+    let sourcePushedAt: String?
+    let sourceBranch: String?
+    let expiresAt: Date
+    let skillCount: Int
+    let complete: Bool
+    let version: Int
+
+    func isFresh(for repo: Repo, now: Date = .now) -> Bool {
+        version == RepoSkillScan.rulesVersion && expiresAt > now
+            && (repo.pushedAt == nil || sourcePushedAt == repo.pushedAt)
+            && (repo.defaultBranch == nil || sourceBranch == repo.defaultBranch)
+    }
+
+    var presence: RepoSkillPresence {
+        if skillCount > 0 { return .contains }
+        return complete ? .absent : .unknown
+    }
+}
+
 /// 整仓扫描快照可重建，不参与 CloudKit 用户数据同步。
 struct RepoSkillScan: Codable, Equatable, Sendable {
     /// v3：预览保留原始 frontmatter；v2 缓存已剥离元数据，须整体重扫。
@@ -72,11 +95,18 @@ struct RepoSkillScan: Codable, Equatable, Sendable {
     let manifestChecked: Int?
     let version: Int
 
+    var summary: RepoSkillSummary {
+        RepoSkillSummary(
+            repositoryID: repositoryID, commitSHA: commitSHA,
+            sourcePushedAt: sourcePushedAt, sourceBranch: sourceBranch,
+            expiresAt: checkedAt.addingTimeInterval(86_400), skillCount: skills.count,
+            complete: complete, version: version
+        )
+    }
+
     func isFresh(for repo: Repo, now: Date = .now) -> Bool {
-        version == Self.rulesVersion && checkedAt.addingTimeInterval(86_400) > now
-            // 探索卡片可能没有分支或 pushedAt；缺少字段不是“仓库已更新”的证据。
-            && (repo.pushedAt == nil || sourcePushedAt == repo.pushedAt)
-            && (repo.defaultBranch == nil || sourceBranch == repo.defaultBranch)
+        // 探索卡片可能没有分支或 pushedAt；缺少字段不是“仓库已更新”的证据。
+        summary.isFresh(for: repo, now: now)
     }
 
     var presence: RepoSkillPresence {

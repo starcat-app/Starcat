@@ -272,7 +272,7 @@ final class StarcatMCPPublicFacade {
             return .object(result)
         case "get_repo_skills":
             let repo = try await resolve(arguments, app: app)
-            guard let scan = app.repoSkillStore.scans[repo.id] else { return cached(nil) }
+            guard let scan = try await app.repoSkillStore.cachedScan(for: repo) else { return cached(nil) }
             return cached(.object([
                 "repo_id": .int(Int(repo.id)), "commit_sha": .string(scan.commitSHA),
                 "complete": .bool(scan.complete), "fresh": .bool(scan.isFresh(for: repo)),
@@ -290,7 +290,7 @@ final class StarcatMCPPublicFacade {
             ]))
         case "export_repo_skill_file", "export_repo_skill":
             let repo = try await resolve(arguments, app: app)
-            guard let skill = app.repoSkillStore.scans[repo.id]?.skills.first(where: {
+            guard let skill = try await app.repoSkillStore.cachedScan(for: repo)?.skills.first(where: {
                 $0.id == arguments["skill_id"]?.stringValue
             }) else {
                 throw StarcatMCPError.notFound("Loaded Skill not found; use get_repo_skills first.")

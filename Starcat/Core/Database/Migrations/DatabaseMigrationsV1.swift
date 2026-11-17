@@ -124,6 +124,23 @@ enum DatabaseMigrations {
         registerV24(into: &migrator)
         registerV25(into: &migrator)
         registerV26(into: &migrator)
+        registerV27(into: &migrator)
+    }
+
+    /// 旧 payload 原样保留；升级时一次性提取摘要，日常恢复不再读取全量正文。
+    private static func registerV27(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v27-repository-skill-summaries") { db in
+            try db.alter(table: "repo_skill_scans") { table in
+                table.add(column: "skill_count", .integer).notNull().defaults(to: 0)
+                table.add(column: "is_complete", .boolean).notNull().defaults(to: false)
+            }
+            try db.execute(sql: """
+                UPDATE repo_skill_scans
+                SET skill_count = COALESCE(json_array_length(CAST(payload AS TEXT), '$.skills'), 0),
+                    is_complete = COALESCE(json_extract(CAST(payload AS TEXT), '$.complete'), 0)
+                WHERE json_valid(CAST(payload AS TEXT))
+                """)
+        }
     }
 
     /// 未发布的推荐历史草稿：完整快照独立于可清理的 repos，不保留开发期 ID-only 导入表。

@@ -49,18 +49,18 @@ struct RepoSkillBadge: View {
             }
         }
         .background(WorkspaceSceneWindowReader(reference: workspaceWindow, minimumContentSize: nil))
-        .task(id: "\(dependencies.databaseScopeRevision):\(repo.id):\(repo.pushedAt ?? "")") {
-            _ = try? await store.detect(repo)
+        .task(id: "\(dependencies.databaseScopeRevision):\(repo.id):\(repo.pushedAt ?? ""):\(repo.defaultBranch ?? "")") {
+            _ = try? await store.detectSummary(repo)
         }
     }
 
     @ViewBuilder
     private var label: some View {
         let store = dependencies.repoSkillStore
-        if store.presence(for: repo) == .contains, let scan = store.scans[repo.id] {
+        if store.presence(for: repo) == .contains, let scan = store.summaries[repo.id] {
             HStack(spacing: 0) {
                 Text(verbatim: "Skills · ")
-                RepoMetadataCountLabel(count: scan.skills.count, complete: scan.complete)
+                RepoMetadataCountLabel(count: scan.skillCount, complete: scan.complete)
                     .id("\(dependencies.databaseScopeRevision):\(repo.id)")
             }
         } else {

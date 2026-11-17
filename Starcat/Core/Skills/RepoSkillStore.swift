@@ -13,12 +13,14 @@ import Observation
 @MainActor
 @Observable
 final class RepoSkillStore {
-    @ObservationIgnored private var scanSnapshots: [Int64: RepoSkillScan] = [:]
+    @ObservationIgnored private var summarySnapshots: [Int64: RepoSkillSummary] = [:]
+    /// 只在扫描过程中保留渐进正文，供新加入的窗口接续；终态由窗口持有，不常驻全局缓存。
+    @ObservationIgnored private var partialScans: [Int64: RepoSkillScan] = [:]
     /// 主列表读取扫描证据时只订阅语义修订；详情进度经独立消费者回调发布。
-    /// 否则即便 revision 不变，观察 scans 字典仍会使所有仓库行随每批 manifest 失效。
-    var scans: [Int64: RepoSkillScan] {
+    /// 否则即便 revision 不变，观察摘要字典仍会使所有仓库行随每批 manifest 失效。
+    var summaries: [Int64: RepoSkillSummary] {
         _ = revision
-        return scanSnapshots
+        return summarySnapshots
     }
     private(set) var errors: [Int64: String] = [:]
     private(set) var scanningIDs: Set<Int64> = []
@@ -43,7 +45,7 @@ final class RepoSkillStore {
     @ObservationIgnored private var candidateScope = ""
     @ObservationIgnored private var worker: Task<Void, Never>?
     @ObservationIgnored private var inflight: [Int64: Task<RepoSkillScan, Error>] = [:]
-    @ObservationIgnored private var loadTask: Task<[RepoSkillScan], Error>?
+    @ObservationIgnored private var loadTask: Task<[RepoSkillSummary], Error>?
     @ObservationIgnored private var installations: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var knownRepos: [Int64: Repo] = [:]
     @ObservationIgnored private var updateHandlers: [Int64: [UUID: @MainActor @Sendable (RepoSkillScan) -> Void]] = [:]
@@ -73,14 +75,26 @@ final class RepoSkillStore {
         guard loadedAccount != account else { return }
         let expected = epoch
         let writer = database.writer
-        let task: Task<[RepoSkillScan], Error>
+        let task: Task<[RepoSkillSummary], Error>
         if let loadTask {
             task = loadTask
         } else {
             task = Task {
                 try await writer.read { db in
-                    try Data.fetchAll(db, sql: "SELECT payload FROM repo_skill_scans")
-                        .compactMap { try? JSONDecoder().decode(RepoSkillScan.self, from: $0) }
+                    // 不选 payload：历史扫描可包含数 MB 正文，徽标无需为其它仓库解码。
+                    try Row.fetchAll(db, sql: """
+                        SELECT repo_id, commit_sha, pushed_at, branch, rules_version,
+                               expires_at, skill_count, is_complete
+                        FROM repo_skill_scans
+                        """).map { row in
+                        RepoSkillSummary(
+                            repositoryID: row["repo_id"], commitSHA: row["commit_sha"],
+                            sourcePushedAt: row["pushed_at"], sourceBranch: row["branch"],
+                            expiresAt: Date(timeIntervalSince1970: row["expires_at"]),
+                            skillCount: row["skill_count"], complete: row["is_complete"],
+                            version: row["rules_version"]
+                        )
+                    }
                 }
             }
             loadTask = task
@@ -89,9 +103,9 @@ final class RepoSkillStore {
             let values = try await task.value
             guard epoch == expected, loadedAccount != account else { return }
             // 恢复期间详情可能已完成新扫描，旧数据库快照不能覆盖更新后的证据。
-            for value in values where scans[value.repositoryID] == nil
+            for value in values where summaries[value.repositoryID] == nil
                 && errors[value.repositoryID] == nil && !scanningIDs.contains(value.repositoryID) {
-                scanSnapshots[value.repositoryID] = value
+                summarySnapshots[value.repositoryID] = value
             }
             loadedAccount = account
             loadTask = nil
@@ -104,17 +118,51 @@ final class RepoSkillStore {
     }
 
     func presence(for repo: Repo) -> RepoSkillPresence {
-        guard let scan = scans[repo.id], scan.isFresh(for: withKnownMetadata(repo)),
+        guard let scan = summaries[repo.id], scan.isFresh(for: withKnownMetadata(repo)),
               errors[repo.id] == nil else { return .unknown }
         return scan.presence
     }
 
     func presence(repositoryID: Int64) -> RepoSkillPresence {
         if let repo = knownRepos[repositoryID] { return presence(for: repo) }
-        guard let scan = scans[repositoryID], scan.checkedAt.addingTimeInterval(86_400) > .now,
+        guard let scan = summaries[repositoryID], scan.expiresAt > .now,
               scan.version == RepoSkillScan.rulesVersion,
               errors[repositoryID] == nil else { return .unknown }
         return scan.presence
+    }
+
+    /// 徽标和后台筛选只需要摘要；缓存命中时既不读取正文，也不访问 GitHub。
+    @discardableResult
+    func detectSummary(_ repo: Repo) async throws -> RepoSkillSummary {
+        let expected = epoch
+        await prepare()
+        try Task.checkCancellation()
+        guard !isChangingAccount, epoch == expected else { throw CancellationError() }
+        remember(repo)
+        if inflight[repo.id] == nil, let value = summaries[repo.id],
+           value.isFresh(for: withKnownMetadata(repo)), errors[repo.id] == nil {
+            return value
+        }
+        return try await detect(repo).summary
+    }
+
+    /// 只读当前仓库的持久缓存，不触发扫描。CLI/MCP 与阅读窗口共用账号隔离边界。
+    func cachedScan(for repo: Repo) async throws -> RepoSkillScan? {
+        try Task.checkCancellation()
+        guard !isChangingAccount else { throw CancellationError() }
+        if let partial = partialScans[repo.id] { return partial }
+        let expected = epoch
+        let writer = database.writer
+        let value = try await writer.read { db -> RepoSkillScan? in
+            guard let data = try Data.fetchOne(
+                db, sql: "SELECT payload FROM repo_skill_scans WHERE repo_id = ?", arguments: [repo.id]
+            ) else { return nil }
+            // 读库队列完成解码，主线程只接收当前仓库的已解析快照。
+            return try? JSONDecoder().decode(RepoSkillScan.self, from: data)
+        }
+        try Task.checkCancellation()
+        guard epoch == expected, !isChangingAccount else { throw CancellationError() }
+        return value
     }
 
     /// 单次最多补查 200 个候选；详情主动重试可以越过本轮 attempted，后台不循环轰炸失败项。
@@ -183,13 +231,19 @@ final class RepoSkillStore {
         if let task = inflight[repo.id], !task.isCancelled {
             return try await consume(task, repositoryID: repo.id, onUpdate: onUpdate)
         }
-        if !force, !scanningIDs.contains(repo.id), let value = scans[repo.id],
-           value.isFresh(for: source), errors[repo.id] == nil { return value }
+        if !force, let summary = summaries[repo.id], summary.isFresh(for: source), errors[repo.id] == nil {
+            let value = try await cachedScan(for: source)
+            guard requestedEpoch == epoch, !isChangingAccount else { throw CancellationError() }
+            if let task = inflight[repo.id], !task.isCancelled {
+                return try await consume(task, repositoryID: repo.id, onUpdate: onUpdate)
+            }
+            if let value, value.isFresh(for: source) { return value }
+        }
         let expected = epoch
         let writer = database.writer
         let token = UUID()
         // 关窗后立即重开时，上一轮取消可能尚未收尾；它的 partial 不能成为新扫描的缓存回退。
-        let previousScan = scanningIDs.contains(repo.id) ? nil : scans[repo.id]
+        let previousSummary = scanningIDs.contains(repo.id) ? nil : summaries[repo.id]
         let api = repo.isPrivate ? privateAPI : publicAPI
         let scanner = RepoSkillScanner(
             api: api, downloader: repo.isPrivate ? privateDownloader : publicDownloader,
@@ -206,6 +260,7 @@ final class RepoSkillStore {
                     self.updateHandlers[repo.id] = nil
                     self.consumers[repo.id] = nil
                     self.scanTokens[repo.id] = nil
+                    self.partialScans[repo.id] = nil
                 }
             }
             do {
@@ -223,15 +278,17 @@ final class RepoSkillStore {
                 try await writer.write { db in
                     try db.execute(sql: """
                         INSERT OR REPLACE INTO repo_skill_scans
-                        (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload,
+                         skill_count, is_complete)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, arguments: [
                             repo.id, value.commitSHA, value.sourcePushedAt, value.sourceBranch, value.version,
-                            value.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, value.presence.rawValue, data
+                            value.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, value.presence.rawValue, data,
+                            value.skills.count, value.complete
                         ])
                 }
                 guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
-                self.scanSnapshots[repo.id] = value
+                self.summarySnapshots[repo.id] = value.summary
                 self.updateCoverage()
                 // 最终落库只发一次全局修订，供 SQL Skill 筛选重新取稳定分页。
                 self.revision &+= 1
@@ -240,7 +297,7 @@ final class RepoSkillStore {
                 guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
                 if Task.isCancelled || error is CancellationError {
                     let previousPresence = self.presence(for: source)
-                    self.scanSnapshots[repo.id] = previousScan
+                    self.summarySnapshots[repo.id] = previousSummary
                     if previousPresence != self.presence(for: source) { self.revision &+= 1 }
                 } else {
                     self.errors[repo.id] = error.localizedDescription
@@ -248,7 +305,7 @@ final class RepoSkillStore {
                         try db.execute(sql: "DELETE FROM repo_skill_scans WHERE repo_id = ?", arguments: [repo.id])
                     }
                     guard self.epoch == expected, self.scanTokens[repo.id] == token else { throw CancellationError() }
-                    self.scanSnapshots[repo.id] = nil
+                    self.summarySnapshots[repo.id] = nil
                     self.revision &+= 1
                 }
                 throw error
@@ -268,7 +325,7 @@ final class RepoSkillStore {
         consumers[repositoryID, default: []].insert(consumer)
         if let onUpdate {
             updateHandlers[repositoryID, default: [:]][consumer] = onUpdate
-            if let partial = scans[repositoryID], !partial.complete { onUpdate(partial) }
+            if let partial = partialScans[repositoryID] { onUpdate(partial) }
         }
         return try await withTaskCancellationHandler {
             defer { releaseConsumer(consumer, repositoryID: repositoryID) }
@@ -319,7 +376,8 @@ final class RepoSkillStore {
         attempted = []
         admitted = []
         candidateScope = ""
-        scanSnapshots = [:]
+        summarySnapshots = [:]
+        partialScans = [:]
         knownRepos = [:]
         errors = [:]
         scanningIDs = []
@@ -344,10 +402,11 @@ final class RepoSkillStore {
     private func publishPartial(_ value: RepoSkillScan, repositoryID: Int64, epoch expected: UInt64, token: UUID) {
         guard epoch == expected, scanTokens[repositoryID] == token, !isChangingAccount,
               inflight[repositoryID]?.isCancelled == false, repositoryID == value.repositoryID else { return }
-        if let current = scans[repositoryID], current.commitSHA == value.commitSHA,
+        if let current = partialScans[repositoryID], current.commitSHA == value.commitSHA,
            (current.manifestChecked ?? 0) > (value.manifestChecked ?? 0) { return }
         let previous = presence(repositoryID: repositoryID)
-        scanSnapshots[repositoryID] = value
+        partialScans[repositoryID] = value
+        summarySnapshots[repositoryID] = value.summary
         // manifest 数量和正文属于详情进度；主列表只关心 unknown/contains/absent 的变化。
         if previous != presence(repositoryID: repositoryID) {
             updateCoverage()
@@ -394,7 +453,7 @@ final class RepoSkillStore {
                 let scope = self.candidateScope
                 self.attempted.insert(self.attemptKey(repo))
                 do {
-                    try await self.detect(repo)
+                    try await self.detectSummary(repo)
                 } catch {
                     // 遇限流/权限失败先停队列，用户可以恢复；不把数百个后续请求一起打出去。
                     if self.epoch == expected, self.candidateScope == scope, !Task.isCancelled {

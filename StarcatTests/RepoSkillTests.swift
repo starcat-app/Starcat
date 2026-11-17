@@ -622,6 +622,89 @@ struct RepoSkillTests {
         #expect(try await repository.fetchListCount(scope: .allStars, filters: filters) == 0)
     }
 
+    @Test("v27 一次性回填数量与完整性，保留旧正文并容忍损坏的可重建缓存")
+    func summaryMigrationPreservesPayload() async throws {
+        let queue = try DatabaseQueue()
+        var migrations = DatabaseMigrator()
+        DatabaseMigrations.registerAll(into: &migrations)
+        try migrations.migrate(queue, upTo: "v26-recommendation-history")
+        let payload = try JSONEncoder().encode(RepoSkillScan(
+            repositoryID: 1, commitSHA: "fixed", sourcePushedAt: nil, sourceBranch: nil,
+            checkedAt: .now, complete: true, skills: [installSkill()], diagnostics: [],
+            manifestTotal: 1, manifestChecked: 1, version: RepoSkillScan.rulesVersion
+        ))
+        try await queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO repo_skill_scans
+                (repo_id, commit_sha, rules_version, expires_at, presence, payload)
+                VALUES (1, 'fixed', 3, 4000000000, 'contains', ?),
+                       (2, 'invalid', 3, 4000000000, 'unknown', X'00')
+                """, arguments: [payload])
+        }
+        try migrations.migrate(queue)
+        try await queue.read { db in
+            let row = try #require(try Row.fetchOne(db, sql: "SELECT * FROM repo_skill_scans WHERE repo_id = 1"))
+            #expect(row["skill_count"] as Int == 1)
+            #expect(row["is_complete"] as Bool)
+            #expect(row["payload"] as Data == payload)
+            #expect(try Int.fetchOne(db, sql: "SELECT skill_count FROM repo_skill_scans WHERE repo_id = 2") == 0)
+        }
+    }
+
+    @MainActor
+    @Test("徽标恢复只读摘要；正文按仓库读取，缓存命中不发网络请求")
+    func summaryRestoreAvoidsPayloadReads() async throws {
+        let db = try InMemoryDatabaseManager()
+        let source = try await repo()
+        let scan = RepoSkillScan(
+            repositoryID: source.id, commitSHA: "cached",
+            sourcePushedAt: source.pushedAt, sourceBranch: source.defaultBranch, checkedAt: .now,
+            complete: true, skills: [installSkill()], diagnostics: [], manifestTotal: 1, manifestChecked: 1,
+            version: RepoSkillScan.rulesVersion
+        )
+        let payload = try JSONEncoder().encode(scan)
+        try await db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO repo_skill_scans
+                (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload,
+                 skill_count, is_complete)
+                VALUES (?, ?, ?, ?, ?, ?, 'contains', ?, 1, 1),
+                       (999, 'other', NULL, NULL, 3, 4000000000, 'contains', X'00', 20, 0)
+                """, arguments: [
+                    source.id, scan.commitSHA, source.pushedAt, source.defaultBranch, scan.version,
+                    scan.summary.expiresAt.timeIntervalSince1970, payload
+                ])
+        }
+        let statements = Mutex<[String]>([])
+        try await db.writer.write { db in
+            db.trace { event in statements.withLock { $0.append(event.description) } }
+        }
+        let calls = Mutex(0)
+        let api = MockGitHubAPIClient()
+        api.repositoryLatestCommitHandler = { _, _, _, _ in
+            calls.withLock { $0 += 1 }
+            return nil
+        }
+        let store = RepoSkillStore(database: db, publicAPI: api, privateAPI: api,
+                                  publicDownloader: SkillTestDownloader(), privateDownloader: SkillTestDownloader())
+        await store.prepare()
+        #expect(store.summaries.count == 2)
+        #expect(try await store.detectSummary(source).skillCount == 1)
+        #expect(store.presence(repositoryID: 999) == .contains)
+        #expect(!statements.withLock { $0.contains { $0.contains("SELECT payload") } })
+        let loaded = try #require(try await store.cachedScan(for: source))
+        #expect(loaded.skills == scan.skills)
+        #expect(try await store.detect(source).skills == scan.skills)
+        #expect(calls.withLock { $0 } == 0)
+        #expect(statements.withLock { values in
+            let payloadReads = values.filter { $0.contains("SELECT payload") }
+            return payloadReads.count == 2 && payloadReads.allSatisfy { $0.contains("WHERE repo_id =") }
+        })
+        var changed = source
+        changed.defaultBranch = "new-default"
+        #expect(store.presence(for: changed) == .unknown)
+    }
+
     @Test("远端空命中补页预算跨任务累计，切范围重置")
     func pageBudget() {
         var budget = RepoSkillPageBudget()
@@ -710,7 +793,7 @@ struct RepoSkillTests {
         restored.trackInstallation(task, id: UUID())
         await restored.resetForAccountChange()
         #expect(cleaned.withLock { $0 })
-        #expect(restored.scans.isEmpty && restored.isChangingAccount)
+        #expect(restored.summaries.isEmpty && restored.isChangingAccount)
         try await db.reopen(userId: 42)
         restored.finishAccountChange()
         await restored.prepare()
@@ -803,7 +886,7 @@ struct RepoSkillTests {
         #expect(firstPartial.withLock { $0 })
         let listInvalidated = Mutex(false)
         withObservationTracking {
-            _ = store.scans
+            _ = store.summaries
         } onChange: {
             listInvalidated.withLock { $0 = true }
         }
@@ -856,7 +939,7 @@ struct RepoSkillTests {
         scanning.cancel()
         await #expect(throws: CancellationError.self) { try await scanning.value }
         #expect(!store.scanningIDs.contains(source.id))
-        #expect(store.scans[source.id] == nil)
+        #expect(store.summaries[source.id] == nil)
         #expect(store.errors[source.id] == nil)
         #expect(downloader.statistics.previewCount < 100)
     }
@@ -882,11 +965,13 @@ struct RepoSkillTests {
             try $0.execute(
                 sql: """
                     INSERT INTO repo_skill_scans
-                    (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (repo_id, commit_sha, pushed_at, branch, rules_version, expires_at, presence, payload,
+                     skill_count, is_complete)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [source.id, scan.commitSHA, source.pushedAt, source.defaultBranch, scan.version,
-                            scan.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, "contains", payload]
+                            scan.checkedAt.addingTimeInterval(86_400).timeIntervalSince1970, "contains", payload,
+                            scan.skills.count, scan.complete]
             )
         }
         let api = MockGitHubAPIClient()

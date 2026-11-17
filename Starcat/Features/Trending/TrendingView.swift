@@ -278,7 +278,7 @@ struct TrendingView: View {
             searchQuery: quickSearchQuery,
             licenseFilter: settings.licenseFilter,
             skillFilter: settings.skillFilter,
-            skillPresence: settings.skillFilter == .any ? [:] : dependencies.repoSkillStore.scans.mapValues {
+            skillPresence: settings.skillFilter == .any ? [:] : dependencies.repoSkillStore.summaries.mapValues {
                 dependencies.repoSkillStore.presence(repositoryID: $0.repositoryID)
             }
         )
