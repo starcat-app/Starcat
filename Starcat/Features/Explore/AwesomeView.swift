@@ -14,7 +14,6 @@ import SwiftUI
 struct AwesomeView: View {
     @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
-    @State private var listModel = AwesomeListModel()
     @State private var isLoadingVisiblePage = false
     let store: AwesomeStore
     let onRepoCountChange: (Int) -> Void
@@ -30,6 +29,8 @@ struct AwesomeView: View {
     @State private var sort: AwesomeSortOption = .original
     @State private var libraryStateMap: [Int64: LibraryState] = [:]
     @State private var wikiAvailabilityMap: [Int64: Bool] = [:]
+
+    private var listModel: AwesomeListModel { store.listModel }
 
     var body: some View {
         @Bindable var store = store
