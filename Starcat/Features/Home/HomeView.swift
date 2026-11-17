@@ -159,6 +159,8 @@ struct HomeView: View {
     @State private var showsDailyRadarPreview = false
     /// 抽卡以独立透明子窗口覆盖整窗，关闭后保留批次与翻牌进度。
     @State private var showsDailyRecommendations = false
+    /// 准备反馈由中栏承载，与知识库操作复用同一个 Toast 组件。
+    @State private var dailyRecommendationPreparationMessage: String?
     /// 历史查询与选择由窗口持有，打开卡片或切换分类不重建。
     @State private var recommendationHistoryModel = RecommendationHistoryListModel()
     /// 每日热点目录与分类状态由主窗口持有，左栏二级分类和右侧覆盖层共享同一数据源。
@@ -338,10 +340,7 @@ struct HomeView: View {
         navigationWithLifecycle
             .modifier(DailyRecommendationHost(
                 isPresented: $showsDailyRecommendations,
-                onOpen: { repo in
-                    showsDailyRecommendations = false
-                    openCompanionRepository(repo, pinInList: false)
-                }
+                preparationMessage: $dailyRecommendationPreparationMessage
             ))
             .background {
                 WorkspaceSceneWindowReader(reference: batchAIParentWindow, minimumContentSize: nil)
@@ -407,9 +406,27 @@ struct HomeView: View {
         $showsDailyRadarPreview
     }
 
+    /// 用户关闭 Toast 同时取消准备；宿主直接清空消息时不会误关已准备好的推荐窗口。
+    private var dailyRecommendationPreparationToast: Binding<String?> {
+        Binding(
+            get: { dailyRecommendationPreparationMessage },
+            set: { message in
+                dailyRecommendationPreparationMessage = message
+                if message == nil { showsDailyRecommendations = false }
+            }
+        )
+    }
+
     @ViewBuilder
     private var previewAwareContentColumn: some View {
         contentColumn
+            .toast(
+                message: dailyRecommendationPreparationToast,
+                icon: "hourglass",
+                autoDismiss: false,
+                actionLabel: "common.cancel",
+                onAction: { showsDailyRecommendations = false }
+            )
             .anchorPreference(key: DailyRadarPreviewColumnAnchors.self, value: .bounds) {
                 [.content: $0]
             }

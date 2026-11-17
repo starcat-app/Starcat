@@ -46,6 +46,8 @@ final class AppDependencies {
     let dailyRecommendationStore: DailyRecommendationStore
     /// 可重建 AI 理由缓存与长期历史分离，卡片和历史详情共享同一份生成结果。
     let dailyRecommendationExplanationStore = DailyRecommendationExplanationStore()
+    /// 整批 owner 头像先准备为内嵌数据，网页打开时无需重新联网。
+    let dailyRecommendationAvatarStore = DailyRecommendationAvatarStore()
     /// 原生宿主共用可取消的准备任务，关闭用户换批不依赖 SwiftUI 的任务继承。
     let dailyRecommendationPreparation = DailyRecommendationPreparation()
     /// AI Chat / Embedding 原始用量事件与面板聚合查询的本地仓储。
@@ -2086,6 +2088,7 @@ final class AppDependencies {
         databaseScopeRevision &+= 1
         dailyRecommendationStore.activate(accountID: database.currentUserId, scopeRevision: databaseScopeRevision)
         dailyRecommendationExplanationStore.activate(accountID: database.currentUserId, revision: databaseScopeRevision)
+        dailyRecommendationAvatarStore.activate(accountID: database.currentUserId, revision: databaseScopeRevision)
         githubIssueSummaryStore.reset(scopeRevision: databaseScopeRevision)
         repositoryInsightsContextScopeState.update(
             userID: database.currentUserId,

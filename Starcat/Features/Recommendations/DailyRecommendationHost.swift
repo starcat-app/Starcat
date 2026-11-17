@@ -10,10 +10,10 @@ import SwiftUI
 import AppKit
 import Combine
 
-/// 宿主只编排依赖和呈现；关闭或从详情返回时，批次由 AppDependencies 继续持有。
+/// 宿主只编排依赖和呈现；关闭或前往浏览器时，批次由 AppDependencies 继续持有。
 struct DailyRecommendationHost: ViewModifier {
     @Binding var isPresented: Bool
-    let onOpen: (Repo) -> Void
+    @Binding var preparationMessage: String?
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
@@ -27,7 +27,7 @@ struct DailyRecommendationHost: ViewModifier {
     @State private var isParentWindowReady = false
     @State private var isOverlayWindowReady = false
     @State private var isCardContentReady = false
-    /// 外部 Binding 是“请求打开”，只有批次理由已保存或明确兜底才真正创建推荐窗口。
+    /// 外部 Binding 是“请求打开”，理由和整批头像均已就绪或明确兜底后才创建窗口。
     @State private var isReadyToPresent = false
 
     private var accountID: Int64? {
@@ -55,7 +55,6 @@ struct DailyRecommendationHost: ViewModifier {
                 DailyRecommendationCardsView(
                     store: dependencies.dailyRecommendationStore,
                     onClose: { isPresented = false },
-                    onOpen: onOpen,
                     onRetry: retry,
                     onNextBatch: { await prepare(replacingCurrentBatch: true, origin: .user) },
                     onPresented: {
@@ -71,10 +70,9 @@ struct DailyRecommendationHost: ViewModifier {
             }
             .frame(width: 0, height: 0)
         }
-        .overlay(alignment: .bottom) {
-            if isPresented && !isReadyToPresent {
-                preparationStatus
-            }
+        .onChange(of: isPresented && !isReadyToPresent, initial: true) { _, preparing in
+            // 宿主只发布状态，Toast 挂在真正的中栏，不能覆盖右侧详情区域。
+            preparationMessage = preparing ? "recommendations.daily.loading" : nil
         }
         .task(id: "\(identity)|\(preparationRevision)") {
             guard !TestEnvironment.isRunning else { return }
@@ -134,6 +132,7 @@ struct DailyRecommendationHost: ViewModifier {
             isReadyToPresent = true
         }
         .onDisappear {
+            preparationMessage = nil
             syncCompletionTask?.cancel()
             dependencies.dailyRecommendationPreparation.cancel()
         }
@@ -149,27 +148,6 @@ struct DailyRecommendationHost: ViewModifier {
                 await dependencies.dailyRecommendationStore.excludeStarred(ids)
             }
         }
-    }
-
-    /// 理由准备结束前不创建覆盖窗口；局部反馈和取消入口不锁住主窗口的其余操作。
-    private var preparationStatus: some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.small)
-                .accessibilityHidden(true)
-            Text("recommendations.daily.loading")
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 12)
-            Button("common.cancel") { isPresented = false }
-                .controlSize(.small)
-        }
-        .font(.system(size: 13 * interfaceScale.multiplier))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: 480)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .padding(16)
     }
 
     /// 每次请求先固定账号和服务作用域；账号切换会让 Store 的 generation 失效。
@@ -228,12 +206,21 @@ struct DailyRecommendationHost: ViewModifier {
             let scope = await dependencies.recommendAPI.recommendationCacheScope()
             guard accountID == self.accountID, revision == dependencies.databaseScopeRevision,
                   !Task.isCancelled else { return false }
+            defer {
+                dependencies.dailyRecommendationAvatarStore.retain(
+                    items: dependencies.dailyRecommendationStore.visibleItems, accountID: accountID, revision: revision
+                )
+            }
             let prepared = await dependencies.dailyRecommendationStore.load(
                 accountID: accountID, scopeRevision: revision, serviceScope: scope,
                 replacingCurrentBatch: replacingCurrentBatch,
                 fetchStars: { try await dependencies.repoRepository.fetchAllStarred() },
                 fetchCandidates: { try await dependencies.recommendAPI.fetchDailyCandidates(seedIDs: $0, cursor: $1) },
                 prepareItems: { items in
+                    // 两项准备并行计时，头像整批最多等待 30 秒，不叠加到理由生成时间之后。
+                    async let avatars: Void = dependencies.dailyRecommendationAvatarStore.prepareBatch(
+                        items: items, accountID: accountID, revision: revision, retryFailed: retryReasons
+                    )
                     await dependencies.dailyRecommendationExplanationStore.prepareBatch(
                         items: items, accountID: accountID, revision: revision, locale: language, isPro: isPro,
                         retryFailed: retryReasons,
@@ -243,16 +230,22 @@ struct DailyRecommendationHost: ViewModifier {
                             input: input, outputLanguage: language
                         )
                     }
+                    await avatars
                 }
             )
             guard accountID == self.accountID, revision == dependencies.databaseScopeRevision,
                   !Task.isCancelled else { return false }
             await dependencies.dailyRecommendationStore.excludeStarred(dependencies.starredRegistry.ids)
             // 取数失败时旧批次仍可读，只恢复原已保存理由，不为失败回退另开一轮模型请求。
+            // 正常批次已准备过头像，这里直接复用；失败回退的旧批次同样须在打开前准备。
+            async let avatars: Void = dependencies.dailyRecommendationAvatarStore.prepareBatch(
+                items: dependencies.dailyRecommendationStore.visibleItems, accountID: accountID, revision: revision
+            )
             await dependencies.dailyRecommendationExplanationStore.loadSaved(
                 items: dependencies.dailyRecommendationStore.visibleItems,
                 accountID: accountID, revision: revision, locale: language, isPro: isPro
             )
+            await avatars
             return prepared
         }
     }
@@ -270,7 +263,7 @@ struct DailyRecommendationHost: ViewModifier {
 }
 
 extension RepoRecommendationItem {
-    /// 推荐精简快照；详情入口会先保证 repos 父行存在，但不创建 Star 或知识库关系。
+    /// 推荐列表使用的精简快照；本身不创建 Star 或知识库关系。
     var dailyRecommendationRepo: Repo {
         let parts = fullName.split(separator: "/")
         return Repo(

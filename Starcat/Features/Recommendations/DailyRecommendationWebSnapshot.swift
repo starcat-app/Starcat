@@ -13,7 +13,7 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
     struct Item: Encodable, Equatable {
         let id: String
         let fullName: String
-        let coverImageURL: String?
+        let coverImageDataURI: String?
         let description: String
         let language: String?
         let stars: Int
@@ -26,19 +26,11 @@ struct DailyRecommendationWebSnapshot: Encodable, Equatable {
 
         /// GitHub ID 按字符串过桥，避免 JavaScript Number 丢失 Int64 精度。
         init(_ item: RepoRecommendationItem, revealed: Bool, explanation: String? = nil,
-             canRetryExplanation: Bool = false) {
+             canRetryExplanation: Bool = false, coverImageDataURI: String? = nil) {
             id = String(item.repoID)
             fullName = item.fullName
-            // 卡面展示仓库 owner 的头像；复用全站头像入口，并为大图请求 @2x 清晰度。
-            let path = item.fullName.split(separator: "/", omittingEmptySubsequences: false)
-            if path.count == 2, !path[0].isEmpty, !path[1].isEmpty {
-                coverImageURL = GitHubAvatarURL.imageURL(
-                    from: RepoAvatarURL.from(owner: String(path[0])),
-                    displayDiameter: 256, maximumPixelSize: 512
-                )?.absoluteString
-            } else {
-                coverImageURL = nil
-            }
+            // 只携带已准备的图片；失败或超时保持 nil，不让网页重新发出远端请求。
+            self.coverImageDataURI = coverImageDataURI
             description = item.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             language = item.language?.trimmingCharacters(in: .whitespacesAndNewlines)
             stars = item.stars

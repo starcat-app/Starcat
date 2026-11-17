@@ -2,17 +2,17 @@
 //  DailyRecommendationCardsView.swift
 //  Starcat
 //
-//  每日发现的原生业务宿主。WKWebView 呈现大圆角卡片，推荐批次、写入确认和详情
-//  继续使用原生权威路径；网页不保存另一份 Star、反馈或浏览进度。
+//  每日发现的原生业务宿主。WKWebView 呈现大圆角卡片，推荐批次、写入确认和外链
+//  由原生处理；网页不保存另一份 Star、反馈或浏览进度。
 //
 
+import AppKit
 import SwiftUI
 
 /// 保留整窗透明材质与原生确认，仅将项目卡片的布局和动画交给本地网页。
 struct DailyRecommendationCardsView: View {
     @Bindable var store: DailyRecommendationStore
     let onClose: () -> Void
-    let onOpen: (Repo) -> Void
     let onRetry: () async -> Void
     let onNextBatch: () async -> Bool
     let onPresented: () -> Void
@@ -24,17 +24,17 @@ struct DailyRecommendationCardsView: View {
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @State private var pendingStar: RepoRecommendationItem?
     @State private var starringID: Int64?
-    @State private var openingDetail = false
     @State private var actionFailed = false
     @State private var isPerformingAction = false
+    /// 换批反馈覆盖取数、理由与头像准备全过程，不能只跟随网络请求状态。
+    @State private var isChangingBatch = false
     @State private var isVisible = false
     @State private var rendererFailed = false
     @State private var rendererRevision = 0
     @State private var actionTask: Task<Void, Never>?
-    @State private var detailTask: Task<Void, Never>?
 
     private var controlsBusy: Bool {
-        store.isLoading || isPerformingAction || openingDetail || starringID != nil || pendingStar != nil
+        store.isLoading || isPerformingAction || starringID != nil || pendingStar != nil
     }
 
     private var context: String {
@@ -55,13 +55,15 @@ struct DailyRecommendationCardsView: View {
                       explanation: dependencies.dailyRecommendationExplanationStore.text(
                          for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser),
                        canRetryExplanation: dependencies.dailyRecommendationExplanationStore.canRetry(
-                         for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser))
+                         for: item, locale: locale.identifier, isPro: dependencies.entitlementGate.isProUser),
+                       coverImageDataURI: dependencies.dailyRecommendationAvatarStore.dataURI(
+                         for: item, accountID: store.accountID, revision: dependencies.databaseScopeRevision))
             },
             labels: DailyRecommendationWebSnapshot.localizedLabels,
             date: store.state.generatedAt.map { $0.formatted(.dateTime.year().month().day().locale(locale)) } ?? "",
             locale: locale.identifier.replacingOccurrences(of: "_", with: "-").components(separatedBy: "@")[0],
             dark: colorScheme == .dark, reduceMotion: reduceMotion, scale: Double(interfaceScale.multiplier),
-            loading: store.isLoading, busy: controlsBusy,
+            loading: store.isLoading || isChangingBatch, busy: controlsBusy,
             message: (store.errorKey ?? store.batchMessageKey).map { String.l10n($0) },
             emptyMessage: String.l10n(emptyKey),
             canRetry: store.accountID != nil,
@@ -102,7 +104,6 @@ struct DailyRecommendationCardsView: View {
         .onDisappear {
             isVisible = false
             actionTask?.cancel()
-            detailTask?.cancel()
         }
         .alert("recommendations.daily.starConfirm", isPresented: Binding(
             get: { pendingStar != nil },
@@ -173,8 +174,12 @@ struct DailyRecommendationCardsView: View {
         case .dismiss, .revealAll, .nextBatch, .retry, .setAutoShow:
             let identity = context
             isPerformingAction = true
+            isChangingBatch = action == .nextBatch
             actionTask = Task {
-                defer { isPerformingAction = false }
+                defer {
+                    isPerformingAction = false
+                    isChangingBatch = false
+                }
                 guard !Task.isCancelled, isVisible, context == identity else { return }
                 switch action {
                 case let .dismiss(id): await store.dismiss(id)
@@ -192,30 +197,11 @@ struct DailyRecommendationCardsView: View {
         }
     }
 
-    /// Manage README 缓存以 repos 为外键父表，必须先补元数据，再允许详情开始加载。
-    /// 关闭抽卡层或切账号后不再导航；写入失败留在当前卡片，沿用已有错误提示。
+    /// URL 只取自已校验的当前候选，交给默认浏览器打开，不触发应用内导航或元数据写入。
     private func openDetail(_ item: RepoRecommendationItem) {
-        guard !openingDetail, let account = store.accountID,
-              dependencies.database.currentUserId == account else { return }
-        let revision = dependencies.databaseScopeRevision
-        openingDetail = true
-        detailTask = Task {
-            defer { openingDetail = false }
-            guard !Task.isCancelled, store.accountID == account,
-                  dependencies.databaseScopeRevision == revision else { return }
-            do {
-                let repo = try await dependencies.repoRepository.upsertRepoMetadataForLibrary(
-                    repo: item.dailyRecommendationRepo, syncedAt: Date(), preservingExisting: true
-                )
-                guard !Task.isCancelled, store.accountID == account,
-                      dependencies.database.currentUserId == account,
-                      dependencies.databaseScopeRevision == revision else { return }
-                onOpen(repo)
-            } catch {
-                guard !Task.isCancelled, store.accountID == account,
-                      dependencies.databaseScopeRevision == revision else { return }
-                actionFailed = true
-            }
+        guard let url = item.githubURL, NSWorkspace.shared.open(url) else {
+            actionFailed = true
+            return
         }
     }
 

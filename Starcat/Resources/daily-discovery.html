@@ -2,7 +2,7 @@
 <!-- Local daily discovery renderer. Native owns data, localization and all write operations. -->
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https://github.com https://avatars.githubusercontent.com; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Starcat</title><style>
     #starcat-refined {
       color-scheme: light;
@@ -252,16 +252,27 @@
     #starcat-refined .sd-preferences label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
     #starcat-refined .sd-preferences input { accent-color: var(--sd-accent); margin-top: 4px; flex: 0 0 auto; }
     #starcat-refined .sd-preference-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 18px; margin-inline-start: auto; }
+    /* 两种文案共占一个网格单元，按较长翻译预留尺寸，加载切换不挤动底栏。 */
+    #starcat-refined .sd-batch { display: inline-grid; place-items: center; }
+    #starcat-refined .sd-batch span { grid-area: 1 / 1; visibility: hidden; }
+    #starcat-refined .sd-batch:not([aria-busy="true"]) [data-label="nextBatch"],
+    #starcat-refined .sd-batch[aria-busy="true"] [data-label="loading"] { visibility: visible; }
     #starcat-refined .sd-status { width: min(800px, 100%); margin: 12px auto 0; padding: 8px 12px; border-radius: 8px; background: var(--sd-chrome); text-align: center; font-size: calc(13px * var(--sd-scale)); color: var(--sd-text); overflow-wrap: anywhere; }
     #starcat-refined .sd-status button { margin-inline-start: 8px; }
     #starcat-refined .sd-empty { width: min(800px, 100%); min-height: 350px; margin-inline: auto; border: 1px solid var(--sd-line); border-radius: 16px; background: var(--sd-chrome); display: grid; place-content: center; justify-items: center; text-align: center; gap: 18px; padding: 28px; }
     #starcat-refined .sd-empty h2 { font-size: calc(17px * var(--sd-scale)); font-weight: 600; }
     #starcat-refined .sd-spinner { width: 22px; height: 22px; border: 2px solid var(--sd-line); border-top-color: var(--sd-accent); border-radius: 50%; animation: sd-spin 1s linear infinite; }
     #starcat-refined .sd-summary { width: min(800px, 100%); margin: 0 auto; padding: 26px 30px; border: 1px solid var(--sd-line); border-radius: 16px; background: var(--sd-surface); }
-    #starcat-refined .sd-summary h2 { font-size: calc(20px * var(--sd-scale)); font-weight: 600; }
-    #starcat-refined .sd-summary-list { display: grid; gap: 6px; margin: 20px 0; }
-    #starcat-refined .sd-summary-list button { width: 100%; min-height: 38px; text-align: left; border: 0; border-radius: 8px; padding: 8px 12px; background: var(--sd-soft); color: var(--sd-text); overflow-wrap: anywhere; }
-    #starcat-refined .sd-summary-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    #starcat-refined .sd-summary-list { display: grid; gap: 6px; margin-bottom: 20px; }
+    #starcat-refined .sd-summary-list button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; text-align: left; border: 0; border-radius: 8px; padding: 8px 12px; background: transparent; color: var(--sd-text); overflow-wrap: anywhere; transition: background 160ms ease-out; }
+    #starcat-refined .sd-summary-list button:nth-child(even) { background: var(--sd-soft); }
+    #starcat-refined .sd-summary-list button:is(:hover, :focus-visible):not(:disabled) { background: var(--sd-line); }
+    #starcat-refined .sd-summary-avatar { position: relative; flex: 0 0 auto; width: calc(32px * var(--sd-scale)); height: calc(32px * var(--sd-scale)); overflow: hidden; border: 1px solid var(--sd-line); border-radius: 50%; background: var(--sd-background); }
+    /* 头像缺失或解码失败时保留同尺寸图形占位，避免列表跳动或退回字母缩写。 */
+    #starcat-refined .sd-summary-avatar::before { content: ""; position: absolute; inset: 0; margin: auto; width: 15px; height: 12px; border: 1px solid var(--sd-secondary); border-radius: 3px; background: linear-gradient(135deg, transparent 50%, var(--sd-secondary) 51% 65%, transparent 66%) center / 11px 9px no-repeat; }
+    #starcat-refined .sd-summary-avatar img { position: relative; display: block; width: 100%; height: 100%; object-fit: cover; background: var(--sd-background); }
+    #starcat-refined .sd-summary-name { min-width: 0; }
+    #starcat-refined .sd-summary-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
     #starcat-refined button { cursor: pointer; }
     #starcat-refined button:focus-visible { outline: 2px solid var(--sd-accent); outline-offset: 3px; }
     #starcat-refined.sd-reduced *, #starcat-refined.sd-reduced *::before, #starcat-refined.sd-reduced *::after { animation: none !important; transition: none !important; }
@@ -292,18 +303,18 @@
       <section class="sd-recommend" aria-labelledby="reason-title"><div class="sd-reason-heading"><h3 id="reason-title" data-label="reasonTitle"></h3><button type="button" class="sd-text-button" data-action="retry" data-label="retry" data-retry-explanation hidden></button></div><p class="sd-reason" data-field="reason"></p></section>
       <div class="sd-actions">
         <button type="button" class="sd-button sd-star" data-action="star"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg><span data-label="star"></span></button>
-        <button type="button" class="sd-button" data-action="details" data-label="details"></button>
+        <button type="button" class="sd-button" data-action="details"><svg viewBox="0 0 128 128" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M64 5.103c-33.347 0-60.388 27.035-60.388 60.388 0 26.682 17.303 49.317 41.297 57.303 3.017.56 4.125-1.31 4.125-2.905 0-1.44-.056-6.197-.082-11.243-16.8 3.653-20.345-7.125-20.345-7.125-2.747-6.98-6.705-8.836-6.705-8.836-5.48-3.748.413-3.67.413-3.67 6.063.425 9.257 6.223 9.257 6.223 5.386 9.23 14.127 6.562 17.573 5.02.542-3.903 2.107-6.568 3.834-8.076-13.413-1.525-27.514-6.704-27.514-29.843 0-6.593 2.36-11.98 6.223-16.21-.628-1.52-2.695-7.662.584-15.98 0 0 5.07-1.623 16.61 6.19C53.7 35 58.867 34.327 64 34.304c5.13.023 10.3.694 15.127 2.033 11.526-7.813 16.59-6.19 16.59-6.19 3.287 8.317 1.22 14.46.593 15.98 3.872 4.23 6.215 9.617 6.215 16.21 0 23.194-14.127 28.3-27.574 29.796 2.167 1.874 4.097 5.55 4.097 11.183 0 8.08-.07 14.583-.07 16.572 0 1.607 1.088 3.49 4.148 2.897 23.98-7.994 41.263-30.622 41.263-57.294C124.388 32.14 97.35 5.104 64 5.104z"/></svg><span data-label="details"></span></button>
         <button type="button" class="sd-button sd-dismiss" data-action="dismiss"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8ZM3 3l18 18"/></svg></button>
       </div>
     </article></div></div>
     <button type="button" class="sd-peek sd-peek-right" data-action="next"></button>
   </div>
   <section class="sd-empty" hidden><span class="sd-spinner" aria-hidden="true"></span><h2 data-field="empty"></h2><button class="sd-button" type="button" data-action="retry" data-label="retry"></button></section>
-  <section class="sd-summary" hidden><h2 data-label="done"></h2><div class="sd-summary-list"></div><div class="sd-summary-actions"><button class="sd-button" type="button" data-action="close" data-label="done"></button></div></section>
+  <section class="sd-summary" hidden><div class="sd-summary-list"></div><div class="sd-summary-actions"><button class="sd-button" type="button" data-action="close" data-label="done"></button></div></section>
   <nav class="sd-bottom" aria-labelledby="daily-title" hidden><button type="button" class="sd-text-button" data-action="previous" data-label="previous"></button><div class="sd-progress"><span data-field="progress"></span><div class="sd-progress-track" role="group"></div></div><button type="button" class="sd-text-button sd-next" data-action="next" data-label="next"></button></nav>
   <div class="sd-status" role="status" aria-live="polite" aria-atomic="true"><span data-field="message"></span><button type="button" class="sd-text-button" data-action="retry" data-label="retry" hidden></button></div>
   </div></div>
-  <div class="sd-preferences"><label><input type="checkbox" data-action="autoShow"><span data-label="autoShow"></span></label><div class="sd-preference-actions"><button class="sd-text-button" type="button" data-action="revealAll" data-label="revealAll"></button><button class="sd-text-button" type="button" data-action="nextBatch" data-label="nextBatch"></button></div></div>
+  <div class="sd-preferences"><label><input type="checkbox" data-action="autoShow"><span data-label="autoShow"></span></label><div class="sd-preference-actions"><button class="sd-text-button" type="button" data-action="revealAll" data-label="revealAll"></button><button class="sd-text-button sd-batch" type="button" data-action="nextBatch" aria-live="polite"><span data-label="nextBatch"></span><span data-label="loading" aria-hidden="true"></span></button></div></div>
 </main></div></div><script>
 (() => {
   "use strict";
@@ -318,6 +329,7 @@
   let plainNumber = new Intl.NumberFormat("en");
   const index = () => snapshot?.items.findIndex(item => item.id === currentID) ?? -1;
   const active = () => snapshot?.items[index()];
+  // 翻页只做内部防重入；控件的 disabled 仅跟随业务忙碌，避免整页在动画首尾反复置灰。
   const busy = () => moving || snapshot?.busy;
   const canAnimate = () => !snapshot?.reduceMotion && typeof main.animate === "function";
 
@@ -333,9 +345,9 @@
     const owner = item.fullName.slice(0, separator), repo = item.fullName.slice(separator + 1);
     return { owner, repo };
   }
-  // 两处头像共用原生给出的 owner 图片地址；CSP 仅放行头像入口及其 CDN 重定向。
+  // 两处头像共用原生预加载的图片数据；CSP 禁止远端图片，打开后不再等待网络。
   function renderCover(item) {
-    const cover = q(".sd-cover"), url = item?.coverImageURL || "";
+    const cover = q(".sd-cover"), url = item?.coverImageDataURI || "";
     if (cover.dataset.url === url) return;
     field("avatar").style.backgroundImage = url ? `url(${JSON.stringify(url)})` : "";
     cover.dataset.url = url;
@@ -394,7 +406,7 @@
     const target = snapshot.items[index() + delta];
     const button = q(`.sd-peek-${side === "previous" ? "left" : "right"}`);
     button.hidden = !target;
-    button.disabled = Boolean(busy()) || !target;
+    button.disabled = Boolean(snapshot.busy) || !target;
     button.setAttribute("aria-label", target ? `${snapshot.labels[side]}: ${target.fullName}` : "");
     button.title = target?.fullName || "";
   }
@@ -420,20 +432,24 @@
     field("empty").textContent = snapshot.loading ? snapshot.labels.loading : snapshot.emptyMessage;
     q(".sd-empty .sd-spinner").hidden = !snapshot.loading;
     q(".sd-empty [data-action=retry]").hidden = !snapshot.canRetry || snapshot.loading;
-    field("message").textContent = snapshot.loading ? snapshot.labels.loading : snapshot.message || "";
-    q(".sd-status").hidden = !snapshot.loading && !snapshot.message;
+    // 加载反馈留在原按钮或初次空态；这里只显示真实错误与批次提示。
+    field("message").textContent = snapshot.message || "";
+    q(".sd-status").hidden = !snapshot.message;
     q(".sd-status [data-action=retry]").hidden = !snapshot.message || !snapshot.canRetry || snapshot.loading;
     root.querySelectorAll("button[data-action]").forEach(button => {
-      button.disabled = Boolean(busy() && button.dataset.action !== "close");
+      button.disabled = Boolean(snapshot.busy && button.dataset.action !== "close");
       if (button.dataset.action === "nextBatch") {
         button.hidden = !snapshot.canChangeBatch;
+        button.setAttribute("aria-busy", String(Boolean(snapshot.loading)));
+        button.querySelector('[data-label="nextBatch"]').setAttribute("aria-hidden", String(Boolean(snapshot.loading)));
+        button.querySelector('[data-label="loading"]').setAttribute("aria-hidden", String(!snapshot.loading));
       } else if (button.dataset.action === "revealAll") {
         button.hidden = empty || summary || snapshot.items.every(candidate => candidate.revealed);
       }
     });
     const toggle = q("input[data-action=autoShow]");
     toggle.checked = snapshot.showsOnLaunch;
-    toggle.disabled = !snapshot.canSetAutoShow || Boolean(busy());
+    toggle.disabled = !snapshot.canSetAutoShow || Boolean(snapshot.busy);
     q(".sd-preferences").hidden = !snapshot.canSetAutoShow && !snapshot.canChangeBatch;
     if (empty) { renderCover(null); return; }
     if (summary) {
@@ -441,8 +457,22 @@
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.select = candidate.id;
-        button.textContent = candidate.fullName;
-        button.disabled = Boolean(busy());
+        const avatar = document.createElement("span");
+        avatar.className = "sd-summary-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        if (candidate.coverImageDataURI) {
+          const image = new Image();
+          image.alt = "";
+          image.draggable = false;
+          image.addEventListener("error", () => image.remove(), { once: true });
+          image.src = candidate.coverImageDataURI;
+          avatar.append(image);
+        }
+        const name = document.createElement("span");
+        name.className = "sd-summary-name";
+        name.textContent = candidate.fullName;
+        button.append(avatar, name);
+        button.disabled = Boolean(snapshot.busy);
         return button;
       }));
       return;
@@ -483,11 +513,11 @@
         button.classList.add("sd-current");
         button.setAttribute("aria-current", "true");
       }
-      button.disabled = Boolean(busy());
+      button.disabled = Boolean(snapshot.busy);
       return button;
     }));
     root.querySelectorAll('[data-action="previous"]').forEach(button => {
-      button.disabled = Boolean(busy()) || index() === 0;
+      button.disabled = Boolean(snapshot.busy) || index() === 0;
     });
     q(".sd-next").textContent = index() === snapshot.items.length - 1 ? snapshot.labels.done : snapshot.labels.next;
     updatePreview("previous", -1);
@@ -579,7 +609,7 @@
   }, { signal: listeners.signal });
   root.addEventListener("change", event => {
     if (event.target.matches('input[data-action="autoShow"]') && !event.target.disabled) {
-      send("autoShow", { value: event.target.checked });
+      if (!busy()) send("autoShow", { value: event.target.checked });
       event.target.checked = snapshot.showsOnLaunch;
     }
   }, { signal: listeners.signal });
