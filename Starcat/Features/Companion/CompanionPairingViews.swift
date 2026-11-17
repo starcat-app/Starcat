@@ -144,7 +144,7 @@ private struct CompanionDeviceRow: View {
                 }
             }
             HStack {
-                Text(verbatim: device.browser == "safari" ? "Safari" : "Chrome")
+                Text(verbatim: device.browserDescription)
                 Spacer()
                 Text("companion.devices.lastSeen")
                 if let lastSeen = device.lastSeenAt {

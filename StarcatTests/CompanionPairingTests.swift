@@ -19,6 +19,36 @@ struct CompanionPairingTests {
         .init(instanceID: UUID().uuidString, browser: "chrome", name: "Test browser")
     }
 
+    @Test("浏览器版本经配对保存并恢复，旧 Keychain 记录保留授权")
+    func browserVersionMetadataAndLegacyRecords() throws {
+        let keychain = InMemoryKeychain()
+        let store = CompanionDeviceStore(keychain: keychain, loadStoredCredentials: true)
+        let payload = Data("""
+        {"instance_id":"\(UUID().uuidString)","browser":"chrome","name":"Work","browser_version":"142.0.7444.60"}
+        """.utf8)
+        let request = try JSONDecoder().decode(CompanionPairingStart.self, from: payload)
+        let receipt = try store.start(request, origin: origin)
+        #expect(store.pendingApproval?.browserVersion == "142.0.7444.60")
+        store.approve(requestID: receipt.requestID)
+        let result = try store.poll(.init(requestID: receipt.requestID, claimSecret: receipt.claimSecret), origin: origin)
+        let token = try #require(result.token)
+        let restored = CompanionDeviceStore(keychain: keychain, loadStoredCredentials: true)
+        #expect(restored.authorizedDevice(token: token)?.browserDescription == "Chrome 142.0.7444.60")
+        try restored.rename(deviceID: #require(result.deviceID), name: "Personal")
+        #expect(restored.devices.first?.browserDescription == "Chrome 142.0.7444.60")
+
+        // Missing metadata is an existing authorized device, not corrupt data.
+        let legacy = Data("""
+        [{"device":{"id":"old-device","instanceID":"old-instance","browser":"safari","name":"Safari","pairedAt":0,"scope":"companion"},"token":"old-token"}]
+        """.utf8)
+        try keychain.storeServiceAPIKey(String(decoding: legacy, as: UTF8.self), forService: "starcat.companion.paired-devices")
+        let legacyStore = CompanionDeviceStore(keychain: keychain, loadStoredCredentials: true)
+        #expect(legacyStore.authorizedDevice(token: "old-token")?.browserVersion == nil)
+        #expect(legacyStore.devices.first?.browserDescription == "Safari")
+        let oldPayload = try JSONEncoder().encode(input())
+        #expect(try JSONDecoder().decode(CompanionPairingStart.self, from: oldPayload).browserVersion == nil)
+    }
+
     @Test("批准后仅能领取一次独立 token，重启存储后仍可逐设备撤销")
     func approvalClaimPersistenceAndRevocation() throws {
         let keychain = InMemoryKeychain()

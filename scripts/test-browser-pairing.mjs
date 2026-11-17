@@ -166,6 +166,14 @@ async function harness(browser, initial = {}, nativeHandler, clock = clockHarnes
   };
   const context = vm.createContext({
     chrome: api, browser: browser === "safari" ? api : undefined, indexedDB, fetch,
+    navigator: browser === "safari"
+      ? { userAgent: "Mozilla/5.0 Version/26.1 Safari/605.1.15" }
+      : {
+        userAgent: "Mozilla/5.0 Chrome/142.0.0.0 Safari/537.36",
+        userAgentData: { async getHighEntropyValues() {
+          return { fullVersionList: [{ brand: "Not A Brand", version: "99" }, { brand: "Google Chrome", version: "142.0.7444.60" }] };
+        } }
+      },
     crypto: webcrypto, URL, URLSearchParams, AbortSignal, AbortController, TextDecoder, console,
     Date: clock.Date, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout
   });
@@ -181,11 +189,11 @@ async function harness(browser, initial = {}, nativeHandler, clock = clockHarnes
     ...(action === "start" ? { serviceURL: "http://127.0.0.1:5051" } : {}),
     ...more
   }, from);
-  return { storage, credentials, calls, control, send, pair, sender, clock, connect: (port) => connectListener(port) };
+  return { storage, credentials, calls, control, send, pair, sender, clock, context, connect: (port) => connectListener(port) };
 }
 
 /** 只模拟配对页用到的 DOM 和扩展消息，不把 VM 检查表述为真实浏览器验收。 */
-async function pageHarness(browser, handler, locale = "zh", page = "pairing", initial = {}, clock = clockHarness()) {
+async function pageHarness(browser, handler, locale = "zh", page = "pairing", initial = {}, clock = clockHarness(), parent) {
   const elements = new Map();
   const nodes = [];
   const sourceRoot = `${workspace}supports/extensions/starcat-${browser}-plugin/src`;
@@ -199,16 +207,23 @@ async function pageHarness(browser, handler, locale = "zh", page = "pairing", in
       dataset: Object.fromEntries(Object.entries(attributesByName).filter(([name]) => name.startsWith("data-"))
         .map(([name, value]) => [name.slice(5).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()), value])),
       attributes: attributesByName,
+      style: {},
+      contentWindow: {},
       addEventListener(name, callback) { events.set(name, callback); },
       setAttribute(name, value) { this.attributes[name] = value; },
+      removeAttribute(name) { delete this.attributes[name]; if (name === "src") delete this.src; },
+      showModal() { this.open = true; },
+      close() { this.open = false; },
+      focus() { this.focused = true; },
       replaceChildren() { this.children = []; this.value = ""; },
       add(option) { (this.children ||= []).push(option); },
-      dispatch(name) { return events.get(name)?.({ preventDefault() {} }); }
+      dispatch(name, event = {}) { return events.get(name)?.({ preventDefault() {}, ...event }); }
     };
     nodes.push(element);
     if (attributesByName.id) elements.set(attributesByName.id, element);
   }
   const calls = [];
+  const events = new Map();
   const preferences = { starcatOptionsLocale: locale, ...initial };
   const api = {
     runtime: {
@@ -238,17 +253,41 @@ async function pageHarness(browser, handler, locale = "zh", page = "pairing", in
     navigator: { language: locale },
     location: { protocol: browser === "safari" ? "safari-web-extension:" : "chrome-extension:" },
     matchMedia: () => ({ matches: true }),
-    addEventListener() {},
+    addEventListener(name, listener) { events.set(name, listener); },
+    parent,
+    ResizeObserver: class {
+      constructor(callback) { this.callback = callback; }
+      observe() { this.callback(); }
+      disconnect() {}
+    },
     Option: function (label, value) { return { label, value }; },
     Date: clock.Date, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, URL
   });
   vm.runInContext(await readFile(`${sourceRoot}/shared/shared.js`, "utf8"), context);
   const ready = vm.runInContext(await readFile(`${sourceRoot}/${page}/${page}.js`, "utf8"), context);
   await settle();
-  return { elements, nodes, calls, clock, context, ready, storage: preferences };
+  return { elements, nodes, calls, clock, context, ready, storage: preferences, dispatch: (name, event) => events.get(name)?.(event) };
 }
 
 for (const browser of ["chrome", "safari"]) {
+  const versioned = await harness(browser);
+  await versioned.pair("start");
+  assert.equal(JSON.parse(versioned.calls.at(-1).options.body).browser_version, browser === "safari" ? "26.1" : "142.0.7444.60");
+  passed++;
+  if (browser === "chrome") {
+    for (const hints of [undefined, { async getHighEntropyValues() { throw new Error("fixture_denied"); } }]) {
+      const reduced = await harness(browser);
+      reduced.context.navigator.userAgentData = hints;
+      await reduced.pair("start");
+      assert.equal(JSON.parse(reduced.calls.at(-1).options.body).browser_version, "142");
+      passed++;
+    }
+  }
+  const unknownVersion = await harness(browser);
+  unknownVersion.context.navigator = {};
+  assert.equal((await unknownVersion.pair("start")).ok, true);
+  assert.equal(JSON.parse(unknownVersion.calls.at(-1).options.body).browser_version, undefined);
+  passed++;
   const manualToken = ["legacy", "fixture"].join("-");
   const current = await harness(browser, { starcatCompanionPort: 5444, starcatCompanionToken: manualToken });
   const publicConfig = await current.send({ type: "starcat.publicConfig" });
@@ -393,8 +432,19 @@ for (const browser of ["chrome", "safari"]) {
     if (message.action === "cancel") return { ok: true, body: { status: "cancelled" } };
     return new Promise((resolve) => { completePoll = resolve; });
   });
+  assert.equal(page.elements.get("setup").hidden, false);
+  assert.equal(page.elements.get("verification").hidden, true);
+  assert.equal(page.elements.get("connection-management").hidden, true);
+  assert.equal(page.elements.get("browser-label").textContent, browser === "safari" ? "Safari" : "Chrome");
+  assert.equal(page.elements.get("chrome-icon").hidden, browser !== "chrome");
+  assert.equal(page.elements.get("safari-icon").hidden, browser !== "safari");
   await page.elements.get("pairing-form").dispatch("submit");
   assert.match(page.elements.get("countdown")?.textContent || "", /120/);
+  assert.equal(page.elements.get("setup").hidden, true);
+  assert.equal(page.elements.get("verification").hidden, false);
+  assert.equal(page.elements.get("code-area").hidden, false);
+  assert.equal(page.elements.get("step-2").attributes["aria-current"], "step");
+  assert.equal(page.elements.get("title").focused, true);
   await page.clock.advance(1000);
   assert.match(page.elements.get("countdown").textContent, /119/);
   await page.clock.advance(119000);
@@ -404,6 +454,11 @@ for (const browser of ["chrome", "safari"]) {
   assert.equal(page.elements.get("connect").disabled, false);
   assert.equal(page.elements.get("connect").textContent, "重新配对");
   assert.equal(page.calls.at(-1).action, "cancel");
+  assert.equal(page.elements.get("setup").hidden, false);
+  assert.equal(page.elements.get("verification").hidden, true);
+  assert.equal(page.elements.get("code-area").hidden, true);
+  assert.equal(page.elements.get("manual-help").hidden, false);
+  assert.equal(page.elements.get("step-1").attributes["aria-current"], "step");
   passed++;
   await page.elements.get("pairing-form").dispatch("submit");
   completePoll({ ok: true, body: { status: "approved" } });
@@ -418,12 +473,16 @@ for (const browser of ["chrome", "safari"]) {
   let completeDiscovery;
   const searching = await pageHarness(browser, () => new Promise((resolve) => { completeDiscovery = resolve; }));
   assert.equal(searching.elements.get("connect").disabled, true);
+  assert.equal(searching.elements.get("discover").dataset.loading, "true");
+  assert.equal(searching.elements.get("manual-help").hidden, false);
   await searching.clock.advance(4999);
   assert.match(searching.elements.get("status").textContent, /正在查找/);
   await searching.clock.advance(1);
   await searching.ready;
   assert.match(searching.elements.get("status").textContent, /超时/);
   assert.equal(searching.elements.get("discover").disabled, false);
+  assert.equal(searching.elements.get("discover").dataset.loading, "false");
+  assert.equal(searching.elements.get("page").dataset.tone, "error");
   assert.equal(searching.elements.get("manual").hidden, false);
   assert.equal(searching.elements.get("manual").attributes.href, "../options/options.html");
   completeDiscovery({ ok: true, body: { candidates: [{ channel: "late", serviceURL: "http://127.0.0.1:9999" }] } });
@@ -463,11 +522,86 @@ for (const browser of ["chrome", "safari"]) {
       await terminalPage.clock.advance(2000);
       assert.equal(terminalPage.elements.get("code").textContent, "");
       assert.equal(terminalPage.elements.get("countdown").textContent, "");
+      assert.equal(terminalPage.elements.get("verification").hidden, true);
+      assert.equal(terminalPage.elements.get("setup").hidden, terminalStatus === "approved");
+      assert.equal(terminalPage.elements.get("connection-summary").hidden, terminalStatus !== "approved");
+      assert.equal(terminalPage.elements.get("connection-management").hidden, terminalStatus !== "approved");
+      assert.equal(terminalPage.elements.get("manual-help").hidden, terminalStatus === "approved");
+      if (terminalStatus === "approved") {
+        assert.match(terminalPage.elements.get("title").textContent, locale === "zh" ? /配对成功/ : /all set/);
+        assert.equal(terminalPage.elements.get("connected-name").textContent, browser === "safari" ? "Safari" : "Chrome");
+        assert.match(terminalPage.elements.get("authorization-note").textContent, locale === "zh" ? /独立授权/ : /own authorization/);
+      }
       const terminalMessage = terminalPage.elements.get("status").textContent;
       await terminalPage.clock.advance(120000);
       assert.equal(terminalPage.elements.get("status").textContent, terminalMessage);
       passed++;
     }
+    // 已保存的连接直接进入管理视图；撤销失败时保留授权摘要和本地清理入口。
+    for (const mode of ["paired", "manual"]) {
+      let completeDisconnect;
+      const savedConnection = mode === "paired"
+        ? { [connectionKey]: { serviceURL: "http://127.0.0.1:5051", mode: "paired", deviceID: "fixture" } }
+        : { starcatCompanionToken: "manual-fixture" };
+      const configured = await pageHarness(browser, async (message) => {
+        if (message.action === "disconnect") {
+          if (message.localOnly) return { ok: true, body: { status: "local_only" } };
+          return new Promise((resolve) => { completeDisconnect = resolve; });
+        }
+        return { ok: true, body: { candidates: [{ channel: "com.starcat.app.direct.debug", serviceURL: "http://127.0.0.1:5051" }] } };
+      }, locale, "pairing", { ...savedConnection, starcatOptionsTheme: mode === "paired" ? "dark" : "light" });
+      await configured.ready;
+      assert.equal(configured.calls.length, 0);
+      assert.equal(configured.context.document.documentElement.dataset.theme, mode === "paired" ? "dark" : "light");
+      assert.equal(configured.elements.get("page").dataset.state, "connected");
+      assert.equal(configured.elements.get("page").dataset.tone, "neutral");
+      assert.match(configured.elements.get("title").textContent, locale === "zh" ? /已配置连接/ : /Connection configured/);
+      assert.equal(configured.elements.get("setup").hidden, true);
+      assert.equal(configured.elements.get("connection-summary").hidden, false);
+      assert.equal(configured.elements.get("connection-management").hidden, false);
+      assert.equal(configured.elements.get("manual-help").hidden, true);
+      assert.match(configured.elements.get("authorization-note").textContent, mode === "paired"
+        ? locale === "zh" ? /独立授权/ : /own authorization/
+        : locale === "zh" ? /共享 API Key/ : /shared API Key/);
+      assert.equal(configured.elements.get("connected-address").textContent, "http://127.0.0.1:5051");
+      for (const node of configured.nodes.filter((element) => element.dataset.text)) {
+        assert.equal(typeof node.textContent, "string");
+        assert.ok(node.textContent.length > 0, `missing ${locale} text: ${node.dataset.text}`);
+      }
+      passed++;
+      const disconnecting = configured.elements.get("disconnect").dispatch("click");
+      assert.equal(configured.elements.get("disconnect").disabled, true);
+      assert.equal(configured.elements.get("forget").disabled, true);
+      completeDisconnect({ ok: true, body: { status: "revoke_failed" } });
+      await disconnecting;
+      assert.equal(configured.elements.get("connection-summary").hidden, false);
+      assert.equal(configured.elements.get("setup").hidden, true);
+      assert.equal(configured.elements.get("page").dataset.tone, "error");
+      assert.equal(configured.elements.get("forget").hidden, false);
+      assert.equal(configured.elements.get("disconnect").disabled, false);
+      await configured.elements.get("forget").dispatch("click");
+      assert.equal(configured.calls.at(-1).localOnly, true);
+      assert.equal(configured.elements.get("setup").hidden, false);
+      assert.equal(configured.elements.get("connection-summary").hidden, true);
+      assert.equal(configured.elements.get("connection-management").hidden, true);
+      assert.equal(configured.elements.get("manual-help").hidden, false);
+      assert.match(configured.elements.get("status").textContent, locale === "zh" ? /App 端授权可能仍有效/ : /App authorization may remain/);
+      passed++;
+      await configured.elements.get("discover").dispatch("click");
+      assert.equal(configured.elements.get("instances").value, "http://127.0.0.1:5051");
+      assert.equal(configured.elements.get("instances").children[1].label, "Starcat · Direct (Debug) · http://127.0.0.1:5051");
+      passed++;
+    }
+    const revokedPage = await pageHarness(browser, async () => ({ ok: true, body: { status: "revoked" } }), locale, "pairing", {
+      [connectionKey]: { serviceURL: "http://127.0.0.1:5051", mode: "paired", deviceID: "fixture" }
+    });
+    await revokedPage.elements.get("disconnect").dispatch("click");
+    assert.equal(revokedPage.elements.get("setup").hidden, false);
+    assert.equal(revokedPage.elements.get("connection-management").hidden, true);
+    assert.equal(revokedPage.elements.get("manual-help").hidden, false);
+    assert.equal(revokedPage.elements.get("forget").hidden, true);
+    assert.match(revokedPage.elements.get("status").textContent, locale === "zh" ? /已撤销/ : /revoked/);
+    passed++;
     const manual = await pageHarness(browser, async () => ({ ok: false, error: "http_401", status: 401 }), locale, "options");
     manual.elements.get("token").value = "manual-fixture";
     manual.elements.get("service-url").value = "http://127.0.0.1:5051";
@@ -488,6 +622,50 @@ for (const browser of ["chrome", "safari"]) {
     assert.match(manual.elements.get("key-help").textContent, locale === "zh" ? /扩展与连接 → 浏览器扩展/ : /Extensions & Connections > Browser Extensions/);
     assert.equal(manual.elements.get("token").attributes["aria-describedby"], "key-help");
     passed++;
+
+    // An unchanged pairing keeps unsaved manual settings; successful pairing
+    // refreshes the form from storage after closing the shared flow.
+    assert.equal(manual.nodes.find((node) => node.dataset.i18n === "action.pair").textContent,
+      locale === "zh" ? "免 Key 配对" : "Connect without a key");
+    manual.elements.get("token").value = "unsaved-key";
+    manual.elements.get("service-url").value = "http://localhost:5444";
+    await manual.elements.get("pair").dispatch("click");
+    assert.equal(manual.elements.get("pairing-dialog").open, true);
+    assert.equal(manual.elements.get("pairing-frame").src, "../pairing/pairing.html?embedded=1");
+    let closed = 0;
+    manual.elements.get("pairing-frame").contentWindow.StarcatPairing = { async close() { closed++; } };
+    manual.elements.get("pairing-frame").contentDocument = {
+      getElementById: () => ({ getBoundingClientRect: () => ({ height: 456 }) })
+    };
+    manual.elements.get("pairing-frame").dispatch("load");
+    assert.equal(manual.elements.get("pairing-frame").style.height, "456px");
+    await manual.elements.get("pairing-close").dispatch("click");
+    assert.equal(closed, 1);
+    assert.equal(manual.elements.get("pairing-dialog").open, false);
+    assert.equal(manual.elements.get("token").value, "unsaved-key");
+    assert.equal(manual.elements.get("service-url").value, "http://localhost:5444");
+    assert.equal(manual.elements.get("pair").focused, true);
+    passed++;
+    await manual.elements.get("pair").dispatch("click");
+    manual.storage[connectionKey] = {
+      serviceURL: "http://127.0.0.1:5666", mode: "paired", deviceID: "new-device", scope: "companion"
+    };
+    manual.dispatch("message", { source: {}, data: { type: "starcat.pairing.close" } });
+    assert.equal(manual.elements.get("pairing-dialog").open, true);
+    manual.dispatch("message", {
+      source: manual.elements.get("pairing-frame").contentWindow, data: { type: "starcat.pairing.close" }
+    });
+    await settle();
+    assert.equal(manual.elements.get("pairing-dialog").open, false);
+    assert.equal(manual.elements.get("service-url").value, "http://127.0.0.1:5666");
+    assert.equal(manual.elements.get("token").value, "");
+    assert.match(manual.elements.get("status").textContent, locale === "zh" ? /已与 Starcat 配对/ : /paired with Starcat/);
+    passed++;
+    await manual.elements.get("pair").dispatch("click");
+    await manual.elements.get("pairing-dialog").dispatch("cancel");
+    await settle();
+    assert.equal(manual.elements.get("pairing-dialog").open, false);
+    passed++;
   }
 
   const restored = await pageHarness(browser, async (message, clock) => {
@@ -501,6 +679,53 @@ for (const browser of ["chrome", "safari"]) {
   assert.match(restored.elements.get("countdown").textContent, /45/);
   await restored.clock.advance(45000);
   assert.match(restored.elements.get("status").textContent, /过期/);
+  passed++;
+
+  for (const approved of [false, true]) {
+    const dialogClock = clockHarness();
+    const background = await harness(browser, {}, undefined, dialogClock);
+    const parentMessages = [];
+    const embedded = await pageHarness(browser, (message) => background.send(message), "zh", "pairing", {}, dialogClock, {
+      postMessage(message) { parentMessages.push(message); }
+    });
+    await embedded.ready;
+    assert.equal(embedded.context.document.documentElement.dataset.embedded, "true");
+    embedded.dispatch("keydown", { key: "Escape", preventDefault() {} });
+    await embedded.elements.get("manual").dispatch("click");
+    assert.equal(parentMessages.length, 2);
+    assert.equal(parentMessages[0].type, "starcat.pairing.close");
+    await embedded.elements.get("pairing-form").dispatch("submit");
+    if (approved) {
+      background.control.status = "approved";
+      await dialogClock.advance(2000);
+      assert.equal(background.storage[connectionKey].mode, "paired");
+    }
+    await embedded.context.StarcatPairing.close();
+    const cancellations = background.calls.filter((call) => call.address.endsWith("/cancel")).length;
+    assert.equal(cancellations, approved ? 0 : 1);
+    await dialogClock.advance(120000);
+    assert.equal(Boolean(background.storage[connectionKey]), approved);
+    await embedded.context.StarcatPairing.close();
+    assert.equal(background.calls.filter((call) => call.address.endsWith("/cancel")).length, cancellations);
+    passed++;
+  }
+
+  // A late start receipt must not resume polling after the dialog closes.
+  let finishStart;
+  const closingPage = await pageHarness(browser, async (message, clock) => {
+    if (message.action === "discover") return { ok: true, body: { candidates: [] } };
+    if (message.action === "start") return new Promise((resolve) => {
+      finishStart = () => resolve({ ok: true, body: { code: "123456", expiresAt: new clock.Date(clock.Date.now() + 120000).toISOString() } });
+    });
+    return { ok: true, body: { status: "cancelled" } };
+  });
+  const starting = closingPage.elements.get("pairing-form").dispatch("submit");
+  await closingPage.context.StarcatPairing.close();
+  finishStart();
+  await starting;
+  await closingPage.clock.advance(2000);
+  assert.equal(closingPage.calls.some((message) => message.action === "poll"), false);
+  assert.equal(closingPage.calls.at(-1).action, "cancel");
   passed++;
 
   // Share time across the actual page and background: approval may be in flight

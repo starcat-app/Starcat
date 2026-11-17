@@ -19,6 +19,14 @@ struct CompanionPairedDevice: Codable, Identifiable, Sendable {
     let pairedAt: Date
     var lastSeenAt: Date?
     let scope: String
+    /// 旧 Keychain 记录没有版本；保持可选以保留已授权浏览器，不推测历史版本。
+    var browserVersion: String? = nil
+
+    var browserDescription: String {
+        let browserName = browser == "safari" ? "Safari" : "Chrome"
+        guard let browserVersion, !browserVersion.isEmpty else { return browserName }
+        return "\(browserName) \(browserVersion)"
+    }
 }
 
 /// 这份快照同时驱动 App 核对界面与服务端批准，避免批准已经替换的请求。
@@ -28,15 +36,18 @@ struct CompanionPairingApproval: Identifiable, Sendable {
     let name: String
     let code: String
     let expiresAt: Date
+    var browserVersion: String? = nil
 }
 
 struct CompanionPairingStart: Codable, Sendable {
     let instanceID: String
     let browser: String
     let name: String
+    var browserVersion: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case instanceID = "instance_id"
+        case browserVersion = "browser_version"
         case browser, name
     }
 }
@@ -134,7 +145,8 @@ final class CompanionDeviceStore {
         guard UUID(uuidString: input.instanceID) != nil,
               ["chrome", "safari"].contains(input.browser),
               !input.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              input.name.count <= 128 else {
+              input.name.count <= 128,
+              (input.browserVersion?.count ?? 0) <= 64 else {
             throw CompanionPairingError.invalidRequest
         }
         guard pendingApproval == nil else { throw CompanionPairingError.busy }
@@ -148,7 +160,8 @@ final class CompanionDeviceStore {
         repeat { code = String(format: "%06d", Int.random(in: 0...999_999)) } while activeCodes.contains(code)
         let approval = CompanionPairingApproval(
             id: requestID, browser: input.browser, name: input.name,
-            code: code, expiresAt: now().addingTimeInterval(Self.lifetime)
+            code: code, expiresAt: now().addingTimeInterval(Self.lifetime),
+            browserVersion: input.browserVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         requests[requestID] = Request(
             approval: approval, instanceID: input.instanceID, origin: origin, secret: secret
@@ -176,7 +189,7 @@ final class CompanionDeviceStore {
             let device = CompanionPairedDevice(
                 id: UUID().uuidString.lowercased(), instanceID: request.instanceID,
                 browser: approval.browser, name: approval.name, pairedAt: now(),
-                lastSeenAt: nil, scope: "companion"
+                lastSeenAt: nil, scope: "companion", browserVersion: approval.browserVersion
             )
             let record = Record(device: device, token: try Self.randomToken())
             try persist(records + [record])
