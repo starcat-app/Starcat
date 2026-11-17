@@ -34,10 +34,10 @@ struct AwesomeSourceManagerSheet: View {
     @State private var pendingConfirmation: AwesomeSourceConfirmation?
     @FocusState private var focusedInput: FocusedInput?
 
-    /// 840pt 画布内保留两列完整卡片，不通过缩小图片和操作控件硬塞第三列。
+    /// 1180pt 画布内固定三列，每张卡片约 371pt 宽，不缩小图片和操作控件。
     private let columns = Array(
         repeating: GridItem(.flexible(minimum: 280), spacing: 14, alignment: .top),
-        count: 2
+        count: 3
     )
 
     /// 打开时一次性捕获勾选草稿；后续目录刷新不能覆盖用户尚未提交的选择。
@@ -66,8 +66,8 @@ struct AwesomeSourceManagerSheet: View {
         .frame(width: AwesomeSourceManagerWindowController.contentSize.width,
                height: AwesomeSourceManagerWindowController.contentSize.height)
         .task {
-            // 首帧先不让输入框参与焦点链，避免系统自动聚焦后再清除造成蓝框闪烁。
-            // 挂载完成后恢复正常焦点能力，用户点击和键盘导航仍使用系统 Focus Ring。
+            // 首帧先不让输入框参与焦点链，避免系统自动聚焦后再清除造成边框闪烁。
+            // 挂载完成后恢复焦点能力，用户点击和键盘导航由输入框的细边框反馈。
             await Task.yield()
             guard !Task.isCancelled else { return }
             acceptsInputFocus = true
@@ -130,13 +130,57 @@ struct AwesomeSourceManagerSheet: View {
                 SheetCloseButton { store.dismissSourceManager() }
             }
 
-            TextField("awesome.search.placeholder", text: $searchQuery)
-                .textFieldStyle(.roundedBorder)
-                .focusable(acceptsInputFocus)
-                .focused($focusedInput, equals: .search)
+            sourceInput(
+                "awesome.search.placeholder",
+                text: $searchQuery,
+                focus: .search,
+                showsSearchIcon: true
+            )
         }
         .padding(20)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// 两个输入框共用语义背景与细边框；占位符先本地化再按纯文本显示，避免 URL 自带链接颜色。
+    private func sourceInput(
+        _ placeholderKey: String,
+        text: Binding<String>,
+        focus: FocusedInput,
+        showsSearchIcon: Bool = false
+    ) -> some View {
+        HStack(spacing: 6) {
+            if showsSearchIcon {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            TextField(
+                LocalizedStringKey(placeholderKey),
+                text: text,
+                prompt: Text(verbatim: String.l10n(placeholderKey))
+                    .foregroundStyle(.secondary)
+            )
+            .textFieldStyle(.plain)
+            .foregroundStyle(.primary)
+            .labelsHidden()
+            .focusable(acceptsInputFocus)
+            .focused($focusedInput, equals: focus)
+            // 焦点仍参与键盘导航，只抑制额外的系统光晕，由外层 1pt 边框明确反馈。
+            .focusEffectDisabled()
+            .accessibilityLabel(Text(LocalizedStringKey(placeholderKey)))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(
+                    focusedInput == focus ? Color.accentColor : Color.secondary.opacity(0.35),
+                    lineWidth: 1
+                )
+                .allowsHitTesting(false)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: focusedInput == focus)
     }
 
     @ViewBuilder
@@ -197,22 +241,24 @@ struct AwesomeSourceManagerSheet: View {
         }
     }
 
-    /// 骨架沿用真实两列与 222pt 卡片高度；目录刷新已有内容时继续保留勾选草稿。
+    /// 骨架沿用真实三列与收窄后的卡片高度；目录刷新已有内容时继续保留勾选草稿。
     private var sourceGridSkeleton: some View {
         SkeletonAnimatedPhase { phase in
             let palette = SkeletonPalette.forColorScheme(colorScheme)
             LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
-                ForEach(0..<4, id: \.self) { _ in
+                ForEach(0..<6, id: \.self) { _ in
                     VStack(alignment: .leading, spacing: 0) {
                         SkeletonBlock(height: 160, cornerRadius: 0, phase: phase, palette: palette)
-                        VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 7) {
                             SkeletonBlock(width: 150, height: 13, phase: phase, palette: palette)
-                            SkeletonBlock(width: 100, height: 10, phase: phase, palette: palette)
+                            Spacer(minLength: 8)
+                            SkeletonBlock(width: 70, height: 28, phase: phase, palette: palette)
                         }
-                        .padding(12)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
-                    .frame(height: 222)
+                    .frame(height: 208)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
             }
@@ -259,10 +305,12 @@ struct AwesomeSourceManagerSheet: View {
         let selectableSources = sources.filter {
             $0.kind == .custom || $0.githubRepoCount > 0 || $0.isEnabled
         }
+        // 只调整选择窗口的展示顺序：推荐置顶，同组仍沿用目录顺序，不改侧栏与持久化排序。
+        let orderedSources = selectableSources.filter(\.featured) + selectableSources.filter { !$0.featured }
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedQuery.isEmpty else { return selectableSources }
+        guard !normalizedQuery.isEmpty else { return orderedSources }
 
-        return selectableSources.filter { source in
+        return orderedSources.filter { source in
             [
                 source.displayName,
                 source.repoFullName,
@@ -310,12 +358,13 @@ struct AwesomeSourceManagerSheet: View {
             Text("awesome.sources.custom.title")
                 .font(.headline)
             HStack(spacing: 8) {
-                TextField("awesome.sources.custom.placeholder", text: $customSourceInput)
-                    .textFieldStyle(.roundedBorder)
-                    .focusable(acceptsInputFocus)
-                    .focused($focusedInput, equals: .customSource)
-                    .onSubmit(addCustomSource)
-                    .disabled(isAddingCustomSource)
+                sourceInput(
+                    "awesome.sources.custom.placeholder",
+                    text: $customSourceInput,
+                    focus: .customSource
+                )
+                .onSubmit(addCustomSource)
+                .disabled(isAddingCustomSource)
                 Button(action: addCustomSource) {
                     if isAddingCustomSource {
                         ProgressView()

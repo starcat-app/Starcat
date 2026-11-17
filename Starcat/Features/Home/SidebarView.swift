@@ -1363,29 +1363,8 @@ struct SidebarView: View {
         ) {
             exploreSidebarBusinessIcon(mode.businessIcon, color: mode.sidebarIconColor)
         } title: {
-            HStack(spacing: 4) {
-                Text(mode.titleKey)
-                    .lineLimit(1)
-                if mode == .awesome {
-                    Button {
-                        guard authSession.state.isAuthenticated else {
-                            showLoginSheet = true
-                            return
-                        }
-                        Task { await dependencies.awesomeStore.presentSourceManager() }
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(interfaceScale.font(.captionSmall))
-                            .foregroundStyle(ExploreSidebarIconStyle(semanticColor: .secondary))
-                            .frame(width: 18, height: 18)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .focusEffectDisabled()
-                    .help(Text("awesome.sources.manage"))
-                    .accessibilityLabel(Text("awesome.sources.manage"))
-                }
-            }
+            Text(mode.titleKey)
+                .lineLimit(1)
         }
     }
 

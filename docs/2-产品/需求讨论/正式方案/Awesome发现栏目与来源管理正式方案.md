@@ -13,7 +13,7 @@
 3. **Awesome 来源分成两类。** Starcat 精选来源由内容管理端维护并由 Discovery API 下发；用户自定义来源在客户端添加、解析和保存，不上传到公共服务。
 4. **精选来源不是 App 内硬编码清单。** `_local-admin` 提供来源内容管理，`starcat-discovery-api` 保存并公开已发布来源的名称、图片、介绍、仓库地址、项目数和同步状态。
 5. **用户自行选择精选来源。** 第一次点击 Awesome 时自动弹出卡片式来源选择 Sheet；用户确认后才订阅和加载对应来源。
-6. **来源管理入口固定在 Awesome 名称右侧。** 交互位置参考“我的项目”名称右侧的独立按钮，不在 Awesome 子分类底部再放“管理来源”行。
+6. **来源管理入口固定在 Awesome 中栏顶部、刷新按钮左侧。** 使用简短的“来源”文本按钮，交互位置参考每日推荐的“今日推荐”；侧栏不再放管理入口（2026-11-17 调整）。
 7. **精选来源由服务端集中解析。** Discovery API 定时或手动抓取来源仓库默认分支 README，解析 GitHub Repo，并向客户端返回预计算结果。
 8. **自定义来源由客户端本地解析。** 接受 `owner/repo` 或公开 GitHub 仓库 URL；不把用户添加的来源上传到 Discovery API。
 9. **Repo 全局去重，来源关系分别保留。** 同一 Repo 可以来自多个 Awesome；出现于 Awesome 不等于已 Star、已入知识库或属于“我的项目”。
@@ -64,7 +64,7 @@ Starcat 展示来源卡片，用户自行勾选
 - 在探索模式列表中把 Awesome 添加到周刊下面。
 - Awesome 选中时，将左栏下半部分切换为 Awesome 来源列表。
 - 第一次进入时自动展示卡片式来源选择 Sheet。
-- Awesome 名称右侧提供独立“管理来源”按钮。
+- Awesome 中栏顶部、刷新按钮左侧提供独立“来源”按钮。
 - `_local-admin` 支持精选来源新增、编辑、排序、发布、下架和同步。
 - Discovery API 提供精选来源目录和各来源条目接口。
 - Discovery API 集中解析精选来源 README，并缓存 GitHub Repo 元数据和来源证据。
@@ -100,7 +100,7 @@ Starcat 展示来源卡片，用户自行勾选
 ├── 热门
 ├── 新发布
 ├── 周刊
-└── Awesome  [管理来源]
+└── Awesome
 ```
 
 Awesome 必须紧跟周刊，不能插到发现榜单之间，也不能成为新的 `SidebarRootPage`。
@@ -137,23 +137,22 @@ Awesome 来源
 - README 内部章节不展开到左栏；章节属于中栏筛选，避免形成“来源 → 章节 → Repo”的深层侧栏树。
 - 来源不可用时保留一条禁用状态行，允许用户进入管理 Sheet 处理，不静默消失。
 
-### 3.3 Awesome 行与管理按钮
+### 3.3 Awesome 行与中栏管理按钮
 
-Awesome 模式行的结构与“我的项目”行保持一致：
+Awesome 模式行只负责导航与数量展示；管理入口放在中栏工具栏：
 
 ```text
-[Awesome 图标]  Awesome  [管理来源按钮]             [去重 Repo 数]
+侧栏：[Awesome 图标]  Awesome                     [去重 Repo 数]
+中栏：[搜索 / 筛选 / 排序]                [来源] [刷新] [多选]
 ```
 
 必须满足：
 
-- 管理按钮紧跟 `Awesome` 文本，不能放在整行最右侧，也不能放在来源子列表下面。
-- 点击 Awesome 行只切换模式。
-- 点击管理按钮只打开来源管理 Sheet；Button 必须拦截行选择，不误触模式切换。
-- Button 使用 `.buttonStyle(.plain)` 时必须添加 `.focusEffectDisabled()`。
-- 图标使用固定“来源管理”语义，不复用“我的项目”绿色授权勾。建议 `slider.horizontal.3`，最终以同栏可读性验收为准。
+- 点击 Awesome 行切换模式；首次配置仍按下述状态机自动打开来源选择 Sheet。
+- 中栏管理按钮使用原生文本按钮，文案为“来源” / “Sources”，位于刷新按钮左侧。
+- 点击管理按钮只打开现有来源管理 Sheet；未登录时禁用，不增加新的配置路径。
 - Tooltip 与 Accessibility Label 都是“管理 Awesome 来源”的本地化文案。
-- 行选中时图标颜色必须复用 `SidebarSemanticIconStyle`，不得手写固定灰色或绿色。
+- 简短按钮文案覆盖当前全部支持语言，保持单行。
 
 ### 3.4 首次进入状态机
 
@@ -223,8 +222,9 @@ hasCompletedAwesomeSourceSetup == false ?
 - Stars、项目数和同步状态使用克制的 Repo 风格胶囊；Stars 必须来自 GitHub 事实，不能以“未知”或缺字段时的 `0` 冒充。
 - 卡片背景使用 Logo 采样色生成低透明度渐变，图片不可用时使用统一语义兜底色；同时保留系统语义文字色和轻量选中边框。
 - 支持键盘焦点、Space 切换和 VoiceOver。
-- Sheet header 左上角展示 Awesome 图标；搜索框过滤名称、`owner/repo`、GitHub description 和内容管理摘要，无结果时显示搜索空态。
-- Sheet 初次打开不自动聚焦输入框；用户主动点击输入框后仍显示系统 Focus Ring。
+- Sheet header 左上角展示 Awesome 图标；搜索框左侧带搜索图标，过滤名称、`owner/repo`、GitHub description 和内容管理摘要，无结果时显示搜索空态。
+- 推荐来源（`featured=true`）在来源网格和搜索结果中置顶，同组保留目录顺序；自定义来源继续独立分区。
+- Sheet 初次打开不自动聚焦输入框；点击或键盘聚焦后用细边框反馈。搜索与自定义来源输入框的占位提示按纯文本显示，使用语义颜色适配明暗主题。
 - Sheet header 提供目录刷新按钮，只强制校验公共来源目录；中栏刷新按钮同时校验目录和已启用来源条目。
 - Sheet header 右上角关闭按钮使用 `SheetCloseButton`。
 - Sheet 失败时保留本地缓存卡片，并显示非阻断刷新错误。
@@ -965,7 +965,7 @@ xcodebuild -scheme Starcat -destination 'platform=macOS,arch=arm64' test
 
 - [ ] “探索”中 Awesome 位于周刊下面，未新增一级主栏目。
 - [ ] 周刊显示语言列表；Awesome 显示已启用来源列表。
-- [ ] Awesome 名称右侧存在独立管理按钮，子分类底部没有“管理来源”行。
+- [ ] Awesome 中栏顶部、刷新按钮左侧存在“来源”按钮，侧栏没有管理入口。
 - [ ] 用户第一次点击 Awesome 自动打开卡片式来源选择 Sheet。
 - [ ] 取消不完成首次配置；点击完成后不再自动弹出，包括零选择场景。
 - [ ] 精选来源完全来自 Discovery API，App 中没有业务来源硬编码。

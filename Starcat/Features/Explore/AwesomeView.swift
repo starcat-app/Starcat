@@ -125,6 +125,15 @@ struct AwesomeView: View {
             Spacer()
                 .layoutPriority(AdaptiveToolbarStatusText.spacerPriority)
 
+            Button("awesome.sources.button") {
+                Task { await store.presentSourceManager() }
+            }
+            .lineLimit(1)
+            .fixedSize()
+            .disabled(!authSession.state.isAuthenticated)
+            .help(Text("awesome.sources.manage"))
+            .accessibilityLabel(Text("awesome.sources.manage"))
+
             SyncIconButton(
                 isRefreshing: store.isRefreshing,
                 disabled: store.isRefreshing,

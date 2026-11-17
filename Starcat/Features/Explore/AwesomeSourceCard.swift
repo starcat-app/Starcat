@@ -46,9 +46,9 @@ struct AwesomeSourceCard: View {
     private static let ogReplaceBlurOutDuration: TimeInterval = 0.24
     @State private var ogRevealBlur: CGFloat = Self.ogReplaceBlurRadius
 
-    /// 保持原有图片和卡片高度；窗口减为两列时不缩小文字与操作区。
+    /// 图片保持原高度；底部收窄到操作胶囊所需的 48pt，避免项目数行上下留白过大。
     private let ogHeight: CGFloat = 160
-    private let cardHeight: CGFloat = 222
+    private let cardHeight: CGFloat = 208
     private let languageBarHeight: CGFloat = 6
 
     var body: some View {
@@ -138,10 +138,6 @@ struct AwesomeSourceCard: View {
             .clipped()
             .accessibilityHidden(true)
 
-            if source.featured {
-                featuredBadge
-                    .padding(10)
-            }
         }
         .overlay(alignment: .bottom) {
             // 部分 GitHub 默认 OG 图本身已带语言色条；把本地色条覆盖在图片底边，
@@ -174,10 +170,13 @@ struct AwesomeSourceCard: View {
     private var featuredBadge: some View {
         Label(String.l10n("awesome.sources.featured"), systemImage: "sparkles")
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(Color.green)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(.regularMaterial, in: Capsule())
+            .background(
+                Color.green.opacity(colorScheme == .dark ? 0.24 : 0.16),
+                in: Capsule()
+            )
             .accessibilityHidden(true)
     }
 
@@ -208,6 +207,10 @@ struct AwesomeSourceCard: View {
 
     private var footer: some View {
         HStack(alignment: .center, spacing: 7) {
+            // 推荐标记进入底部信息行，避免覆盖 OG 图里的仓库标识或作者信息。
+            if source.featured {
+                featuredBadge
+            }
             sourceStatus
             if !source.isAvailable || hasRefreshError {
                 staleBadge

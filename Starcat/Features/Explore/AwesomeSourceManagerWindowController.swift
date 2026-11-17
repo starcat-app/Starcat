@@ -2,8 +2,8 @@
 //  AwesomeSourceManagerWindowController.swift
 //  Starcat
 //
-//  Awesome 来源管理的固定尺寸 AppKit sheet。与 AI 整理共用 840 × 560 画布，
-//  禁止 SwiftUI 的内容尺寸协商将来源网格反向撑大成宽窗口。
+//  Awesome 来源管理的固定尺寸 AppKit sheet。对齐 Skills / Issues 的 1180 × 720 画布，
+//  由窗口持有尺寸，避免 SwiftUI 的内容尺寸协商反向改变画布。
 //
 
 import AppKit
@@ -12,7 +12,7 @@ import SwiftUI
 /// 只管理窗口生命周期；勾选草稿、来源增删和保存仍由原有 View / Store 负责。
 @MainActor
 final class AwesomeSourceManagerWindowController: NSWindowController, NSWindowDelegate {
-    static let contentSize = AIOrganizationLayout.windowSize
+    static let contentSize = NSSize(width: 1180, height: 720)
 
     private static var activeController: AwesomeSourceManagerWindowController?
     private weak var parentWindow: NSWindow?

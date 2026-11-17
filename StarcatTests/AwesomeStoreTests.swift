@@ -31,14 +31,13 @@ struct AwesomeStoreTests {
         #expect(item.discoveryDTO.pushedAt == repo.pushedAt)
     }
 
-    @Test("Awesome 来源管理与 AI 整理共用 840 × 560 固定画布")
+    @Test("Awesome 来源管理使用 1180 × 720 三列卡片画布")
     @MainActor
-    func sourceManagerUsesCompactOrganizationCanvas() {
+    func sourceManagerUsesThreeColumnCanvas() {
         // 只校验几何契约，不创建窗口或依赖桌面状态。
         let size = AwesomeSourceManagerWindowController.contentSize
-        #expect(size == AIOrganizationLayout.windowSize)
-        #expect(size.width == 840)
-        #expect(size.height == 560)
+        #expect(size.width == 1180)
+        #expect(size.height == 720)
     }
 
     @Test("后台加载不弹来源选择，用户点击才弹出且完成后停止弹出")
@@ -691,9 +690,30 @@ struct AwesomeStoreTests {
         #expect(searchResults.map(\.id) == ["unavailable-enabled", "empty-custom", "available"])
     }
 
+    @Test("来源选择与搜索都将推荐置顶，同组保留目录顺序", arguments: ["", " AWESOME-ONE "])
+    @MainActor
+    func sourcePickerPrioritizesFeaturedSources(query: String) {
+        let sources = [
+            Self.source(id: "regular-first", featured: false),
+            Self.source(id: "featured-first"),
+            Self.source(id: "empty-featured", githubRepoCount: 0),
+            Self.source(id: "regular-second", featured: false),
+            Self.source(id: "featured-second")
+        ]
+
+        let results = AwesomeSourceManagerSheet.filterSources(
+            sources,
+            query: query,
+            languageCode: "zh"
+        )
+
+        #expect(results.map(\.id) == ["featured-first", "featured-second", "regular-first", "regular-second"])
+    }
+
     private static func source(
         id: String = "one",
         kind: AwesomeSourceKind = .managed,
+        featured: Bool = true,
         isEnabled: Bool = false,
         isAvailable: Bool = true,
         githubRepoCount: Int = 1,
@@ -710,7 +730,7 @@ struct AwesomeStoreTests {
             imageURL: nil,
             summaryZH: "测试来源",
             summaryEN: "Test source",
-            featured: true,
+            featured: featured,
             sortOrder: 1,
             sourceStars: 9_012,
             sourceForks: 812,
