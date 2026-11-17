@@ -11,6 +11,172 @@ import Foundation
 import Testing
 @testable import Starcat
 
+@Suite("RepoFileTreeSessionCache")
+struct RepoFileTreeSessionCacheTests {
+    @Test("同提交并发请求只拉一棵树，普通重开命中缓存，强制刷新重新请求")
+    func mergesRequestsAndRefreshes() async throws {
+        let cache = RepoFileTreeSessionCache()
+        let source = TreeRequestTestSource()
+        let api = MockGitHubAPIClient()
+        api.repositoryGitTreeHandler = { _, _, _ in try await source.fetch() }
+        async let first = cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api, force: true)
+        async let second = cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api, force: true)
+        try await source.waitForCalls(1)
+        // 两个调用都必须停在网络返回之前，才真正覆盖请求合并。
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await source.callCount == 1)
+        await source.succeed()
+        let results = try await (first, second)
+        #expect(results.0.sha == results.1.sha)
+        #expect(try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api).sha == results.0.sha)
+        let refreshed = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api, force: true)
+        }
+        try await source.waitForCalls(2)
+        await source.succeed()
+        #expect(try await refreshed.value.sha != results.0.sha)
+    }
+
+    @Test("一个窗口取消不影响另一个，最后一个离开才停止请求")
+    func consumerCancellation() async throws {
+        let cache = RepoFileTreeSessionCache()
+        let source = TreeRequestTestSource()
+        let api = MockGitHubAPIClient()
+        api.repositoryGitTreeHandler = { _, _, _ in try await source.fetch() }
+        let first = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api, force: true)
+        }
+        try await source.waitForCalls(1)
+        let second = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api, force: true)
+        }
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await source.callCount == 1)
+        first.cancel()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(await source.cancelCount == 0)
+        await source.succeed()
+        #expect(try await second.value.sha == "tree-1")
+        await #expect(throws: CancellationError.self) { try await first.value }
+
+        let last = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "another", scope: "public", api: api)
+        }
+        try await source.waitForCalls(2)
+        last.cancel()
+        await #expect(throws: CancellationError.self) { try await last.value }
+        #expect(await source.cancelCount == 1)
+        let retry = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "another", scope: "public", api: api)
+        }
+        try await source.waitForCalls(3)
+        await source.succeed()
+        #expect(try await retry.value.sha == "tree-3")
+    }
+
+    @Test("切号拒绝不响应取消的迟到结果，新会话可以重试")
+    func resetRejectsLateResponse() async throws {
+        let cache = RepoFileTreeSessionCache()
+        let source = TreeRequestTestSource(honorsCancellation: false)
+        let api = MockGitHubAPIClient()
+        api.repositoryGitTreeHandler = { _, _, _ in try await source.fetch() }
+        let old = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "private", api: api)
+        }
+        try await source.waitForCalls(1)
+        await cache.reset()
+        await source.succeed()
+        await #expect(throws: CancellationError.self) { try await old.value }
+        let current = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "private", api: api)
+        }
+        try await source.waitForCalls(2)
+        await source.succeed()
+        #expect(try await current.value.sha == "tree-2")
+    }
+
+    @Test("凭据范围独立，共享失败后允许重新请求")
+    func scopeIsolationAndRetry() async throws {
+        let cache = RepoFileTreeSessionCache()
+        let source = TreeRequestTestSource()
+        let api = MockGitHubAPIClient()
+        api.repositoryGitTreeHandler = { _, _, _ in try await source.fetch() }
+        let publicTree = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api)
+        }
+        let privateTree = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "private", api: api)
+        }
+        try await source.waitForCalls(2)
+        await source.fail()
+        await #expect(throws: URLError.self) { try await publicTree.value }
+        await #expect(throws: URLError.self) { try await privateTree.value }
+        let retry = Task {
+            try await cache.load(owner: "o", repo: "r", ref: "fixed", scope: "public", api: api)
+        }
+        try await source.waitForCalls(3)
+        await source.succeed()
+        #expect(try await retry.value.sha == "tree-3")
+    }
+}
+
+/// 可控网络替身只暂停请求，不访问 GitHub；同时可模拟取消被传输层忽略。
+private actor TreeRequestTestSource {
+    private(set) var callCount = 0
+    private(set) var cancelCount = 0
+    private let honorsCancellation: Bool
+    private var pending: [Int: CheckedContinuation<GitHubGitTreeDTO, Error>] = [:]
+
+    init(honorsCancellation: Bool = true) {
+        self.honorsCancellation = honorsCancellation
+    }
+
+    func fetch() async throws -> GitHubGitTreeDTO {
+        callCount += 1
+        let requestID = callCount
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled, honorsCancellation {
+                    cancelCount += 1
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    pending[requestID] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.cancel(requestID) }
+        }
+    }
+
+    func waitForCalls(_ expected: Int) async throws {
+        for _ in 0..<2_000 {
+            if callCount >= expected { return }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        try #require(callCount >= expected)
+    }
+
+    func succeed() {
+        let requests = pending
+        pending = [:]
+        for (requestID, continuation) in requests {
+            continuation.resume(returning: GitHubGitTreeDTO(sha: "tree-\(requestID)", truncated: false, tree: []))
+        }
+    }
+
+    func fail() {
+        let requests = pending
+        pending = [:]
+        requests.values.forEach { $0.resume(throwing: URLError(.cannotConnectToHost)) }
+    }
+
+    private func cancel(_ requestID: Int) {
+        guard honorsCancellation, let continuation = pending.removeValue(forKey: requestID) else { return }
+        cancelCount += 1
+        continuation.resume(throwing: CancellationError())
+    }
+}
+
 @Suite("RepoFileTreeBuilder")
 struct RepoFileTreeBuilderTests {
 
