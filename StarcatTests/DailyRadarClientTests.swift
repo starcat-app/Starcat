@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Observation
 import Testing
 @testable import Starcat
 
@@ -567,7 +568,7 @@ struct DailyRadarClientTests {
         #expect(model.workspaceTitle == DailyRadarCatalog.Category.localizedTitle(for: "ai-community"))
     }
 
-    @Test @MainActor func sidebarCountsFollowCatalogAndSelectCategoryClosesDetail() async throws {
+    @Test @MainActor func sidebarCountsFollowIndependentCatalogAndSelectCategoryClosesDetail() async throws {
         let fixture = DailyRadarFixture()
         defer { fixture.clean() }
         let model = DailyRadarWorkspaceViewModel()
@@ -576,8 +577,12 @@ struct DailyRadarClientTests {
         #expect(model.categoryCounts.isEmpty)
         #expect(model.totalCount == nil)
         await model.reload()
-        #expect(model.categoryCounts == ["ai-cli": 12])
-        #expect(model.totalCount == 12)
+        // 页面发布不隐式加载侧栏；两份统计只由独立目录入口维护。
+        #expect(model.categoryCounts.isEmpty)
+        #expect(model.totalCount == nil)
+        await model.reloadSidebarCatalogs()
+        #expect(model.categoryCounts == ["ai-cli": 12, "ai-weekly-events": 43])
+        #expect(model.totalCount == 55)
         // 打开报告后切换分类必须关闭详情面板，避免旧详情浮在新分类列表之上。
         let selected = try #require(model.items.first)
         await model.open(selected)
@@ -644,6 +649,89 @@ struct DailyRadarClientTests {
         #expect(!restarted.failed)
     }
 
+    /// 分类和历史日期快照仍可离线阅读，但不能在恢复或重验证期间回退侧栏的独立目录统计。
+    @Test(arguments: [false, true], [false, true])
+    @MainActor func olderPageSnapshotsNeverChangeSidebarCounts(events: Bool, networkFails: Bool) async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        let category = events ? "ai-weekly-events" : "ai-cli"
+        let historicalDate = "2026-10-29"
+        model.selectCategory(category)
+        await model.reload()
+        model.selectedEdition = historicalDate
+        fixture.state.mutate { $0.historyDates = [historicalDate, "2026-10-24"] }
+        await model.reload()
+        #expect(model.catalog?.catalogRevision == "1")
+
+        fixture.state.mutate {
+            $0.revision = "2"
+            $0.weeklyCount = 13
+            $0.eventsCount = 44
+        }
+        await model.reloadSidebarCatalogs(force: true)
+        let expectedCounts = ["ai-cli": 13, "ai-weekly-events": 44]
+        #expect(model.categoryCounts == expectedCounts)
+        #expect(model.totalCount == 57)
+        fixture.state.mutate { $0.networkError = networkFails }
+
+        for selectedEdition in [nil, historicalDate] as [String?] {
+            model.selectCategory(nil)
+            model.selectCategory(category)
+            model.selectedEdition = selectedEdition
+            // 只断言最终值会漏掉“旧快照先回退、网络随后恢复”的瞬时跳变。
+            let updates = AsyncStream<Void>.makeStream()
+            withObservationTracking {
+                _ = model.categoryCounts
+                _ = model.totalCount
+            } onChange: {
+                updates.continuation.yield(())
+            }
+
+            await model.reload()
+            updates.continuation.finish()
+            var sidebarChanged = false
+            for await _ in updates.stream { sidebarChanged = true }
+
+            #expect(!sidebarChanged)
+            #expect(model.categoryCounts == expectedCounts)
+            #expect(model.totalCount == 57)
+            #expect(model.catalog?.catalogRevision == (networkFails ? "1" : "2"))
+            #expect(model.isShowingCachedContent == networkFails)
+            #expect(!model.items.isEmpty)
+            if let selectedEdition { #expect(model.edition == selectedEdition) }
+        }
+    }
+
+    /// 手动刷新必须更新两份独立统计；日期/列表失败时仍保留旧阅读快照。
+    @Test(arguments: [false, true], [false, true])
+    @MainActor func forcedRefreshUpdatesSidebarIndependentlyOfPageSuccess(events: Bool, pageFails: Bool) async throws {
+        let fixture = DailyRadarFixture()
+        defer { fixture.clean() }
+        let model = DailyRadarWorkspaceViewModel()
+        model.configure(repository: fixture.repository, scope: "one", locale: Locale(identifier: "en_US"))
+        await model.reloadSidebarCatalogs()
+        model.selectCategory(events ? "ai-weekly-events" : "ai-cli")
+        await model.reload()
+        #expect(model.catalog?.catalogRevision == "1")
+        #expect(model.totalCount == 55)
+
+        fixture.state.mutate {
+            $0.revision = "2"
+            $0.weeklyCount = 13
+            $0.eventsCount = 44
+            if pageFails { $0.failedPaths = ["/api/v1/daily-radar/dates"] }
+        }
+        await model.reload(force: true)
+
+        #expect(model.categoryCounts == ["ai-cli": 13, "ai-weekly-events": 44])
+        #expect(model.totalCount == 57)
+        #expect(model.catalog?.catalogRevision == (pageFails ? "1" : "2"))
+        #expect(model.isShowingCachedContent == pageFails)
+        #expect(!model.items.isEmpty)
+    }
+
     @Test @MainActor func switchingCategoryClearsStaleItemsButSameIdentityFailureKeepsContent() async throws {
         let fixture = DailyRadarFixture()
         defer { fixture.clean() }
@@ -695,6 +783,8 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
         var historyDates: [String]? = nil
         var changeOnNext = false
         var failedEventsCatalog = false
+        var weeklyCount = 12
+        var eventsCount = 43
         var requests: [URLRequest] = []
     }
     private let lock = NSLock()
@@ -773,12 +863,12 @@ private final class DailyRadarFixtureState: @unchecked Sendable {
             if path.hasSuffix("/catalog") {
                 if isEvents {
                     payload = """
-                    {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-weekly-events","title":"Weekly AI Highlights","period":"weekly"}],"available_languages":["en","zh-Hans"],"latest_available_date":"\(values.day)","category_counts":{"ai-weekly-events":43},"total_count":43}
+                    {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-weekly-events","title":"Weekly AI Highlights","period":"weekly"}],"available_languages":["en","zh-Hans"],"latest_available_date":"\(values.day)","category_counts":{"ai-weekly-events":\(values.eventsCount)},"total_count":\(values.eventsCount)}
                     """
                 } else {
-                    // 计数与 /reports 的 total=12 语义保持一致，供侧边栏徽标断言使用。
+                    // 默认计数与 /reports 一致；允许模拟目录更新，验证页面快照不会回写旧统计。
                     payload = """
-                    {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":12},"total_count":12}
+                    {"catalog_revision":"\(values.revision)","categories":[{"id":"ai-cli","title":"AI CLI","period":"daily"}],"available_languages":["en"],"latest_available_date":"\(values.day)","category_counts":{"ai-cli":\(values.weeklyCount)},"total_count":\(values.weeklyCount)}
                     """
                 }
             } else if path.hasSuffix("/dates") {
