@@ -8,25 +8,23 @@
 //  关键约束：
 //  - 每次绘制从报告身份重建随机流，禁止使用系统随机数或按帧变化的状态
 //  - 几何与纹理分流，尺寸只裁减细节，不改变风格与配色
-//  - 采样与图形数量都有上限，不启用动画、逐像素噪声或全画面模糊
+//  - 静态主体的采样与图形数量都有上限，不做逐像素噪声或全画面模糊
 //  - 主推卡图案连续铺满画布，通过末层渐变保护左侧文字，避免留出硬边黑块
 //
 
 import SwiftUI
 
-/// 封面是无交互的静态 Canvas；同一份构图可适配卡片、缩略图和阅读页。
+/// 封面主体是无交互的静态 Canvas；同一份构图可适配卡片、缩略图和阅读页。
+/// 循环光效由调用方叠加独立图层，避免 30fps 重画整套程序化构图。
 struct DailyRadarProgrammaticCover: View {
     let category: String?
     let seed: String
     var textSafeLeading: CGFloat = 0
-    var animationPhase: Double?
 
-    init(category: String?, seed: String, textSafeLeading: CGFloat = 0,
-         animationPhase: Double? = nil) {
+    init(category: String?, seed: String, textSafeLeading: CGFloat = 0) {
         self.category = category
         self.seed = seed
         self.textSafeLeading = textSafeLeading
-        self.animationPhase = animationPhase
     }
 
     var body: some View {
@@ -72,9 +70,6 @@ struct DailyRadarProgrammaticCover: View {
                 Self.drawMosaic(subject, rect: rect, composition: composition, rng: &rng, detail: detail)
             }
             Self.drawTexture(context, rect: rect, composition: composition, detail: detail)
-            if let animationPhase {
-                Self.drawDynamicPulse(context, rect: rect, composition: composition, phase: animationPhase)
-            }
             if safe > 0 {
                 Self.drawTextProtection(context, rect: rect, safe: safe)
             }
@@ -180,11 +175,58 @@ struct DailyRadarProgrammaticCover: View {
         ctx.stroke(marks, with: .color(.white.opacity(0.16)), lineWidth: 0.6)
     }
 
-    /// 专题入口专用的轻量循环光效；普通报告封面不传入 phase，保持完全静态。
-    private static func drawDynamicPulse(_ ctx: GraphicsContext, rect: CGRect,
-                                         composition c: DailyRadarCoverComposition, phase raw: Double) {
+    /// 专题入口专用的轻量循环光效；普通报告封面不叠加该图层，保持完全静态。
+    static func drawDynamicPulse(_ ctx: GraphicsContext, rect: CGRect,
+                                 composition c: DailyRadarCoverComposition, phase raw: Double) {
         let phase = raw - floor(raw)
         let width = max(rect.width, rect.height)
+        // 光晕使用径向渐变而非整图模糊；两种颜色始终由报告身份派生，不按帧随机。
+        for glow in 0..<2 {
+            let angle = raw * .pi / 2 + c.phase + Double(glow) * .pi
+            let center = CGPoint(
+                x: rect.width * (0.70 + cos(angle) * 0.15),
+                y: rect.height * (0.46 + sin(angle) * 0.23)
+            )
+            let color = ink(c, accent: glow == 1)
+            ctx.fill(Path(rect), with: .radialGradient(
+                Gradient(colors: [color.opacity(0.34), color.opacity(0.10), .clear]),
+                center: center, startRadius: 0, endRadius: width * 0.38
+            ))
+        }
+        // 轨迹和亮点复用同一函数，固定三条路径、九个亮点，避免随尺寸或帧数增加绘制预算。
+        func point(at progress: Double, lane: Int) -> CGPoint {
+            CGPoint(
+                x: rect.width * (0.40 + progress * 0.64),
+                y: rect.height * (
+                    0.26 + Double(lane) * 0.19
+                        + sin(progress * 2 * .pi + c.phase + Double(lane)) * 0.12
+                )
+            )
+        }
+        for lane in 0..<3 {
+            let color = ink(c, accent: lane.isMultiple(of: 2))
+            var track = Path()
+            for sample in 0...36 {
+                let position = point(at: Double(sample) / 36, lane: lane)
+                if sample == 0 { track.move(to: position) } else { track.addLine(to: position) }
+            }
+            ctx.stroke(track, with: .color(color.opacity(0.20)), lineWidth: 0.8)
+            for spark in 0..<3 {
+                let progress = (raw / (1.6 + Double(lane) * 0.35) + Double(spark) / 3)
+                    .truncatingRemainder(dividingBy: 1)
+                let center = point(at: progress, lane: lane)
+                let intensity = sin(progress * .pi)
+                let halo = CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)
+                ctx.fill(Path(ellipseIn: halo), with: .radialGradient(
+                    Gradient(colors: [color.opacity(0.65 * intensity), .clear]),
+                    center: center, startRadius: 0, endRadius: 9
+                ))
+                ctx.fill(
+                    Path(ellipseIn: CGRect(x: center.x - 1.5, y: center.y - 1.5, width: 3, height: 3)),
+                    with: .color(.white.opacity(0.90 * intensity))
+                )
+            }
+        }
         for band in 0..<3 {
             let cycle = (phase + Double(band) / 3).truncatingRemainder(dividingBy: 1)
             let x = rect.minX + CGFloat(cycle) * (rect.width + width * 0.34) - width * 0.17
@@ -197,7 +239,7 @@ struct DailyRadarProgrammaticCover: View {
             ctx.fill(beam, with: .linearGradient(
                 Gradient(colors: [
                     ink(c, accent: band.isMultiple(of: 2)).opacity(0.015),
-                    ink(c, accent: band.isMultiple(of: 2)).opacity(0.075),
+                    ink(c, accent: band.isMultiple(of: 2)).opacity(0.13),
                     ink(c, accent: band.isMultiple(of: 2)).opacity(0.015)
                 ]),
                 startPoint: CGPoint(x: beam.boundingRect.minX, y: .zero),

@@ -4,6 +4,7 @@
 //
 //  每日热点总分类的每周 AI 大事入口。叠卡只预览真实报告封面，
 //  鼠标、键盘与辅助功能激活统一进入分类，不直接打开某期文章。
+//  轮播与流光跟随视口、窗口和减少动态效果设置，暂停时保留当前选期。
 //
 
 import SwiftUI
@@ -49,8 +50,12 @@ struct DailyRadarWeeklyTopicCard: View {
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(\.locale) private var locale
     @Environment(\.starcatReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
     @State private var hovered = false
     @State private var selectedIndex = 0
+    @State private var isCardVisible = false
     @FocusState private var focused: Bool
 
     /// 最新一期始终在最左侧；先排序再截取，避免输入顺序影响最近六期的选择。
@@ -62,7 +67,18 @@ struct DailyRadarWeeklyTopicCard: View {
     }
     private var coverCount: Int { max(1, editions.count) }
     private var currentIndex: Int { min(selectedIndex, coverCount - 1) }
-    private var activeIndex: Int? { hovered || focused || reduceMotion ? currentIndex : nil }
+    private var isWindowActive: Bool { scenePhase == .active && appearsActive }
+    private var shouldRunCarousel: Bool {
+        !reduceMotion && isCardVisible && isWindowActive && coverCount > 1
+            && !hovered && !focused && !voiceOverEnabled
+    }
+    /// 选期、报告身份或播放条件改变时取消旧倒计时，恢复后从完整五秒重新开始。
+    private var carouselIdentity: [String]? {
+        shouldRunCarousel ? editions.map(\.contentIdentity) + [String(currentIndex)] : nil
+    }
+    private var isVisualEffectActive: Bool {
+        !reduceMotion && isCardVisible && isWindowActive
+    }
     private var compact: Bool { availableWidth < 640 * scale.multiplier }
     private var categoryTitle: String {
         DailyRadarCatalog.Category.localizedTitle(for: "ai-weekly-events")
@@ -101,7 +117,7 @@ struct DailyRadarWeeklyTopicCard: View {
             }
             .background {
                 animatedBackground
-                .overlay(Color.black.opacity(0.35))
+                .overlay(Color.black.opacity(0.16))
                 .allowsHitTesting(false)
             }
             // 与现有专题大卡一致：插画固定为深色，文字随局部语义环境保持对比；
@@ -123,15 +139,25 @@ struct DailyRadarWeeklyTopicCard: View {
         .focusable()
         .focused($focused)
         .pointerStyle(.link)
+        // LazyVStack 中卡片可能先被构建但尚未进入视口；只有真正可见且窗口活跃时才轮播。
+        .onScrollVisibilityChange(threshold: 0.2) { isVisible in
+            isCardVisible = isVisible
+        }
         .onHover { isInside in
             hovered = isInside
-            if !isInside && !focused { selectedIndex = 0 }
-        }
-        .onChange(of: focused) { _, isFocused in
-            if !isFocused && !hovered { selectedIndex = 0 }
         }
         .onChange(of: editions.map(\.contentIdentity)) { _, _ in
             selectedIndex = 0
+        }
+        .task(id: carouselIdentity) {
+            guard shouldRunCarousel else { return }
+            do {
+                try await Task.sleep(for: .seconds(5))
+                try Task.checkCancellation()
+            } catch {
+                return
+            }
+            selectedIndex = (currentIndex + 1) % coverCount
         }
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { key in
             selectedIndex = (currentIndex + (key.key == .rightArrow ? 1 : coverCount - 1)) % coverCount
@@ -187,23 +213,24 @@ struct DailyRadarWeeklyTopicCard: View {
         .padding(24 * scale.multiplier)
     }
 
-    /// 仅周专题入口持续播放背景光效；Reduce Motion 时直接回落静态封面。
+    /// 背景跟随当前预览期次；静态主体和循环光效分层，切换期次时只交叉渐变主体。
     private var animatedBackground: some View {
-        Group {
-            if reduceMotion {
-                DailyRadarProgrammaticCover(
-                    category: "ai-weekly-events", seed: "ai-weekly-events", textSafeLeading: 0.4
-                )
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                    DailyRadarProgrammaticCover(
-                        category: "ai-weekly-events", seed: "ai-weekly-events",
-                        textSafeLeading: 0.4,
-                        animationPhase: timeline.date.timeIntervalSinceReferenceDate / 7
-                    )
-                }
+        let seed = editions.indices.contains(currentIndex)
+            ? editions[currentIndex].id
+            : "ai-weekly-events"
+        return ZStack {
+            DailyRadarProgrammaticCover(
+                category: "ai-weekly-events", seed: seed, textSafeLeading: 0.4
+            )
+            .id(seed)
+            .transition(.opacity)
+            if isVisualEffectActive {
+                DailyRadarWeeklyTopicGlow(seed: seed)
+                    .id("glow|\(seed)")
+                    .transition(.opacity)
             }
         }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: seed)
     }
 
     /// 图片层完全禁用命中；日期与静态感应区复用封面锚点，动画不会反过来改变选期。
@@ -224,6 +251,16 @@ struct DailyRadarWeeklyTopicCard: View {
                                 RoundedRectangle(cornerRadius: 10)
                                     .strokeBorder(Color.primary.opacity(0.28), lineWidth: 1)
                             }
+                            .overlay {
+                                if index == currentIndex && !reduceMotion {
+                                    DailyRadarWeeklyCoverEdgeGlow(
+                                        seed: editions.indices.contains(index)
+                                            ? editions[index].id
+                                            : "ai-weekly-events",
+                                        isAnimated: isVisualEffectActive
+                                    )
+                                }
+                            }
                             .shadow(color: .black.opacity(0.22), radius: 8, y: 5)
                             .scaleEffect(pose.scale)
                             .rotationEffect(.degrees(pose.rotation))
@@ -239,8 +276,8 @@ struct DailyRadarWeeklyTopicCard: View {
                     ForEach(Array(editions.enumerated()), id: \.element.id) { index, _ in
                         // 只保留指示点，不显示日期文案，避免与右下角项目徽标重叠。
                         Capsule()
-                            .fill(Color.primary.opacity(activeIndex == index ? 0.9 : 0.35))
-                            .frame(width: activeIndex == index ? 14 : 3, height: 3)
+                            .fill(Color.primary.opacity(currentIndex == index ? 0.9 : 0.35))
+                            .frame(width: currentIndex == index ? 14 : 3, height: 3)
                             .frame(width: coverCount > 1 ? layout.spacing : layout.width)
                         .position(x: layout.center(at: index), y: geometry.size.height - 25 * scale.multiplier)
                         .allowsHitTesting(false)
@@ -254,7 +291,7 @@ struct DailyRadarWeeklyTopicCard: View {
                     selectedIndex = layout.index(at: location.x)
                 }
             }
-            .animation(reduceMotion ? nil : .smooth(duration: 0.48), value: activeIndex)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.5), value: currentIndex)
             .clipped()
         }
         .accessibilityHidden(true)
@@ -265,7 +302,19 @@ struct DailyRadarWeeklyTopicCard: View {
         let report = editions.indices.contains(index) ? editions[index] : nil
         return ZStack {
             DailyRadarProgrammaticCover(category: "ai-weekly-events", seed: report?.id ?? "ai-weekly-events")
-                .overlay(Color.black.opacity(0.48))
+                // 只在文字需要的位置保留遮罩，让程序化封面的主体保持更高亮度。
+                .overlay {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black.opacity(0.20), location: 0),
+                            .init(color: .clear, location: 0.32),
+                            .init(color: .black.opacity(0.18), location: 0.62),
+                            .init(color: .black.opacity(0.38), location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
             VStack(alignment: .leading, spacing: 10) {
                 Text(verbatim: categoryTitle)
                     .font(scale.font(size: 9, weight: .medium))
@@ -293,23 +342,15 @@ struct DailyRadarWeeklyTopicCard: View {
         if reduceMotion {
             return CoverPose(x: x, opacity: index == currentIndex ? 1 : 0, z: index == currentIndex ? 10 : 0)
         }
-        guard let activeIndex else {
-            let position = CGFloat(index) / CGFloat(max(1, coverCount - 1))
-            return CoverPose(
-                x: x, y: position * 12,
-                rotation: coverCount > 1 ? Double(position) * 16 - 8 : 0,
-                scale: 0.94 - position * 0.12,
-                opacity: index == 0 ? 1 : 0.82, z: Double(coverCount - index)
-            )
-        }
-        if index == activeIndex { return CoverPose(x: x, y: -9, z: 10) }
-        let distance = index - activeIndex
+        // 暂停只停止计时与流光，不收回前景卡片，避免失焦时背景与预览期次错位。
+        if index == currentIndex { return CoverPose(x: x, y: -12, z: 10) }
+        let distance = index - currentIndex
         let direction: CGFloat = distance < 0 ? -1 : 1
         return CoverPose(
             x: x,
             y: CGFloat(23 + abs(distance) * 3),
             rotation: Double(direction) * Double(12 + abs(distance) * 2),
-            scale: 0.65, opacity: 0.65, z: Double(5 - abs(distance))
+            scale: 0.72, opacity: 0.80, z: Double(5 - abs(distance))
         )
     }
 
@@ -321,5 +362,70 @@ struct DailyRadarWeeklyTopicCard: View {
         var scale: CGFloat = 1
         var opacity: Double = 1
         var z: Double = 0
+    }
+
+    /// 专题背景的独立循环光层；不可见或窗口失活时整层移除，不再产生帧更新。
+    private struct DailyRadarWeeklyTopicGlow: View {
+        let seed: String
+
+        var body: some View {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                Canvas { context, size in
+                    guard size.width > 0, size.height > 0 else { return }
+                    let composition = DailyRadarCoverComposition(
+                        category: "ai-weekly-events", seed: seed
+                    )
+                    let phase = timeline.date.timeIntervalSinceReferenceDate / 7
+                    DailyRadarProgrammaticCover.drawDynamicPulse(
+                        context, rect: CGRect(origin: .zero, size: size),
+                        composition: composition, phase: phase
+                    )
+                }
+            }
+            // 光效在文字区逐渐减弱，左侧仍由静态封面的文字保护渐变保证对比度。
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .white.opacity(0.12), location: 0.4),
+                        .init(color: .white, location: 0.68),
+                        .init(color: .white, location: 1)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    /// 当前封面使用随期次配色的低强度边缘流光，叠在固定圆角内不改变命中区。
+    private struct DailyRadarWeeklyCoverEdgeGlow: View {
+        let seed: String
+        let isAnimated: Bool
+
+        var body: some View {
+            let composition = DailyRadarCoverComposition(category: "ai-weekly-events", seed: seed)
+            let primary = Color(hue: composition.hue, saturation: 0.70, brightness: 0.86)
+            let accent = Color(hue: composition.accentHue, saturation: 0.82, brightness: 0.90)
+            return TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isAnimated)) { timeline in
+                let phase = timeline.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: 9) / 9
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(
+                        AngularGradient(
+                            colors: [
+                                primary.opacity(0.18), primary.opacity(0.18),
+                                accent.opacity(0.85), .white.opacity(0.75),
+                                primary.opacity(0.18)
+                            ],
+                            center: .center,
+                            angle: .degrees(phase * 360)
+                        ),
+                        lineWidth: 2
+                    )
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
