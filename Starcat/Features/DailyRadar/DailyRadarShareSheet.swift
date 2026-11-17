@@ -44,47 +44,56 @@ struct DailyRadarShareSheet: View {
     }
 
     private func coverPreview(_ job: DailyRadarShareJob) -> some View {
-        Group {
+        let article = job.report.presentationMarkdown.flatMap(DailyRadarArticle.parse)
+        return Group {
             if let image = job.coverImage {
-                let article = job.report.presentationMarkdown.flatMap(DailyRadarArticle.parse)
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    // 文字只叠在预览层；上传 PNG 保持原样，避免网页重复叠字与快照 hash 冲突。
-                    .overlay {
-                        LinearGradient(
-                            colors: [.clear, .black.opacity(0.85)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+            } else if case .success(let response) = job.state {
+                // 恢复链接不依赖重新渲染；预览读取原已发布封面，离线失败也不阻塞链接操作。
+                AsyncImage(url: response.heroPNGURL) { phase in
+                    if let image = phase.image {
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    } else {
+                        Color.primary.opacity(0.04)
                     }
-                    .overlay(alignment: .bottomLeading) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(verbatim: (article?.title ?? job.report.title)
-                                .replacingOccurrences(of: "\n", with: " "))
-                                .font(.title2.weight(.bold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                            let summary = article?.summary ?? job.report.summary
-                            if !summary.isEmpty {
-                                Text(verbatim: summary)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
-                        // 封面始终是深色画面，局部语义色跟随深色环境以保证浅色主题下可读。
-                        .environment(\.colorScheme, .dark)
-                    }
+                }
             } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color.primary.opacity(0.04))
-                    .overlay { ProgressView().controlSize(.small) }
+                    .overlay {
+                        if job.state.isRunning { ProgressView().controlSize(.small) }
+                    }
             }
         }
         .frame(width: 480, height: 252)
+        // 文字只叠在预览层；上传 PNG 保持原样，避免网页重复叠字与快照 hash 冲突。
+        .overlay {
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.85)],
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+        .overlay(alignment: .bottomLeading) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verbatim: (article?.title ?? job.report.title).replacingOccurrences(of: "\n", with: " "))
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                let summary = article?.summary ?? job.report.summary
+                if !summary.isEmpty {
+                    Text(verbatim: summary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            // 封面始终是深色画面，局部语义色跟随深色环境以保证浅色主题下可读。
+            .environment(\.colorScheme, .dark)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityHidden(true)
     }

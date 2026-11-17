@@ -8,6 +8,7 @@
 
 import Foundation
 import CoreGraphics
+import CryptoKit
 import ImageIO
 import Testing
 @testable import Starcat
@@ -103,9 +104,13 @@ struct DailyRadarSharingTests {
         let api = fixture.api()
         let response = try await api.shareDailyRadar(request: request, heroPNG: png)
         let repeated = try await api.shareDailyRadar(request: request, heroPNG: png)
-        let restored = try await fixture.api().shareDailyRadar(request: request, heroPNG: png)
+        let restarted = fixture.api()
+        let restored = await restarted.cachedDailyRadarShare(
+            reportID: request.report.id, language: request.report.language, revision: request.report.revision
+        )
         #expect(response == repeated)
         #expect(response == restored)
+        #expect(try await restarted.shareDailyRadar(request: request, heroPNG: Data([2])) == response)
         #expect(fixture.state.requests.count == 1)
         let sent = try #require(fixture.state.requests.first)
         #expect(sent.url?.path == "/api/v1/daily-radar/shares")
@@ -119,14 +124,15 @@ struct DailyRadarSharingTests {
         #expect(body.contains("\"category_id\":\"ai-cli\""))
         #expect(!body.contains("test-secret"))
         #expect(!body.contains("private-repo"))
-        let cacheFiles = try FileManager.default.contentsOfDirectory(at: fixture.directory, includingPropertiesForKeys: nil)
+        let cacheFiles = try FileManager.default.contentsOfDirectory(at: fixture.recordsDirectory, includingPropertiesForKeys: nil)
         #expect(cacheFiles.count == 1)
         let cached = String(decoding: try Data(contentsOf: #require(cacheFiles.first)), as: UTF8.self)
         #expect(!cached.contains("Report body"))
         #expect(!cached.contains("test-secret"))
     }
 
-    @Test func revisionLanguageCoverAndServiceChangesInvalidateCache() async throws {
+    /// 封面和正文排版变化复用已发布快照；报告、revision、语言与服务地址仍各自隔离。
+    @Test func stableReportIdentityReusesPublishedCoverAndIsolatesVersions() async throws {
         let fixture = SharingFixture()
         defer { fixture.clean() }
         let api = fixture.api()
@@ -135,9 +141,84 @@ struct DailyRadarSharingTests {
         _ = try await api.shareDailyRadar(request: DailyRadarShareRequest(detail: makeReport(revision: "r2")), heroPNG: Data([1]))
         _ = try await api.shareDailyRadar(request: DailyRadarShareRequest(detail: makeReport(language: "zh-Hans")), heroPNG: Data([1]))
         _ = try await api.shareDailyRadar(request: first, heroPNG: Data([2]))
+        _ = try await api.shareDailyRadar(
+            request: DailyRadarShareRequest(detail: makeReport(markdown: "Updated rendering of the same revision")),
+            heroPNG: Data([3])
+        )
+        let weekly = try makeReport(category: "ai-weekly-events")
+        #expect(await api.cachedDailyRadarShare(
+            reportID: weekly.id, language: weekly.contentLanguage, revision: weekly.revision
+        ) == nil)
+        _ = try await api.shareDailyRadar(request: DailyRadarShareRequest(detail: weekly), heroPNG: Data([1]))
+        #expect(await fixture.api().cachedDailyRadarShare(
+            reportID: weekly.id, language: weekly.contentLanguage, revision: weekly.revision
+        ) != nil)
+        #expect(fixture.state.requests.count == 4)
         await api.updateBaseURL(fixture.baseURL.appendingPathComponent("other"))
+        #expect(await api.cachedDailyRadarShare(
+            reportID: first.report.id, language: first.report.language, revision: first.report.revision
+        ) == nil)
         _ = try await api.shareDailyRadar(request: first, heroPNG: Data([1]))
         #expect(fixture.state.requests.count == 5)
+        await api.updateBaseURL(fixture.baseURL)
+        #expect(await api.cachedDailyRadarShare(
+            reportID: first.report.id, language: first.report.language, revision: first.report.revision
+        ) != nil)
+        #expect(fixture.state.requests.count == 5)
+    }
+
+    /// 复现旧版磁盘格式：迁移不发 HTTP，删掉旧缓存后新 client 仍能按报告恢复。
+    @Test func legacyCacheMigratesWithoutPublishingAgain() async throws {
+        let fixture = SharingFixture()
+        defer { fixture.clean() }
+        let request = try DailyRadarShareRequest(detail: makeReport())
+        let png = Data([1])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let snapshot = try encoder.encode(request)
+        let legacyIdentity = [
+            fixture.baseURL.absoluteString,
+            SHA256.hash(data: snapshot).map { String(format: "%02x", $0) }.joined(),
+            SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+        ].joined(separator: "|")
+        let legacyKey = SHA256.hash(data: Data(legacyIdentity.utf8)).map { String(format: "%02x", $0) }.joined()
+        let legacyFile = fixture.legacyDirectory.appendingPathComponent(legacyKey + ".json")
+        try FileManager.default.createDirectory(at: fixture.legacyDirectory, withIntermediateDirectories: true)
+        try encoder.encode(makeResponse()).write(to: legacyFile)
+        let api = fixture.api()
+        #expect(await api.hasLegacyDailyRadarShares())
+        #expect(await api.cachedDailyRadarShare(request: request, heroPNG: png) == makeResponse())
+        #expect(!FileManager.default.fileExists(atPath: legacyFile.path))
+        #expect(!(await api.hasLegacyDailyRadarShares()))
+        #expect(await fixture.api().cachedDailyRadarShare(
+            reportID: request.report.id, language: request.report.language, revision: request.report.revision
+        ) == makeResponse())
+        #expect(fixture.state.requests.isEmpty)
+    }
+
+    /// 损坏或不安全的本地记录不得使分享入口变成已生成，查询也不能隐式上传。
+    @Test func invalidRecordsAreIgnoredWithoutNetworkRequests() async throws {
+        let fixture = SharingFixture()
+        defer { fixture.clean() }
+        let report = try makeReport()
+        let request = try DailyRadarShareRequest(detail: report)
+        let api = fixture.api()
+        #expect(await api.cachedDailyRadarShare(
+            reportID: report.id, language: report.contentLanguage, revision: report.revision
+        ) == nil)
+        #expect(fixture.state.requests.isEmpty)
+        _ = try await api.shareDailyRadar(request: request, heroPNG: Data([1]))
+        let files = try FileManager.default.contentsOfDirectory(at: fixture.recordsDirectory, includingPropertiesForKeys: nil)
+        let file = try #require(files.first)
+        try JSONEncoder().encode(makeResponse(url: "file:///tmp/share")).write(to: file)
+        #expect(await fixture.api().cachedDailyRadarShare(
+            reportID: report.id, language: report.contentLanguage, revision: report.revision
+        ) == nil)
+        try Data("broken record".utf8).write(to: file)
+        #expect(await fixture.api().cachedDailyRadarShare(
+            reportID: report.id, language: report.contentLanguage, revision: report.revision
+        ) == nil)
+        #expect(fixture.state.requests.count == 1)
     }
 
     @Test func concurrentRequestsShareOneUpload() async throws {
@@ -146,7 +227,7 @@ struct DailyRadarSharingTests {
         let api = fixture.api()
         let request = try DailyRadarShareRequest(detail: makeReport())
         async let first = api.shareDailyRadar(request: request, heroPNG: Data([1]))
-        async let second = api.shareDailyRadar(request: request, heroPNG: Data([1]))
+        async let second = api.shareDailyRadar(request: request, heroPNG: Data([2]))
         let responses = try await (first, second)
         #expect(responses.0 == responses.1)
         #expect(fixture.state.requests.count == 1)
@@ -165,6 +246,7 @@ struct DailyRadarSharingTests {
             #expect(DailyRadarShareError.from(error) == expected)
             #expect(!expected.localizationKey.contains("internal-path"))
         }
+        #expect(!FileManager.default.fileExists(atPath: fixture.recordsDirectory.path))
     }
 
     @Test func unsafeResponseURLsAreRejected() throws {
@@ -176,6 +258,7 @@ struct DailyRadarSharingTests {
     @MainActor @Test func taskDeduplicationAndRetryKeepTheOriginalSnapshot() async throws {
         let store = DailyRadarShareTaskStore()
         let report = try makeReport()
+        let identity = DailyRadarShareTaskStore.identity(report: report, serviceIdentity: "")
         let image = try smallImage()
         var uploads = 0
         var identities: [String] = []
@@ -190,15 +273,17 @@ struct DailyRadarSharingTests {
         )
         store.start(report: report, operations: operations)
         store.start(report: report, operations: operations)
-        try await waitForTask(store, identity: report.contentIdentity)
+        try await waitForTask(store, identity: identity)
         #expect(uploads == 1)
-        #expect(store.jobs[report.contentIdentity]?.state == .failure(.unavailable))
-        store.retry(identity: report.contentIdentity, operations: operations)
-        try await waitForTask(store, identity: report.contentIdentity)
+        #expect(store.jobs[identity]?.state == .failure(.unavailable))
+        #expect(!store.isShared(identity: identity))
+        store.retry(identity: identity, operations: operations)
+        try await waitForTask(store, identity: identity)
         #expect(uploads == 2)
         #expect(identities == ["r1", "r1"])
-        #expect(store.jobs[report.contentIdentity]?.coverImage != nil)
-        store.retry(identity: report.contentIdentity, operations: operations)
+        #expect(store.jobs[identity]?.coverImage != nil)
+        #expect(store.isShared(identity: identity))
+        store.retry(identity: identity, operations: operations)
         await Task.yield()
         #expect(uploads == 2)
     }
@@ -207,6 +292,8 @@ struct DailyRadarSharingTests {
         let store = DailyRadarShareTaskStore()
         let first = try makeReport()
         let second = try makeReport(revision: "r2")
+        let firstIdentity = DailyRadarShareTaskStore.identity(report: first, serviceIdentity: "")
+        let secondIdentity = DailyRadarShareTaskStore.identity(report: second, serviceIdentity: "")
         let image = try smallImage()
         let operations = DailyRadarShareOperations(
             renderCover: { _ in (image, Data([1])) },
@@ -214,10 +301,57 @@ struct DailyRadarSharingTests {
         )
         store.start(report: first, operations: operations)
         store.start(report: second, operations: operations)
-        try await waitForTask(store, identity: first.contentIdentity)
-        try await waitForTask(store, identity: second.contentIdentity)
-        #expect(store.jobs[first.contentIdentity]?.state == .success(makeResponse(url: "https://share.example/d/r1")))
-        #expect(store.jobs[second.contentIdentity]?.state == .success(makeResponse(url: "https://share.example/d/r2")))
+        try await waitForTask(store, identity: firstIdentity)
+        try await waitForTask(store, identity: secondIdentity)
+        #expect(store.jobs[firstIdentity]?.state == .success(makeResponse(url: "https://share.example/d/r1")))
+        #expect(store.jobs[secondIdentity]?.state == .success(makeResponse(url: "https://share.example/d/r2")))
+    }
+
+    /// 重启后的查询与直接点击都优先恢复链接，封面失败也不能阻止访问已发布结果。
+    @MainActor @Test func restoredLinksSkipRenderingAndUploadingAndRespectServiceIdentity() async throws {
+        let report = try makeReport(category: "ai-weekly-events")
+        let firstIdentity = DailyRadarShareTaskStore.identity(report: report, serviceIdentity: "first")
+        let otherIdentity = DailyRadarShareTaskStore.identity(report: report, serviceIdentity: "other")
+        var renders = 0
+        var uploads = 0
+        let cached = makeResponse()
+        let operations = DailyRadarShareOperations(
+            renderCover: { _ in
+                renders += 1
+                throw DailyRadarShareError.coverFailed
+            },
+            createShare: { _, _ in
+                uploads += 1
+                return cached
+            },
+            serviceIdentity: "first",
+            cachedShare: { _ in cached }
+        )
+        let store = DailyRadarShareTaskStore()
+        await store.restore(report: report, operations: operations)
+        #expect(store.isShared(identity: firstIdentity))
+        #expect(!store.isShared(identity: otherIdentity))
+        #expect(store.jobs[firstIdentity]?.state == .success(cached))
+        store.start(report: report, operations: operations)
+        #expect(!store.isRunning(identity: firstIdentity))
+        let restarted = DailyRadarShareTaskStore()
+        restarted.start(report: report, operations: operations)
+        try await waitForTask(restarted, identity: firstIdentity)
+        #expect(restarted.isShared(identity: firstIdentity))
+        let other = DailyRadarShareOperations(
+            renderCover: operations.renderCover, createShare: operations.createShare,
+            serviceIdentity: "other", cachedShare: { _ in nil }
+        )
+        await store.restore(report: report, operations: other)
+        #expect(!store.isShared(identity: otherIdentity))
+        #expect(!store.isRunning(identity: otherIdentity))
+        #expect(store.jobs[otherIdentity] == nil)
+        store.start(report: report, operations: other)
+        try await waitForTask(store, identity: otherIdentity)
+        #expect(store.jobs[otherIdentity]?.state == .failure(.coverFailed))
+        #expect(store.isShared(identity: firstIdentity))
+        #expect(renders == 1)
+        #expect(uploads == 0)
     }
 
     /// 实际离屏 Canvas 必须稳定生成 1600×840 PNG，避免服务端同 revision 原图 hash 冲突。
@@ -261,7 +395,9 @@ struct DailyRadarSharingTests {
     }
 
     /// 通过实际 JSON 解码创建报告，覆盖线上 DTO 的字段映射及 private 防线。
-    private func makeReport(revision: String = "r1", language: String = "en", markdown: String? = nil) throws -> DailyRadarReport {
+    private func makeReport(
+        revision: String = "r1", language: String = "en", markdown: String? = nil, category: String = "ai-cli"
+    ) throws -> DailyRadarReport {
         let body = markdown ?? """
         ---
         {"article_format":1,"title":"Structured report","summary":"Structured summary","edition_date":"2026-11-13","reading_minutes":6}
@@ -280,8 +416,8 @@ struct DailyRadarSharingTests {
             ]
         }
         let payload: [String: Any] = [
-            "id": "agents-radar:2026-11-13:ai-cli", "revision": revision, "edition_date": "2026-11-13",
-            "category": "ai-cli", "period": "daily", "title": "Report", "summary": "Summary",
+            "id": "agents-radar:2026-11-13:\(category)", "revision": revision, "edition_date": "2026-11-13",
+            "category": category, "period": category == "ai-weekly-events" ? "weekly" : "daily", "title": "Report", "summary": "Summary",
             "reading_minutes": 3, "cover": ["kind": "category", "fallback": "orbit", "alt": "Cover", "hero_url": "https://external-cover.example/image.png"],
             "related_project_count": 2, "content_language": language, "available_languages": ["en", "zh-Hans"],
             "markdown": body, "related_projects": [project("public-repo", false), project("private-repo", true)],
@@ -326,6 +462,8 @@ private struct SharingFixture {
     let host = "\(UUID().uuidString).daily-radar-sharing.invalid"
     let state: SharingFixtureState
     var baseURL: URL { URL(string: "https://\(host)")! }
+    var recordsDirectory: URL { directory.appendingPathComponent("records") }
+    var legacyDirectory: URL { directory.appendingPathComponent("legacy") }
 
     init(status: Int = 200) {
         state = SharingFixtureState(status: status)
@@ -337,7 +475,8 @@ private struct SharingFixture {
         configuration.protocolClasses = [SharingTestProtocol.self]
         return ShareAPI(
             baseURL: baseURL, apiKey: "test-secret", session: URLSession(configuration: configuration),
-            dailyRadarCacheDirectory: directory, repoShareDirectory: directory.appendingPathComponent("repos")
+            dailyRadarCacheDirectory: legacyDirectory, dailyRadarShareDirectory: recordsDirectory,
+            repoShareDirectory: directory.appendingPathComponent("repos")
         )
     }
 

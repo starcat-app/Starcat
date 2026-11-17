@@ -220,7 +220,9 @@ struct DailyRadarPreviewReader: View {
                 !$0.title.isEmpty &&
                 $0.presentationMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         } ?? false
-        let isRunning = shareTaskStore.isRunning(identity: story.contentIdentity)
+        let identity = DailyRadarShareTaskStore.identity(report: story, serviceIdentity: presentShare.serviceIdentity)
+        let isRunning = shareTaskStore.isRunning(identity: identity)
+        let isShared = shareTaskStore.isShared(identity: identity)
         return Button {
             guard isReady, !isRunning, let detail else { return }
             presentShare.present(detail)
@@ -229,11 +231,12 @@ struct DailyRadarPreviewReader: View {
                 if isRunning {
                     ProgressView().controlSize(.mini)
                 } else {
-                    Image(systemName: "square.and.arrow.up")
+                    Image(systemName: isShared ? "square.and.arrow.up.fill" : "square.and.arrow.up")
                 }
             }
             .font(scale.font(size: 14, weight: .medium))
-            .foregroundStyle(.secondary)
+            // 蓝色实心沿用项目分享的“已有链接”语义，形状也让状态不只依赖颜色。
+            .foregroundStyle(isShared ? Color.blue : Color.secondary)
             .opacity(isReady ? 1 : 0.5)
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())
@@ -244,7 +247,11 @@ struct DailyRadarPreviewReader: View {
         // 动作门控承担禁用语义，固定 Button 与占位避免进入/离开加载态时丢焦点。
         .help(isReady ? "dailyRadar.share.action" : "dailyRadar.share.unavailable")
         .accessibilityLabel(Text(isReady ? "dailyRadar.share.action" : "dailyRadar.share.unavailable"))
-        .accessibilityValue(Text(isRunning ? "dailyRadar.share.creating" : ""))
+        .accessibilityValue(Text(isRunning ? "dailyRadar.share.creating" : (isShared ? "dailyRadar.share.ready" : "")))
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isShared)
+        .task(id: "\(identity)|\(detail?.contentIdentity ?? "")") {
+            if let detail { await presentShare.restore(detail) }
+        }
     }
 
     /// 头图先稳定，标题和元信息再短延迟入场；正文与摘要仍沿用原有加载/逐字节奏。
