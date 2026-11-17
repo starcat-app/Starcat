@@ -14,12 +14,15 @@ import SwiftUI
 struct AwesomeView: View {
     @Namespace private var selectionSpace
     @State private var skillPageBudget = RepoSkillPageBudget()
+    @State private var listModel = AwesomeListModel()
+    @State private var isLoadingVisiblePage = false
     let store: AwesomeStore
     let onRepoCountChange: (Int) -> Void
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
+    @Environment(\.locale) private var locale
     @State private var searchText = ""
     @State private var quickSearchDraft = ""
     @State private var isQuickSearchExpanded = false
@@ -58,11 +61,12 @@ struct AwesomeView: View {
             await store.loadAllRepositoryPages()
             reportCount()
         }
-        .task(id: filteredDisplayItemIDs) {
+        .task(id: listIdentity) {
+            await updateListProjection()
             await fillVisiblePageIfNeeded()
         }
         .task(id: skillScanTaskIdentity) {
-            guard settings.skillFilter != .any else { return }
+            guard settings.skillFilter != .any, listModel.identity == listIdentity else { return }
             dependencies.repoSkillStore.enqueue(skillCandidates, scope: skillScanScope)
             await fillVisiblePageIfNeeded()
         }
@@ -76,9 +80,9 @@ struct AwesomeView: View {
             dependencies.exploreMultiSelectionStore.clearSelection()
             reportCount()
         }
-        .onChange(of: filteredDisplayItemIDs) { _, _ in
+        .onChange(of: listModel.projectionRevision) { _, _ in
             reportCount()
-            retainVisibleMultiSelection(filteredRepositoryIDs)
+            retainVisibleMultiSelection(listModel.repositoryIDs)
         }
     }
 
@@ -173,7 +177,7 @@ struct AwesomeView: View {
             ContentUnavailableView {
                 Label("sidebar.loginPrompt", systemImage: "person.crop.circle.badge.exclamationmark")
             }
-        } else if settings.licenseFilter.isActive && store.hasMoreRepositories {
+        } else if requiresCompleteRepositorySet && store.hasMoreRepositories {
             // 完整本地来源补齐前不展示部分命中，避免用户把前缀空结果误认为没有匹配项目。
             RepoSkeletonListView(rowCount: 10)
         } else if store.isLoading, store.repositories.isEmpty, store.resources.isEmpty {
@@ -188,7 +192,10 @@ struct AwesomeView: View {
                     Task { await store.presentSourceManager() }
                 }
             }
-        } else if filteredDisplayItems.isEmpty {
+        } else if listModel.identity?.sourceID != store.selectedSourceID ||
+                    listModel.identity?.query != listIdentity.query {
+            RepoSkeletonListView(rowCount: 10)
+        } else if listModel.rows.isEmpty {
             ContentUnavailableView.search(text: searchText)
         } else {
             repositoryList
@@ -197,7 +204,7 @@ struct AwesomeView: View {
 
     private var repositoryList: some View {
         let multiStore = dependencies.exploreMultiSelectionStore
-        let groups = sectionGroups
+        let groups = listModel.groups
         // 按实际章节顺序只登记首屏 15 项；不能在每个章节重新从 0 播放，或逐行扫描整个列表。
         let revealIndices = Dictionary(uniqueKeysWithValues: groups.lazy.flatMap(\.items)
             .prefix(ListRowRevealMetrics.animatedRowLimit)
@@ -213,17 +220,27 @@ struct AwesomeView: View {
                             case .repository(let repo):
                                 repositoryRow(repo)
                                     .automaticListPagination(
-                                        appearingIndex: store.repositories.firstIndex(where: { $0.id == repo.id }) ?? 0,
-                                        visibleItemCount: store.repositories.count,
-                                        loadedItemCount: store.repositories.count,
-                                        hasMore: store.hasMoreRepositories && !requiresCompleteRepositorySet,
-                                        isLoading: store.isLoading || store.isRefreshing || store.isLoadingMoreRepositories,
-                                        identity: "awesome-\(store.selectedSourceID ?? "__all__")"
+                                        appearingIndex: listModel.rowIndices[item.id] ?? 0,
+                                        visibleItemCount: listModel.rows.count,
+                                        loadedItemCount: listModel.total,
+                                        hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
+                                        isLoading: listModel.isUpdating,
+                                        identity: "awesome-\(snapshotID)"
                                     ) {
-                                        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: repo.id)
+                                        await loadNextVisiblePage(appearingID: item.id)
                                     }
                             case .resource(let resource):
                                 resourceRow(resource)
+                                    .automaticListPagination(
+                                        appearingIndex: listModel.rowIndices[item.id] ?? 0,
+                                        visibleItemCount: listModel.rows.count,
+                                        loadedItemCount: listModel.total,
+                                        hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
+                                        isLoading: listModel.isUpdating,
+                                        identity: "awesome-\(snapshotID)"
+                                    ) {
+                                        await loadNextVisiblePage(appearingID: item.id)
+                                    }
                             }
                         }
                         .listRowReveal(
@@ -337,14 +354,10 @@ struct AwesomeView: View {
         store.repositorySections
     }
 
-    private var filteredRepositories: [AwesomeRepositoryItem] {
-        filteredRepositories(includingSkill: true)
-    }
-
     private var skillCandidates: [Repo] {
         // formatter 只在真正启用 Skills 筛选后创建，并在本批次复用；不跨隔离域共享可变实例。
         let formatter = ISO8601DateFormatter.shared
-        return filteredRepositories(includingSkill: false).map {
+        return listModel.skillCandidates.map {
             $0.discoveryDTO(dateFormatter: formatter)
                 .toEphemeralRepo(isStarred: dependencies.starredRegistry.contains(ghRepoId: $0.id))
         }
@@ -352,89 +365,7 @@ struct AwesomeView: View {
 
     private var skillScanTaskIdentity: String? {
         guard settings.skillFilter != .any else { return nil }
-        return "\(skillScanScope):\(store.repositoryRevision):\(dependencies.repoSkillStore.paginationRevision)"
-    }
-
-    private func filteredRepositories(includingSkill: Bool) -> [AwesomeRepositoryItem] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let filtered = store.repositories.filter { repo in
-            guard matchesGlobalFilters(repo, includingSkill: includingSkill) else { return false }
-            let matchesSection = selectedSection == nil || repo.evidence.contains {
-                $0.sectionPath.joined(separator: " / ") == selectedSection
-            }
-            guard matchesSection else { return false }
-            guard !query.isEmpty else { return true }
-            let fields: [String?] = [repo.fullName, repo.description]
-                + repo.evidence.flatMap { [$0.entryTitle, $0.entryDescription, $0.source.displayName] }
-            return fields.compactMap { $0?.lowercased() }.contains { $0.contains(query) }
-        }
-        return filtered
-    }
-
-    private var filteredResources: [AwesomeResourceItem] {
-        guard resourcesMatchGlobalFilters else { return [] }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return store.resources.filter { resource in
-            let matchesSection = selectedSection == nil ||
-                resource.evidence.sectionPath.joined(separator: " / ") == selectedSection
-            guard matchesSection else { return false }
-            guard !query.isEmpty else { return true }
-            return [resource.title, resource.description, resource.url.absoluteString]
-                .compactMap { $0?.lowercased() }
-                .contains { $0.contains(query) }
-        }
-    }
-
-    /// 仓库专属筛选无法解释外站资源。只要用户启用了任一仓库事实筛选，就隐藏资源条目，
-    /// 避免把“缺少 GitHub 元数据”误判为满足筛选条件。
-    private var resourcesMatchGlobalFilters: Bool {
-        guard !settings.licenseFilter.isActive, !settings.hideArchived, !settings.hideForks, settings.globalFilterLanguages.isEmpty else { return false }
-        guard case .all = settings.starFilter, case .all = settings.libraryFilter else { return false }
-        guard case .unknown = settings.wikiAvailabilityFilter,
-              case .unknown = settings.healthAvailabilityFilter,
-              case .unknown = settings.openSSFAvailabilityFilter
-        else { return false }
-        return true
-    }
-
-    private var filteredDisplayItems: [AwesomeDisplayItem] {
-        let items = filteredRepositories.map(AwesomeDisplayItem.repository)
-            + filteredResources.map(AwesomeDisplayItem.resource)
-        switch sort {
-        case .original:
-            return items.sorted(by: AwesomeDisplayItem.originalOrder)
-        case .stars:
-            return items.sorted(by: AwesomeDisplayItem.starOrder)
-        case .updated:
-            return items.sorted(by: AwesomeDisplayItem.updatedOrder)
-        case .name:
-            return items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        }
-    }
-
-    private var sectionGroups: [AwesomeSectionGroup] {
-        let items = filteredDisplayItems
-        guard store.selectedSourceID != nil, sort == .original, selectedSection == nil else {
-            return [AwesomeSectionGroup(title: String.l10n("awesome.section.results"), items: items)]
-        }
-        var order: [String] = []
-        var seen: Set<String> = []
-        let grouped = Dictionary(grouping: items) { item in
-            item.sectionPath.joined(separator: " / ").nilIfEmpty ?? String.l10n("awesome.section.other")
-        }
-        for item in items {
-            let title = item.sectionPath.joined(separator: " / ").nilIfEmpty ?? String.l10n("awesome.section.other")
-            if seen.insert(title).inserted { order.append(title) }
-        }
-        return order.map { AwesomeSectionGroup(title: $0, items: grouped[$0] ?? []) }
-    }
-
-    private var filteredRepositoryIDs: [Int64] {
-        filteredRepositories.map(\.id)
-    }
-
-    private var filteredDisplayItemIDs: [String] {
-        filteredDisplayItems.map(\.id)
+        return "\(skillScanScope):\(listModel.projectionRevision):\(dependencies.repoSkillStore.paginationRevision)"
     }
 
     private func selectionSnapshot(for repo: AwesomeRepositoryItem) -> SelectionSnapshot {
@@ -450,8 +381,10 @@ struct AwesomeView: View {
 
     private func selectAllVisibleRepositories(in multiStore: MultiSelectionStore) async {
         await store.loadAllRepositoryPages()
+        await updateListProjection()
         guard !Task.isCancelled else { return }
-        multiStore.selectAll(filteredRepositories.map { selectionSnapshot(for: $0) })
+        let visibleIDs = Set(listModel.repositoryIDs)
+        multiStore.selectAll(store.repositories.filter { visibleIDs.contains($0.id) }.map { selectionSnapshot(for: $0) })
     }
 
     /// 全局筛选可能让一页 40 条只剩少量结果。继续读取本地页直到凑满一个可滚动首屏，
@@ -462,47 +395,83 @@ struct AwesomeView: View {
 
     private func fillVisiblePageIfNeeded() async {
         guard !requiresCompleteRepositorySet else { return }
-        while filteredRepositories.count < AwesomeStore.repositoryPageSize,
+        guard listModel.identity == listIdentity,
+              listModel.total < AwesomeStore.repositoryPageSize,
               store.hasMoreRepositories,
               let lastRepositoryID = store.repositories.last?.id,
-              !Task.isCancelled {
-            if settings.skillFilter != .any,
-               !skillPageBudget.claim(scope: "\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") { return }
-            let count = store.repositories.count
-            await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: lastRepositoryID)
-            if count == store.repositories.count { return }
-        }
+              !Task.isCancelled else { return }
+        if settings.skillFilter != .any,
+           !skillPageBudget.claim(scope: "\(skillScanScope):\(dependencies.repoSkillStore.paginationRevision)") { return }
+        await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: lastRepositoryID)
     }
 
-    private func matchesGlobalFilters(_ repo: AwesomeRepositoryItem, includingSkill: Bool = true) -> Bool {
-        if includingSkill, !settings.skillFilter.matches(dependencies.repoSkillStore.presence(repositoryID: repo.id)) { return false }
-        return AwesomeGlobalFilterPolicy.matches(
-            repo,
-            options: AwesomeGlobalFilterOptions(
-                hideArchived: settings.hideArchived,
-                hideForks: settings.hideForks,
-                starFilter: settings.starFilter,
-                libraryFilter: settings.libraryFilter,
-                languages: settings.globalFilterLanguages,
-                wikiFilter: settings.wikiAvailabilityFilter,
-                healthFilter: settings.healthAvailabilityFilter,
-                openSSFFilter: settings.openSSFAvailabilityFilter,
-                licenseFilter: settings.licenseFilter
-            ),
-            facts: AwesomeGlobalFilterFacts(
-                isStarred: dependencies.starredRegistry.contains(ghRepoId: repo.id),
-                isInLibrary: libraryStateMap[repo.id] == .inLibrary,
-                wikiAvailability: wikiAvailabilityMap[repo.id],
-                hasHealthData: dependencies.repoHealthStore.snapshot(for: repo.id) != nil,
-                hasOpenSSFData: dependencies.openSSFScoreStore.record(for: repo.id)?.badgeData != nil
+    private var listIdentity: AwesomeListIdentity {
+        AwesomeListIdentity(
+            revision: store.repositoryRevision,
+            sourceID: store.selectedSourceID,
+            query: AwesomeListQuery(
+                localeIdentifier: locale.identifier,
+                search: searchText, section: selectedSection, sort: sort,
+                options: AwesomeGlobalFilterOptions(
+                    hideArchived: settings.hideArchived,
+                    hideForks: settings.hideForks,
+                    starFilter: settings.starFilter,
+                    libraryFilter: settings.libraryFilter,
+                    languages: settings.globalFilterLanguages,
+                    wikiFilter: settings.wikiAvailabilityFilter,
+                    healthFilter: settings.healthAvailabilityFilter,
+                    openSSFFilter: settings.openSSFAvailabilityFilter,
+                    licenseFilter: settings.licenseFilter
+                ),
+                skillFilter: settings.skillFilter,
+                skillRevision: settings.skillFilter == .any ? 0 : dependencies.repoSkillStore.revision,
+                starredIDs: settings.starFilter == .all ? [] : dependencies.starredRegistry.ids,
+                libraryIDs: settings.libraryFilter == .all ? [] :
+                    Set(libraryStateMap.compactMap { $0.value == .inLibrary ? $0.key : nil }),
+                wikiAvailability: settings.wikiAvailabilityFilter == .unknown ? [:] : wikiAvailabilityMap,
+                healthIDs: settings.healthAvailabilityFilter == .unknown ? [] :
+                    Set(dependencies.repoHealthStore.snapshots.keys),
+                openSSFIDs: settings.openSSFAvailabilityFilter == .unknown ? [] :
+                    Set(dependencies.openSSFScoreStore.records.compactMap { $0.value.badgeData != nil ? $0.key : nil })
             )
         )
+    }
+
+    private func updateListProjection() async {
+        let identity = listIdentity
+        guard !requiresCompleteRepositorySet || !store.hasMoreRepositories else { return }
+        let presence: [Int64: RepoSkillPresence] = settings.skillFilter == .any ? [:] :
+            Dictionary(uniqueKeysWithValues: store.repositories.map {
+                ($0.id, dependencies.repoSkillStore.presence(repositoryID: $0.id))
+            })
+        await listModel.update(
+            identity: identity, repositories: store.repositories,
+            resources: store.resources, skillPresence: presence
+        )
+    }
+
+    private func loadNextVisiblePage(appearingID: String) async {
+        guard !isLoadingVisiblePage, listModel.identity == listIdentity,
+              ListPaginationPolicy.shouldPrefetch(
+                appearingIndex: listModel.rowIndices[appearingID] ?? -1,
+                itemCount: listModel.rows.count,
+                hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet)
+              ) else { return }
+        isLoadingVisiblePage = true
+        defer { isLoadingVisiblePage = false }
+        if listModel.hasMore {
+            listModel.loadMore()
+        } else if !requiresCompleteRepositorySet, let lastID = store.repositories.last?.id {
+            await store.loadMoreRepositoriesIfNeeded(currentRepositoryID: lastID)
+            await updateListProjection()
+            listModel.loadMore()
+        }
     }
 
     private var wikiAvailabilityTaskIdentity: AwesomeWikiAvailabilityTaskIdentity {
         AwesomeWikiAvailabilityTaskIdentity(
             filter: settings.wikiAvailabilityFilter,
-            repositoryIDs: store.repositories.map(\.id)
+            repositoryIDs: settings.wikiAvailabilityFilter == .unknown ? [] : store.repositories.map(\.id)
         )
     }
 
@@ -534,8 +503,10 @@ struct AwesomeView: View {
     }
 
     private func reportCount() {
+        // 完整读取与后台投影分两次提交；不能在两者之间把上一查询的数量报给工具栏。
+        guard listModel.identity == listIdentity else { return }
         if settings.skillFilter != .any {
-            onRepoCountChange(filteredDisplayItems.count)
+            onRepoCountChange(listModel.total)
             return
         }
         // 许可证需要完整来源，不能把前 40 条中的命中数冒充完整计数。
@@ -544,7 +515,7 @@ struct AwesomeView: View {
             // 默认分页浏览时不能把已加载 40 条冒充完整结果数。
             onRepoCountChange(store.currentRepositoryCount)
         } else {
-            onRepoCountChange(filteredDisplayItems.count)
+            onRepoCountChange(listModel.total)
         }
     }
 
@@ -588,7 +559,7 @@ enum AwesomeListSelectionPolicy {
 
 /// Awesome 与其它 Explore 列表共用同一组持久筛选设置，但仓库来自独立来源。
 /// 这里把筛选需要的设置和本地事实显式建模，避免 UI 分支各自解释 `unknown` 的含义。
-struct AwesomeGlobalFilterOptions {
+struct AwesomeGlobalFilterOptions: Hashable, Sendable {
     let hideArchived: Bool
     let hideForks: Bool
     let starFilter: RepoStarFilter
@@ -598,6 +569,13 @@ struct AwesomeGlobalFilterOptions {
     let healthFilter: RepoSignalAvailabilityFilter
     let openSSFFilter: RepoSignalAvailabilityFilter
     var licenseFilter: RepoLicenseFilter = .all
+
+    /// 外站资源没有仓库事实；启用此类筛选时隐藏资源，不将缺失元数据当作命中。
+    var includesResources: Bool {
+        !licenseFilter.isActive && !hideArchived && !hideForks && languages.isEmpty
+            && starFilter == .all && libraryFilter == .all && wikiFilter == .unknown
+            && healthFilter == .unknown && openSSFFilter == .unknown
+    }
 }
 
 struct AwesomeGlobalFilterFacts {
@@ -654,7 +632,7 @@ enum AwesomeGlobalFilterPolicy {
     }
 }
 
-private enum AwesomeSortOption: String, CaseIterable, Identifiable, Hashable {
+enum AwesomeSortOption: String, CaseIterable, Identifiable, Hashable, Sendable {
     case original
     case stars
     case updated
@@ -680,13 +658,13 @@ private enum AwesomeSortOption: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-private struct AwesomeSectionGroup: Identifiable {
+struct AwesomeSectionGroup: Identifiable, Sendable {
     let title: String
     let items: [AwesomeDisplayItem]
     var id: String { title }
 }
 
-private enum AwesomeDisplayItem: Identifiable {
+enum AwesomeDisplayItem: Identifiable, Sendable {
     case repository(AwesomeRepositoryItem)
     case resource(AwesomeResourceItem)
 
@@ -753,10 +731,6 @@ private enum AwesomeDisplayItem: Identifiable {
         case (.resource, .resource): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 private struct AwesomeWikiAvailabilityTaskIdentity: Hashable {

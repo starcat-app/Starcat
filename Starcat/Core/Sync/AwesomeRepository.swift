@@ -714,7 +714,15 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
         records: [AwesomeEntryRecord],
         sourceMap: [String: AwesomeSource]
     ) -> [AwesomeRepositoryItem] {
-        Dictionary(grouping: records, by: \.ghRepoID)
+        // Foundation formatter 初始化远比解析昂贵；同一数据库批次复用，且不跨并发读取共享实例。
+        let fractional = ISO8601DateFormatter.shared
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        func date(_ raw: String?) -> Date? {
+            guard let raw else { return nil }
+            return fractional.date(from: raw) ?? standard.date(from: raw)
+        }
+        return Dictionary(grouping: records, by: \.ghRepoID)
             .compactMap { repoID, grouped -> AwesomeRepositoryItem? in
                 guard let first = grouped.first else { return nil }
                 let evidence = grouped.compactMap { record -> AwesomeEntryEvidence? in
@@ -749,9 +757,9 @@ actor AwesomeRepository: AwesomeRepositoryProtocol {
                     topics: first.topics,
                     isArchived: first.isArchived,
                     isFork: first.isFork,
-                    pushedAt: first.pushedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
-                    updatedAt: first.repoUpdatedAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
-                    createdAt: first.createdAt.flatMap(ISO8601DateFormatter.githubDate(from:)),
+                    pushedAt: date(first.pushedAt),
+                    updatedAt: date(first.repoUpdatedAt),
+                    createdAt: date(first.createdAt),
                     evidence: evidence
                 )
             }

@@ -48,6 +48,8 @@ final class AwesomeStore {
     private let customSourceService: AwesomeCustomSourceService
     private var loadTask: Task<Void, Never>?
     private var selectionLoadTask: Task<Void, Never>?
+    private var completeLoadTask: Task<Void, Never>?
+    private var repositoryLoadGeneration: UInt64 = 0
     private var customSourceParseTasks: [String: Task<Void, Never>] = [:]
 
     init(
@@ -214,19 +216,33 @@ final class AwesomeStore {
     }
 
     /// 搜索、非原始排序和需要全局事实的筛选必须在完整结果集上执行，不能把当前 40 条
-    /// 当成全部数据。该入口只在用户真的启用这些能力时补齐剩余本地页，不发远端请求。
+    /// 当成全部数据。完整读取只查一次本地库、只发布一次，不逐页重复 COUNT / 解码 / 刷新 UI。
     func loadAllRepositoryPages() async {
-        // 来源切换先完成新来源首屏，再取后续页；否则会拿旧来源行数作新来源 offset。
         await selectionLoadTask?.value
-        while hasMoreRepositories, !Task.isCancelled {
-            // 用户开始搜索时，列表末尾可能恰好正在预取。等待该页回写后再继续，
-            // 否则一次性的搜索 task 会提前返回，并把已加载前缀误当成完整结果。
-            if isLoadingMoreRepositories {
-                try? await Task.sleep(for: .milliseconds(20))
-                continue
-            }
-            await loadRepositoryPage(append: true)
+        guard !Task.isCancelled else { return }
+        if let completeLoadTask {
+            await completeLoadTask.value
+            return
         }
+        guard hasMoreRepositories else { return }
+        // 使正在等待数据库的预取页失效，避免完整集发布后又追加旧页。
+        repositoryLoadGeneration &+= 1
+        let generation = repositoryLoadGeneration
+        let sourceID = selectedSourceID
+        isLoadingMoreRepositories = true
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let items = await self.repository.repositories(sourceID: sourceID)
+            guard !Task.isCancelled, self.repositoryLoadGeneration == generation,
+                  self.selectedSourceID == sourceID else { return }
+            self.repositories = items
+            self.repositoryTotalCount = items.count
+            self.hasMoreRepositories = false
+            self.isLoadingMoreRepositories = false
+            self.completeLoadTask = nil
+        }
+        completeLoadTask = task
+        await task.value
     }
 
     func refresh() async {
@@ -272,6 +288,9 @@ final class AwesomeStore {
         loadTask = nil
         selectionLoadTask?.cancel()
         selectionLoadTask = nil
+        completeLoadTask?.cancel()
+        completeLoadTask = nil
+        repositoryLoadGeneration &+= 1
         customSourceParseTasks.values.forEach { $0.cancel() }
         customSourceParseTasks = [:]
         sources = []
@@ -357,17 +376,21 @@ final class AwesomeStore {
     }
 
     private func reloadRepositories() async {
+        completeLoadTask?.cancel()
+        completeLoadTask = nil
+        repositoryLoadGeneration &+= 1
         isLoadingMoreRepositories = false
         await loadRepositoryPage(append: false)
     }
 
     private func loadRepositoryPage(append: Bool) async {
-        if append, isLoadingMoreRepositories { return }
+        if append, isLoadingMoreRepositories || completeLoadTask != nil { return }
+        let generation = repositoryLoadGeneration
         let requestedSourceID = selectedSourceID
         let offset = append ? repositories.count : 0
         if append { isLoadingMoreRepositories = true }
         defer {
-            if append { isLoadingMoreRepositories = false }
+            if append, repositoryLoadGeneration == generation { isLoadingMoreRepositories = false }
         }
 
         let page: AwesomeRepositoryPage
@@ -392,7 +415,8 @@ final class AwesomeStore {
             (page, resourceItems, sections) = await (visiblePage, visibleResources, visibleSections)
         }
         // GRDB/测试替身不保证响应取消；旧选择即使晚返回，也不能覆盖当前来源。
-        guard !Task.isCancelled, selectedSourceID == requestedSourceID else { return }
+        guard !Task.isCancelled, repositoryLoadGeneration == generation,
+              selectedSourceID == requestedSourceID else { return }
         if append {
             let existingIDs = Set(repositories.map(\.id))
             repositories.append(contentsOf: page.repositories.filter { !existingIDs.contains($0.id) })
