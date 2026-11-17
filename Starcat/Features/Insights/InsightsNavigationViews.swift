@@ -124,8 +124,12 @@ struct InsightsListView: View {
             }
         }
         .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
         .listRowSurface(index: rowIndex,
                         isSelected: selection == item, selectionNamespace: selectionSpace)
+        .padding(.horizontal, -6)
+        .padding(.vertical, -4)
         .tag(item)
     }
 
