@@ -78,7 +78,7 @@ struct RepoSkillSelectionPane: View {
                 .padding(.bottom, 10)
 
             ScrollView {
-                LazyVStack(spacing: 0) {
+                LazyVStack(spacing: RepoSkillRowChrome.rowSpacing) {
                     ForEach(Array(visibleSkills.enumerated()), id: \.element.id) { index, skill in
                         skillRow(skill, rowIndex: index)
                             .automaticListPagination(
@@ -229,7 +229,7 @@ private struct SkillRow: View {
     private var isInstalled: Bool { session.installedIDs.contains(skill.id) }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 0) {
             Toggle(isOn: Binding(
                 get: { session.selectedIDs.contains(skill.id) },
                 set: { _ in session.toggleSelection(skill.id) }
@@ -239,11 +239,13 @@ private struct SkillRow: View {
             .toggleStyle(.checkbox)
             .labelsHidden()
             .disabled(session.isInstalling || skill.installationIssue != nil)
+            .padding(.leading, RepoSkillRowChrome.horizontalInset)
 
             Button {
                 selectPreview(skill.id)
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: RepoSkillRowChrome.itemSpacing) {
+                    RepoSkillMonogram(skill: skill)
                     Text(verbatim: skill.name)
                         .font(interfaceScale.font(.bodyEmphasis, weight: .medium))
                         .foregroundStyle(.primary)
@@ -269,32 +271,32 @@ private struct SkillRow: View {
                             .accessibilityLabel(Text(verbatim: issue))
                     }
                 }
-                // 只移动名称，已安装状态固定在行尾，悬停不改变右对齐边界。
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // 预览按钮覆盖复选框右侧的整行区域，包含留白；复选框保留独立命中。
+                .padding(.leading, RepoSkillRowChrome.itemSpacing)
+                .padding(.trailing, RepoSkillRowChrome.horizontalInset)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .accessibilityAddTraits(isPreviewSelected ? .isSelected : [])
         }
-        .padding(.horizontal, 10)
-        .frame(height: interfaceScale.scaled(32))
+        .frame(height: interfaceScale.scaled(RepoSkillRowChrome.rowHeight))
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .background {
             ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                RoundedRectangle(cornerRadius: RepoSkillRowChrome.rowCornerRadius, style: .continuous)
                     .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: false, isHovered: isHovered))
                     .opacity(isPreviewSelected ? 0 : 1)
                 if isPreviewSelected {
-                    // 背景与描边共享几何身份并保留默认过渡，让同一块高亮跨行滑动。
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: true, isHovered: isHovered))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 1)
-                        }
-                        .matchedGeometryEffect(id: "repo.skills.preview.selection", in: selectionSpace)
+                    if reduceMotion {
+                        selectionBackground
+                    } else {
+                        // 高亮的各层共用几何身份，文字、色块与复选框保持原位。
+                        selectionBackground
+                            .matchedGeometryEffect(id: "repo.skills.preview.selection", in: selectionSpace)
+                    }
                 }
             }
         }
@@ -302,10 +304,59 @@ private struct SkillRow: View {
         .help(skill.summary + "\n" + skill.manifestPath)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: isHovered)
     }
+
+    private var selectionBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: RepoSkillRowChrome.rowCornerRadius, style: .continuous)
+        return shape
+            .fill(RepoSkillRowChrome.background(rowIndex: rowIndex, isSelected: true, isHovered: false))
+            .overlay { shape.strokeBorder(Color.accentColor.opacity(0.4), lineWidth: 1) }
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 3, height: 16)
+                    .padding(.leading, 5)
+            }
+    }
 }
 
-/// 独立抽出行底色，保证斑马纹、悬停与选中的优先级可用单元测试固定。
+/// Skill 名称没有稳定语义图标；用确定性字母块提供识别点，不伪造分类含义。
+private struct RepoSkillMonogram: View {
+    let skill: RepoSkill
+
+    @Environment(\.starcatInterfaceScale) private var interfaceScale
+
+    var body: some View {
+        let monogram = RepoSkillRowChrome.monogram(for: skill.name)
+        let tint = RepoSkillRowChrome.monogramTint(for: skill)
+        let size = interfaceScale.scaled(RepoSkillRowChrome.monogramSize)
+        let shape = RoundedRectangle(cornerRadius: RepoSkillRowChrome.monogramCornerRadius, style: .continuous)
+
+        Text(verbatim: monogram)
+            .font(.system(size: interfaceScale.scaled(10), weight: .bold, design: .rounded))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .frame(width: size, height: size)
+            .background(tint.opacity(0.16), in: shape)
+            .overlay { shape.strokeBorder(tint.opacity(0.28)) }
+            .accessibilityHidden(true)
+    }
+}
+
+/// 真实行和骨架共用尺寸与斑马纹，避免加载交接时改变对齐位置。
 enum RepoSkillRowChrome {
+    static let rowHeight: CGFloat = 38
+    static let rowSpacing: CGFloat = 2
+    static let rowCornerRadius: CGFloat = 5
+    static let horizontalInset: CGFloat = 10
+    static let itemSpacing: CGFloat = 8
+    static let monogramSize: CGFloat = 24
+    static let monogramCornerRadius: CGFloat = 6
+
+    private static let monogramPalette: [Color] = [
+        .blue, .teal, .indigo, .purple, .pink, .orange
+    ]
+
     /// 选中 > 悬停 > 斑马纹；避免悬停时破坏当前预览行的语义。
     static func background(rowIndex: Int, isSelected: Bool, isHovered: Bool) -> Color {
         if isSelected {
@@ -313,7 +364,30 @@ enum RepoSkillRowChrome {
         } else if isHovered {
             Color.accentColor.opacity(0.08)
         } else {
-            rowIndex.isMultiple(of: 2) ? .clear : Color.primary.opacity(0.045)
+            Color.primary.opacity(rowIndex.isMultiple(of: 2) ? 0.015 : 0.045)
         }
+    }
+
+    /// 名称可能来自任意仓库，没有可信分类来源；取分隔词首字母，单词取前两位。
+    static func monogram(for name: String) -> String {
+        let words = name.split { !$0.isLetter && !$0.isNumber }
+        guard let firstWord = words.first else { return "–" }
+        let initials = words.count > 1 ? String(words.prefix(2).compactMap(\.first)) : String(firstWord.prefix(2))
+        return String(initials.uppercased().prefix(2))
+    }
+
+    /// FNV-1a 在重启时保持稳定；排除提交号，避免每次同步仓库后同一个目录变色。
+    static func monogramPaletteIndex(for skill: RepoSkill) -> Int {
+        let identity = "\(skill.repositoryID):\(skill.directory)"
+        var hash: UInt32 = 2_166_136_261
+        for byte in identity.utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 16_777_619
+        }
+        return Int(hash % UInt32(monogramPalette.count))
+    }
+
+    static func monogramTint(for skill: RepoSkill) -> Color {
+        monogramPalette[monogramPaletteIndex(for: skill)]
     }
 }

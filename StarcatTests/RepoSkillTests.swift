@@ -1141,9 +1141,30 @@ struct RepoSkillTests {
 struct RepoSkillRowChromeTests {
     @Test("斑马纹、悬停与选中使用规范中的固定优先级")
     func rowBackgroundPrecedence() {
+        #expect(RepoSkillRowChrome.background(rowIndex: 0, isSelected: false, isHovered: false) == Color.primary.opacity(0.015))
         #expect(RepoSkillRowChrome.background(rowIndex: 1, isSelected: false, isHovered: false) == Color.primary.opacity(0.045))
         #expect(RepoSkillRowChrome.background(rowIndex: 1, isSelected: false, isHovered: true) == Color.accentColor.opacity(0.08))
         #expect(RepoSkillRowChrome.background(rowIndex: 0, isSelected: true, isHovered: true) == Color.accentColor.opacity(0.14))
+    }
+
+    @Test("Skill 缩写覆盖分隔词、单词和特殊名称")
+    func monogramFromSkillName() {
+        #expect(RepoSkillRowChrome.monogram(for: "ask-matt") == "AM")
+        #expect(RepoSkillRowChrome.monogram(for: "tdd") == "TD")
+        #expect(RepoSkillRowChrome.monogram(for: "pr") == "PR")
+        #expect(RepoSkillRowChrome.monogram(for: "代码审查") == "代码")
+        #expect(RepoSkillRowChrome.monogram(for: "⚙️") == "–")
+        #expect(RepoSkillRowChrome.monogram(for: "ßa").count == 2)
+    }
+
+    @Test("Skill 目录在仓库提交更新后保持原有颜色")
+    func monogramColorSurvivesCommitChange() {
+        let original = installSkill()
+        let refreshed = installSkill(commitSHA: "new-commit")
+
+        #expect(original.id != refreshed.id)
+        #expect(RepoSkillRowChrome.monogramPaletteIndex(for: original) == 0)
+        #expect(RepoSkillRowChrome.monogramTint(for: original) == RepoSkillRowChrome.monogramTint(for: refreshed))
     }
 }
 
@@ -1222,12 +1243,12 @@ private final class ManifestDownloadRecorder: Sendable {
     }
 }
 
-private func installSkill() -> RepoSkill {
+private func installSkill(commitSHA: String = "fixed") -> RepoSkill {
     let files = ["SKILL.md", "scripts/check.sh", "references/guide.md"].map {
         RepoSkillFile(path: $0, sha: RepoFileDownloader.gitBlobSHA(Data($0.utf8)), size: $0.utf8.count,
                       mode: $0.hasSuffix(".sh") ? "100755" : "100644")
     }
-    return RepoSkill(repositoryID: 1, commitSHA: "fixed", directory: "skills/review/", name: "review",
+    return RepoSkill(repositoryID: 1, commitSHA: commitSHA, directory: "skills/review/", name: "review",
                      summary: "Review", manifest: "Review", files: files, installationIssue: nil)
 }
 

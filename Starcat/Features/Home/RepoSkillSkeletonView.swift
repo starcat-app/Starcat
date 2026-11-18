@@ -18,6 +18,13 @@ struct RepoSkillSkeletonView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
+    private let selectionRowCount = 12
+
+    private var selectionHeight: CGFloat {
+        interfaceScale.scaled(RepoSkillRowChrome.rowHeight) * CGFloat(selectionRowCount)
+            + RepoSkillRowChrome.rowSpacing * CGFloat(selectionRowCount - 1)
+    }
+
     var body: some View {
         Group {
             if layout == .manifest {
@@ -35,34 +42,41 @@ struct RepoSkillSkeletonView: View {
                 }
             }
         }
-        .frame(height: layout == .selection ? interfaceScale.scaled(32 * 12) : nil)
+        .frame(height: layout == .selection ? selectionHeight : nil)
         .frame(maxWidth: .infinity, maxHeight: layout == .selection ? nil : .infinity, alignment: .topLeading)
         .clipped()
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
-    /// 与真实列表共用 32pt 行高和斑马纹，骨架通过覆盖层显示，不挤动即将出现的列表。
+    /// 与真实列表共用行高、复选框、monogram 和斑马纹，骨架不挤动即将出现的列表。
     private func selectionRows(width: CGFloat, phase: Double, palette: SkeletonPalette) -> some View {
-        let textWidth = max(0, width - 42)
+        let checkboxSize: CGFloat = 14
+        let monogramSize = interfaceScale.scaled(RepoSkillRowChrome.monogramSize)
+        let insets = 2 * (RepoSkillRowChrome.horizontalInset + RepoSkillRowChrome.itemSpacing)
+        let textWidth = max(0, width - insets - checkboxSize - monogramSize)
         let fractions: [CGFloat] = [0.88, 0.66, 0.94, 0.76]
-        return VStack(spacing: 0) {
-            ForEach(0..<12) { index in
-                HStack(spacing: 8) {
+        return VStack(spacing: RepoSkillRowChrome.rowSpacing) {
+            ForEach(0..<selectionRowCount) { index in
+                HStack(spacing: RepoSkillRowChrome.itemSpacing) {
                     SkeletonBlock(
-                        width: 14, height: 14, cornerRadius: 4, phase: phase, palette: palette
+                        width: checkboxSize, height: checkboxSize, cornerRadius: 4, phase: phase, palette: palette
+                    )
+                    SkeletonBlock(
+                        width: monogramSize, height: monogramSize, cornerRadius: RepoSkillRowChrome.monogramCornerRadius,
+                        phase: phase, palette: palette
                     )
                     SkeletonBlock(
                         width: textWidth * fractions[index % fractions.count],
                         height: interfaceScale.scaled(12), phase: phase, palette: palette
                     )
-                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 10)
-                .frame(height: interfaceScale.scaled(32))
+                .padding(.horizontal, RepoSkillRowChrome.horizontalInset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: interfaceScale.scaled(RepoSkillRowChrome.rowHeight))
                 .background(
                     RepoSkillRowChrome.background(rowIndex: index, isSelected: false, isHovered: false),
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: RepoSkillRowChrome.rowCornerRadius, style: .continuous)
                 )
             }
         }
