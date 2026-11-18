@@ -211,7 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(hideDockIcon ? .accessory : .regular)
     }
 
-    /// 恢复并激活主窗口。Dock reopen 和菜单栏左键共用这条路径，避免出现两套
+    /// 恢复并激活主窗口。Dock reopen 和菜单栏「打开 Starcat」共用这条路径，避免出现两套
     /// “打开主窗口”语义。
     static func activateMainWindowIfPossible() {
         NSApp.activate(ignoringOtherApps: true)

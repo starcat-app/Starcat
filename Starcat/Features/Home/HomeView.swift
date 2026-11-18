@@ -1942,6 +1942,18 @@ struct HomeView: View {
         case .githubNotifications:
             openGitHubNotification()
 
+        case .statusTask(let id, let accountID):
+            if accountID == dependencies.authSession.state.user?.id,
+               let task = AppBackgroundTaskSnapshot.current(dependencies).task(id),
+               task.opensWindow {
+                switch task.kind {
+                case .grouping: startGitHubStarListAIGrouping()
+                case .tags: presentBatchAIProgress()
+                case .indexing: openKnowledgeRAGWorkspaceForGettingStarted()
+                default: break
+                }
+            }
+
         case .repository(let repository):
             // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。
             dependencies.mainWindowNavigationDispatcher.pendingRequest = nil

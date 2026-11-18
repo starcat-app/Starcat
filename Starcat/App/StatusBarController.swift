@@ -7,21 +7,29 @@
 //  设计约束:
 //  - Starcat 仍是普通窗口应用，菜单栏入口只是常驻快捷面板；用户选择隐藏 Dock 后，
 //    这里就成为恢复主窗口的固定路径。
-//  - SwiftUI `MenuBarExtra` 无法可靠区分左键打开窗口、右键展示菜单，因此这里使用
+//  - SwiftUI `MenuBarExtra` 无法可靠区分左键状态面板、右键快捷菜单，因此这里使用
 //    AppKit `NSStatusItem` 自行处理鼠标事件。
 //  - 菜单内容每次右键时动态生成，确保同步状态、Browser Plugin Service、MCP 开关
 //    都读取最新对象，而不是缓存一份过期菜单。
 //
 
 import AppKit
+import SwiftUI
 
 @MainActor
-final class StatusBarController: NSObject, NSMenuDelegate {
+final class StatusBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     static let shared = StatusBarController()
+
+    var openLocalAILogWindow: (() -> Void)?
 
     private var statusItem: NSStatusItem?
     private weak var dependencies: AppDependencies?
     private let pluginConfiguration = CompanionConfiguration.shared
+    private let diagnostics = AppStatusDiagnostics()
+    private var statusPopover: NSPopover?
+    private var afterStatusPopoverClose: (() -> Void)?
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
 
     private override init() {
         super.init()
@@ -50,9 +58,91 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
         switch NSApp.currentEvent?.type {
         case .rightMouseUp:
+            statusPopover?.close()
             showContextMenu()
         default:
-            AppDelegate.activateMainWindowIfPossible()
+            if let statusPopover {
+                statusPopover.close()
+            } else {
+                showStatusPopover(anchoredTo: sender)
+            }
+        }
+    }
+
+    /// 浮层只依赖状态栏锚点。这里不激活应用，也不查找或恢复主窗口。
+    private func showStatusPopover(anchoredTo button: NSStatusBarButton) {
+        guard let dependencies, button.window != nil else { return }
+        let popover = NSPopover()
+        let height = min(
+            AppStatusPopover.maximumHeight,
+            (button.window?.screen?.visibleFrame.height ?? AppStatusPopover.maximumHeight + 32) - 32
+        )
+        let content = AppStatusPopover(
+            diagnostics: diagnostics,
+            loadsStoredSyncDate: true,
+            dismissThen: { [weak self] action in
+                self?.afterStatusPopoverClose = action
+                self?.statusPopover?.close()
+            },
+            onOpenWorkspaceTask: { id in
+                dependencies.mainWindowNavigationDispatcher.navigate(
+                    to: .statusTask(id, accountID: dependencies.authSession.state.user?.id)
+                )
+            },
+            onOpenLocalAILogs: { [weak self] in self?.openLocalAILogWindow?() }
+        )
+        .frame(width: AppStatusPopover.contentWidth, height: height)
+        .appHostEnvironment(dependencies)
+
+        popover.contentViewController = NSHostingController(rootView: content)
+        popover.contentSize = NSSize(width: AppStatusPopover.contentWidth, height: height)
+        // 自行处理外部按下事件，避免系统先关闭浮层，再由同一次 mouseUp 把它重新打开。
+        popover.behavior = .applicationDefined
+        popover.animates = !dependencies.settings.disableAnimations && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        popover.delegate = self
+        statusPopover = popover
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        guard popover.isShown else {
+            statusPopover = nil
+            return
+        }
+        button.highlight(true)
+        monitorOutsideClicks(button: button, popover: popover)
+    }
+
+    private func monitorOutsideClicks(button: NSStatusBarButton, popover: NSPopover) {
+        let mouseDown: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [mouseDown, .keyDown]) { [weak button, weak popover] event in
+            guard let popover, let popoverWindow = popover.contentViewController?.view.window else { return event }
+            if event.type == .keyDown {
+                guard event.keyCode == 53, event.window === popoverWindow else { return event }
+                popover.close()
+                return nil
+            }
+            if event.window !== popoverWindow, event.window !== button?.window {
+                popover.close()
+            }
+            return event
+        }
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseDown) { [weak popover] _ in
+            popover?.close()
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard let popover = notification.object as? NSPopover, popover === statusPopover else { return }
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        localClickMonitor = nil
+        globalClickMonitor = nil
+        statusPopover = nil
+        if statusItem?.menu == nil {
+            statusItem?.button?.highlight(false)
+        }
+        let action = afterStatusPopoverClose
+        afterStatusPopoverClose = nil
+        if let action {
+            DispatchQueue.main.async { action() }
         }
     }
 
@@ -304,44 +394,49 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private static func makeStatusIcon() -> NSImage {
         let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        defer {
-            image.unlockFocus()
-            image.isTemplate = true
+        let image = NSImage(size: size, flipped: true) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+
+            let silhouette = CGMutablePath()
+            silhouette.move(to: CGPoint(x: 2, y: 10.15))
+            silhouette.addQuadCurve(to: CGPoint(x: 2.8, y: 3), control: CGPoint(x: 2, y: 6.8))
+            silhouette.addQuadCurve(to: CGPoint(x: 4, y: 2.6), control: CGPoint(x: 3.05, y: 1.9))
+            silhouette.addLine(to: CGPoint(x: 6.75, y: 4.78))
+            silhouette.addQuadCurve(to: CGPoint(x: 11.25, y: 4.78), control: CGPoint(x: 9, y: 4))
+            silhouette.addLine(to: CGPoint(x: 14, y: 2.6))
+            silhouette.addQuadCurve(to: CGPoint(x: 15.2, y: 3), control: CGPoint(x: 14.95, y: 1.9))
+            silhouette.addQuadCurve(to: CGPoint(x: 16, y: 10.15), control: CGPoint(x: 16, y: 6.8))
+            silhouette.addCurve(
+                to: CGPoint(x: 9, y: 16),
+                control1: CGPoint(x: 16, y: 13.75),
+                control2: CGPoint(x: 13.15, y: 16)
+            )
+            silhouette.addCurve(
+                to: CGPoint(x: 2, y: 10.15),
+                control1: CGPoint(x: 4.85, y: 16),
+                control2: CGPoint(x: 2, y: 13.75)
+            )
+            silhouette.closeSubpath()
+
+            // 四角星需要是透明镂空，才能在菜单栏反色时保留清晰轮廓。
+            silhouette.move(to: CGPoint(x: 9, y: 6.5))
+            silhouette.addLine(to: CGPoint(x: 10.1, y: 8.9))
+            silhouette.addLine(to: CGPoint(x: 12.5, y: 10))
+            silhouette.addLine(to: CGPoint(x: 10.1, y: 11.1))
+            silhouette.addLine(to: CGPoint(x: 9, y: 13.5))
+            silhouette.addLine(to: CGPoint(x: 7.9, y: 11.1))
+            silhouette.addLine(to: CGPoint(x: 5.5, y: 10))
+            silhouette.addLine(to: CGPoint(x: 7.9, y: 8.9))
+            silhouette.closeSubpath()
+
+            context.setFillColor(gray: 0, alpha: 1)
+            context.addPath(silhouette)
+            context.fillPath(using: .evenOdd)
+            return true
         }
 
-        NSColor.labelColor.setStroke()
-        NSColor.labelColor.setFill()
-
-        let head = NSBezierPath()
-        head.move(to: NSPoint(x: 2.8, y: 3.8))
-        head.line(to: NSPoint(x: 2.8, y: 12.6))
-        head.line(to: NSPoint(x: 6.0, y: 16.0))
-        head.line(to: NSPoint(x: 8.0, y: 13.7))
-        head.line(to: NSPoint(x: 10.0, y: 13.7))
-        head.line(to: NSPoint(x: 12.0, y: 16.0))
-        head.line(to: NSPoint(x: 15.2, y: 12.6))
-        head.line(to: NSPoint(x: 15.2, y: 3.8))
-        head.close()
-        head.lineWidth = 1.8
-        head.stroke()
-
-        // 菜单栏会按模板图缩放着色；轮廓尽量占满 18pt 画布，避免与系统状态图标相比显小。
-        let star = NSBezierPath()
-        star.move(to: NSPoint(x: 9.0, y: 11.4))
-        star.line(to: NSPoint(x: 9.8, y: 9.8))
-        star.line(to: NSPoint(x: 11.5, y: 9.6))
-        star.line(to: NSPoint(x: 10.2, y: 8.4))
-        star.line(to: NSPoint(x: 10.5, y: 6.7))
-        star.line(to: NSPoint(x: 9.0, y: 7.6))
-        star.line(to: NSPoint(x: 7.5, y: 6.7))
-        star.line(to: NSPoint(x: 7.8, y: 8.4))
-        star.line(to: NSPoint(x: 6.5, y: 9.6))
-        star.line(to: NSPoint(x: 8.2, y: 9.8))
-        star.close()
-        star.fill()
-
+        // 由状态栏按钮按当前外观与按压状态着色，避免锁定为创建图标时的颜色。
+        image.isTemplate = true
         return image
     }
 }

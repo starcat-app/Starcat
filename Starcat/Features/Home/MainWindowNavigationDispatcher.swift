@@ -102,6 +102,8 @@ final class MainWindowNavigationDispatcher {
         case insights
         /// 状态面板查看同步只定位通知列表，不要求已有具体 thread。
         case githubNotifications
+        /// 菜单栏明确选择的审核任务，由主窗口在自己的宿主上打开。
+        case statusTask(AppBackgroundTask.ID, accountID: Int64?)
         /// Universal Link 只携带稳定的 owner / repo，不把网页端数据写入本地库。
         case repository(RepositoryDeepLink)
         /// Spotlight 只按稳定 ID 打开当前数据库实体，允许用户已授权索引的 private repository。

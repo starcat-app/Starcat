@@ -548,6 +548,9 @@ private struct MainWindowOpenFallbackRegistrar: ViewModifier {
                 AppDelegate.openSettingsWindowFallback = {
                     openWindow(id: "settings")
                 }
+                StatusBarController.shared.openLocalAILogWindow = {
+                    openWindow(id: LocalAILogWindowSelection.sceneID)
+                }
                 AIWorkspaceSceneCoordinator.shared.registerWindowActions(
                     openAgent: {
                         openWindow(id: AgentWorkspaceWindowController.sceneID)
