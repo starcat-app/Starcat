@@ -42,6 +42,7 @@ private struct ToastModifier: ViewModifier {
     let autoDismiss: Bool
     let actionLabel: String?
     let onAction: (() -> Void)?
+    let restartID: Int
 
     /// 2026-06-15:Toast 进出场 0.25s snappy 在「关闭应用内动画」时跳过,
     /// 直接显示/隐藏避免吸引视线。
@@ -95,7 +96,7 @@ private struct ToastModifier: ViewModifier {
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 .id(message) // 切换 message 重置动画
                 // 仅 autoDismiss 时挂自动消失 timer
-                .task(id: message) {
+                .task(id: "\(restartID):\(message)") {
                     guard autoDismiss else { return }
                     try? await Task.sleep(for: .seconds(duration))
                     if !Task.isCancelled {
@@ -118,6 +119,7 @@ extension View {
     ///   - iconColor: 仅覆盖图标色；文案继续继承系统主色，保证可读性
     ///   - bottomPadding: 底部浮动距离；详情页可避开 README 状态栏
     ///   - autoDismiss: 是否自动消失，默认 true；false 时显示 X 关闭按钮
+    ///   - restartID: 同一文案重复触发时递增，只重置倒计时，不重新播放入场
     ///   - actionLabel: 操作按钮文案（localization key），nil 则不显示
     ///   - onAction: 操作按钮回调，点击后自动关闭 toast
     func toast(
@@ -127,6 +129,7 @@ extension View {
         iconColor: Color? = nil,
         bottomPadding: CGFloat = 16,
         autoDismiss: Bool = true,
+        restartID: Int = 0,
         actionLabel: String? = nil,
         onAction: (() -> Void)? = nil
     ) -> some View {
@@ -138,7 +141,8 @@ extension View {
             bottomPadding: bottomPadding,
             autoDismiss: autoDismiss,
             actionLabel: actionLabel,
-            onAction: onAction
+            onAction: onAction,
+            restartID: restartID
         ))
     }
 }

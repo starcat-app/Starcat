@@ -30,6 +30,18 @@ import SwiftUI
 enum CopyFeedbackButtonStyle {
     case plain
     case bordered
+    case floating
+}
+
+/// 浮动材质在旧版 macOS 上没有原生按压高光，用透明度反馈保持命中区不变。
+private struct FloatingCopyButtonStyle: ButtonStyle {
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 /// 通用复制按钮，封装"复制 + 反馈"完整状态机。
@@ -127,6 +139,10 @@ struct CopyFeedbackButton<Label: View>: View {
         case .bordered:
             button
                 .buttonStyle(.bordered)
+                .focusEffectDisabled()
+        case .floating:
+            button
+                .buttonStyle(FloatingCopyButtonStyle())
                 .focusEffectDisabled()
         }
     }

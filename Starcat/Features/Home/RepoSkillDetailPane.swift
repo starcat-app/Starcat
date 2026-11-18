@@ -37,6 +37,8 @@ struct RepoSkillDetailPane: View {
     @State private var translationToast: String?
     @State private var translationNoticeToast: String?
     @State private var installationIssueToast: String?
+    @State private var aiInstallToast: String?
+    @State private var aiInstallToastRevision = 0
 
     /// 只共享翻译服务与设置；窗口拥有自己的 VM，翻译 Skill 不会打断主窗口的 README。
     init(
@@ -150,9 +152,16 @@ struct RepoSkillDetailPane: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 if tab == .manifest {
-                    installButton
-                        .padding(.trailing, ReadmeWebView.floatingToolbarTrailingInset)
-                        .padding(.bottom, 14)
+                    VStack(spacing: 10) {
+                        if showsManifestSource {
+                            manifestSourceCopyButton
+                                .id(skill.id)
+                                .disabled(!isContentReady || !isContentVisible || skill.manifest.isEmpty)
+                        }
+                        installButton
+                    }
+                    .padding(.trailing, ReadmeWebView.floatingToolbarTrailingInset)
+                    .padding(.bottom, 14)
                 }
             }
             .background(RepoSkillPanelStyle.panelColor(colorScheme), in: RoundedRectangle(cornerRadius: 8))
@@ -192,6 +201,10 @@ struct RepoSkillDetailPane: View {
             message: $translationNoticeToast, icon: "checkmark.circle.fill",
             duration: 5, bottomPadding: 30
         )
+        .toast(
+            message: $aiInstallToast, duration: 4, iconColor: .green, bottomPadding: 30,
+            restartID: aiInstallToastRevision
+        )
         .toast(message: $session.exportError, icon: "exclamationmark.triangle.fill", iconColor: .orange)
         .toast(message: $session.exportNotice, icon: "checkmark.circle.fill")
         .onChange(of: translationVM.errorMessage) { _, message in
@@ -208,16 +221,21 @@ struct RepoSkillDetailPane: View {
         }
         .onChange(of: skill.id, initial: true) { _, _ in
             previewedFile = nil
+            aiInstallToast = nil
             translationSourceDocumentID = nil
             translationSourceSnapshot = .empty
             // 只在切换 Skill 时提示，手动关闭后不因正文重绘或翻译更新再次弹出。
             installationIssueToast = skill.installationIssue
         }
         .onChange(of: tab) { _, _ in
+            aiInstallToast = nil
             renderedDocumentID = nil
             updateContentVisibility()
         }
-        .onChange(of: showsManifestSource) { _, _ in updateContentVisibility() }
+        .onChange(of: showsManifestSource) { _, showsSource in
+            if showsSource { aiInstallToast = nil }
+            updateContentVisibility()
+        }
         .onChange(of: translationSyncKey, initial: true) { _, _ in prepareTranslation() }
         .onDisappear {
             // prepare(nil) 同时取消缓存读取和翻译任务，关窗后不能再发布部分译文或付费提示。
@@ -307,14 +325,13 @@ struct RepoSkillDetailPane: View {
         }
     }
 
-    /// 所有操作绑定扫描时的提交；复制和下载始终使用原文，不受阅读层译文影响。
+    /// 链接和下载绑定扫描时的提交，不受阅读层译文影响。
     private var manifestToolbar: some View {
         HStack(spacing: 6) {
-            CopyFeedbackButton(
-                providesContent: { skill.manifest }, tooltip: "repo.files.preview.copy", style: .bordered
-            ) { didCopy in
-                Image(systemName: didCopy ? "checkmark.circle.fill" : "square.on.square")
-                    .foregroundStyle(didCopy ? Color.green : Color.secondary)
+            if !showsManifestSource,
+               let manifestURL = contentBaseURL(raw: false)?.appendingPathComponent("SKILL.md") {
+                aiInstallButton(manifestURL: manifestURL)
+                    .id(skill.id)
             }
             Picker("repo.files.markdown.mode", selection: $showsManifestSource) {
                 Text("repo.files.markdown.rendered").tag(false)
@@ -345,6 +362,28 @@ struct RepoSkillDetailPane: View {
         }
         .disabled(document?.skillID != skill.id || !isContentVisible)
         .fixedSize()
+    }
+
+    /// 只把当前 Skill 的固定提交链接交给 AI，避免复制整仓安装指令或随分支更新改变目标。
+    private func aiInstallButton(manifestURL: URL) -> some View {
+        CopyFeedbackButton(
+            providesContent: {
+                String(format: String.l10n("repo.skills.aiInstall.prompt"), skill.name, manifestURL.absoluteString)
+            },
+            tooltip: "repo.skills.aiInstall.action",
+            style: .bordered,
+            onCopied: {
+                aiInstallToast = "repo.skills.aiInstall.copied"
+                aiInstallToastRevision += 1
+                AccessibilityNotification.Announcement(String.l10n("repo.skills.aiInstall.copied")).post()
+            }
+        ) { didCopy in
+            Image(systemName: didCopy ? "checkmark.circle.fill" : "sparkles")
+                .foregroundStyle(didCopy ? Color.green : Color.accentColor)
+                .frame(width: 16)
+        }
+        .clickablePointer()
+        .accessibilityLabel(Text("repo.skills.aiInstall.action"))
     }
 
     private var manifestMoreMenu: some View {
@@ -422,6 +461,33 @@ struct RepoSkillDetailPane: View {
         .focusEffectDisabled()
         .help(helpKey)
         .accessibilityLabel(Text(helpKey))
+    }
+
+    /// 通用文本复制会裁掉首尾空白，这里走原样写入，再复用相同的成功反馈。
+    private var manifestSourceCopyButton: some View {
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        return CopyFeedbackButton(
+            performCopy: {
+                NSPasteboard.general.clearContents()
+                return NSPasteboard.general.setString(skill.manifest, forType: .string)
+            },
+            tooltip: "repo.skills.preview.copySource",
+            style: .floating,
+            onCopied: {
+                AccessibilityNotification.Announcement(String.l10n("common.copy.copied")).post()
+            }
+        ) { didCopy in
+            Image(systemName: didCopy ? "checkmark.circle.fill" : "square.on.square")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(didCopy ? Color.green : Color.secondary)
+                .frame(width: 30, height: 30)
+                .starcatInteractiveGlassSurface(.thinMaterial, in: shape)
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.12)))
+                .contentShape(shape)
+        }
+        .toolbarIconHover(cornerRadius: 10)
+        .accessibilityLabel(Text("repo.skills.preview.copySource"))
+        .shadow(color: .black.opacity(0.09), radius: 8, x: 0, y: 4)
     }
 
     /// 安装入口仅属于 SKILL.md，与 README 的悬浮操作共用贴边间距，不挤占滚动容器。

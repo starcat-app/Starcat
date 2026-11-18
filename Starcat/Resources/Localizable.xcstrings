@@ -446180,6 +446180,434 @@
         }
       }
     },
+    "repo.skills.aiInstall.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install with AI — Copy prompt"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一键 AI 安装 · 复制提示词"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一鍵 AI 安裝 · 複製提示詞"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI でインストール — プロンプトをコピー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "AI로 설치 — 프롬프트 복사"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Mit KI installieren – Prompt kopieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installer avec l’IA — Copier l’invite"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instalar con IA — Copiar instrucción"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instalar com IA — Copiar prompt"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installa con l’IA — Copia il prompt"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Установить с помощью ИИ — копировать запрос"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installeren met AI — Prompt kopiëren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zainstaluj z AI — Kopiuj polecenie"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Установити за допомогою ШІ — копіювати запит"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yapay zekâyla yükle — İstemi kopyala"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Cài đặt bằng AI — Sao chép yêu cầu"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instal dengan AI — Salin prompt"
+          }
+        }
+      }
+    },
+    "repo.skills.aiInstall.copied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installation prompt copied. Paste it into your AI agent and send it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制安装提示词。请粘贴到你的 AI 工具并发送。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已複製安裝提示詞。請貼到你的 AI 工具並送出。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "インストール用プロンプトをコピーしました。AI エージェントに貼り付けて送信してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "설치 프롬프트를 복사했습니다. AI 에이전트에 붙여넣고 보내세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installationsprompt kopiert. Füge ihn in deinen KI-Assistenten ein und sende ihn ab."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Invite d’installation copiée. Collez-la dans votre agent IA et envoyez-la."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instrucción de instalación copiada. Pégala en tu agente de IA y envíala."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prompt de instalação copiado. Cole-o no seu agente de IA e envie."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prompt di installazione copiato. Incollalo nel tuo agente IA e invialo."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запрос на установку скопирован. Вставьте его в чат с ИИ-агентом и отправьте."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installatieprompt gekopieerd. Plak deze in je AI-agent en verstuur hem."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Skopiowano polecenie instalacji. Wklej je w swoim agencie AI i wyślij."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Запит на встановлення скопійовано. Вставте його в чат з ШІ-агентом і надішліть."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Yükleme istemi kopyalandı. Yapay zekâ aracınıza yapıştırıp gönderin."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Đã sao chép yêu cầu cài đặt. Hãy dán vào công cụ AI của bạn rồi gửi."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Prompt instalasi disalin. Tempelkan ke agen AI Anda, lalu kirim."
+          }
+        }
+      }
+    },
+    "repo.skills.aiInstall.prompt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please install the %1$@ skill. Use this SKILL.md as the source: <%2$@>. Install only this skill from the linked revision, including its supporting files, and preserve its directory structure."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请安装 %1$@ 技能。以此 SKILL.md 为准：<%2$@>。只安装链接所指版本中的这一个技能，包含配套文件并保留目录结构。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請安裝 %1$@ 技能。以此 SKILL.md 為準：<%2$@>。只安裝連結所指版本中的這一個技能，包含配套檔案並保留目錄結構。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "スキル「%1$@」をインストールしてください。参照元の SKILL.md は <%2$@> です。リンク先のリビジョンからこのスキルだけを、付属ファイルとディレクトリ構成を維持してインストールしてください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "%1$@ 스킬을 설치해 주세요. 다음 SKILL.md를 기준으로 사용하세요: <%2$@>. 링크된 리비전에서 이 스킬만 설치하고, 관련 파일과 디렉터리 구조를 그대로 유지해 주세요."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bitte installiere den Skill %1$@. Verwende diese SKILL.md als Quelle: <%2$@>. Installiere nur diesen Skill aus der verlinkten Revision und erhalte die zugehörigen Dateien und die Verzeichnisstruktur."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installe la compétence %1$@. Utilise ce fichier SKILL.md comme source : <%2$@>. Installe uniquement cette compétence depuis la révision indiquée, avec ses fichiers associés et en conservant la structure des dossiers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instala la habilidad %1$@. Usa este SKILL.md como fuente: <%2$@>. Instala solo esta habilidad de la revisión enlazada, con sus archivos auxiliares y conservando la estructura de carpetas."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Instale a habilidade %1$@. Use este SKILL.md como fonte: <%2$@>. Instale apenas essa habilidade da revisão indicada, incluindo os arquivos de apoio e preservando a estrutura de diretórios."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installa la skill %1$@. Usa questo file SKILL.md come fonte: <%2$@>. Installa solo questa skill dalla revisione indicata, includendo i file di supporto e conservando la struttura delle cartelle."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Установи навык %1$@. Используй этот файл SKILL.md как источник: <%2$@>. Установи только этот навык из указанной ревизии, включая вспомогательные файлы, и сохрани структуру каталогов."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Installeer de vaardigheid %1$@. Gebruik dit SKILL.md-bestand als bron: <%2$@>. Installeer alleen deze vaardigheid uit de gekoppelde revisie, inclusief de bijbehorende bestanden, en behoud de mapstructuur."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Zainstaluj umiejętność %1$@. Użyj tego pliku SKILL.md jako źródła: <%2$@>. Zainstaluj tylko tę umiejętność ze wskazanej rewizji wraz z plikami pomocniczymi i zachowaj strukturę katalogów."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Встанови навичку %1$@. Використай цей файл SKILL.md як джерело: <%2$@>. Встанови лише цю навичку з версії за посиланням разом із допоміжними файлами та збережи структуру каталогів."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Lütfen %1$@ becerisini yükle. Kaynak olarak şu SKILL.md dosyasını kullan: <%2$@>. Yalnızca bağlantıdaki sürümden bu beceriyi yükle, destek dosyalarını dahil et ve dizin yapısını koru."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Hãy cài đặt kỹ năng %1$@. Dùng tệp SKILL.md này làm nguồn: <%2$@>. Chỉ cài kỹ năng này từ phiên bản trong liên kết, kèm các tệp hỗ trợ và giữ nguyên cấu trúc thư mục."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Tolong instal keterampilan %1$@. Jadikan SKILL.md ini sebagai sumber: <%2$@>. Instal hanya keterampilan ini dari revisi yang ditautkan, sertakan berkas pendukungnya, dan pertahankan struktur direktorinya."
+          }
+        }
+      }
+    },
+    "repo.skills.preview.copySource" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy SKILL.md source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 SKILL.md 原文"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製 SKILL.md 原文"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SKILL.md の原文をコピー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SKILL.md 원본 복사"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Quelltext von SKILL.md kopieren"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copier le contenu source de SKILL.md"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copiar el contenido original de SKILL.md"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copiar o conteúdo original de SKILL.md"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Copia il contenuto originale di SKILL.md"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Копировать исходный текст SKILL.md"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Brontekst van SKILL.md kopiëren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Kopiuj tekst źródłowy SKILL.md"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Копіювати вихідний текст SKILL.md"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "SKILL.md kaynak metnini kopyala"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sao chép nội dung gốc của SKILL.md"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Salin isi asli SKILL.md"
+          }
+        }
+      }
+    },
     "repo.skills.preview.overview" : {
       "comment" : "Skill UI preview only. AI translation draft; pending maintainer review.",
       "extractionState" : "manual",
