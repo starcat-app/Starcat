@@ -121,6 +121,9 @@ struct ReadmeWebView: View {
     /// 所有 README 与 Skill 操作浮在滚动条左侧；只内收按钮，WebView 和正文始终占满阅读区。
     static let floatingToolbarTrailingInset: CGFloat = 20
 
+    /// 调用方可按阅读区右侧留白调整两个浮动按钮的位置，正文布局不受影响。
+    var floatingToolbarTrailingPadding: CGFloat = ReadmeWebView.floatingToolbarTrailingInset
+
     /// 当前 README 所属仓库。有值且设置选择应用内打开时，
     /// 同仓 Markdown 点击走 `onOpenRepositoryMarkdown`，不再进浏览器。
     var markdownLinkRepositoryOwner: String? = nil
@@ -210,7 +213,7 @@ struct ReadmeWebView: View {
                 openInNewWindow: onOpenInNewWindow,
                 onExportMarkdown: onExportMarkdown
             )
-            .padding(.trailing, Self.floatingToolbarTrailingInset)
+            .padding(.trailing, floatingToolbarTrailingPadding)
             .padding(.bottom, 54 + floatingToolbarBottomInset)
             .opacity(isImagePreviewVisible ? 0 : 1)
             .allowsHitTesting(!isImagePreviewVisible)
@@ -219,7 +222,7 @@ struct ReadmeWebView: View {
         // 回到顶部是独立常驻操作，固定贴在 README 渲染区右下角。
         .overlay(alignment: .bottomTrailing) {
             ReadmeBackToTopButton(action: scrollToTop)
-                .padding(.trailing, Self.floatingToolbarTrailingInset)
+                .padding(.trailing, floatingToolbarTrailingPadding)
                 .padding(.bottom, 14 + floatingToolbarBottomInset)
                 .opacity(isImagePreviewVisible ? 0 : 1)
                 .allowsHitTesting(!isImagePreviewVisible)

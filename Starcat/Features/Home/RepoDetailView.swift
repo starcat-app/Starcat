@@ -960,6 +960,7 @@ struct ReadmeStateView: View {
                     )
                 },
                 onExportMarkdown: exportMarkdown,
+                floatingToolbarTrailingPadding: 14,
                 markdownLinkRepositoryOwner: markdownContext?.owner,
                 markdownLinkRepositoryName: markdownContext?.repo,
                 onOpenRepositoryMarkdown: openMarkdown,
