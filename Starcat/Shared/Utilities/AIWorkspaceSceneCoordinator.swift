@@ -87,6 +87,7 @@ final class AIWorkspaceSceneCoordinator {
 
 /// 保存当前 SwiftUI Window 背后的 `NSWindow`，供置顶按钮和尺寸策略使用。
 @MainActor
+@Observable
 final class WorkspaceSceneWindowReference {
     weak var window: NSWindow?
 }
@@ -113,7 +114,9 @@ struct WorkspaceSceneWindowReader: NSViewRepresentable {
     }
 
     private func configure(window: NSWindow?) {
-        reference.window = window
+        if reference.window !== window {
+            reference.window = window
+        }
         // HomeView 离开窗口时清掉引用，异步预检返回后不能把旧审核页挂到登录页上。
         guard let window else { return }
         guard let minimumContentSize else { return }

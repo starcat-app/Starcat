@@ -43,6 +43,7 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
     private weak var parentWindow: NSWindow?
     private var geometryObservers: [NSObjectProtocol] = []
     private let reduceMotion: Bool
+    private let onParentClose: () -> Void
     private var isDismissing = false
 
     /// 将 SwiftUI 搜索中心作为主窗口内容区上方的 child window 展示。
@@ -52,7 +53,8 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
     static func present<Content: View>(
         content: Content,
         from parentWindow: NSWindow? = nil,
-        reduceMotion: Bool = false
+        reduceMotion: Bool = false,
+        onParentClose: @escaping () -> Void
     ) {
         if let activeController {
             activeController.window?.makeKeyAndOrderFront(nil)
@@ -89,7 +91,8 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
         let controller = SearchCenterWindowController(
             window: panel,
             parentWindow: parent,
-            reduceMotion: reduceMotion
+            reduceMotion: reduceMotion,
+            onParentClose: onParentClose
         )
         guard controller.present() else { return }
         activeController = controller
@@ -100,9 +103,15 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
         activeController?.finishDismissal()
     }
 
-    private init(window: NSWindow, parentWindow: NSWindow, reduceMotion: Bool) {
+    private init(
+        window: NSWindow,
+        parentWindow: NSWindow,
+        reduceMotion: Bool,
+        onParentClose: @escaping () -> Void
+    ) {
         self.parentWindow = parentWindow
         self.reduceMotion = reduceMotion
+        self.onParentClose = onParentClose
         super.init(window: window)
         window.delegate = self
     }
@@ -128,6 +137,17 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
                 DispatchQueue.main.async { [weak self] in self?.updateFrame() }
             })
         }
+        // 父窗关闭时 AppKit 会隐藏 child panel，不保证触发 panel 自己的关闭回调。
+        // 同步释放旧控制器和搜索展示状态，下一次菜单请求才能挂到重新打开的主窗。
+        geometryObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: parentWindow, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.completeDismissal(restoreParentFocus: false)
+                self.onParentClose()
+            }
+        })
         updateFrame()
         window.alphaValue = reduceMotion ? 1 : 0
         window.makeKeyAndOrderFront(nil)
@@ -170,7 +190,8 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func completeDismissal() {
+    private func completeDismissal(restoreParentFocus: Bool = true) {
+        guard Self.activeController === self else { return }
         geometryObservers.forEach(NotificationCenter.default.removeObserver)
         geometryObservers = []
         if let parentWindow, let window {
@@ -181,7 +202,9 @@ final class SearchCenterWindowController: NSWindowController, NSWindowDelegate {
         }
         window = nil
         Self.activeController = nil
-        parentWindow?.makeKeyAndOrderFront(nil)
+        if restoreParentFocus {
+            parentWindow?.makeKeyAndOrderFront(nil)
+        }
     }
 
     private static func mainWindow() -> NSWindow? {

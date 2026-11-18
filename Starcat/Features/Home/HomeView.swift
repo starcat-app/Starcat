@@ -62,8 +62,9 @@ struct HomeView: View {
 
     /// HOM-47：Release 时间线 sheet 显示状态。
     @State private var showReleaseTimeline: Bool = false
-    /// 批量整理必须挂到发起操作的主窗口，不能误用状态 popover 或其它 Scene 的焦点窗口。
-    @State private var batchAIParentWindow = WorkspaceSceneWindowReference()
+    /// 子窗口必须挂到主窗口，不能误用状态 popover 或其它 Scene 的焦点窗口。
+    @State private var mainWindowReference = WorkspaceSceneWindowReference()
+    @State private var hasRestoredInitialNavigation = false
     /// Widget Release Deep Link 的一次性定位目标；普通 Sidebar 入口保持为 nil。
     @State private var releaseTimelineTargetID: Int64?
 
@@ -343,7 +344,7 @@ struct HomeView: View {
                 preparationMessage: $dailyRecommendationPreparationMessage
             ))
             .background {
-                WorkspaceSceneWindowReader(reference: batchAIParentWindow, minimumContentSize: nil)
+                WorkspaceSceneWindowReader(reference: mainWindowReference, minimumContentSize: nil)
                     .frame(width: 0, height: 0)
             }
             .onPreferenceChange(InsightsColumnHeaderHeightPreferenceKey.self) { contentHeight in
@@ -486,8 +487,10 @@ struct HomeView: View {
                     }
                 }
             }
-            .onChange(of: selectedSidebarPage) { _, _ in
-                showsDailyRadarPreview = false
+            .onChange(of: selectedSidebarPage) { _, page in
+                if page != .trending {
+                    showsDailyRadarPreview = false
+                }
             }
         )
     }
@@ -497,6 +500,7 @@ struct HomeView: View {
     /// 搜索 ViewModel 仍由 HomeView 持有；窗口控制器只保留 hosting tree 和几何关系，
     /// 这样点击遮罩、Esc、打开详情等现有路径仍然只通过 `isPresented` 驱动。
     private func presentSearchCenterWindow() {
+        guard let window = mainWindowReference.window else { return }
         SearchCenterWindowController.present(
             content: SearchCenterView(
                 viewModel: searchCenterViewModel,
@@ -512,7 +516,9 @@ struct HomeView: View {
             // AppKit child window 不会自动继承 WindowGroup 的 environment；必须复用主窗口
             // 同一套注入链，否则搜索结果的详情、收藏和命令路由会在运行时丢失依赖。
             .appHostEnvironment(dependencies, homeViewModel: viewModel),
-            reduceMotion: reduceMotion
+            from: window,
+            reduceMotion: reduceMotion,
+            onParentClose: { [searchCenterViewModel] in searchCenterViewModel.dismiss() }
         )
     }
 
@@ -631,9 +637,7 @@ struct HomeView: View {
     private var navigationWithListPreferencesReset: some View {
         navigationWithOverlays
             .onReceive(NotificationCenter.default.publisher(for: .starcatResetListPreferencesRequested)) { _ in
-                guard let login = currentListPreferenceLogin else { return }
-                listPreferencesResetLogin = login
-                showsResetListPreferencesConfirmation = true
+                presentResetListPreferencesConfirmation()
             }
             .onChange(of: currentListPreferenceLogin) { _, _ in
                 showsResetListPreferencesConfirmation = false
@@ -857,17 +861,20 @@ struct HomeView: View {
         .onAppear {
             syncGettingStartedProgressFromCurrentState()
             prepareDetailCoachMarkIfNeeded(for: gettingStartedActiveStepID)
-            handleMainWindowNavigationRequest(dependencies.mainWindowNavigationDispatcher.pendingRequest)
             registerMainWindowCommandActions()
         }
         .onDisappear {
+            hasRestoredInitialNavigation = false
             commandRouter.unregisterMainWindowActions(ownerID: commandRouterOwnerID)
         }
         .onChange(of: settings.globalSearchShortcut) { _, _ in
             registerMainWindowCommandActions()
         }
-        .onChange(of: dependencies.mainWindowNavigationDispatcher.pendingRequest) { _, request in
-            handleMainWindowNavigationRequest(request)
+        .onChange(of: dependencies.mainWindowNavigationDispatcher.pendingRequest) { _, _ in
+            consumePendingMainWindowNavigation()
+        }
+        .onChange(of: mainWindowReference.window != nil) { _, _ in
+            consumePendingMainWindowNavigation()
         }
         .onChange(of: gettingStartedActiveStepID) { _, newStepID in
             prepareDetailCoachMarkIfNeeded(for: newStepID)
@@ -1900,12 +1907,46 @@ struct HomeView: View {
     /// 消费独立窗口发布的一次性主窗口路由。
     ///
     /// 先准备 root/selection，再安装临时筛选，避免请求直接修改持久字段；后续 Sidebar
-    /// 变化由上面的两个 handler 统一终止会话。请求消费后立即清空，防止窗口重挂载重放。
-    private func handleMainWindowNavigationRequest(_ request: MainWindowNavigationDispatcher.Request?) {
-        guard let request else { return }
+    /// 变化由上面的两个 handler 统一终止会话。等待窗口挂载和初始页恢复，关窗重开也能正确落地。
+    private func consumePendingMainWindowNavigation() {
+        let isReady = hasRestoredInitialNavigation && mainWindowReference.window != nil
+        guard let request = dependencies.mainWindowNavigationDispatcher.takePendingRequest(whenHomeIsReady: isReady) else {
+            return
+        }
         NSApp.activate(ignoringOtherApps: true)
 
         switch request.destination {
+        case .globalSearch:
+            if searchCenterViewModel.isPresented {
+                presentSearchCenterWindow()
+            } else {
+                presentSearchCenterForGettingStarted()
+            }
+
+        case .knowledgeRAGWorkspace:
+            openKnowledgeRAGWorkspaceForGettingStarted()
+
+        case .agentWorkspace:
+            if dependencies.distributionGate.isAvailable(.externalAgentRuntime) {
+                AgentWorkspaceWindowController.show(dependencies: dependencies)
+            }
+
+        case .explore(let mode):
+            selectSidebarRootPage(.trending)
+            showsDailyRadarPreview = false
+            dependencies.linuxDoStore.selectedSource = .catalog
+            selectedExploreMode = mode
+            if mode == .recommendations { recommendationHistoryModel.dateScope = .all }
+
+        case .dailyRadar(let category):
+            selectSidebarRootPage(.trending)
+            newFeatureBadgeStore.markVisited(.dailyRadar)
+            dailyRadarModel.selectCategory(category)
+            showsDailyRadarPreview = true
+
+        case .resetListPreferences:
+            presentResetListPreferencesConfirmation()
+
         case .manage(let selection):
             selectedSidebarPage = .manage
             viewModel.selection = selection
@@ -1955,25 +1996,18 @@ struct HomeView: View {
             }
 
         case .repository(let repository):
-            // 先消费请求再异步查库/拉 GitHub，避免 HomeView 重挂载时重复发网络请求。
-            dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
             Task { await openRepositoryDeepLink(repository) }
-            return
 
         case .spotlightRepository(let repositoryID):
             // Spotlight 已由用户授权索引本机 private repo；必须走 local-only 路由，
             // 不能借公开 Universal Link 绕过 ProjectPrivacyPolicy。
-            dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
             Task { await openSpotlightRepository(repositoryID: repositoryID) }
-            return
 
         case .repositoryRelease(let release):
             viewModel.clearTemporaryGlobalFilters()
             releaseTimelineTargetID = release.releaseID
             showReleaseTimeline = true
         }
-
-        dependencies.mainWindowNavigationDispatcher.pendingRequest = nil
     }
 
     /// 打开分享仓库：本地命中直接定位；未命中只创建会话内 Repo，不自动 Star、
@@ -2111,6 +2145,12 @@ struct HomeView: View {
         } else {
             selectedSidebarPage = .trending
             viewModel.selection = .trending
+        }
+
+        // 先恢复默认页，再消费外部导航。路由不必等侧栏查询完成。
+        hasRestoredInitialNavigation = true
+        consumePendingMainWindowNavigation()
+        if !authSession.state.isAuthenticated {
             await viewModel.refreshSidebar()
         }
 
@@ -2641,7 +2681,7 @@ struct HomeView: View {
         )
         BatchAIWorkspaceWindowController.present(
             dependencies: dependencies,
-            parentWindow: batchAIParentWindow.window,
+            parentWindow: mainWindowReference.window,
             initialMode: .preflight(context),
             options: $batchAIOptions,
             hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
@@ -2706,7 +2746,7 @@ struct HomeView: View {
         AppLog.ui.info("[batch-ai-window] Requested mode=review")
         BatchAIWorkspaceWindowController.present(
             dependencies: dependencies,
-            parentWindow: batchAIParentWindow.window,
+            parentWindow: mainWindowReference.window,
             initialMode: .review,
             options: $batchAIOptions,
             hasUsableExternalSearchProvider: hasUsableExternalSearchProvider,
@@ -2819,6 +2859,12 @@ struct HomeView: View {
 
     private var currentListPreferenceLogin: String? {
         authSession.state.user?.login
+    }
+
+    private func presentResetListPreferencesConfirmation() {
+        guard let login = currentListPreferenceLogin else { return }
+        listPreferencesResetLogin = login
+        showsResetListPreferencesConfirmation = true
     }
 
     private func persistListPreference(_ value: String?, key: String) {

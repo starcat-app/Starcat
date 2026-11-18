@@ -21,6 +21,7 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     static let shared = StatusBarController()
 
     var openLocalAILogWindow: (() -> Void)?
+    var openSkillWorkspaceScene: ((String) -> Void)?
 
     private var statusItem: NSStatusItem?
     private weak var dependencies: AppDependencies?
@@ -147,8 +148,12 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
     }
 
     private func showContextMenu() {
-        guard let statusItem, let button = statusItem.button else { return }
-        let menu = makeMenu()
+        guard let statusItem, let button = statusItem.button, let dependencies else { return }
+        let menu = makeMenu(
+            distributionGate: dependencies.distributionGate,
+            explorePreferences: dependencies.settings.exploreCatalogPreferences,
+            isAuthenticated: dependencies.authSession.state.isAuthenticated
+        )
         menu.delegate = self
         // `popUpMenu(_:)` 已废弃；右键时临时绑定 menu 后触发按钮点击，
         // 菜单关闭后再解绑，避免左键也变成展开菜单。
@@ -160,116 +165,207 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         statusItem?.menu = nil
     }
 
-    private func makeMenu() -> NSMenu {
+    func makeMenu(
+        distributionGate: DistributionGate,
+        explorePreferences: ExploreCatalogPreferences,
+        isAuthenticated: Bool
+    ) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-
         menu.addItem(actionItem(
             title: String.l10n("menubar.openStarcat"),
             action: #selector(openMainWindow),
             imageName: "macwindow"
         ))
+        menu.addItem(navigationItem("toolbar.globalSearch", destination: .globalSearch, imageName: "magnifyingglass"))
+        menu.addItem(.separator())
+
+        let ragItem = navigationItem("workspace.rag.title", destination: .knowledgeRAGWorkspace, imageName: "books.vertical")
+        var workspaces = [ragItem]
+        if distributionGate.isAvailable(.externalAgentRuntime) {
+            workspaces.append(navigationItem(
+                "agent.workspace.window.title",
+                destination: .agentWorkspace,
+                imageName: "sparkles"
+            ))
+        }
+        if distributionGate.isAvailable(.skillManagement) {
+            workspaces.append(actionItem(
+                title: String.l10n("skills.workspace.title"),
+                action: #selector(openSkillWorkspace),
+                imageName: "square.stack.3d.up"
+            ))
+        }
+        if workspaces.count == 1 {
+            menu.addItem(ragItem)
+        } else {
+            menu.addItem(submenuItem("menubar.group.aiWorkspaces", items: workspaces))
+        }
+
+        let collectionItems = [
+            navigationItem("sidebar.allRepos", destination: .manage(.allStars), imageName: "star"),
+            navigationItem("sidebar.tags", destination: .revealTags, imageName: "tag"),
+            navigationItem("smartCollections.title", destination: .manage(.smartCollectionsHome), imageName: "folder"),
+            navigationItem("insights.my.title", destination: .insights, imageName: "chart.bar"),
+        ]
+        collectionItems.forEach { $0.isEnabled = isAuthenticated }
+        menu.addItem(submenuItem("menubar.group.library", items: collectionItems))
+        menu.addItem(submenuItem("explore.mode.discover", items: discoveryItems(preferences: explorePreferences)))
+
+        let notifications = navigationItem(
+            "settings.notifications.githubInbox.title",
+            destination: .githubNotifications,
+            imageName: "bell"
+        )
+        notifications.isEnabled = isAuthenticated
+        let releases = navigationItem("menubar.activity.releaseTimeline", destination: .releaseTimeline, imageName: "shippingbox")
+        releases.isEnabled = isAuthenticated
+        menu.addItem(submenuItem("menubar.group.activity", items: [notifications, releases]))
+        menu.addItem(.separator())
+
+        menu.addItem(actionItem(
+            title: String.l10n("menubar.syncStars"),
+            action: #selector(syncStars),
+            imageName: "arrow.triangle.2.circlepath"
+        ))
+        menu.addItem(submenuItem("menubar.group.syncAndServices", items: syncAndServiceItems()))
+        menu.addItem(.separator())
+
         menu.addItem(actionItem(
             title: String.l10n("menubar.openSettings"),
             action: #selector(openSettings),
             imageName: "gearshape"
         ))
-        menu.addItem(NSMenuItem.separator())
-
-        addStatusSection(to: menu)
-        menu.addItem(NSMenuItem.separator())
-
-        menu.addItem(toggleItem(
-            title: String.l10n("menubar.pluginService"),
-            isOn: pluginConfiguration.isEnabled,
-            action: #selector(togglePluginService)
-        ))
-        if let dependencies {
-            menu.addItem(toggleItem(
-                title: String.l10n("menubar.mcpService"),
-                isOn: dependencies.settings.mcpServiceEnabled,
-                action: #selector(toggleMCPService)
-            ))
-            menu.addItem(toggleItem(
-                title: String.l10n("menubar.notifications"),
-                isOn: dependencies.settings.notificationsEnabled,
-                action: #selector(toggleNotifications)
-            ))
-            menu.addItem(actionItem(
-                title: String.l10n("menubar.syncStars"),
-                action: #selector(syncStars),
-                imageName: "arrow.triangle.2.circlepath"
-            ))
-            if dependencies.directUpdateController.isDirectBuild {
-                let updateItem = actionItem(
-                    title: String.l10n("menubar.checkForUpdates"),
-                    action: #selector(checkForUpdates),
-                    imageName: "arrow.down.circle"
-                )
-                updateItem.isEnabled = dependencies.directUpdateController.canCheckForUpdates
-                menu.addItem(updateItem)
-            } else if dependencies.appStoreUpdateController.isAppStoreBuild {
-                let updateItem = actionItem(
-                    title: String.l10n("menubar.checkForUpdates"),
-                    action: #selector(checkForUpdates),
-                    imageName: "arrow.down.circle"
-                )
-                updateItem.isEnabled = dependencies.appStoreUpdateController.canCheckForUpdates
-                menu.addItem(updateItem)
-            }
-        }
-
-        let resetItem = actionItem(
-            title: String.l10n("settings.listPreferences.reset.title"),
-            action: #selector(resetListPreferences),
-            imageName: "arrow.counterclockwise"
-        )
-        resetItem.isEnabled = dependencies?.authSession.state.isAuthenticated == true
-        menu.addItem(resetItem)
-
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(actionItem(
-            title: String.l10n("app.about"),
-            action: #selector(openAbout),
-            imageName: "info.circle"
-        ))
+        menu.addItem(submenuItem("menubar.group.helpAndMaintenance", items: maintenanceItems(isAuthenticated: isAuthenticated)))
+        menu.addItem(.separator())
         menu.addItem(actionItem(
             title: String.l10n("menubar.quit"),
             action: #selector(quit),
             imageName: "power"
         ))
-
         return menu
     }
 
-    private func addStatusSection(to menu: NSMenu) {
+    private func discoveryItems(preferences: ExploreCatalogPreferences) -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        if preferences.isGroupEnabled(ExploreMode.trending.rawValue) {
+            items.append(navigationItem("menubar.discovery.githubTrending", destination: .explore(.trending), imageName: "chart.line.uptrend.xyaxis"))
+        }
+        items.append(navigationItem("recommendations.daily.navigationTitle.short", destination: .explore(.recommendations), imageName: "sparkles"))
+        if preferences.isGroupEnabled("dailyRadar") {
+            items.append(navigationItem("dailyRadar.title", destination: .dailyRadar(category: nil), imageName: "dot.radiowaves.left.and.right"))
+            let weeklyCategory = "ai-weekly-events"
+            if !preferences.hiddenDailyRadarCategories.contains(weeklyCategory) {
+                items.append(navigationItem("dailyRadar.category.weeklyHighlights", destination: .dailyRadar(category: weeklyCategory), imageName: "newspaper"))
+            }
+        }
+        return items
+    }
+
+    private func syncAndServiceItems() -> [NSMenuItem] {
+        var items = statusItems()
+        items.append(.separator())
+        items.append(toggleItem(
+            title: String.l10n("menubar.pluginService"),
+            isOn: pluginConfiguration.isEnabled,
+            action: #selector(togglePluginService)
+        ))
+        if let dependencies {
+            items.append(toggleItem(
+                title: String.l10n("menubar.mcpService"),
+                isOn: dependencies.settings.mcpServiceEnabled,
+                action: #selector(toggleMCPService)
+            ))
+            items.append(toggleItem(
+                title: String.l10n("menubar.notifications"),
+                isOn: dependencies.settings.notificationsEnabled,
+                action: #selector(toggleNotifications)
+            ))
+        }
+        return items
+    }
+
+    private func maintenanceItems(isAuthenticated: Bool) -> [NSMenuItem] {
+        var items = [
+            actionItem(title: String.l10n("commands.help.helpCenter"), action: #selector(openHelpCenter), imageName: "questionmark.circle"),
+            actionItem(title: String.l10n("commands.help.releaseNotes"), action: #selector(openReleaseNotes), imageName: "doc.text"),
+        ]
+        if let dependencies {
+            let updateItem = actionItem(
+                title: String.l10n("menubar.checkForUpdates"),
+                action: #selector(checkForUpdates),
+                imageName: "arrow.down.circle"
+            )
+            if dependencies.directUpdateController.isDirectBuild {
+                updateItem.isEnabled = dependencies.directUpdateController.canCheckForUpdates
+                items.append(updateItem)
+            } else if dependencies.appStoreUpdateController.isAppStoreBuild {
+                updateItem.isEnabled = dependencies.appStoreUpdateController.canCheckForUpdates
+                items.append(updateItem)
+            }
+        }
+        items.append(actionItem(title: String.l10n("app.about"), action: #selector(openAbout), imageName: "info.circle"))
+        items.append(.separator())
+
+        let resetItem = navigationItem(
+            "settings.listPreferences.reset.title",
+            destination: .resetListPreferences,
+            imageName: "arrow.counterclockwise"
+        )
+        resetItem.isEnabled = isAuthenticated
+        items.append(resetItem)
+        return items
+    }
+
+    private func statusItems() -> [NSMenuItem] {
         let loginValue: String
         if let user = dependencies?.authSession.state.user {
             loginValue = "@\(user.login)"
         } else {
             loginValue = String.l10n("menubar.status.notSignedIn")
         }
-        menu.addItem(infoItem(title: String.l10n("menubar.status.account"), value: loginValue))
+        var items = [infoItem(title: String.l10n("menubar.status.account"), value: loginValue)]
 
         if let dependencies {
-            menu.addItem(infoItem(
+            items.append(infoItem(
                 title: String.l10n("menubar.status.sync"),
                 value: syncStatusText(state: dependencies.syncManager.state)
             ))
-            menu.addItem(infoItem(
+            items.append(infoItem(
                 title: String.l10n("menubar.status.mcp"),
                 value: mcpStatusText(state: dependencies.mcpService.state)
             ))
         }
 
-        menu.addItem(infoItem(
+        items.append(infoItem(
             title: String.l10n("menubar.status.plugin"),
             value: pluginStatusText()
         ))
-        menu.addItem(infoItem(
+        items.append(infoItem(
             title: String.l10n("settings.integration.browserPlugin.endpoint"),
             value: "127.0.0.1:\(pluginConfiguration.port)"
         ))
+        return items
+    }
+
+    private func submenuItem(_ titleKey: String, items: [NSMenuItem]) -> NSMenuItem {
+        let title = String.l10n(titleKey)
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = false
+        items.forEach { submenu.addItem($0) }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    private func navigationItem(
+        _ titleKey: String,
+        destination: MainWindowNavigationDispatcher.Destination,
+        imageName: String
+    ) -> NSMenuItem {
+        let item = actionItem(title: String.l10n(titleKey), action: #selector(navigateFromMenu(_:)), imageName: imageName)
+        item.representedObject = destination
+        return item
     }
 
     private func actionItem(title: String, action: Selector, imageName: String) -> NSMenuItem {
@@ -338,6 +434,19 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         AppDelegate.openSettingsWindow()
     }
 
+    @objc private func navigateFromMenu(_ sender: NSMenuItem) {
+        guard let destination = sender.representedObject as? MainWindowNavigationDispatcher.Destination else { return }
+        dependencies?.mainWindowNavigationDispatcher.navigate(to: destination)
+    }
+
+    @objc private func openSkillWorkspace() {
+        guard let openSkillWorkspaceScene else { return }
+        try? SkillWorkspaceSceneCoordinator.shared.openWindow { sceneID in
+            NSApp.activate(ignoringOtherApps: true)
+            openSkillWorkspaceScene(sceneID)
+        }
+    }
+
     @objc private func togglePluginService() {
         pluginConfiguration.isEnabled.toggle()
         CompanionServiceBootstrapper.apply(configuration: pluginConfiguration)
@@ -379,9 +488,12 @@ final class StatusBarController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         }
     }
 
-    @objc private func resetListPreferences() {
-        AppDelegate.activateMainWindowIfPossible()
-        NotificationCenter.default.post(name: .starcatResetListPreferencesRequested, object: nil)
+    @objc private func openHelpCenter() {
+        NSWorkspace.shared.open(AppWebsiteLinks.current.support)
+    }
+
+    @objc private func openReleaseNotes() {
+        ReleaseNotesWindowController.show()
     }
 
     @objc private func openAbout() {
