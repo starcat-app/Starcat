@@ -105,6 +105,7 @@ struct AppStatusToolbarButton: View {
 
     private var hasIssue: Bool {
         diagnostics.summary.issueCount > 0
+            || !dependencies.aiBackgroundBillingAlerts.alerts.isEmpty
             || diagnostics.summary.storageUnavailable
             || isMCPFailed
             || isBrowserPluginFailed
@@ -183,6 +184,8 @@ struct AppStatusPopover: View {
                 diagnosticSummary: diagnostics.summary,
                 isClearingDiagnostics: diagnostics.isClearing,
                 aiUsageRepository: dependencies.aiUsageRepository,
+                billingAlerts: dependencies.aiBackgroundBillingAlerts,
+                onOpenModelSettings: { openSettings(tab: "ai.models") },
                 relativePastDate: relativePastDate,
                 relativeFutureDate: relativeFutureDate,
                 onOpenDiagnostics: { openSettings(tab: "diagnostics") },
@@ -374,6 +377,8 @@ private struct AppStatusPanel: View {
     let diagnosticSummary: DiagnosticLogSummary
     let isClearingDiagnostics: Bool
     let aiUsageRepository: any AIUsageRepositoryProtocol
+    let billingAlerts: AIBackgroundBillingAlerts
+    let onOpenModelSettings: () -> Void
     let relativePastDate: (Date) -> String
     let relativeFutureDate: (Date) -> String
     let onOpenDiagnostics: () -> Void
@@ -401,6 +406,9 @@ private struct AppStatusPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            ForEach(billingAlerts.alerts) { alert in
+                billingCard(alert)
+            }
             overviewGrid
             if tasksExpanded, !backgroundTasks.tasks.isEmpty {
                 AppBackgroundTaskList(tasks: backgroundTasks.tasks, onOpen: onOpenTask, onCancel: onCancelTask)
@@ -417,8 +425,78 @@ private struct AppStatusPanel: View {
             footer
         }
         .task { await loadAIUsageSummary() }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: billingAlerts.alerts)
         .onChange(of: backgroundTasks.tasks.isEmpty) { _, isEmpty in
             if isEmpty { tasksExpanded = false }
+        }
+    }
+
+    /// 首屏展示受影响的配置和工作量，打开设置时沿用宿主已有的浮层关闭顺序。
+    private func billingCard(_ alert: AIBackgroundBillingAlerts.Alert) -> some View {
+        let brand = alert.provider.kind.defaultProfileName
+        let title = alert.provider.name == brand ? brand : "\(alert.provider.name) · \(brand)"
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Label { Text(verbatim: title) } icon: {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+                }
+                .font(interfaceScale.font(.body, weight: .semibold))
+                Spacer(minLength: 4)
+                Text(verbatim: String(format: String.l10n("batchAI.panel.failedSummaryFormat"), alert.taskCount))
+                    .monospacedDigit()
+            }
+            Text("ai.client.error.paymentRequired")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(AIBackgroundBillingAlerts.Kind.allCases, id: \.self) { kind in
+                if let repos = alert.reposByKind[kind], !repos.isEmpty {
+                    BillingTaskRow(kind: kind, repositories: repos)
+                }
+            }
+            HStack {
+                Button("rag.workspace.error.action.openAISettings.modelsSettings", action: onOpenModelSettings)
+                Spacer()
+                Button("toolbar.status.diagnostics.clear") { billingAlerts.dismiss(providerID: alert.id) }
+            }
+            .controlSize(.small)
+            .focusEffectDisabled()
+        }
+        .font(interfaceScale.font(.caption))
+        .padding(10)
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// 仓库可能较多，默认仅展示各任务数量，需要识别具体失败项时再展开。
+    private struct BillingTaskRow: View {
+        let kind: AIBackgroundBillingAlerts.Kind
+        let repositories: [Int64: String]
+        @State private var expanded = false
+        @Environment(\.starcatReduceMotion) private var reduceMotion
+
+        var body: some View {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    Text(LocalizedStringKey(kind.titleKey))
+                    Spacer()
+                    Text(repositories.count, format: .number).monospacedDigit()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            if expanded {
+                LazyVStack(alignment: .leading) {
+                    ForEach(repositories.sorted { $0.value < $1.value }, id: \.key) { entry in
+                        Text(verbatim: entry.value)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(.leading, 14)
+            }
         }
     }
 
@@ -737,6 +815,7 @@ private struct AppStatusPanel: View {
     }
 
     private var panelHasIssue: Bool {
+        if !billingAlerts.alerts.isEmpty { return true }
         if diagnosticSummary.issueCount > 0 { return true }
         if diagnosticSummary.storageUnavailable { return true }
         if githubStatusMonitor.hasRelevantIssue { return true }

@@ -215,6 +215,7 @@ final class AppDependencies {
     let githubIssueSummaryStore = GitHubNotificationIssueSummaryStore(persistenceCache: .shared)
     /// 单仓 AI 摘要的进程内会话表。按 repo 保留生成 Task 与 UI 状态，切换详情不取消。
     let repoAIInsightSessionStore: RepoAIInsightSessionStore
+    let aiBackgroundBillingAlerts: AIBackgroundBillingAlerts
     /// RepoContextPacker 的共享入口。单仓 AI 与知识库 RAG 必须复用同一缓存、设置和临时目录清理约束。
     let repoAIContextProvider: RepoAIContextProvider
     /// RepoContext 文件系统真源。知识库浏览器只通过该对象读写 XML，不跨 security scope 持有 URL。
@@ -335,7 +336,7 @@ final class AppDependencies {
     /// 不再 new；③ 未来要做 ShareAPI 单测，从 environment 注入 mock 即可。
     let shareAPI: ShareAPI
     /// UI 多窗口与 CLI 共用任务，连 AI 准备阶段也只运行一次。
-    let repoShareTaskStore = RepoShareTaskStore()
+    let repoShareTaskStore: RepoShareTaskStore
 
     // MARK: - Wiki 外部文档索引
 
@@ -901,6 +902,7 @@ final class AppDependencies {
         return try AIClientFactory.make(configuration: AIClientConfiguration(
             providerID: profile.id,
             provider: profile.provider,
+            profileName: profile.displayName,
             apiKey: apiKey,
             baseURL: profile.baseURL,
             chatModel: chatModel,
@@ -1234,11 +1236,15 @@ final class AppDependencies {
         let githubStarListRepo = GRDBGitHubStarListRepository(database: db)
         self.tagRepository = tagRepo
         self.repoTagRepository = repoTagRepo
+        let billingAlerts = AIBackgroundBillingAlerts()
+        self.aiBackgroundBillingAlerts = billingAlerts
+        self.repoShareTaskStore = RepoShareTaskStore(billingAlerts: billingAlerts)
         // Session store 同时依赖 AI service 与标签仓储，因此必须在两组依赖都完成装配后创建。
         self.repoAIInsightSessionStore = RepoAIInsightSessionStore(
             service: aiInsight,
             tagRepository: tagRepo,
-            repoTagRepository: repoTagRepo
+            repoTagRepository: repoTagRepo,
+            billingAlerts: billingAlerts
         )
         self.githubStarListRepository = githubStarListRepo
         self.githubStarListSyncService = GitHubStarListSyncService(
@@ -1308,7 +1314,8 @@ final class AppDependencies {
             aiSummaryRepository: summaryRepo,
             entitlementGate: self.entitlementGate,
             notificationService: notificationService,
-            draftRepository: aiOrganizationDraftRepository
+            draftRepository: aiOrganizationDraftRepository,
+            billingAlerts: billingAlerts
         )
         self.batchAIQueueService = batchSvc
 
@@ -1317,7 +1324,8 @@ final class AppDependencies {
             listService: self.githubStarListSyncService,
             insightService: decisionGroupingRouter,
             entitlementGate: self.entitlementGate,
-            draftRepository: aiOrganizationDraftRepository
+            draftRepository: aiOrganizationDraftRepository,
+            billingAlerts: billingAlerts
         )
 
         // HOM-126：自动后台 AI 整理调度器。
@@ -2065,6 +2073,7 @@ final class AppDependencies {
             // 新账号库恢复；把屏障放在数据库所有者内部，避免 View 生命周期竞态。
             await batchAIQueueService.resetForAccountChange()
             await githubStarListAIGroupingSession.resetForAccountChange()
+            aiBackgroundBillingAlerts.reset()
             // 屏障从清理前一直保持到 reopen 结束；新请求会等待并在 end 后重新读取 Token。
             await repositoryMetricsClient.beginDatabaseScopeChange()
             await repositoryInsightsCache.clearTransientState()

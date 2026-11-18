@@ -19,6 +19,32 @@ import Testing
 @MainActor
 struct RepoShareTaskStoreTests {
 
+    @Test("后台分享只将生成摘要阶段的余额失败归到服务商配置")
+    func billingAlertFromShareSummary() async {
+        let alerts = AIBackgroundBillingAlerts()
+        let store = RepoShareTaskStore(billingAlerts: alerts)
+        let repo = Repo.makeMinimal(owner: "starcat", name: "share-billing")
+        let provider = AIBillingProvider(id: "deepseek-work", kind: .deepSeek, name: "Work")
+        let billing = AIClientError.paymentRequired(detail: "HTTP 402", provider: provider)
+        let operations = RepoShareOperations(
+            cachedInsight: { _ in nil },
+            generateInsight: { _ in throw billing },
+            createShare: { _ in Issue.record("摘要失败后不应创建链接"); return makeResponse(url: "") }
+        )
+        store.start(repo: repo, operations: operations)
+        #expect(await waitUntil { store.latestCompletion?.outcome == .failure })
+        #expect(alerts.alerts.first?.provider == provider)
+        #expect(alerts.alerts.first?.reposByKind[.sharing] == [repo.id: repo.fullName])
+
+        store.retry(repoID: repo.id, operations: RepoShareOperations(
+            cachedInsight: { _ in makeInsight(oneLiner: "cached") },
+            generateInsight: { _ in throw billing },
+            createShare: { _ in makeResponse(url: "https://example.org/share") }
+        ))
+        #expect(await waitUntil { store.isSuccessful(repoID: repo.id) })
+        #expect(alerts.alerts.isEmpty)
+    }
+
     @Test("已有链接在摘要检查之前返回，UI 与公共调用共用运行中任务")
     func existingLinkSkipsAIAndPublishing() async throws {
         let store = RepoShareTaskStore()

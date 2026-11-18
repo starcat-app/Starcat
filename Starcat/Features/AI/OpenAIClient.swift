@@ -142,16 +142,16 @@ struct OpenAIClient: AIClientProtocol {
                 status: .failed,
                 error: error
             )
-            throw error
+            throw error.attributed(to: configuration)
         } catch {
-            // SDK 的 statusError 会把整段 NSHTTPURLResponse dump 进 localizedDescription；
-            // 产品层只应看到归类后的 AIClientError。
-            AppLog.ai.error("Chat request failed: \(error.localizedDescription, privacy: .public)")
             let mappedError = Self.mapChatFailure(
                 error,
                 requestJSON: Self.formattedJSON(query),
                 exchange: Self.takeFailureExchange(for: error)
-            )
+            ).attributed(to: configuration)
+            Self.logUnexpectedChatFailure(mappedError) {
+                AppLog.ai.error("Chat request failed: \(error.localizedDescription, privacy: .public)")
+            }
             await recordChatUsage(
                 startedAt: startedAt,
                 model: resolvedModel,
@@ -345,14 +345,16 @@ struct OpenAIClient: AIClientProtocol {
                         status: .failed,
                         error: error
                     )
-                    continuation.finish(throwing: error)
+                    continuation.finish(throwing: error.attributed(to: configuration))
                 } catch {
-                    AppLog.ai.error("Chat stream failed: \(error.localizedDescription, privacy: .public)")
                     let mappedError = Self.mapChatFailure(
                         error,
                         requestJSON: diagnosticQuery.flatMap { Self.formattedJSON($0) },
                         exchange: Self.takeFailureExchange(for: error)
-                    )
+                    ).attributed(to: configuration)
+                    Self.logUnexpectedChatFailure(mappedError) {
+                        AppLog.ai.error("Chat stream failed: \(error.localizedDescription, privacy: .public)")
+                    }
                     await recordChatUsage(
                         startedAt: startedAt,
                         model: resolvedModel,
@@ -371,6 +373,12 @@ struct OpenAIClient: AIClientProtocol {
     }
 
     // MARK: - Chat 错误映射
+
+    /// 余额不足已有用户提示和失败记录；跳过日志闭包可避免每次请求都展开 SDK 的完整响应头。
+    static func logUnexpectedChatFailure(_ mappedError: AIClientError, write: () -> Void) {
+        if case .paymentRequired = mappedError { return }
+        write()
+    }
 
     /// 判断 SDK / URLSession 包装后的错误是否仍然表达“请求被取消”。
     ///

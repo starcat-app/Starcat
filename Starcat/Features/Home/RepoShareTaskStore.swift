@@ -91,6 +91,11 @@ final class RepoShareTaskStore {
 
     /// Task 句柄本身不是 UI 状态；忽略 Observation，避免任务字典变化触发无关重绘。
     @ObservationIgnored private var tasks: [Int64: Task<Void, Never>] = [:]
+    private let billingAlerts: AIBackgroundBillingAlerts?
+
+    init(billingAlerts: AIBackgroundBillingAlerts? = nil) {
+        self.billingAlerts = billingAlerts
+    }
 
     func job(for repoID: Int64) -> RepoShareJob? {
         jobs[repoID]
@@ -218,6 +223,9 @@ final class RepoShareTaskStore {
             }
             finish(repo: repo, taskID: taskID, state: .failure(message), outcome: .failure)
         } catch {
+            if jobs[repo.id]?.id == taskID, case .generatingSummary = jobs[repo.id]?.state {
+                billingAlerts?.record(error, kind: .sharing, repo: repo)
+            }
             finish(repo: repo, taskID: taskID, state: .failure(error.localizedDescription), outcome: .failure)
         }
     }
@@ -237,6 +245,7 @@ final class RepoShareTaskStore {
         outcome: RepoShareCompletionNotice.Outcome
     ) {
         guard update(repoID: repo.id, taskID: taskID, state: state) else { return }
+        if outcome == .success { billingAlerts?.resolve(kind: .sharing, repoID: repo.id) }
         latestCompletion = RepoShareCompletionNotice(
             repoID: repo.id,
             repoFullName: repo.fullName,

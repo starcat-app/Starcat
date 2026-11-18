@@ -21,6 +21,7 @@ import Foundation
 struct AIClientConfiguration: Equatable, Sendable {
     var providerID: String = "legacy-openAICompatible"
     var provider: AIServiceProvider = .openAICompatible
+    var profileName: String?
     var apiKey: String
     var baseURL: String
     var chatModel: String
@@ -28,6 +29,17 @@ struct AIClientConfiguration: Equatable, Sendable {
     var timeoutInterval: TimeInterval = 300
     /// 业务归因必须在创建客户端时确定，底层 adapter 不猜调用方属于哪个功能。
     var usageContext: AIUsageContext = .unknown
+
+    /// 只把公开名称随错误传到任务终态；期间切换设置不会改变失败归属。
+    var billingProvider: AIBillingProvider {
+        AIBillingProvider(id: providerID, kind: provider, name: profileName ?? provider.defaultProfileName)
+    }
+}
+
+struct AIBillingProvider: Equatable, Sendable {
+    let id: String
+    let kind: AIServiceProvider
+    let name: String
 }
 
 /// Chat 返回格式要求。
@@ -403,7 +415,7 @@ enum AIClientError: Error, LocalizedError, Equatable, Sendable {
     /// Provider 限流（HTTP 429）。
     case rateLimited(detail: String)
     /// 需要付费 / 余额不足（HTTP 402）。
-    case paymentRequired(detail: String)
+    case paymentRequired(detail: String, provider: AIBillingProvider? = nil)
     /// Provider 拒绝本次请求（HTTP 400 / 404 / 422 等）；`detail` 供展开诊断。
     case requestRejected(statusCode: Int, detail: String)
     /// 网络不可达或 5xx。
@@ -462,7 +474,7 @@ enum AIClientError: Error, LocalizedError, Equatable, Sendable {
             return Self.nonEmpty(message)
         case .authenticationRejected(let detail),
              .rateLimited(let detail),
-             .paymentRequired(let detail),
+             .paymentRequired(let detail, _),
              .networkUnavailable(let detail),
              .timedOut(let detail),
              .requestFailed(let detail):
@@ -477,6 +489,16 @@ enum AIClientError: Error, LocalizedError, Equatable, Sendable {
     private static func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var billingProvider: AIBillingProvider? {
+        guard case .paymentRequired(_, let provider) = self else { return nil }
+        return provider
+    }
+
+    func attributed(to configuration: AIClientConfiguration) -> Self {
+        guard case .paymentRequired(let detail, nil) = self else { return self }
+        return .paymentRequired(detail: detail, provider: configuration.billingProvider)
     }
 }
 

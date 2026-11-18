@@ -61,6 +61,8 @@ enum AIRecommendationValidationError: Error, LocalizedError, Equatable, Sendable
 struct RepoAIInsightGeneration: Equatable, Sendable {
     var insight: RepoAIInsight
     var tagErrorMessage: String?
+    /// 摘要仍可独立保存；队列需要结构化的标签失败才能决定是否重试或提醒。
+    var tagBillingError: AIClientError?
 
     /// Y4：代码上下文降级原因（nil = 用上了代码或用户关了开关）。
     /// UI 层判定 banner 是否显示。
@@ -553,12 +555,8 @@ final class RepoAIInsightService {
             let footerTitle = String.l10n("ai.assistant.summary.externalReferences.title")
             summaryText += "\n\n## \(footerTitle)\n" + links.joined(separator: "\n")
         }
-        let tagErrorMessage: String? = {
-            if case .failure(let error) = resolvedTagResult {
-                return error.localizedDescription
-            }
-            return nil
-        }()
+        let tagError: (any Error)? = if case .failure(let error) = resolvedTagResult { error } else { nil }
+        let tagClientError = tagError as? AIClientError
 
         let summaryModel = summaryConfiguration?.model ?? summaryTask.resolvedModelName
         var insight = Self.makeInsight(
@@ -619,7 +617,8 @@ final class RepoAIInsightService {
         }
         return RepoAIInsightGeneration(
             insight: insight,
-            tagErrorMessage: tagErrorMessage,
+            tagErrorMessage: tagError?.localizedDescription,
+            tagBillingError: tagClientError?.billingProvider == nil ? nil : tagClientError,
             // Y4：透传 makeSource 阶段的代码上下文降级原因。
             // 注：summarySource 从 source 派生但不改 contextDegradationReason，
             // 这里直接读最原始 source 的 reason 即可。
@@ -1690,6 +1689,7 @@ final class RepoAIInsightService {
         return (try AIClientFactory.make(configuration: AIClientConfiguration(
             providerID: profile.id,
             provider: profile.provider,
+            profileName: profile.displayName,
             apiKey: apiKey,
             baseURL: profile.baseURL,
             chatModel: model,

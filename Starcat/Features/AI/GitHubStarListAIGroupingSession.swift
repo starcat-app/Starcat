@@ -336,14 +336,18 @@ final class GitHubStarListAIGroupingSession {
         listService: GitHubStarListSyncService,
         insightService: any GitHubStarListSuggestionProviding,
         entitlementGate: EntitlementGate,
-        draftRepository: (any AIOrganizationDraftRepositoryProtocol)? = nil
+        draftRepository: (any AIOrganizationDraftRepositoryProtocol)? = nil,
+        billingAlerts: AIBackgroundBillingAlerts? = nil
     ) {
         self.repoRepository = repoRepository
         self.listService = listService
         self.insightService = insightService
         self.entitlementGate = entitlementGate
         self.draftRepository = draftRepository
+        self.billingAlerts = billingAlerts
     }
+
+    private let billingAlerts: AIBackgroundBillingAlerts?
 
     var totalCount: Int { jobs.count }
     var analysisTotalCount: Int { jobs.count { !$0.isExcludedFromAnalysis } }
@@ -1581,6 +1585,9 @@ final class GitHubStarListAIGroupingSession {
                 .success(repos: [repo], results: results),
                 automaticThreshold: automaticThreshold
             )
+            if generation == self.generation, !Task.isCancelled {
+                billingAlerts?.resolve(kind: .grouping, repoID: repo.id)
+            }
         } catch {
             guard generation == self.generation,
                   !Task.isCancelled,
@@ -1593,6 +1600,9 @@ final class GitHubStarListAIGroupingSession {
                 .failure(repos: [repo], error: BatchAIFailure(error: error)),
                 automaticThreshold: automaticThreshold
             )
+            if generation == self.generation {
+                billingAlerts?.record(error, kind: .grouping, repo: repo)
+            }
         }
     }
 

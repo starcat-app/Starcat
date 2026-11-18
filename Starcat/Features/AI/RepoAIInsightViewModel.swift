@@ -84,6 +84,9 @@ final class RepoAIInsightViewModel {
     private(set) var isGenerating: Bool = false
     private(set) var errorMessage: String?
     private(set) var tagErrorMessage: String?
+    /// 会话 Store 只在任务收尾时读取，沿用原有 `wasBackgrounded` 判定。
+    private(set) var billingError: AIClientError?
+    private(set) var tagBillingError: AIClientError?
     private(set) var streamingSummaryText: String?
     private(set) var appliedTagNames: Set<String> = []
     private(set) var paywallContext: ProPaywallContext?
@@ -298,6 +301,8 @@ final class RepoAIInsightViewModel {
         // 重新点「生成摘要」时立刻藏掉上次失败条，避免与「正在准备…」叠显。
         errorMessage = nil
         tagErrorMessage = nil
+        billingError = nil
+        tagBillingError = nil
 
         // 配置校验必须在 isGenerating / 代码上下文准备之前：
         // 没有可用 AI 服务时，不应进入「解析分支 / 下载 ZIP / 生成 XML」。
@@ -413,6 +418,7 @@ final class RepoAIInsightViewModel {
 
             insight = result.insight
             tagErrorMessage = result.tagErrorMessage
+            tagBillingError = result.tagBillingError
             // Y4：透传降级原因到 UI banner。
             contextDegradationReason = result.contextDegradationReason
             // Y9.3：透传 anysearch 降级原因到 UI banner。
@@ -420,6 +426,7 @@ final class RepoAIInsightViewModel {
             errorMessage = nil
         } catch {
             guard generationEpoch == runEpoch else { return }
+            billingError = error as? AIClientError
             presentPaywallIfNeeded(error)
             presentGenerateFailure(error)
         }
@@ -579,6 +586,7 @@ final class RepoAIInsightSessionStore {
         let id: UUID
         let repo: Repo
         let task: Task<Void, Never>
+        let includesTags: Bool
         var wasBackgrounded: Bool
     }
 
@@ -596,6 +604,7 @@ final class RepoAIInsightSessionStore {
     private let tagRepository: any TagRepositoryProtocol
     private let repoTagRepository: any RepoTagRepositoryProtocol
     private let maxIdleSessionCount: Int
+    private let billingAlerts: AIBackgroundBillingAlerts?
     private var viewModels: [Repo.ID: RepoAIInsightViewModel] = [:]
     private var runningTasks: [Repo.ID: RunningTask] = [:]
     private var finishedTasks: [Repo.ID: FinishedTask] = [:]
@@ -609,12 +618,14 @@ final class RepoAIInsightSessionStore {
         service: RepoAIInsightService,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
-        maxIdleSessionCount: Int = RepoAIInsightSessionStore.defaultMaxIdleSessionCount
+        maxIdleSessionCount: Int = RepoAIInsightSessionStore.defaultMaxIdleSessionCount,
+        billingAlerts: AIBackgroundBillingAlerts? = nil
     ) {
         self.service = service
         self.tagRepository = tagRepository
         self.repoTagRepository = repoTagRepository
         self.maxIdleSessionCount = max(1, maxIdleSessionCount)
+        self.billingAlerts = billingAlerts
     }
 
     /// 同一 repo 始终返回同一 ViewModel；不同 repo 的运行态互不共享。
@@ -654,6 +665,7 @@ final class RepoAIInsightSessionStore {
             id: taskID,
             repo: repo,
             task: task,
+            includesTags: includeTags,
             wasBackgrounded: visiblePanelCounts[repo.id, default: 0] == 0
         )
         touch(repo.id)
@@ -737,6 +749,22 @@ final class RepoAIInsightSessionStore {
     private func finishGeneration(for repoID: Repo.ID, taskID: UUID) {
         guard let running = runningTasks[repoID], running.id == taskID else { return }
         runningTasks[repoID] = nil
+        if let model = viewModels[repoID], !Task.isCancelled {
+            if let error = model.billingError {
+                if running.wasBackgrounded {
+                    billingAlerts?.record(error, kind: .summary, repo: running.repo)
+                }
+            } else if model.errorMessage == nil {
+                billingAlerts?.resolve(kind: .summary, repoID: repoID)
+            }
+            if let error = model.tagBillingError {
+                if running.wasBackgrounded {
+                    billingAlerts?.record(error, kind: .tags, repo: running.repo)
+                }
+            } else if running.includesTags, model.errorMessage == nil, model.tagErrorMessage == nil {
+                billingAlerts?.resolve(kind: .tags, repoID: repoID)
+            }
+        }
         if running.wasBackgrounded {
             let state: RepoAISummaryBackgroundTask.State =
                 viewModels[repoID]?.errorMessage == nil ? .completed : .failed

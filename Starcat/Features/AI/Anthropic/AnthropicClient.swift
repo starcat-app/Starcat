@@ -323,7 +323,7 @@ struct AnthropicClient: AIClientProtocol {
         case 401, 403:
             return .authenticationRejected(detail: detail)
         case 402:
-            return .paymentRequired(detail: detail)
+            return .paymentRequired(detail: detail, provider: configuration.billingProvider)
         case 408, 504:
             return .timedOut(detail: detail)
         case 429:

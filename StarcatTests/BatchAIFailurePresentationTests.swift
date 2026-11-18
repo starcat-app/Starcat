@@ -113,13 +113,33 @@ struct BatchAIFailurePresentationTests {
         let mapped = OpenAIClient.mapChatFailure(
             OpenAIError.statusError(response: response, statusCode: 402)
         )
-        guard case .paymentRequired(let detail) = mapped else {
+        guard case .paymentRequired(let detail, _) = mapped else {
             Issue.record("expected paymentRequired, got \(mapped)")
             return
         }
         #expect(detail.contains("402"))
         #expect(mapped.localizedDescription == String.l10n("ai.client.error.paymentRequired"))
         #expect(BatchAIQueueService.userVisibleFailureMessage(for: mapped).contains("402"))
+        OpenAIClient.logUnexpectedChatFailure(mapped) {
+            Issue.record("余额不足时不应输出 SDK 原始响应")
+        }
+    }
+
+    @Test("网络超时和服务端故障仍各保留一条原始排障日志")
+    func logsUnexpectedChatFailures() {
+        let url = URL(string: "https://api.deepseek.com/v1/chat/completions")!
+        let response = HTTPURLResponse(url: url, statusCode: 503, httpVersion: nil, headerFields: nil)!
+        let errors: [any Error] = [
+            URLError(.timedOut),
+            OpenAIError.statusError(response: response, statusCode: 503)
+        ]
+        for error in errors {
+            var entries: [String] = []
+            OpenAIClient.logUnexpectedChatFailure(OpenAIClient.mapChatFailure(error)) {
+                entries.append(error.localizedDescription)
+            }
+            #expect(entries == [error.localizedDescription])
+        }
     }
 
     @Test("HTTP 失败诊断包含格式化的原始请求与响应 JSON")
@@ -144,7 +164,7 @@ struct BatchAIFailurePresentationTests {
             OpenAIError.statusError(response: response, statusCode: 402),
             exchange: exchange
         )
-        guard case .paymentRequired(let detail) = mapped else {
+        guard case .paymentRequired(let detail, _) = mapped else {
             Issue.record("expected paymentRequired, got \(mapped)")
             return
         }

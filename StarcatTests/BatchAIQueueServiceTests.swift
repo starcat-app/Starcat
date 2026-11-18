@@ -19,6 +19,63 @@ import Testing
 @MainActor
 struct BatchAIQueueServiceTests {
 
+    @Test("同配置合并不同仓库与任务，取消和其他网络错误不产生余额提醒")
+    func groupsBillingFailuresByProfileAndWork() async {
+        let alerts = AIBackgroundBillingAlerts()
+        let repo = Self.makeTestRepos(ids: [10])[0]
+        let otherRepo = Self.makeTestRepos(ids: [20])[0]
+        let first = AIBillingProvider(id: "work", kind: .deepSeek, name: "Work")
+        let second = AIBillingProvider(id: "home", kind: .deepSeek, name: "Home")
+        let billing = AIClientError.paymentRequired(detail: "HTTP 402", provider: first)
+        alerts.record(billing, kind: .summary, repo: repo)
+        alerts.record(billing, kind: .summary, repo: repo)
+        alerts.record(billing, kind: .tags, repo: repo)
+        alerts.record(billing, kind: .tags, repo: otherRepo)
+        alerts.record(AIClientError.paymentRequired(detail: "HTTP 402", provider: second), kind: .summary, repo: repo)
+        alerts.record(URLError(.timedOut), kind: .grouping, repo: repo)
+        let cancelled = Task { @MainActor in
+            withUnsafeCurrentTask { $0?.cancel() }
+            alerts.record(billing, kind: .sharing, repo: repo)
+        }
+        await cancelled.value
+        #expect(alerts.alerts.map(\.provider) == [first, second])
+        #expect(alerts.alerts.map(\.taskCount) == [3, 1])
+        #expect(alerts.alerts.first?.reposByKind[.tags] == [repo.id: repo.fullName, otherRepo.id: otherRepo.fullName])
+
+        alerts.resolve(kind: .summary, repoID: repo.id)
+        #expect(alerts.alerts.map(\.id) == [first.id])
+        #expect(alerts.alerts.first?.taskCount == 2)
+        alerts.dismiss(providerID: first.id)
+        #expect(alerts.alerts.isEmpty)
+    }
+
+    @Test("摘要成功且标签余额不足时仅登记标签，重试只再生成标签")
+    func retriesOnlyTagsAfterPartialBillingFailure() async throws {
+        let database = try InMemoryDatabaseManager()
+        let provider = ImmediateBatchAIInsightProvider(suggestions: Self.sampleSuggestions)
+        let profile = AIBillingProvider(id: "tags", kind: .deepSeek, name: "Tags")
+        provider.partialTagBillingError = .paymentRequired(detail: "HTTP 402", provider: profile)
+        let alerts = AIBackgroundBillingAlerts()
+        let service = makeService(insightProvider: provider, database: database,
+                                  tagRepository: GRDBTagRepository(database: database),
+                                  repoTagRepository: GRDBRepoTagRepository(database: database), billingAlerts: alerts)
+        let repo = Self.makeTestRepos(ids: [77])[0]
+        #expect(service.start(repos: [repo], options: BatchAIQueueOptions()))
+        await waitUntilStopped(service)
+        #expect(service.jobs.first?.status == .failed)
+        #expect(service.jobs.first?.didGenerateSummary == true)
+        #expect(service.jobs.first?.attempts == 1)
+        #expect(alerts.alerts.first?.provider == profile)
+        #expect(alerts.alerts.first?.count(for: .tags) == 1)
+        #expect(alerts.alerts.first?.taskCount == 1)
+        service.retry(jobId: repo.id)
+        await waitUntilStopped(service)
+        #expect(provider.generationCount == 1)
+        #expect(provider.batchTagGenerationCount == 1)
+        #expect(service.jobs.first?.status == .completed)
+        #expect(alerts.alerts.isEmpty)
+    }
+
     @Test("重启后恢复未确认标签且不会自动重复调用 AI")
     func restoresPendingReviewWithoutCallingProvider() async throws {
         let database = try InMemoryDatabaseManager(userId: 1)
@@ -1126,14 +1183,16 @@ struct BatchAIQueueServiceTests {
         database: InMemoryDatabaseManager,
         tagRepository: any TagRepositoryProtocol,
         repoTagRepository: any RepoTagRepositoryProtocol,
-        draftRepository: (any AIOrganizationDraftRepositoryProtocol)? = nil
+        draftRepository: (any AIOrganizationDraftRepositoryProtocol)? = nil,
+        billingAlerts: AIBackgroundBillingAlerts? = nil
     ) -> BatchAIQueueService {
         BatchAIQueueService(
             insightService: insightProvider,
             tagRepository: tagRepository,
             repoTagRepository: repoTagRepository,
             aiSummaryRepository: GRDBAISummaryRepository(database: database),
-            draftRepository: draftRepository
+            draftRepository: draftRepository,
+            billingAlerts: billingAlerts
         )
     }
 
@@ -1369,6 +1428,7 @@ private final class BlockingBatchAIInsightProvider: BatchAIInsightProviding {
 private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
     let suggestions: [AITagSuggestion]
     let batchTagError: TypeSafeClientError?
+    var partialTagBillingError: AIClientError?
     private(set) var lastCodeContextEnabledOverride: Bool?
     private(set) var lastExternalContextEnabledOverride: Bool?
     private(set) var generationCount = 0
@@ -1442,14 +1502,15 @@ private final class ImmediateBatchAIInsightProvider: BatchAIInsightProviding {
                 strengths: [],
                 risks: [],
                 minimalExample: nil,
-                suggestedTags: includeTags ? suggestions : [],
+                suggestedTags: includeTags && partialTagBillingError == nil ? suggestions : [],
                 model: "test-model",
                 generatedAt: ISO8601DateFormatter.shared.string(from: Date()),
                 contextMetadata: nil,
                 externalContextMarkdown: nil,
                 generationContextSettings: nil
             ),
-            tagErrorMessage: nil,
+            tagErrorMessage: partialTagBillingError?.localizedDescription,
+            tagBillingError: partialTagBillingError,
             contextDegradationReason: nil,
             externalContextDegradationReason: nil
         )
