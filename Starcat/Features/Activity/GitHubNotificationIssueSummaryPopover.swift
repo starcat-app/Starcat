@@ -1,15 +1,15 @@
 //
-//  GitHubNotificationIssueSummaryPanel.swift
+//  GitHubNotificationIssueSummaryPopover.swift
 //  Starcat
 //
-//  详情内部的玻璃总结面板。正文快照只由独立 Markdown 子视图观察，
-//  玻璃背景和状态栏仅在任务阶段切换时更新。
+//  Issue 总结 Popover 的内容。独立 Markdown 子视图观察正文快照，
+//  避免流式更新反复刷新标题和操作区。
 //
 
 import SwiftUI
 
-/// 面板只负责读取会话和发出操作，不拥有生成 Task；拆卸面板不会结束后台请求。
-struct GitHubNotificationIssueSummaryPanel: View {
+/// 弹层读取当前总结会话，生成任务由 Store 持有，可在下次打开时继续阅读。
+struct GitHubNotificationIssueSummaryPopover: View {
     let title: String
     let payload: ActivityNotificationPayload
     let timeline: [GitHubNotificationIssueTimelineItem]
@@ -18,7 +18,6 @@ struct GitHubNotificationIssueSummaryPanel: View {
     let preparationError: String?
     let preparationNeedsSettings: Bool
     let onRegenerate: () -> Void
-    let onDismiss: () -> Void
 
     @Environment(\.locale) private var locale
 
@@ -30,19 +29,12 @@ struct GitHubNotificationIssueSummaryPanel: View {
             header
             Divider()
             GitHubNotificationIssueSummaryMarkdownView(session: session)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             notices
             Divider()
             footer
         }
         .padding(16)
-        .starcatGlassSurface(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                .allowsHitTesting(false)
-        }
-        .shadow(color: Color.black.opacity(0.16), radius: 10, y: 4)
     }
 
     private var header: some View {
@@ -73,17 +65,6 @@ struct GitHubNotificationIssueSummaryPanel: View {
             }
             .disabled(!session.hasContent || session.isGenerating)
             .accessibilityLabel(Text("ai.assistant.summary.copy.tooltip"))
-            Button(action: onDismiss) {
-                Image(systemName: "minus")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("activity.issueSummary.collapse")
-            .accessibilityLabel(Text("activity.issueSummary.collapse"))
-            SheetCloseButton(action: onDismiss)
         }
     }
 

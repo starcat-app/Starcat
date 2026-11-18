@@ -375,6 +375,7 @@ struct RepoIssuesWorkspaceContent: View {
                         viewModel.detailItem = $0
                     }
                 ), showsHeroTint: false, showsRepositoryHeader: false,
+                   showsOpenInStarcatAction: false,
                    commentComposerBackground: AnyShapeStyle(Color(nsColor: .windowBackgroundColor)),
                    onSelectAdjacent: { delta in
                        Task { await viewModel.selectAdjacentIssue(delta) }

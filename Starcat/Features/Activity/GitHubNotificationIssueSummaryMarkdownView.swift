@@ -2,7 +2,7 @@
 //  GitHubNotificationIssueSummaryMarkdownView.swift
 //  Starcat
 //
-//  Issue 总结的局部 Markdown 阅读区。观察仅止于此视图，玻璃面板和详情页不会
+//  Issue 总结的局部 Markdown 阅读区。观察仅止于此视图，工具栏和详情页不会
 //  随正文快照重算；完整段落冻结，尚未闭合的尾部最多以 8Hz 重新解析。
 //
 
@@ -43,7 +43,7 @@ struct GitHubNotificationIssueSummaryMarkdownView: View {
             .textSelection(.disabled)
         }
         .defaultScrollAnchor(session.isGenerating ? .bottom : .top, for: .initialOffset)
-        // 完成态调整面板高度只改变阅读视口，不能再被 sizeChanges 的底部锚点拉走。
+        // 完成态保留阅读位置，只有生成中才跟随新内容。
         .defaultScrollAnchor(session.isGenerating && tail.isFollowing ? .bottom : nil, for: .sizeChanges)
         // 正文在内容层内缩，给贴着 ScrollView 右缘的滚动指示条让出 gutter，
         // 指示条不再压住每行末尾的文字。
@@ -76,7 +76,7 @@ private struct IssueSummaryMarkdownChunk: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 小型阅读面板不采用 GitHub 默认的大标题或不透明正文底色，避免破坏玻璃层次。
+    /// 紧凑标题和透明正文底色让 Markdown 融入原生弹层。
     private var summaryTheme: Theme {
         Theme.gitHub
             .text {

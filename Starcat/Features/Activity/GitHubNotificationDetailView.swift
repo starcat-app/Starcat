@@ -26,6 +26,8 @@ struct GitHubNotificationDetailView: View {
     var showsHeroTint: Bool = true
     /// 仓库工作台已有整窗仓库顶栏，可关闭重复行；活动时间线默认保留原有对齐。
     var showsRepositoryHeader: Bool = true
+    /// 仓库 Issues 窗口已经位于目标仓库，只有活动详情需要跳回管理页。
+    var showsOpenInStarcatAction: Bool = true
     /// README Issues 工作台可对齐窗口底色；默认保留活动通知原有的系统背景样式。
     var commentComposerBackground: AnyShapeStyle = AnyShapeStyle(.background)
     /// 仓库工作台提供自己的列表导航；未注入时保留活动通知的 Inbox 切换语义。
@@ -108,7 +110,6 @@ struct GitHubNotificationDetailView: View {
         withDetailObservers(content, item: item)
     }
 
-    /// Overlay 只挂在详情正文范围，既不覆盖顶部导航，也不参与评论流的宽高测量。
     private func detailBody(_ item: ActivityItem) -> some View {
         VStack(spacing: 0) {
             if !isComposerExpanded {
@@ -119,24 +120,14 @@ struct GitHubNotificationDetailView: View {
                GitHubNotificationMapper.canReply(subjectType: payload.subjectType, number: payload.subjectNumber) {
                 if !isComposerExpanded {
                     Divider()
-                        .anchorPreference(key: GitHubNotificationIssueSummaryAnchorKey.self, value: .bounds) {
-                            .init(divider: $0)
-                        }
                 }
                 commentComposer(item, payload: payload)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .overlayPreferenceValue(GitHubNotificationIssueSummaryAnchorKey.self) { bounds in
-            if let composerAnchor = bounds.composer, let dividerAnchor = bounds.divider,
-               let payload = item.notification, payload.subjectType == "Issue", !isComposerExpanded {
-                issueSummaryOverlay(item, payload: payload, composerAnchor: composerAnchor, dividerAnchor: dividerAnchor)
-            }
-        }
         .clipped()
     }
 
-    /// 评论卡仍一次性排版；总结由独立浮层按批次渲染，不参与评论流的布局。
     private func conversationScroll(_ item: ActivityItem) -> some View {
         ScrollView {
             // 单次 hydration 最多 100 条，保留 VStack，避免 LazySubviewPlacements 布局风暴。
@@ -167,7 +158,6 @@ struct GitHubNotificationDetailView: View {
         }
     }
 
-    /// 总结入口浮在输入区分割线上方，不在右侧占用输入宽度。
     private func commentComposer(_ item: ActivityItem, payload: ActivityNotificationPayload) -> some View {
         GitHubNotificationCommentComposer(
             payload: payload,
@@ -181,11 +171,9 @@ struct GitHubNotificationDetailView: View {
     }
 
     /// 切帖重建展示态，原生成会话由 AppDependencies 持有，回来重开可恢复。
-    private func issueSummaryOverlay(
+    private func issueSummaryButton(
         _ item: ActivityItem,
-        payload: ActivityNotificationPayload,
-        composerAnchor: Anchor<CGRect>,
-        dividerAnchor: Anchor<CGRect>
+        payload: ActivityNotificationPayload
     ) -> some View {
         var summaryPayload = payload
         // 关闭 / 重开后的内存态比列表持有的快照更新，总结不能继续声称旧状态。
@@ -198,9 +186,7 @@ struct GitHubNotificationDetailView: View {
             title: item.title,
             payload: summaryPayload,
             timeline: settings.githubIssueEventTimelineEnabled
-                ? inbox.cachedIssueTimeline(threadId: payload.threadId) ?? [] : [],
-            composerAnchor: composerAnchor,
-            dividerAnchor: dividerAnchor
+                ? inbox.cachedIssueTimeline(threadId: payload.threadId) ?? [] : []
         )
         .id("\(dependencies.databaseScopeRevision)|\(payload.threadId)|\(RepoAIInsightService.outputLanguageDescriptor())")
     }
@@ -342,6 +328,9 @@ struct GitHubNotificationDetailView: View {
             }
             Spacer(minLength: 8)
             HStack(spacing: 4) {
+                if let payload = item.notification, payload.subjectType == "Issue" {
+                    issueSummaryButton(item, payload: payload)
+                }
                 detailLinkButtons(item)
                 if let vm = translationVM,
                    let payload = item.notification {
@@ -385,6 +374,7 @@ struct GitHubNotificationDetailView: View {
         // 把原先评论区顶部的留白纳入工具行，整行在分隔线与首张卡片之间垂直居中。
         .frame(height: ManageListFilterBarMetrics.barHeight + Self.conversationPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .coordinateSpace(.named(GitHubNotificationIssueSummaryButton.toolbarCoordinateSpace))
         // 透明，让根节点语言色光晕透到 chip 行背后。
         .background(.clear)
     }
@@ -772,7 +762,7 @@ struct GitHubNotificationDetailView: View {
     /// GitHub / Starcat 入口放工具行：会话滚走或评论框展开时仍能点。
     @ViewBuilder
     private func detailLinkButtons(_ item: ActivityItem) -> some View {
-        if let repo = item.repo {
+        if showsOpenInStarcatAction, let repo = item.repo {
             Button {
                 NotificationCenter.default.post(
                     name: .starcatRevealRepoInManage,
@@ -2037,10 +2027,6 @@ private struct GitHubNotificationCommentComposer: View {
                 .opacity(isGenerating ? 0 : 1)
                 .animation(.easeInOut(duration: StarcatAIHaloMetrics.fadeDuration(reduceMotion)), value: isGenerating)
         )
-        // 卡片边界只控制入口的水平对齐；垂直位置单独读取输入区上方的分割线。
-        .anchorPreference(key: GitHubNotificationIssueSummaryAnchorKey.self, value: .bounds) {
-            .init(composer: payload.subjectType == "Issue" && !isExpanded ? $0 : nil)
-        }
         // 光晕铺在 clip 外面的一圈 gutter 里，加大 blur 才不会被圆角裁掉。
         .padding(StarcatAIHaloMetrics.glowBleed)
         .overlay {
