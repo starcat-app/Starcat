@@ -11,11 +11,18 @@ import AppKit
 import SwiftUI
 
 struct GitHubNotificationInboxView: View {
+    private enum ContentPhase: Equatable {
+        case readingLocalPage
+        case skeleton
+        case ready
+    }
+
     @Namespace private var selectionSpace
 
     @Environment(AppDependencies.self) private var dependencies
     @Environment(AuthSession.self) private var authSession
     @Environment(\.locale) private var locale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
 
     @Binding var selectedItem: ActivityItem?
 
@@ -23,6 +30,10 @@ struct GitHubNotificationInboxView: View {
     @State private var cursor: GitHubInboxTimelineCursor?
     @State private var hasMore = false
     @State private var isLoadingPage = false
+    /// 首次读取期间先保留中栏底色，等现有首页查询确认缓存是否可展示，避免命中时闪出骨架。
+    @State private var hasReadLocalFirstPage = false
+    /// 首轮同步后的首页读取完成前，空的本地首页不足以判定权限空态，组织 Issue 仍可能补入数据。
+    @State private var hasFinishedInitialLoad = false
     @State private var pagingGeneration = 0
     @State private var filter: GitHubNotificationFilter = .all
     @State private var lastFetchedAt: Date?
@@ -36,16 +47,29 @@ struct GitHubNotificationInboxView: View {
         dependencies.githubNotificationInboxService
     }
 
+    private var contentPhase: ContentPhase {
+        guard hasReadLocalFirstPage else { return .readingLocalPage }
+        if rows.isEmpty && (!hasFinishedInitialLoad || isLoadingPage || inbox.isSyncing) {
+            return .skeleton
+        }
+        return .ready
+    }
+
     /// 首次页面仍在加载时提交搜索，待行数或游标状态变化后需要自动重试补页。
     private var quickSearchLoadIdentity: String {
         "\(quickSearchQuery)|\(rows.count)|\(hasMore)"
     }
 
     var body: some View {
+        let phase = contentPhase
         VStack(spacing: 0) {
             toolbar
             Divider()
-            content
+            content(for: phase)
+                .animation(
+                    phase == .ready ? .easeOut(duration: reduceMotion ? 0.12 : 0.18) : nil,
+                    value: phase
+                )
         }
         .task {
             inbox.listFilter = filter
@@ -57,6 +81,7 @@ struct GitHubNotificationInboxView: View {
             consumePendingOpenIfNeeded()
             await inbox.sync()
             await reloadFirstPage()
+            hasFinishedInitialLoad = true
             consumePendingOpenIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .githubNotificationInboxDidChange)) { _ in
@@ -227,17 +252,23 @@ struct GitHubNotificationInboxView: View {
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(for phase: ContentPhase) -> some View {
         // 同一次列表更新只计算一次搜索快照。懒加载行不能为分页数量再次扫描整张时间线。
         let visibleRows = visibleRows
-        if inbox.missingScope && rows.isEmpty {
-            missingScopeEmpty
-        } else if rows.isEmpty && (inbox.isSyncing || isLoadingPage) {
+        if phase == .readingLocalPage {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else if phase == .skeleton {
             ListLoadingSkeleton(rowHeight: 76)
                 .padding(12)
                 .frame(maxHeight: .infinity, alignment: .top)
+                .transition(.opacity)
         } else if rows.isEmpty {
-            if filter.isActive {
+            if inbox.missingScope {
+                missingScopeEmpty
+            } else if filter.isActive {
                 filterEmptyState
             } else {
                 emptyState
@@ -246,6 +277,7 @@ struct GitHubNotificationInboxView: View {
             searchEmptyState
         } else {
             timeline(visibleRows)
+                .transition(.opacity)
         }
     }
 
@@ -416,6 +448,7 @@ struct GitHubNotificationInboxView: View {
         hasMore = page.hasMore
         cursor = page.rows.last?.cursor
         lastFetchedAt = fetchedAt
+        hasReadLocalFirstPage = true
         Task { await inbox.prefetchMissingIssueStates(from: page.rows) }
         // 状态筛选必须先出本地结果。补缺放到后台，且同一会话只启动一轮。
         if requestedFilter.issueState.issueStateFilter != nil {
