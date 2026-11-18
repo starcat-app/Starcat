@@ -17,22 +17,24 @@ enum AppStatusPanelMetrics {
     static let gridSpacing: CGFloat = 8
 }
 
-/// 状态浮层的中性卡片底色，避免深色下实心黑卡与透明概览卡割裂。
-enum AppStatusPanelSurface {
-    /// 深色用较厚的原生材质遮住背景细节；低透明色层只能提亮，无法增强磨砂。
-    static func card(
-        colorScheme: ColorScheme,
-        lightColor: Color = Color(nsColor: .textBackgroundColor)
-    ) -> AnyShapeStyle {
-        colorScheme == .dark ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(lightColor)
+/// 一级卡片共用衬底，状态色叠在衬底上，避免桌面底色改变卡片之间的明暗层级。
+private struct AppStatusPanelSurface: ViewModifier {
+    let shape: RoundedRectangle
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        let fill = reduceTransparency
+            ? AnyShapeStyle(StarcatSurface.panel(colorScheme: colorScheme))
+            : AnyShapeStyle(.thickMaterial)
+        content.background(fill, in: shape)
     }
 }
 
 /// 浅 tint 对角渐变底 + 同色描边，和洞察摘要卡同一套，避免 popover 另起一种营销渐变。
 struct AppStatusTintedSurface: ViewModifier {
     let tint: Color
-
-    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
         content
@@ -47,11 +49,7 @@ struct AppStatusTintedSurface: ViewModifier {
                 ),
                 in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
             )
-            .background(
-                // 概览卡也使用同一层磨砂，再叠加原有状态色，避免大小卡片通透程度不一致。
-                AppStatusPanelSurface.card(colorScheme: colorScheme, lightColor: .clear),
-                in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
-            )
+            .appStatusCardSurface()
             .overlay {
                 RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
                     .stroke(tint.opacity(0.22), lineWidth: 1)
@@ -60,6 +58,12 @@ struct AppStatusTintedSurface: ViewModifier {
 }
 
 extension View {
+    func appStatusCardSurface(
+        in shape: RoundedRectangle = RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
+    ) -> some View {
+        modifier(AppStatusPanelSurface(shape: shape))
+    }
+
     func appStatusTintedSurface(_ tint: Color) -> some View {
         modifier(AppStatusTintedSurface(tint: tint))
     }
@@ -185,7 +189,6 @@ struct AppStatusActionRow<Trailing: View>: View {
     @ViewBuilder var trailing: () -> Trailing
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let content = HStack(spacing: 10) {
@@ -213,10 +216,7 @@ struct AppStatusActionRow<Trailing: View>: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            AppStatusPanelSurface.card(colorScheme: colorScheme),
-            in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
-        )
+        .appStatusCardSurface()
         .overlay {
             RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
@@ -237,16 +237,11 @@ struct AppStatusActionRow<Trailing: View>: View {
 struct AppStatusGroupCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         content()
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                AppStatusPanelSurface.card(colorScheme: colorScheme),
-                in: RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
-            )
+            .appStatusCardSurface()
             .overlay {
                 RoundedRectangle(cornerRadius: AppStatusPanelMetrics.cardCorner, style: .continuous)
                     .stroke(Color.secondary.opacity(0.14), lineWidth: 1)

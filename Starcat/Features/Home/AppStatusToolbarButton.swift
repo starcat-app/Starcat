@@ -464,6 +464,7 @@ private struct AppStatusPanel: View {
         .font(interfaceScale.font(.caption))
         .padding(10)
         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .appStatusCardSurface(in: RoundedRectangle(cornerRadius: 8))
     }
 
     /// 仓库可能较多，默认仅展示各任务数量，需要识别具体失败项时再展开。

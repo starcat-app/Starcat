@@ -194,6 +194,30 @@ struct SettingsView: View {
             }
         }
 
+        /// 按功能分配颜色，侧栏和搜索建议共用。深色主题提亮底板，避免与侧栏材质融在一起。
+        var iconBackground: (light: UInt32, dark: UInt32) {
+            switch self {
+            case .general, .shortcuts, .localTools, .storage, .diagnostics:
+                return (0x525C6A, 0x697587)
+            case .notifications:
+                return (0xC72B51, 0xD13C67)
+            case .pro:
+                return (0xD99B31, 0xF0BD61)
+            case .privacy:
+                return (0x244FA3, 0x4267C6)
+            case .aiModels, .aiAutomation, .ragInference:
+                return (0x5841B4, 0x6F54C9)
+            case .translation:
+                return (0x21725F, 0x27836D)
+            case .aiIndexContext, .externalSearch, .ragRetrieval:
+                return (0x0C688A, 0x197CA1)
+            case .browserExtensions, .mcp, .services:
+                return (0x186F76, 0x268089)
+            case .labs:
+                return (0x8A3F92, 0xA14EA7)
+            }
+        }
+
         /// RAG 主侧栏条目把 selection 传给共用的设置内容。
         var ragSettingsSection: RAGSettingsSection {
             switch self {
@@ -434,7 +458,7 @@ struct SettingsView: View {
                     Label {
                         Text(LocalizedStringKey(item.titleKey))
                     } icon: {
-                        BusinessIcon(item.tab.businessIcon, pointSize: item.tab.businessIcon.isAsset ? 16 : 13)
+                        SettingsNavigationIcon(tab: item.tab)
                     }
                 }
             }
@@ -461,6 +485,38 @@ struct SettingsView: View {
         settingsTabSelection.wrappedValue = tabs[destination]
     }
 
+    /// 底板颜色只标识功能。选中和悬停仍由导航行表达，搜索建议也能保持同样的图标辨识度。
+    private struct SettingsNavigationIcon: View {
+        let tab: SettingsTab
+
+        @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.colorSchemeContrast) private var contrast
+
+        var body: some View {
+            let palette = tab.iconBackground
+            let rgb = colorScheme == .dark ? palette.dark : palette.light
+            let background = Color(
+                red: Double((rgb >> 16) & 0xFF) / 255,
+                green: Double((rgb >> 8) & 0xFF) / 255,
+                blue: Double(rgb & 0xFF) / 255
+            )
+            let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+
+            BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 16 : 13)
+                .foregroundStyle(.primary)
+                // 局部外观让模板图形在琥珀底上用深色、其他底板用浅色，不影响行标题和底板描边。
+                .environment(\.colorScheme, tab == .pro ? .light : .dark)
+                .frame(width: 20, height: 20)
+                .background(background, in: shape)
+                .overlay {
+                    if contrast == .increased {
+                        shape.strokeBorder(Color.primary.opacity(0.8), lineWidth: 1)
+                    }
+                }
+                .accessibilityHidden(true)
+        }
+    }
+
     /// 共享选中背景负责移动；悬停只改变绘制属性，不挤动相邻文字与导航行。
     private struct SettingsSidebarRow: View {
         let tab: SettingsTab
@@ -474,12 +530,8 @@ struct SettingsView: View {
         var body: some View {
             Button(action: select) {
                 HStack(spacing: 8) {
-                    BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 16 : 13)
-                        .frame(width: 16, height: 16)
-                        // 保留侧栏图标的强调色；悬停通过背景和位移反馈，避免模板图标被染成灰色。
-                        .foregroundStyle(.tint)
+                    SettingsNavigationIcon(tab: tab)
                         .offset(x: isHovered && !isSelected && !reduceMotion ? 1.5 : 0)
-                        .accessibilityHidden(true)
                     Text(tab.titleKey)
                         .font(.body.weight(isSelected ? .medium : .regular))
                         .foregroundStyle(.primary)
