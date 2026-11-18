@@ -33,7 +33,7 @@ struct DailyRadarShareHost: ViewModifier {
             .environment(taskStore)
             .environment(\.presentDailyRadarShare, DailyRadarSharePresenter(
                 serviceIdentity: serviceIdentity, present: present,
-                restore: { await taskStore.restore(report: $0, operations: shareOperations) }
+                restore: { await taskStore.restore(report: $0, operations: shareOperations, legacyShare: restoreLegacyShare) }
             ))
             .sheet(item: $presentation) { selected in
                 DailyRadarShareSheet(
@@ -55,24 +55,34 @@ struct DailyRadarShareHost: ViewModifier {
     }
 
     private var shareOperations: DailyRadarShareOperations {
-        DailyRadarShareOperations(
+        let selectedService = serviceIdentity
+        return DailyRadarShareOperations(
             renderCover: { try DailyRadarShareCover.render(report: $0) },
             createShare: { request, heroPNG in
-                try await dependencies.shareAPI.shareDailyRadar(request: request, heroPNG: heroPNG)
+                guard serviceIdentity == selectedService else { throw DailyRadarShareError.configuration }
+                return try await dependencies.shareAPI.shareDailyRadar(request: request, heroPNG: heroPNG)
             },
-            serviceIdentity: serviceIdentity,
+            serviceIdentity: selectedService,
             cachedShare: { report in
-                let api = dependencies.shareAPI
-                if let cached = await api.cachedDailyRadarShare(
+                await dependencies.shareAPI.cachedDailyRadarShare(
                     reportID: report.id, language: report.contentLanguage, revision: report.revision
-                ) { return cached }
-                // 旧缓存没有报告身份，只在存在旧文件且完整详情就绪时重建旧 hash。
-                // 这条恢复路径只查本地记录，绝不调用创建端点。
-                guard await api.hasLegacyDailyRadarShares(),
-                      let request = try? DailyRadarShareRequest(detail: report),
-                      let cover = try? DailyRadarShareCover.render(report: report) else { return nil }
-                return await api.cachedDailyRadarShare(request: request, heroPNG: cover.png)
+                )
+            },
+            lookupShare: { report in
+                guard serviceIdentity == selectedService else { throw DailyRadarShareError.configuration }
+                return try await dependencies.shareAPI.lookupDailyRadarShare(
+                    reportID: report.id, language: report.contentLanguage, revision: report.revision
+                )
             }
         )
+    }
+
+    /// 旧文件只有哈希索引，仅在恢复旧本地记录时按旧算法重建封面。
+    private func restoreLegacyShare(_ report: DailyRadarReport) async -> DailyRadarShareResponse? {
+        let api = dependencies.shareAPI
+        guard await api.hasLegacyDailyRadarShares(),
+              let request = try? DailyRadarShareRequest(detail: report),
+              let cover = try? DailyRadarShareCover.render(report: report) else { return nil }
+        return await api.cachedDailyRadarShare(request: request, heroPNG: cover.png)
     }
 }

@@ -217,6 +217,40 @@ actor ShareAPI {
         return cached
     }
 
+    /// 仅业务上的未发布允许创建。旧服务的路由错误、鉴权失败和超时都继续抛给调用方。
+    func lookupDailyRadarShare(reportID: String, language: String, revision: String) async throws -> DailyRadarShareResponse? {
+        let cacheKey = dailyRadarShareKey(reportID: reportID, language: language, revision: revision)
+        let endpoint = AppEndpoints.appendPath(AppEndpoints.Sharing.Paths.dailyRadarShares, to: baseURL)
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            throw StarcatEnvelopeNetworkError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "report_id", value: reportID),
+            URLQueryItem(name: "language", value: language),
+            URLQueryItem(name: "revision", value: revision),
+        ]
+        // Go 按表单规则解析 query，未转义的加号会被解释为空格。
+        components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        guard let url = components.url else { throw StarcatEnvelopeNetworkError.invalidURL }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let apiKey, !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        StarcatGatewayRouting.applyServiceHeader(to: &request, service: .sharing)
+        let (data, response) = try await DiagnosticHTTP.data(for: request, using: session, service: "sharing")
+        if (response as? HTTPURLResponse)?.statusCode == 404,
+           let envelope = try? decoder.decode(StarcatErrorEnvelope.self, from: data),
+           envelope.error.code == "DAILY_RADAR_SHARE_NOT_FOUND" {
+            return nil
+        }
+        let found = try StarcatEnvelopeDecoder.decode(
+            DailyRadarShareResponse.self, data: data, response: response, decoder: decoder
+        ).validated()
+        persistDailyRadarShare(found, key: cacheKey)
+        return found
+    }
+
     /// 旧文件只有响应，无法反查报告身份；仅在确有旧记录时才需要重建旧 hash。
     func hasLegacyDailyRadarShares() -> Bool {
         let files = try? FileManager.default.contentsOfDirectory(
@@ -249,7 +283,7 @@ actor ShareAPI {
         return cached
     }
 
-    /// 身份与服务端唯一约束一致；封面绘制升级不能让已发布 revision 重新上传并触发冲突。
+    /// 身份与服务端唯一约束一致；封面绘制升级不影响已有链接。
     private func dailyRadarShareKey(reportID: String, language: String, revision: String) -> String {
         let identity = [baseURL.absoluteString, reportID, language, revision].joined(separator: "|")
         return SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()

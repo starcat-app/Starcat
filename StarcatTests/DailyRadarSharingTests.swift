@@ -233,6 +233,98 @@ struct DailyRadarSharingTests {
         #expect(fixture.state.requests.count == 1)
     }
 
+    /// 第二个客户端使用独立的记录目录和凭据，只发 GET 即可恢复首发的链接、封面与时间。
+    @MainActor @Test func anotherClientFindsPublishedShareWithoutRenderingOrUploading() async throws {
+        let fixture = SharingFixture()
+        defer { fixture.clean() }
+        let report = try makeReport(revision: "r1+fix&preview")
+        let first = try await fixture.api().shareDailyRadar(
+            request: DailyRadarShareRequest(detail: report), heroPNG: Data([1])
+        )
+        let secondDirectory = fixture.directory.appendingPathComponent("second-records")
+        let second = fixture.api(apiKey: "second-token", recordsDirectory: secondDirectory)
+        let lookup: @MainActor (DailyRadarReport) async throws -> DailyRadarShareResponse? = {
+            try await second.lookupDailyRadarShare(reportID: $0.id, language: $0.contentLanguage, revision: $0.revision)
+        }
+        let cached: @MainActor (DailyRadarReport) async -> DailyRadarShareResponse? = {
+            await second.cachedDailyRadarShare(reportID: $0.id, language: $0.contentLanguage, revision: $0.revision)
+        }
+        #expect(await cached(report) == nil)
+        let operations = DailyRadarShareOperations(
+            renderCover: { _ in
+                Issue.record("Published report triggered local rendering")
+                throw DailyRadarShareError.coverFailed
+            },
+            createShare: { _, _ in
+                Issue.record("Published report triggered an upload")
+                throw DailyRadarShareError.unavailable
+            },
+            cachedShare: cached, lookupShare: lookup
+        )
+        let store = DailyRadarShareTaskStore()
+        let identity = DailyRadarShareTaskStore.identity(report: report, serviceIdentity: "")
+        await store.restore(report: report, operations: operations)
+        #expect(store.jobs[identity] == nil)
+        #expect(fixture.state.requests.map(\.httpMethod) == ["POST"])
+        store.start(report: report, operations: operations)
+        try await waitForTask(store, identity: identity)
+        let cachedResponse = await cached(report)
+        let restored = try #require(cachedResponse)
+        #expect(store.jobs[identity]?.state == .success(restored))
+        #expect(store.jobs[identity]?.coverImage == nil)
+        #expect(restored.alreadyExists)
+        #expect(restored.shareID == first.shareID)
+        #expect(restored.shareURL == first.shareURL)
+        #expect(restored.heroPNGURL == first.heroPNGURL)
+        #expect(restored.heroWebPURL == first.heroWebPURL)
+        #expect(restored.createdAt == first.createdAt)
+        #expect(fixture.state.requests.map(\.httpMethod) == ["POST", "GET"])
+        let sent = try #require(fixture.state.requests.last)
+        #expect(sent.url?.path == "/api/v1/daily-radar/shares")
+        #expect(sent.url?.absoluteString.contains("revision=r1%2Bfix%26preview") == true)
+        let query = try #require(sent.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems })
+        #expect(query == [
+            URLQueryItem(name: "report_id", value: report.id),
+            URLQueryItem(name: "language", value: report.contentLanguage),
+            URLQueryItem(name: "revision", value: report.revision),
+        ])
+        #expect(sent.value(forHTTPHeaderField: "Authorization") == "Bearer second-token")
+        #expect(sent.value(forHTTPHeaderField: "X-SC-Svc") == "sharing")
+        #expect(fixture.state.bodies.last?.isEmpty == true)
+        #expect(await fixture.api(recordsDirectory: secondDirectory).cachedDailyRadarShare(
+            reportID: report.id, language: report.contentLanguage, revision: report.revision
+        ) == restored)
+    }
+
+    /// 只有明确的未发布才进入创建流程，旧服务路由错误及服务异常不触发上传。
+    @MainActor @Test(arguments: [(404, "DAILY_RADAR_SHARE_NOT_FOUND", true), (404, "NOT_FOUND", false),
+                                 (405, "METHOD_NOT_ALLOWED", false), (503, "SERVICE_UNAVAILABLE", false)])
+    func onlyExplicitLookupMissAllowsUpload(status: Int, code: String, shouldUpload: Bool) async throws {
+        let fixture = SharingFixture(lookupStatus: status, errorCode: code)
+        defer { fixture.clean() }
+        let api = fixture.api()
+        let report = try makeReport()
+        let image = try smallImage()
+        var renders = 0
+        let operations = DailyRadarShareOperations(
+            renderCover: { _ in
+                renders += 1
+                return (image, Data([1]))
+            },
+            createShare: { try await api.shareDailyRadar(request: $0, heroPNG: $1) },
+            lookupShare: {
+                try await api.lookupDailyRadarShare(reportID: $0.id, language: $0.contentLanguage, revision: $0.revision)
+            }
+        )
+        let store = DailyRadarShareTaskStore()
+        let identity = DailyRadarShareTaskStore.identity(report: report, serviceIdentity: "")
+        store.start(report: report, operations: operations)
+        try await waitForTask(store, identity: identity)
+        #expect(fixture.state.requests.map(\.httpMethod) == (shouldUpload ? ["GET", "POST"] : ["GET"]))
+        #expect(renders == (shouldUpload ? 1 : 0))
+        #expect(store.jobs[identity]?.state == (shouldUpload ? .success(makeResponse()) : .failure(.unavailable)))
+    }
+
     @Test(arguments: [(401, DailyRadarShareError.configuration), (409, .conflict), (413, .tooLarge), (429, .rateLimited), (503, .unavailable)])
     func errorsHaveStableRecoverableCopy(status: Int, expected: DailyRadarShareError) async throws {
         let fixture = SharingFixture(status: status)
@@ -354,7 +446,7 @@ struct DailyRadarSharingTests {
         #expect(uploads == 0)
     }
 
-    /// 实际离屏 Canvas 必须稳定生成 1600×840 PNG，避免服务端同 revision 原图 hash 冲突。
+    /// 实际离屏 Canvas 必须稳定生成符合发布规格的 1600×840 PNG。
     @MainActor @Test func realCoverHasFixedDimensionsAndDeterministicPNG() throws {
         let report = try makeReport()
         let first = try DailyRadarShareCover.render(report: report)
@@ -432,10 +524,16 @@ private final class SharingFixtureState: @unchecked Sendable {
     private var captured: [URLRequest] = []
     private var capturedBodies: [Data] = []
     let status: Int
+    let lookupStatus: Int
+    let errorCode: String
     var requests: [URLRequest] { lock.withLock { captured } }
     var bodies: [Data] { lock.withLock { capturedBodies } }
 
-    init(status: Int) { self.status = status }
+    init(status: Int, lookupStatus: Int?, errorCode: String) {
+        self.status = status
+        self.lookupStatus = lookupStatus ?? status
+        self.errorCode = errorCode
+    }
 
     func capture(_ request: URLRequest) {
         var body = request.httpBody ?? Data()
@@ -465,17 +563,17 @@ private struct SharingFixture {
     var recordsDirectory: URL { directory.appendingPathComponent("records") }
     var legacyDirectory: URL { directory.appendingPathComponent("legacy") }
 
-    init(status: Int = 200) {
-        state = SharingFixtureState(status: status)
+    init(status: Int = 200, lookupStatus: Int? = nil, errorCode: String = "FIXTURE") {
+        state = SharingFixtureState(status: status, lookupStatus: lookupStatus, errorCode: errorCode)
         SharingTestProtocol.register(state, host: host)
     }
 
-    func api() -> ShareAPI {
+    func api(apiKey: String = "test-secret", recordsDirectory: URL? = nil) -> ShareAPI {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SharingTestProtocol.self]
         return ShareAPI(
-            baseURL: baseURL, apiKey: "test-secret", session: URLSession(configuration: configuration),
-            dailyRadarCacheDirectory: legacyDirectory, dailyRadarShareDirectory: recordsDirectory,
+            baseURL: baseURL, apiKey: apiKey, session: URLSession(configuration: configuration),
+            dailyRadarCacheDirectory: legacyDirectory, dailyRadarShareDirectory: recordsDirectory ?? self.recordsDirectory,
             repoShareDirectory: directory.appendingPathComponent("repos")
         )
     }
@@ -501,10 +599,12 @@ private final class SharingTestProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         state.capture(request)
-        let payload = state.status == 200
-            ? #"{"schema_version":1,"data":{"share_id":"fixture","share_url":"https://share.example/d/fixture","already_exists":false,"hero_webp_url":"https://share.example/d/fixture/hero.webp","hero_png_url":"https://share.example/d/fixture/hero.png","created_at":"2026-11-13T00:00:00Z"}}"#
-            : #"{"schema_version":1,"error":{"code":"FIXTURE","message":"internal-path-must-not-be-shown"}}"#
-        let response = HTTPURLResponse(url: request.url!, statusCode: state.status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        let lookup = request.httpMethod == "GET"
+        let status = lookup ? state.lookupStatus : state.status
+        let payload = status == 200
+            ? #"{"schema_version":1,"data":{"share_id":"fixture","share_url":"https://share.example/d/fixture","already_exists":\#(lookup),"hero_webp_url":"https://share.example/d/fixture/hero.webp","hero_png_url":"https://share.example/d/fixture/hero.png","created_at":"2026-11-13T00:00:00Z"}}"#
+            : #"{"schema_version":1,"error":{"code":"\#(state.errorCode)","message":"internal-path-must-not-be-shown"}}"#
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(payload.utf8))
         client?.urlProtocolDidFinishLoading(self)

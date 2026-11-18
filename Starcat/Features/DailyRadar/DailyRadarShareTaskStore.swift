@@ -14,6 +14,7 @@ import Observation
 struct DailyRadarShareOperations {
     let serviceIdentity: String
     let cachedShare: @MainActor (DailyRadarReport) async -> DailyRadarShareResponse?
+    let lookupShare: @MainActor (DailyRadarReport) async throws -> DailyRadarShareResponse?
     let renderCover: @MainActor (DailyRadarReport) throws -> (image: CGImage, png: Data)
     let createShare: @MainActor (DailyRadarShareRequest, Data) async throws -> DailyRadarShareResponse
 
@@ -21,10 +22,12 @@ struct DailyRadarShareOperations {
         renderCover: @escaping @MainActor (DailyRadarReport) throws -> (image: CGImage, png: Data),
         createShare: @escaping @MainActor (DailyRadarShareRequest, Data) async throws -> DailyRadarShareResponse,
         serviceIdentity: String = "",
-        cachedShare: @escaping @MainActor (DailyRadarReport) async -> DailyRadarShareResponse? = { _ in nil }
+        cachedShare: @escaping @MainActor (DailyRadarReport) async -> DailyRadarShareResponse? = { _ in nil },
+        lookupShare: @escaping @MainActor (DailyRadarReport) async throws -> DailyRadarShareResponse? = { _ in nil }
     ) {
         self.serviceIdentity = serviceIdentity
         self.cachedShare = cachedShare
+        self.lookupShare = lookupShare
         self.renderCover = renderCover
         self.createShare = createShare
     }
@@ -71,11 +74,17 @@ final class DailyRadarShareTaskStore {
     }
 
     /// 打开文章只恢复已生成结果；缓存未命中不创建任务，也不会触发上传。
-    func restore(report: DailyRadarReport, operations: DailyRadarShareOperations) async {
+    func restore(
+        report: DailyRadarReport, operations: DailyRadarShareOperations,
+        legacyShare: @MainActor (DailyRadarReport) async -> DailyRadarShareResponse? = { _ in nil }
+    ) async {
         let identity = Self.identity(report: report, serviceIdentity: operations.serviceIdentity)
-        guard jobs[identity] == nil,
-              let response = await operations.cachedShare(report),
-              !Task.isCancelled, jobs[identity] == nil else { return }
+        guard jobs[identity] == nil else { return }
+        var response = await operations.cachedShare(report)
+        if response == nil, !Task.isCancelled, jobs[identity] == nil {
+            response = await legacyShare(report)
+        }
+        guard let response, !Task.isCancelled, jobs[identity] == nil else { return }
         jobs[identity] = DailyRadarShareJob(report: report, state: .success(response))
     }
 
@@ -113,11 +122,19 @@ final class DailyRadarShareTaskStore {
                 update(identity: identity, taskID: taskID, state: .success(cached))
                 return
             }
+            // 跨账号或渠道通常没有本地记录，先取服务端链接，再决定是否生成快照。
+            if let published = try await operations.lookupShare(report) {
+                update(identity: identity, taskID: taskID, state: .success(published))
+                return
+            }
+            guard jobs[identity]?.taskID == taskID else { return }
             let request = try DailyRadarShareRequest(detail: report)
             let cover = try operations.renderCover(report)
-            guard jobs[identity]?.taskID == taskID else { return }
             jobs[identity]?.coverImage = cover.image
             let response = try await operations.createShare(request, cover.png)
+            guard jobs[identity]?.taskID == taskID else { return }
+            // 两端同时首发时，落败的一端也要展示服务端实际保留的封面。
+            if response.alreadyExists { jobs[identity]?.coverImage = nil }
             update(identity: identity, taskID: taskID, state: .success(response))
         } catch {
             update(identity: identity, taskID: taskID, state: .failure(DailyRadarShareError.from(error)))
