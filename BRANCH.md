@@ -6,7 +6,7 @@
 >
 > 操作规范：[`docs/5-规范/Git-分支与Worktree规范.md`](docs/5-规范/Git-分支与Worktree规范.md)
 >
-> 最后核对：2026-11-16
+> 最后核对：2026-11-19
 
 ## 登记说明
 
@@ -46,9 +46,16 @@ Search Center 内容过滤、误杀控制、来源胶囊筛选、主题适配与
 | 分支 | 位置 | 用途 | 当前状态 | 下一步 |
 |---|---|---|---|---|
 | `codex/go-security-20261102` | 本地隔离 clone：`task-2/repos/Starcat`；无远端分支 | 从 `main`（`6908f483`）修复 SQLite 备份 helper 的安全构建基线，并统一跨仓 Go 工具链约定。 | `已合并`；2026-11-02 经确认以 fast-forward 合入 `main`（`a787c48`），未发布或操作生产数据。 | 保留本地分支；`dev` 同步与后续发布待单独授权。 |
-| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐已合入本地 `dev`，2026-11-16 再整合列表与详情动效、七项性能修复及独立洞察图标改动；CLI/MCP 能力与浏览器配对经 `8eea1a1b` 合入，四个支持仓也已同步至各自 `dev`。 | 本次仅本地合并，不推送；继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
+| `dev` | 本地 + `origin/dev`；仓库根目录 worktree | 日常开发与功能集成主线。新功能完成验收后先进入这里，再按发布流程进入 `main`。 | `开发中`；2026-11-15 按 dong4j 要求经 `4712a2b6` 合入 Skill 管理 `3162ca5d`，包含研究文档、M0–M3 实现及开窗崩溃修复。dong4j 确认目前可用，后续优化与剩余验收直接在本工作区进行；每日推荐已合入本地 `dev`，2026-11-16 再整合列表与详情动效、七项性能修复及独立洞察图标改动；CLI/MCP 能力与浏览器配对经 `8eea1a1b` 合入，四个支持仓也已同步至各自 `dev`。2026-11-19 从 `d436acf6` 构建 Direct `1.9.6 Beta 1`。 | 继续承载后续开发。每次发布后同步主仓库及全部 supports 独立项目的本地与远端 `dev/main`，新增变更不得回写已公开 tag。 |
 | `codex/laya-mlx-swift-poc` | 本地；无独立 worktree、无远端分支 | Laya MLX 决策引擎 PoC 的历史分支。 | `已合并`；分支头 `706f6bff` 已是 `dev` 的 ancestor，独有提交为 0。 | 暂时保留本地分支；如需删除，等待 dong4j 单独授权。 |
-| `main` | 本地 + `origin/main`；仓库根目录 worktree（发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-12 按本次发布收尾要求从 `dev` fast-forward 并推送，本地及远端 `dev/main` 保持一致。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
+| `main` | 本地 + `origin/main`；仓库根目录 worktree（正式发布期间检出） | 远端默认稳定主线和发布基线。 | `长期保留`；2026-11-19 在 Direct `1.9.6 Beta 1` 发布后快进到 `d436acf6`，核实本地和远端 `dev/main` 均指向该提交。 | 保持稳定；发布收尾覆盖全部独立项目，回读远端 refs 确认同步结果，不改写已公开 tag。 |
+
+2026-11-19 核对主仓库及 supports 下共 31 个独立 Git 仓库，`dev/main` 已对齐，
+包括官网 `1264f7f`、CLI `4e0d274`、Homebrew CLI `7fdf7a7`，以及仅有本地分支的
+`supports/ai-file-wall`。经 dong4j 授权，其余五仓的 `main` 均已快进并推送：
+`starcat-docs` 为 `99d0ca9`，`starcat-sharing-api` 为 `a09d8d9`，
+`starcat-trending-api` 为 `b8ae0d5`，`starcat-weekly-api` 为 `ec11487`，
+`starcat-wiki-api` 为 `2e32951`；回读远端 `dev/main` 与本地对应分支一致。
 
 2026-11-12 发布收尾覆盖主仓库及 supports 下共 31 个独立 Git 仓库。其中 30 个有
 `origin`，逐仓核对本地 `dev/main` 与远端同名分支；`supports/ai-file-wall` 无远端，
