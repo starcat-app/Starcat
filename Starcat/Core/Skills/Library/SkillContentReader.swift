@@ -158,4 +158,3 @@ struct SkillContentReader: Sendable {
         return current
     }
 }
-
