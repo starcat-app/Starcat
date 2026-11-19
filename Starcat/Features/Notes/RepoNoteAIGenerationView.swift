@@ -349,6 +349,7 @@ struct RepoNoteAIDraftDisclosure: View {
             if isExpanded {
                 ScrollView {
                     Markdown(markdown)
+                        .starcatMarkdownStyle()
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)

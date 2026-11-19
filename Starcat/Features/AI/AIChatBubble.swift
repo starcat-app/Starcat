@@ -402,7 +402,7 @@ struct AIStreamingChatBubble: View {
                         // 尾部结构仍可能被下一个 token 改写（代码围栏、列表、强调等），
                         // 中间态用纯文本换取稳定帧率；完成后整条消息恢复完整 Markdown。
                         Text(snapshot.liveTail)
-                            .font(interfaceScale.font(.bodyEmphasis))
+                            .starcatMarkdownBodyFont()
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

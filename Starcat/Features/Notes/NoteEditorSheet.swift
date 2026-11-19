@@ -209,6 +209,7 @@ struct NoteEditorSheet: View {
                 .padding(20)
             } else {
                 Markdown(content)
+                    .starcatMarkdownStyle()
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)

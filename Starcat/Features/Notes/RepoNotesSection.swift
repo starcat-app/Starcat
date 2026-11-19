@@ -416,6 +416,7 @@ struct RepoNotesSection: View {
                 .padding(12)
             } else {
                 Markdown(editingContent)
+                    .starcatMarkdownStyle()
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
