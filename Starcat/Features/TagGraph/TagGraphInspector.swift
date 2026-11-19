@@ -33,7 +33,7 @@ struct TagGraphInspector: View {
                     }
                 }
             } else if !model.failed {
-                ProgressView().controlSize(.small)
+                ListLoadingSkeleton(rowCount: 4, rowHeight: 32)
             }
         }
     }
@@ -48,11 +48,13 @@ struct TagGraphInspector: View {
                 if let other = graph.nodes.first(where: { $0.id == otherID }) {
                     Button { model.select(.edge(edge.id)) } label: {
                         HStack {
-                            Text(verbatim: other.name)
+                            Text(verbatim: other.name).lineLimit(2)
                             Spacer()
                             Text(edge.sharedCount, format: .number).monospacedDigit()
                         }.contentShape(Rectangle())
                     }
+                    .help(Text(verbatim: other.name))
+                    .accessibilityLabel(Text(verbatim: other.name))
                     .accessibilityValue(Text(verbatim: String(format: .l10n("tagGraph.detail.shared"), locale: locale, edge.sharedCount)))
                 }
             }.listStyle(.inset(alternatesRowBackgrounds: true))
@@ -81,5 +83,6 @@ struct TagGraphInspector: View {
             Label { Text(verbatim: repo.fullName).lineLimit(2) } icon: { Image(systemName: "book.closed") }
                 .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
         }
+        .help(Text(verbatim: repo.fullName))
     }
 }

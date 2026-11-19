@@ -12,6 +12,40 @@ struct TagGraphObservationTests {
         try #require(predicate())
     }
 
+    @Test("首次失败可重试，同账户刷新失败保留上次成功的图与仓库")
+    func retriesFailedReads() async throws {
+        let fixture = try TagGraphFixture()
+        try await fixture.seed()
+        let model = TagGraphViewModel()
+        defer { model.clear() }
+
+        // 暂时移走内存库中的关联表，让真实订阅读失败，同时保留可恢复的原数据。
+        let writer = fixture.db.writer
+        try await writer.write { try $0.execute(sql: "ALTER TABLE repo_tags RENAME TO saved_repo_tags") }
+        model.bind(reader: writer) { true }
+        try await Self.waitUntil { model.failed }
+        #expect(model.graph == nil)
+        try await writer.write { try $0.execute(sql: "ALTER TABLE saved_repo_tags RENAME TO repo_tags") }
+        model.observe()
+        try await Self.waitUntil { model.graph?.nodes.count == 5 }
+        model.select(.edge(TagGraphPair("agent", "rag")))
+        try await Self.waitUntil { model.page?.total == 2 }
+
+        let before = model.graph
+        try await writer.write { try $0.execute(sql: "ALTER TABLE repo_tags RENAME TO saved_repo_tags") }
+        model.observe()
+        try await Self.waitUntil { model.failed }
+        #expect(model.graph == before)
+        #expect(Set(model.page?.items.map(\.id) ?? []) == [1, 2])
+        try await writer.write { db in
+            try db.execute(sql: "ALTER TABLE saved_repo_tags RENAME TO repo_tags")
+            try db.execute(sql: "UPDATE repos SET is_starred = 0 WHERE id = 2")
+        }
+        model.observe()
+        try await Self.waitUntil { model.page?.items.map(\.id) == [1] }
+        #expect(!model.failed && model.page?.total == 1)
+    }
+
     @Test func replacesMemberAndClosesVanishedEdge() async throws {
         let fixture = try TagGraphFixture()
         try await fixture.seed()
