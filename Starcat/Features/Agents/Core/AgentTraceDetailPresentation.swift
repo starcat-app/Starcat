@@ -796,6 +796,7 @@ struct AgentTraceDetailsView: View {
 /// Runtime 的 reasoning summary 与 commentary 都可能包含强调、列表和行内代码。
 /// MarkdownUI 不继承外层 SwiftUI 字号，因此这里显式绑定 Trace 的紧凑排版。
 struct AgentTraceMarkdownText: View {
+    @Environment(AppSettings.self) private var markdownSettings: AppSettings?
     enum Tone {
         case primary
         case secondary
@@ -814,14 +815,14 @@ struct AgentTraceMarkdownText: View {
     }
 
     private var traceTheme: Theme {
-        Theme()
+        MarkdownTypography.theme(scale: interfaceScale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0)
             .text {
                 ForegroundColor(tone == .primary ? .primary : .secondary)
-                FontSize(interfaceScale.scaled(StarcatTypography.captionSmall.pointSize))
+                FontSize(MarkdownTypography.bodyFontSize(scale: interfaceScale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0))
             }
             .code {
                 FontFamilyVariant(.monospaced)
-                FontSize(.em(0.92))
+                FontSize(.em(MarkdownTypography.inlineCodeRatio))
                 BackgroundColor(.secondary.opacity(0.10))
             }
             .link {

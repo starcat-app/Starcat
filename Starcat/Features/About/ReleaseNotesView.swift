@@ -154,6 +154,7 @@ private struct ReleaseNotesVersionCard: View {
         if version.sections.isEmpty {
             // 无 ### 分区时保持可读：直接渲染原始 Markdown。
             Markdown(version.bodyMarkdown)
+                .starcatMarkdownStyle()
                 .font(.body)
                 .textSelection(.enabled)
         } else {

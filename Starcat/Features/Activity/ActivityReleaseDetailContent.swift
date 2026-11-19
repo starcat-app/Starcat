@@ -199,6 +199,7 @@ struct ActivityReleaseDetailContent: View {
         if let markdown = release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines),
            !markdown.isEmpty {
             Markdown(GitHubMarkdownPreparing.prepare(markdown))
+                .starcatMarkdownStyle()
                 .textSelection(.enabled)
                 // 与订阅发布时间线同一套：大截图按详情栏宽度等比缩小，避免被卡片裁切。
                 .fittedGitHubMarkdownImages()

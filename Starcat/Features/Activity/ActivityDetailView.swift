@@ -357,6 +357,7 @@ struct ActivityDetailView: View {
 
         if let excerpt = payload.excerpt, !excerpt.isEmpty {
             Markdown(excerpt)
+                .starcatMarkdownStyle()
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -376,6 +377,7 @@ struct ActivityDetailView: View {
                 }
                 if !comment.body.isEmpty {
                     Markdown(comment.body)
+                        .starcatMarkdownStyle()
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

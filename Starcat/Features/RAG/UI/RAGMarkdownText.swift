@@ -11,6 +11,7 @@ import MarkdownUI
 import SwiftUI
 
 struct RAGMarkdownText: View {
+    @Environment(AppSettings.self) private var markdownSettings: AppSettings?
     @Environment(\.starcatInterfaceScale) private var interfaceScale
 
     let content: String
@@ -199,16 +200,16 @@ struct RAGMarkdownText: View {
     }
     /// RAG 回答专用主题：段落/列表更疏；每次构建避免 Theme 非 Sendable 静态存储告警。
     private var ragAnswerTheme: Theme {
-        Theme()
+        MarkdownTypography.theme(scale: interfaceScale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0)
             .text {
                 ForegroundColor(.primary)
                 // MarkdownUI 使用自己的 FontProperties，不读取外层 SwiftUI font。
                 // 必须在 theme 内显式绑定回答字号，完成态与流式冻结块才会同步生效。
-                FontSize(interfaceScale.scaled(RAGConversationTypography.answerText.pointSize))
+                FontSize(MarkdownTypography.bodyFontSize(scale: interfaceScale, adjustment: markdownSettings?.readmeFontSizeAdjustment ?? 0))
             }
             .code {
                 FontFamilyVariant(.monospaced)
-                FontSize(.em(0.92))
+                FontSize(.em(MarkdownTypography.inlineCodeRatio))
                 BackgroundColor(.secondary.opacity(0.12))
             }
             .link {
@@ -366,7 +367,7 @@ private struct RAGCodeBlockView: View {
                     .relativeLineSpacing(.em(0.15))
                     .markdownTextStyle {
                         FontFamilyVariant(.monospaced)
-                        FontSize(.em(0.92))
+                        FontSize(.em(MarkdownTypography.codeBlockRatio))
                         BackgroundColor(nil)
                     }
                     .padding(.horizontal, 12)
