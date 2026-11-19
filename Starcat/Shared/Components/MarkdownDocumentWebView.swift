@@ -9,10 +9,31 @@
 import MarkdownUI
 import SwiftUI
 
+/// 来源已有的资源权限必须随阅读器迁移一起保留；本机 Skill 只展示文本，不加载附件。
+enum ReadmeResourcePolicy: Equatable {
+    case repository
+    case localTextOnly
+
+    var contentSecurityPolicy: String {
+        switch self {
+        case .repository:
+            "script-src 'none'; media-src https:; object-src 'none'; base-uri 'none';"
+        case .localTextOnly:
+            "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none';"
+        }
+    }
+
+    /// 本机预览只允许显式点击 http/https；不把 file、自定义命令等交给 NSWorkspace。
+    func allowsUserLink(_ url: URL) -> Bool {
+        self == .repository || (["http", "https"].contains(url.scheme?.lowercased() ?? "") && url.host?.isEmpty == false)
+    }
+}
+
 /// 单篇静态文档的阅读宿主，复用字号工具、回到顶部及主题，不承载业务操作。
 struct MarkdownDocumentWebView: View {
     let markdown: String
     var baseURL: URL? = nil
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var document: Document?
@@ -46,7 +67,8 @@ struct MarkdownDocumentWebView: View {
                         onDocumentFailed: { id in
                             if id == self.document?.id { failedID = id }
                         },
-                        allowsSameDocumentAnchors: true
+                        allowsSameDocumentAnchors: true,
+                        resourcePolicy: resourcePolicy
                     )
                     .opacity(renderedID == document.id ? 1 : 0)
                 }

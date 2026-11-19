@@ -151,6 +151,7 @@ struct ReadmeWebView: View {
     var onDocumentFailed: (String) -> Void = { _ in }
     var registersFindShortcut: Bool = true
     var allowsSameDocumentAnchors: Bool = false
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 
     @Environment(AppSettings.self) private var settings
     @Environment(AuthSession.self) private var authSession
@@ -185,7 +186,8 @@ struct ReadmeWebView: View {
             openRepositoryMarkdownInApp: settings.repositoryMarkdownOpenMode != .browser,
             markdownLinkRepositoryOwner: markdownLinkRepositoryOwner,
             markdownLinkRepositoryName: markdownLinkRepositoryName,
-            onOpenRepositoryMarkdown: onOpenRepositoryMarkdown
+            onOpenRepositoryMarkdown: onOpenRepositoryMarkdown,
+            resourcePolicy: resourcePolicy
         )
         .id(authSession.state.user?.id)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -341,13 +343,15 @@ struct ReadmeWebView: View {
         fragment: String,
         isDark: Bool,
         interfaceScale: InterfaceScale = .standard,
-        readmeFontSizeAdjustment: Int = 0
+        readmeFontSizeAdjustment: Int = 0,
+        resourcePolicy: ReadmeResourcePolicy = .repository
     ) -> String {
         ReadmeWebContentView.assembleDocument(
             fragment: fragment,
             isDark: isDark,
             interfaceScale: interfaceScale,
-            readmeFontSizeAdjustment: readmeFontSizeAdjustment
+            readmeFontSizeAdjustment: readmeFontSizeAdjustment,
+            resourcePolicy: resourcePolicy
         )
     }
 }
@@ -375,6 +379,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
     var markdownLinkRepositoryOwner: String?
     var markdownLinkRepositoryName: String?
     var onOpenRepositoryMarkdown: ((RepositoryMarkdownLinkTarget) -> Void)?
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -495,7 +500,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
             documentID: documentID ?? htmlFragment,
             baseURL: baseURL,
             isDark: colorScheme == .dark,
-            interfaceScale: interfaceScale
+            interfaceScale: interfaceScale,
+            resourcePolicy: resourcePolicy
         )
 
         // 内容或主题变化 → 完整重载 HTML（含初始字号）
@@ -516,7 +522,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
                 fragment: htmlFragment,
                 isDark: colorScheme == .dark,
                 interfaceScale: interfaceScale,
-                readmeFontSizeAdjustment: readmeFontSizeAdjustment
+                readmeFontSizeAdjustment: readmeFontSizeAdjustment,
+                resourcePolicy: resourcePolicy
             )
             context.coordinator.expectsInitialLoad = true
             context.coordinator.documentNavigation = webView.loadHTMLString(fullHTML, baseURL: baseURL)
@@ -556,7 +563,8 @@ struct ReadmeWebContentView: NSViewRepresentable {
         fragment: String,
         isDark: Bool,
         interfaceScale: InterfaceScale = .standard,
-        readmeFontSizeAdjustment: Int = 0
+        readmeFontSizeAdjustment: Int = 0,
+        resourcePolicy: ReadmeResourcePolicy = .repository
     ) -> String {
         let css = ReadmeCSS.full + "\n" + ReadmeMermaidDOM.css + "\n" + ReadmeTranslationDOM.css + "\n" + ReadmeStarHistoryDOM.css + "\n" + ReadmeCSS.readingVariables(
             bodyFontSize: readmeBodyFontSize(
@@ -572,7 +580,7 @@ struct ReadmeWebContentView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <meta http-equiv="Content-Security-Policy" content="script-src 'none'; media-src https:; object-src 'none'; base-uri 'none';">
+        <meta http-equiv="Content-Security-Policy" content="\(resourcePolicy.contentSecurityPolicy)">
         <style>\(css)</style>
         </head>
         <body class="\(bodyClass)">
@@ -2145,6 +2153,11 @@ struct ReadmeWebContentView: NSViewRepresentable {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            // 原本不加载附件的本机 Skill 不启用图片预览或 Mermaid 附件桥接。
+            if lastLoadedKey?.resourcePolicy == .localTextOnly,
+               [ReadmeWebViewConstants.imagePreviewMessageName, ReadmeWebViewConstants.mermaidRequestMessageName].contains(message.name) {
+                return
+            }
             if message.name == ReadmeWebViewConstants.imagePreviewMessageName {
                 guard message.frameInfo.isMainFrame,
                       let payload = message.body as? [String: Any],
@@ -2313,6 +2326,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
             if navigationAction.navigationType == .linkActivated {
                 if allowsSameDocumentAnchors, ReadmeWebView.isSameDocumentAnchor(url, currentURL: webView.url) {
                     decisionHandler(.allow)
+                    return
+                }
+                guard lastLoadedKey?.resourcePolicy.allowsUserLink(url) != false else {
+                    decisionHandler(.cancel)
                     return
                 }
                 if openRepositoryMarkdownIfNeeded(
@@ -2854,6 +2871,7 @@ struct ReadmeKey: Equatable {
     let baseURL: URL?
     let isDark: Bool
     let interfaceScale: InterfaceScale
+    var resourcePolicy: ReadmeResourcePolicy = .repository
 }
 
 // MARK: - GFM CSS

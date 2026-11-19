@@ -39,7 +39,8 @@ struct SkillDetailView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 Divider()
-                ScrollView {
+                // 概览由 WebView 独占滚动；文件与其他页签在各自内容内保留原生滚动。
+                Group {
                     detail(item)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
@@ -126,21 +127,23 @@ struct SkillDetailView: View {
                     .id(item.id)
                     .detailContentTransition()
             case .assignments:
-                SkillAssignmentsView(item: item, viewModel: viewModel)
+                ScrollView { SkillAssignmentsView(item: item, viewModel: viewModel) }
                     .id(item.id)
                     .detailContentTransition()
             case .versions:
-                VStack(alignment: .leading) {
-                    if item.managementKind == .managed, viewModel.libraryEnvironment != nil {
-                        HStack {
-                            Button("skills.update.review") { review(item.id, rollback: false) }
-                            Button("skills.update.rollback") { review(item.id, rollback: true) }
+                ScrollView {
+                    VStack(alignment: .leading) {
+                        if item.managementKind == .managed, viewModel.libraryEnvironment != nil {
+                            HStack {
+                                Button("skills.update.review") { review(item.id, rollback: false) }
+                                Button("skills.update.rollback") { review(item.id, rollback: true) }
+                            }
                         }
-                    }
-                    if let revision = item.revision {
-                        Text(verbatim: revision).font(interfaceScale.font(.code))
-                    } else {
-                        Text("skills.detail.version.unknown").foregroundStyle(.secondary)
+                        if let revision = item.revision {
+                            Text(verbatim: revision).font(interfaceScale.font(.code))
+                        } else {
+                            Text("skills.detail.version.unknown").foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .detailContentTransition()
