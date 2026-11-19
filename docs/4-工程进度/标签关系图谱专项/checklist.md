@@ -73,7 +73,8 @@
 
 - [x] 运行覆盖聚合、交集、账户切换及公共工具的 Swift suites、离线渲染器测试和公共能力检查。按[CLI 与 MCP 规范](../../5-规范/CLI与MCP能力暴露规范.md)验证通用 CLI 与 MCP 的真实调用。
   - 2026-11-20，18 个 Swift suites 共 113 项通过，包含实际调用 CLI 与 MCP stdio 的 realCLIAndStdio。离线渲染器 42 项通过。公共能力登记检查、CLI 的 go test ./... 与 Skill 契约检查通过。
-- [ ] 完成 `make build-appstore` 和 `make build-direct`，核验两渠道产物中的离线资源。
+- [x] 完成 `make build-appstore` 和 `make build-direct`，核验两渠道产物中的离线资源。
+  - 2026-11-20 在代码提交 `9d2ec4cf` 上执行 `make build-appstore` 与 `make build-direct`，两者均返回 0。分别从两个 Debug App 的 `Contents/Resources` 读取 `tag-graph.html`（526 字节）和 `tag-graph.js`（204063 字节），四份文件均与仓库中的同名资源逐字节一致。
 - [x] 在 G0 选定设备上测量典型及密集样本从订阅到图数据就绪、从选边到首批共同仓库就绪的耗时，记录设备、样本和复测方法。
   - Mac Studio M2 Ultra / 64 GB，各跑三轮。典型样本有 34 条边，图数据 7.0～389.1 ms，共同仓库首批 11.4～11.7 ms。密集样本有 780 条边，分别为 78.9～80.6 ms 和 84.6～86.0 ms。[逐轮结果与复测方法](实现方案.md#5000-个-star-的数据读取实测)。
 - [ ] 在实机画布测量两个样本的首个可读画面、选边到列表可见的耗时，以及稳定后 10 秒的重绘与 CPU，对照需求中的参考线。
