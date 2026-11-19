@@ -401,6 +401,11 @@ Section {
 > 单一信任源：[`docs/5-规范/UI-颜色规范.md`](docs/5-规范/UI-颜色规范.md)
 > 文字 / 图标 `foregroundStyle` **只用 `.primary` 或 `.secondary`，禁止 `.tertiary`**。唯一例外需在代码注释里写明"故意弱化 + 产品意图"。
 
+### UI 规范：Markdown 字号与渲染器（强制，2026-11-19 起生效）
+
+> 单一信任源：[`docs/5-规范/UI-Markdown字号与渲染规范.md`](docs/5-规范/UI-Markdown字号与渲染规范.md)
+> 所有 Markdown 阅读及预览必须采用共享 16 号正文基准，统一接入界面字号档位与现有阅读微调；禁止业务视图散写字号。单篇独立文档复用 WebView，原生会话、编辑预览及流式正文按规范保留 MarkdownUI；切换渲染器须明确授权与来源资源边界。新增或修改 Markdown 入口前必须读取该规范。
+
 ### UI 规范：Focus Ring 蓝框（强制）
 
 > 单一信任源：[`docs/5-规范/UI-Focus-Ring-规范.md`](docs/5-规范/UI-Focus-Ring-规范.md)
