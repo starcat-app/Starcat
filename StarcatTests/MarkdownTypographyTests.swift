@@ -9,6 +9,7 @@ import Testing
 @testable import Starcat
 
 @Suite("Markdown 阅读字号")
+@MainActor
 struct MarkdownTypographyTests {
     @Test("四档倍率与阅读偏移共用同一公式", arguments: InterfaceScale.allCases)
     func readingSize(scale: InterfaceScale) {

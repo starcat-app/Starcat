@@ -31,6 +31,7 @@ enum MarkdownTypography {
     }
 
     /// 先钳制旧偏好，再缩放一次；WebView、原生 Markdown 与流式 Text 尾部共用。
+    @MainActor
     static func bodyFontSize(scale: InterfaceScale, adjustment: Int = 0) -> CGFloat {
         scale.scaled(bodySize + CGFloat(AppSettings.clampedReadmeFontSizeAdjustment(adjustment)))
     }
