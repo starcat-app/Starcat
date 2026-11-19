@@ -192,13 +192,16 @@ async function harness(browser, initial = {}, nativeHandler, clock = clockHarnes
   return { storage, credentials, calls, control, send, pair, sender, clock, context, connect: (port) => connectListener(port) };
 }
 
-/** 只模拟配对页用到的 DOM 和扩展消息，不把 VM 检查表述为真实浏览器验收。 */
+/** 从页面 HTML 提取 VM 用例所需的 DOM 和导航，确保断言跟踪实际入口。 */
 async function pageHarness(browser, handler, locale = "zh", page = "pairing", initial = {}, clock = clockHarness(), parent) {
   const elements = new Map();
   const nodes = [];
   const sourceRoot = `${workspace}supports/extensions/starcat-${browser}-plugin/src`;
   const html = await readFile(`${sourceRoot}/${page}/${page}.html`, "utf8");
-  for (const [, attributes] of html.matchAll(/<[a-z][a-z0-9-]*\b([^>]*)>/gi)) {
+  const navMarkup = html.match(/<nav\b[^>]*\bclass="settings-nav"[^>]*>([\s\S]*?)<\/nav>/i)?.[1] ?? "";
+  const navHrefs = new Set([...navMarkup.matchAll(/<a\b[^>]*\bhref="([^"]+)"/gi)].map(([, href]) => href));
+  const navLinks = [];
+  for (const [, tag, attributes] of html.matchAll(/<([a-z][a-z0-9-]*)\b([^>]*)>/gi)) {
     const attributesByName = Object.fromEntries([...attributes.matchAll(/([\w-]+)="([^"]*)"/g)]
       .map(([, name, value]) => [name, value]));
     const events = new Map();
@@ -215,12 +218,18 @@ async function pageHarness(browser, handler, locale = "zh", page = "pairing", in
       showModal() { this.open = true; },
       close() { this.open = false; },
       focus() { this.focused = true; },
-      replaceChildren() { this.children = []; this.value = ""; },
+      replaceChildren(...children) { this.children = children; this.value = ""; },
       add(option) { (this.children ||= []).push(option); },
+      prepend(element) { element.placement = { prependTo: this }; },
+      before(element) { element.placement = { before: this }; },
       dispatch(name, event = {}) { return events.get(name)?.({ preventDefault() {}, ...event }); }
     };
     nodes.push(element);
     if (attributesByName.id) elements.set(attributesByName.id, element);
+    if (tag === "a" && navHrefs.has(attributesByName.href)) {
+      element.hash = attributesByName.href;
+      navLinks.push(element);
+    }
   }
   const calls = [];
   const events = new Map();
@@ -243,15 +252,18 @@ async function pageHarness(browser, handler, locale = "zh", page = "pairing", in
     chrome: api, browser: browser === "safari" ? api : undefined,
     document: {
       documentElement: { dataset: {}, removeAttribute() {} },
+      createElement: (tagName) => ({ tagName, textContent: "" }),
       getElementById: (identity) => elements.get(identity),
       querySelector: (selector) => elements.get(selector.slice(1)),
       querySelectorAll: (selector) => {
+        if (selector === ".settings-nav a") return navLinks;
         const name = selector.slice(1, -1);
         return nodes.filter((element) => name in element.attributes);
       }
     },
     navigator: { language: locale },
-    location: { protocol: browser === "safari" ? "safari-web-extension:" : "chrome-extension:" },
+    location: { hash: "", protocol: browser === "safari" ? "safari-web-extension:" : "chrome-extension:" },
+    window: { scrollTo() {} },
     matchMedia: () => ({ matches: true }),
     addEventListener(name, listener) { events.set(name, listener); },
     parent,
@@ -270,6 +282,7 @@ async function pageHarness(browser, handler, locale = "zh", page = "pairing", in
 }
 
 for (const browser of ["chrome", "safari"]) {
+  const beforeBrowser = passed;
   const versioned = await harness(browser);
   await versioned.pair("start");
   assert.equal(JSON.parse(versioned.calls.at(-1).options.body).browser_version, browser === "safari" ? "26.1" : "142.0.7444.60");
@@ -484,7 +497,8 @@ for (const browser of ["chrome", "safari"]) {
   assert.equal(searching.elements.get("discover").dataset.loading, "false");
   assert.equal(searching.elements.get("page").dataset.tone, "error");
   assert.equal(searching.elements.get("manual").hidden, false);
-  assert.equal(searching.elements.get("manual").attributes.href, "../options/options.html");
+  const manualHref = searching.elements.get("manual").attributes.href;
+  assert.equal(manualHref, "../options/options.html#manual-key");
   completeDiscovery({ ok: true, body: { candidates: [{ channel: "late", serviceURL: "http://127.0.0.1:9999" }] } });
   await settle();
   assert.match(searching.elements.get("status").textContent, /超时/);
@@ -603,8 +617,17 @@ for (const browser of ["chrome", "safari"]) {
     assert.match(revokedPage.elements.get("status").textContent, locale === "zh" ? /已撤销/ : /revoked/);
     passed++;
     const manual = await pageHarness(browser, async () => ({ ok: false, error: "http_401", status: 401 }), locale, "options");
+    manual.context.location.hash = "#preferences";
+    manual.dispatch("hashchange");
+    assert.equal(manual.elements.get("preferences").hidden, false);
+    manual.context.location.hash = new URL(manualHref, manual.context.location.protocol + "//fixture/src/pairing/pairing.html").hash;
+    manual.dispatch("hashchange");
+    assert.equal(manual.elements.get("connection").hidden, false);
+    assert.equal(manual.elements.get("preferences").hidden, true);
+    assert.equal(manual.elements.get("manual-key").open, true);
     manual.elements.get("token").value = "manual-fixture";
     manual.elements.get("service-url").value = "http://127.0.0.1:5051";
+    manual.elements.get("options-form").dispatch("input");
     await manual.elements.get("options-form").dispatch("submit");
     assert.equal(manual.storage.starcatCompanionToken, "manual-fixture");
     assert.equal(manual.calls.length, 0);
@@ -616,17 +639,20 @@ for (const browser of ["chrome", "safari"]) {
       [connectionKey]: { serviceURL: "http://127.0.0.1:5051", mode: "paired", deviceID: "fixture" }
     });
     pairedOptions.elements.get("token").value = "new-manual-fixture";
+    pairedOptions.elements.get("options-form").dispatch("input");
+    assert.equal(pairedOptions.elements.get("manual-settings").hidden, true);
+    assert.equal(pairedOptions.elements.get("service-url").readOnly, true);
+    assert.equal(pairedOptions.elements.get("save").disabled, true);
     await pairedOptions.elements.get("options-form").dispatch("submit");
-    assert.match(pairedOptions.elements.get("status").textContent, locale === "zh" ? /先在配对页取消/ : /Unpair this browser/);
     assert.equal(pairedOptions.storage[connectionKey].deviceID, "fixture");
-    assert.match(manual.elements.get("key-help").textContent, locale === "zh" ? /扩展与连接 → 浏览器扩展/ : /Extensions & Connections > Browser Extensions/);
+    assert.match(manual.elements.get("key-help").textContent, locale === "zh" ? /扩展与连接 → 浏览器扩展/ : /Extensions & Connections → Browser Extensions/);
     assert.equal(manual.elements.get("token").attributes["aria-describedby"], "key-help");
     passed++;
 
     // An unchanged pairing keeps unsaved manual settings; successful pairing
     // refreshes the form from storage after closing the shared flow.
     assert.equal(manual.nodes.find((node) => node.dataset.i18n === "action.pair").textContent,
-      locale === "zh" ? "免 Key 配对" : "Connect without a key");
+      locale === "zh" ? "免 Key 配对" : "Pair without a Key");
     manual.elements.get("token").value = "unsaved-key";
     manual.elements.get("service-url").value = "http://localhost:5444";
     await manual.elements.get("pair").dispatch("click");
@@ -694,11 +720,15 @@ for (const browser of ["chrome", "safari"]) {
     await embedded.elements.get("manual").dispatch("click");
     assert.equal(parentMessages.length, 2);
     assert.equal(parentMessages[0].type, "starcat.pairing.close");
+    assert.equal(parentMessages[1].useManualKey, true);
     await embedded.elements.get("pairing-form").dispatch("submit");
+    assert.equal(embedded.elements.get("page").dataset.state, "waiting");
+    assert.equal(embedded.elements.get("status").placement.prependTo, embedded.elements.get("verification-footer"));
     if (approved) {
       background.control.status = "approved";
       await dialogClock.advance(2000);
       assert.equal(background.storage[connectionKey].mode, "paired");
+      assert.equal(embedded.elements.get("status").placement.before, embedded.elements.get("setup"));
     }
     await embedded.context.StarcatPairing.close();
     const cancellations = background.calls.filter((call) => call.address.endsWith("/cancel")).length;
@@ -747,6 +777,7 @@ for (const browser of ["chrome", "safari"]) {
   assert.equal(claiming.credentials.has("paired-device"), false);
   assert.equal(new URL(claiming.calls.at(-1).address).pathname, "/plugin/v1/pairing/cancel");
   passed++;
+  console.log(`PASS: ${browser}: ${passed - beforeBrowser} isolated checks.`);
 }
 
 const nativeCalls = [];
