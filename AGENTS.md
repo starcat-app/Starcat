@@ -374,6 +374,11 @@ Section {
 
 本项目内新增或维护的所有 skill 必须使用中文编写，包括 `SKILL.md`、`references/` 下的说明文档、示例、触发说明和操作步骤。代码、命令、文件路径、环境变量、脚本名、错误日志、YAML key 等技术字面量保持原文，不强行翻译。
 
+### 版本迭代与日常 Checklist
+
+- 用户提出“开始进行 X.Y.Z 的版本迭代”、增补版本范围或维护清单时，先读取项目 Skill [`skills/starcat-version-iteration/SKILL.md`](skills/starcat-version-iteration/SKILL.md) 与[版本迭代规范](docs/5-规范/版本迭代规范.md)，即使工具未自动加载 Skill 也执行此入口；分支、计划路径、每轮依赖检查及授权边界以该规范为准。
+- 日常开发交付先按该规范定位当前版本计划，获授权的本版任务同批维护 Checklist；Changelog 的逐任务询问豁免、收口整理及独立写入授权以 [Changelog 更新规范](docs/5-规范/Changelog-更新规范.md)为准。
+
 ### 文档修改
 
 - 修改任何文档前，先检查 `docs/1-立项/开发前问题清单.md` 确认是否有相关决策
