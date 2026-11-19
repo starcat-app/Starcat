@@ -385,14 +385,14 @@ struct RepoNotesSection: View {
     /// 编辑模式继续绑定原来的 `editingContent`，所以扩展 / 收起不会产生第二份保存状态。
     private var inlineTextEditor: some View {
         TextEditor(text: $editingContent)
-            .font(.system(.body, design: .default))
+            .starcatMarkdownBodyFont()
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .overlay(alignment: .topLeading) {
                 if editingContent.isEmpty {
                     Text("repo.notesPlaceholder")
-                        .font(.system(.body, design: .default))
+                        .starcatMarkdownBodyFont()
                         .foregroundStyle(.secondary)
                         .padding(.leading, 13)
                         .padding(.top, 6)
@@ -409,7 +409,7 @@ struct RepoNotesSection: View {
             if trimmed.isEmpty {
                 HStack {
                     Text("repo.notes.editor.emptyPreview")
-                        .font(.body)
+                        .starcatMarkdownBodyFont()
                         .foregroundStyle(.secondary)
                     Spacer()
                 }

@@ -105,7 +105,7 @@ struct RepoIssueCreatePane: View {
                 text: $viewModel.createTitle
             )
             .textFieldStyle(.roundedBorder)
-            .font(.body)
+            .starcatMarkdownBodyFont()
             .focused($isTitleFocused)
         }
         .padding(.top, 6)
@@ -191,6 +191,7 @@ struct RepoIssueCreatePane: View {
             ImagePasteTextEditor(
                 text: $viewModel.createBody,
                 placeholder: String.l10n("repo.issues.sheet.bodyPlaceholder", defaultValue: "描述这个 Issue，支持 Markdown，可粘贴剪切板图片…"),
+                font: MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment),
                 isEditable: !viewModel.isGeneratingIssue && !viewModel.isUploadingImage,
                 maximumHeight: 4_000,
                 onHeightChange: { _ in },

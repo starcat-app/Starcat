@@ -6,6 +6,7 @@
 //  不复用用于紧凑表单的 13pt body token，也不重复叠加 Dynamic Type。
 //
 
+import AppKit
 import MarkdownUI
 import SwiftUI
 
@@ -34,6 +35,25 @@ enum MarkdownTypography {
     @MainActor
     static func bodyFontSize(scale: InterfaceScale, adjustment: Int = 0) -> CGFloat {
         scale.scaled(bodySize + CGFloat(AppSettings.clampedReadmeFontSizeAdjustment(adjustment)))
+    }
+
+    /// 原生编辑器与自绘占位提示共用阅读尺寸，避免系统默认正文退回 13pt。
+    @MainActor
+    static func nativeFont(scale: InterfaceScale, adjustment: Int = 0) -> NSFont {
+        .systemFont(ofSize: bodyFontSize(scale: scale, adjustment: adjustment))
+    }
+
+    /// 只改排版，不回填草稿或重置选择；typingAttributes 保证后续键入沿用同一字体。
+    @MainActor
+    @discardableResult
+    static func applyEditorFont(_ font: NSFont, to textView: NSTextView) -> Bool {
+        let changed = textView.font != font
+        if changed {
+            textView.font = font
+            textView.needsDisplay = true
+        }
+        textView.typingAttributes[.font] = font
+        return changed
     }
 
     /// 提供基础排版；业务主题可继续追加表格、复制、图片等已有能力。
@@ -97,13 +117,14 @@ private struct StarcatMarkdownStyle: ViewModifier {
 /// 流式尾部保持纯 Text，避免重新解析；其字号必须与冻结块及完成态相同。
 private struct StarcatMarkdownBodyFont: ViewModifier {
     var weight: Font.Weight? = nil
+    var design: Font.Design = .default
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(AppSettings.self) private var settings: AppSettings?
 
     func body(content: Content) -> some View {
         content.font(.system(size: MarkdownTypography.bodyFontSize(
             scale: scale, adjustment: settings?.readmeFontSizeAdjustment ?? 0
-        ), weight: weight))
+        ), weight: weight, design: design))
     }
 }
 
@@ -111,8 +132,8 @@ extension View {
     /// 普通 MarkdownUI 阅读入口统一调用；专用主题直接从 MarkdownTypography.theme 派生。
     func starcatMarkdownStyle() -> some View { modifier(StarcatMarkdownStyle()) }
 
-    /// 只用于与 Markdown 正文交接的纯文本尾部，不改变工具栏与辅助信息字号。
-    func starcatMarkdownBodyFont(weight: Font.Weight? = nil) -> some View {
-        modifier(StarcatMarkdownBodyFont(weight: weight))
+    /// 用于阅读尾部、内容输入及其占位提示；工具栏与辅助信息仍采用界面 token。
+    func starcatMarkdownBodyFont(weight: Font.Weight? = nil, design: Font.Design = .default) -> some View {
+        modifier(StarcatMarkdownBodyFont(weight: weight, design: design))
     }
 }

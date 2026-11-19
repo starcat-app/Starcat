@@ -173,7 +173,7 @@ struct NoteEditorSheet: View {
     /// 再用 `Color(nsColor: .textBackgroundColor)` 作为统一可视背景，与 inline 视觉一致。
     private var editArea: some View {
         TextEditor(text: $content)
-            .font(.system(.body, design: .default))
+            .starcatMarkdownBodyFont()
             .scrollContentBackground(.hidden)
             .padding(16)
             .background(Color(nsColor: .textBackgroundColor))
@@ -182,7 +182,7 @@ struct NoteEditorSheet: View {
                     // v2.2（2026-06-17）与 inline RepoNotesSection 同款：首行光标 Y 不再叠加
                     // textContainerInset.height，实际位置 = (16+5, 16) = (21, 16)。
                     Text("repo.notesPlaceholder")
-                        .font(.system(.body, design: .default))
+                        .starcatMarkdownBodyFont()
                         .foregroundStyle(.secondary)
                         .padding(.leading, 21)
                         .padding(.top, 16)
@@ -202,7 +202,7 @@ struct NoteEditorSheet: View {
             if trimmed.isEmpty {
                 HStack {
                     Text("repo.notes.editor.emptyPreview")
-                        .font(.body)
+                        .starcatMarkdownBodyFont()
                         .foregroundStyle(.secondary)
                     Spacer()
                 }

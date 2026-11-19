@@ -74,7 +74,7 @@ struct AIChatBubble: View {
             // 头像只与问题气泡垂直居中，footer 单独铺在气泡下方。
             HStack(alignment: .center, spacing: 8) {
                 Text(message.content)
-                    .font(interfaceScale.font(.bodyEmphasis))
+                    .starcatMarkdownBodyFont()
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.leading)
                     .textSelection(.enabled)

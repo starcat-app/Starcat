@@ -120,6 +120,7 @@ struct AIChatInputView: View {
         AIChatNativeTextEditor(
             state: editorState,
             placeholder: String.l10n("ai.assistant.input.placeholder"),
+            font: MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: settings.readmeFontSizeAdjustment),
             isEnabled: !isSending,
             isFocused: focus,
             requiresCommandReturn: settings.aiChatRequiresCommandReturn,
@@ -336,6 +337,7 @@ private final class AIChatTextEditorState {
 private struct AIChatNativeTextEditor: NSViewRepresentable {
     let state: AIChatTextEditorState
     let placeholder: String
+    let font: NSFont
     let isEnabled: Bool
     let isFocused: FocusState<Bool>.Binding
     let requiresCommandReturn: Bool
@@ -356,7 +358,7 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        MarkdownTypography.applyEditorFont(font, to: textView)
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
         textView.textContainerInset = NSSize(width: 0, height: 2)
@@ -387,6 +389,10 @@ private struct AIChatNativeTextEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
+        if MarkdownTypography.applyEditorFont(font, to: textView) {
+            // 字号变化时即使草稿不变也更新 2…4 行高度；不回填文字，不打断输入法与 selection。
+            DispatchQueue.main.async { scrollView.textDidChange() }
+        }
         textView.isEditable = isEnabled
         textView.isSelectable = isEnabled
         if let chatTextView = textView as? AIChatTextView {
@@ -479,8 +485,9 @@ private enum AIChatEditorMetrics {
     static let maximumLines: CGFloat = 4
     static let verticalInset: CGFloat = 4
 
+    @MainActor
     static var defaultHeight: CGFloat {
-        let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        let font = MarkdownTypography.nativeFont(scale: .standard)
         return ceil(NSLayoutManager().defaultLineHeight(for: font) * minimumLines + verticalInset)
     }
 }
@@ -516,7 +523,7 @@ private final class AIChatIntrinsicScrollView: NSScrollView {
               let textContainer = textView.textContainer else { return }
 
         layoutManager.ensureLayout(for: textContainer)
-        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? .systemFont(ofSize: 13))
+        let lineHeight = layoutManager.defaultLineHeight(for: textView.font ?? MarkdownTypography.nativeFont(scale: .standard))
         let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
         let minimumHeight = lineHeight * AIChatEditorMetrics.minimumLines + AIChatEditorMetrics.verticalInset
         let maximumHeight = lineHeight * AIChatEditorMetrics.maximumLines + AIChatEditorMetrics.verticalInset
@@ -556,7 +563,7 @@ private final class AIChatTextView: NSTextView {
         guard string.isEmpty, !placeholder.isEmpty else { return }
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .font: font ?? MarkdownTypography.nativeFont(scale: .standard),
             .foregroundColor: NSColor.placeholderTextColor
         ]
         placeholder.draw(

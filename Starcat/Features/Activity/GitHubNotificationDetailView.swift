@@ -1424,6 +1424,7 @@ struct GitHubNotificationCommentCard: View, @MainActor Equatable {
                     zh: "用 Markdown 编辑…",
                     en: "Edit with Markdown…"
                 ),
+                font: MarkdownTypography.nativeFont(scale: dependencies.settings.interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment),
                 isEditable: !isSavingEdit,
                 maximumHeight: editEditorMaxHeight,
                 shouldBecomeFirstResponder: true,
@@ -2419,6 +2420,7 @@ private struct GitHubNotificationCommentComposer: View {
                         zh: "用 Markdown 写下评论，支持从剪切板上传图片…",
                         en: "Write a comment with Markdown. You can paste images from the clipboard…"
                     ),
+                    font: MarkdownTypography.nativeFont(scale: dependencies.settings.interfaceScale, adjustment: dependencies.settings.readmeFontSizeAdjustment),
                     isEditable: !isPosting && !isGenerating,
                     maximumHeight: composerCollapsedMaxHeight,
                     shouldBecomeFirstResponder: true,
