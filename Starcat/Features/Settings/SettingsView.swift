@@ -495,12 +495,12 @@ struct SettingsView: View {
         var body: some View {
             let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
 
-            // 略放大图形以抵消模板素材的边缘留白，底板与文字列的位置保持稳定。
+            // 保持图形尺寸，用更大的底板留出四周间距，避免图形贴近圆角边缘。
             BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 17 : 14)
                 .foregroundStyle(.primary)
                 // 暖金底上的 Pro 保留深色图形，其余用浅色；局部外观不影响底板和行标题。
                 .environment(\.colorScheme, tab == .pro ? .light : .dark)
-                .frame(width: 20, height: 20)
+                .frame(width: 24, height: 24)
                 .background {
                     shape
                         .fill(tab.iconBackground)
