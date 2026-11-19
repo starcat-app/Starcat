@@ -26,7 +26,8 @@
 
 依赖 V2-TG-01。先验收原始权重与交集查询，再以这份结果检查可视编码。
 
-- [ ] 共用多标签 AND 谓词，交集总数与当前页在一次读取中得到。`Agent ∩ RAG` 设 `limit=1` 后两页合计 r1、r2，任一页 `total=2`。`Agent ∩ Python` 仅返回 r1。
+- [x] 共用多标签 AND 谓词，交集总数与当前页在一次读取中得到。`Agent ∩ RAG` 设 `limit=1` 后两页合计 r1、r2，任一页 `total=2`。`Agent ∩ Python` 仅返回 r1。
+  - RepoTagIntersectionTests 和既有 RepoTagRepositoryTests 通过。两页共得到 r1、r2，窄交集只返回 r1。
 - [ ] 节点大小、线宽随计数单调变化，详情可读精确数值。阈值 2 时仅剩一条可见边、全部五个节点可找，清除阈值恢复三条边。
 
 ## V2-TG-03 · 交互与下钻
