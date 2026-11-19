@@ -10,6 +10,19 @@ import Foundation
 
 /// 生成默认值按模型区分，不能用远程 API 的通用 128K 输出预算。
 enum LocalAIGenerationPolicy {
+    /// 仓库聊天独立于摘要、RAG 等既有任务预算。输入必须给回答留下固定 4K 空间。
+    static let chatContextTokens = 32_768
+    static let chatOutputTokens = 4_096
+    static let chatInputTokens = chatContextTokens - chatOutputTokens
+
+    /// 在请求快照上应用，不覆盖用户持久化的模型参数或其它本地任务。
+    static func repositoryChatParameters(_ parameters: AIModelParameters) -> AIModelParameters {
+        var result = parameters
+        result.contextWindowTokens = chatContextTokens
+        result.maxCompletionTokens = min(max(parameters.maxCompletionTokens, 1), chatOutputTokens)
+        return result
+    }
+
     /// 长度上限是截断，不是完整回答。统一在客户端拦截，所有业务入口都能收到失败。
     static func validateCompletion(_ response: AIChatResponse) throws {
         if response.finishReason == "length" { throw AIClientError.responseTruncated }

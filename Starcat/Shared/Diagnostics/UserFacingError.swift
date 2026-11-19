@@ -150,7 +150,7 @@ struct UserFacingError: Equatable, Sendable {
             )
             switch localAI {
             case .hardwareUnsupported, .unavailableInTests, .modelNotInstalled, .toolsUnsupported,
-                 .contextTooLong, .memoryBudgetExceeded:
+                 .contextTooLong, .repositoryChatInputTooLong, .memoryBudgetExceeded:
                 result.diagnosticOutcome = .skipped
             case .repetitiveOutput, .embeddingDimensionMismatch: break
             }

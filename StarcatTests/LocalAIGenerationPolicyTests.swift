@@ -27,6 +27,21 @@ struct LocalAIGenerationPolicyTests {
         #expect(qwenWindow - qwen.maxCompletionTokens <= LocalAIMemoryPolicy.inputTokens)
     }
 
+    @Test("仓库对话固定 32K 窗口，预留 4K 输出，不改原模型配置")
+    func repositoryChatKeepsOutputHeadroom() {
+        var original = AIModelParameters.summaryDefault
+        original.contextWindowTokens = 128 * 1_024
+        original.maxCompletionTokens = 80_000
+        let localChat = LocalAIGenerationPolicy.repositoryChatParameters(original)
+        #expect(localChat.contextWindowTokens == 32_768)
+        #expect(localChat.maxCompletionTokens == 4_096)
+        #expect(LocalAIGenerationPolicy.chatInputTokens + localChat.maxCompletionTokens == 32_768)
+        #expect(original.contextWindowTokens == 131_072)
+        #expect(original.maxCompletionTokens == 80_000)
+        original.maxCompletionTokens = 1_000
+        #expect(LocalAIGenerationPolicy.repositoryChatParameters(original).maxCompletionTokens == 1_000)
+    }
+
     @Test("重复章节不受流分块大小影响", arguments: [1, 7, 64, 1_024])
     func detectsRepeatedSections(chunkSize: Int) {
         let block = (0..<24).map { "## 配置条目 \($0)\n这一条说明对应独立配置的用途与验证条件。\n" }.joined()
