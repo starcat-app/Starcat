@@ -41,23 +41,37 @@ struct ReleaseWorkspaceAssets: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ReleaseSearchField(label: "releases.assetFilter.placeholder", text: $filter.query)
+        ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
-                Picker("releases.workspace.platform", selection: $filter.platform) {
-                    Text("general.all").tag(nil as ReleaseBuildArtifact.Platform?)
-                    ForEach(ReleaseBuildArtifact.Platform.allCases, id: \.self) { platform in
-                        Text(verbatim: platform.rawValue).tag(Optional(platform))
-                    }
-                }
-                Picker("releases.workspace.architecture", selection: $filter.architecture) {
-                    Text("general.all").tag(nil as ReleaseBuildArtifact.Architecture?)
-                    ForEach(ReleaseBuildArtifact.Architecture.allCases, id: \.self) { architecture in
-                        Text(verbatim: architecture.rawValue).tag(Optional(architecture))
-                    }
-                }
-            }.controlSize(.small).font(scale.font(.caption))
+                searchField.frame(minWidth: scale.scaled(200))
+                filterMenus.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                searchField
+                filterMenus
+            }
         }
+    }
+
+    private var searchField: some View {
+        ReleaseSearchField(label: "releases.assetFilter.placeholder", text: $filter.query)
+    }
+
+    private var filterMenus: some View {
+        HStack(spacing: 14) {
+            Picker("releases.workspace.platform", selection: $filter.platform) {
+                Text("general.all").tag(nil as ReleaseBuildArtifact.Platform?)
+                ForEach(ReleaseBuildArtifact.Platform.allCases, id: \.self) { platform in
+                    Text(verbatim: platform.rawValue).tag(Optional(platform))
+                }
+            }
+            Picker("releases.workspace.architecture", selection: $filter.architecture) {
+                Text("general.all").tag(nil as ReleaseBuildArtifact.Architecture?)
+                ForEach(ReleaseBuildArtifact.Architecture.allCases, id: \.self) { architecture in
+                    Text(verbatim: architecture.rawValue).tag(Optional(architecture))
+                }
+            }
+        }.controlSize(.small).font(scale.font(.caption))
     }
 
     @ViewBuilder private func group(_ builds: [ReleaseBuildArtifact], heading: LocalizedStringKey?, recommended: Bool) -> some View {

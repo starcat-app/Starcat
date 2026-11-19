@@ -32,7 +32,6 @@ final class RepoWorkspaceWindowController: NSWindowController, NSWindowDelegate 
         title: String,
         parent: NSWindow?,
         dependencies: AppDependencies,
-        fixedSize: NSSize? = nil,
         onDismiss: @escaping () -> Void = {},
         @ViewBuilder content: (@escaping () -> Void) -> Content
     ) -> RepoWorkspaceWindowController? {
@@ -45,7 +44,7 @@ final class RepoWorkspaceWindowController: NSWindowController, NSWindowDelegate 
             sheet.makeKeyAndOrderFront(nil)
             return nil
         }
-        let size = fixedSize ?? contentSize(available: parent?.screen?.visibleFrame.size ?? NSScreen.main?.visibleFrame.size)
+        let size = contentSize(available: parent?.screen?.visibleFrame.size ?? NSScreen.main?.visibleFrame.size)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false

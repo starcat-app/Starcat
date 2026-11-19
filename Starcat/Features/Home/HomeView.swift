@@ -671,7 +671,7 @@ struct HomeView: View {
         )
     }
 
-    /// 父窗持有会话以接收打开后的深链；实际 sheet 和 AI 标签整理共用同一尺寸来源。
+    /// 父窗持有会话以接收打开后的深链；sheet 与仓库 Skills 使用同一套屏幕尺寸预算。
     private func presentReleaseWorkspace() {
         let workspace = ReleaseTimelineViewModel(repository: dependencies.releaseRepository) {
             _ = await dependencies.releasePoller.runNow()
@@ -682,7 +682,6 @@ struct HomeView: View {
         let controller = RepoWorkspaceWindowController.present(
             identifier: "releases", title: String.l10n("releases.timeline.title"),
             parent: mainWindowReference.window, dependencies: dependencies,
-            fixedSize: AIOrganizationLayout.windowSize,
             onDismiss: {
                 releaseWorkspace = nil
                 showReleaseTimeline = false

@@ -21,12 +21,14 @@ struct ReleaseTimelineView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            HStack(spacing: 0) {
-                sidebar.frame(width: 250)
-                    .background(.bar)
-                Divider()
-                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .nativeDetailTransition(value: model.selectedID)
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    sidebar.frame(width: min(280, geometry.size.width * 0.25))
+                        .background(.bar)
+                    Divider()
+                    detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .nativeDetailTransition(value: model.selectedID)
+                }
             }
             if let error = model.errorMessage {
                 Divider()
@@ -38,7 +40,6 @@ struct ReleaseTimelineView: View {
                 .font(scale.font(.caption)).padding(8)
             }
         }
-        .frame(width: AIOrganizationLayout.windowSize.width, height: AIOrganizationLayout.windowSize.height)
         .task { await model.reload() }
         .releaseAssetDownloadToast(message: $downloads.message, fileURL: $downloads.fileURL)
     }
@@ -78,7 +79,7 @@ struct ReleaseTimelineView: View {
                 Picker("releases.timeline.title", selection: $model.unreadOnly) {
                     Text("general.all").tag(false)
                     Text("activity.notification.segment.unread").tag(true)
-                }.labelsHidden().pickerStyle(.segmented)
+                }.labelsHidden().pickerStyle(.segmented).controlSize(.small)
             }.padding(10)
             Divider()
             ScrollViewReader { scroll in
@@ -155,7 +156,7 @@ private struct ReleaseNavigationLabel: View {
                 HStack(spacing: 4) {
                     Text(verbatim: entry.repo.fullName).font(scale.font(.body, weight: .semibold))
                         .truncationMode(.middle).layoutPriority(1)
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 4)
                     if let date = entry.displayDate {
                         Text(verbatim: RelativeTimeText.pastEvent(date, locale: locale))
                             .font(scale.font(.captionSmall)).foregroundStyle(.secondary)
@@ -210,9 +211,9 @@ private struct ReleaseWorkspaceDetail: View {
                 }.font(scale.font(.caption))
                 let name = entry.release.name?.trimmingCharacters(in: .whitespacesAndNewlines)
                 Text(verbatim: name.flatMap { $0.isEmpty ? nil : $0 } ?? entry.release.tagName)
-                    .font(scale.font(.panelTitle, weight: .bold)).lineLimit(2).textSelection(.enabled)
+                    .font(scale.font(.panelTitle)).lineLimit(2).textSelection(.enabled)
                 HStack(spacing: 7) {
-                    Text(verbatim: entry.release.tagName).font(scale.font(.code))
+                    Text(verbatim: entry.release.tagName).font(scale.font(.code)).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                         .help(Text(verbatim: entry.release.tagName))
                     if entry.release.isPrerelease {
@@ -220,8 +221,8 @@ private struct ReleaseWorkspaceDetail: View {
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(.orange.opacity(0.17), in: Capsule()).fixedSize()
                     }
-                    Spacer(minLength: 0)
                     if let date = entry.displayDate {
+                        Text(verbatim: "·").foregroundStyle(.secondary).accessibilityHidden(true)
                         Text(date, format: .dateTime.year().month().day().locale(locale))
                             .font(scale.font(.captionSmall)).foregroundStyle(.secondary).fixedSize()
                     }
@@ -230,7 +231,7 @@ private struct ReleaseWorkspaceDetail: View {
                     Text("releases.workspace.notes").tag(ReleaseWorkspaceTab.notes)
                     Text(verbatim: String(format: String.l10n("releases.workspace.downloadsFormat"), locale: locale, assets.count))
                         .tag(ReleaseWorkspaceTab.files)
-                }.labelsHidden().pickerStyle(.segmented).padding(.top, 3)
+                }.labelsHidden().pickerStyle(.segmented).controlSize(.small).padding(.top, 3)
             }.padding(.horizontal, 18).padding(.vertical, 12)
             Divider()
             Group {
@@ -248,6 +249,7 @@ private struct ReleaseWorkspaceDetail: View {
         if let notes = entry.release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
             ScrollView {
                 Markdown(GitHubMarkdownPreparing.prepare(notes))
+                    .markdownTheme(RepoIssueMarkdownTheme.content(baseFontSize: scale.scaled(StarcatTypography.body.pointSize)))
                     .textSelection(.enabled).fittedGitHubMarkdownImages()
                     .frame(maxWidth: .infinity, alignment: .leading).padding(18)
             }
@@ -262,6 +264,7 @@ private struct ReleaseWorkspaceDetail: View {
 struct ReleaseSearchField: View {
     let label: LocalizedStringKey
     @Binding var text: String
+    @Environment(\.starcatInterfaceScale) private var scale
 
     var body: some View {
         HStack(spacing: 6) {
@@ -273,6 +276,7 @@ struct ReleaseSearchField: View {
                     .accessibilityLabel(Text("ai.usage.empty.clearFilters"))
             }
         }
+        .font(scale.font(.body))
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
         .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(0.22)) }
