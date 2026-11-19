@@ -648,6 +648,23 @@ struct StarcatMCPRuntimeTests {
         database: InMemoryDatabaseManager? = nil,
         publicCapabilities: StarcatMCPPublicFacade? = nil
     ) async throws -> StarcatMCPRuntime {
+        let parts = try await makeFacades(allowWrites: allowWrites, database: database, publicCapabilities: publicCapabilities)
+        let runtime = StarcatMCPRuntime(
+            facade: parts.facade,
+            writeFacade: parts.writeFacade,
+            originValidator: originValidator,
+            allowedToolNames: allowedToolNames,
+            exposesResources: exposesResources
+        )
+        try await runtime.start()
+        return runtime
+    }
+
+    /// 协议会话和服务启动门槛共用生产门面，只把账户库、权益及钥匙串替换为隔离测试依赖。
+    static func makeFacades(allowWrites: Bool, database: InMemoryDatabaseManager?,
+                            publicCapabilities: StarcatMCPPublicFacade?, isPro: Bool = true) async throws ->
+        (facade: StarcatMCPFacade, writeFacade: StarcatMCPWriteFacade, settings: AppSettings,
+         gate: EntitlementGate, keychain: InMemoryKeychain) {
         let db = try database ?? InMemoryDatabaseManager()
         if database == nil { try await seedRuntimeData(in: db) }
 
@@ -655,7 +672,7 @@ struct StarcatMCPRuntimeTests {
         settings.mcpAllowWrites = allowWrites
 
         let gate = EntitlementGate(
-            entitlementProvider: MCPRuntimeTestEntitlementProvider(isPro: true),
+            entitlementProvider: MCPRuntimeTestEntitlementProvider(isPro: isPro),
             userIDProvider: { 1 }
         )
         let repoRepository = GRDBRepoRepository(database: db)
@@ -716,15 +733,7 @@ struct StarcatMCPRuntimeTests {
             entitlementGate: gate,
             auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl"))
         )
-        let runtime = StarcatMCPRuntime(
-            facade: facade,
-            writeFacade: writeFacade,
-            originValidator: originValidator,
-            allowedToolNames: allowedToolNames,
-            exposesResources: exposesResources
-        )
-        try await runtime.start()
-        return runtime
+        return (facade, writeFacade, settings, gate, testKeychain)
     }
 
     /// 常规协议用例使用既有数据，注入领域样例时避免混入其他仓库或标签。
