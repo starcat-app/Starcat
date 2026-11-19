@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 /// 节点和无向边使用数据库 ID，改名不会丢失选择。
-enum TagGraphSelection: Equatable, Sendable {
+enum TagGraphSelection: Hashable, Sendable {
     case node(String)
     case edge(TagGraphPair)
 

@@ -87,7 +87,12 @@ struct TagGraphWorkspace: View {
                                       graph.visibleEdges(minimum: model.minimum).count, graph.edges.count))
                     .foregroundStyle(.secondary).font(.caption)
                 Divider()
-                tagList(graph)
+                if let selection = model.selection, model.search.isEmpty {
+                    TagGraphInspector(graph: graph, selection: selection, model: model, onOpenRepo: onOpenRepo)
+                        .nativeDetailTransition(value: selection)
+                } else {
+                    tagList(graph)
+                }
             }
             if model.failed { Button("action.retry") { model.observe() } }
             Spacer(minLength: 0)
@@ -111,6 +116,7 @@ struct TagGraphWorkspace: View {
 
     /// 搜索/列表定位才移动镜头，点画布或数据回读均保留视角。
     private func locate(_ node: TagGraphNode) {
+        model.search = ""
         model.select(.node(node.id))
         focusID = node.id
         camera += 1
@@ -118,6 +124,7 @@ struct TagGraphWorkspace: View {
 
     private func acceptCanvas(_ session: UUID, _ generation: Int, _ ids: [String]) {
         guard model.accepts(session: session, generation: generation) else { return }
+        model.search = ""
         switch ids.count {
         case 0: model.select(nil)
         case 1: model.select(.node(ids[0]))
