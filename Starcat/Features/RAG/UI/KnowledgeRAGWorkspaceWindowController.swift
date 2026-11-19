@@ -1365,6 +1365,7 @@ private struct KnowledgeRAGBrowserScrollOffsetKey: PreferenceKey {
 }
 
 private struct KnowledgeRAGBrowserView: View {
+    @Environment(AppSettings.self) private var inputSettings: AppSettings?
     @Namespace private var selectionSpace
     @Bindable var viewModel: KnowledgeRAGBrowserViewModel
     @Environment(\.starcatInterfaceScale) private var interfaceScale
@@ -1399,9 +1400,9 @@ private struct KnowledgeRAGBrowserView: View {
         return font.ascender - font.descender + font.leading
     }
 
-    /// 召回测试是侧栏辅助工具，沿用正文输入层级，避免与主问答 composer 争夺视觉焦点。
+    /// 召回测试仍是内容输入，和主问答及其占位提示采用同一阅读字号。
     private var retrievalQueryFont: NSFont {
-        NSFont.systemFont(ofSize: interfaceScale.scaled(13))
+        MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: inputSettings?.readmeFontSizeAdjustment ?? 0)
     }
 
     private var retrievalQueryMinHeight: CGFloat {
@@ -3277,7 +3278,7 @@ private struct KnowledgeRAGChunkEditor: View {
                     })
                 } else {
                     TextEditor(text: $content)
-                        .font(usesMonospacedEditor ? .body.monospaced() : .body)
+                        .starcatMarkdownBodyFont(design: usesMonospacedEditor ? .monospaced : .default)
                         .scrollContentBackground(.hidden)
                         .padding(8)
                         .frame(maxWidth: .infinity, minHeight: 250, maxHeight: .infinity)

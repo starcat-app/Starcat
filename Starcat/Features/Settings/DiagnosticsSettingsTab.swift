@@ -70,6 +70,7 @@ struct DiagnosticsSettingsTab: View {
     private var reportSection: some View {
         Section {
             TextField("settings.diagnostics.capture.description", text: $problemDescription, axis: .vertical)
+                .starcatMarkdownBodyFont()
                 .lineLimit(1...3)
                 .onChange(of: problemDescription) { _, value in
                     if value.count > 2000 { problemDescription = String(value.prefix(2000)) }

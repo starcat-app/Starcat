@@ -1272,9 +1272,7 @@ struct RAGWorkspaceAnswerSurface: View {
     }
 
     var composerNSFont: NSFont {
-        NSFont.systemFont(
-            ofSize: interfaceScale.scaled(RAGConversationTypography.text.pointSize)
-        )
+        MarkdownTypography.nativeFont(scale: interfaceScale, adjustment: settings.readmeFontSizeAdjustment)
     }
 
     var composerMinimumHeight: CGFloat {
