@@ -9,7 +9,7 @@ struct TagGraphFixture {
     var tags: GRDBTagRepository { GRDBTagRepository(database: db) }
     var links: GRDBRepoTagRepository { GRDBRepoTagRepository(database: db) }
 
-    init() throws { db = try InMemoryDatabaseManager() }
+    init(userID: Int64? = nil) throws { db = try InMemoryDatabaseManager(userId: userID) }
 
     func seed() async throws {
         try await db.insertRepoFixtures(count: 6)

@@ -644,14 +644,12 @@ struct StarcatMCPRuntimeTests {
         originValidator: OriginValidator = .localhost(),
         allowedToolNames: Set<String>? = nil,
         exposesResources: Bool = true,
-        allowWrites: Bool = true
+        allowWrites: Bool = true,
+        database: InMemoryDatabaseManager? = nil,
+        publicCapabilities: StarcatMCPPublicFacade? = nil
     ) async throws -> StarcatMCPRuntime {
-        let db = try InMemoryDatabaseManager()
-        try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
-        try await db.insertRepoFixture(id: 2, owner: "openai", name: "codex")
-        try await db.writer.write { db in
-            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 2")
-        }
+        let db = try database ?? InMemoryDatabaseManager()
+        if database == nil { try await seedRuntimeData(in: db) }
 
         let settings = AppSettings(defaults: UserDefaults(suiteName: "test.starcat.mcp.runtime.\(UUID().uuidString)")!)
         settings.mcpAllowWrites = allowWrites
@@ -661,6 +659,82 @@ struct StarcatMCPRuntimeTests {
             userIDProvider: { 1 }
         )
         let repoRepository = GRDBRepoRepository(database: db)
+        let tagRepository = GRDBTagRepository(database: db)
+        let repoTagRepository = GRDBRepoTagRepository(database: db)
+        let noteRepository = GRDBRepoNoteRepository(database: db)
+        let readmeRepository = ReadmeRepository(database: db)
+        let summaryRepository = GRDBAISummaryRepository(database: db)
+        let testKeychain = InMemoryKeychain()
+        let semanticSearch = SemanticSearchService(
+            embeddingRepository: GRDBRepoEmbeddingRepository(database: db),
+            settings: settings,
+            readmeRepository: readmeRepository,
+            noteRepository: noteRepository,
+            summaryRepository: summaryRepository,
+            entitlementGate: gate,
+            keychain: testKeychain
+        )
+        let insightService = RepoAIInsightService(
+            summaryRepository: summaryRepository,
+            readmeRepository: readmeRepository,
+            settings: settings,
+            keychain: testKeychain,
+            entitlementGate: gate
+        )
+        let facade = StarcatMCPFacade(
+            repoRepository: repoRepository,
+            readmeRepository: readmeRepository,
+            tagRepository: tagRepository,
+            repoTagRepository: repoTagRepository,
+            repoNoteRepository: noteRepository,
+            semanticSearchService: semanticSearch,
+            repoAIInsightService: insightService,
+            database: db,
+            aiUsageRepository: GRDBAIUsageRepository(database: db),
+            knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache(),
+            entitlementGate: gate,
+            settings: settings
+        )
+        facade.publicCapabilities = publicCapabilities
+        let writeFacade = StarcatMCPWriteFacade(
+            repoRepository: repoRepository,
+            metadataCapability: RepositoryMetadataCapabilityExecutor(
+                source: DatabaseRepositoryMetadataCapabilitySource(
+                    repoRepository: repoRepository,
+                    repoNoteRepository: noteRepository
+                )
+            ),
+            tagCapability: RepositoryTagCapabilityExecutor(
+                source: DatabaseRepositoryTagCapabilitySource(
+                    repoRepository: repoRepository,
+                    tagRepository: GatedTagRepository(base: tagRepository, entitlementGate: gate),
+                    repoTagRepository: repoTagRepository
+                )
+            ),
+            starMutationService: MCPRuntimeStarMutationServiceStub(),
+            settings: settings,
+            entitlementGate: gate,
+            auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl"))
+        )
+        let runtime = StarcatMCPRuntime(
+            facade: facade,
+            writeFacade: writeFacade,
+            originValidator: originValidator,
+            allowedToolNames: allowedToolNames,
+            exposesResources: exposesResources
+        )
+        try await runtime.start()
+        return runtime
+    }
+
+    /// 常规协议用例使用既有数据，注入领域样例时避免混入其他仓库或标签。
+    private static func seedRuntimeData(in db: InMemoryDatabaseManager) async throws {
+        try await db.insertRepoFixture(id: 1, owner: "apple", name: "swift")
+        try await db.insertRepoFixture(id: 2, owner: "openai", name: "codex")
+        try await db.writer.write { db in
+            try db.execute(sql: "UPDATE repos SET is_starred = 0, starred_at = NULL WHERE id = 2")
+        }
+
         let tagRepository = GRDBTagRepository(database: db)
         let repoTagRepository = GRDBRepoTagRepository(database: db)
         let actionTag = Tag.fixture(id: "mcp-act-test", name: "act/test")
@@ -703,71 +777,9 @@ struct StarcatMCPRuntimeTests {
             errorCategory: nil,
             correlationId: nil
         ))
-        let readmeRepository = ReadmeRepository(database: db)
-        let summaryRepository = GRDBAISummaryRepository(database: db)
-        let testKeychain = InMemoryKeychain()
-        let semanticSearch = SemanticSearchService(
-            embeddingRepository: GRDBRepoEmbeddingRepository(database: db),
-            settings: settings,
-            readmeRepository: readmeRepository,
-            noteRepository: noteRepository,
-            summaryRepository: summaryRepository,
-            entitlementGate: gate,
-            keychain: testKeychain
-        )
-        let insightService = RepoAIInsightService(
-            summaryRepository: summaryRepository,
-            readmeRepository: readmeRepository,
-            settings: settings,
-            keychain: testKeychain,
-            entitlementGate: gate
-        )
-        let facade = StarcatMCPFacade(
-            repoRepository: repoRepository,
-            readmeRepository: readmeRepository,
-            tagRepository: tagRepository,
-            repoTagRepository: repoTagRepository,
-            repoNoteRepository: noteRepository,
-            semanticSearchService: semanticSearch,
-            repoAIInsightService: insightService,
-            database: db,
-            aiUsageRepository: GRDBAIUsageRepository(database: db),
-            knowledgeBaseMetadataSnapshotCache: KnowledgeBaseMetadataSnapshotCache(),
-            entitlementGate: gate,
-            settings: settings
-        )
-        let writeFacade = StarcatMCPWriteFacade(
-            repoRepository: repoRepository,
-            metadataCapability: RepositoryMetadataCapabilityExecutor(
-                source: DatabaseRepositoryMetadataCapabilitySource(
-                    repoRepository: repoRepository,
-                    repoNoteRepository: noteRepository
-                )
-            ),
-            tagCapability: RepositoryTagCapabilityExecutor(
-                source: DatabaseRepositoryTagCapabilitySource(
-                    repoRepository: repoRepository,
-                    tagRepository: GatedTagRepository(base: tagRepository, entitlementGate: gate),
-                    repoTagRepository: repoTagRepository
-                )
-            ),
-            starMutationService: MCPRuntimeStarMutationServiceStub(),
-            settings: settings,
-            entitlementGate: gate,
-            auditLog: StarcatMCPAuditLog(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("starcat-mcp-runtime-\(UUID().uuidString).jsonl"))
-        )
-        let runtime = StarcatMCPRuntime(
-            facade: facade,
-            writeFacade: writeFacade,
-            originValidator: originValidator,
-            allowedToolNames: allowedToolNames,
-            exposesResources: exposesResources
-        )
-        try await runtime.start()
-        return runtime
     }
 
-    private static func initializeParams() -> [String: Any] {
+    static func initializeParams() -> [String: Any] {
         [
             "protocolVersion": "2025-03-26",
             "capabilities": [:],
@@ -813,7 +825,7 @@ struct StarcatMCPRuntimeTests {
         return (httpResponse.statusCode, data)
     }
 
-    private static func request(
+    static func request(
         id: Int,
         method: String,
         params: [String: Any]? = nil,
@@ -830,7 +842,7 @@ struct StarcatMCPRuntimeTests {
         return httpRequest(object, host: host)
     }
 
-    private static func notification(method: String, params: [String: Any]? = nil) -> HTTPRequest {
+    static func notification(method: String, params: [String: Any]? = nil) -> HTTPRequest {
         var object: [String: Any] = [
             "jsonrpc": "2.0",
             "method": method
