@@ -10,8 +10,13 @@ const result = await build({
   target: 'safari18', outfile: `${output}/follow-graph.js`, metafile: true,
   legalComments: 'eof'
 });
+// Both graphs embed the same pinned libraries. Check the union for notices.
+const tagResult = await build({
+  entryPoints: ['tag-graph-entry.mjs'], bundle: true, minify: true, format: 'iife',
+  target: 'safari18', outfile: `${output}/tag-graph.js`, metafile: true, legalComments: 'eof'
+});
 const packages = new Map();
-for (const input of Object.keys(result.metafile.inputs)) {
+for (const input of Object.keys({...result.metafile.inputs, ...tagResult.metafile.inputs})) {
   if (!input.startsWith('node_modules/')) continue;
   const parts = input.split('/');
   const directory = parts[1].startsWith('@') ? parts.slice(0, 3).join('/') : parts.slice(0, 2).join('/');

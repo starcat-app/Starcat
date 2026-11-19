@@ -8,13 +8,16 @@ import { fileURLToPath } from 'node:url';
 import { ProgressiveReveal } from './progressive-reveal.mjs';
 import * as forces from 'd3-force-3d';
 
-const source = buildSync({
-  entryPoints: [fileURLToPath(new URL('entry.js', import.meta.url))],
+const bundle = entry => buildSync({
+  entryPoints: [fileURLToPath(new URL(entry, import.meta.url))],
   bundle: true, write: false, format: 'cjs', external: ['force-graph', 'd3-force-3d']
 }).outputFiles[0].text;
 
+const source = bundle('entry.js');
+const tagSource = bundle('tag-graph-entry.mjs');
+
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
-function renderer({ reduced = true } = {}) {
+function renderer({ reduced = true, tagGraph = false } = {}) {
   const props = new Map(), calls = [], messages = [], images = [], canvases = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
@@ -57,9 +60,10 @@ function renderer({ reduced = true } = {}) {
     }
   });
   const window = { ...target(), webkit: { messageHandlers: {
-    followGraph: { postMessage: value => messages.push(value) }
+    followGraph: { postMessage: value => messages.push(value) },
+    tagGraph: { postMessage: value => messages.push(value) }
   } } };
-  vm.runInNewContext(source, {
+  vm.runInNewContext(tagGraph ? tagSource : source, {
     require: name => name === 'force-graph' ? function () { return graph; } : forces,
     window, document, innerWidth: 1200, innerHeight: 800, URL, performance: { now: () => clock },
     requestAnimationFrame: fn => { frames.set(++nextTimer, fn); return nextTimer; },
@@ -1092,4 +1096,32 @@ test('settled flow redraws only its transparent overlay and follows Retina zoom 
   r.window.followGraph.destroy();
   assert.equal(canvas.width, 0);
   assert.equal(canvas.height, 0);
+});
+
+test('tag canvas reports the painted frame once, retains user viewport and filters only edges', () => {
+  const r = renderer({tagGraph:true});
+  const state = {session:'A', generation:1, selected:[], minimum:1, reduced:true, camera:0};
+  const data = {nodes:[{id:'a',name:'Agent',repo_count:2},{id:'r',name:'RAG',repo_count:2}],
+    edges:[{left_id:'a',right_id:'r',shared_count:2}]};
+  const apply = changes => r.window.tagGraph.apply({...state, ...changes});
+  assert.equal(r.messages[0].kind, 'ready');
+  apply({data});
+  r.props.get('onRenderFramePost')(); r.props.get('onRenderFramePost')();
+  assert.equal(r.messages.filter(m => m.kind === 'painted').length, 1);
+  const graph = r.props.get('graphData'), node = graph.nodes[0], edge = graph.links[0];
+  Object.assign(node,{x:65,y:42});
+  apply({focus:'a',selected:['a'],camera:1});
+  assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt',65,42,0]);
+  r.props.get('onEngineStop')();
+  assert.equal(r.calls.filter(([name]) => name === 'zoomToFit').length, 0);
+  r.props.get('onNodeDragEnd')(node);
+  assert.deepEqual([node.fx,node.fy],[65,42]);
+  apply({minimum:3,camera:1});
+  assert.equal(r.props.get('linkVisibility')(edge), false);
+  assert.equal(r.calls.filter(([name]) => name === 'graphData').length, 1);
+  apply({camera:2});
+  assert.equal(r.calls.filter(([name]) => name === 'zoomToFit').length, 1);
+  r.props.get('onLinkClick')(edge);
+  assert.deepEqual(Array.from(r.messages.at(-1).ids), ['a','r']);
+  r.window.tagGraph.destroy();
 });

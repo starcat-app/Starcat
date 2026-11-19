@@ -144,6 +144,7 @@ struct SidebarView: View {
     let recommendationHistoryModel: RecommendationHistoryListModel
     /// 新功能标识状态由主窗口持有；侧栏只读展示，并在系统 List 选中时写入首次点击记录。
     var newFeatureBadgeStore: NewFeatureBadgeStore
+    var onOpenTagGraph: () -> Void = {}
     var onOpenFollowGraph: (FollowGraphRelation) -> Void = { _ in }
 
     /// HOM-73：控制登录 sheet 的显示。
@@ -1887,6 +1888,18 @@ struct SidebarView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .help(Text("sidebar.tagManagement"))
+
+            Button(action: onOpenTagGraph) {
+                Label("tagGraph.window.title", systemImage: "point.3.connected.trianglepath.dotted")
+                    .labelStyle(.iconOnly)
+                    .font(interfaceScale.font(.iconMedium, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(Text("tagGraph.window.title"))
 
             // HOM-179：仅当有 tag 被选中时显示"清除"按钮，避免空状态下噪声。
             // 与 `+` / chevron 同款 14pt hierarchical 语言，hover 反馈复用 pressableHover。
