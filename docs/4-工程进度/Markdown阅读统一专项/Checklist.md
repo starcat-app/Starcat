@@ -5,7 +5,7 @@
 ## 实施任务
 
 - [x] M1：新增字号与渲染器规范、AGENTS 引用及决策记录，建立本清单。
-- [ ] M2：实现共享阅读字号、MarkdownUI 主题和 WebView CSS 来源，保留偏好及实时设置联动。
+- [x] M2：实现共享阅读字号、MarkdownUI 主题和 WebView CSS 来源，保留偏好及实时设置联动。
 - [ ] M3：Releases 更新日志改用共享 WebView，保留版本导航、资源下载和阅读工具。
 - [ ] M4：独立 Skill 管理概览改用共享 WebView，带字号及回顶工具，保持图片和链接限制。
 - [ ] M5：Issues 正文、评论、回复预览、新增 Issue 预览及总结统一字号。

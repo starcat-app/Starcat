@@ -584,11 +584,10 @@ struct ReadmeWebContentView: NSViewRepresentable {
     }
 
     /// README 是长文阅读区，标准档比列表正文更偏阅读舒适；用户设置的界面倍率仍统一生效。
-    private static let standardReadmeBodyFontSize: CGFloat = 16
     private static let readmeLineHeight: CGFloat = 1.62
 
     private static func readmeBodyFontSize(for interfaceScale: InterfaceScale, adjustment: Int) -> CGFloat {
-        interfaceScale.scaled(standardReadmeBodyFontSize + CGFloat(AppSettings.clampedReadmeFontSizeAdjustment(adjustment)))
+        MarkdownTypography.bodyFontSize(scale: interfaceScale, adjustment: adjustment)
     }
 
     // MARK: - Coordinator
@@ -2936,12 +2935,12 @@ enum ReadmeCSS {
         font-weight: 600;
         line-height: 1.25;
     }
-    .markdown-body h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-    .markdown-body h2 { font-size: 1.45em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
-    .markdown-body h3 { font-size: 1.2em; }
-    .markdown-body h4 { font-size: 1.0em; }
-    .markdown-body h5 { font-size: 0.9em; }
-    .markdown-body h6 { font-size: 0.85em; color: var(--muted); }
+    .markdown-body h1 { font-size: \(MarkdownTypography.Heading.h1.ratio)em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .markdown-body h2 { font-size: \(MarkdownTypography.Heading.h2.ratio)em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+    .markdown-body h3 { font-size: \(MarkdownTypography.Heading.h3.ratio)em; }
+    .markdown-body h4 { font-size: \(MarkdownTypography.Heading.h4.ratio)em; }
+    .markdown-body h5 { font-size: \(MarkdownTypography.Heading.h5.ratio)em; }
+    .markdown-body h6 { font-size: \(MarkdownTypography.Heading.h6.ratio)em; color: var(--muted); }
     /* 段落 / 列表 */
     .markdown-body p,
     .markdown-body ul,
@@ -2962,7 +2961,7 @@ enum ReadmeCSS {
     .markdown-body code, .markdown-body tt {
         padding: 0.2em 0.4em;
         margin: 0;
-        font-size: 85%;
+        font-size: \(MarkdownTypography.inlineCodeRatio * 100)%;
         background: var(--code-bg);
         border-radius: 6px;
         font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -2988,7 +2987,7 @@ enum ReadmeCSS {
         padding: 0;
         background: transparent;
         border-radius: 0;
-        font-size: 100%;
+        font-size: \(MarkdownTypography.codeBlockRatio * 100)%;
     }
     /* 引用 */
     .markdown-body blockquote {
