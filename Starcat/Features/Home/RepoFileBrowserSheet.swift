@@ -81,7 +81,7 @@ struct RepoFileBrowserSheet: View {
         .onChange(of: viewModel.previewedPath) { _, path in
             if path == nil { readingLayout.isExpanded = false }
         }
-        .onExitCommand {
+        .workspaceEscapeAction {
             if !readingLayout.handleEscape() { closeWorkspace() }
         }
         .task(id: viewModel.previewRevision) {

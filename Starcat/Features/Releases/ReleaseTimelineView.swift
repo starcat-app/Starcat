@@ -40,6 +40,7 @@ struct ReleaseTimelineView: View {
             }
         }
         .task { await model.reload() }
+        .workspaceEscapeAction(onClose)
         .releaseAssetDownloadToast(message: $downloads.message, fileURL: $downloads.fileURL)
     }
 
