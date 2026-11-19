@@ -470236,6 +470236,114 @@
         }
       }
     },
+    "repo.files.preview.chooseFile" : {
+      "comment" : "Empty file preview. AI translations require review; Simplified Chinese wording supplied by the maintainer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Bitte wähle links eine Datei aus, um sie in der Vorschau anzuzeigen oder herunterzuladen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Select a file on the left to preview or download"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Selecciona un archivo a la izquierda para previsualizarlo o descargarlo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Sélectionnez un fichier à gauche pour le prévisualiser ou le télécharger"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Pilih file di sebelah kiri untuk dipratinjau atau diunduh"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Seleziona un file a sinistra per visualizzarlo in anteprima o scaricarlo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "左側からファイルを選択して、プレビューまたはダウンロードしてください"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "왼쪽에서 파일을 선택하여 미리 보거나 다운로드하세요"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Selecteer links een bestand om het te bekijken of te downloaden"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Wybierz plik po lewej stronie, aby wyświetlić podgląd lub go pobrać"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Selecione um arquivo à esquerda para visualizar ou baixar"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Выберите файл слева для просмотра или скачивания"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Önizlemek veya indirmek için soldan bir dosya seçin"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Виберіть файл ліворуч для перегляду або завантаження"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Chọn một tệp ở bên trái để xem trước hoặc tải xuống"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请从左侧选择文件预览或下载"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "請從左側選擇檔案預覽或下載"
+          }
+        }
+      }
+    },
     "repo.files.preview.empty" : {
       "localizations" : {
         "de" : {

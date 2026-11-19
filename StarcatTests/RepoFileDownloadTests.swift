@@ -180,6 +180,40 @@ private actor TreeRequestTestSource {
 @Suite("RepoFileTreeBuilder")
 struct RepoFileTreeBuilderTests {
 
+    @Test("根目录 README 按应用语言匹配，兼容常见文件名", arguments: [
+        ("zh-Hans", "README_CN.md"),
+        ("zh-Hans", "README_zh_CN.md"),
+        ("zh-Hant", "README.zh-TW.md"),
+        ("zh-Hant", "README_TW.md"),
+        ("en", "readme.EN.MD"),
+        ("ja", "README.ja.md"),
+        ("pt-BR", "README.pt-BR.md"),
+        ("pt-BR", "README.pt.md"),
+    ])
+    func matchesLocalizedRootReadme(localeIdentifier: String, fileName: String) {
+        let roots = RepoFileTreeBuilder.build(from: [
+            entry(path: "README.md", type: "blob", mode: "100644", sha: "default"),
+            entry(path: fileName, type: "blob", mode: "100644", sha: "localized"),
+            entry(path: "docs/" + fileName, type: "blob", mode: "100644", sha: "nested"),
+        ])
+        #expect(RepoFileTreeBuilder.preferredReadme(in: roots, locale: Locale(identifier: localeIdentifier))?.path == fileName)
+    }
+
+    @Test("README 回退只用根目录默认文件，不打开子目录或其它语言")
+    func rootReadmeFallbackAndAbsence() {
+        let entries = [
+            entry(path: "docs/README.fr.md", type: "blob", mode: "100644", sha: "nested"),
+            entry(path: "README_CN.md", type: "blob", mode: "100644", sha: "chinese"),
+        ]
+        let locale = Locale(identifier: "fr")
+        #expect(RepoFileTreeBuilder.preferredReadme(in: RepoFileTreeBuilder.build(from: entries), locale: locale) == nil)
+        let roots = RepoFileTreeBuilder.build(from: entries + [
+            entry(path: "readme.MD", type: "blob", mode: "100644", sha: "default"),
+        ])
+        #expect(RepoFileTreeBuilder.preferredReadme(in: roots, locale: locale)?.path == "readme.MD")
+        #expect(RepoFileTreeBuilder.preferredReadme(in: roots, locale: Locale(identifier: "zh-Hant"))?.path == "readme.MD")
+    }
+
     @Test("扁平 tree 收成目录优先的嵌套节点，并跳过子模块和符号链接")
     func buildsNestedTreeAndSkipsSubmodules() throws {
         let entries = [
@@ -586,6 +620,71 @@ private struct RequiredFileToken: GitHubTokenProviding {
 @Suite("RepoFileBrowserViewModel")
 @MainActor
 struct RepoFileBrowserViewModelTests {
+
+    @Test("首次自动阅读与下载勾选独立，刷新保留手动阅读，切分支重新选择 README",
+          arguments: ["README_CN.md", "README.md"])
+    func automaticallyPreviewsReadme(fileName: String) async throws {
+        let mock = MockGitHubAPIClient()
+        mock.repositoryGitTreeHandler = { _, _, ref in
+            let readme = ref == "main" ? fileName : "README.md"
+            return GitHubGitTreeDTO(sha: ref, truncated: false, tree: [
+                readme, "CHANGELOG.md", "docs/README_CN.md",
+            ].map { path in
+                GitHubGitTreeEntryDTO(path: path, mode: "100644", type: "blob", sha: ref + path, size: 4, url: nil)
+            })
+        }
+        let viewModel = RepoFileBrowserViewModel(
+            target: RepoFileBrowserTarget(owner: "o", name: "demo", fullName: "o/demo", ref: "main"),
+            apiClient: mock, downloader: PreviewStubDownloader(preview: .text("# hi")),
+            folderPicker: FixedFolderPicker(url: nil), treeCache: RepoFileTreeSessionCache(),
+            locale: Locale(identifier: "zh-Hans")
+        )
+        defer { viewModel.stop() }
+        await viewModel.loadTree()
+        #expect(viewModel.previewedPath == fileName)
+        #expect(viewModel.selectedCount == 0)
+        for _ in 0..<50 {
+            if viewModel.previewText != nil { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(viewModel.previewText == "# hi")
+
+        // 用户手动阅读与勾选后刷新，不能被默认 README 抢回选择。
+        viewModel.reveal(try #require(RepoFileTreeBuilder.find(path: "CHANGELOG.md", in: viewModel.nodes)))
+        viewModel.previewMode = .source
+        viewModel.selectAll()
+        let selected = viewModel.selectedPaths
+        await viewModel.refreshTree()
+        #expect(viewModel.previewedPath == "CHANGELOG.md")
+        #expect(viewModel.previewMode == .source)
+        #expect(viewModel.selectedPaths == selected)
+
+        await viewModel.selectBranch("dev")
+        #expect(viewModel.previewedPath == "README.md")
+        #expect(viewModel.previewMode == .rendered)
+        #expect(viewModel.selectedCount == 0)
+    }
+
+    @Test("只有子目录 README 时就绪但不自动预览")
+    func missingRootReadmeLeavesPreviewIdle() async {
+        let mock = MockGitHubAPIClient()
+        mock.repositoryGitTreeHandler = { _, _, _ in
+            GitHubGitTreeDTO(sha: "tree", truncated: false, tree: [
+                GitHubGitTreeEntryDTO(path: "docs/README.md", mode: "100644", type: "blob", sha: "blob", size: 4, url: nil),
+            ])
+        }
+        let viewModel = RepoFileBrowserViewModel(
+            target: RepoFileBrowserTarget(owner: "o", name: "demo", fullName: "o/demo", ref: "main"),
+            apiClient: mock, downloader: PreviewStubDownloader(preview: .text("# hi")),
+            folderPicker: FixedFolderPicker(url: nil), treeCache: RepoFileTreeSessionCache(),
+            locale: Locale(identifier: "en")
+        )
+        await viewModel.loadTree()
+        #expect(viewModel.phase == .ready)
+        #expect(viewModel.previewedPath == nil)
+        #expect(viewModel.preview == .idle)
+        #expect(viewModel.selectedCount == 0)
+    }
 
     @Test("Markdown 资源绑定树提交，源码切换不重新请求，过期失败回调被忽略")
     func markdownSnapshotAndModes() async throws {

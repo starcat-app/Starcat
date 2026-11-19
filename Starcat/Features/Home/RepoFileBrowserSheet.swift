@@ -8,8 +8,8 @@
 //  左栏 checkbox 与展开是两个独立 Button；点文件名只拉预览，不改勾选。
 //  原型没有 checkbox，但批量下载需要勾选，所以树行左侧保留。
 //  Sheet 规范仍要求右上角 `SheetCloseButton`；原型窗口红绿灯在 AppKit chrome 上，这里补关闭钮。
-//  打开时只展示文件树；点文件后左树收窄，预览 + 详情从右侧滑入。
-//  切分支会清空预览，三栏收回，避免对着旧文件发呆。
+//  打开时保留左树与阅读区，按应用语言自动预览根目录 README；没有 README 时提示手动选文件。
+//  切分支清空旧预览后重新选择 README，不把上一分支内容留在阅读区。
 //
 
 import SwiftUI
@@ -163,42 +163,36 @@ struct RepoFileBrowserSheet: View {
         }
     }
 
-    /// 点过文件才展开预览栏。打开页、切分支清空预览后都只留文件树。
-    private var isPreviewPresented: Bool {
-        viewModel.previewedPath != nil
-    }
-
-    /// 未选文件时树占满内容区；选中后树收到 240，预览+详情从右侧滑入。
-    /// 动画跟 RAG / Agent 收起 Inspector 同一档：短 easeInOut，减少动态效果时直接切。
+    /// 首屏固定左树与阅读区，README 加载和空态都不再引起整页宽度跳变。
     private var columns: some View {
         GeometryReader { geometry in
-            let expanded = readingLayout.isExpanded && isPreviewPresented
+            let expanded = readingLayout.isExpanded && viewModel.previewedPath != nil
             let overlay = readingLayout.usesInspectorOverlay(availableWidth: geometry.size.width)
             HStack(spacing: expanded ? 0 : 12) {
                 // 不移除树，放大还原后目录展开、勾选及滚动位置继续保留。
                 sidebar
-                    .frame(width: isPreviewPresented ? 240 : nil)
-                    .frame(maxWidth: isPreviewPresented ? nil : .infinity, maxHeight: .infinity)
+                    .frame(width: 240)
+                    .frame(maxHeight: .infinity)
                     .fileBrowserCard()
                     .frame(width: expanded ? 0 : nil)
                     .opacity(expanded ? 0 : 1)
                     .clipped()
                     .allowsHitTesting(!expanded)
                     .accessibilityHidden(expanded)
-                if isPreviewPresented {
-                    previewColumn
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .fileBrowserCard()
-                        .overlay(alignment: .trailing) {
-                            if !expanded && overlay && readingLayout.showsInspector {
-                                inspectorPanel
-                                    .padding(8)
-                                    .padding(.top, 106)
-                                    .shadow(color: .black.opacity(0.12), radius: 8)
-                                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                            }
+                previewColumn
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .fileBrowserCard()
+                    .overlay(alignment: .trailing) {
+                        if !expanded && overlay && readingLayout.showsInspector && viewModel.previewedFile != nil {
+                            inspectorPanel
+                                .padding(8)
+                                .padding(.top, 106)
+                                .shadow(color: .black.opacity(0.12), radius: 8)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
-                    if !expanded && !overlay && readingLayout.showsInspector { inspectorPanel }
+                    }
+                if !expanded && !overlay && readingLayout.showsInspector && viewModel.previewedFile != nil {
+                    inspectorPanel
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -207,7 +201,6 @@ struct RepoFileBrowserSheet: View {
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isPreviewPresented)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: readingLayout)
     }
 
@@ -466,10 +459,17 @@ struct RepoFileBrowserSheet: View {
     private var previewBody: some View {
         switch presentedPreview {
         case .idle:
-            Text("repo.files.preview.empty")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if viewModel.phase == .loading || viewModel.isRefreshing {
+                ReadmeSkeletonView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text("repo.files.preview.chooseFile")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         case .loading:
             ReadmeSkeletonView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
