@@ -67,6 +67,7 @@ private struct IssueSummaryMarkdownChunk: View, Equatable {
     let markdown: String
 
     @Environment(\.starcatInterfaceScale) private var interfaceScale
+    @Environment(AppSettings.self) private var settings: AppSettings?
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool { lhs.markdown == rhs.markdown }
 
@@ -78,30 +79,25 @@ private struct IssueSummaryMarkdownChunk: View, Equatable {
 
     /// 紧凑标题和透明正文底色让 Markdown 融入原生弹层。
     private var summaryTheme: Theme {
-        Theme.gitHub
-            .text {
-                ForegroundColor(.primary)
-                BackgroundColor(nil)
-                FontSize(13 * interfaceScale.multiplier)
-            }
+        MarkdownTypography.theme(scale: interfaceScale, adjustment: settings?.readmeFontSizeAdjustment ?? 0)
             .heading1 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(1.15)) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h1.ratio)) }
                     .markdownMargin(top: 8, bottom: 6)
             }
             .heading2 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(1.1)) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h2.ratio)) }
                     .markdownMargin(top: 8, bottom: 6)
             }
             .heading3 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(MarkdownTypography.Heading.h3.ratio)) }
                     .markdownMargin(top: 8, bottom: 6)
             }
             .heading6 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold); ForegroundColor(.secondary) }
+                    .markdownTextStyle { FontWeight(.semibold); ForegroundColor(.secondary); FontSize(.em(MarkdownTypography.Heading.h6.ratio)) }
                     .markdownMargin(top: 6, bottom: 4)
             }
             .paragraph { configuration in

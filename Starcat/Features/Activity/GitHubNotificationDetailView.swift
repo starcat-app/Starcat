@@ -2906,6 +2906,7 @@ private struct GitHubNotificationMarkdown: View {
                 repositoryFullName: repositoryFullName
             )
         )
+        .starcatMarkdownStyle()
         .markdownImageProvider(GitHubNotificationImageProvider())
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.openURL, OpenURLAction { url in
