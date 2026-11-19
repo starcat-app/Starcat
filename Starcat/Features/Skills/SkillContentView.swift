@@ -250,4 +250,3 @@ struct SkillContentView: View {
         }
     }
 }
-

@@ -155,14 +155,12 @@ private struct ReleaseNotesVersionCard: View {
             // 无 ### 分区时保持可读：直接渲染原始 Markdown。
             Markdown(version.bodyMarkdown)
                 .starcatMarkdownStyle()
-                .font(.body)
                 .textSelection(.enabled)
         } else {
             VStack(alignment: .leading, spacing: 16) {
                 if let summary = version.summary, summary.isEmpty == false {
                     ReleaseNotesInlineText(
                         raw: summary,
-                        font: .callout,
                         baseColor: .secondary
                     )
                 }
@@ -263,15 +261,14 @@ private struct ReleaseNotesItemRow: View {
                     VStack(alignment: .leading, spacing: 3) {
                         ReleaseNotesInlineText(
                             raw: item.title,
-                            font: .body.weight(.medium),
+                            weight: .medium,
                             baseColor: .primary
                         )
 
                         if let detail = item.detail, detail.isEmpty == false {
                             ReleaseNotesInlineText(
                                 raw: detail,
-                                font: .callout,
-                                baseColor: .secondary
+                                        baseColor: .secondary
                             )
                         }
                     }
@@ -293,12 +290,12 @@ private struct ReleaseNotesItemRow: View {
 /// 颜色写在 AttributedString 里，避免外层 `.foregroundStyle` 把链接色一并盖掉。
 private struct ReleaseNotesInlineText: View {
     let raw: String
-    let font: Font
+    var weight: Font.Weight? = nil
     let baseColor: Color
 
     var body: some View {
         Text(ReleaseNotesInlineMarkdown.attributed(raw, baseColor: baseColor))
-            .font(font)
+            .starcatMarkdownBodyFont(weight: weight)
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .tint(Color.accentColor)

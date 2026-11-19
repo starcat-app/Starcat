@@ -96,13 +96,14 @@ private struct StarcatMarkdownStyle: ViewModifier {
 
 /// 流式尾部保持纯 Text，避免重新解析；其字号必须与冻结块及完成态相同。
 private struct StarcatMarkdownBodyFont: ViewModifier {
+    var weight: Font.Weight? = nil
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(AppSettings.self) private var settings: AppSettings?
 
     func body(content: Content) -> some View {
         content.font(.system(size: MarkdownTypography.bodyFontSize(
             scale: scale, adjustment: settings?.readmeFontSizeAdjustment ?? 0
-        )))
+        ), weight: weight))
     }
 }
 
@@ -111,5 +112,7 @@ extension View {
     func starcatMarkdownStyle() -> some View { modifier(StarcatMarkdownStyle()) }
 
     /// 只用于与 Markdown 正文交接的纯文本尾部，不改变工具栏与辅助信息字号。
-    func starcatMarkdownBodyFont() -> some View { modifier(StarcatMarkdownBodyFont()) }
+    func starcatMarkdownBodyFont(weight: Font.Weight? = nil) -> some View {
+        modifier(StarcatMarkdownBodyFont(weight: weight))
+    }
 }
