@@ -82,7 +82,7 @@ struct ReleaseWorkspaceAssets: View {
                     .padding(.horizontal, 6).padding(.vertical, 5)
             }
             ForEach(Array(builds.enumerated()), id: \.element.id) { index, build in
-                ReleaseWorkspaceAssetRow(build: build, downloads: downloads, recommended: recommended)
+                ReleaseWorkspaceAssetRow(build: build, downloads: downloads)
                     .listRowSurface(index: index)
             }
         }
@@ -93,10 +93,12 @@ struct ReleaseWorkspaceAssets: View {
 private struct ReleaseWorkspaceAssetRow: View {
     let build: ReleaseBuildArtifact
     let downloads: ReleaseWorkspaceDownloads
-    let recommended: Bool
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var scale
-    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var hoveringDownload = false
+    @FocusState private var focusingDownload: Bool
+
+    private var state: ReleaseWorkspaceDownloads.State? { downloads.states[build.id] }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -111,43 +113,74 @@ private struct ReleaseWorkspaceAssetRow: View {
                 Text(verbatim: [size, build.platform?.rawValue, build.architecture?.rawValue]
                     .compactMap { $0 }.joined(separator: " · "))
                     .font(scale.font(.captionSmall)).foregroundStyle(.secondary)
-                if case .failed(let reason) = downloads.states[build.id] {
+                if case .failed(let reason) = state {
                     Text(verbatim: reason).font(scale.font(.captionSmall)).foregroundStyle(.secondary)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
+            // Finder 放在固定的复制和下载热区之前，完成、重试时两个常用按钮仍然对齐。
+            if case .saved(let url) = state {
+                Button { ReleaseAssetDownloadToastSupport.revealInFinder(url) } label: {
+                    Label("settings.storage.revealInFinder", systemImage: "folder").labelStyle(.iconOnly)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).focusEffectDisabled().foregroundStyle(.secondary)
+                .help("settings.storage.revealInFinder")
+            }
             CopyFeedbackButton(providesContent: { build.asset.browserDownloadUrl }, tooltip: "releases.copyDownloadLink") { copied in
                 Image(systemName: copied ? "checkmark.circle.fill" : "link")
                     .foregroundStyle(copied ? Color.green : Color.secondary)
-                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .frame(width: 28, height: 28).contentShape(Rectangle())
             }
-            action.controlSize(.small)
+            .accessibilityLabel(Text("releases.copyDownloadLink"))
+            downloadButton
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
 
-    @ViewBuilder private var action: some View {
-        switch downloads.states[build.id] {
-        case .running(let fraction):
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(fraction, format: .percent.precision(.fractionLength(0)).locale(locale))
-                    .font(scale.font(.captionSmall).monospacedDigit())
-                ProgressView(value: fraction).progressViewStyle(.linear).frame(width: 58)
-            }
-        case .saved(let url):
-            Button { ReleaseAssetDownloadToastSupport.revealInFinder(url) } label: {
-                Label("settings.storage.revealInFinder", systemImage: "folder").labelStyle(.iconOnly)
-            }.help("settings.storage.revealInFinder")
-            downloadButton
-        case .failed:
-            Button("action.retry") { Task { await downloads.start(build.asset) } }
-        case nil:
-            if recommended { downloadButton.buttonStyle(.borderedProminent) }
-            else { downloadButton }
+    private var actionLabel: LocalizedStringKey {
+        switch state {
+        case .running, .cancelling: "repo.files.cancelDownload"
+        case .failed: "action.retry"
+        default: "repo.files.inspector.download"
         }
     }
 
     private var downloadButton: some View {
-        Button("repo.files.inspector.download") { Task { await downloads.start(build.asset) } }
-            .help("releases.downloadAsset")
+        Button {
+            if case .running = state {
+                downloads.cancel(build.id)
+            } else {
+                Task { await downloads.start(build.asset) }
+            }
+        } label: {
+            Group {
+                switch state {
+                case .running(let fraction) where !hoveringDownload && !focusingDownload:
+                    ReleaseAssetDownloadProgressRing(progress: fraction, side: 16)
+                case .running, .cancelling:
+                    Image(systemName: "stop.circle.fill")
+                case .failed:
+                    Image(systemName: "arrow.clockwise")
+                default:
+                    Image(systemName: "arrow.down.to.line")
+                }
+            }
+            .foregroundStyle(.secondary)
+            .frame(width: 28, height: 28).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).focusEffectDisabled()
+        .focused($focusingDownload)
+        .onHover { hoveringDownload = $0 }
+        .disabled(state == .cancelling)
+        .help(Text(actionLabel))
+        .accessibilityLabel(Text(actionLabel))
+        .accessibilityValue(progressDescription)
+    }
+
+    private var progressDescription: Text {
+        if case .running(let fraction) = state {
+            return Text(fraction, format: .percent.precision(.fractionLength(0)).locale(locale))
+        }
+        return Text(verbatim: "")
     }
 }

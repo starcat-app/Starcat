@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Synchronization
 import Testing
 @testable import Starcat
 
@@ -147,6 +148,45 @@ struct ReleaseAssetDownloaderTests {
         let saved = try Data(contentsOf: destination)
         #expect(saved == payload)
     }
+
+    @Test("取消在途请求会停止传输，保留原文件且不再请求备用地址")
+    func cancelInFlight() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PendingReleaseDownloadProtocol.self]
+        configuration.timeoutIntervalForResource = 5
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let downloader = ReleaseAssetDownloader(session: session, tokenProvider: StubTokenProvider(token: nil))
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let existing = Data("previous build".utf8)
+        try existing.write(to: destination)
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        PendingReleaseDownloadProtocol.events.withLock { $0 = [] }
+        let asset = sampleAsset()
+        let transfer = Task { try await downloader.download(asset: asset, to: destination) }
+        defer { transfer.cancel() }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(3))
+        while PendingReleaseDownloadProtocol.events.withLock({ $0.isEmpty }) && clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try #require(PendingReleaseDownloadProtocol.events.withLock { $0 } == ["start"])
+        transfer.cancel()
+        await #expect(throws: CancellationError.self) { try await transfer.value }
+        #expect(PendingReleaseDownloadProtocol.events.withLock { $0 } == ["start", "stop"])
+        #expect(try Data(contentsOf: destination) == existing)
+    }
+}
+
+/// 保持请求在途，记录 URLSession 实际调用的停止事件，区别于只复位界面的取消。
+private final class PendingReleaseDownloadProtocol: URLProtocol, @unchecked Sendable {
+    static let events = Mutex<[String]>([])
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() { Self.events.withLock { $0.append("start") } }
+    override func stopLoading() { Self.events.withLock { $0.append("stop") } }
 }
 
 private final class LockedProgressBox: @unchecked Sendable {
