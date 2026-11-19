@@ -5,7 +5,6 @@
 //  订阅版本工作区。左侧导航始终保留，右侧只呈现选中版本的说明或下载文件。
 //
 
-import MarkdownUI
 import SwiftUI
 
 struct ReleaseTimelineView: View {
@@ -247,13 +246,11 @@ private struct ReleaseWorkspaceDetail: View {
 
     @ViewBuilder private var notes: some View {
         if let notes = entry.release.bodyMarkdown?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-            ScrollView {
-                Markdown(GitHubMarkdownPreparing.prepare(notes))
-                    .markdownTheme(RepoIssueMarkdownTheme.content(baseFontSize: scale.scaled(StarcatTypography.body.pointSize)))
-                    .textSelection(.enabled).fittedGitHubMarkdownImages()
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(18)
-            }
-            .reportingMarkdownContainerWidth(horizontalInset: 18)
+            // 正文自带滚动与阅读工具，不能再套原生 ScrollView；附件页仍使用原有下载状态。
+            MarkdownDocumentWebView(
+                markdown: GitHubMarkdownPreparing.prepare(notes),
+                baseURL: URL(string: entry.release.htmlUrl)
+            )
         } else {
             EmptyStateView(systemImage: "doc.text", title: "activity.release.noNotes")
         }
