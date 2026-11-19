@@ -174,7 +174,7 @@ struct RepoIssueCreatePane: View {
                 let trimmed = viewModel.trimmedCreateBody
                 if trimmed.isEmpty {
                     Text(String.l10n("repo.issues.sheet.emptyPreview", defaultValue: "暂无内容可预览"))
-                        .font(.body)
+                        .starcatMarkdownBodyFont()
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {

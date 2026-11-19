@@ -2117,7 +2117,7 @@ private struct GitHubNotificationCommentComposer: View {
                     zh: "留下评论…",
                     en: "Leave a comment…"
                 ))
-                .font(.subheadline)
+                .starcatMarkdownBodyFont()
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 Spacer(minLength: 0)
@@ -2402,6 +2402,7 @@ private struct GitHubNotificationCommentComposer: View {
                 ScrollView {
                     if trimmed.isEmpty {
                         Text(verbatim: GitHubNotificationMapper.copy(locale, zh: "没什么可预览的", en: "Nothing to preview"))
+                            .starcatMarkdownBodyFont()
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                     } else {
