@@ -194,27 +194,27 @@ struct SettingsView: View {
             }
         }
 
-        /// 按功能分配颜色，侧栏和搜索建议共用。深色主题提亮底板，避免与侧栏材质融在一起。
-        var iconBackground: (light: UInt32, dark: UInt32) {
+        /// 彩色底板标识设置分类，侧栏和搜索建议共用系统配色，避免自定义暗色显得浑浊。
+        var iconBackground: Color {
             switch self {
             case .general, .shortcuts, .localTools, .storage, .diagnostics:
-                return (0x525C6A, 0x697587)
+                return .gray
             case .notifications:
-                return (0xC72B51, 0xD13C67)
+                return .red
             case .pro:
-                return (0xD99B31, 0xF0BD61)
+                return .orange
             case .privacy:
-                return (0x244FA3, 0x4267C6)
+                return .blue
             case .aiModels, .aiAutomation, .ragInference:
-                return (0x5841B4, 0x6F54C9)
+                return .purple
             case .translation:
-                return (0x21725F, 0x27836D)
+                return .green
             case .aiIndexContext, .externalSearch, .ragRetrieval:
-                return (0x0C688A, 0x197CA1)
+                return .cyan
             case .browserExtensions, .mcp, .services:
-                return (0x186F76, 0x268089)
+                return .teal
             case .labs:
-                return (0x8A3F92, 0xA14EA7)
+                return .pink
             }
         }
 
@@ -485,7 +485,7 @@ struct SettingsView: View {
         settingsTabSelection.wrappedValue = tabs[destination]
     }
 
-    /// 底板颜色只标识功能。选中和悬停仍由导航行表达，搜索建议也能保持同样的图标辨识度。
+    /// 彩色底板用轻微明暗和贴边柔影表现系统设置式质感；选中和悬停仍由导航行表达。
     private struct SettingsNavigationIcon: View {
         let tab: SettingsTab
 
@@ -493,21 +493,35 @@ struct SettingsView: View {
         @Environment(\.colorSchemeContrast) private var contrast
 
         var body: some View {
-            let palette = tab.iconBackground
-            let rgb = colorScheme == .dark ? palette.dark : palette.light
-            let background = Color(
-                red: Double((rgb >> 16) & 0xFF) / 255,
-                green: Double((rgb >> 8) & 0xFF) / 255,
-                blue: Double(rgb & 0xFF) / 255
-            )
             let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
 
-            BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 16 : 13)
+            // 略放大图形以抵消模板素材的边缘留白，底板与文字列的位置保持稳定。
+            BusinessIcon(tab.businessIcon, pointSize: tab.businessIcon.isAsset ? 17 : 14)
                 .foregroundStyle(.primary)
-                // 局部外观让模板图形在琥珀底上用深色、其他底板用浅色，不影响行标题和底板描边。
+                // 暖金底上的 Pro 保留深色图形，其余用浅色；局部外观不影响底板和行标题。
                 .environment(\.colorScheme, tab == .pro ? .light : .dark)
                 .frame(width: 20, height: 20)
-                .background(background, in: shape)
+                .background {
+                    shape
+                        .fill(tab.iconBackground)
+                        .overlay {
+                            // 高光限制在小底板内，避免大面积渐变或强阴影抢过导航选中态。
+                            shape.fill(LinearGradient(
+                                colors: [.white.opacity(0.16), .clear, .black.opacity(0.04)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ))
+                        }
+                        .overlay {
+                            shape.strokeBorder(.white.opacity(0.24), lineWidth: 0.5)
+                        }
+                        .shadow(
+                            color: .black.opacity(colorScheme == .dark ? 0.20 : 0.14),
+                            radius: 0.8,
+                            x: 0,
+                            y: 0.7
+                        )
+                }
                 .overlay {
                     if contrast == .increased {
                         shape.strokeBorder(Color.primary.opacity(0.8), lineWidth: 1)
