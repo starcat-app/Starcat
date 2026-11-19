@@ -778,6 +778,19 @@ struct RepoFileBrowserSheet: View {
                 )
                 .disabled(viewModel.previewMode == .source || !isContentVisible)
             }
+            Button {
+                readingLayout.isExpanded.toggle()
+            } label: {
+                Image(systemName: readingLayout.isExpanded
+                      ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand")
+            .accessibilityLabel(Text(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand"))
+            .disabled(!readingLayout.isExpanded && viewModel.previewText == nil && viewModel.previewImageData == nil)
             if !readingLayout.isExpanded {
                 Button {
                     readingLayout.showsInspector.toggle()
@@ -792,19 +805,6 @@ struct RepoFileBrowserSheet: View {
                 .accessibilityLabel(Text(readingLayout.showsInspector ? "repo.files.inspector.hide" : "repo.files.inspector.show"))
                 .accessibilityValue(Text(readingLayout.showsInspector ? "repo.skills.content.expanded" : "repo.skills.content.collapsed"))
             }
-            Button {
-                readingLayout.isExpanded.toggle()
-            } label: {
-                Image(systemName: readingLayout.isExpanded
-                      ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand")
-            .accessibilityLabel(Text(readingLayout.isExpanded ? "repo.files.preview.restore" : "repo.files.preview.expand"))
-            .disabled(!readingLayout.isExpanded && viewModel.previewText == nil && viewModel.previewImageData == nil)
         }
     }
 
