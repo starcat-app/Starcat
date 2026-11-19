@@ -24,6 +24,7 @@ struct DailyRadarPreviewWorkspace: View {
     /// 默认收起避免把首屏专题挤出可视区域；子分类报告少，默认展开方便回看。
     /// 同分类内手动切换不受影响（见 body 内 onChange）。
     @State private var isHistoryExpanded = false
+    @State private var interactionController = ListInteractionSuppressionController()
     @FocusState private var workspaceFocused: Bool
 
     /// 翻译状态独立于主窗口原选中仓库；宿主在文章与项目往返时保持稳定。
@@ -43,8 +44,6 @@ struct DailyRadarPreviewWorkspace: View {
         let daily = model.stories.filter { $0.category != "ai-weekly-events" }
         return daily.filter { $0.category == "ai-agents" } + daily.filter { $0.category != "ai-agents" }
     }
-    private var olderStories: [DailyRadarReport] { model.olderStories }
-    private var hasHistory: Bool { !olderStories.isEmpty || model.nextCursor != nil }
     private var story: DailyRadarReport? { model.selection }
     private var isWeeklyTopicVisible: Bool {
         !dependencies.settings.exploreCatalogPreferences.hiddenDailyRadarCategories.contains("ai-weekly-events")
@@ -175,7 +174,17 @@ struct DailyRadarPreviewWorkspace: View {
 
     /// 自适应列数只由可用内容宽度决定，不假设侧栏或主窗口的固定尺寸。
     private func home(width: CGFloat) -> some View {
-        VStack(spacing: 0) {
+        // 行闭包只捕获本轮快照，避免每行的 count / last 再次全量筛选历史集合。
+        let stories = self.stories
+        let olderStories = model.olderStories
+        let historyCount = olderStories.count
+        let lastHistoryID = olderStories.last?.id
+        let loadedItemCount = model.items.count
+        let hasMore = model.nextCursor != nil
+        let isPaginationLoading = model.isLoading || model.isLoadingMore || model.failed
+        let paginationIdentity = model.identity
+
+        return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Label {
                     Text(verbatim: model.workspaceTitle)
@@ -260,7 +269,7 @@ struct DailyRadarPreviewWorkspace: View {
                             .frame(minHeight: 200)
                     }
 
-                    if hasHistory {
+                    if historyCount > 0 || hasMore {
                         Button {
                             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                                 isHistoryExpanded.toggle()
@@ -346,12 +355,12 @@ struct DailyRadarPreviewWorkspace: View {
                                     .focusEffectDisabled()
                                     .pointerStyle(.link)
                                     .automaticListPagination(
-                                        appearingIndex: index, visibleItemCount: olderStories.count,
-                                        loadedItemCount: model.items.count, hasMore: model.nextCursor != nil,
-                                        isLoading: model.isLoading || model.isLoadingMore || model.failed,
-                                        identity: model.identity
+                                        appearingIndex: index, visibleItemCount: historyCount,
+                                        loadedItemCount: loadedItemCount, hasMore: hasMore,
+                                        isLoading: isPaginationLoading,
+                                        identity: paginationIdentity
                                     ) { await model.loadMore() }
-                                    if item.id != olderStories.last?.id { Divider() }
+                                    if item.id != lastHistoryID { Divider() }
                                 }
                             }
                         }
@@ -366,16 +375,22 @@ struct DailyRadarPreviewWorkspace: View {
                 .frame(maxWidth: 1120, alignment: .leading)
                 .padding(width < 600 ? 20 : 32)
                 .frame(maxWidth: .infinity)
+                .environment(\.starcatListInteractionSuppressed, interactionController.isSuppressed)
             }
+            // 连续滚轮事件由共享控制器防抖；只发布开始 / 结束，不逐帧刷新首页。
+            .onScrollPhaseChange { _, phase in
+                interactionController.update(isActive: phase != .idle)
+            }
+            .onDisappear { interactionController.cancel() }
             // 只有筛选变化才重置首页滚动；打开/关闭阅读不会改变此身份。
             .id(model.identity)
             // 筛选切换时旧页面淡出、新页面淡入，替代生硬的整树跳变。
             .transition(reduceMotion ? .identity : .opacity)
             .automaticListPaginationFill(
-                visibleItemCount: olderStories.count, loadedItemCount: model.items.count,
-                hasMore: isHistoryExpanded && model.nextCursor != nil,
-                isLoading: model.isLoading || model.isLoadingMore || model.failed,
-                identity: model.identity
+                visibleItemCount: historyCount, loadedItemCount: loadedItemCount,
+                hasMore: isHistoryExpanded && hasMore,
+                isLoading: isPaginationLoading,
+                identity: paginationIdentity
             ) { await model.loadMore() }
         }
         // 筛选身份变化（.id 重建）与当期内容到达（骨架→内容、期次切换）都走

@@ -53,6 +53,8 @@ struct DailyRadarWeeklyTopicCard: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.starcatListInteractionSuppressed) private var interactionSuppressed
+    @Environment(\.isEnabled) private var isEnabled
     @State private var hovered = false
     @State private var selectedIndex = 0
     @State private var isCardVisible = false
@@ -69,7 +71,7 @@ struct DailyRadarWeeklyTopicCard: View {
     private var currentIndex: Int { min(selectedIndex, coverCount - 1) }
     private var isWindowActive: Bool { scenePhase == .active && appearsActive }
     private var shouldRunCarousel: Bool {
-        !reduceMotion && isCardVisible && isWindowActive && coverCount > 1
+        isVisualEffectActive && coverCount > 1
             && !hovered && !focused && !voiceOverEnabled
     }
     /// 选期、报告身份或播放条件改变时取消旧倒计时，恢复后从完整五秒重新开始。
@@ -77,7 +79,8 @@ struct DailyRadarWeeklyTopicCard: View {
         shouldRunCarousel ? editions.map(\.contentIdentity) + [String(currentIndex)] : nil
     }
     private var isVisualEffectActive: Bool {
-        !reduceMotion && isCardVisible && isWindowActive
+        // 首页保留挂载以保存位置；阅读层覆盖时 isEnabled=false，也必须停止后台绘制。
+        !reduceMotion && isCardVisible && isWindowActive && isEnabled && !interactionSuppressed
     }
     private var compact: Bool { availableWidth < 640 * scale.multiplier }
     private var categoryTitle: String {
@@ -287,8 +290,9 @@ struct DailyRadarWeeklyTopicCard: View {
             .frame(width: geometry.size.width, height: geometry.size.height)
             .contentShape(Rectangle())
             .onContinuousHover { phase in
-                if case .active(let location) = phase {
-                    selectedIndex = layout.index(at: location.x)
+                if !interactionSuppressed, case .active(let location) = phase {
+                    let index = layout.index(at: location.x)
+                    if selectedIndex != index { selectedIndex = index }
                 }
             }
             .animation(reduceMotion ? nil : .smooth(duration: 0.5), value: currentIndex)
