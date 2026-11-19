@@ -337,8 +337,9 @@ struct RepoFileBrowserSheet: View {
                 }
             }
             Spacer(minLength: 0)
-            if let path = viewModel.previewedPath {
-                CopyFeedbackButton(providesContent: { path }, tooltip: "repo.files.preview.copy") { didCopy in
+            if let url = viewModel.githubBlobURL {
+                // 与“在 GitHub 查看”共用当前文件地址，复制后可直接打开文件页。
+                CopyFeedbackButton(providesContent: { url.absoluteString }, tooltip: "repo.files.preview.copy") { didCopy in
                     Image(systemName: didCopy ? "checkmark.circle.fill" : "square.on.square")
                         .font(.caption)
                         .foregroundStyle(didCopy ? Color.green : Color.secondary)
