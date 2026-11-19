@@ -95,6 +95,7 @@ private struct ReleaseWorkspaceAssetRow: View {
     let downloads: ReleaseWorkspaceDownloads
     @Environment(\.locale) private var locale
     @Environment(\.starcatInterfaceScale) private var scale
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var hoveringDownload = false
     @FocusState private var focusingDownload: Bool
 
@@ -159,6 +160,8 @@ private struct ReleaseWorkspaceAssetRow: View {
                     ReleaseAssetDownloadProgressRing(progress: fraction, side: 16)
                 case .running, .cancelling:
                     Image(systemName: "stop.circle.fill")
+                        // 停止正在进行的下载使用红色动作语义，区别于灰色的普通下载入口。
+                        .foregroundStyle(.red)
                 case .failed:
                     Image(systemName: "arrow.clockwise")
                 default:
@@ -171,6 +174,7 @@ private struct ReleaseWorkspaceAssetRow: View {
         .buttonStyle(.plain).focusEffectDisabled()
         .focused($focusingDownload)
         .onHover { hoveringDownload = $0 }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hoveringDownload || focusingDownload)
         .disabled(state == .cancelling)
         .help(Text(actionLabel))
         .accessibilityLabel(Text(actionLabel))
