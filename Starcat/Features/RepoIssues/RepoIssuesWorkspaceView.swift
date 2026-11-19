@@ -384,6 +384,7 @@ private struct RepoIssueListRow: View {
     var rowIndex = 0
     var selectionNamespace: Namespace.ID? = nil
     let onSelect: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: onSelect) {
@@ -451,15 +452,18 @@ private struct RepoIssueListRow: View {
         .font(.system(size: 14, weight: .medium))
     }
 
-    /// 标签胶囊：GitHub label 色（6 位 hex）做 14% 底 + 实色文字。
+    /// GitHub 原色只承担标签识别；语义文字色保证浅黄、浅青标签在两种主题和选中行上都可读。
     private func issueLabelCapsule(_ label: GitHubRepoIssueLabel) -> some View {
         let tint = issueLabelTint(label.colorHex)
         return Text(verbatim: label.name)
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(tint)
+            .foregroundStyle(.primary)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(tint.opacity(0.14), in: Capsule())
+            .background(tint.opacity(colorScheme == .dark ? 0.22 : 0.14), in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(tint.opacity(colorScheme == .dark ? 0.45 : 0.30), lineWidth: 0.5)
+            }
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
     }
