@@ -209,7 +209,7 @@ Apple 的系统字体会按字号自动处理 optical size：小字号使用更�
 
 主窗口、Agent 工作台、知识库 RAG 工作台必须共享同一个 `InterfaceScale.multiplier`。不要为某个工作台额外放大或缩小一档；如果页面需要更强的可读层级，应选择更合适的 Typography token，而不是叠加第二套倍率。
 
-Markdown 阅读正文采用独立的 16 号基准，并共享现有阅读微调与界面倍率；不要用下表的界面 `body` token 代替。字号层级、WebView / MarkdownUI 选型及资源边界统一遵循 [`UI-Markdown字号与渲染规范`](docs/5-规范/UI-Markdown字号与渲染规范.md)。
+Markdown 阅读正文及内容输入（包括占位提示）采用独立的 16 号基准，并共享现有阅读微调与界面倍率；不要用下表的界面 `body` token 代替。字号层级、WebView / MarkdownUI 选型及资源边界统一遵循 [`UI-Markdown字号与渲染规范`](docs/5-规范/UI-Markdown字号与渲染规范.md)。
 
 Starcat 标准档字号规则：
 

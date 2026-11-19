@@ -1,6 +1,6 @@
 # Markdown 字号与渲染规范
 
-> 生效：2026-11-19；适用于 App 内 Markdown 阅读、预览及 AI 流式正文。实现清单见 [Markdown 阅读统一专项](../4-工程进度/Markdown阅读统一专项/Checklist.md)。
+> 生效：2026-11-19；适用于 App 内 Markdown 阅读、预览、内容撰写及 AI 流式正文。实现清单见 [Markdown 阅读统一专项](../4-工程进度/Markdown阅读统一专项/Checklist.md)。
 
 ## 字号的单一来源
 
@@ -30,6 +30,15 @@ WebView 的 CSS px 与 MarkdownUI 的原生 point 采用相同逻辑数值；不
 | RAG / Agent 正文与证据阅读 | 保留现有 MarkdownUI | 保留引用、表格及代码复制、现有流式与滚动策略 |
 
 新增入口先按内容形态选择；不能以“原生一定快”或“WebView 一定快”代替判断。变更既有入口的渲染方式必须明确范围及原有能力影响。本次只将 Releases 与独立 Skill 管理概览迁移到 WebView，其余入口不因本规范扩大迁移。
+
+## 内容输入与占位提示
+
+笔记、Issue 标题/正文/回复/评论编辑、AI 对话、RAG/Agent 命令、提示词模板和其他多行内容输入，均与阅读正文共用 16 号基准、界面倍率及阅读微调。输入文字、空输入提示必须采用同一个字体来源；不能只放大预览而遗漏输入。
+
+- SwiftUI `TextEditor` / 多行 `TextField` 使用 `starcatMarkdownBodyFont()`；独立 overlay placeholder 也必须使用同一 modifier。提示词/XML 等原有等宽设计保留，字号相同。
+- AppKit `NSTextView` 从 `MarkdownTypography.nativeFont` 取得字体；`makeNSView` 和 `updateNSView` 均应用。字体变化时更新现有正文与 typingAttributes、重绘占位提示并重新测高，不能只在创建时设一次字体。
+- 自绘 placeholder 使用编辑器实际 `font`；不得额外使用系统默认字号或 caption。改字号不替换草稿、不重置选择范围、撤销、输入法和发送/粘贴逻辑。
+- 搜索、名称、端口、密钥、数字及其他单行配置表单不属于内容撰写，仍采用界面 typography；盘点时单列其用途与字号，不为凑统一数字强行放大工具栏。
 
 ## WebView 使用约束
 
