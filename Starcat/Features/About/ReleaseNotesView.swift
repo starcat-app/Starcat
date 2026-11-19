@@ -268,7 +268,7 @@ private struct ReleaseNotesItemRow: View {
                         if let detail = item.detail, detail.isEmpty == false {
                             ReleaseNotesInlineText(
                                 raw: detail,
-                                        baseColor: .secondary
+                                baseColor: .secondary
                             )
                         }
                     }
