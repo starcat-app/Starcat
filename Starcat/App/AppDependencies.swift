@@ -76,6 +76,9 @@ final class AppDependencies {
     let repoRepository: any RepoRepositoryProtocol
     /// Skill 扫描证据、后台补查与详情读取共用同一份本机索引。
     let repoSkillStore: RepoSkillStore
+    /// 详情、管理窗口与 MCP 复用评估任务、账号边界和报告。
+    let skillEvaluation: SkillEvaluationService
+    let publicMCPTasks: StarcatMCPTaskStore
     /// 公开 Star 数据贡献旁路；失败不得改变同步和 UI 状态。
     let dataContributionCoordinator: DataContributionCoordinator
     /// Settings 只读取开关真值，不暴露 Outbox 或网络状态。
@@ -1142,9 +1145,36 @@ final class AppDependencies {
             tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession)
         )
         self.projectGitHubAPIClient = projectAPIClient
-        self.repoSkillStore = RepoSkillStore(
+        let repoSkills = RepoSkillStore(
             database: db, publicAPI: api, privateAPI: projectAPIClient,
             privateDownloader: RepoFileDownloader(tokenProvider: ProjectAccessTokenProvider(session: projectAccessSession))
+        )
+        self.repoSkillStore = repoSkills
+        let publicTasks = StarcatMCPTaskStore()
+        self.publicMCPTasks = publicTasks
+        // 只有 Direct 可建立本机库句柄。SkillLibraryStore 到首次读写才真正打开数据库。
+        let evaluationLibrary = try? SkillLibraryStore(distributionGate: distributionGate)
+        self.skillEvaluation = SkillEvaluationService(
+            gate: distributionGate, tasks: publicTasks,
+            account: { db.currentUserId.map(String.init) ?? "_anonymous" },
+            providers: { settings.aiProviderProfiles },
+            readKey: { try KeychainManager.shared.loadAIKey(forProvider: $0) },
+            source: { target in
+                switch target {
+                case .repository(let repo, _):
+                    SkillEvaluationSnapshotter(store: nil, downloader: repoSkills.downloader(for: repo))
+                case .library:
+                    SkillEvaluationSnapshotter(store: evaluationLibrary, downloader: RepoFileDownloader())
+                }
+            },
+            verifyTarget: { target in
+                guard case .repository(let repo, let skill) = target else { return }
+                guard session.state.user?.id == db.currentUserId,
+                      let scan = try await repoSkills.cachedScan(for: repo),
+                      scan.commitSHA == skill.commitSHA, scan.skills.contains(skill) else {
+                    throw SkillEvaluationFailure("input")
+                }
+            }
         )
         self.projectReadmeAPI = ReadmeAPI(
             client: projectAPIClient,
@@ -1935,6 +1965,7 @@ final class AppDependencies {
         session.onUserSessionChanged = { [weak self] userId in
             guard let self else { return }
             // 先等公共任务真实退出，再让任何领域服务切换数据库，避免旧账号句柄串库。
+            self.skillEvaluation.beginAccountChange()
             await mcpFacade.publicCapabilities?.prepareForAccountChange()
             // 启动校验 401 不经过 onSignOut；在共用会话出口清理，覆盖退出和凭据失效。
             if userId == nil { self.profileExtrasService.reset() }
@@ -2013,6 +2044,7 @@ final class AppDependencies {
                 await self.screensaverRefreshCoordinator.publishReady()
             }
             mcpFacade.publicCapabilities?.finishAccountChange(succeeded: didSwitchDatabase)
+            self.skillEvaluation.finishAccountChange(succeeded: didSwitchDatabase)
         }
 
         // 启动期 reload：异步 Task，不阻塞 init。测试 host 跳过避免触发 DB 启动期成本。

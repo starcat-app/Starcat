@@ -905,6 +905,7 @@ private struct AboutDependency: Identifiable {
         var dependencies = base
         if DistributionChannel.current.isDirect {
             dependencies.append(sparkle)
+            dependencies.append(skillEvaluator)
         }
         dependencies.append(contentsOf: embeddedResources)
         return dependencies
@@ -1022,6 +1023,14 @@ private struct AboutDependency: Identifiable {
     )
 
     // MARK: 嵌入式资源 / 生成代码（非 SPM，但同样属于第三方开源）
+
+    // Direct 通过用户安装的 CLI 调用；版权行来自固定发布版本的 LICENSE。
+    private static let skillEvaluator = AboutDependency(
+        name: "SkillEvaluator",
+        license: "Apache 2.0",
+        copyright: "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+        url: URL(string: "https://github.com/NVIDIA/SkillEvaluator")
+    )
 
     private static let embeddedResources: [AboutDependency] = [
         AboutDependency(

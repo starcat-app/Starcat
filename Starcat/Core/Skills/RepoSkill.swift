@@ -48,6 +48,8 @@ struct RepoSkill: Identifiable, Codable, Equatable, Sendable {
     let manifest: String
     let files: [RepoSkillFile]
     let installationIssue: String?
+    /// 评估可读取无效清单，但不接受缺失目录成员或无法安全复制的 Git 文件。
+    var evaluationSnapshotComplete: Bool? = nil
 
     var id: String { "\(repositoryID):\(commitSHA):\(directory)" }
     var manifestPath: String { directory + "SKILL.md" }
@@ -80,8 +82,8 @@ struct RepoSkillSummary: Equatable, Sendable {
 
 /// 整仓扫描快照可重建，不参与 CloudKit 用户数据同步。
 struct RepoSkillScan: Codable, Equatable, Sendable {
-    /// v4：无效 frontmatter 也保留预览；旧缓存丢弃了这些候选，须整体重扫。
-    static let rulesVersion = 4
+    /// v5：目录完整性与安装资格分开记录，旧缓存需要重新取树。
+    static let rulesVersion = 5
     let repositoryID: Int64
     let commitSHA: String
     let sourcePushedAt: String?

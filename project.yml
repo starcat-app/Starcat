@@ -265,6 +265,11 @@ targets:
     platform: macOS
     sources:
       - path: StarcatTests
+        excludes:
+          - Fixtures/SkillEvaluation
+      - path: StarcatTests/Fixtures/SkillEvaluation
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: Starcat
     configFiles:

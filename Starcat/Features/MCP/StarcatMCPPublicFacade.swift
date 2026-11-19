@@ -15,7 +15,7 @@ import MCP
 final class StarcatMCPPublicFacade {
     private weak var dependencies: AppDependencies?
     private weak var facade: StarcatMCPFacade?
-    let tasks = StarcatMCPTaskStore()
+    let tasks: StarcatMCPTaskStore
     private var sessionChanging = false
     /// 导出只返回随机身份；分块读取 App 生成的文件，不接受客户端提供本机文件路径。
     var diagnosticExports: [String: (url: URL, createdAt: Date)] = [:]
@@ -24,6 +24,8 @@ final class StarcatMCPPublicFacade {
     init(dependencies: AppDependencies, facade: StarcatMCPFacade) {
         self.dependencies = dependencies
         self.facade = facade
+        // 界面启动的评估与公共调用共享任务身份及切号屏障。
+        self.tasks = dependencies.publicMCPTasks
     }
 
     /// 整个切库窗口都拒绝新调用；仅等待任务退出后立即解锁仍会留出异步切库空隙。
@@ -84,6 +86,8 @@ final class StarcatMCPPublicFacade {
              "get_cache_statistics", "clear_cache", "list_managed_skills", "import_skill", "update_skill",
              "remove_skill", "check_skill_updates", "set_public_settings", "export_diagnostics", "read_export_chunk":
             return try await callLocalOperation(name: name, arguments: arguments, app: app)
+        case "get_skill_evaluation", "export_skill_evaluation", "start_skill_evaluation":
+            return try await callSkillEvaluation(name: name, arguments: arguments, app: app)
         case "get_task_status":
             return try tasks.status(id: arguments["task_id"]?.stringValue ?? "")
         case "get_task_result":

@@ -159,7 +159,11 @@ struct RepoSkillScanner: Sendable {
                         installationIssue: metadata == nil ? RepoSkillError.invalidManifest.localizedDescription
                             : !complete ? String.l10n("repo.skills.error.incomplete")
                             : externalReferences ? String.l10n("repo.skills.error.externalReferences")
-                            : (unsupported || nested ? String.l10n("repo.skills.error.unsupported") : nil)
+                            : (unsupported || nested ? String.l10n("repo.skills.error.unsupported") : nil),
+                        evaluationSnapshotComplete: complete && !nested && contents.allSatisfy {
+                            RepoFileTreeBuilder.isSafeRelativePath($0.path) &&
+                                ($0.type == "tree" || ($0.type == "blob" && ["100644", "100755"].contains($0.mode)))
+                        }
                     ))
                 }
             } catch {

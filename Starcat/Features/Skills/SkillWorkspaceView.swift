@@ -222,6 +222,7 @@ private struct SkillLibraryList: View {
     @Bindable var viewModel: SkillWorkspaceViewModel
     @State private var isCheckingUpdates = false
     @State private var updateMessage: String?
+    @State private var evaluationTask: SkillEvaluationPanelTaskLink?
     @Environment(\.starcatReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -229,6 +230,17 @@ private struct SkillLibraryList: View {
             HStack {
                 title.font(interfaceScale.font(.panelTitle))
                 Spacer(minLength: 8)
+                if let dependencies, dependencies.distributionGate.isAvailable(.externalToolBridge) {
+                    Button {
+                        presentEvaluation(dependencies)
+                    } label: {
+                        Label("skills.evaluation.action", systemImage: "checklist")
+                            .labelStyle(.iconOnly)
+                    }
+                    .help("skills.evaluation.action")
+                    .accessibilityLabel(Text("skills.evaluation.action"))
+                    .disabled(viewModel.selectedIDs.isEmpty || viewModel.libraryEnvironment == nil)
+                }
                 Button("skills.batch.title") {
                     let ids = viewModel.visibleItems.filter { viewModel.selectedIDs.contains($0.id) }.map(\.id)
                     SkillReviewWindowController.present(titleKey: "skills.batch.title") { close in
@@ -332,6 +344,19 @@ private struct SkillLibraryList: View {
         }
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: viewModel.items.isEmpty)
         .padding(16)
+    }
+
+    /// 与现有批量入口一样冻结选中的可见条目，多选顺序沿用目录列表。
+    private func presentEvaluation(_ dependencies: AppDependencies) {
+        let items = viewModel.visibleItems.filter { viewModel.selectedIDs.contains($0.id) }.map {
+            SkillEvaluationPanelItem(target: .library($0.id), name: $0.name, source: $0.source)
+        }
+        guard !items.isEmpty else { return }
+        SkillReviewWindowController.present(titleKey: "skills.evaluation.title") { close in
+            SkillEvaluationPanel(items: items, service: dependencies.skillEvaluation, rememberedTask: $evaluationTask, close: close)
+                .onChange(of: dependencies.databaseScopeRevision) { close() }
+                .appHostEnvironment(dependencies)
+        }
     }
 
     private var title: Text {

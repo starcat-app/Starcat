@@ -84,7 +84,44 @@ enum StarcatMCPPublicCatalog {
         ])
     ]
 
-    static let specs: [StarcatMCPPublicSpec] = [
+    /// 目录、tools/list 和调用白名单共同使用渠道过滤后的同一份契约。
+    static let specs = specs(for: DistributionChannel.current)
+
+    static func specs(for channel: DistributionChannel) -> [StarcatMCPPublicSpec] {
+        commonSpecs + (channel.isDirect ? skillEvaluationSpecs : [])
+    }
+
+    private static let skillEvaluationInput: [String: Value] = [
+        "mode": string(SkillEvaluationMode.allCases.map(\.rawValue)),
+        "targets": .object([
+            "type": .string("array"), "minItems": .int(1), "maxItems": .int(30),
+            "items": .object([
+                "type": .string("object"), "additionalProperties": .bool(false),
+                "properties": .object([
+                    "library_id": string(), "repo_id": integer(1, Int.max),
+                    "commit_sha": string(), "skill_id": string()
+                ])
+            ])
+        ])
+    ]
+    private static let skillEvaluationStartInput = skillEvaluationInput.merging(preview) { _, new in new }.merging([
+        "consent": boolean,
+        "model": .object([
+            "type": .string("object"), "additionalProperties": .bool(false),
+            "required": .array([.string("provider_id"), .string("endpoint")]),
+            "properties": .object([
+                "provider_id": string(), "endpoint": string(), "chat": string(), "embedding": string()
+            ])
+        ])
+    ]) { _, new in new }
+
+    private static let skillEvaluationSpecs: [StarcatMCPPublicSpec] = [
+        .init(name: "get_skill_evaluation", summary: "Read cached Skill evaluation reports for library UUIDs or account repositories at an explicit commit. No scan, refresh, or model call.", properties: skillEvaluationInput, required: ["mode", "targets"]),
+        .init(name: "export_skill_evaluation", summary: "Export matching cached Skill evaluation reports as JSON content; the caller owns output files.", properties: skillEvaluationInput, required: ["mode", "targets"]),
+        .init(name: "start_skill_evaluation", summary: "Preview or start a static Skill evaluation, for one Skill or a batch. AI modes require configured models and consent to send selected data. Query or cancel through the existing task tools.", properties: skillEvaluationStartInput, required: ["mode", "targets"], permission: "write", network: "conditional_github_scanner_and_configured_ai", task: true)
+    ]
+
+    private static let commonSpecs: [StarcatMCPPublicSpec] = [
         .init(name: "get_public_settings", summary: "Read non-secret integration settings and channel information.", properties: [:]),
         .init(name: "get_repo_health", summary: "Read the cached health snapshot without refreshing or fetching.", properties: selector),
         .init(name: "get_repo_security", summary: "Read the cached OpenSSF snapshot without fetching.", properties: selector),

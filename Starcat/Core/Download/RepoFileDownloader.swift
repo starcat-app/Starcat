@@ -55,6 +55,10 @@ enum RepoFilePreview: Equatable, Sendable {
 protocol RepoFileDownloading: Sendable {
     /// 普通文件校验 Git blob SHA，LFS 实物还需对应原 pointer 的 SHA256 与大小。
     func verifyDownloadedFile(owner: String, repo: String, sha: String, fileURL: URL) async throws -> Bool
+
+    /// 评估只接收指定 SHA 与大小的原始 Git blob，LFS pointer 保持原样。
+    func evaluationBlob(owner: String, repo: String, sha: String, size: Int) async throws -> Data
+
     func download(
         owner: String,
         repo: String,
@@ -78,6 +82,12 @@ extension RepoFileDownloading {
         let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
         return RepoFileDownloader.gitBlobSHA(data) == sha
     }
+
+    // 只有支持有界原始 blob 的实现才能参与评估，普通下载可能展开 LFS。
+    func evaluationBlob(owner: String, repo: String, sha: String, size: Int) async throws -> Data {
+        throw RepoSkillError.incomplete
+    }
+
     func download(
         owner: String,
         repo: String,
@@ -109,6 +119,8 @@ extension RepoFileDownloading {
 /// 无状态 actor：每次调用独立，进度回调可能来自 URLSession 私有队列。
 actor RepoFileDownloader: RepoFileDownloading {
 
+    static let maximumEvaluationBlobBytes = 64 * 1024 * 1024
+
     private let session: URLSession
     private let tokenProvider: any GitHubTokenProviding
 
@@ -138,6 +150,35 @@ actor RepoFileDownloader: RepoFileDownloading {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
+    /// 文件评估需要 Git 树里的原始字节。尤其不能把一个很小的 LFS pointer
+    /// 展开成超出快照预算的下载，或把实物误认为该 blob 的内容。
+    func evaluationBlob(owner: String, repo: String, sha: String, size: Int) async throws -> Data {
+        try Task.checkCancellation()
+        guard (0...Self.maximumEvaluationBlobBytes).contains(size), sha.utf8.count == 40,
+              sha.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+            throw RepoSkillError.verification
+        }
+        let request = try await blobRequest(owner: owner, repo: repo, sha: sha)
+        let (bytes, response) = try await session.bytes(for: request)
+        // 包括先见到无效状态或读到首个超额字节的情况，停止底层传输。
+        defer { bytes.task.cancel() }
+        guard let http = response as? HTTPURLResponse else { throw RepoFileDownloadError.emptyResponse }
+        guard (200...299).contains(http.statusCode) else { throw RepoFileDownloadError.httpStatus(http.statusCode) }
+
+        // Content-Length 可能缺失，也可能是压缩后的大小。以收到的实际原始字节为准。
+        var data = Data()
+        data.reserveCapacity(min(size, 65_536))
+        for try await byte in bytes {
+            guard data.count < size else { throw RepoSkillError.verification }
+            data.append(byte)
+        }
+        try Task.checkCancellation()
+        guard data.count == size, Self.gitBlobSHA(data) == sha else {
+            throw RepoSkillError.verification
+        }
+        return data
+    }
+
     func download(
         owner: String,
         repo: String,
@@ -152,20 +193,7 @@ actor RepoFileDownloader: RepoFileDownloading {
         guard let destination = Self.destinationURL(root: root, repoName: repo, relativePath: relativePath) else {
             throw RepoFileDownloadError.unsafePath
         }
-        let url = AppEndpoints.GitHubREST.url(
-            AppEndpoints.GitHubREST.Paths.repoGitBlob(owner: owner, repo: repo, sha: sha)
-        )
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue(AppConstants.httpUserAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("application/vnd.github.raw", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        if let token = await tokenProvider.currentToken(), !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        } else if tokenProvider.requiresAuthentication {
-            throw NetworkError.unauthorized
-        }
+        let request = try await blobRequest(owner: owner, repo: repo, sha: sha)
 
         let tempURL: URL
         let response: URLResponse
@@ -333,6 +361,12 @@ actor RepoFileDownloader: RepoFileDownloading {
     }
 
     private func fetchBlobBytes(owner: String, repo: String, sha: String) async throws -> Data {
+        let request = try await blobRequest(owner: owner, repo: repo, sha: sha)
+        return try await data(for: request)
+    }
+
+    /// blob 的请求头与当前仓库所选的凭据来源在预览、下载和评估之间保持一致。
+    private func blobRequest(owner: String, repo: String, sha: String) async throws -> URLRequest {
         let url = AppEndpoints.GitHubREST.url(
             AppEndpoints.GitHubREST.Paths.repoGitBlob(owner: owner, repo: repo, sha: sha)
         )
@@ -346,7 +380,7 @@ actor RepoFileDownloader: RepoFileDownloading {
         } else if tokenProvider.requiresAuthentication {
             throw NetworkError.unauthorized
         }
-        return try await data(for: request)
+        return request
     }
 
     private func fetchLFSBytes(owner: String, repo: String, pointer: GitLFSPointer) async throws -> Data {

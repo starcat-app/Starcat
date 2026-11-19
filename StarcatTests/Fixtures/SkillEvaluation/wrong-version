@@ -1,0 +1,4 @@
+#!/bin/sh
+# 只提供成功退出但版本不同的探针，确保拒绝发生在版本校验。
+[ "$#" -eq 1 ] && [ "$1" = --version ] || exit 2
+printf 'skillevaluator, version 1.0.2\n'
