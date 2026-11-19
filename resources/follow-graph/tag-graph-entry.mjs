@@ -1,7 +1,7 @@
 // 离线标签画布。SQLite ID 是身份；只在真实数据变化时重新交给物理引擎。
 import ForceGraph from 'force-graph';
 import { forceCollide } from 'd3-force-3d';
-import { edgeWidth, nodeRadius } from './tag-graph-style.mjs';
+import { edgeColor, edgeWidth, nodeRadius } from './tag-graph-style.mjs';
 
 const host = document.getElementById('graph');
 let options = {}, currentNodes = new Map(), links = [], neighbors = new Set();
@@ -58,7 +58,7 @@ function refreshStyle() {
   graph.linkColor(e => {
     const ids = options.selected || [];
     const hit = ids.length && ids.every(id => id === e.left_id || id === e.right_id);
-    return hit ? (options.dark ? '#83baff' : '#276ac2') : (options.dark ? '#73798775' : '#73798780');
+    return edgeColor(e.shared_count, options.dark, hit);
   });
 }
 function apply(state) {

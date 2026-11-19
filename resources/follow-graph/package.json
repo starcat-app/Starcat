@@ -4,7 +4,7 @@
   "description": "Starcat offline following graph renderer",
   "main": "index.js",
   "scripts": {
-    "test": "node --test renderer.test.mjs",
+    "test": "node --test renderer.test.mjs tag-graph-style.test.mjs",
     "build": "node build.mjs"
   },
   "keywords": [],
