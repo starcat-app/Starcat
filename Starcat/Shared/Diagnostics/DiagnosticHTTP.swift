@@ -63,17 +63,6 @@ enum DiagnosticHTTP {
                      service: String) async throws -> (Data, URLResponse) {
         let attempt = DiagnosticHTTPRequest(service: service, method: request.httpMethod ?? "GET",
                                             route: DiagnosticHTTPRequest.route(request.url))
-        if DiagnosticRecording.shared.expiresAt != nil {
-            let shape = DiagnosticEvent(
-                level: .debug, category: "network", operation: service, message: "Enhanced request shape",
-                operationID: attempt.operation.id, parentOperationID: attempt.operation.parentID,
-                requestID: attempt.id, phase: "requestShape",
-                fields: ["headerCount": .integer(request.allHTTPHeaderFields?.count ?? 0),
-                         "uploadBytes": .integer(request.httpBody?.count ?? 0)])
-            if DiagnosticRecording.shared.consume(shape.estimatedQueuedBytes) {
-                attempt.operation.capture(shape)
-            }
-        }
         do {
             let result = try await session.data(for: request)
             attempt.finish(response: result.1, receivedBytes: result.0.count)

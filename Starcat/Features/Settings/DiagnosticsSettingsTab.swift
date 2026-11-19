@@ -3,26 +3,17 @@
 //  Starcat
 //
 //  诊断与支持设置：本地诊断导出、连接配置入口和日志说明。
-//  导出、确认提醒与增强复现独立；导出不主动发起连接测试或业务刷新。
+//  诊断报告在独立窗口创建；设置页只提供入口，不保存报告草稿。
 //
 
 import SwiftUI
 
 /// 使用与其他设置页一致的原生分组表单；配置检查仍由各自设置页负责。
 struct DiagnosticsSettingsTab: View {
-    @Environment(AppSettings.self) private var settings
     @Environment(AppDependencies.self) private var dependencies
+    @Environment(\.openWindow) private var openWindow
 
-    @State private var isExporting = false
-    @State private var lastExportMessage: String?
-    @State private var exportError: String?
-    @State private var isReportContentsExpanded = false
     @State private var isLogGuidePresented = false
-    @State private var problemDescription = ""
-    @State private var problemModule = ""
-    @State private var includeProblemTime = false
-    @State private var problemTime = Date()
-    @State private var recordingEndsAt: Date?
 
     var body: some View {
         Form {
@@ -37,143 +28,27 @@ struct DiagnosticsSettingsTab: View {
             supportSection
         }
         .formStyle(.grouped)
-        .task {
-            recordingEndsAt = DiagnosticRecording.shared.expiresAt
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .diagnosticRecordingDidChange)) { _ in
-            recordingEndsAt = DiagnosticRecording.shared.expiresAt
-        }
-        .task(id: recordingEndsAt) {
-            guard let end = recordingEndsAt else { return }
-            do {
-                try await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow)))
-                recordingEndsAt = DiagnosticRecording.shared.expiresAt
-            } catch { /* 视图离开只取消 UI 等待，后台录制仍按原截止时间停止 */ }
-        }
         .sheet(isPresented: $isLogGuidePresented) {
             DiagnosticLogGuideSheet()
                 .appLocaleEnvironment()
-        }
-        .alert(
-            "diagnostics.export.failed.title",
-            isPresented: Binding(
-                get: { exportError != nil },
-                set: { if !$0 { exportError = nil } }
-            )
-        ) {
-            Button("general.ok") { exportError = nil }
-        } message: {
-            Text(exportError ?? "")
         }
     }
 
     private var reportSection: some View {
         Section {
-            TextField("settings.diagnostics.capture.description", text: $problemDescription, axis: .vertical)
-                .starcatMarkdownBodyFont()
-                .lineLimit(1...3)
-                .onChange(of: problemDescription) { _, value in
-                    if value.count > 2000 { problemDescription = String(value.prefix(2000)) }
-                }
-            TextField("settings.diagnostics.capture.module", text: $problemModule)
-                .onChange(of: problemModule) { _, value in
-                    if value.count > 80 { problemModule = String(value.prefix(80)) }
-                }
-            Toggle("settings.diagnostics.capture.includeTime", isOn: $includeProblemTime)
-            if includeProblemTime {
-                DatePicker("settings.diagnostics.capture.time", selection: $problemTime)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    Text("settings.diagnostics.layout.export.description")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .help(Text("settings.diagnostics.layout.export.description"))
-                    Spacer(minLength: 8)
-                    Button {
-                        Task { await exportDiagnostics() }
-                    } label: {
-                        Text("settings.diagnostics.layout.export.button")
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(isExporting)
-                    .fixedSize(horizontal: true, vertical: false)
-                }
-                if isExporting {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("settings.diagnostics.export.running")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if let lastExportMessage {
-                    Text(verbatim: lastExportMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("settings.diagnostics.capture.enhancedHelp")
+            HStack(spacing: 12) {
+                Text("settings.diagnostics.layout.export.description")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    if let end = recordingEndsAt {
-                        Text(timerInterval: Date()...max(Date(), end), countsDown: true)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if recordingEndsAt != nil {
-                        Button("settings.diagnostics.capture.stopExport") {
-                            DiagnosticRecording.shared.stop()
-                            recordingEndsAt = nil
-                            Task { await exportDiagnostics() }
-                        }
-                        .disabled(isExporting)
-                    } else {
-                        Button("settings.diagnostics.capture.start") {
-                            recordingEndsAt = DiagnosticRecording.shared.start()
-                        }
-                    }
+                Spacer(minLength: 8)
+                Button("diagnostics.report.open") {
+                    openWindow(id: DiagnosticReportWindow.sceneID)
                 }
-                HStack {
-                    Spacer()
-                    Button("settings.diagnostics.capture.acknowledge") {
-                        Task { await DiagnosticLogStore.shared.markIssuesAcknowledged() }
-                    }
-                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize(horizontal: true, vertical: false)
             }
-
-            DisclosureGroup(isExpanded: $isReportContentsExpanded) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Divider()
-                    explanation(
-                        "settings.diagnostics.layout.contents.included",
-                        description: "settings.diagnostics.layout.contents.includedDescription"
-                    )
-                    Divider()
-                    explanation(
-                        "settings.diagnostics.layout.contents.excluded",
-                        description: "settings.diagnostics.layout.contents.excludedDescription"
-                    )
-                }
-            } label: {
-                explanation(
-                    "settings.diagnostics.layout.contents.title",
-                    description: "settings.diagnostics.layout.contents.summary"
-                )
-            }
-            .disclosureGroupStyle(SettingsDisclosureGroupStyle(
-                accessibilityLabel: Text("settings.diagnostics.layout.contents.title"),
-                accessibilityHint: Text("settings.diagnostics.layout.contents.summary")
-            ))
         } header: {
             SettingsSectionHeader("settings.diagnostics.layout.report.title", systemImage: "doc.text")
         }
@@ -294,20 +169,4 @@ struct DiagnosticsSettingsTab: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    @MainActor
-    private func exportDiagnostics() async {
-        isExporting = true
-        defer { isExporting = false }
-
-        let options = DiagnosticExportOptions(description: problemDescription, module: problemModule,
-                                             occurredAt: includeProblemTime ? problemTime : nil)
-        switch await DiagnosticBundleExporter.exportFromPanel(settings: settings, options: options) {
-        case .exported(let url):
-            lastExportMessage = String(format: String.l10n("settings.diagnostics.capture.saved"), url.path)
-        case .cancelled:
-            break
-        case .failed(let message):
-            exportError = message
-        }
-    }
 }
