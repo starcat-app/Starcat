@@ -39,7 +39,6 @@ struct RepoFileBrowserSheet: View {
     @State private var translationToast: String?
     @State private var translationNoticeToast: String?
     @Namespace private var selectionNamespace
-    @FocusState private var searchFocused: Bool
 
     init(
         target: RepoFileBrowserTarget, apiClient: any GitHubAPIClientProtocol,
@@ -158,7 +157,16 @@ struct RepoFileBrowserSheet: View {
             ) { name in
                 Task { await viewModel.selectBranch(name) }
             }
-            searchField
+            SyncIconButton(
+                isRefreshing: viewModel.isRefreshing,
+                disabled: viewModel.isRefreshing || viewModel.isDownloading || {
+                    if case .loading = viewModel.phase { return true }
+                    return false
+                }(),
+                tooltip: String.l10n("repo.files.refresh")
+            ) {
+                Task { await viewModel.refreshTree() }
+            }
             SheetCloseButton(action: closeWorkspace)
         }
     }
@@ -212,30 +220,8 @@ struct RepoFileBrowserSheet: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("repo.files.search.placeholder", text: $viewModel.searchQuery)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .disabled(viewModel.nodes.isEmpty)
-            Text("⌘F")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(width: 220)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background {
-            Button("repo.files.search.placeholder") { searchFocused = true }
-                .keyboardShortcut("f", modifiers: .command)
-                .hidden()
-                .accessibilityHidden(true)
-        }
+        RepoWorkspaceSearchField(placeholder: "repo.files.search.placeholder", text: $viewModel.searchQuery)
+            .disabled(viewModel.nodes.isEmpty)
     }
 
     private var sidebar: some View {
@@ -249,20 +235,11 @@ struct RepoFileBrowserSheet: View {
                 .labelsHidden()
                 .fixedSize()
                 Spacer(minLength: 0)
-                SyncIconButton(
-                    isRefreshing: viewModel.isRefreshing,
-                    disabled: viewModel.isRefreshing || viewModel.isDownloading || {
-                        if case .loading = viewModel.phase { return true }
-                        return false
-                    }(),
-                    tooltip: String.l10n("repo.files.refresh")
-                ) {
-                    Task { await viewModel.refreshTree() }
-                }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 10)
-            .padding(.bottom, 6)
+            .padding(12)
+            searchField
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
             treeArea
         }
     }

@@ -30,7 +30,7 @@ struct RepoSkillScanNotice: View {
                     }
                 }
             }
-            .buttonStyle(RepoSkillHeaderButtonStyle())
+            .buttonStyle(.bordered)
             .focusEffectDisabled()
             .help("repo.skills.scan.incomplete")
             .popover(isPresented: $isPresented, arrowEdge: .bottom) {
@@ -119,27 +119,5 @@ struct RepoSkillScanNotice: View {
         }
         .textSelection(.enabled)
         .padding(.trailing, 16)
-    }
-}
-
-/// 顶部两个文字入口共用尺寸与表面，避免原生 small 按钮和自定义提示按钮出现高度差。
-struct RepoSkillHeaderButtonStyle: ButtonStyle {
-    @Environment(\.starcatInterfaceScale) private var interfaceScale
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(interfaceScale.font(.caption, weight: .medium))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .frame(minHeight: interfaceScale.scaled(28))
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12))
-            }
-            .opacity(!isEnabled ? 0.45 : configuration.isPressed ? 0.72 : 1)
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

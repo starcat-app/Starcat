@@ -115,29 +115,23 @@ struct RepoIssuesWorkspaceContent: View {
 
     private var topBar: some View {
         RepoWorkspaceHeader(target: RepoFileBrowserTarget(repo: viewModel.repo)) {
-            SyncIconButton(
-                isRefreshing: viewModel.listViewModel.isLoading,
-                tooltip: String.l10n("repo.issues.workspace.refresh", defaultValue: "刷新 Issues")
-            ) {
-                viewModel.refreshAll()
-            }
             Button {
                 // 过渡动画必须由状态变更点驱动（.animation(value:) 兜底实测不够）。
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
                     viewModel.startCreating()
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(String.l10n("repo.issues.popover.newIssue", defaultValue: "新建 Issue"))
-                        .font(.system(size: 12, weight: .semibold))
-                }
+                Label("repo.issues.popover.newIssue", systemImage: "plus")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            .buttonStyle(.bordered)
             .focusEffectDisabled()
             .disabled(viewModel.isCreating)
+            SyncIconButton(
+                isRefreshing: viewModel.listViewModel.isLoading,
+                tooltip: String.l10n("repo.issues.workspace.refresh", defaultValue: "刷新 Issues")
+            ) {
+                viewModel.refreshAll()
+            }
             SheetCloseButton {
                 viewModel.flushCreateDraft()
                 if let onClose { onClose() } else { dismiss() }
@@ -149,8 +143,8 @@ struct RepoIssuesWorkspaceContent: View {
 
     private var leftColumn: some View {
         VStack(spacing: 0) {
-            searchField
             filterBar
+            searchField
             sortHint
             Divider()
             issueList
@@ -161,49 +155,20 @@ struct RepoIssuesWorkspaceContent: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField(
-                String.l10n("repo.issues.search.placeholder", defaultValue: "搜索标题或 Issue 编号"),
-                text: Binding(
-                    get: { viewModel.listViewModel.searchText },
-                    set: { viewModel.listViewModel.searchText = $0 }
-                )
-            )
-            .textFieldStyle(.plain)
-            .onSubmit { viewModel.listViewModel.searchTextChanged() }
-            .onChange(of: viewModel.listViewModel.searchText) { _, _ in
-                viewModel.listViewModel.searchTextChanged()
-            }
-            if !viewModel.listViewModel.searchText.isEmpty {
-                Button {
-                    viewModel.listViewModel.searchText = ""
-                    viewModel.listViewModel.searchTextChanged()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .help(String.l10n("common.clear", defaultValue: "清空"))
-            }
+        RepoWorkspaceSearchField(
+            placeholder: "repo.issues.search.placeholder",
+            text: Binding(
+                get: { viewModel.listViewModel.searchText },
+                set: { viewModel.listViewModel.searchText = $0 }
+            ),
+            showsClearButton: true
+        )
+        .onSubmit { viewModel.listViewModel.searchTextChanged() }
+        .onChange(of: viewModel.listViewModel.searchText) { _, _ in
+            viewModel.listViewModel.searchTextChanged()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color(nsColor: .textBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.2))
-        )
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
     }
 
     private var filterBar: some View {
@@ -218,8 +183,7 @@ struct RepoIssuesWorkspaceContent: View {
             )
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(12)
     }
 
     /// 排序固定「最新更新」（API 侧 sort=updated），只做标注不做切换。
