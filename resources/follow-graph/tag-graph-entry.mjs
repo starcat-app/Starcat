@@ -5,6 +5,7 @@ import { edgeColor, edgeWidth, nodeRadius } from './tag-graph-style.mjs';
 
 const host = document.getElementById('graph');
 let options = {}, currentNodes = new Map(), links = [], neighbors = new Set();
+let hoveredID = null, pointerOutside = false, highlightedIDs = [];
 let icons = new Map(), firstFit = true, painted = false, lastCamera = -1;
 const post = (kind, ids = []) => window.webkit.messageHandlers.tagGraph.postMessage({
   kind, ids, session: options.session, generation: options.generation
@@ -16,6 +17,7 @@ const graph = new ForceGraph(host).width(host.clientWidth).height(host.clientHei
   .nodeCanvasObject(drawNode).nodePointerAreaPaint((n, color, ctx) => {
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(n.x,n.y,nodeRadius(n.repo_count),0,2*Math.PI); ctx.fill();
   }).linkWidth(e => edgeWidth(e.shared_count)).linkVisibility(e => e.shared_count >= options.minimum)
+  .onNodeHover(node => { hoveredID = node?.id ?? null; refreshStyle(); })
   .onNodeClick(n => post('select', [n.id])).onLinkClick(e => post('select', [e.left_id, e.right_id]))
   .onBackgroundClick(() => post('select')).onNodeDragEnd(n => { n.fx = n.x; n.fy = n.y; })
   .onRenderFramePost(() => {
@@ -29,9 +31,9 @@ graph.d3Force('collision', forceCollide(n => nodeRadius(n.repo_count) + 20));
 // 主题色与选中项只触发重绘，不改变节点坐标或缩放。
 function drawNode(n, ctx) {
   const r = nodeRadius(n.repo_count), dark = options.dark;
-  const selected = options.selected?.includes(n.id);
+  const selected = highlightedIDs.includes(n.id);
   ctx.save();
-  ctx.globalAlpha = options.selected?.length && !neighbors.has(n.id) ? 0.38 : 1;
+  ctx.globalAlpha = highlightedIDs.length && !neighbors.has(n.id) ? 0.38 : 1;
   ctx.fillStyle = /^#?[a-f\d]{6}$/i.test(n.color || '') ? '#' + n.color.replace('#','') : '#347ac5';
   ctx.beginPath(); ctx.arc(n.x,n.y,r,0,2*Math.PI); ctx.fill();
   ctx.strokeStyle = selected ? (dark ? 'white' : '#16161a') : (dark ? '#ffffff66' : '#00000033');
@@ -54,10 +56,20 @@ function drawNode(n, ctx) {
 }
 function fit() { graph.zoomToFit(0,50); }
 function refreshStyle() {
+  // 悬停临时预览当前阈值内的邻居。原生选中项仍控制详情，移出后恢复其高亮。
+  highlightedIDs = !pointerOutside && currentNodes.has(hoveredID) ? [hoveredID] : options.selected || [];
+  neighbors = new Set(highlightedIDs);
+  if (highlightedIDs.length === 1) {
+    const [id] = highlightedIDs;
+    for (const edge of links) {
+      if (edge.shared_count < options.minimum) continue;
+      if (edge.left_id === id) neighbors.add(edge.right_id);
+      if (edge.right_id === id) neighbors.add(edge.left_id);
+    }
+  }
   // ForceGraph 的 setter 标记一帧为脏；静止时不连续重画。
   graph.linkColor(e => {
-    const ids = options.selected || [];
-    const hit = ids.length && ids.every(id => id === e.left_id || id === e.right_id);
+    const hit = highlightedIDs.length > 0 && highlightedIDs.every(id => id === e.left_id || id === e.right_id);
     return edgeColor(e.shared_count, options.dark, hit);
   });
 }
@@ -73,12 +85,6 @@ function apply(state) {
       const img = new Image(); icons.set(key,img); img.onload = refreshStyle; img.src = src;
     }
   }
-  neighbors = new Set(state.selected);
-  if (state.selected.length === 1) for (const e of links) {
-    if (e.shared_count >= state.minimum && (e.left_id === state.selected[0] || e.right_id === state.selected[0])) {
-      neighbors.add(e.left_id); neighbors.add(e.right_id);
-    }
-  }
   graph.linkVisibility(e => e.shared_count >= state.minimum);
   if (lastCamera !== state.camera && !first) {
     firstFit = false;
@@ -91,7 +97,15 @@ function apply(state) {
 const takeCamera = () => { firstFit = false; };
 host.addEventListener('pointerdown', takeCamera);
 host.addEventListener('wheel', takeCamera, {passive: true});
+// ForceGraph 只在画布内跟踪指针；进入原生侧栏时仍可能记得最后一次命中的节点。
+const pointerBoundary = event => {
+  pointerOutside = event.type === 'pointerleave';
+  if (hoveredID !== null) refreshStyle();
+};
+host.addEventListener('pointerenter', pointerBoundary);
+host.addEventListener('pointerleave', pointerBoundary);
 const resize = new ResizeObserver(() => graph.width(host.clientWidth).height(host.clientHeight)); resize.observe(host);
 window.tagGraph = {apply, destroy() { host.removeEventListener('pointerdown', takeCamera); host.removeEventListener('wheel', takeCamera);
+  host.removeEventListener('pointerenter', pointerBoundary); host.removeEventListener('pointerleave', pointerBoundary);
   resize.disconnect(); graph._destructor(); icons.clear(); }};
 window.webkit.messageHandlers.tagGraph.postMessage({kind:'ready'});

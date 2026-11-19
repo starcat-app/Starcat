@@ -1125,3 +1125,39 @@ test('tag canvas reports the painted frame once, retains user viewport and filte
   assert.deepEqual(Array.from(r.messages.at(-1).ids), ['a','r']);
   r.window.tagGraph.destroy();
 });
+
+test('hover previews visible tag neighbors, then restores the selected edge without moving or selecting', () => {
+  const r = renderer({ tagGraph: true });
+  const state = { session: 'A', generation: 1, selected: ['c', 'd'], minimum: 1, reduced: true, camera: 0 };
+  const data = {
+    nodes: Array.from('abcd', id => ({ id, name: id, repo_count: 5 })),
+    edges: [['a', 'b', 2], ['b', 'c', 1], ['c', 'd', 3]].map(([left_id, right_id, shared_count]) =>
+      ({ left_id, right_id, shared_count }))
+  };
+  r.window.tagGraph.apply({ ...state, data });
+  const { nodes, links } = r.props.get('graphData');
+  const colors = () => links.map(link => r.props.get('linkColor')(link));
+  const baseline = colors();
+  const alpha = node => {
+    const ctx = { save() {}, restore() {}, beginPath() {}, arc() {}, fill() {}, stroke() {}, fillText() {}, strokeText() {} };
+    r.props.get('nodeCanvasObject')(node, ctx);
+    return ctx.globalAlpha;
+  };
+  r.calls.length = 0;
+  r.props.get('onNodeHover')(nodes[1]);
+  const preview = colors();
+  assert.deepEqual(preview.map((c, i) => c !== baseline[i]), [true, true, true]);
+  assert.deepEqual(Array.from(nodes, alpha), [1, 1, 1, 0.38]);
+  r.window.tagGraph.apply({ ...state, minimum: 2 });
+  assert.deepEqual(Array.from(nodes, alpha), [1, 1, 0.38, 0.38]);
+  r.container.listeners.get('pointerleave')({ type: 'pointerleave' });
+  assert.deepEqual(colors(), baseline);
+  assert.deepEqual(Array.from(nodes, alpha), [0.38, 0.38, 1, 1]);
+  r.container.listeners.get('pointerenter')({ type: 'pointerenter' });
+  assert.deepEqual(colors(), preview);
+  r.props.get('onNodeHover')(null);
+  assert.deepEqual(colors(), baseline);
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'centerAt', 'zoomToFit'].includes(name)));
+  assert.ok(!r.messages.some(m => m.kind === 'select'));
+  r.window.tagGraph.destroy();
+});
