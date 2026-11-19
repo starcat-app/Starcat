@@ -225,6 +225,9 @@ final class RepoAIChatViewModel {
     /// 调用 `startNewSessionAfterOverflow(repo:)` 后自动清零。
     private(set) var isContextOverflow: Bool = false
 
+    /// 当前会话最近一轮的本地投影状态；切会话时清掉，不写进对话内容或磁盘。
+    private(set) var wasContextCompacted = false
+
     /// 当前 repo 的已索引外部 Wiki 镜像链接（2026-06-15 v4.y）。
     ///
     /// 由 `bootstrap` 阶段从 `WikiContextService` 同步读盘填充（cache hit fresh /
@@ -560,6 +563,7 @@ final class RepoAIChatViewModel {
         isSending = true
         errorMessage = nil
         isContextOverflow = false
+        wasContextCompacted = false
 
         defer { isSending = false }
 
@@ -608,6 +612,9 @@ final class RepoAIChatViewModel {
                     if let snapshot = reasoningPresentationBuffer.completeReasoning(now: now) {
                         self.publishReasoningPhase(snapshot)
                     }
+                },
+                onContextCompacted: { [weak self] in
+                    self?.wasContextCompacted = true
                 }
             ) { [weak self] delta in
                 guard let self else { return }
@@ -792,6 +799,7 @@ final class RepoAIChatViewModel {
         totalMessageCount = 0
         errorMessage = nil
         isContextOverflow = false
+        wasContextCompacted = false
     }
 
     private func applySession(_ session: ChatSession) {
@@ -808,6 +816,7 @@ final class RepoAIChatViewModel {
         totalMessageCount = session.messages.count
         errorMessage = nil
         isContextOverflow = false
+        wasContextCompacted = false
     }
 
     private func applySessionPage(_ page: ChatSessionPage) {
@@ -824,6 +833,7 @@ final class RepoAIChatViewModel {
         totalMessageCount = page.totalMessageCount
         errorMessage = nil
         isContextOverflow = false
+        wasContextCompacted = false
     }
 
     /// 运行中 Think 的 AppKit session。完整文本只活在这里和 NSTextView 里。

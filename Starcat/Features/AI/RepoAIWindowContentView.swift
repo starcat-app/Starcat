@@ -1648,8 +1648,17 @@ struct RepoAIWindowContentView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
+            } else if chat.wasContextCompacted {
+                Label("ai.assistant.chat.contextBudget.compacted", systemImage: "info.circle")
+                    .font(interfaceScale.font(.captionSmall))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
             }
         }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: chat.wasContextCompacted)
     }
 
     /// HOM-70 v2：是否应该在 chatScrollArea 顶部展示「承接自上一对话」banner。

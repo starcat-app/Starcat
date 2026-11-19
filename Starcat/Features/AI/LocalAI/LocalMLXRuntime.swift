@@ -498,27 +498,39 @@ extension LocalMLXRuntime {
     /// actor 上（见文件头「并发模型」）。
     nonisolated static func generate(
         container: ModelContainer,
-        request: AIChatRequest,
+        request originalRequest: AIChatRequest,
         onEvent: @escaping @Sendable (AIChatStreamEvent) -> Void
     ) async throws -> AIChatResponse {
-        if !request.tools.isEmpty {
+        if !originalRequest.tools.isEmpty {
             throw LocalAIError.toolsUnsupported
         }
         LocalAILog.record("input.preparing", "Preparing chat template and validating the input token budget.")
+        let prepared = try await RepoAIChatContextBudget.prepare(originalRequest) { candidate in
+            try await Self.promptTokenCount(container: container, request: candidate)
+        }
+        let request = prepared?.request ?? originalRequest
+        if let prepared {
+            LocalAILog.record("context.prepared", "Repository chat context selected within the model input budget.", fields: [
+                "inputTokens": String(prepared.inputTokens),
+                "inputTokenLimit": String(LocalAIGenerationPolicy.chatInputTokens),
+                "contextWindowTokens": String(LocalAIGenerationPolicy.chatContextTokens),
+                "reservedOutputTokens": String(LocalAIGenerationPolicy.chatOutputTokens),
+                "compacted": String(prepared.wasCompacted)
+            ])
+        }
+        let inputTokenLimit = prepared == nil ? LocalAIMemoryPolicy.inputTokens : LocalAIGenerationPolicy.chatInputTokens
+        let outputTokenLimit = prepared == nil ? LocalAIMemoryPolicy.outputTokens : LocalAIGenerationPolicy.chatOutputTokens
+        let cacheTokenLimit = prepared == nil
+            ? LocalAIMemoryPolicy.inputTokens + LocalAIMemoryPolicy.outputTokens
+            : LocalAIGenerationPolicy.chatContextTokens
         let reasoningConfiguration = await container.configuration.reasoningConfig
         let reasoningSetup = Self.reasoningSetup(
             configuration: reasoningConfiguration,
             disableThinking: request.disableThinking)
-        var systemPrompt = request.systemPrompt
-        if request.responseFormat == .jsonObject {
-            // v1 无 guided generation：JSON 输出靠 prompt 约束（Qwen3 指令跟随足够稳定），
-            // 真正的结构化解码留给 MLXGuidedGeneration 后续版本。
-            systemPrompt +=
-                "\n\nIMPORTANT: Respond with a single valid JSON value only. No markdown fences, no commentary."
-        }
+        let systemPrompt = Self.generationSystemPrompt(for: request)
         let parameters = GenerateParameters(
-            maxTokens: min(max(request.parameters.maxCompletionTokens, 1), LocalAIMemoryPolicy.outputTokens),
-            maxKVSize: LocalAIMemoryPolicy.inputTokens + LocalAIMemoryPolicy.outputTokens,
+            maxTokens: min(max(request.parameters.maxCompletionTokens, 1), outputTokenLimit),
+            maxKVSize: cacheTokenLimit,
             temperature: Float(request.parameters.temperature),
             topP: Float(request.parameters.topP),
             topK: request.parameters.topK,
@@ -538,26 +550,15 @@ extension LocalMLXRuntime {
             additionalContext: reasoningSetup.additionalContext)
 
         let messages = try Self.chatMessages(for: request)
-        // 模型标称上下文不等于本机可承受预算。按真实 chat template 分词校验，
-        // 超限明确失败，不静默裁剪用户对话；这里只分词，不执行模型 forward。
-        let prompt = systemPrompt
-        let promptTokenCount = try await container.perform { context in
-            // UserInput / Chat.Message 不是 Sendable，校验输入在容器边界内独立创建，
-            // 只把 token 数传出来，不与随后生成的 ChatSession 共享可变对象。
-            let setup = Self.reasoningSetup(
-                configuration: context.configuration.reasoningConfig,
-                disableThinking: request.disableThinking)
-            let history = try Self.chatMessages(for: request)
-            let promptMessages = prompt.isEmpty ? history : [.system(prompt)] + history
-            let prepared = try await context.processor.prepare(
-                input: UserInput(chat: promptMessages, additionalContext: setup.additionalContext))
-            return prepared.text.tokens.size
-        }
+        // 聊天已按完整模板真实分词；其它任务继续使用既有 8K 输入准入，不改其语义。
+        let promptTokenCount: Int
+        if let prepared { promptTokenCount = prepared.inputTokens }
+        else { promptTokenCount = try await Self.promptTokenCount(container: container, request: request) }
         LocalAILog.record("input.prepared", "Input token budget validated.", fields: [
             "inputTokens": String(promptTokenCount),
-            "inputTokenLimit": String(LocalAIMemoryPolicy.inputTokens)
+            "inputTokenLimit": String(inputTokenLimit)
         ])
-        guard promptTokenCount <= LocalAIMemoryPolicy.inputTokens else {
+        guard promptTokenCount <= inputTokenLimit else {
             throw LocalAIError.contextTooLong
         }
         var output = ""
@@ -647,7 +648,8 @@ extension LocalMLXRuntime {
             outputTokens: completion.generationTokenCount,
             cachedTokens: 0,
             reasoningTokens: 0,
-            totalTokens: completion.promptTokenCount + completion.generationTokenCount)
+            totalTokens: completion.promptTokenCount + completion.generationTokenCount,
+            repositoryContextCompacted: prepared?.wasCompacted ?? false)
         LocalAILog.record("generation.completed", "MLX generation completed and session resources were released.", fields: [
             "finishReason": finishReason, "inputTokens": String(completion.promptTokenCount),
             "outputTokens": String(completion.generationTokenCount),
@@ -660,6 +662,28 @@ extension LocalMLXRuntime {
             usage: usage,
             model: request.model,
             finishReason: finishReason)
+    }
+
+    /// 与实际 ChatSession 使用同一模板、JSON 约束及 thinking 标志，不能只计算正文。
+    /// UserInput / Chat.Message 在容器内创建，只返回整数，不跨 actor 共享可变 MLX 对象。
+    private nonisolated static func promptTokenCount(container: ModelContainer, request: AIChatRequest) async throws -> Int {
+        try await container.perform { context in
+            let setup = Self.reasoningSetup(configuration: context.configuration.reasoningConfig,
+                                            disableThinking: request.disableThinking)
+            let history = try Self.chatMessages(for: request)
+            let prompt = Self.generationSystemPrompt(for: request)
+            let messages = prompt.isEmpty ? history : [.system(prompt)] + history
+            let prepared = try await context.processor.prepare(
+                input: UserInput(chat: messages, additionalContext: setup.additionalContext))
+            return prepared.text.tokens.size
+        }
+    }
+
+    /// JSON 模式仍靠模板约束。分词与生成调用同一入口，避免漏算这段额外指令。
+    private nonisolated static func generationSystemPrompt(for request: AIChatRequest) -> String {
+        guard request.responseFormat == .jsonObject else { return request.systemPrompt }
+        return request.systemPrompt
+            + "\n\nIMPORTANT: Respond with a single valid JSON value only. No markdown fences, no commentary."
     }
 
     /// 把请求级 `disableThinking` 映射到模型自己的 chat-template 开关。
@@ -731,6 +755,7 @@ enum LocalAIError: LocalizedError, Equatable {
     case memoryBudgetExceeded
     case contextTooLong
     case embeddingDimensionMismatch(expected: Int, actual: Int)
+    case repositoryChatInputTooLong
 
     var errorDescription: String? {
         switch self {
@@ -749,6 +774,8 @@ enum LocalAIError: LocalizedError, Equatable {
             return String.l10n("toolbar.localai.memoryBudgetExceeded")
         case .contextTooLong:
             return String.l10n("toolbar.localai.contextTooLong")
+        case .repositoryChatInputTooLong:
+            return String.l10n("ai.assistant.chat.contextBudget.inputTooLong")
         case .embeddingDimensionMismatch(let expected, let actual):
             return String(
                 format: String.l10n("settings.localai.error.embeddingDimensionMismatchFormat"),

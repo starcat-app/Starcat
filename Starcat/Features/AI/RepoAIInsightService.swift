@@ -182,6 +182,8 @@ final class RepoAIInsightService {
         /// Summary `{readme}` / Tags `{readme}` 的渲染源——清洗 + 截断后的 README 纯文本。
         /// 不含 "README:" 头（头由 prompt 模板自带，占位符仅渲染纯数据）。
         let readme: String
+        /// 只供快速上手问答：在字符截断以前先找章节，不能改变摘要缓存的 source hash。
+        let onboardingReadme: String?
 
         /// Summary `{codeContext}` / Tags `{codeContext}` 的渲染源——
         /// RepoContextPacker 生成的 XML。失败 / 关闭 / 私仓不允许时为空字符串
@@ -212,6 +214,7 @@ final class RepoAIInsightService {
             hash: String,
             metadata: String,
             readme: String,
+            onboardingReadme: String? = nil,
             codeContext: String,
             externalContext: String = "",
             insightsContext: String = "",
@@ -222,6 +225,7 @@ final class RepoAIInsightService {
             self.hash = hash
             self.metadata = metadata
             self.readme = readme
+            self.onboardingReadme = onboardingReadme
             self.codeContext = codeContext
             self.externalContext = externalContext
             self.insightsContext = insightsContext
@@ -982,20 +986,25 @@ final class RepoAIInsightService {
         // 避免 SDK、service、UI 三层各复制一次不断增长的完整字符串。
         onReasoningDelta: (@MainActor (String) -> Void)? = nil,
         onReasoningCompleted: (@MainActor () -> Void)? = nil,
+        onContextCompacted: (@MainActor () -> Void)? = nil,
         onDelta: (@MainActor (String) -> Void)? = nil
     ) async throws -> String {
         try entitlementGate?.requirePro(.aiChat, usesLocalOnly: settings.isChatTaskResolvedToLocalAI)
         // README / 外部上下文准备期间可能切换设置；本轮模型和参数在挂起前固定。
         let task = settings.resolvedAITask(settings.aiChatTask)
         let (client, model) = try makeClient(task: task, fallbackModel: settings.aiChatModel, taskName: String.l10n("ai.taskName.chat"))
-        let source = try await makeSource(for: repo)
+        let isLocalChat = client is LocalMLXClient
+        let isOnboarding = isLocalChat && task.prompt.systemPrompt.contains("{readme}")
+            && RepoAIChatContext.isOnboardingQuestion(userMessage)
+        let source = try await makeSource(for: repo, selectOnboardingReadme: isOnboarding)
 
         // Y9：复用同一份 source 做缓存比对（避免 makeSource 被调两次造成重复网络 IO）。
         // 缓存命中 = 摘要 + External Search markdown 都从 `ai_summaries.summary_json` 直接拿到。
         // try? 故意吞错：缓存读失败（比如 SQLite 临时锁）不应阻塞对话主流程。
         let cached = try? await loadCachedInsight(source: source, repo: repo)
 
-        let systemPrompt = buildChatSystemPrompt(
+        let context = buildChatContext(
+            template: task.prompt.systemPrompt,
             repo: repo,
             source: source,
             cached: cached,
@@ -1005,13 +1014,14 @@ final class RepoAIInsightService {
         )
 
         let request = AIChatRequest(
-            systemPrompt: systemPrompt,
+            systemPrompt: context.systemPrompt,
             userPrompt: userMessage,
             history: history,
             model: model,
             parameters: task.parameters,
             responseFormat: .text,
-            usageContext: AIUsageContext(feature: .repoChat, phase: "conversation")
+            usageContext: AIUsageContext(feature: .repoChat, phase: "conversation"),
+            repositoryContext: isLocalChat ? context : nil
         )
 
         var accumulated = ""
@@ -1024,7 +1034,9 @@ final class RepoAIInsightService {
             case .delta(let delta):
                 accumulated += delta
                 onDelta?(delta)
-            case .toolCallDelta, .usage:
+            case .usage(let usage):
+                if usage.repositoryContextCompacted { onContextCompacted?() }
+            case .toolCallDelta:
                 continue
             case .completed(let response):
                 return response.content
@@ -1113,17 +1125,16 @@ final class RepoAIInsightService {
     /// 2026-06-14 v4 重构：拼装对话路径的 system prompt，走 `aiChatTask.prompt` 模板
     /// + 占位符渲染（详见 `AIDefaultPrompts.chat` 注释，2026-06-15 起 8 占位符）。
     ///
-    /// 实质渲染逻辑下沉到 `assembleChatSystemPrompt(...)` 静态函数（internal 可测），
-    /// 本方法负责"读 settings + 私仓门控 + 拆 source 字段 + 调 RuntimeContextProvider"
-    /// 等 actor-bound 准备工作。
-    private func buildChatSystemPrompt(
+    /// 资料与模板分开保存，供本地模型按预算投影。私仓门控在进入请求前完成。
+    private func buildChatContext(
+        template: String,
         repo: Repo,
         source: Source,
         cached: RepoAIInsight?,
         carriedOverSummary: String?,
         wikiLinks: [WikiLink],
         codeFlowPageURL: URL?
-    ) -> String {
+    ) -> RepoAIChatContext {
         let externalAllowed = ExternalSearchContextProvider.allowsExternalContext(
             repoIsPrivate: repo.isPrivate,
             enabled: settings.externalContextEnabled,
@@ -1141,8 +1152,8 @@ final class RepoAIInsightService {
             wikiLinks: wikiLinks,
             codeFlowPageURL: codeFlowPageURL
         )
-        return Self.assembleChatSystemPrompt(
-            template: settings.aiChatTask.prompt.systemPrompt,
+        return RepoAIChatContext(
+            template: template,
             outputLanguage: Self.outputLanguageDescriptor(),
             runtimeContext: RuntimeContextProvider.snapshot(),
             starcatResources: starcatResources,
@@ -1152,7 +1163,8 @@ final class RepoAIInsightService {
             insightsContext: source.insightsContext,
             summary: cached?.summaryMarkdown ?? "",
             externalContext: externalContext,
-            previousSessionCarryOver: carriedOverSummary ?? ""
+            previousSessionCarryOver: carriedOverSummary ?? "",
+            onboardingReadme: source.onboardingReadme
         )
     }
 
@@ -1196,21 +1208,13 @@ final class RepoAIInsightService {
         //   入口避免"忘了调 provider 还能编译过"的潜在 bug；
         // - `starcatResources` 调用方传 `StarcatResourcesProvider.snapshot(wikiLinks:codeFlowPageURL:)`
         //   的结果（全空时本身就是空串，section 自然为空 header）。
-        AIPromptConfiguration.render(
+        RepoAIChatContext(
             template: template,
-            placeholders: [
-                "outputLanguage": outputLanguage,
-                "runtimeContext": runtimeContext,
-                "starcatResources": starcatResources,
-                "metadata": metadata,
-                "readme": readme,
-                "codeContext": codeContext,
-                "insightsContext": insightsContext,
-                "summary": summary,
-                "externalContext": externalContext,
-                "previousSessionCarryOver": previousSessionCarryOver
-            ]
-        )
+            outputLanguage: outputLanguage, runtimeContext: runtimeContext,
+            starcatResources: starcatResources, metadata: metadata, readme: readme,
+            codeContext: codeContext, insightsContext: insightsContext, summary: summary,
+            externalContext: externalContext, previousSessionCarryOver: previousSessionCarryOver
+        ).systemPrompt
     }
 
     /// 同一次生成的不可变配置；保存客户端还避免准备上下文期间切换 Provider 后读到新凭据。
@@ -1868,21 +1872,28 @@ final class RepoAIInsightService {
         codeContextRequest: RepoAICodeContextRequest? = nil,
         onContextProgress: RepoAIContextProgressCallback? = nil,
         includeInsights: Bool = true,
-        codeContextEnabledOverride: Bool? = nil
+        codeContextEnabledOverride: Bool? = nil,
+        selectOnboardingReadme: Bool = false
     ) async throws -> Source {
         let markdown = try await readmeRepository.findContent(repoId: repo.id)
         let readme: Readme? = (markdown == nil)
             ? try await readmeRepository.find(repoId: repo.id)
             : nil
         let truncateLength = settings.aiReadmeTruncateLength
-        let readmeText: String = {
+        let (readmeText, onboardingReadme): (String, String?) = {
             if let markdown, !markdown.isEmpty {
-                return ReadmePreprocessor.process(markdown: markdown, maxLength: truncateLength)
+                if selectOnboardingReadme {
+                    let cleaned = ReadmePreprocessor.sanitize(markdown: markdown)
+                    let limit = max(0, truncateLength)
+                    let excerpt = RepoAIChatContext.onboardingReadme(cleaned).map { String($0.prefix(limit)) }
+                    return (String(cleaned.prefix(limit)), excerpt)
+                }
+                return (ReadmePreprocessor.process(markdown: markdown, maxLength: truncateLength), nil)
             }
             if let html = readme?.renderedHtml, !html.isEmpty {
-                return ReadmePreprocessor.process(html: html, maxLength: truncateLength)
+                return (ReadmePreprocessor.process(html: html, maxLength: truncateLength), nil)
             }
-            return ""
+            return ("", nil)
         }()
 
         // HOM-199 AI 摘要缓存稳定化（2026-06-14）：拆分"喂 LLM 的文本"和"缓存键 hash"两条路径。
@@ -2020,6 +2031,7 @@ final class RepoAIInsightService {
             hash: Self.hash(hashText),
             metadata: metadataBlock,
             readme: readmeText,
+            onboardingReadme: onboardingReadme,
             codeContext: codeContextXml,
             insightsContext: insightsContext,
             contextMeta: contextMeta,

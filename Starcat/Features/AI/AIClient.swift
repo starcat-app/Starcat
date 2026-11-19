@@ -107,6 +107,8 @@ struct AIChatUsage: Equatable, Sendable {
     var cachedTokens: Int
     var reasoningTokens: Int
     var totalTokens: Int
+    /// 本地仓库问答实际精简过资料或历史，供原对话显示非持久化提示。
+    var repositoryContextCompacted = false
 }
 
 /// 当前轮用户消息附带的图片。仅保存在请求内，不进入历史、日志或数据库。
@@ -144,6 +146,8 @@ struct AIChatRequest: Equatable, Sendable {
     /// `true` 时 Chat 请求带 `reasoning_effort=none`，中间件再补 Qwen / vLLM 的
     /// `enable_thinking=false`。默认 false，避免改掉对话、RAG 里需要思考的路径。
     var disableThinking: Bool = false
+    /// 仓库聊天保留模板与资料边界，供本地 tokenizer 按整次请求裁剪；不能裁已经混在一起的 system prompt。
+    var repositoryContext: RepoAIChatContext? = nil
 }
 
 /// 非流式 Chat 响应。

@@ -67,6 +67,7 @@ struct HomeView: View {
     @State private var hasRestoredInitialNavigation = false
     /// Widget Release Deep Link 的一次性定位目标；普通 Sidebar 入口保持为 nil。
     @State private var releaseTimelineTargetID: Int64?
+    @State private var releaseWorkspace: ReleaseTimelineViewModel?
 
     /// HomeViewModel 在 HomeView 内部持有；用 @State 让生命周期与该视图绑定。
     /// AppDependencies 不构造它，因为 ViewModel 是 view-scoped，没必要塞进全局容器。
@@ -661,21 +662,38 @@ struct HomeView: View {
             )
                 .appSheetRootEnvironment(dependencies)
         }
-        // HOM-47：Release 时间线 sheet（独立窗口承载，不污染三栏布局）
-        .sheet(isPresented: $showReleaseTimeline) {
-            ReleaseTimelineView(targetReleaseID: releaseTimelineTargetID)
-                .appSheetRootEnvironment(dependencies)
-        }
         .onChange(of: showReleaseTimeline) { _, isPresented in
-            // Sheet 完成关闭后清除一次性目标，避免用户下次从 Sidebar 打开时仍跳到旧行。
-            if !isPresented {
-                releaseTimelineTargetID = nil
-            }
+            if isPresented { presentReleaseWorkspace() }
         }
         .sheet(item: homePaywallBinding) { context in
             ProPaywallSheet.hosted(context: context, dependencies: dependencies)
         }
         )
+    }
+
+    /// 父窗持有会话以接收打开后的深链；实际 sheet 和 AI 标签整理共用同一尺寸来源。
+    private func presentReleaseWorkspace() {
+        let workspace = ReleaseTimelineViewModel(repository: dependencies.releaseRepository) {
+            _ = await dependencies.releasePoller.runNow()
+        }
+        workspace.locate(releaseTimelineTargetID)
+        releaseTimelineTargetID = nil
+        releaseWorkspace = workspace
+        let controller = RepoWorkspaceWindowController.present(
+            identifier: "releases", title: String.l10n("releases.timeline.title"),
+            parent: mainWindowReference.window, dependencies: dependencies,
+            fixedSize: AIOrganizationLayout.windowSize,
+            onDismiss: {
+                releaseWorkspace = nil
+                showReleaseTimeline = false
+            }
+        ) { close in
+            ReleaseTimelineView(model: workspace, onClose: close)
+        }
+        if controller == nil {
+            releaseWorkspace = nil
+            showReleaseTimeline = false
+        }
     }
 
     private var navigationWithLifecycle: AnyView {
@@ -2005,8 +2023,12 @@ struct HomeView: View {
 
         case .repositoryRelease(let release):
             viewModel.clearTemporaryGlobalFilters()
-            releaseTimelineTargetID = release.releaseID
-            showReleaseTimeline = true
+            if let releaseWorkspace {
+                releaseWorkspace.locate(release.releaseID)
+            } else {
+                releaseTimelineTargetID = release.releaseID
+                showReleaseTimeline = true
+            }
         }
     }
 
