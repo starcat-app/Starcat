@@ -660,11 +660,13 @@ final class StarcatMCPPublicFacade {
         let matching: Int
         if name == "get_tag_graph" {
             let graph = try await reader.read { try TagGraphQuery.snapshot(in: $0) }
-            let edges = graph.visibleEdges(minimum: arguments["min_shared_repos"]?.intValue ?? 1)
-            matching = edges.count
-            result = ["nodes": try StarcatMCPJSON.value(graph.nodes),
-                      "edges": try StarcatMCPJSON.value(Array(edges.dropFirst(offset).prefix(limit))),
-                      "total_edges": .int(graph.edges.count), "matching_edges": .int(matching)]
+            let edges = Array(graph.edges.dropFirst(offset).prefix(limit))
+            let repoIDs = Set(edges.map(\.target))
+            // Retain all tags, including isolated ones. Only send repos referenced on this page.
+            let nodes = graph.nodes.filter { $0.kind == .tag || repoIDs.contains($0.id) }
+            matching = graph.edges.count
+            result = ["nodes": try StarcatMCPJSON.value(nodes), "edges": try StarcatMCPJSON.value(edges),
+                      "total_edges": .int(matching), "total_nodes": .int(graph.nodes.count)]
         } else {
             let ids = Set(arguments["tag_ids"]?.arrayValue?.compactMap(\.stringValue) ?? [])
             let page = try await reader.read { try RepoTagIntersection.page(in: $0, tagIDs: ids, limit: limit, offset: offset) }

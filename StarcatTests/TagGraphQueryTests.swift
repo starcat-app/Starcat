@@ -1,19 +1,42 @@
-// Exercises the production graph projection against the migrated in-memory database.
+// Exercises the production membership projection against the migrated in-memory database.
 import GRDB
 import Testing
 @testable import Starcat
 
-/// Shared fixture from the tag graph requirements, with known AND and OR results.
+/// Shared fixture from the tag graph requirements, with known tag-to-repository results.
 struct TagGraphFixture {
     let db: InMemoryDatabaseManager
     var tags: GRDBTagRepository { GRDBTagRepository(database: db) }
     var links: GRDBRepoTagRepository { GRDBRepoTagRepository(database: db) }
 
+    static let tagNames = [
+        ("agent", "Agent"), ("cli", "CLI"), ("parent", "资料"), ("python", "Python"), ("rag", "RAG"),
+    ]
+    static let avatarURL = "https://avatars.githubusercontent.com/u/42"
+    static let tagNodes = tagNames.map { id, name in
+        TagGraphNode(id: "tag:\(id)", kind: .tag, name: name, color: "#FF5722", icon: "tag")
+    }
+    static let repoNodes = (1...4).map { id in
+        TagGraphNode(id: "repo:\(id)", kind: .repo, name: "octo/demo-\(id)", avatarURL: id == 1 ? avatarURL : nil)
+    }
+
+    static let expectedEdges: [TagGraphEdge] = [
+        .init(source: "tag:agent", target: "repo:1"),
+        .init(source: "tag:python", target: "repo:1"),
+        .init(source: "tag:rag", target: "repo:1"),
+        .init(source: "tag:agent", target: "repo:2"),
+        .init(source: "tag:rag", target: "repo:2"),
+        .init(source: "tag:python", target: "repo:3"),
+        .init(source: "tag:cli", target: "repo:4"),
+    ]
+
+    static var expectedSnapshot: TagGraphSnapshot { .init(nodes: tagNodes + repoNodes, edges: expectedEdges) }
+
     init(userID: Int64? = nil) throws { db = try InMemoryDatabaseManager(userId: userID) }
 
     func seed() async throws {
         try await db.insertRepoFixtures(count: 6)
-        for (id, name) in [("agent", "Agent"), ("rag", "RAG"), ("python", "Python"), ("cli", "CLI"), ("parent", "资料")] {
+        for (id, name) in Self.tagNames {
             try await tags.create(.fixture(id: id, name: name))
         }
         try await links.setTags(repoId: 1, tagIds: ["agent", "rag", "python"])
@@ -23,6 +46,7 @@ struct TagGraphFixture {
         try await links.setTags(repoId: 6, tagIds: ["agent", "rag"])
         try await db.writer.write { db in
             try db.execute(sql: "UPDATE tags SET parent_id = 'parent' WHERE id = 'rag'")
+            try db.execute(sql: "UPDATE repos SET owner_avatar = ? WHERE id = 1", arguments: [Self.avatarURL])
             try db.execute(sql: "UPDATE repos SET is_starred = 0 WHERE id = 6")
         }
     }
@@ -34,18 +58,10 @@ struct TagGraphFixture {
 
 @Suite("Tag graph query")
 struct TagGraphQueryTests {
-    @Test("Graph counts come from current Stars and applied tags")
+    @Test("Graph contains tags, tagged Stars and one edge per membership")
     func fixedSample() async throws {
         let sample = try TagGraphFixture()
         try await sample.seed()
-        let graph = try await sample.snapshot()
-        #expect(Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.name, $0.repoCount) }) == [
-            "Agent": 2, "RAG": 2, "Python": 2, "CLI": 1, "资料": 0,
-        ])
-        #expect(graph.edges == [
-            TagGraphEdge(leftID: "agent", rightID: "rag", sharedCount: 2),
-            TagGraphEdge(leftID: "agent", rightID: "python", sharedCount: 1),
-            TagGraphEdge(leftID: "python", rightID: "rag", sharedCount: 1),
-        ])
+        #expect(try await sample.snapshot() == TagGraphFixture.expectedSnapshot)
     }
 }

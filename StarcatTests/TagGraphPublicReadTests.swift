@@ -1,4 +1,4 @@
-// 经 MCP 的真实 Registry 和执行器核对图谱，避免协议层的计数与原生图谱脱节。
+// 经 MCP 的真实 Registry 和执行器核对图谱，避免协议层的节点与原生图谱脱节。
 import Foundation
 import MCP
 import Testing
@@ -25,7 +25,7 @@ struct TagGraphPublicReadTests {
         return try #require(json.objectValue?["result"]?.objectValue?["structuredContent"]?.objectValue)
     }
 
-    @Test("公共响应与画布及仓库检查器的同一固定样例逐项相符")
+    @Test("公共响应按边分页携带仓库节点，标签节点始终完整")
     func applicationParity() async throws {
         let fixture = try TagGraphFixture(userID: 1)
         try await fixture.seed()
@@ -33,22 +33,27 @@ struct TagGraphPublicReadTests {
         let runtime = try await Self.runtime(fixture, reads: reads)
         defer { Task { await runtime.shutdown() } }
         let expected = try await fixture.snapshot()
-        let first = try await Self.call("get_tag_graph", ["limit": 1], on: runtime)
-        let remainder = try await Self.call("get_tag_graph", ["offset": 1], on: runtime)
-        let nodes = try StarcatMCPJSON.value(expected.nodes)
-        #expect(first["nodes"] == nodes && remainder["nodes"] == nodes)
-        #expect(first["total_edges"] == .int(3) && first["matching_edges"] == .int(3))
-        #expect(first["next_offset"] == .int(1) && remainder["next_offset"] == .null)
-        let combined = (first["edges"]?.arrayValue ?? []) + (remainder["edges"]?.arrayValue ?? [])
-        #expect(try Value.array(combined) == StarcatMCPJSON.value(expected.edges))
-        let filtered = try await Self.call("get_tag_graph", ["min_shared_repos": 2], on: runtime)
-        #expect(filtered["nodes"] == nodes && filtered["matching_edges"] == .int(1) && filtered["total_edges"] == .int(3))
+        var combinedEdges = [Value]()
+        for (offset, edgeCount) in [(0, 3), (3, 3), (6, 1)] {
+            let actual = try await Self.call("get_tag_graph", ["limit": 3, "offset": offset], on: runtime)
+            let pageEdges = Array(expected.edges[offset..<(offset + edgeCount)])
+            let pageRepoIDs = Set(pageEdges.map(\.target))
+            let pageNodes = expected.nodes.filter { $0.kind == .tag || pageRepoIDs.contains($0.id) }
+            #expect(try actual["nodes"] == StarcatMCPJSON.value(pageNodes))
+            #expect(try actual["edges"] == StarcatMCPJSON.value(pageEdges))
+            #expect(actual["total_nodes"] == .int(expected.nodes.count))
+            #expect(actual["total_edges"] == .int(expected.edges.count))
+            #expect(actual["matching_edges"] == nil)
+            #expect(actual["next_offset"] == (offset == 6 ? .null : .int(offset + 3)))
+            combinedEdges += try #require(actual["edges"]?.arrayValue)
+        }
+        #expect(try Value.array(combinedEdges) == StarcatMCPJSON.value(expected.edges))
+
         for offset in 0...1 {
             let ids = ["rag", "agent", "rag"]
             let actual = try await Self.call("list_repos_by_tags", ["tag_ids": ids, "limit": 1, "offset": offset], on: runtime)
-            let gui = try await fixture.db.writer.read { try RepoTagIntersection.page(in: $0, tagIDs: Set(ids), limit: 1, offset: offset) }
-            #expect(actual["total"] == .int(gui.total))
-            #expect(actual["items"]?.arrayValue?.compactMap { $0.objectValue?["id"]?.intValue } == gui.items.map { Int($0.id) })
+            #expect(actual["total"] == .int(2))
+            #expect(actual["items"]?.arrayValue?.compactMap { $0.objectValue?["id"]?.intValue } == [offset + 1])
             #expect(actual["next_offset"] == (offset == 0 ? .int(1) : .null))
         }
     }

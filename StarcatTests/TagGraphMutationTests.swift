@@ -1,4 +1,4 @@
-// 从专题样例分别应用标签与收藏写入，再用生产读取核对边权与成员。
+// 从专题样例分别应用标签与收藏写入，再用生产读取核对归属图。
 import GRDB
 import Testing
 @testable import Starcat
@@ -8,36 +8,38 @@ struct TagGraphMutationTests {
     @Test func starAndUnstar() async throws {
         let sample = try TagGraphFixture()
         try await sample.seed()
-        for (starred, expected) in [(false, [Int64(1)]), (true, [1, 2])] {
-            try await sample.db.writer.write { try $0.execute(sql: "UPDATE repos SET is_starred=? WHERE id=2", arguments: [starred]) }
-            let frame = try await sample.db.writer.read {
-                try TagGraphFrame.read(in: $0, selection: .edge(TagGraphPair("agent", "rag")), offset: 0, limit: 20)
-            }
-            #expect(frame.graph.edges.first { $0.id == TagGraphPair("agent", "rag") }?.sharedCount == expected.count)
-            #expect(frame.page?.total == expected.count)
-            #expect(frame.page?.items.map(\.id).sorted() == expected)
-        }
+        try await sample.db.writer.write { try $0.execute(sql: "UPDATE repos SET is_starred=? WHERE id=2", arguments: [false]) }
+        let unstarred = try await sample.snapshot()
+        #expect(!unstarred.nodes.contains { $0.id == "repo:2" })
+        #expect(unstarred.edges == TagGraphFixture.expectedEdges.filter { $0.target != "repo:2" })
+
+        try await sample.db.writer.write { try $0.execute(sql: "UPDATE repos SET is_starred=? WHERE id=2", arguments: [true]) }
+        #expect(try await sample.snapshot() == TagGraphFixture.expectedSnapshot)
     }
 
-    @Test func renameMergeDeleteAndEditAssignments() async throws {
+    @Test func renameAddRemoveMergeAndDelete() async throws {
         let sample = try TagGraphFixture()
         try await sample.seed()
-        let before = try await sample.snapshot()
         var tag = try #require(try await sample.tags.find(id: "rag"))
         tag.name = "Retrieval"
         try await sample.tags.update(tag)
         let renamed = try await sample.snapshot()
-        #expect(renamed.edges == before.edges)
-        #expect(renamed.nodes.first { $0.id == "rag" }?.name == "Retrieval")
+        #expect(renamed.edges == TagGraphFixture.expectedEdges)
+        #expect(renamed.nodes.first { $0.id == "tag:rag" }?.name == "Retrieval")
+
         try await sample.links.addTag(repoId: 3, tagId: "rag")
-        #expect(try await sample.snapshot().edges.first { $0.id == TagGraphPair("rag", "python") }?.sharedCount == 2)
+        #expect(try await sample.snapshot().edges.contains(TagGraphEdge(source: "tag:rag", target: "repo:3")))
         try await sample.links.removeTag(repoId: 3, tagId: "rag")
         #expect(try await sample.snapshot() == renamed)
+
         try await sample.tags.merge(source: "rag", into: "agent")
         let merged = try await sample.snapshot()
-        #expect(merged.nodes.first { $0.id == "agent" }?.repoCount == 2)
-        #expect(merged.edges == [TagGraphEdge(leftID: "agent", rightID: "python", sharedCount: 1)])
+        #expect(!merged.nodes.contains { $0.id == "tag:rag" })
+        #expect(merged.edges == TagGraphFixture.expectedEdges.filter { $0.source != "tag:rag" })
+
         try await sample.tags.delete(id: "python")
-        #expect(try await sample.snapshot().edges.isEmpty)
+        let deleted = try await sample.snapshot()
+        #expect(!deleted.nodes.contains { $0.id == "tag:python" || $0.id == "repo:3" })
+        #expect(!deleted.edges.contains { $0.source == "tag:python" })
     }
 }

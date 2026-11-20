@@ -50,6 +50,12 @@ const post = (type, extra = {}) => {
   if (!destroyed) window.webkit?.messageHandlers.followGraph.postMessage({ type, session, ...extra });
 };
 
+/** Native SF Symbol PNGs are black and transparent; tint them against each tag color. */
+function symbolInk(fillStyle) {
+  const [r, g, b] = [1, 3, 5].map(index => parseInt(fillStyle.slice(index, index + 2), 16));
+  return r * 299 + g * 587 + b * 114 < 145000 ? '#ffffff' : '#000000';
+}
+
 /** Rasterize each avatar once; Canvas drawing never allocates GPU textures or images per frame. */
 function paint(resource, node, placeholder = false) {
   const surface = placeholder ? resource.placeholder : resource.canvas;
@@ -62,14 +68,20 @@ function paint(resource, node, placeholder = false) {
   ctx.clip();
   const tag = node.kind === 'tag';
   const color = tag && /^#[0-9a-f]{6}$/i.test(node.color) ? node.color : null;
-  ctx.fillStyle = color || (dark ? '#46586a' : '#cdd9e5');
+  const badge = color || (dark ? '#46586a' : '#cdd9e5');
+  ctx.fillStyle = badge;
   ctx.fillRect(0, 0, 64, 64);
   if (resource.loaded && !placeholder) {
-    if (tag) ctx.drawImage(resource.image, 12, 12, 40, 40);
-    else ctx.drawImage(resource.image, 0, 0, 64, 64);
-  }
-  else {
-    ctx.fillStyle = (color || dark) ? '#ffffff' : '#24374a';
+    if (tag) {
+      const { naturalWidth, naturalHeight } = resource.image;
+      const scale = 36 / Math.max(naturalWidth, naturalHeight);
+      const width = naturalWidth * scale, height = naturalHeight * scale;
+      ctx.filter = symbolInk(badge) === '#ffffff' ? 'brightness(0) invert(1)' : 'brightness(0)';
+      ctx.drawImage(resource.image, (64 - width) / 2, (64 - height) / 2, width, height);
+      ctx.filter = 'none';
+    } else ctx.drawImage(resource.image, 0, 0, 64, 64);
+  } else {
+    ctx.fillStyle = tag ? symbolInk(badge) : dark ? '#ffffff' : '#24374a';
     ctx.font = 'bold 28px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

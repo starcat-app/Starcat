@@ -39,7 +39,7 @@ struct FollowGraphWebView: NSViewRepresentable {
     let input: Input?
     let events: Events
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
     func makeCoordinator() -> Coordinator { Coordinator(events: events) }

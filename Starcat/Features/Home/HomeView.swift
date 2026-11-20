@@ -475,9 +475,7 @@ struct HomeView: View {
                         TagGraphWorkspace(reader: dependencies.database.writer, isCurrent: {
                             authSession.state.user?.id == userID && dependencies.database.currentUserId == userID
                                 && dependencies.databaseScopeRevision == revision
-                        }, escape: tagGraphEscape, onClose: { showsTagGraph = false }, onOpenRepo: { repo in
-                            RepoDetailWindowController.show(repo: repo, dependencies: dependencies, homeViewModel: viewModel)
-                        })
+                        }, escape: tagGraphEscape, onClose: { showsTagGraph = false })
                         .id(revision)
                         .disabled(false)
                         .accessibilityHidden(false)

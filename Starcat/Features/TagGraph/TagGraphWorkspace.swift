@@ -1,183 +1,232 @@
-// 在当前账户的全窗口画布内查找主题。原生操作区和离线画布共用选择状态。
+// 标签与仓库归属图谱的全窗口宿主。画布、入场和交互复用关注者图谱。
+import AppKit
 import GRDB
 import SwiftUI
 
-/// 宿主以数据库修订号标识工作区，切号时同时销毁旧订阅和 WKWebView。
+/// 数据订阅仍按账户隔离；渲染状态只描述当前 WebView 会话。
 struct TagGraphWorkspace: View {
     let reader: any DatabaseReader
     let isCurrent: () -> Bool
     let escape: Int
     let onClose: () -> Void
-    let onOpenRepo: (Repo) -> Void
     @State private var model = TagGraphViewModel()
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.starcatReduceMotion) private var reduced
-    @Environment(\.locale) private var locale
-    @State private var camera = 0
+    @Environment(\.starcatReduceMotion) private var reduceMotion
+    @State private var search = ""
+    @State private var selectedID: String?
+    @State private var selectionRevision = 0
     @State private var focusID: String?
-    @State private var rendererAttempt = 0
+    @State private var viewportRevision = 0
+    @State private var rendererRevision = 0
+    @State private var rendererPresented = false
     @State private var rendererFailed = false
-    @State private var painted = false
     @FocusState private var searchFocused: Bool
-    @FocusState private var focusedTagID: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("tagGraph.window.title", systemImage: "point.3.connected.trianglepath.dotted").font(.headline)
-                Spacer()
-                Button("followGraph.action.reset") {
-                    model.select(nil)
-                    focusID = nil
-                    camera += 1
-                }
-                SheetCloseButton(action: onClose)
-            }
-            .padding(.horizontal).frame(height: 45)
-            Divider()
-            HStack(spacing: 0) {
-                ZStack {
-                    if let graph = model.graph, !graph.nodes.isEmpty, !rendererFailed {
-                        TagGraphCanvas(state: .init(graph: graph, session: model.session, generation: model.generation,
-                            selected: model.selection?.tagIDs.sorted() ?? [], minimum: model.minimum,
-                            camera: camera, focus: focusID, dark: scheme == .dark, reduced: reduced),
-                            onSelect: acceptCanvas, onPaint: { painted = true }, onFailure: { rendererFailed = true })
-                            .id(rendererAttempt)
-                            .onDisappear { painted = false }
-                            .accessibilityHidden(true)
-                    }
-                    if rendererFailed {
-                        Button("followGraph.action.reloadRenderer") {
-                            rendererAttempt += 1
-                            painted = false
-                            rendererFailed = false
-                        }
-                    } else if model.failed && model.graph == nil {
-                        VStack(spacing: 10) {
-                            Label("tagGraph.state.failed", systemImage: "exclamationmark.circle")
-                            Button("action.retry") { model.observe() }
-                        }
-                    } else if model.graph?.nodes.isEmpty == true {
-                        Label("tagGraph.state.empty", systemImage: "tag")
-                            .foregroundStyle(.secondary).multilineTextAlignment(.center).padding()
-                    } else if !painted {
-                        graphSkeleton
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(.easeOut(duration: reduced ? 0.10 : 0.18), value: painted)
-                Divider()
-                inspector.frame(minWidth: 230, idealWidth: 270, maxWidth: 305)
+        ZStack {
+            Color(white: scheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
+            if let graph = model.graph, !graph.nodes.isEmpty, !rendererFailed {
+                FollowGraphWebView(input: canvasInput, events: canvasEvents)
+                    .id(rendererRevision)
+                    .ignoresSafeArea()
+                    .opacity(rendererPresented ? 1 : 0)
+                    .allowsHitTesting(rendererPresented)
+                    .accessibilityHidden(!rendererPresented)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: rendererPresented)
+                if !rendererPresented { graphSkeleton }
+            } else if !rendererFailed && model.graph?.nodes.isEmpty == true {
+                Label("tagGraph.state.empty", systemImage: "tag")
+                    .foregroundStyle(.secondary)
+            } else if !rendererFailed && !model.failed {
+                graphSkeleton
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { model.bind(reader: reader, isCurrent: isCurrent); searchFocused = true }
+        .overlay(alignment: .topLeading) { contentOverlay }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+                .accessibilityLabel(Text("common.close"))
+                .padding(16)
+        }
+        .onAppear { model.bind(reader: reader, isCurrent: isCurrent) }
         .onDisappear { model.clear() }
         .onChange(of: escape) {
-            if model.showsAll { model.showsAll = false }
-            else if !model.search.isEmpty { model.search = "" }
-            else if model.selection != nil { model.select(nil) }
-            else { onClose() }
+            if !search.isEmpty {
+                search = ""
+                searchFocused = true
+            } else if selectedID != nil {
+                select(nil)
+            } else {
+                onClose()
+            }
         }
     }
 
-    /// 首次等待数据库和 WebKit 真正绘出第一帧时共用同一个占位，减少动态效果时显示静态图形。
+    /// 数据与命令分离，搜索、重置视角和主题变化不重复编码整张图。
+    private var canvasInput: FollowGraphWebView.Input? {
+        guard let graph = model.graph else { return nil }
+        return FollowGraphWebView.Input(
+            rootID: nil,
+            revision: model.revision,
+            selectedID: selectedID,
+            selectionRevision: selectionRevision,
+            viewportRevision: viewportRevision,
+            focusID: focusID
+        ) {
+            let nodes = graph.nodes.map { node -> [String: Any] in
+                var value: [String: Any] = ["id": node.id, "kind": node.kind.rawValue, "name": node.name]
+                if node.kind == .tag {
+                    value["color"] = node.color ?? ""
+                    if let glyph = TagGraphSymbolCache.glyph(for: node.icon ?? "tag") {
+                        value["glyph"] = glyph
+                    }
+                } else {
+                    value["avatar"] = FollowGraphAvatarURL.source(node.avatarURL)
+                }
+                return value
+            }
+            return (nodes, graph.edges.map { ["source": $0.source, "target": $0.target] })
+        }
+    }
+
+    private var canvasEvents: FollowGraphWebView.Events {
+        let revision = rendererRevision
+        return FollowGraphWebView.Events(
+            isCurrent: { isCurrent() && rendererRevision == revision && !rendererFailed },
+            onPresented: { rendererPresented = true },
+            onError: { failed in
+                guard failed else { return }
+                rendererPresented = false
+                rendererFailed = true
+            }
+        )
+    }
+
+    /// 只保留可收起的悬浮搜索和视角操作，画布保持完整宽度。
+    private var contentOverlay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                TextField("tagGraph.search.placeholder", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 250)
+                    .focused($searchFocused)
+                    .onSubmit { if let node = model.graph?.matchingNodes(search).first { locate(node) } }
+                Button {
+                    focusID = nil
+                    viewportRevision += 1
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .frame(width: 24, height: 24)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(String.l10n("followGraph.action.reset"))
+                .accessibilityLabel(Text("followGraph.action.reset"))
+            }
+            .padding(10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            if !search.isEmpty { searchResults }
+            Spacer(minLength: 0)
+            if rendererFailed {
+                Button("followGraph.action.reloadRenderer") {
+                    rendererFailed = false
+                    rendererPresented = false
+                    rendererRevision += 1
+                }
+                .buttonStyle(.bordered)
+            } else if model.failed {
+                Label("tagGraph.state.failed", systemImage: "exclamationmark.circle")
+                    .padding(10)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                Button("action.retry") { model.observe() }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .padding(16)
+        .zIndex(2)
+    }
+
+    @ViewBuilder private var searchResults: some View {
+        let matches = model.graph?.matchingNodes(search, limit: 12) ?? []
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+                if matches.isEmpty {
+                    Text("followGraph.search.empty")
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                } else {
+                    ForEach(Array(matches.enumerated()), id: \.element.id) { index, node in
+                        Button { locate(node) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: node.kind == .tag ? (node.icon ?? "tag") : "book.closed")
+                                    .foregroundStyle(.secondary)
+                                Text(verbatim: node.name)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .focusEffectDisabled()
+                        .listRowSurface(index: index)
+                        .help(Text(verbatim: node.name))
+                        .accessibilityLabel(Text(verbatim: node.name))
+                    }
+                }
+            }
+        }
+        .frame(width: 320, height: min(220, CGFloat(matches.count * 36 + 26)))
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// 搜索定位会同时高亮并移动镜头；画布内点击由 renderer 本地处理。
+    private func locate(_ node: TagGraphNode) {
+        select(node.id)
+        focusID = node.id
+        viewportRevision += 1
+        search = ""
+        searchFocused = false
+    }
+
+    private func select(_ id: String?) {
+        selectedID = id
+        selectionRevision += 1
+    }
+
+    /// 首帧由 WebKit 汇报，数据库读取和脚本装载期间使用同一静态占位。
     private var graphSkeleton: some View {
         let palette = SkeletonPalette.forColorScheme(scheme)
         return SkeletonAnimatedPhase { phase in
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 80, weight: .light)).foregroundStyle(palette.base)
+                .font(.system(size: 80, weight: .light))
+                .foregroundStyle(palette.base)
                 .skeletonShimmer(phase: phase, palette: palette)
         }
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("followGraph.status.loading"))
     }
+}
 
-    private var inspector: some View {
-        @Bindable var model = model
-        return VStack(alignment: .leading, spacing: 10) {
-            TextField("batch.searchTags", text: $model.search)
-                .textFieldStyle(.roundedBorder)
-                .focused($searchFocused)
-                .onSubmit { if let node = model.graph?.matchingNodes(model.search).first { locate(node) } }
-            if let graph = model.graph {
-                LabeledContent("tagGraph.filter.minimum") {
-                    TextField("tagGraph.filter.minimum", value: $model.minimum, format: .number.grouping(.never))
-                        .labelsHidden().textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 52)
-                        .onChange(of: model.minimum) { _, new in model.minimum = max(1, new) }
-                }
-                let visibleCount = graph.visibleEdges(minimum: model.minimum).count
-                Text(verbatim: String(format: .l10n("tagGraph.filter.count"), locale: locale, visibleCount, graph.edges.count))
-                    .foregroundStyle(.secondary).font(.caption)
-                if !graph.nodes.isEmpty && graph.edges.isEmpty {
-                    Text("tagGraph.state.isolated").font(.callout).foregroundStyle(.secondary)
-                } else if !graph.edges.isEmpty && visibleCount == 0 {
-                    Text("tagGraph.state.filtered").font(.callout).foregroundStyle(.secondary)
-                    Button("tagGraph.filter.showAll") { model.minimum = 1 }
-                }
-                if model.failed {
-                    Label("tagGraph.state.failed", systemImage: "exclamationmark.circle")
-                    Button("action.retry") { model.observe() }
-                }
-                if model.selectionDisappeared {
-                    Text("tagGraph.state.removed").font(.callout).foregroundStyle(.secondary)
-                }
-                Divider()
-                if let selection = model.selection, model.search.isEmpty {
-                    TagGraphInspector(graph: graph, selection: selection, model: model, onOpenRepo: onOpenRepo)
-                        .nativeDetailTransition(value: selection)
-                } else {
-                    tagList(graph)
-                }
-            } else if !model.failed {
-                ListLoadingSkeleton(rowHeight: 32)
-            }
-            Spacer(minLength: 0)
-        }.padding(12)
-    }
+/// SF Symbols 只在标签图使用。按符号名缓存透明 PNG，避免数据库刷新时重复栅格化。
+@MainActor private enum TagGraphSymbolCache {
+    private static var glyphs: [String: String?] = [:]
 
-    @ViewBuilder private func tagList(_ graph: TagGraphSnapshot) -> some View {
-        let matches = graph.matchingNodes(model.search)
-        if matches.isEmpty && !model.search.isEmpty {
-            Text("batch.noMatch").foregroundStyle(.secondary)
-            Button("search.clear") { model.search = ""; searchFocused = true }
-        } else {
-            List(Array(matches.enumerated()), id: \.element.id) { index, node in
-                Button { locate(node) } label: {
-                    HStack {
-                        Image(systemName: node.icon ?? "tag")
-                        Text(verbatim: node.name).lineLimit(1)
-                        Spacer()
-                        Text(node.repoCount, format: .number).monospacedDigit().foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 5).frame(minHeight: 26)
-                    .listRowSurface(index: index, isSelected: focusedTagID == node.id)
-                }
-                .buttonStyle(.plain).focusEffectDisabled().focused($focusedTagID, equals: node.id)
-                .accessibilityLabel(Text(verbatim: node.name))
-                .accessibilityValue(Text(verbatim: String(format: .l10n("list.repoCountFormat"), locale: locale, node.repoCount)))
-                .help(Text(verbatim: node.name))
-            }.listStyle(.inset)
+    static func glyph(for symbol: String) -> String? {
+        if let cached = glyphs[symbol] { return cached }
+        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil),
+              let configured = image.withSymbolConfiguration(.init(pointSize: 40, weight: .medium)),
+              let tiff = configured.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+            // 记录失败可以避免每次图刷新都请求系统符号；renderer 会回退到标签首字。
+            glyphs[symbol] = .some(nil)
+            return nil
         }
-    }
-
-    /// 搜索/列表定位才移动镜头，点画布或数据回读均保留视角。
-    private func locate(_ node: TagGraphNode) {
-        model.search = ""
-        model.select(.node(node.id))
-        focusID = node.id
-        camera += 1
-    }
-
-    private func acceptCanvas(_ session: UUID, _ generation: Int, _ ids: [String]) {
-        guard model.accepts(session: session, generation: generation) else { return }
-        model.search = ""
-        switch ids.count {
-        case 0: model.select(nil)
-        case 1: model.select(.node(ids[0]))
-        case 2: model.select(.edge(TagGraphPair(ids[0], ids[1])))
-        default: break
-        }
+        let value = "data:image/png;base64," + png.base64EncodedString()
+        glyphs[symbol] = value
+        return value
     }
 }

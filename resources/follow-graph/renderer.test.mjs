@@ -14,10 +14,9 @@ const bundle = entry => buildSync({
 }).outputFiles[0].text;
 
 const source = bundle('entry.js');
-const tagSource = bundle('tag-graph-entry.mjs');
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
-function renderer({ reduced = true, tagGraph = false } = {}) {
+function renderer({ reduced = true } = {}) {
   const props = new Map(), calls = [], messages = [], images = [], canvases = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
@@ -60,10 +59,9 @@ function renderer({ reduced = true, tagGraph = false } = {}) {
     }
   });
   const window = { ...target(), webkit: { messageHandlers: {
-    followGraph: { postMessage: value => messages.push(value) },
-    tagGraph: { postMessage: value => messages.push(value) }
+    followGraph: { postMessage: value => messages.push(value) }
   } } };
-  vm.runInNewContext(tagGraph ? tagSource : source, {
+  vm.runInNewContext(source, {
     require: name => name === 'force-graph' ? function () { return graph; } : forces,
     window, document, innerWidth: 1200, innerHeight: 800, URL, performance: { now: () => clock },
     requestAnimationFrame: fn => { frames.set(++nextTimer, fn); return nextTimer; },
@@ -1200,68 +1198,4 @@ test('tag search can select and locate a queued repository, and reveal settles w
   r.frame(10_000);
   assert.deepEqual(r.calls, []);
   r.window.followGraph.destroy();
-});
-
-test('tag canvas reports the painted frame once, retains user viewport and filters only edges', () => {
-  const r = renderer({tagGraph:true});
-  const state = {session:'A', generation:1, selected:[], minimum:1, reduced:true, camera:0};
-  const data = {nodes:[{id:'a',name:'Agent',repo_count:2},{id:'r',name:'RAG',repo_count:2}],
-    edges:[{left_id:'a',right_id:'r',shared_count:2}]};
-  const apply = changes => r.window.tagGraph.apply({...state, ...changes});
-  assert.equal(r.messages[0].kind, 'ready');
-  apply({data});
-  r.props.get('onRenderFramePost')(); r.props.get('onRenderFramePost')();
-  assert.equal(r.messages.filter(m => m.kind === 'painted').length, 1);
-  const graph = r.props.get('graphData'), node = graph.nodes[0], edge = graph.links[0];
-  Object.assign(node,{x:65,y:42});
-  apply({focus:'a',selected:['a'],camera:1});
-  assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt',65,42,0]);
-  r.props.get('onEngineStop')();
-  assert.equal(r.calls.filter(([name]) => name === 'zoomToFit').length, 0);
-  r.props.get('onNodeDragEnd')(node);
-  assert.deepEqual([node.fx,node.fy],[65,42]);
-  apply({minimum:3,camera:1});
-  assert.equal(r.props.get('linkVisibility')(edge), false);
-  assert.equal(r.calls.filter(([name]) => name === 'graphData').length, 1);
-  apply({camera:2});
-  assert.equal(r.calls.filter(([name]) => name === 'zoomToFit').length, 1);
-  r.props.get('onLinkClick')(edge);
-  assert.deepEqual(Array.from(r.messages.at(-1).ids), ['a','r']);
-  r.window.tagGraph.destroy();
-});
-
-test('hover previews visible tag neighbors, then restores the selected edge without moving or selecting', () => {
-  const r = renderer({ tagGraph: true });
-  const state = { session: 'A', generation: 1, selected: ['c', 'd'], minimum: 1, reduced: true, camera: 0 };
-  const data = {
-    nodes: Array.from('abcd', id => ({ id, name: id, repo_count: 5 })),
-    edges: [['a', 'b', 2], ['b', 'c', 1], ['c', 'd', 3]].map(([left_id, right_id, shared_count]) =>
-      ({ left_id, right_id, shared_count }))
-  };
-  r.window.tagGraph.apply({ ...state, data });
-  const { nodes, links } = r.props.get('graphData');
-  const colors = () => links.map(link => r.props.get('linkColor')(link));
-  const baseline = colors();
-  const alpha = node => {
-    const ctx = { save() {}, restore() {}, beginPath() {}, arc() {}, fill() {}, stroke() {}, fillText() {}, strokeText() {} };
-    r.props.get('nodeCanvasObject')(node, ctx);
-    return ctx.globalAlpha;
-  };
-  r.calls.length = 0;
-  r.props.get('onNodeHover')(nodes[1]);
-  const preview = colors();
-  assert.deepEqual(preview.map((c, i) => c !== baseline[i]), [true, true, true]);
-  assert.deepEqual(Array.from(nodes, alpha), [1, 1, 1, 0.38]);
-  r.window.tagGraph.apply({ ...state, minimum: 2 });
-  assert.deepEqual(Array.from(nodes, alpha), [1, 1, 0.38, 0.38]);
-  r.container.listeners.get('pointerleave')({ type: 'pointerleave' });
-  assert.deepEqual(colors(), baseline);
-  assert.deepEqual(Array.from(nodes, alpha), [0.38, 0.38, 1, 1]);
-  r.container.listeners.get('pointerenter')({ type: 'pointerenter' });
-  assert.deepEqual(colors(), preview);
-  r.props.get('onNodeHover')(null);
-  assert.deepEqual(colors(), baseline);
-  assert.ok(!r.calls.some(([name]) => ['graphData', 'centerAt', 'zoomToFit'].includes(name)));
-  assert.ok(!r.messages.some(m => m.kind === 'select'));
-  r.window.tagGraph.destroy();
 });

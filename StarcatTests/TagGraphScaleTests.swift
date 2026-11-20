@@ -1,13 +1,13 @@
-// 用两个可复现的 5,000 Star 收藏测量图谱和共同仓库首屏。建库和准备样本均在计时区间外。
+// 用两个可复现的 5,000 Star 收藏测量归属图交付。建库和准备样本均在计时区间外。
 import Foundation
 import GRDB
 import Testing
 @testable import Starcat
 
-/// 使用生产 DatabasePool 与 ViewModel，计时止于图和仓库数据交付主线程。画布绘制另做实机验收。
+/// 使用生产 DatabasePool 与 ViewModel，计时止于图数据交付主线程。画布绘制另做实机验收。
 @MainActor @Suite("标签图谱规模样本")
 struct TagGraphScaleTests {
-    @Test func firstGraphAndIntersection() async throws {
+    @Test func firstGraph() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         for tagCount in [17, 40] {
@@ -22,17 +22,12 @@ struct TagGraphScaleTests {
                 try await Self.waitForDelivery { model.graph != nil }
                 let graphReady = clock.now
                 let graph = try #require(model.graph)
-                #expect(graph.nodes.count == tagCount)
-                if tagCount == 40 { #expect(graph.edges.count == 780) }
-                let edge = try #require(graph.edges.first)
-                let selected = clock.now
-                model.select(.edge(edge.id))
-                try await Self.waitForDelivery { model.page != nil }
-                let pageReady = clock.now
-                let page = try #require(model.page)
-                #expect(page.total == edge.sharedCount && page.items.count == min(20, page.total))
-                print("TAG_GRAPH_SAMPLE tags=\(tagCount) edges=\(graph.edges.count) shared=\(page.total) " +
-                      "round=\(round) graph=\(opened.duration(to: graphReady)) page=\(selected.duration(to: pageReady))")
+                let taggedRepos = tagCount == 17 ? 3_750 : 5_000
+                let memberships = tagCount == 17 ? 7_500 : 40_032
+                #expect(graph.nodes.count == taggedRepos + tagCount)
+                #expect(graph.edges.count == memberships)
+                print("TAG_GRAPH_SAMPLE tags=\(tagCount) nodes=\(graph.nodes.count) memberships=\(graph.edges.count) " +
+                      "round=\(round) graph=\(opened.duration(to: graphReady))")
             }
         }
     }
@@ -44,7 +39,7 @@ struct TagGraphScaleTests {
         try #require(ready())
     }
 
-    /// 典型样本每仓 0～3 个标签。密集样本每仓 8 个，首仓用全部 40 个，使 780 条边都可核对。
+    /// 典型样本每仓 0～3 个标签。密集样本每仓 8 个，首仓用全部 40 个，使边数都可核对。
     private static func seed(_ writer: any DatabaseWriter, tagCount: Int) async throws {
         try await writer.write { db in
             try db.execute(sql: """
@@ -58,7 +53,6 @@ struct TagGraphScaleTests {
                 INSERT INTO tags (id, name, created_at, updated_at)
                 SELECT printf('t%02d',i), 'Tag '||i, '2026-11-20', '2026-11-20' FROM seq
                 """, arguments: [tagCount])
-            // 按仓库 ID 轮换首标签，让最热门关系统计的也是一批不同仓库。
             try db.execute(sql: """
                 WITH RECURSIVE slots(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM slots WHERE i+1<?)
                 INSERT INTO repo_tags (repo_id, tag_id, created_at)

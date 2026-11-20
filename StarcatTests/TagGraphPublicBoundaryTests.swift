@@ -16,15 +16,15 @@ struct TagGraphPublicBoundaryTests {
             ("list_repos_by_tags", ["tag_ids": []], "arguments.tag_ids"),
             ("list_repos_by_tags", ["tag_ids": ["agent", 1]], "arguments.tag_ids[1]"),
             ("list_repos_by_tags", ["tag_ids": [""]], "arguments.tag_ids[0]"),
-            ("get_tag_graph", ["min_shared_repos": 0], "arguments.min_shared_repos"),
+            ("get_tag_graph", ["min_shared_repos": 0], "unknown argument min_shared_repos"),
             ("get_tag_graph", ["offset": -1], "arguments.offset"),
             ("get_tag_graph", ["limit": 101], "arguments.limit"),
             ("list_repos_by_tags", ["tag_ids": ["rag"], "limit": 0], "arguments.limit")
         ]
-        for (tool, arguments, path) in invalid {
+        for (tool, arguments, diagnostic) in invalid {
             let result = try await TagGraphPublicReadTests.call(tool, arguments, on: runtime)
             #expect(result["code"] == .string("INVALID_ARGUMENTS"))
-            #expect(result["message"]?.stringValue?.contains(path) == true)
+            #expect(result["message"]?.stringValue?.contains(diagnostic) == true, "\(tool): \(diagnostic)")
         }
         for (tool, arguments) in [("get_tag_graph", ["offset": Int.max] as [String: Any]),
                                   ("list_repos_by_tags", ["tag_ids": ["agent"], "offset": Int.max])] {
@@ -53,7 +53,7 @@ struct TagGraphPublicBoundaryTests {
         parts.settings.mcpServiceEnabled = true
         service.refreshForCurrentSettings()
         #expect(service.state == .failed(String.l10n("settings.mcp.status.requiresPro")))
-        #expect(try await fixture.snapshot().edges.count == 3)
+        #expect(try await fixture.snapshot().edges.count == 7)
     }
 
     @Test("登出、切库屏障和从上一账户带来的 ID 不返回旧数据")

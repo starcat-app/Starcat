@@ -23,22 +23,31 @@ struct TagGraphTransportTests {
         let port = try await server.startAndWaitUntilReady()
         defer { server.stop(); Task { await runtime.shutdown() } }
         let expected = try await fixture.snapshot()
-        let nodes = try StarcatMCPJSON.value(expected.nodes)
-        let edges = try StarcatMCPJSON.value(expected.edges)
         for stdio in [false, true] {
-            var allEdges = [Value](), repoIDs = [Int]()
+            var allEdges = [Value](), allNodeIDs = Set<String>(), repoIDs = [Int]()
+            for offset in stride(from: 0, through: 6, by: 2) {
+                let graph = try await Self.call("get_tag_graph", ["limit": 2, "offset": offset], stdio: stdio, port: port, token: token)
+                let pageEdges = try #require(graph["edges"]?.arrayValue)
+                let pageRepoIDs = Set(pageEdges.compactMap { $0.objectValue?["target"]?.stringValue })
+                #expect(graph["total_nodes"] == .int(expected.nodes.count))
+                #expect(graph["total_edges"] == .int(expected.edges.count))
+                #expect(graph["next_offset"] == (offset == 6 ? .null : .int(offset + 2)))
+                let nodes = try #require(graph["nodes"]?.arrayValue)
+                let ids = Set(nodes.compactMap { $0.objectValue?["id"]?.stringValue })
+                #expect(ids.isSuperset(of: TagGraphFixture.tagNodes.map(\.id)))
+                #expect(ids.subtracting(TagGraphFixture.tagNodes.map(\.id)) == pageRepoIDs)
+                allEdges += pageEdges
+                allNodeIDs.formUnion(ids)
+
+            }
+            #expect(try Value.array(allEdges) == StarcatMCPJSON.value(expected.edges))
+            #expect(allNodeIDs == Set(expected.nodes.map(\.id)))
             for offset in 0...1 {
-                let graph = try await Self.call("get_tag_graph", ["limit": 2, "offset": offset * 2], stdio: stdio, port: port, token: token)
-                #expect(graph["nodes"] == nodes && graph["total_edges"] == .int(3) && graph["matching_edges"] == .int(3))
-                #expect(graph["next_offset"] == (offset == 0 ? .int(2) : .null))
-                allEdges += try #require(graph["edges"]?.arrayValue)
                 let repos = try await Self.call("list_repos_by_tags", ["tag_ids": ["agent", "rag"], "limit": 1, "offset": offset], stdio: stdio, port: port, token: token)
                 #expect(repos["total"] == .int(2) && repos["next_offset"] == (offset == 0 ? .int(1) : .null))
                 repoIDs += try #require(repos["items"]?.arrayValue).compactMap { $0.objectValue?["id"]?.intValue }
             }
-            #expect(.array(allEdges) == edges)
-            let gui = try await fixture.db.writer.read { try RepoTagIntersection.page(in: $0, tagIDs: ["agent", "rag"], limit: 20, offset: 0) }
-            #expect(repoIDs == gui.items.map { Int($0.id) })
+            #expect(repoIDs == [1, 2])
         }
     }
 

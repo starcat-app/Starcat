@@ -103,9 +103,7 @@ enum StarcatMCPPublicCatalog {
         .init(name: "list_notifications", summary: "Read the cached notification and Issue/PR inbox without remote hydration.", properties: pagination),
         .init(name: "list_activity_timeline", summary: "Read cached notifications and Star/Unstar/Fork activity with combined filters and cursor pagination. Values within events/reasons are OR; groups are AND. Does not hydrate remote state.", properties: activityTimeline),
         .init(name: "get_notification", summary: "Read one cached notification or Issue/PR conversation.", properties: ["id": string()], required: ["id"]),
-        .init(name: "get_tag_graph", summary: "Read all current-account tag nodes and one page of undirected edges, weighted by shared starred repositories.", properties: tagGraphPaging.merging([
-            "min_shared_repos": .object(["type": .string("integer"), "minimum": .int(1), "default": .int(1)])
-        ]) { _, new in new }),
+        .init(name: "get_tag_graph", summary: "Read current-account tags and one page of tag-to-starred-repository memberships, with repository nodes for that page.", properties: tagGraphPaging),
         .init(name: "list_repos_by_tags", summary: "Read a page of currently starred repositories carrying every supplied tag ID. Repeated IDs count once.", properties: tagGraphPaging.merging([
             "tag_ids": .object(["type": .string("array"), "items": string(), "minItems": .int(1)])
         ]) { _, new in new }, required: ["tag_ids"]),
