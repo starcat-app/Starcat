@@ -5,6 +5,8 @@ import SwiftUI
 
 /// 数据订阅仍按账户隔离；渲染状态只描述当前 WebView 会话。
 struct TagGraphWorkspace: View {
+    private static let rootID = "app:starcat"
+
     let reader: any DatabaseReader
     let isCurrent: () -> Bool
     let escape: Int
@@ -65,13 +67,16 @@ struct TagGraphWorkspace: View {
     private var canvasInput: FollowGraphWebView.Input? {
         guard let graph = model.graph else { return nil }
         return FollowGraphWebView.Input(
-            rootID: nil,
+            rootID: Self.rootID,
+            kind: .tags,
             revision: model.revision,
             selectedID: selectedID,
             selectionRevision: selectionRevision,
             viewportRevision: viewportRevision,
             focusID: focusID
         ) {
+            var logo: [String: Any] = ["id": Self.rootID, "kind": "app", "name": "Starcat"]
+            logo["glyph"] = TagGraphSymbolCache.appLogo
             let nodes = graph.nodes.map { node -> [String: Any] in
                 var value: [String: Any] = ["id": node.id, "kind": node.kind.rawValue, "name": node.name]
                 if node.kind == .tag {
@@ -84,7 +89,9 @@ struct TagGraphWorkspace: View {
                 }
                 return value
             }
-            return (nodes, graph.edges.map { ["source": $0.source, "target": $0.target] })
+            // Logo 连线只用于画布导航。归属查询和标签统计只读取数据库里的边。
+            let anchors = graph.nodes.lazy.filter { $0.kind == .tag }.map { ["source": Self.rootID, "target": $0.id] }
+            return ([logo] + nodes, Array(anchors) + graph.edges.map { ["source": $0.source, "target": $0.target] })
         }
     }
 
@@ -215,18 +222,32 @@ struct TagGraphWorkspace: View {
 @MainActor private enum TagGraphSymbolCache {
     private static var glyphs: [String: String?] = [:]
 
+    /// 直接使用当前渠道的 App 图标，缩小后再编码，避免把完整 icns 传给 WebKit。
+    static let appLogo: String? = {
+        guard let source = NSApp.applicationIconImage else { return nil }
+        let image = NSImage(size: NSSize(width: 96, height: 96), flipped: false) { rect in
+            source.draw(in: rect)
+            return true
+        }
+        return dataURL(image)
+    }()
+
     static func glyph(for symbol: String) -> String? {
         if let cached = glyphs[symbol] { return cached }
         guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil),
               let configured = image.withSymbolConfiguration(.init(pointSize: 40, weight: .medium)),
-              let tiff = configured.tiffRepresentation,
-              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+              let value = dataURL(configured) else {
             // 记录失败可以避免每次图刷新都请求系统符号；renderer 会回退到标签首字。
             glyphs[symbol] = .some(nil)
             return nil
         }
-        let value = "data:image/png;base64," + png.base64EncodedString()
         glyphs[symbol] = value
         return value
+    }
+
+    private static func dataURL(_ image: NSImage) -> String? {
+        guard let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return nil }
+        return "data:image/png;base64," + png.base64EncodedString()
     }
 }

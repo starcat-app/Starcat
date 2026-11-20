@@ -5,21 +5,6 @@
 // Numeric GitHub IDs retain the same stable traversal ordering as the native model.
 export const compareIDs = new Intl.Collator('en', { numeric: true }).compare;
 
-/** Keep the opening anchor stable during live edits. A tag-only graph still needs a center. */
-function membershipRoot(nodes, neighbors, current) {
-  if (nodes.has(current)) return current;
-  let best = null, bestCount = 0;
-  for (const node of nodes.values()) {
-    if (node.kind !== 'repo') continue;
-    const count = neighbors.get(node.id)?.length ?? 0;
-    if (count > bestCount || (count > 0 && count === bestCount && compareIDs(node.id, best) < 0)) {
-      best = node.id;
-      bestCount = count;
-    }
-  }
-  return best ?? nodes.keys().next().value ?? null;
-}
-
 /** Reveal parents before children and retain existing nodes across incoming data batches. */
 export class ProgressiveReveal {
   visible = new Set();
@@ -34,7 +19,6 @@ export class ProgressiveReveal {
 
   /** Reconcile the latest full snapshot without restarting already-visible avatars. */
   sync(nodes, links, root, now, reduced, relation = 'following') {
-    const membership = root === null;
     const neighbors = new Map();
     const connect = (owner, neighbor) => {
       if (!neighbors.has(owner)) neighbors.set(owner, []);
@@ -43,15 +27,13 @@ export class ProgressiveReveal {
     for (const link of links.values()) {
       const source = typeof link.source === 'object' ? link.source.id : link.source;
       const target = typeof link.target === 'object' ? link.target.id : link.target;
-      // Follow graphs explore in their selected direction. Membership can be
-      // traversed from a repository or a tag while retaining each original edge.
-      if (membership || relation !== 'followers') connect(source, target);
-      if (membership || relation === 'followers') connect(target, source);
+      // Followers explore incoming links. Following and tag membership explore outgoing links.
+      if (relation === 'followers') connect(target, source);
+      else connect(source, target);
     }
     for (const targets of neighbors.values()) targets.sort(compareIDs);
-    if (membership) root = membershipRoot(nodes, neighbors, this.root);
     if (root !== this.root) {
-      if (!membership) this.clear();
+      this.clear();
       this.root = root;
     }
     for (const id of this.visible) {
@@ -74,24 +56,14 @@ export class ProgressiveReveal {
       }
     };
     if (nodes.has(root)) walk(root);
-    if (membership) {
-      // Every remaining group starts from its own real tag rather than hanging
-      // from a made-up relationship to the anchor. Input is already tag-first.
-      for (const id of nodes.keys()) if (!this.parents.has(id)) walk(id);
-    } else {
-      ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compareIDs));
-    }
+    ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compareIDs));
     if (this.pending.length === 0) {
-      // Leave the center readable on its own through the native canvas fade-in.
-      this.nextAt = now + (membership && !this.visible.size ? 180 : 45);
+      this.nextAt = now + 45;
       this.burst = 0;
     }
     this.pending = ordered.filter(id => !this.visible.has(id));
     if (reduced) this.finish();
-    else if (!this.visible.size && nodes.has(root)) {
-      this.show([root], now);
-      if (membership) this.births.delete(root);
-    }
+    else if (!this.visible.size && nodes.has(root)) this.show([root], now);
   }
 
   /** Gradually accelerate large graphs, while the first few avatars remain visibly separate. */

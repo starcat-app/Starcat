@@ -12,8 +12,11 @@ import WebKit
 /// 共用的离线 2D 画布。每个遮盖层有独立 WebKit 会话，数据由各自的宿主提供。
 struct FollowGraphWebView: NSViewRepresentable {
     struct Input {
-        /// 标签图没有中心账号。每个批次都携带相同的根，以区分两种交互语义。
-        let rootID: String?
+        enum Kind: String { case follow, tags }
+
+        /// 两张图都从显式的根节点入场，图类型单独决定关系语义。
+        let rootID: String
+        var kind: Kind = .follow
         var relation: FollowGraphRelation? = nil
         let revision: Int
         var selectedID: String? = nil
@@ -164,7 +167,9 @@ struct FollowGraphWebView: NSViewRepresentable {
         func flush() {
             guard ready, isCurrent, let input else { return }
             sequence += 1
-            var payload: [String: Any] = ["session": session, "root": input.rootID as Any? ?? NSNull(), "sequence": sequence]
+            var payload: [String: Any] = [
+                "session": session, "root": input.rootID, "kind": input.kind.rawValue, "sequence": sequence
+            ]
             if let update = input.avatarUpdate, sentAvatarRevision != update.revision {
                 payload["avatarReady"] = ["id": update.id, "source": update.source, "revision": update.revision] as [String: Any]
                 sentAvatarRevision = update.revision
@@ -179,7 +184,7 @@ struct FollowGraphWebView: NSViewRepresentable {
             }
             // 标签图的数据库更新不得覆盖 Canvas 刚发生的点击。只有搜索会发送选择命令。
             if sentSelection != input.selectedID || sentSelectionRevision != input.selectionRevision ||
-                (input.rootID != nil && payload["nodes"] != nil) {
+                (input.kind == .follow && payload["nodes"] != nil) {
                 payload["selected"] = input.selectedID as Any? ?? NSNull()
                 payload["selectionRevision"] = input.selectionRevision
                 payload["path"] = input.path
@@ -206,7 +211,7 @@ struct FollowGraphWebView: NSViewRepresentable {
             // 合并尚未发出的字段并串行发送，防止较新的选择消息越过包含节点的旧批次。
             // 仅靠序号丢弃旧消息会同时丢掉那批节点，因此不能并发调用渲染桥。
             // 坐标更新仅影响 SwiftUI 浮层，不能反向触发空批次形成桥接重绘循环。
-            guard payload.count > 3 else { return }
+            guard payload.count > 4 else { return }
             pendingPayload.merge(payload) { _, new in new }
             sendNext()
         }

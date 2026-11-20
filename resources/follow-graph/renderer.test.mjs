@@ -1097,8 +1097,9 @@ test('settled flow redraws only its transparent overlay and follows Retina zoom 
 });
 
 const membershipGraph = {
-  root: null, dark: true,
+  root: 'app:starcat', kind: 'tags', dark: true,
   nodes: [
+    { id: 'app:starcat', kind: 'app', name: 'Starcat', glyph: 'data:image/png;base64,AA==' },
     { id: 'tag:a', kind: 'tag', name: 'Agent', color: '#0088aa', glyph: 'data:image/png;base64,AA==' },
     { id: 'tag:b', kind: 'tag', name: 'RAG' },
     { id: 'tag:z', kind: 'tag', name: '资料' },
@@ -1107,180 +1108,118 @@ const membershipGraph = {
     { id: 'repo:2', kind: 'repo', name: 'example/related' }
   ],
   links: [
+    ...['tag:a', 'tag:b', 'tag:z'].map(target => ({ source: 'app:starcat', target })),
     { source: 'tag:a', target: 'repo:1' },
     { source: 'tag:b', target: 'repo:1' },
     { source: 'tag:b', target: 'repo:2' }
   ]
 };
+const visible = r => r.props.get('graphData');
+const ids = r => Array.from(visible(r).nodes, node => node.id);
+const paintVisible = r => {
+  for (const node of visible(r).nodes) r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+  r.props.get('onRenderFramePost')(r.canvasContext, 1);
+};
 
-test('tag canvas paints the centered repository before its tags and preserves real edges', () => {
+test('app icon paints alone before tags enter with the same cadence and parent placement as followers', () => {
   const r = renderer({ reduced: false });
   r.update(1, structuredClone(membershipGraph));
-  const paint = () => {
-    const { nodes } = r.props.get('graphData');
-    for (const node of nodes) r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
-    r.props.get('onRenderFramePost')(r.canvasContext, 1);
-  };
-  const ids = () => Array.from(r.props.get('graphData').nodes, node => node.id);
-  assert.deepEqual(ids(), ['repo:1']);
-  const [anchor] = r.props.get('graphData').nodes;
+  assert.deepEqual(ids(r), ['app:starcat']);
+  r.frame(600);
+  paintVisible(r);
+  assert.ok(!r.messages.some(message => message.type === 'presented'));
+  assert.deepEqual(ids(r), ['app:starcat']);
+  const [anchor] = visible(r).nodes;
   assert.deepEqual([anchor.x, anchor.y, anchor.fx, anchor.fy], [0, 0, 0, 0]);
-  paint();
-  assert.deepEqual(r.messages.map(message => message.type), ['ready', 'presented']);
-  assert.ok(r.calls.some(([name, value]) => name === 'fillText' && value === 'example/project'));
-  assert.ok(r.images.some(image => image.src.startsWith('data:image/png')));
-  assert.ok(r.images.some(image => image.src.startsWith('starcat-follow-avatar://cache/')));
-  r.frame(179);
-  assert.deepEqual(ids(), ['repo:1']);
-  r.frame();
-  assert.deepEqual(ids(), ['repo:1', 'tag:a']);
-  assert.equal(r.props.get('graphData').links.length, 1);
-  r.update(2, { root: null, reduceMotion: true });
-  paint();
-  assert.deepEqual(ids().sort(), ['repo:1', 'repo:2', 'tag:a', 'tag:b', 'tag:z']);
-  assert.equal(r.props.get('graphData').links.length, 3);
+  const [logo] = r.images;
+  assert.match(logo.src, /^data:image\/png/);
+  logo.onload();
+  paintVisible(r);
+  assert.ok(r.messages.some(message => message.type === 'presented'));
+  assert.ok(r.calls.some(([name, value]) => name === 'fillText' && value === 'Starcat'));
+  assert.ok(!r.calls.some(([name, ticks]) => name === 'cooldownTicks' && ticks === 0));
+
+  const follow = renderer({ reduced: false });
+  follow.update(1, r.data(4));
+  for (const interval of [44, 34, 34, 34, 34]) {
+    r.frame(interval);
+    follow.frame(interval);
+    assert.equal(ids(r).filter(id => !id.startsWith('repo:')).length, ids(follow).length);
+  }
+  const tag = visible(r).nodes.find(node => node.id === 'tag:a');
+  assert.ok(Math.abs(Math.hypot(tag.x, tag.y) - (anchor.radius + 24)) < 0.0001);
+  assert.notEqual(tag.x, tag.fx);
+  assert.deepEqual(ids(r).slice(0, 4), ['app:starcat', 'tag:a', 'tag:b', 'tag:z']);
+  r.update(2, { root: membershipGraph.root, reduceMotion: true });
+  assert.equal(visible(r).nodes.length, 6);
+  assert.equal(visible(r).links.length, 6);
   assert.equal(r.frames.size, 0);
-  assert.deepEqual(r.messages.map(message => message.type), ['ready', 'presented']);
+  r.window.followGraph.destroy();
+  follow.window.followGraph.destroy();
+});
+
+test('more uses the shared reveal pump, retains the camera and reports only admitted tag memberships', () => {
+  const r = renderer({ reduced: false });
+  r.update(1, structuredClone(membershipGraph));
+  r.images[0].onload();
+  paintVisible(r);
+  for (let frame = 0; frame < 30; frame++) r.frame();
+  r.props.get('onEngineTick')();
+  const [root, tag] = visible(r).nodes;
+  const count = () => r.messages.findLast(message => message.type === 'progress').selectedCount;
+  r.update(2, { root: membershipGraph.root, selected: 'tag:a', selectionRevision: 1 });
+  assert.equal(count(), 1);
+  r.graph.centerAt(19, 20).zoom(1.7);
+  const expanded = structuredClone(membershipGraph);
+  expanded.links.push({ source: 'tag:a', target: 'repo:2' }); // already visible under tag:b
+  for (let index = 3; index <= 51; index++) {
+    const id = `repo:${index}`;
+    expanded.nodes.push({ id, kind: 'repo', name: `sample/${index}` });
+    expanded.links.push({ source: 'tag:a', target: id });
+  }
+  r.update(3, expanded);
+  assert.equal(count(), 2);
+  assert.equal(ids(r).length, 6);
+  r.frame(46);
+  assert.ok(count() > 2 && count() < 51);
+  assert.equal(visible(r).nodes[0], root);
+  assert.equal(visible(r).nodes.find(node => node.id === tag.id), tag);
+  const child = visible(r).nodes.find(node => node.id === 'repo:3');
+  assert.ok(Math.abs(Math.hypot(child.x - tag.x, child.y - tag.y) - (tag.radius + 24)) < 0.0001);
+  r.props.get('onEngineTick')();
+  assert.deepEqual([r.graph.centerAt().x, r.graph.centerAt().y, r.graph.zoom()], [19, 20, 1.7]);
+  for (let frame = 0; frame < 110; frame++) r.frame();
+  assert.equal(count(), 51);
+  assert.equal(r.frames.size, 0);
   r.window.followGraph.destroy();
 });
 
-/** A dozen connected tags plus sparse groups, including a truly unused tag. */
-function denseMembershipGraph() {
-  const data = { root: null, dark: true, nodes: [], links: [] };
-  for (let i = 1; i <= 17; i++) {
-    data.nodes.push({ id: `tag:${i}`, kind: 'tag', name: `Topic ${i}` });
-    if (i <= 12) data.links.push({ source: `tag:${i}`, target: 'repo:18' });
-  }
-  for (let i = 1; i <= 1400; i++) {
-    data.nodes.push({ id: `repo:${i}`, kind: 'repo', name: `example/${i}` });
-    if (i === 18) continue;
-    const slot = (i - 1) % 12;
-    data.links.push({ source: `tag:${i <= 1396 ? slot + 1 : i - 1384}`, target: `repo:${i}` });
-    if (i <= 1396 && i % 3 === 0) {
-      data.links.push({ source: `tag:${(slot + 5) % 12 + 1}`, target: `repo:${i}` });
-    }
-  }
-  return data;
-}
-
-test('large tag layout opens on the center, leaves room between labels and fits sparse groups', () => {
-  const r = renderer({ reduced: false }), data = denseMembershipGraph();
-  r.update(1, data);
-  assert.equal(r.props.get('graphData').nodes[0].id, 'repo:18');
-  const zoom = r.graph.zoom();
-  r.frame(214);
-  const firstTag = r.props.get('graphData').nodes[1];
-  const firstPosition = [firstTag.x, firstTag.y];
-  for (let i = 0; i < 80; i++) r.frame(100);
-  const { nodes, links } = r.props.get('graphData');
-  assert.equal(nodes.length, data.nodes.length);
-  assert.equal(links.length, data.links.length);
-  const anchor = nodes.find(node => node.id === 'repo:18');
-  assert.deepEqual([anchor.x, anchor.y], [0, 0]);
-  assert.deepEqual([firstTag.x, firstTag.y], firstPosition);
-  assert.equal(r.graph.zoom(), zoom);
-  assert.equal(r.props.get('cooldownTicks'), 0);
-  const tags = nodes.filter(node => node.kind === 'tag');
-  assert.ok(tags.every(node => Math.abs(node.x) * zoom < 570 && Math.abs(node.y) * zoom < 365));
-  for (const [index, tag] of tags.entries()) {
-    for (const other of tags.slice(index + 1)) {
-      assert.ok(Math.hypot(tag.x - other.x, tag.y - other.y) * zoom > 48,
-        `${tag.name} and ${other.name} need space for their icons and names`);
-    }
-  }
-  r.window.followGraph.destroy();
-});
-
-test('dense overview keeps labels legible and restores cross-group edges and avatars in context', () => {
-  const r = renderer({ width: 2560, height: 1440 });
-  r.update(1, denseMembershipGraph());
-  const { nodes, links } = r.props.get('graphData');
-  const draw = r.props.get('nodeCanvasObject'), scale = r.graph.zoom();
-  assert.equal(scale, 1);
-  const nodeByID = new Map(nodes.map(node => [node.id, node]));
-  const cross = links.find(link => link.target !== 'repo:18' && nodeByID.get(link.target).groupID !== link.source);
-  const visibility = r.props.get('linkVisibility');
-  assert.equal(visibility(cross), false);
-  const dot = nodes.find(node => node.kind === 'repo' && node.id !== 'repo:18' && !node.preview);
-  r.calls.length = 0;
-  for (const node of nodes) draw(node, r.canvasContext, scale);
-  r.props.get('onRenderFramePost')(r.canvasContext, scale);
-  const labels = r.calls.filter(([method]) => method === 'strokeText').length;
-  const thumbnails = r.calls.filter(([method]) => method === 'drawImage').length;
-  assert.equal(labels, 18); // One center name and every tag, even far out.
-  assert.ok(r.calls.findIndex(([method]) => method === 'strokeText') >
-    r.calls.findLastIndex(([method]) => method === 'drawImage'));
-  assert.ok(thumbnails > labels && thumbnails < nodes.length / 8);
-  r.calls.length = 0;
-  r.props.get('onNodeClick')(nodeByID.get(cross.source));
-  assert.equal(visibility(cross), true);
-  assert.equal(r.props.get('linkColor')(cross), '#53c9b560');
-  r.props.get('onBackgroundClick')();
-  r.graph.zoom(1.4);
-  r.props.get('onRenderFramePre')();
-  r.calls.length = 0;
-  draw(dot, r.canvasContext, 1.4);
-  assert.ok(r.calls.some(([method]) => method === 'drawImage'));
-  assert.equal(visibility(cross), true);
-  r.window.followGraph.destroy();
-});
-
-test('tag clicks highlight just direct memberships without a native round trip or a layout rebuild', () => {
+test('click reports selection, emphasizes only direct memberships, and deselection clears it', () => {
   const r = renderer();
   r.update(1, structuredClone(membershipGraph));
-  const { nodes, links } = r.props.get('graphData');
-  const click = id => r.props.get('onNodeClick')(nodes.find(node => node.id === id));
-  const colors = () => Array.from(links, r.props.get('linkColor'));
-  const alpha = id => {
-    let opacity;
-    const ctx = new Proxy(r.canvasContext, {
-      set: (_, key, value) => {
-        if (key === 'globalAlpha') opacity = value;
-        return true;
-      }
-    });
-    r.props.get('nodeCanvasObject')(nodes.find(node => node.id === id), ctx, 1);
-    return opacity;
-  };
-  const ordinary = colors();
-  assert.equal(ordinary[0], ordinary[1]);
-  assert.notEqual(ordinary[0], ordinary[2]);
-  assert.equal(new Set(links.map(r.props.get('linkWidth'))).size, 1);
+  const data = visible(r), repo = data.nodes.find(node => node.id === 'repo:1');
+  const [appToA,,, aToOne, bToOne, bToTwo] = data.links;
+  const color = r.props.get('linkColor');
   r.calls.length = 0;
-  click('tag:a');
-  assert.deepEqual(colors(), ['#53c9b560', '#65788b12', '#65788b12']);
-  assert.deepEqual(['tag:a', 'repo:1', 'tag:b'].map(alpha), [1, 1, 0.3]);
-  click('repo:1');
-  assert.deepEqual(colors(), ['#53c9b560', '#53c9b560', '#65788b12']);
-  assert.deepEqual(['tag:a', 'tag:b', 'repo:2'].map(alpha), [1, 1, 0.3]);
-  assert.ok(links.every(link => r.props.get('linkDirectionalArrowLength')(link) === 0));
+  r.props.get('onNodeClick')(repo);
+  assert.equal(color(aToOne), color(bToOne));
+  assert.notEqual(color(aToOne), color(bToTwo));
+  assert.equal(color(appToA), color(bToTwo));
+  assert.ok(!r.calls.some(([name]) => name === 'graphData' || name === 'centerAt'));
+  assert.equal(r.messages.findLast(message => message.type === 'select').id, 'repo:1');
   r.props.get('onBackgroundClick')();
-  assert.deepEqual(colors(), ordinary);
-  r.props.get('onZoomEnd')({ x: 10, y: 10, k: 2 });
-  assert.deepEqual(r.messages.map(message => message.type), ['ready']);
-  assert.ok(!r.calls.some(([name]) => ['graphData', 'nodePointerAreaPaint', 'zoomToFit'].includes(name)));
-  assert.equal(r.frames.size, 0);
+  assert.equal(color(aToOne), color(bToTwo));
+  assert.equal(r.messages.findLast(message => message.type === 'select').id, null);
   r.window.followGraph.destroy();
 });
 
-test('tag search can select and locate a queued repository, and reveal settles without ongoing redraws', () => {
+test('tag search can select and locate a queued repository together with its parent', () => {
   const r = renderer({ reduced: false });
   r.update(1, structuredClone(membershipGraph));
-  r.update(2, { root: null, selected: 'repo:2', focus: 'repo:2' });
-  let { nodes, links } = r.props.get('graphData');
-  const repo = nodes.find(node => node.id === 'repo:2');
-  assert.ok(repo);
-  assert.equal(links.length, 0);
+  r.update(2, { root: membershipGraph.root, selected: 'repo:2', focus: 'repo:2' });
   r.props.get('onEngineTick')();
-  assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', repo.x, repo.y, 0]);
-  for (let i = 0; i < 60; i++) r.frame();
-  ({ nodes, links } = r.props.get('graphData'));
-  assert.equal(nodes.length, 5);
-  assert.equal(links.length, 3);
-  assert.equal(r.props.get('linkColor')(links.find(link => link.target === 'repo:2')), '#53c9b560');
-  assert.equal(r.frames.size, 0);
-  r.calls.length = 0;
-  r.frame(10_000);
-  assert.deepEqual(r.calls, []);
+  assert.deepEqual(ids(r), ['app:starcat', 'tag:b', 'repo:2']);
+  const target = visible(r).nodes.find(node => node.id === 'repo:2');
+  assert.deepEqual([r.graph.centerAt().x, r.graph.centerAt().y], [target.x, target.y]);
   r.window.followGraph.destroy();
 });
