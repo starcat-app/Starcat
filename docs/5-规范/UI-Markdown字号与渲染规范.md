@@ -39,6 +39,7 @@ WebView 的 CSS px 与 MarkdownUI 的原生 point 采用相同逻辑数值；不
 - AppKit `NSTextView` 从 `MarkdownTypography.nativeFont` 取得字体；`makeNSView` 和 `updateNSView` 均应用。字体变化时更新现有正文与 typingAttributes、重绘占位提示并重新测高，不能只在创建时设一次字体。
 - 自绘 placeholder 使用编辑器实际 `font`；不得额外使用系统默认字号或 caption。改字号不替换草稿、不重置选择范围、撤销、输入法和发送/粘贴逻辑。
 - 搜索、名称、端口、密钥、数字及其他单行配置表单不属于内容撰写，仍采用界面 typography；盘点时单列其用途与字号，不为凑统一数字强行放大工具栏。
+- 诊断报告的问题描述属于临时表单线索，采用 `StarcatTypography.body`（标准档 13pt）及界面倍率；输入与占位提示一致，不使用 Markdown 字号或 README 阅读微调。此例外不扩展到笔记、Issues、对话及其他内容编辑器。
 
 ## WebView 使用约束
 

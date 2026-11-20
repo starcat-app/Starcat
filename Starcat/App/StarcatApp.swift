@@ -255,7 +255,8 @@ struct StarcatApp: App {
                 .appLocaleEnvironment()
         }
         .commandsRemoved()
-        .defaultSize(width: 680, height: 680)
+        .defaultSize(width: 560, height: 560)
+        .windowResizability(.contentMinSize)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 

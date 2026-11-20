@@ -14,6 +14,7 @@ struct DiagnosticReportTimePicker: View {
     @Binding var date: Date
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var scale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Namespace private var selectionSpace
     @State private var hoveredChoice: DiagnosticReportDraft.TimeChoice?
@@ -21,20 +22,20 @@ struct DiagnosticReportTimePicker: View {
     @FocusState private var focusedChoice: DiagnosticReportDraft.TimeChoice?
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             HStack(spacing: 2) {
                 ForEach(DiagnosticReportDraft.TimeChoice.allCases) { item in
                     Button { choice = item } label: {
                         Text(LocalizedStringKey(item.titleKey))
-                            .font(.body.weight(choice == item ? .medium : .regular))
+                            .font(scale.font(.body, weight: choice == item ? .medium : .regular))
                             .foregroundStyle(.primary)
-                            // 蓝色选中底上的文字使用深色外观的 primary，保持可读且不写死前景色。
-                            .environment(\.colorScheme, choice == item ? .dark : colorScheme)
-                            .frame(maxWidth: .infinity, minHeight: 28)
+                            .frame(maxWidth: .infinity, minHeight: 24)
                             .background {
                                 if choice == item {
                                     RoundedRectangle(cornerRadius: 5)
-                                        .fill(Color.accentColor)
+                                        // 紧凑分段沿用 macOS 的浅色选中面，避免整行大面积蓝底。
+                                        .fill(Color.fromHex6(colorScheme == .dark ? 0x3A3A3C : 0xFFFFFF))
+                                        .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
                                         .matchedGeometryEffect(id: "diagnostics.time.selection", in: selectionSpace)
                                 } else if hoveredChoice == item {
                                     RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05))
@@ -64,10 +65,10 @@ struct DiagnosticReportTimePicker: View {
                             .monospacedDigit()
                             .foregroundStyle(.primary)
                         Spacer(minLength: 8)
-                        Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down").font(scale.font(.caption)).foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .frame(maxWidth: .infinity, minHeight: 28)
                     .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
                     .contentShape(Rectangle())
                 }

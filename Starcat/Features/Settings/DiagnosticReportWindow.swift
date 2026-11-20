@@ -17,6 +17,7 @@ struct DiagnosticReportWindow: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.locale) private var locale
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.starcatInterfaceScale) private var scale
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var draft = DiagnosticReportDraft()
     @State private var evidence: DiagnosticReportEvidence = .loading
@@ -26,28 +27,28 @@ struct DiagnosticReportWindow: View {
     @State private var isExporting = false
     @State private var exportedURL: URL?
     @State private var exportError: String?
+    @State private var showsModules = false
+    @State private var hoveredModule: DiagnosticReportDraft.Module?
+    @FocusState private var focusedModule: DiagnosticReportDraft.Module?
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Text("diagnostics.report.introduction")
-                        .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
                     descriptionInput
                     contextFields
-                    Divider()
                     evidenceSection
                     contentsDisclosure
                 }
-                .padding(28)
+                .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
             footer
         }
-        .font(.body)
+        .font(scale.font(.body))
         .background(Color.fromHex6(colorScheme == .dark ? 0x1C1C1E : 0xF5F5F7))
-        .frame(minWidth: 620, minHeight: 620)
+        .frame(minWidth: 520, minHeight: 480)
         .navigationTitle(String.l10n("diagnostics.report.title"))
         .task(id: evidenceRevision) { await loadEvidence() }
         .onReceive(NotificationCenter.default.publisher(for: .diagnosticIssuesDidChange)) { _ in
@@ -62,6 +63,9 @@ struct DiagnosticReportWindow: View {
             environment = nil
             exportError = nil
             isContentsExpanded = false
+            showsModules = false
+            hoveredModule = nil
+            focusedModule = nil
         }
         .alert("diagnostics.export.failed.title", isPresented: Binding(
             get: { exportError != nil }, set: { if !$0 { exportError = nil } }
@@ -72,17 +76,17 @@ struct DiagnosticReportWindow: View {
         }
     }
 
-    /// 16 号内容字体只作用于编辑器与占位提示，外部标签保持普通表单字号。
+    /// 诊断线索是临时表单，不是 Markdown 编辑器；输入与提示共用界面字号，避免叠加阅读微调。
     private var descriptionInput: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("diagnostics.report.descriptionLabel").fontWeight(.medium)
-                Text("diagnostics.report.optional").font(.caption).foregroundStyle(.secondary)
+                Text("diagnostics.report.optional").font(scale.font(.caption)).foregroundStyle(.secondary)
             }
             ZStack(alignment: .topLeading) {
                 if draft.description.isEmpty {
                     Text("diagnostics.report.placeholder")
-                        .starcatMarkdownBodyFont()
+                        .font(scale.font(.body))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 8)
@@ -90,12 +94,12 @@ struct DiagnosticReportWindow: View {
                         .accessibilityHidden(true)
                 }
                 TextEditor(text: $draft.description)
-                    .starcatMarkdownBodyFont()
+                    .font(scale.font(.body))
                     .scrollContentBackground(.hidden)
                     .accessibilityLabel(Text("diagnostics.report.descriptionLabel"))
             }
-            .padding(6)
-            .frame(height: 112)
+            .padding(4)
+            .frame(height: 80)
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
@@ -114,41 +118,43 @@ struct DiagnosticReportWindow: View {
                     .monospacedDigit()
                     .fixedSize()
             }
-            .font(.caption)
+            .font(scale.font(.caption))
             .foregroundStyle(.secondary)
         }
     }
 
     private var contextFields: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             formRow("diagnostics.report.moduleLabel") {
-                Menu {
-                    Picker("diagnostics.report.moduleLabel", selection: $draft.module) {
-                        ForEach(DiagnosticReportDraft.Module.allCases) { module in
-                            Text(LocalizedStringKey(module.titleKey)).tag(module)
-                        }
-                    }
-                } label: {
+                Button { showsModules = true } label: {
                     HStack(spacing: 8) {
                         Text(LocalizedStringKey(draft.module.titleKey))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer(minLength: 8)
-                        Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(scale.font(.caption))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                     }
                     .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .frame(maxWidth: .infinity, minHeight: 28)
                     .background(panelBackground, in: RoundedRectangle(cornerRadius: 6))
                     .overlay {
                         RoundedRectangle(cornerRadius: 6)
                             .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
                     }
+                    .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(maxWidth: .infinity)
+                // 用完整 Button 保持值列宽度，避免 macOS Menu 重新排版自定义标签。
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
                 .accessibilityLabel(Text("diagnostics.report.moduleLabel"))
                 .accessibilityValue(Text(LocalizedStringKey(draft.module.titleKey)))
+                .help(Text(LocalizedStringKey(draft.module.titleKey)))
+                .popover(isPresented: $showsModules, arrowEdge: .bottom) {
+                    moduleChoices.appLocaleEnvironment()
+                }
             }
             formRow("settings.diagnostics.capture.time") {
                 DiagnosticReportTimePicker(choice: $draft.timeChoice, date: $draft.customTime)
@@ -158,13 +164,72 @@ struct DiagnosticReportWindow: View {
         .disabled(isExporting)
     }
 
+    /// 原生 popover 承载整行选项；鼠标、方向键和回车共用草稿选择，长译文可换行并滚动。
+    private var moduleChoices: some View {
+        ScrollView {
+            VStack(spacing: 2) {
+                ForEach(DiagnosticReportDraft.Module.allCases) { module in
+                    Button {
+                        draft.module = module
+                        showsModules = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark")
+                                .opacity(draft.module == module ? 1 : 0)
+                                .accessibilityHidden(true)
+                            Text(LocalizedStringKey(module.titleKey))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            focusedModule == module ? Color.accentColor.opacity(0.12)
+                                : hoveredModule == module ? Color.primary.opacity(0.06) : .clear,
+                            in: RoundedRectangle(cornerRadius: 5)
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusEffectDisabled()
+                    .focused($focusedModule, equals: module)
+                    .accessibilityAddTraits(draft.module == module ? .isSelected : [])
+                    .onHover { hoveredModule = $0 ? module : nil }
+                }
+            }
+            .padding(6)
+            .padding(.trailing, 12)
+        }
+        .frame(width: 300, height: 330)
+        .font(scale.font(.body))
+        .onAppear { focusedModule = draft.module }
+        .onKeyPress(.upArrow) { moveModuleFocus(-1); return .handled }
+        .onKeyPress(.downArrow) { moveModuleFocus(1); return .handled }
+        .onKeyPress(.return) {
+            if let focusedModule { draft.module = focusedModule }
+            showsModules = false
+            return .handled
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: hoveredModule)
+    }
+
+    /// 翻动焦点不立即提交选项，回车确认后才关闭列表。
+    private func moveModuleFocus(_ offset: Int) {
+        let modules = DiagnosticReportDraft.Module.allCases
+        guard let index = modules.firstIndex(of: focusedModule ?? draft.module),
+              modules.indices.contains(index + offset) else { return }
+        focusedModule = modules[index + offset]
+    }
+
     /// 固定标签列、伸展控件列；避免 LabeledContent 在非 Form 容器里按固有宽度居中。
     private func formRow<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 12) {
             Text(title)
                 .frame(width: 112, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 7)
+                .padding(.top, 6)
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -175,7 +240,7 @@ struct DiagnosticReportWindow: View {
     }
 
     private var evidenceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("diagnostics.report.dataTitle").fontWeight(.semibold)
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
@@ -189,7 +254,8 @@ struct DiagnosticReportWindow: View {
                     }
                     .foregroundStyle(.secondary)
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
                 Divider().padding(.horizontal, 12)
                 HStack(spacing: 12) {
                     Text("diagnostics.report.logs")
@@ -197,7 +263,8 @@ struct DiagnosticReportWindow: View {
                     evidenceStatus
                         .foregroundStyle(.secondary)
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(panelBackground, in: RoundedRectangle(cornerRadius: 8))
@@ -211,11 +278,11 @@ struct DiagnosticReportWindow: View {
             } icon: {
                 Image(systemName: "info.circle")
             }
-            .font(.caption)
+            .font(scale.font(.caption))
             .foregroundStyle(.secondary)
             if let exportedURL {
                 HStack {
-                    Text("diagnostics.report.saved").font(.caption).foregroundStyle(.secondary)
+                    Text("diagnostics.report.saved").font(scale.font(.caption)).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Button("settings.storage.revealInFinder") {
                         NSWorkspace.shared.activateFileViewerSelecting([exportedURL])
@@ -257,11 +324,11 @@ struct DiagnosticReportWindow: View {
                 Text("settings.diagnostics.layout.contents.excluded").fontWeight(.semibold)
                 Text("settings.diagnostics.layout.contents.excludedDescription")
             }
-            .font(.caption)
+            .font(scale.font(.caption))
             .foregroundStyle(.secondary)
             .padding(.top, 8)
         } label: {
-            Text("diagnostics.report.contents").font(.caption)
+            Text("diagnostics.report.contents").font(scale.font(.caption))
         }
         .disclosureGroupStyle(SettingsDisclosureGroupStyle(
             accessibilityLabel: Text("diagnostics.report.contents"),
@@ -270,16 +337,41 @@ struct DiagnosticReportWindow: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        // 长译文或较大字号时让说明单独占一行，保持操作按钮完整且始终靠右。
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                footerStatus.fixedSize()
+                Spacer(minLength: 8)
+                footerActions.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                footerStatus.fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer(minLength: 0)
+                    footerActions
+                }
+            }
+        }
+        .controlSize(.regular)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    private var footerStatus: some View {
+        HStack(spacing: 8) {
             if isExporting {
                 ProgressView().controlSize(.small)
-                Text("settings.diagnostics.export.running").font(.caption).foregroundStyle(.secondary)
+                Text("settings.diagnostics.export.running")
             } else {
                 Label("diagnostics.report.localOnly", systemImage: "lock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+        }
+        .font(scale.font(.caption))
+        .foregroundStyle(.secondary)
+    }
+
+    private var footerActions: some View {
+        HStack(spacing: 12) {
             Button("general.cancel") { dismissWindow(id: Self.sceneID) }
                 .keyboardShortcut(.cancelAction)
                 .disabled(isExporting)
@@ -290,9 +382,6 @@ struct DiagnosticReportWindow: View {
             .keyboardShortcut(.defaultAction)
             .disabled(isExporting)
         }
-        .controlSize(.regular)
-        .padding(.horizontal, 28)
-        .padding(.vertical, 16)
     }
 
     /// 快照和解码在后台完成；关闭窗口或更新快照后，旧任务不能回写当前预览。
