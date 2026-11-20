@@ -18,9 +18,44 @@ struct TagGraphWorkspace: View {
     @State private var rendererRevision = 0
     @State private var rendererPresented = false
     @State private var rendererFailed = false
+    @State private var canvasSize = CGSize.zero
+    @State private var cardContentHeight: CGFloat = 180
     @FocusState private var searchFocused: Bool
 
     var body: some View {
+        ZStack(alignment: .topLeading) {
+            canvas
+            FollowGraphSelectionCard(node: rendererPresented ? model.selectedNode : nil,
+                                     canvasSize: canvasSize, toolbarHeight: 28,
+                                     contentHeight: $cardContentHeight) { node in
+                TagGraphNodeCard(node: node, model: model, reader: reader, isCurrent: isCurrent) {
+                    focus(node.id)
+                }
+            }
+            .zIndex(1)
+        }
+        .overlay(alignment: .topLeading) { contentOverlay }
+        .overlay(alignment: .topTrailing) {
+            SheetCloseButton(action: onClose)
+                .accessibilityLabel(Text("common.close"))
+                .padding(16)
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { canvasSize = $0 }
+        .onAppear { model.bind(reader: reader, isCurrent: isCurrent) }
+        .onDisappear { model.clear() }
+        .onChange(of: escape) {
+            if !search.isEmpty {
+                search = ""
+                searchFocused = true
+            } else if model.selectedID != nil {
+                model.select(nil)
+            } else {
+                onClose()
+            }
+        }
+    }
+
+    private var canvas: some View {
         ZStack {
             Color(white: scheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
             if let graph = model.displayed, !graph.nodes.isEmpty, !rendererFailed {
@@ -37,24 +72,6 @@ struct TagGraphWorkspace: View {
                     .foregroundStyle(.secondary)
             } else if !rendererFailed && !model.failed {
                 graphSkeleton
-            }
-        }
-        .overlay(alignment: .topLeading) { contentOverlay }
-        .overlay(alignment: .topTrailing) {
-            SheetCloseButton(action: onClose)
-                .accessibilityLabel(Text("common.close"))
-                .padding(16)
-        }
-        .onAppear { model.bind(reader: reader, isCurrent: isCurrent) }
-        .onDisappear { model.clear() }
-        .onChange(of: escape) {
-            if !search.isEmpty {
-                search = ""
-                searchFocused = true
-            } else if model.selectedID != nil {
-                model.select(nil)
-            } else {
-                onClose()
             }
         }
     }
@@ -122,10 +139,7 @@ struct TagGraphWorkspace: View {
                     .frame(width: 250)
                     .focused($searchFocused)
                     .onSubmit { if let node = model.graph?.matchingNodes(search).first { locate(node) } }
-                Button {
-                    focusID = nil
-                    viewportRevision += 1
-                } label: {
+                Button { focus(nil) } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .frame(width: 24, height: 24)
                         .foregroundStyle(.secondary)
@@ -198,10 +212,14 @@ struct TagGraphWorkspace: View {
     /// 搜索定位会同时高亮并移动镜头；画布内点击由 renderer 本地处理。
     private func locate(_ node: TagGraphNode) {
         model.locate(node.id)
-        focusID = model.selectedID
-        viewportRevision += 1
+        focus(model.selectedID)
         search = ""
         searchFocused = false
+    }
+
+    private func focus(_ id: String?) {
+        focusID = id
+        viewportRevision += 1
     }
 
     /// 首帧由 WebKit 汇报，数据库读取和脚本装载期间使用同一静态占位。

@@ -125,33 +125,12 @@ struct OwnerCardView: View {
 
     private var profileContent: some View {
         VStack(alignment: .leading, spacing: colorScheme == .light ? 10 : 12) {
-            HStack(alignment: .top, spacing: 12) {
-                if isCompact {
-                    avatarImage
-                        .frame(width: 56, height: 56)
-                        .clipShape(Circle())
-                        .accessibilityHidden(true)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: displayName)
-                        .font(.title3.bold())
-                        .foregroundStyle(primaryContentColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Text(verbatim: "@\(login)")
-                        .font(.caption)
-                        .foregroundStyle(secondaryContentColor)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
-                Spacer(minLength: 4)
-                githubButton
-                if isCompact {
-                    SheetCloseButton(action: onClose)
-                        .accessibilityLabel(Text("common.close"))
-                }
+            FollowGraphCardHeader(title: displayName, subtitle: "@\(login)", isCompact: isCompact,
+                                  titleColor: primaryContentColor, subtitleColor: secondaryContentColor,
+                                  onClose: onClose) {
+                avatarImage
+            } actions: {
+                FollowGraphGitHubButton(action: onOpenGitHub)
             }
 
             if let normalizedBio {
@@ -285,30 +264,6 @@ struct OwnerCardView: View {
     }
 
     // MARK: - 操作
-
-    private var githubButton: some View {
-        Button(action: onOpenGitHub) {
-            Label {
-                Text("repo.openOnGithub")
-            } icon: {
-                // 复用现有 Devicons GitHub mark，并以 template 着色适配明暗主题。
-                Image("github")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 16, height: 16)
-            }
-            .labelStyle(.iconOnly)
-            .foregroundStyle(.primary)
-            .frame(width: 36, height: 28)
-            .starcatInteractiveGlassSurface(.regularMaterial, in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .pressableHover(scale: 1.0)
-        .help("repo.openOnGithub")
-        .accessibilityLabel(Text("repo.openOnGithub"))
-    }
 
     private var followButton: some View {
         Button(action: onToggleFollow) {
@@ -501,5 +456,78 @@ struct OwnerCardView: View {
 
     private func compactCount(_ value: Int) -> String {
         value.formatted(.number.notation(.compactName).locale(locale))
+    }
+}
+
+/// 关注者和标签图谱沿用资料卡的紧凑头像、标题与关闭按钮。详情页仍可用普通头部。
+struct FollowGraphCardHeader<Avatar: View, Actions: View>: View {
+    let title: String
+    let subtitle: String?
+    var isCompact = true
+    var titleColor: Color = .primary
+    var subtitleColor: Color = .secondary
+    let onClose: () -> Void
+    @ViewBuilder let avatar: () -> Avatar
+    @ViewBuilder let actions: () -> Actions
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if isCompact {
+                avatar()
+                    .frame(width: 56, height: 56)
+                    .clipShape(Circle())
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: title)
+                    .font(.title3.bold())
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(title)
+                if let subtitle {
+                    Text(verbatim: subtitle)
+                        .font(.caption)
+                        .foregroundStyle(subtitleColor)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            Spacer(minLength: 4)
+            actions()
+            if isCompact {
+                SheetCloseButton(action: onClose)
+                    .accessibilityLabel(Text("common.close"))
+            }
+        }
+    }
+}
+
+/// 图谱卡片与仓库 owner 详情使用相同的 GitHub 操作外观。
+struct FollowGraphGitHubButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label {
+                Text("repo.openOnGithub")
+            } icon: {
+                // 复用现有 Devicons GitHub mark，并以 template 着色适配明暗主题。
+                Image("github")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
+            }
+            .labelStyle(.iconOnly)
+            .foregroundStyle(.primary)
+            .frame(width: 36, height: 28)
+            .starcatInteractiveGlassSurface(.regularMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .pressableHover(scale: 1.0)
+        .help("repo.openOnGithub")
+        .accessibilityLabel(Text("repo.openOnGithub"))
     }
 }
