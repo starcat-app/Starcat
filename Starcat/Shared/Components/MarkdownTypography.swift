@@ -12,7 +12,13 @@ import SwiftUI
 
 /// 阅读正文、标题与代码的尺寸契约；保留现有阅读偏移键及用户已保存的设置。
 enum MarkdownTypography {
-    static let bodySize: CGFloat = 16
+    /// 仓库笔记和 AI 助手的阅读、输入与流式正文共用紧凑基准。
+    enum BodyBaseline: Int {
+        case standard = 16
+        case repositoryPanel = 14
+    }
+
+    static let bodySize = CGFloat(BodyBaseline.standard.rawValue)
     static let inlineCodeRatio: CGFloat = 0.85
     static let codeBlockRatio: CGFloat = 1
 
@@ -33,14 +39,23 @@ enum MarkdownTypography {
 
     /// 先钳制旧偏好，再缩放一次；WebView、原生 Markdown 与流式 Text 尾部共用。
     @MainActor
-    static func bodyFontSize(scale: InterfaceScale, adjustment: Int = 0) -> CGFloat {
-        scale.scaled(bodySize + CGFloat(AppSettings.clampedReadmeFontSizeAdjustment(adjustment)))
+    static func bodyFontSize(
+        scale: InterfaceScale,
+        adjustment: Int = 0,
+        baseline: BodyBaseline = .standard
+    ) -> CGFloat {
+        let adjustment = AppSettings.clampedReadmeFontSizeAdjustment(adjustment)
+        return scale.scaled(CGFloat(baseline.rawValue + adjustment))
     }
 
     /// 原生编辑器与自绘占位提示共用阅读尺寸，避免系统默认正文退回 13pt。
     @MainActor
-    static func nativeFont(scale: InterfaceScale, adjustment: Int = 0) -> NSFont {
-        .systemFont(ofSize: bodyFontSize(scale: scale, adjustment: adjustment))
+    static func nativeFont(
+        scale: InterfaceScale,
+        adjustment: Int = 0,
+        baseline: BodyBaseline = .standard
+    ) -> NSFont {
+        .systemFont(ofSize: bodyFontSize(scale: scale, adjustment: adjustment, baseline: baseline))
     }
 
     /// 只改排版，不回填草稿或重置选择；typingAttributes 保证后续键入沿用同一字体。
@@ -58,12 +73,16 @@ enum MarkdownTypography {
 
     /// 提供基础排版；业务主题可继续追加表格、复制、图片等已有能力。
     @MainActor
-    static func theme(scale: InterfaceScale, adjustment: Int = 0) -> Theme {
+    static func theme(
+        scale: InterfaceScale,
+        adjustment: Int = 0,
+        baseline: BodyBaseline = .standard
+    ) -> Theme {
         Theme.basic
             .text {
                 ForegroundColor(.primary)
                 BackgroundColor(nil)
-                FontSize(bodyFontSize(scale: scale, adjustment: adjustment))
+                FontSize(bodyFontSize(scale: scale, adjustment: adjustment, baseline: baseline))
             }
             .code {
                 FontFamilyVariant(.monospaced)
@@ -104,18 +123,20 @@ enum MarkdownTypography {
 
 /// 在 body 内读取 Observable 偏好，保证已打开窗口与冻结的 Markdown 块仍响应字号变化。
 private struct StarcatMarkdownStyle: ViewModifier {
+    let baseline: MarkdownTypography.BodyBaseline
     @Environment(\.starcatInterfaceScale) private var scale
     @Environment(AppSettings.self) private var settings: AppSettings?
 
     func body(content: Content) -> some View {
         content.markdownTheme(MarkdownTypography.theme(
-            scale: scale, adjustment: settings?.readmeFontSizeAdjustment ?? 0
+            scale: scale, adjustment: settings?.readmeFontSizeAdjustment ?? 0, baseline: baseline
         ))
     }
 }
 
 /// 流式尾部保持纯 Text，避免重新解析；其字号必须与冻结块及完成态相同。
 private struct StarcatMarkdownBodyFont: ViewModifier {
+    let baseline: MarkdownTypography.BodyBaseline
     var weight: Font.Weight? = nil
     var design: Font.Design = .default
     @Environment(\.starcatInterfaceScale) private var scale
@@ -123,17 +144,23 @@ private struct StarcatMarkdownBodyFont: ViewModifier {
 
     func body(content: Content) -> some View {
         content.font(.system(size: MarkdownTypography.bodyFontSize(
-            scale: scale, adjustment: settings?.readmeFontSizeAdjustment ?? 0
+            scale: scale, adjustment: settings?.readmeFontSizeAdjustment ?? 0, baseline: baseline
         ), weight: weight, design: design))
     }
 }
 
 extension View {
     /// 普通 MarkdownUI 阅读入口统一调用；专用主题直接从 MarkdownTypography.theme 派生。
-    func starcatMarkdownStyle() -> some View { modifier(StarcatMarkdownStyle()) }
+    func starcatMarkdownStyle(baseline: MarkdownTypography.BodyBaseline = .standard) -> some View {
+        modifier(StarcatMarkdownStyle(baseline: baseline))
+    }
 
     /// 用于阅读尾部、内容输入及其占位提示；工具栏与辅助信息仍采用界面 token。
-    func starcatMarkdownBodyFont(weight: Font.Weight? = nil, design: Font.Design = .default) -> some View {
-        modifier(StarcatMarkdownBodyFont(weight: weight, design: design))
+    func starcatMarkdownBodyFont(
+        baseline: MarkdownTypography.BodyBaseline = .standard,
+        weight: Font.Weight? = nil,
+        design: Font.Design = .default
+    ) -> some View {
+        modifier(StarcatMarkdownBodyFont(baseline: baseline, weight: weight, design: design))
     }
 }

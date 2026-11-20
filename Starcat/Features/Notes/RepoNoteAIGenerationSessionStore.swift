@@ -17,8 +17,17 @@ final class RepoNoteAIGenerationSessionStore {
     static let shared = RepoNoteAIGenerationSessionStore()
 
     private var sessions: [Int64: RepoNoteAIGenerationViewModel] = [:]
+    private var databaseRevision: UInt64?
 
     init() {}
+
+    /// 账号换库时结束上一作用域的草稿；相同 repo ID 可能出现在不同账号里。
+    func activate(databaseRevision: UInt64) {
+        guard self.databaseRevision != databaseRevision else { return }
+        sessions.values.forEach { $0.discard() }
+        sessions.removeAll()
+        self.databaseRevision = databaseRevision
+    }
 
     func session(for repoID: Int64) -> RepoNoteAIGenerationViewModel? {
         sessions[repoID]

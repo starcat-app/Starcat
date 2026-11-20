@@ -263,9 +263,8 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         self.reduceMotion = reduceMotion
         self.hostedContentController = nil
 
-        let initialSize = NSSize(width: 320, height: RepoAIOverlayLayout.panelMinHeight)
         let panel = RepoAIInlinePanel(
-            contentRect: NSRect(origin: .zero, size: initialSize),
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 320),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -278,7 +277,6 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         panel.level = parentWindow.level
         panel.collectionBehavior = [.fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
-        panel.contentMinSize = NSSize(width: 320, height: RepoAIOverlayLayout.panelMinHeight)
 
         super.init(window: panel)
 
@@ -335,14 +333,10 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
 
         guard !reduceMotion else { return true }
-        var initialFrame = targetFrame
-        initialFrame.origin.y -= 20
-        window.setFrame(initialFrame, display: false)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.24
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1
-            window.animator().setFrame(targetFrame, display: true)
         }
         return true
     }
@@ -401,15 +395,17 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         let layoutSize = availableSize.width > 0 && availableSize.height > 0
             ? availableSize
             : anchorFrame.size
-        let size = panelSize(for: layoutSize, isMaximized: maximized)
-        // 屏幕坐标系 y 向上，origin.y 是面板底边：底边必须钉在「锚点底边 + 状态栏
-        // 高度」上才能贴住 README 状态栏上沿；顶边由高度公式（锚点高 − 底部状态栏
-        // − 顶部切换行）自然落到切换行分隔线下方。旧写法把底部 inset 扣在锚点
-        // maxY 上，经高度减法抵消后落到底边的是切换行高度，面板整体抬高，
-        // 底边与状态栏之间留出一条缝。
+        let insets = RepoDetailOverlayLayout.verticalInsets(
+            topChromeInset: topChromeInset,
+            bottomChromeInset: bottomChromeInset
+        )
+        // 屏幕坐标系 y 向上。高度和底边都使用同一组 inset，短视口也优先保住两条栏。
+        let height = layoutSize.height - insets.top - insets.bottom
+        guard height > 0 else { return nil }
+        let size = NSSize(width: panelWidth(availableWidth: layoutSize.width, isMaximized: maximized), height: height)
         let desiredOrigin = NSPoint(
             x: anchorFrame.midX - size.width / 2,
-            y: anchorFrame.minY + effectiveBottomChromeInset
+            y: anchorFrame.minY + insets.bottom
         )
         return clampedPanelFrame(
             origin: desiredOrigin,
@@ -420,9 +416,7 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
 
     /// 将 child window 限制在主窗口内容区域内，防止滚动布局跨帧时出现越界闪动。
     ///
-    /// 高度仍由 `RepoAIOverlayLayout.panelHeight` 决定；这里仅在窗口尺寸确实大于
-    /// 当前主窗口可见区域时收缩，并钳制 origin。这样不会改变正常详情页的自动增高、
-    /// 变低位置，只保护快速滚动和窗口缩放期间的临界帧。
+    /// 这里仅保护快速滚动和窗口缩放期间，父窗口尚未收到最新锚点布局的临界帧。
     private func clampedPanelFrame(origin: NSPoint, size: NSSize, in parentWindow: NSWindow) -> NSRect {
         let visibleFrame = parentWindow.convertToScreen(parentWindow.contentLayoutRect)
         let constrainedSize = NSSize(
@@ -442,37 +436,23 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         return NSRect(origin: constrainedOrigin, size: constrainedSize)
     }
 
-    private func panelSize(for availableSize: CGSize, isMaximized: Bool) -> NSSize {
-        let usableWidth = max(320, availableSize.width - 48)
-        let width: CGFloat
+    private func panelWidth(availableWidth: CGFloat, isMaximized: Bool) -> CGFloat {
+        let usableWidth = max(320, availableWidth - 48)
         if isMaximized {
-            width = max(320, usableWidth - 32)
-        } else {
-            width = min(usableWidth, 720, max(320, usableWidth * 0.70))
+            return max(320, usableWidth - 32)
         }
-        let height = RepoAIOverlayLayout.panelHeight(
-            availableHeight: availableSize.height,
-            topChromeInset: topChromeInset,
-            bottomChromeInset: effectiveBottomChromeInset,
-            isMaximized: isMaximized
-        )
-        return NSSize(width: width, height: height)
-    }
-
-    /// 没有 README 状态栏的详情模式仍需保留旧的安全间距；README 页面则使用实测高度。
-    private var effectiveBottomChromeInset: CGFloat {
-        bottomChromeInset > 0
-            ? bottomChromeInset
-            : RepoAIOverlayLayout.panelBottomInset
+        return min(usableWidth, 720, max(320, usableWidth * 0.70))
     }
 
     private func openDetachedWindow() {
+        guard !isDismissing else { return }
+        // 分离时焦点由独立窗口接管，原浮层的淡出回调只负责清理自身。
+        finishDismissal(restoreParentFocus: false)
         RepoAIWindowController.show(
             repo: repo,
             dependencies: dependencies,
             homeViewModel: homeViewModel
         )
-        finishDismissal()
     }
 
     private func installEscapeMonitor() {
@@ -483,7 +463,7 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func finishDismissal(animated: Bool = true) {
+    private func finishDismissal(animated: Bool = true, restoreParentFocus: Bool = true) {
         guard Self.activeController === self, !isDismissing else { return }
         isDismissing = true
         if let escapeMonitor {
@@ -492,25 +472,22 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         }
 
         guard animated, !reduceMotion, let window else {
-            completeDismissal()
+            completeDismissal(restoreParentFocus: restoreParentFocus)
             return
         }
 
-        var finalFrame = window.frame
-        finalFrame.origin.y -= 20
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             window.animator().alphaValue = 0
-            window.animator().setFrame(finalFrame, display: true)
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.completeDismissal()
+                self?.completeDismissal(restoreParentFocus: restoreParentFocus)
             }
         }
     }
 
-    private func completeDismissal() {
+    private func completeDismissal(restoreParentFocus: Bool) {
         removeObservers()
         if let parentWindow, let window {
             parentWindow.removeChildWindow(window)
@@ -521,7 +498,9 @@ final class RepoAIInlineWindowController: NSWindowController, NSWindowDelegate {
         hostedContentController = nil
         window = nil
         Self.activeController = nil
-        parentWindow?.makeKeyAndOrderFront(nil)
+        if restoreParentFocus {
+            parentWindow?.makeKeyAndOrderFront(nil)
+        }
         onDismiss()
     }
 

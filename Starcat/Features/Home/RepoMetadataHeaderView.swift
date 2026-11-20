@@ -353,15 +353,18 @@ struct RepoMetadataHeaderView<TrailingActions: View>: View {
 struct CollapsibleRepoMetadataPanel<Content: View>: View {
     @Binding var collapseProgress: CGFloat
     @Binding var panelHeight: CGFloat
+    private let showsBottomDivider: Bool
     private let content: Content
 
     init(
         collapseProgress: Binding<CGFloat>,
         panelHeight: Binding<CGFloat>,
+        showsBottomDivider: Bool,
         @ViewBuilder content: () -> Content
     ) {
         _collapseProgress = collapseProgress
         _panelHeight = panelHeight
+        self.showsBottomDivider = showsBottomDivider
         self.content = content()
     }
 
@@ -373,8 +376,10 @@ struct CollapsibleRepoMetadataPanel<Content: View>: View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
                 content
-                Divider()
-                    .opacity(1 - progress)
+                if showsBottomDivider {
+                    Divider()
+                        .opacity(1 - progress)
+                }
             }
             .fixedSize(horizontal: false, vertical: true)
             .background {

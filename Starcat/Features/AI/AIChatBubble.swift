@@ -74,7 +74,7 @@ struct AIChatBubble: View {
             // 头像只与问题气泡垂直居中，footer 单独铺在气泡下方。
             HStack(alignment: .center, spacing: 8) {
                 Text(message.content)
-                    .starcatMarkdownBodyFont()
+                    .starcatMarkdownBodyFont(baseline: .repositoryPanel)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.leading)
                     .textSelection(.enabled)
@@ -252,6 +252,7 @@ struct AIChatBubble: View {
 /// 运行中与完成后都走固定高度 NSTextView 视口（与 RAG 思考同一套），禁止用 SwiftUI
 /// `Text` 整段替换：长 Think 会把外层对话 ScrollView 一起撑卡。
 private struct AIChatReasoningDisclosure: View {
+    @Environment(AppSettings.self) private var settings: AppSettings?
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @Environment(\.starcatInterfaceScale) private var interfaceScale
     @Environment(\.locale) private var locale
@@ -330,14 +331,19 @@ private struct AIChatReasoningDisclosure: View {
     /// 运行中绑 session 追加；完成后用落库文本建静态视口，不复用运行中 NSTextView。
     @ViewBuilder
     private var reasoningViewport: some View {
+        let font = MarkdownTypography.nativeFont(
+            scale: interfaceScale,
+            adjustment: settings?.readmeFontSizeAdjustment ?? 0,
+            baseline: .repositoryPanel
+        )
         if isStreaming, let liveSession {
             RAGStreamingReasoningViewport(
                 session: liveSession,
                 pinsToBottom: true,
-                typography: .caption
+                fontOverride: font
             )
         } else if let text = completedReasoningText, !text.isEmpty {
-            RAGCompletedReasoningViewport(text: text, typography: .caption)
+            RAGCompletedReasoningViewport(text: text, fontOverride: font)
         }
     }
 
@@ -402,7 +408,7 @@ struct AIStreamingChatBubble: View {
                         // 尾部结构仍可能被下一个 token 改写（代码围栏、列表、强调等），
                         // 中间态用纯文本换取稳定帧率；完成后整条消息恢复完整 Markdown。
                         Text(snapshot.liveTail)
-                            .starcatMarkdownBodyFont()
+                            .starcatMarkdownBodyFont(baseline: .repositoryPanel)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

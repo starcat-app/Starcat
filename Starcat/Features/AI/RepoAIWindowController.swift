@@ -198,12 +198,8 @@ final class RepoAIWindowController: NSWindowController, NSWindowDelegate {
         //   保留——让窗口背后桌面 / 其它窗口仍能透出一丝纹理，与主窗整体观感对齐。
         window.contentView = Self.makeWindowSurface(contentView: hostingController.view)
 
-        // 窗口标题走 String.l10n(...) + format：AppKit NSWindow.title 是 String，
-        // 不像 SwiftUI Text 那样自动解析 LocalizedStringKey，必须显式跑一次本地化。
-        window.title = String(
-            format: String.l10n("ai.assistant.window.titleFormat"),
-            repo.fullName
-        )
+        // 系统窗口菜单用仓库全名区分同时打开的 AI 窗口。
+        window.title = "\(String.l10n("ai.assistant.window.panelTitle")) · \(repo.fullName)"
         window.setContentSize(RepoAIWindowMetrics.defaultContentSize)
         window.contentMinSize = RepoAIWindowMetrics.minContentSize
         window.minSize = RepoAIWindowMetrics.minContentSize

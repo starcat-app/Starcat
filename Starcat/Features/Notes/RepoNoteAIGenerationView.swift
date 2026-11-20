@@ -2,13 +2,12 @@
 //  RepoNoteAIGenerationView.swift
 //  Starcat
 //
-//  AI 个人笔记的标题行入口、七步跟踪与可折叠草稿确认 UI。
+//  笔记抽屉内的 AI 生成入口和步骤进度。
 //
 
-import MarkdownUI
 import SwiftUI
 
-/// 折叠标题行右侧只保留生成入口。过程信息统一放在输入框下方，避免同一状态重复展示。
+/// 生成入口位于编辑工具栏。启动后，正文区切换到步骤与草稿。
 ///
 /// 视觉对齐 `PillSegmentedControl` compact 选中项（README / Insights）：外框胶囊 +
 /// 内嵌选中 pill；悬停时加深内底并加 accent 描边，作为「光标聚焦」反馈（禁用系统蓝框）。
@@ -37,7 +36,7 @@ struct RepoNoteAIGenerationHeaderControl: View {
         Button(action: onGenerate) {
             Label(generateTitleKey, systemImage: "sparkles")
                 .font(.system(size: Self.pillSize.fontSize, weight: .medium))
-                .labelStyle(.titleAndIcon)
+                .labelStyle(.iconOnly)
                 .foregroundStyle(.primary)
                 .padding(.horizontal, Self.pillSize.horizontalPadding)
                 .padding(.vertical, Self.pillSize.verticalPadding)
@@ -69,6 +68,7 @@ struct RepoNoteAIGenerationHeaderControl: View {
         }
         .onDisappear { isHovered = false }
         .help(Text(generateHelpKey))
+        .accessibilityLabel(Text(generateTitleKey))
         .accessibilityHint(Text(generateHelpKey))
     }
 
@@ -81,65 +81,17 @@ struct RepoNoteAIGenerationHeaderControl: View {
     }
 }
 
-/// 展开后的完整跟踪器。草稿始终与正式编辑 buffer 分离，只能通过确认回调应用。
-struct RepoNoteAIGenerationPanel: View {
+/// 步骤列表本身不滚动，由抽屉的正文区承载步骤与生成中的内容。
+struct RepoNoteAIProgress: View {
     let viewModel: RepoNoteAIGenerationViewModel
-    let onRetry: () -> Void
-    let onCancel: () -> Void
-    let onDiscard: () -> Void
-    let onApply: () -> Void
 
-    @State private var isDraftExpanded: Bool = true
     @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("repo.notes.ai.progressTitle", systemImage: "sparkles")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text("\(viewModel.resolvedStepCount)/\(RepoNoteAIGenerationStep.allCases.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(RepoNoteAIGenerationStep.allCases) { step in
+                stepRow(step)
             }
-
-            Label("repo.notes.ai.privacyNotice", systemImage: "lock.shield")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 7) {
-                ForEach(RepoNoteAIGenerationStep.allCases) { step in
-                    stepRow(step)
-                }
-            }
-
-            if let key = viewModel.errorMessageKey {
-                errorBanner(key: key)
-            }
-
-            if !viewModel.draftMarkdown.isEmpty {
-                Divider()
-                RepoNoteAIDraftDisclosure(
-                    markdown: viewModel.draftMarkdown,
-                    isExpanded: $isDraftExpanded
-                )
-                // 草稿操作属于预览的一部分；折叠标题时一起隐藏，避免孤立按钮失去上下文。
-                if isDraftExpanded {
-                    actionRow
-                }
-            } else {
-                actionRow
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.secondary.opacity(0.06))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.secondary.opacity(0.14))
         }
         .accessibilityElement(children: .contain)
     }
@@ -232,138 +184,6 @@ struct RepoNoteAIGenerationPanel: View {
         case .skipped: "repo.notes.ai.state.skipped"
         case .failed: "repo.notes.ai.state.failed"
         case .cancelled: "repo.notes.ai.state.cancelled"
-        }
-    }
-
-    private func errorBanner(key: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.primary)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(LocalizedStringKey(key))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                if let detail = viewModel.errorDetail,
-                   detail != String.l10n(key) {
-                    Text(detail)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
-        }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(Color.secondary.opacity(0.08))
-        )
-    }
-
-    @ViewBuilder
-    private var actionRow: some View {
-        HStack(spacing: 8) {
-            Spacer()
-            switch viewModel.phase {
-            case .running:
-                Button("repo.notes.ai.cancel", action: onCancel)
-                    .buttonStyle(.bordered)
-            case .awaitingConfirmation:
-                Button("repo.notes.ai.discard", action: onDiscard)
-                    .buttonStyle(.bordered)
-                Button("repo.notes.ai.regenerate", action: onRetry)
-                    .buttonStyle(.bordered)
-                Button("repo.notes.ai.apply", action: onApply)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!viewModel.canApplyDraft)
-            case .applying:
-                ProgressView()
-                    .controlSize(.small)
-                Text("repo.notes.ai.saving")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            case .failed, .cancelled:
-                Button("repo.notes.ai.discard", action: onDiscard)
-                    .buttonStyle(.bordered)
-                Button("repo.notes.ai.retry", action: onRetry)
-                    .buttonStyle(.borderedProminent)
-            case .completed:
-                Button("repo.notes.ai.done", action: onDiscard)
-                    .buttonStyle(.bordered)
-                Button("repo.notes.ai.regenerate", action: onRetry)
-                    .buttonStyle(.borderedProminent)
-            case .idle:
-                EmptyView()
-            }
-        }
-        .controlSize(.small)
-    }
-}
-
-/// AI 草稿的可折叠 Markdown 预览。标题整行可点击，符合详情页折叠交互规范。
-struct RepoNoteAIDraftDisclosure: View {
-    let markdown: String
-    @Binding var isExpanded: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .trailing) {
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.16)) {
-                        isExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 10)
-                        Text("repo.notes.ai.draftTitle")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.primary)
-                        Spacer()
-                    }
-                    // 给右侧独立复制命中区留位，避免标题行文字与按钮重叠。
-                    .padding(.trailing, 26)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-
-                // 复制与折叠是同级 Button；折叠草稿时仍能直接复制最新 Markdown。
-                CopyFeedbackButton(
-                    providesContent: { markdown },
-                    tooltip: "repo.notes.ai.copyDraft"
-                ) { didCopy in
-                    Image(systemName: didCopy ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(didCopy ? Color.green : .secondary)
-                        .frame(width: 14, height: 14)
-                        .accessibilityLabel(
-                            didCopy ? Text("common.copy.copied") : Text("repo.notes.ai.copyDraft")
-                        )
-                }
-            }
-
-            if isExpanded {
-                ScrollView {
-                    Markdown(markdown)
-                        .starcatMarkdownStyle()
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                }
-                .frame(maxHeight: 260)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .textBackgroundColor))
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.secondary.opacity(0.2))
-                }
-            }
         }
     }
 }

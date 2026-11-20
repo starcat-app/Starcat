@@ -165,7 +165,7 @@ struct RepoLocalSections: View {
             if isVisible {
                 RepoTagsSection(repo: repo)
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                RepoNotesSection(repo: repo)
+                RepoNotesSection()
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 // v2.0(2026-06-12)：原 RepoReleaseSection 段已压缩为 hero stats 行的紧凑
                 // stat `RepoReleaseStatItem`,与 Stars / Forks 等同行,详见 `RepoMetadataHeaderView.statsSection`。

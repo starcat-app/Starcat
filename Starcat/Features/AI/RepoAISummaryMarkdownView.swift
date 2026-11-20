@@ -25,7 +25,7 @@ struct RepoAISummaryMarkdownView: View {
 
     var body: some View {
         Markdown(markdown)
-            .starcatMarkdownStyle()
+            .starcatMarkdownStyle(baseline: .repositoryPanel)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
