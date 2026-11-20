@@ -19,7 +19,7 @@ let selectionRevision = 0, visibleLinkCount = 0;
 const renderedRelations = new Map();
 const incidentLinks = new Map(), visibleNodeIDs = new Set(), visibleEdgeKeys = new Set();
 let visibleNodes = [], visibleLinks = [], visibleTopologyDirty = true;
-let hasAppearance = false, rootPainted = false, presented = false;
+let hasAppearance = false, firstNodePainted = false, presented = false;
 let adjacentNodes = new Set();
 let directionLinks = [], hoveredLink = null;
 const nodes = new Map(), links = new Map(), resources = new Map();
@@ -33,6 +33,8 @@ const avatarPulses = new Set(), pulsedAvatars = new Set();
 // avatars to hit an arbitrary count: that would create placeholder/cache-read churn.
 const avatarBudget = 512;
 let viewportBounds = null, nextAvatarTrim = 0;
+// Tag membership is undirected and has no account/root node.
+const isTagGraph = () => root === null;
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
 // Degree describes only the loaded presentation graph. Logarithmic scaling keeps
@@ -42,7 +44,7 @@ const isPath = link => pathEdges.has(edgeKey(endpoint(link.source), endpoint(lin
 const isAdjacent = link => selected != null &&
   (endpoint(link.source) === selected || endpoint(link.target) === selected);
 const pathColor = () => dark ? '#53c9b5a0' : '#087f758c';
-const linkColor = link => isPath(link) ? pathColor() : isAdjacent(link) ?
+const linkColor = link => isPath(link) || (isTagGraph() && isAdjacent(link)) ? pathColor() : isAdjacent(link) ?
   (dark ? '#9aafbf70' : '#526c8068') : (dark ? '#65788b45' : '#8196ab40');
 const post = (type, extra = {}) => {
   if (!destroyed) window.webkit?.messageHandlers.followGraph.postMessage({ type, session, ...extra });
@@ -58,15 +60,20 @@ function paint(resource, node, placeholder = false) {
   ctx.beginPath();
   ctx.arc(32, 32, 32, 0, Math.PI * 2);
   ctx.clip();
-  ctx.fillStyle = dark ? '#46586a' : '#cdd9e5';
+  const tag = node.kind === 'tag';
+  const color = tag && /^#[0-9a-f]{6}$/i.test(node.color) ? node.color : null;
+  ctx.fillStyle = color || (dark ? '#46586a' : '#cdd9e5');
   ctx.fillRect(0, 0, 64, 64);
-  if (resource.loaded && !placeholder) ctx.drawImage(resource.image, 0, 0, 64, 64);
+  if (resource.loaded && !placeholder) {
+    if (tag) ctx.drawImage(resource.image, 12, 12, 40, 40);
+    else ctx.drawImage(resource.image, 0, 0, 64, 64);
+  }
   else {
-    ctx.fillStyle = dark ? '#ffffff' : '#24374a';
+    ctx.fillStyle = (color || dark) ? '#ffffff' : '#24374a';
     ctx.font = 'bold 28px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(node.login.slice(0, 1).toUpperCase(), 32, 33);
+    ctx.fillText((node.login || node.name).slice(0, 1).toUpperCase(), 32, 33);
   }
   ctx.restore();
 }
@@ -118,15 +125,19 @@ function drainImages(queue) {
         // A local miss releases first-frame presentation immediately, without
         // waiting for the network. Keep the existing placeholder/download fade.
         graph.nodeCanvasObject(drawNode);
+        if (node.glyph) return; // Native symbols are already local. Keep the fallback on decode failure.
         if (node.id === selected) downloadQueue.pending.unshift([node, resource]);
         else downloadQueue.pending.push([node, resource]);
         drainImages(downloadQueue);
       }
     };
-    const url = new URL(node.avatar);
-    if (!queue.cacheOnly) url.hostname = 'load';
-    url.searchParams.set('attempt', String(++imageAttempt));
-    image.src = url.href;
+    if (node.glyph) image.src = node.glyph;
+    else {
+      const url = new URL(node.avatar);
+      if (!queue.cacheOnly) url.hostname = 'load';
+      url.searchParams.set('attempt', String(++imageAttempt));
+      image.src = url.href;
+    }
   }
 }
 
@@ -135,7 +146,7 @@ function drainImages(queue) {
  */
 function prioritizeAvatar(id) {
   const node = nodes.get(id);
-  if (!node?.avatar) return;
+  if (!node?.avatar && !node?.glyph) return;
   let resource = resources.get(id);
   if (resource?.failed) {
     discardAvatar(id);
@@ -232,10 +243,11 @@ function refreshCardAvatar(event) {
 
 function avatar(node) {
   if (!resources.has(node.id)) {
-    const resource = { canvas: avatarSurface(), placeholder: null, loaded: false, probing: Boolean(node.avatar) };
+    const probing = Boolean(node.avatar || node.glyph);
+    const resource = { canvas: avatarSurface(), placeholder: null, loaded: false, probing };
     resources.set(node.id, resource);
     paint(resource, node);
-    if (node.avatar) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }
+    if (probing) { cacheQueue.pending.push([node, resource]); drainImages(cacheQueue); }
   }
   const resource = resources.get(node.id);
   resource.lastUsed = performance.now();
@@ -247,7 +259,7 @@ function avatar(node) {
  * This affects drawing only: force radii and pointer hit areas remain unchanged.
  */
 function avatarPulse(node, resource) {
-  if (!resource.loaded) return 1;
+  if (!resource.loaded || node.kind === 'tag') return 1;
   if (!pulsedAvatars.has(node.id)) {
     pulsedAvatars.add(node.id);
     if (!reduceMotion) {
@@ -267,9 +279,10 @@ function drawNode(node, ctx, scale) {
   // Only the root's bounded local probe gates initial presentation. A cached root
   // should not flash its letter first; no remote request can hold this gate.
   if (node.id === root && avatar(node).probing) return;
-  if (node.id === root) rootPainted = true;
   if (!avatarOnscreen(node)) return;
   const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
+  if (isTagGraph() && progress === 0) return;
+  if (node.id === root || isTagGraph()) firstNodePainted = true;
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
   const overshoot = progress - 1;
   const pop = progress === 0 ? 0 : 1 + 2.70158 * overshoot ** 3 + 1.70158 * overshoot ** 2;
@@ -302,14 +315,16 @@ function drawNode(node, ctx, scale) {
     ctx.lineWidth = (emphasized ? 2 : 1) / scale;
     ctx.stroke();
   }
-  if (node.id === root || node.id === selected) {
-    // Only prominent nodes have persistent labels, so large graphs stay readable.
+  if (node.id === root || node.id === selected ||
+      (node.kind === 'tag' && scale >= 0.7 && (!selected || emphasized))) {
+    // In an overview only the tags need labels. Repositories share the follower
+    // behavior: the full name is shown on hover or while selected.
     const fontSize = 12 / scale;
     ctx.font = `500 ${fontSize}px -apple-system, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = dark ? '#f5f5f7' : '#1c1c1e';
-    ctx.fillText(`@${node.login}`, node.x, node.y + r + 5 / scale);
+    ctx.fillText(isTagGraph() ? node.name : `@${node.login}`, node.x, node.y + r + 5 / scale);
   }
   ctx.restore();
 }
@@ -327,10 +342,11 @@ const graph = new ForceGraph(container)
   })
   .nodeLabel(node => {
     const label = document.createElement('span');
-    label.textContent = `${node.name} (@${node.login})`;
+    label.textContent = isTagGraph() ? node.name : `${node.name} (@${node.login})`;
     return label;
   })
-  .linkWidth(link => isPath(link) ? 1.25 : isAdjacent(link) ? 0.8 : selected ? 0.3 : 0.6)
+  .linkWidth(link => isTagGraph() ? (isAdjacent(link) ? 0.95 : 0.6) :
+    isPath(link) ? 1.25 : isAdjacent(link) ? 0.8 : selected ? 0.3 : 0.6)
   .linkColor(link => !isPath(link) && !isAdjacent(link) && selected ?
     (dark ? '#65788b18' : '#8196ab18') : linkColor(link))
   .linkDirectionalArrowColor(linkColor)
@@ -348,8 +364,8 @@ const graph = new ForceGraph(container)
     drawFlowOverlay(scale);
     trimAvatars();
     // Script readiness is earlier than the first real Canvas frame. Keep native
-    // presentation hidden until the themed graph has actually painted its root.
-    if (!presented && hasAppearance && rootPainted && session) {
+    // presentation hidden until the themed graph has actually painted a node.
+    if (!presented && hasAppearance && firstNodePainted && session) {
       presented = true;
       post('presented');
     }
@@ -359,7 +375,7 @@ const graph = new ForceGraph(container)
   // Fine edges occupy much of a dense canvas. The library dispatches link hits
   // separately from background hits; both mean deselect in this product.
   .onLinkClick(() => selectNode(null))
-  .onLinkHover(link => { hoveredLink = link; redrawSelection(); })
+  .onLinkHover(link => { if (!isTagGraph()) { hoveredLink = link; redrawSelection(); } })
   .onNodeDrag(() => { lastDrag = performance.now(); })
   .onNodeDragEnd(node => {
     lastDrag = performance.now();
@@ -367,7 +383,7 @@ const graph = new ForceGraph(container)
     node.fy = node.id === root ? 0 : node.y;
   })
   .onZoomEnd(({ x, y, k }) => {
-    post('viewport', { value: [x, y, k] });
+    if (!isTagGraph()) post('viewport', { value: [x, y, k] });
   });
 
 // Keep the existing post-node compositing order, but do not let an animated
@@ -408,6 +424,15 @@ function drawFlowOverlay(scale = graph.zoom()) {
  */
 function selectNode(id) {
   prioritizeAvatar(id);
+  if (isTagGraph()) {
+    // Membership selection changes pixels only. Keep the simulation and native
+    // view untouched during rapid clicks, with no edge picking or path animation.
+    if (selected === id) return;
+    selected = id;
+    updateAdjacency();
+    redrawSelection();
+    return;
+  }
   if (selected === id) {
     post('select', { id });
     return;
@@ -430,7 +455,7 @@ function selectNode(id) {
  * Reuse it for selection instead of sorting/scanning the whole graph on every click.
  */
 function pathFromRoot(id) {
-  if (!id || !nodes.has(id)) return [];
+  if (isTagGraph() || !id || !nodes.has(id)) return [];
   const parents = reveal.parents;
   if (!parents.has(id)) return [];
   const path = [];
@@ -513,6 +538,7 @@ function updateAdjacency() {
     adjacentNodes.add(endpoint(link.source));
     adjacentNodes.add(endpoint(link.target));
   }
+  if (isTagGraph()) return;
   // Hubs should not acquire a crown of arrows. Keep the full selected path,
   // and reveal a dense hub's other directions only on the hovered relationship.
   directionLinks = [...pathEdges].map(key => links.get(key)).filter(Boolean);
@@ -523,7 +549,7 @@ function updateAdjacency() {
  * outside the target avatar. Both dimensions remain stable while zooming.
  */
 function drawDirections(ctx, scale = 1) {
-  if (!ctx || !selected) return;
+  if (!ctx || !selected || isTagGraph()) return;
   const candidates = hoveredLink && isAdjacent(hoveredLink) && !directionLinks.includes(hoveredLink) ?
     [...directionLinks, hoveredLink] : directionLinks;
   ctx.save();
@@ -550,8 +576,8 @@ function drawDirections(ctx, scale = 1) {
 }
 
 function redrawSelection() {
-  graph.nodeCanvasObject(drawNode).nodePointerAreaPaint(graph.nodePointerAreaPaint())
-    .linkColor(graph.linkColor()).linkWidth(graph.linkWidth())
+  graph.nodeCanvasObject(drawNode).linkColor(graph.linkColor()).linkWidth(graph.linkWidth());
+  if (!isTagGraph()) graph.nodePointerAreaPaint(graph.nodePointerAreaPaint())
     .linkDirectionalArrowLength(graph.linkDirectionalArrowLength());
 }
 
@@ -683,14 +709,17 @@ function admitVisibleLink(link) {
   if (visibleEdgeKeys.has(key) || !visibleNodeIDs.has(source) || !visibleNodeIDs.has(target)) return;
   visibleEdgeKeys.add(key);
   visibleLinks.push(link);
-  const owner = relation === 'followers' ? target : source;
-  renderedRelations.set(owner, (renderedRelations.get(owner) || 0) + 1);
+  if (!isTagGraph()) {
+    const owner = relation === 'followers' ? target : source;
+    renderedRelations.set(owner, (renderedRelations.get(owner) || 0) + 1);
+  }
 }
 
 /** Bridge only real reveal changes (at most 30/sec) and selection acknowledgements.
  * The native selection version rejects delayed counts even after A -> B -> A.
  */
 function reportProgress() {
+  if (isTagGraph()) return; // No native counters during tag reveal.
   const selectedCount = renderedRelations.get(selected) || 0;
   const identity = `${graphRevision}:${reveal.visible.size}:${visibleLinkCount}:${selected}:${selectionRevision}:${selectedCount}`;
   if (lastProgress !== identity) {
@@ -708,6 +737,13 @@ function update(payload) {
   lastSequence = payload.sequence;
   session = payload.session;
   root = payload.root;
+  if (isTagGraph() && previousRoot !== root) {
+    // Memberships are decorative at pointer level. Dense graphs need only pick
+    // nodes, and a click on a line should behave exactly like a blank click.
+    graph.linkPointerAreaPaint(() => {});
+    collision.iterations(1);
+    graph.d3Force('link').strength(0.05);
+  }
   if ('relation' in payload) relation = payload.relation;
   if ('dark' in payload) {
     hasAppearance = true;
@@ -720,7 +756,7 @@ function update(payload) {
   }
   if ('reduceMotion' in payload) {
     reduceMotion = payload.reduceMotion;
-    graph.cooldownTicks(reduceMotion ? 0 : 120);
+    graph.cooldownTicks(reduceMotion ? 0 : isTagGraph() ? 48 : 120);
     if (reduceMotion) reveal.finish();
   }
   const oldSelection = selected;
@@ -746,14 +782,15 @@ function update(payload) {
     // Sorted phyllotaxis is deterministic on reopen and valid even with Reduce Motion.
     const sorted = [...payload.nodes].sort((a, b) =>
       a.id === b.id ? 0 : a.id === root ? -1 : b.id === root ? 1 :
-        compareIDs(a.id, b.id));
+        isTagGraph() && a.kind !== b.kind ? (a.kind === 'tag' ? -1 : 1) : compareIDs(a.id, b.id));
     sorted.forEach((value, index) => {
       // A later relationship batch may still carry the older snapshot avatar URL.
       // Keep the selected card's newer profile source for this Canvas session.
       if (avatarOverrides.has(value.id)) value = { ...value, avatar: avatarOverrides.get(value.id) };
       if (nodes.has(value.id)) {
         const node = nodes.get(value.id);
-        if (node.avatar !== value.avatar || node.login !== value.login) {
+        if (node.avatar !== value.avatar || node.login !== value.login ||
+            node.glyph !== value.glyph || node.color !== value.color) {
           discardAvatar(value.id);
         }
         Object.assign(node, value);
@@ -774,13 +811,14 @@ function update(payload) {
       incidentLinks.clear();
       for (const link of links.values()) {
         for (const id of new Set([endpoint(link.source), endpoint(link.target)])) {
-          degrees.set(id, (degrees.get(id) || 0) + 1);
+          if (!isTagGraph()) degrees.set(id, (degrees.get(id) || 0) + 1);
           if (!incidentLinks.has(id)) incidentLinks.set(id, []);
           incidentLinks.get(id).push(link);
         }
       }
       for (const node of nodes.values()) {
-        node.radius = Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
+        node.radius = isTagGraph() ? (node.kind === 'tag' ? 14 : 10) :
+          Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
       }
       // D3 caches collision radii. Profiles and pagination do not alter geometry.
       collision.radius(node => radius(node) + 6);
@@ -795,11 +833,12 @@ function update(payload) {
       graph.zoom(0.8, 0).centerAt(0, 0, 0);
     }
     if (topologyChanged) { applyVisibleGraph(); graphApplied = true; }
+    if (isTagGraph() && !nodes.has(selected)) selected = null;
     setPath(pathFromRoot(selected));
   }
-  if (selected) {
+  if (selected && (!isTagGraph() || !reveal.visible.has(selected))) {
     const oldCount = reveal.visible.size;
-    reveal.show(selectedPath, performance.now());
+    reveal.show(isTagGraph() ? [selected] : selectedPath, performance.now());
     if (reduceMotion) reveal.finish();
     if (oldCount !== reveal.visible.size) { applyVisibleGraph(); graphApplied = true; }
   }
@@ -818,7 +857,9 @@ function update(payload) {
       graph.zoom(zoom, 0).centerAt(x, y, 0);
     } else if ('focus' in payload) {
       const node = nodes.get(payload.focus);
-      const duration = reduceMotion ? 0 : 300;
+      // While nodes are still arriving the next batch preserves the camera.
+      // Finish a search jump immediately in that case so it cannot be interrupted.
+      const duration = reduceMotion || (isTagGraph() && reveal.animating) ? 0 : 300;
       if (node) graph.centerAt(node.x, node.y, duration).zoom(Math.max(1, graph.zoom()), duration);
       else fit(duration);
     }

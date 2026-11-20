@@ -27,32 +27,41 @@ export class ProgressiveReveal {
       if (!nodes.has(id)) { this.visible.delete(id); this.births.delete(id); }
     }
     this.added = this.added.filter(id => nodes.has(id));
-    const outgoing = new Map();
-    for (const link of links.values()) {
-      const source = typeof link.source === 'object' ? link.source.id : link.source;
-      const target = typeof link.target === 'object' ? link.target.id : link.target;
-      // Exploration follows incoming edges for followers; keep actual links untouched.
-      const owner = relation === 'followers' ? target : source;
-      const neighbor = relation === 'followers' ? source : target;
-      if (!outgoing.has(owner)) outgoing.set(owner, []);
-      outgoing.get(owner).push(neighbor);
-    }
-    for (const targets of outgoing.values()) targets.sort(compareIDs);
-    this.parents = new Map([[root, null]]);
-    const ordered = nodes.has(root) ? [root] : [];
-    for (let i = 0; i < ordered.length; i++) {
-      for (const id of outgoing.get(ordered[i]) || []) {
-        if (nodes.has(id) && !this.parents.has(id)) {
-          this.parents.set(id, ordered[i]);
-          ordered.push(id);
+    // The tag map has no privileged root. Its input order puts tag anchors before repositories.
+    let ordered;
+    if (root === null) {
+      this.parents.clear();
+      ordered = [...nodes.keys()];
+    } else {
+      const outgoing = new Map();
+      for (const link of links.values()) {
+        const source = typeof link.source === 'object' ? link.source.id : link.source;
+        const target = typeof link.target === 'object' ? link.target.id : link.target;
+        // Exploration follows incoming edges for followers; keep actual links untouched.
+        const owner = relation === 'followers' ? target : source;
+        const neighbor = relation === 'followers' ? source : target;
+        if (!outgoing.has(owner)) outgoing.set(owner, []);
+        outgoing.get(owner).push(neighbor);
+      }
+      for (const targets of outgoing.values()) targets.sort(compareIDs);
+      this.parents = new Map([[root, null]]);
+      ordered = nodes.has(root) ? [root] : [];
+      for (let i = 0; i < ordered.length; i++) {
+        for (const id of outgoing.get(ordered[i]) || []) {
+          if (nodes.has(id) && !this.parents.has(id)) {
+            this.parents.set(id, ordered[i]);
+            ordered.push(id);
+          }
         }
       }
+      ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compareIDs));
     }
-    ordered.push(...[...nodes.keys()].filter(id => !this.parents.has(id)).sort(compareIDs));
     if (this.pending.length === 0) { this.nextAt = now + 45; this.burst = 0; }
     this.pending = ordered.filter(id => !this.visible.has(id));
     if (reduced) this.finish();
-    else if (!this.visible.size && nodes.has(root)) this.show([root], now);
+    else if (!this.visible.size && ordered.length && (root === null || nodes.has(root))) {
+      this.show([ordered[0]], now);
+    }
   }
 
   /** Gradually accelerate large graphs, while the first few avatars remain visibly separate. */

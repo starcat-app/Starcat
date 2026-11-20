@@ -1098,6 +1098,110 @@ test('settled flow redraws only its transparent overlay and follows Retina zoom 
   assert.equal(canvas.height, 0);
 });
 
+const membershipGraph = {
+  root: null, dark: true,
+  nodes: [
+    { id: 'tag:a', kind: 'tag', name: 'Agent', color: '#0088aa', glyph: 'data:image/png;base64,AA==' },
+    { id: 'tag:b', kind: 'tag', name: 'RAG' },
+    { id: 'tag:z', kind: 'tag', name: '资料' },
+    { id: 'repo:1', kind: 'repo', name: 'example/project',
+      avatar: 'starcat-follow-avatar://cache/image?url=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F1' },
+    { id: 'repo:2', kind: 'repo', name: 'example/related' }
+  ],
+  links: [
+    { source: 'tag:a', target: 'repo:1' },
+    { source: 'tag:b', target: 'repo:1' },
+    { source: 'tag:b', target: 'repo:2' }
+  ]
+};
+
+test('shared tag canvas reveals the first tag before repositories and reports the first nonblank frame', () => {
+  const r = renderer({ reduced: false });
+  r.update(1, structuredClone(membershipGraph));
+  const paint = () => {
+    const { nodes } = r.props.get('graphData');
+    for (const node of nodes) r.props.get('nodeCanvasObject')(node, r.canvasContext, 1);
+    r.props.get('onRenderFramePost')(r.canvasContext, 1);
+  };
+  const ids = () => Array.from(r.props.get('graphData').nodes, node => node.id);
+  assert.deepEqual(ids(), ['tag:a']);
+  paint();
+  assert.deepEqual(r.messages.map(message => message.type), ['ready']);
+  r.frame();
+  paint();
+  assert.deepEqual(r.messages.map(message => message.type), ['ready', 'presented']);
+  assert.ok(r.images.some(image => image.src.startsWith('data:image/png')));
+  assert.ok(r.images.some(image => image.src.startsWith('starcat-follow-avatar://cache/')));
+  r.frame();
+  assert.deepEqual(ids(), ['tag:a', 'tag:b']);
+  r.update(2, { root: null, reduceMotion: true });
+  paint();
+  assert.deepEqual(ids(), ['tag:a', 'tag:b', 'tag:z', 'repo:1', 'repo:2']);
+  assert.equal(r.props.get('graphData').links.length, 3);
+  assert.equal(r.frames.size, 0);
+  assert.deepEqual(r.messages.map(message => message.type), ['ready', 'presented']);
+  r.window.followGraph.destroy();
+});
+
+test('tag clicks highlight just direct memberships without a native round trip or a layout rebuild', () => {
+  const r = renderer();
+  r.update(1, structuredClone(membershipGraph));
+  const { nodes, links } = r.props.get('graphData');
+  const click = id => r.props.get('onNodeClick')(nodes.find(node => node.id === id));
+  const colors = () => Array.from(links, r.props.get('linkColor'));
+  const alpha = id => {
+    let opacity;
+    const ctx = new Proxy(r.canvasContext, {
+      set: (_, key, value) => {
+        if (key === 'globalAlpha') opacity = value;
+        return true;
+      }
+    });
+    r.props.get('nodeCanvasObject')(nodes.find(node => node.id === id), ctx, 1);
+    return opacity;
+  };
+  const ordinary = colors();
+  assert.equal(new Set(ordinary).size, 1);
+  assert.ok(links.every(link => r.props.get('linkWidth')(link) === 0.6));
+  r.calls.length = 0;
+  click('tag:a');
+  assert.deepEqual(colors(), ['#53c9b5a0', '#65788b18', '#65788b18']);
+  assert.deepEqual(['tag:a', 'repo:1', 'tag:b'].map(alpha), [1, 1, 0.3]);
+  click('repo:1');
+  assert.deepEqual(colors(), ['#53c9b5a0', '#53c9b5a0', '#65788b18']);
+  assert.deepEqual(['tag:a', 'tag:b', 'repo:2'].map(alpha), [1, 1, 0.3]);
+  assert.ok(links.every(link => r.props.get('linkDirectionalArrowLength')(link) === 0));
+  r.props.get('onBackgroundClick')();
+  assert.deepEqual(colors(), ordinary);
+  r.props.get('onZoomEnd')({ x: 10, y: 10, k: 2 });
+  assert.deepEqual(r.messages.map(message => message.type), ['ready']);
+  assert.ok(!r.calls.some(([name]) => ['graphData', 'nodePointerAreaPaint', 'zoomToFit'].includes(name)));
+  assert.equal(r.frames.size, 0);
+  r.window.followGraph.destroy();
+});
+
+test('tag search can select and locate a queued repository, and reveal settles without ongoing redraws', () => {
+  const r = renderer({ reduced: false });
+  r.update(1, structuredClone(membershipGraph));
+  r.update(2, { root: null, selected: 'repo:2', focus: 'repo:2' });
+  let { nodes, links } = r.props.get('graphData');
+  const repo = nodes.find(node => node.id === 'repo:2');
+  assert.ok(repo);
+  assert.equal(links.length, 0);
+  r.props.get('onEngineTick')();
+  assert.deepEqual(r.calls.findLast(([name]) => name === 'centerAt'), ['centerAt', repo.x, repo.y, 0]);
+  for (let i = 0; i < 60; i++) r.frame();
+  ({ nodes, links } = r.props.get('graphData'));
+  assert.equal(nodes.length, 5);
+  assert.equal(links.length, 3);
+  assert.equal(r.props.get('linkColor')(links.find(link => link.target === 'repo:2')), '#53c9b5a0');
+  assert.equal(r.frames.size, 0);
+  r.calls.length = 0;
+  r.frame(10_000);
+  assert.deepEqual(r.calls, []);
+  r.window.followGraph.destroy();
+});
+
 test('tag canvas reports the painted frame once, retains user viewport and filters only edges', () => {
   const r = renderer({tagGraph:true});
   const state = {session:'A', generation:1, selected:[], minimum:1, reduced:true, camera:0};
