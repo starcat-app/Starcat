@@ -9,19 +9,40 @@
 import SwiftUI
 import WebKit
 
-/// 一个遮盖层对应一个临时 WebView，缓存与会话视口由外部模型持有。
+/// 共用的离线 2D 画布。每个遮盖层有独立 WebKit 会话，数据由各自的宿主提供。
 struct FollowGraphWebView: NSViewRepresentable {
-    @Bindable var model: FollowGraphViewModel
-    // 显式值输入让 SwiftUI 比较真正的渲染身份，而非只比较同一个引用模型。
-    let graphRevision: Int
-    let selectionID: String?
-    let viewportRevision: Int
-    let avatarRevision: Int
+    struct Input {
+        /// 标签图没有中心账号。每个批次都携带相同的根，以区分两种交互语义。
+        let rootID: String?
+        var relation: FollowGraphRelation? = nil
+        let revision: Int
+        var selectedID: String? = nil
+        var selectionRevision = 0
+        var path: [String] = []
+        var viewport: FollowGraphViewport? = nil
+        var viewportRevision = 0
+        var focusID: String? = nil
+        var avatarUpdate: (revision: Int, id: String, source: String)? = nil
+        // 只在图版本改变时编码节点和边。搜索、主题或计数变化不应遍历整图。
+        let graph: () -> (nodes: [[String: Any]], links: [[String: String]])
+    }
+
+    struct Events {
+        let isCurrent: () -> Bool
+        let onPresented: () -> Void
+        let onError: (Bool) -> Void
+        var onSelect: ((String?) -> Input?)? = nil
+        var onViewport: ((FollowGraphViewport) -> Void)? = nil
+        var onProgress: ((Int, Int, Int, String?, Int, Int) -> Void)? = nil
+    }
+
+    let input: Input?
+    let events: Events
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    func makeCoordinator() -> Coordinator { Coordinator(model: model) }
+    func makeCoordinator() -> Coordinator { Coordinator(events: events) }
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
@@ -36,13 +57,14 @@ struct FollowGraphWebView: NSViewRepresentable {
             context.coordinator.initialURL = url
             web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
-            DispatchQueue.main.async { model.rendererError = true }
+            DispatchQueue.main.async { [weak coordinator = context.coordinator] in coordinator?.reportFailure() }
         }
         return web
     }
 
     func updateNSView(_ web: WKWebView, context: Context) {
-        context.coordinator.model = model
+        context.coordinator.input = input
+        context.coordinator.events = events
         context.coordinator.dark = colorScheme == .dark
         context.coordinator.reduceMotion = reduceMotion
         context.coordinator.active = scenePhase == .active
@@ -50,7 +72,7 @@ struct FollowGraphWebView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) {
-        coordinator.ready = false
+        coordinator.invalidate()
         coordinator.avatars.cancelAll()
         web.configuration.userContentController.removeScriptMessageHandler(forName: "followGraph")
         web.evaluateJavaScript("window.followGraph?.destroy()")
@@ -62,14 +84,15 @@ struct FollowGraphWebView: NSViewRepresentable {
     @MainActor final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var web: WKWebView?
         let avatars = FollowGraphAvatarSchemeHandler()
-        var model: FollowGraphViewModel
+        var input: Input?
+        var events: Events
         var initialURL: URL?
         var ready = false
         var dark = false
         var reduceMotion = false
         var active = true
         private let session = UUID().uuidString
-        private let renderer: Int
+        private var invalidated = false
         private var sentRevision = -1
         private var sentSelection: String?
         private var sentSelectionRevision = -1
@@ -81,86 +104,97 @@ struct FollowGraphWebView: NSViewRepresentable {
         private var pendingPayload: [String: Any] = [:]
         private var isSending = false
 
-        init(model: FollowGraphViewModel) {
-            self.model = model
-            renderer = model.rendererRevision
+        init(events: Events) {
+            self.events = events
+        }
+
+        private var isCurrent: Bool { !invalidated && events.isCurrent() }
+
+        func invalidate() {
+            invalidated = true
+            ready = false
+            pendingPayload = [:]
+        }
+
+        func reportFailure() {
+            guard isCurrent else { return }
+            events.onError(true)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard model.rendererRevision == renderer,
-                  message.webView === web, message.frameInfo.isMainFrame,
+            guard isCurrent, message.webView === web, message.frameInfo.isMainFrame,
                   let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
             if type == "ready" {
                 guard !ready else { return }
                 ready = true
-                model.rendererError = false
+                events.onError(false)
                 flush()
                 return
             }
             guard ready, body["session"] as? String == session else { return }
             switch type {
             case "presented":
-                // ready 只表示脚本已装载；必须等主题、数据和本人节点的首帧绘制完成才显示。
-                model.rendererPresented = true
+                // ready 只表示脚本装载完成。宿主等真实首帧后才显示画布。
+                events.onPresented()
             case "select":
-                if let id = body["id"] as? String, id.count < 64, model.snapshot?.nodes[id] != nil {
-                    model.select(id)
-                } else if body["id"] is NSNull { model.select(nil) }
-                // 文本卡片与 WebView 必须同批更新完整路径，不依赖宿主下一次重算。
+                guard let onSelect = events.onSelect else { return }
+                let id = body["id"] as? String
+                guard id.map({ $0.count < 64 }) ?? (body["id"] is NSNull), let next = onSelect(id) else { return }
+                // 关注者的卡片与路径同批更新。标签图的点击只在本地画布处理。
+                input = next
                 flush()
             case "viewport":
                 if let values = body["value"] as? [Double],
-                   let viewport = FollowGraphViewport(values: values) { model.viewport = viewport }
+                   let viewport = FollowGraphViewport(values: values) { events.onViewport?(viewport) }
             case "progress":
                 if let nodes = body["nodes"] as? Int, let edges = body["edges"] as? Int,
                    let revision = body["revision"] as? Int,
                    let selectionRevision = body["selectionRevision"] as? Int,
                    let selectedCount = body["selectedCount"] as? Int,
                    body["selected"] is NSNull || body["selected"] is String {
-                    model.reportRenderedCounts(nodes: nodes, edges: edges, revision: revision, renderer: renderer,
-                                               selectedID: body["selected"] as? String,
-                                               selectionRevision: selectionRevision, selectedCount: selectedCount)
+                    events.onProgress?(nodes, edges, revision, body["selected"] as? String,
+                                       selectionRevision, selectedCount)
                 }
-            case "error": model.rendererError = true
+            case "error": reportFailure()
             default: break
             }
         }
 
         /// 每批数据最多一次序列化；选择、主题和视口指令不重复传整图。
         func flush() {
-            guard ready, let snapshot = model.displayedSnapshot else { return }
+            guard ready, isCurrent, let input else { return }
             sequence += 1
-            var payload: [String: Any] = ["session": session, "root": snapshot.rootID, "sequence": sequence]
-            if let update = model.avatarUpdate, sentAvatarRevision != update.revision {
+            var payload: [String: Any] = ["session": session, "root": input.rootID as Any? ?? NSNull(), "sequence": sequence]
+            if let update = input.avatarUpdate, sentAvatarRevision != update.revision {
                 payload["avatarReady"] = ["id": update.id, "source": update.source, "revision": update.revision] as [String: Any]
                 sentAvatarRevision = update.revision
             }
-            if sentRevision != model.revision {
-                payload["revision"] = model.revision
-                payload["relation"] = snapshot.relation.rawValue
-                payload["nodes"] = snapshot.nodes.values.map {
-                    ["id": $0.id, "login": $0.login, "name": $0.name ?? $0.login,
-                     "avatar": FollowGraphAvatarURL.source($0.avatarURL)] as [String: Any]
-                }
-                payload["links"] = snapshot.edges.map { ["source": $0.source, "target": $0.target] }
-                sentRevision = model.revision
+            if sentRevision != input.revision {
+                payload["revision"] = input.revision
+                payload["relation"] = input.relation?.rawValue
+                let graph = input.graph()
+                payload["nodes"] = graph.nodes
+                payload["links"] = graph.links
+                sentRevision = input.revision
             }
-            if sentSelection != model.selectedID || sentSelectionRevision != model.selectionRevision || payload["nodes"] != nil {
-                payload["selected"] = model.selectedID as Any? ?? NSNull()
-                payload["selectionRevision"] = model.selectionRevision
-                payload["path"] = model.path
-                sentSelection = model.selectedID
-                sentSelectionRevision = model.selectionRevision
+            // 标签图的数据库更新不得覆盖 Canvas 刚发生的点击。只有搜索会发送选择命令。
+            if sentSelection != input.selectedID || sentSelectionRevision != input.selectionRevision ||
+                (input.rootID != nil && payload["nodes"] != nil) {
+                payload["selected"] = input.selectedID as Any? ?? NSNull()
+                payload["selectionRevision"] = input.selectionRevision
+                payload["path"] = input.path
+                sentSelection = input.selectedID
+                sentSelectionRevision = input.selectionRevision
             }
-            if sentViewportRevision != model.viewportRevision {
+            if sentViewportRevision != input.viewportRevision {
                 // 首帧没有显式指令时使用固定初始镜头；只有主动重置才发送空 focus 做全图适配。
-                if sentViewportRevision != -1 || model.focusID != nil {
-                    payload["focus"] = model.focusID as Any? ?? NSNull()
+                if sentViewportRevision != -1 || input.focusID != nil {
+                    payload["focus"] = input.focusID as Any? ?? NSNull()
                 }
-                if sentViewportRevision == -1, let viewport = model.viewport {
+                if sentViewportRevision == -1, let viewport = input.viewport {
                     payload["viewport"] = viewport.values
                 }
-                sentViewportRevision = model.viewportRevision
+                sentViewportRevision = input.viewportRevision
             }
             let appearance = "\(dark)-\(reduceMotion)-\(active)"
             if appearance != sentAppearance {
@@ -178,7 +212,7 @@ struct FollowGraphWebView: NSViewRepresentable {
         }
 
         private func sendNext() {
-            guard ready, !isSending, !pendingPayload.isEmpty, let web else { return }
+            guard ready, isCurrent, !isSending, !pendingPayload.isEmpty, let web else { return }
             let payload = pendingPayload
             pendingPayload = [:]
             isSending = true
@@ -190,7 +224,7 @@ struct FollowGraphWebView: NSViewRepresentable {
                         in: nil, contentWorld: .page
                     )
                 } catch {
-                    self?.model.rendererError = true
+                    self?.reportFailure()
                 }
                 self?.isSending = false
                 self?.sendNext()
@@ -204,17 +238,17 @@ struct FollowGraphWebView: NSViewRepresentable {
             if allowed { initialNavigationAllowed = true }
             decisionHandler(allowed ? .allow : .cancel)
         }
-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { model.rendererError = true }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { reportFailure() }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // 构造 Canvas renderer 可能在 ready 消息之前失败；避免留下没有恢复入口的空画布。
             Task { @MainActor [weak self, weak webView] in
                 guard let webView else { return }
                 let initialized = try? await webView.evaluateJavaScript("Boolean(window.followGraph)")
-                if initialized as? Bool != true { self?.model.rendererError = true }
+                if initialized as? Bool != true { self?.reportFailure() }
             }
         }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            model.rendererError = true
+            reportFailure()
         }
     }
 }

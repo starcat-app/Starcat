@@ -35,9 +35,7 @@ struct FollowGraphOverlayView: View {
             // 与 Canvas 的主题底色一致，WebKit 加载期间也不会露出另一种颜色。
             Color(white: colorScheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
             if canvasPrepared, !model.isPreparing {
-                FollowGraphWebView(model: model, graphRevision: model.revision,
-                                   selectionID: model.selectedID, viewportRevision: model.viewportRevision,
-                                   avatarRevision: model.avatarUpdate?.revision ?? 0)
+                FollowGraphWebView(input: canvasInput, events: canvasEvents)
                     .id(model.rendererRevision)
                     .ignoresSafeArea()
                     .opacity(model.rendererPresented ? 1 : 0)
@@ -111,6 +109,39 @@ struct FollowGraphOverlayView: View {
         }
         .onDisappear { model.stop() }
         .onChange(of: scenePhase) { _, phase in if phase == .background { model.stop() } }
+    }
+
+    /// 数据与命令分开编码，原生卡片更新不需要把节点重复传给 WebKit。
+    private var canvasInput: FollowGraphWebView.Input? {
+        guard let snapshot = model.displayedSnapshot else { return nil }
+        return .init(rootID: snapshot.rootID, relation: snapshot.relation, revision: model.revision,
+                     selectedID: model.selectedID, selectionRevision: model.selectionRevision, path: model.path,
+                     viewport: model.viewport, viewportRevision: model.viewportRevision, focusID: model.focusID,
+                     avatarUpdate: model.avatarUpdate) {
+            let nodes = snapshot.nodes.values.map {
+                ["id": $0.id, "login": $0.login, "name": $0.name ?? $0.login,
+                 "avatar": FollowGraphAvatarURL.source($0.avatarURL)] as [String: Any]
+            }
+            return (nodes, snapshot.edges.map { ["source": $0.source, "target": $0.target] })
+        }
+    }
+
+    private var canvasEvents: FollowGraphWebView.Events {
+        let renderer = model.rendererRevision
+        return .init(isCurrent: { model.rendererRevision == renderer },
+                     onPresented: { model.rendererPresented = true },
+                     onError: { model.rendererError = $0 },
+                     onSelect: { id in
+                         guard id.map({ model.snapshot?.nodes[$0] != nil }) ?? true else { return nil }
+                         model.select(id)
+                         return canvasInput
+                     },
+                     onViewport: { model.viewport = $0 },
+                     onProgress: { nodes, edges, revision, selectedID, selectionRevision, selectedCount in
+                         model.reportRenderedCounts(nodes: nodes, edges: edges, revision: revision, renderer: renderer,
+                                                    selectedID: selectedID, selectionRevision: selectionRevision,
+                                                    selectedCount: selectedCount)
+                     })
     }
 
     /// 只对实际浮层范围感应悬停；不把透明全窗口容器变成画布的事件遮挡层。
