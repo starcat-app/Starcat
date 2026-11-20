@@ -62,4 +62,27 @@ struct DiagnosticReportDraft: Equatable {
         }
         return options
     }
+
+    /// 使用 Calendar 的日历日运算，保留本地周起始日与闰日，不把一天假定成 86400 秒。
+    static func monthDays(containing date: Date, calendar: Calendar) -> [Date?] {
+        guard let month = calendar.dateInterval(of: .month, for: date),
+              let days = calendar.range(of: .day, in: .month, for: date) else { return [] }
+        let leading = (calendar.component(.weekday, from: month.start) - calendar.firstWeekday + 7) % 7
+        // 固定六行，切月时 Popover 不跳动；月首、月尾空位不接受点击。
+        return (0..<42).map { index in
+            let offset = index - leading
+            guard offset >= 0, offset < days.count else { return nil }
+            return calendar.date(byAdding: .day, value: offset, to: month.start)
+        }
+    }
+
+    /// 日期与时分编辑复用同一边界，保留未编辑部分，并阻止报告发生时间落在未来。
+    static func updatingTime(_ date: Date, day: Date? = nil, hour: Int? = nil, minute: Int? = nil,
+                             calendar: Calendar, maximum: Date) -> Date {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        let updated = calendar.date(bySettingHour: min(23, max(0, hour ?? parts.hour ?? 0)),
+                                    minute: min(59, max(0, minute ?? parts.minute ?? 0)), second: 0,
+                                    of: day ?? date) ?? date
+        return min(updated, maximum)
+    }
 }

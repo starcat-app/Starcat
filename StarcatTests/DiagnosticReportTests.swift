@@ -107,6 +107,39 @@ struct DiagnosticReportTests {
         }
     }
 
+    @Test("自绘月历包含闰日，遵循周起始日并保持六行稳定布局")
+    func monthCalendar() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        calendar.firstWeekday = 2
+        let february = try #require(calendar.date(from: DateComponents(year: 2024, month: 2, day: 15)))
+        let grid = DiagnosticReportDraft.monthDays(containing: february, calendar: calendar)
+        #expect(grid.count == 42)
+        #expect(grid.compactMap { $0 }.count == 29)
+        #expect(grid.prefix(3).allSatisfy { $0 == nil })
+        #expect(calendar.component(.day, from: try #require(grid[3])) == 1)
+        #expect(calendar.component(.day, from: try #require(grid.compactMap { $0 }.last)) == 29)
+        calendar.firstWeekday = 1
+        #expect(DiagnosticReportDraft.monthDays(containing: february, calendar: calendar).prefix(4).allSatisfy { $0 == nil })
+    }
+
+    @Test("自绘时分输入保留日期、钳制数值，并禁止未来发生时间")
+    func customClock() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+        let date = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 19, hour: 14, minute: 32)))
+        let maximum = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: 10, minute: 45)))
+        let hour = DiagnosticReportDraft.updatingTime(date, hour: 8, calendar: calendar, maximum: maximum)
+        #expect(calendar.component(.day, from: hour) == 19)
+        #expect(calendar.component(.hour, from: hour) == 8)
+        #expect(calendar.component(.minute, from: hour) == 32)
+        let bounded = DiagnosticReportDraft.updatingTime(date, hour: 99, minute: -2, calendar: calendar, maximum: maximum)
+        #expect(calendar.component(.hour, from: bounded) == 23)
+        #expect(calendar.component(.minute, from: bounded) == 0)
+        #expect(DiagnosticReportDraft.updatingTime(date, day: maximum, hour: 22, minute: 59,
+                                                 calendar: calendar, maximum: maximum) == maximum)
+    }
+
     /// 合成快照只用于读取与归档，不触碰用户的真实诊断目录。
     private func snapshot(_ text: String, health: [String: Int] = [:]) -> DiagnosticSnapshot {
         .init(text: text, cutoffSequence: 0, capturedAt: Date().ISO8601Format(), health: health)

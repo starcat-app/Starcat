@@ -16,6 +16,7 @@ struct DiagnosticReportWindow: View {
     @Environment(AppSettings.self) private var settings
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.locale) private var locale
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var draft = DiagnosticReportDraft()
     @State private var evidence: DiagnosticReportEvidence = .loading
@@ -31,7 +32,7 @@ struct DiagnosticReportWindow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Text("diagnostics.report.introduction")
-                    .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary)
                     descriptionInput
                     contextFields
                     Divider()
@@ -45,7 +46,7 @@ struct DiagnosticReportWindow: View {
             footer
         }
         .font(.body)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color.fromHex6(colorScheme == .dark ? 0x1C1C1E : 0xF5F5F7))
         .frame(minWidth: 620, minHeight: 620)
         .navigationTitle(String.l10n("diagnostics.report.title"))
         .task(id: evidenceRevision) { await loadEvidence() }
@@ -120,64 +121,90 @@ struct DiagnosticReportWindow: View {
 
     private var contextFields: some View {
         VStack(alignment: .leading, spacing: 16) {
-            LabeledContent {
-                Picker("diagnostics.report.moduleLabel", selection: $draft.module) {
-                    ForEach(DiagnosticReportDraft.Module.allCases) { module in
-                        Text(LocalizedStringKey(module.titleKey)).tag(module)
+            formRow("diagnostics.report.moduleLabel") {
+                Menu {
+                    Picker("diagnostics.report.moduleLabel", selection: $draft.module) {
+                        ForEach(DiagnosticReportDraft.Module.allCases) { module in
+                            Text(LocalizedStringKey(module.titleKey)).tag(module)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(LocalizedStringKey(draft.module.titleKey))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.down").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .background(panelBackground, in: RoundedRectangle(cornerRadius: 6))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
                     }
                 }
-                .labelsHidden()
-                .frame(width: 340)
-            } label: {
-                Text("diagnostics.report.moduleLabel")
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel(Text("diagnostics.report.moduleLabel"))
+                .accessibilityValue(Text(LocalizedStringKey(draft.module.titleKey)))
             }
-            LabeledContent {
-                Picker("settings.diagnostics.capture.time", selection: $draft.timeChoice) {
-                    ForEach(DiagnosticReportDraft.TimeChoice.allCases) { choice in
-                        Text(LocalizedStringKey(choice.titleKey)).tag(choice)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 340)
-            } label: {
-                Text("settings.diagnostics.capture.time")
-            }
-            if draft.timeChoice == .custom {
-                DatePicker("settings.diagnostics.capture.time", selection: $draft.customTime, in: ...Date())
-                    .datePickerStyle(.field)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .transition(.opacity)
+            formRow("settings.diagnostics.capture.time") {
+                DiagnosticReportTimePicker(choice: $draft.timeChoice, date: $draft.customTime)
             }
         }
         .controlSize(.regular)
         .disabled(isExporting)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: draft.timeChoice)
+    }
+
+    /// 固定标签列、伸展控件列；避免 LabeledContent 在非 Form 容器里按固有宽度居中。
+    private func formRow<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(title)
+                .frame(width: 112, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 7)
+            content().frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var panelBackground: Color {
+        Color.fromHex6(colorScheme == .dark ? 0x2C2C2E : 0xFFFFFF)
     }
 
     private var evidenceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("diagnostics.report.dataTitle").fontWeight(.semibold)
             VStack(spacing: 0) {
-                LabeledContent("diagnostics.report.environment") {
+                HStack(spacing: 12) {
+                    Text("diagnostics.report.environment")
+                    Spacer(minLength: 8)
                     Label {
                         Text(LocalizedStringKey(environment == nil ? "diagnostics.report.collecting" : "diagnostics.report.collected"))
                     } icon: {
                         Image(systemName: environment == nil ? "ellipsis" : "checkmark.circle")
                             .foregroundStyle(environment == nil ? Color.secondary : Color.green)
                     }
-                        .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary)
                 }
                 .padding(12)
                 Divider().padding(.horizontal, 12)
-                LabeledContent("diagnostics.report.logs") {
+                HStack(spacing: 12) {
+                    Text("diagnostics.report.logs")
+                    Spacer(minLength: 8)
                     evidenceStatus
                         .foregroundStyle(.secondary)
                 }
                 .padding(12)
             }
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(panelBackground, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
+            }
             Label {
                 evidenceExplanation
                     .fixedSize(horizontal: false, vertical: true)
