@@ -16,7 +16,7 @@ const bundle = entry => buildSync({
 const source = bundle('entry.js');
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
-function renderer({ reduced = true, simulate = false } = {}) {
+function renderer({ reduced = true, width = 1200, height = 800 } = {}) {
   const props = new Map(), calls = [], messages = [], images = [], canvases = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
@@ -38,28 +38,15 @@ function renderer({ reduced = true, simulate = false } = {}) {
     }
   };
   let center = { x: 0, y: 0 }, zoom = 1;
-  const force = { strength() { return this; }, distance() { return this; }, distanceMax() { return this; } };
-  const simulation = simulate && forces.forceSimulation([], 2).stop()
-    .force('link', forces.forceLink().id(node => node.id))
-    .force('charge', forces.forceManyBody())
-    .force('center', forces.forceCenter());
+  const force = { strength() { return this; }, distance() { return this; } };
   const graph = new Proxy({}, {
     get(_, name) {
       return (...args) => {
-        if (name === 'd3Force') {
-          if (args.length === 1) return simulation ? simulation.force(args[0]) : force;
-          simulation && simulation.force(...args);
-          return graph;
-        }
-        if (name === 'graphData' && simulation) {
-          simulation.force('link').links([]);
-          simulation.nodes(args[0].nodes).force('link').links(args[0].links);
-          simulation.alpha(1);
-        }
+        if (name === 'd3Force') return args.length === 1 ? force : graph;
         if (name === 'centerAt' && !args.length) return center;
         if (name === 'zoom' && !args.length) return zoom;
         if (name === 'graph2ScreenCoords') return {
-          x: 600 + (args[0] - center.x) * zoom, y: 400 + (args[1] - center.y) * zoom
+          x: width / 2 + (args[0] - center.x) * zoom, y: height / 2 + (args[1] - center.y) * zoom
         };
         if (!args.length && ['nodeCanvasObject', 'nodePointerAreaPaint', 'linkColor',
           'linkWidth', 'linkDirectionalArrowLength'].includes(name)) return props.get(name);
@@ -76,7 +63,7 @@ function renderer({ reduced = true, simulate = false } = {}) {
   } } };
   vm.runInNewContext(source, {
     require: name => name === 'force-graph' ? function () { return graph; } : forces,
-    window, document, innerWidth: 1200, innerHeight: 800, URL, performance: { now: () => clock },
+    window, document, innerWidth: width, innerHeight: height, URL, performance: { now: () => clock },
     requestAnimationFrame: fn => { frames.set(++nextTimer, fn); return nextTimer; },
     cancelAnimationFrame: id => frames.delete(id),
     setTimeout: fn => { timers.set(++nextTimer, fn); return nextTimer; },
@@ -98,7 +85,6 @@ function renderer({ reduced = true, simulate = false } = {}) {
   return { props, calls, messages, images, canvases, timers, frames, container, document, window, graph, update, data, canvasContext,
     resize() { onResize(); },
     frame(ms = 34) { clock += ms; const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(clock)); },
-    settle(ticks) { simulation.tick(ticks); },
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
 
@@ -1158,31 +1144,84 @@ test('tag canvas paints the centered repository before its tags and preserves re
   r.window.followGraph.destroy();
 });
 
-test('small detached tag groups stay close to a large anchored graph without extra edges', () => {
-  const r = renderer({ reduced: false, simulate: true }), data = structuredClone(membershipGraph);
-  // Make a later repository the sole highest-degree node. The second group
-  // contains a one-repository tag and an unused tag, like sparse real tag data.
-  data.nodes.push({ id: 'tag:c', kind: 'tag', name: 'CLI' }, { id: 'tag:d', kind: 'tag', name: 'Tools' });
-  data.links.push({ source: 'tag:a', target: 'repo:2' }, { source: 'tag:c', target: 'repo:2' });
-  for (let i = 3; i <= 800; i++) {
+/** A dozen connected tags plus sparse groups, including a truly unused tag. */
+function denseMembershipGraph() {
+  const data = { root: null, dark: true, nodes: [], links: [] };
+  for (let i = 1; i <= 17; i++) {
+    data.nodes.push({ id: `tag:${i}`, kind: 'tag', name: `Topic ${i}` });
+    if (i <= 12) data.links.push({ source: `tag:${i}`, target: 'repo:18' });
+  }
+  for (let i = 1; i <= 1400; i++) {
     data.nodes.push({ id: `repo:${i}`, kind: 'repo', name: `example/${i}` });
-    data.links.push({ source: i === 800 ? 'tag:d' : ['tag:a', 'tag:b', 'tag:c'][i % 3], target: `repo:${i}` });
+    if (i === 18) continue;
+    const slot = (i - 1) % 12;
+    data.links.push({ source: `tag:${i <= 1396 ? slot + 1 : i - 1384}`, target: `repo:${i}` });
+    if (i <= 1396 && i % 3 === 0) {
+      data.links.push({ source: `tag:${(slot + 5) % 12 + 1}`, target: `repo:${i}` });
+    }
   }
+  return data;
+}
+
+test('large tag layout opens on the center, leaves room between labels and fits sparse groups', () => {
+  const r = renderer({ reduced: false }), data = denseMembershipGraph();
   r.update(1, data);
-  assert.equal(r.props.get('graphData').nodes[0].id, 'repo:2');
-  for (let i = 0; i < 50; i++) {
-    r.frame(100);
-    r.settle(2);
-  }
-  r.settle(48);
+  assert.equal(r.props.get('graphData').nodes[0].id, 'repo:18');
+  const zoom = r.graph.zoom();
+  r.frame(214);
+  const firstTag = r.props.get('graphData').nodes[1];
+  const firstPosition = [firstTag.x, firstTag.y];
+  for (let i = 0; i < 80; i++) r.frame(100);
   const { nodes, links } = r.props.get('graphData');
   assert.equal(nodes.length, data.nodes.length);
   assert.equal(links.length, data.links.length);
-  const anchor = nodes.find(node => node.id === 'repo:2');
+  const anchor = nodes.find(node => node.id === 'repo:18');
   assert.deepEqual([anchor.x, anchor.y], [0, 0]);
-  const detached = new Set(['tag:d', 'tag:z', 'repo:800']);
-  const mainRadius = Math.max(...nodes.filter(node => !detached.has(node.id)).map(node => Math.hypot(node.x, node.y)));
-  assert.ok(nodes.filter(node => detached.has(node.id)).every(node => Math.hypot(node.x, node.y) < mainRadius * 1.25));
+  assert.deepEqual([firstTag.x, firstTag.y], firstPosition);
+  assert.equal(r.graph.zoom(), zoom);
+  assert.equal(r.props.get('cooldownTicks'), 0);
+  const tags = nodes.filter(node => node.kind === 'tag');
+  assert.ok(tags.every(node => Math.abs(node.x) * zoom < 570 && Math.abs(node.y) * zoom < 365));
+  for (const [index, tag] of tags.entries()) {
+    for (const other of tags.slice(index + 1)) {
+      assert.ok(Math.hypot(tag.x - other.x, tag.y - other.y) * zoom > 48,
+        `${tag.name} and ${other.name} need space for their icons and names`);
+    }
+  }
+  r.window.followGraph.destroy();
+});
+
+test('dense overview keeps labels legible and restores cross-group edges and avatars in context', () => {
+  const r = renderer({ width: 2560, height: 1440 });
+  r.update(1, denseMembershipGraph());
+  const { nodes, links } = r.props.get('graphData');
+  const draw = r.props.get('nodeCanvasObject'), scale = r.graph.zoom();
+  assert.equal(scale, 1);
+  const nodeByID = new Map(nodes.map(node => [node.id, node]));
+  const cross = links.find(link => link.target !== 'repo:18' && nodeByID.get(link.target).groupID !== link.source);
+  const visibility = r.props.get('linkVisibility');
+  assert.equal(visibility(cross), false);
+  const dot = nodes.find(node => node.kind === 'repo' && node.id !== 'repo:18' && !node.preview);
+  r.calls.length = 0;
+  for (const node of nodes) draw(node, r.canvasContext, scale);
+  r.props.get('onRenderFramePost')(r.canvasContext, scale);
+  const labels = r.calls.filter(([method]) => method === 'strokeText').length;
+  const thumbnails = r.calls.filter(([method]) => method === 'drawImage').length;
+  assert.equal(labels, 18); // One center name and every tag, even far out.
+  assert.ok(r.calls.findIndex(([method]) => method === 'strokeText') >
+    r.calls.findLastIndex(([method]) => method === 'drawImage'));
+  assert.ok(thumbnails > labels && thumbnails < nodes.length / 8);
+  r.calls.length = 0;
+  r.props.get('onNodeClick')(nodeByID.get(cross.source));
+  assert.equal(visibility(cross), true);
+  assert.equal(r.props.get('linkColor')(cross), '#53c9b560');
+  r.props.get('onBackgroundClick')();
+  r.graph.zoom(1.4);
+  r.props.get('onRenderFramePre')();
+  r.calls.length = 0;
+  draw(dot, r.canvasContext, 1.4);
+  assert.ok(r.calls.some(([method]) => method === 'drawImage'));
+  assert.equal(visibility(cross), true);
   r.window.followGraph.destroy();
 });
 
@@ -1204,14 +1243,15 @@ test('tag clicks highlight just direct memberships without a native round trip o
     return opacity;
   };
   const ordinary = colors();
-  assert.equal(new Set(ordinary).size, 1);
-  assert.ok(links.every(link => r.props.get('linkWidth')(link) === 0.6));
+  assert.equal(ordinary[0], ordinary[1]);
+  assert.notEqual(ordinary[0], ordinary[2]);
+  assert.equal(new Set(links.map(r.props.get('linkWidth'))).size, 1);
   r.calls.length = 0;
   click('tag:a');
-  assert.deepEqual(colors(), ['#53c9b5a0', '#65788b18', '#65788b18']);
+  assert.deepEqual(colors(), ['#53c9b560', '#65788b12', '#65788b12']);
   assert.deepEqual(['tag:a', 'repo:1', 'tag:b'].map(alpha), [1, 1, 0.3]);
   click('repo:1');
-  assert.deepEqual(colors(), ['#53c9b5a0', '#53c9b5a0', '#65788b18']);
+  assert.deepEqual(colors(), ['#53c9b560', '#53c9b560', '#65788b12']);
   assert.deepEqual(['tag:a', 'tag:b', 'repo:2'].map(alpha), [1, 1, 0.3]);
   assert.ok(links.every(link => r.props.get('linkDirectionalArrowLength')(link) === 0));
   r.props.get('onBackgroundClick')();
@@ -1237,7 +1277,7 @@ test('tag search can select and locate a queued repository, and reveal settles w
   ({ nodes, links } = r.props.get('graphData'));
   assert.equal(nodes.length, 5);
   assert.equal(links.length, 3);
-  assert.equal(r.props.get('linkColor')(links.find(link => link.target === 'repo:2')), '#53c9b5a0');
+  assert.equal(r.props.get('linkColor')(links.find(link => link.target === 'repo:2')), '#53c9b560');
   assert.equal(r.frames.size, 0);
   r.calls.length = 0;
   r.frame(10_000);
