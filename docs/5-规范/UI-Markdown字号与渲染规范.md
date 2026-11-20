@@ -33,6 +33,8 @@ WebView 的 CSS px 与 MarkdownUI 的原生 point 采用相同逻辑数值；不
 
 ## 内容输入与占位提示
 
+控件选择与光标、占位提示的基线对齐同时遵守 [输入框与占位提示规范](UI-输入框与占位提示-规范.md)；同字号不代表同一文字起点，不能用独立 padding/offset 猜测原生编辑器内边距。
+
 笔记、Issue 标题/正文/回复/评论编辑、AI 对话、RAG/Agent 命令、提示词模板和其他多行内容输入，均与阅读正文共用 16 号基准、界面倍率及阅读微调。输入文字、空输入提示必须采用同一个字体来源；不能只放大预览而遗漏输入。
 
 - SwiftUI `TextEditor` / 多行 `TextField` 使用 `starcatMarkdownBodyFont()`；独立 overlay placeholder 也必须使用同一 modifier。提示词/XML 等原有等宽设计保留，字号相同。

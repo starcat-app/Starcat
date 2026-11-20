@@ -211,6 +211,8 @@ Apple 的系统字体会按字号自动处理 optical size：小字号使用更�
 
 Markdown 阅读正文及内容输入（包括占位提示）采用独立的 16 号基准，并共享现有阅读微调与界面倍率；不要用下表的界面 `body` token 代替。字号层级、WebView / MarkdownUI 选型及资源边界统一遵循 [`UI-Markdown字号与渲染规范`](docs/5-规范/UI-Markdown字号与渲染规范.md)。
 
+任何新增或修改的输入框必须同时遵守 [`UI-输入框与占位提示-规范`](docs/5-规范/UI-输入框与占位提示-规范.md)：优先原生 placeholder，光标、占位提示与首字符共用文字布局；禁止用独立 padding/offset 猜测基线。短任务窗口按内容确定高度，不以整页滚动掩盖布局问题。
+
 Starcat 标准档字号规则：
 
 | 场景 | SwiftUI 优先写法 | Token | 基准字号 |

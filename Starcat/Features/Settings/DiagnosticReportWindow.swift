@@ -23,7 +23,6 @@ struct DiagnosticReportWindow: View {
     @State private var evidence: DiagnosticReportEvidence = .loading
     @State private var environment: DiagnosticEnvironment?
     @State private var evidenceRevision = 0
-    @State private var isContentsExpanded = false
     @State private var isExporting = false
     @State private var exportedURL: URL?
     @State private var exportError: String?
@@ -33,22 +32,22 @@ struct DiagnosticReportWindow: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    descriptionInput
-                    contextFields
-                    evidenceSection
-                    contentsDisclosure
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 12) {
+                descriptionInput
+                contextFields
+                evidenceSection
+                contentsSummary
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
             footer
         }
         .font(scale.font(.body))
         .background(Color.fromHex6(colorScheme == .dark ? 0x1C1C1E : 0xF5F5F7))
-        .frame(minWidth: 520, minHeight: 480)
+        // 高度由所有正文的实际布局决定；切换自定时间、字号或译文时随内容调整，不创建整页滚动。
+        .frame(width: 560)
+        .fixedSize(horizontal: false, vertical: true)
         .navigationTitle(String.l10n("diagnostics.report.title"))
         .task(id: evidenceRevision) { await loadEvidence() }
         .onReceive(NotificationCenter.default.publisher(for: .diagnosticIssuesDidChange)) { _ in
@@ -62,7 +61,6 @@ struct DiagnosticReportWindow: View {
             evidence = .loading
             environment = nil
             exportError = nil
-            isContentsExpanded = false
             showsModules = false
             hoveredModule = nil
             focusedModule = nil
@@ -83,34 +81,26 @@ struct DiagnosticReportWindow: View {
                 Text("diagnostics.report.descriptionLabel").fontWeight(.medium)
                 Text("diagnostics.report.optional").font(scale.font(.caption)).foregroundStyle(.secondary)
             }
-            ZStack(alignment: .topLeading) {
-                if draft.description.isEmpty {
-                    Text("diagnostics.report.placeholder")
-                        .font(scale.font(.body))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 8)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+            // 原生 placeholder 与输入文字共享首行布局，不再用独立 Text 猜测 NSTextView 内边距。
+            TextField("diagnostics.report.placeholder", text: $draft.description, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(scale.font(.body))
+                .lineLimit(4, reservesSpace: true)
+                .scrollIndicators(.hidden)
+                .accessibilityLabel(Text("diagnostics.report.descriptionLabel"))
+                .padding(8)
+                .frame(minHeight: 80, alignment: .topLeading)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
-                TextEditor(text: $draft.description)
-                    .font(scale.font(.body))
-                    .scrollContentBackground(.hidden)
-                    .accessibilityLabel(Text("diagnostics.report.descriptionLabel"))
-            }
-            .padding(4)
-            .frame(height: 80)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5)
-            }
-            .disabled(isExporting)
-            .onChange(of: draft.description) { _, value in
-                if value.count > DiagnosticReportDraft.descriptionLimit {
-                    draft.description = String(value.prefix(DiagnosticReportDraft.descriptionLimit))
+                .disabled(isExporting)
+                .onChange(of: draft.description) { _, value in
+                    if value.count > DiagnosticReportDraft.descriptionLimit {
+                        draft.description = String(value.prefix(DiagnosticReportDraft.descriptionLimit))
+                    }
                 }
-            }
             HStack(alignment: .top) {
                 Text("diagnostics.report.privacyHint")
                 Spacer(minLength: 8)
@@ -203,6 +193,7 @@ struct DiagnosticReportWindow: View {
             .padding(.trailing, 12)
         }
         .frame(width: 300, height: 330)
+        .scrollIndicators(.hidden)
         .font(scale.font(.body))
         .onAppear { focusedModule = draft.module }
         .onKeyPress(.upArrow) { moveModuleFocus(-1); return .handled }
@@ -316,24 +307,30 @@ struct DiagnosticReportWindow: View {
         }
     }
 
-    private var contentsDisclosure: some View {
-        DisclosureGroup(isExpanded: $isContentsExpanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("settings.diagnostics.layout.contents.included").fontWeight(.semibold)
-                Text("settings.diagnostics.layout.contents.includedDescription")
-                Text("settings.diagnostics.layout.contents.excluded").fontWeight(.semibold)
-                Text("settings.diagnostics.layout.contents.excludedDescription")
+    /// 导出前直接展示资料边界；紧凑的两列说明随译文换行，窗口随实际高度适配。
+    private var contentsSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("settings.diagnostics.layout.contents.title").fontWeight(.semibold)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow(alignment: .top) {
+                    Text("settings.diagnostics.layout.contents.included")
+                        .font(scale.font(.captionStrong))
+                        .fixedSize()
+                    Text("settings.diagnostics.layout.contents.includedDescription")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                GridRow(alignment: .top) {
+                    Text("settings.diagnostics.layout.contents.excluded")
+                        .font(scale.font(.captionStrong))
+                        .fixedSize()
+                    Text("settings.diagnostics.layout.contents.excludedDescription")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .font(scale.font(.caption))
             .foregroundStyle(.secondary)
-            .padding(.top, 8)
-        } label: {
-            Text("diagnostics.report.contents").font(scale.font(.caption))
         }
-        .disclosureGroupStyle(SettingsDisclosureGroupStyle(
-            accessibilityLabel: Text("diagnostics.report.contents"),
-            accessibilityHint: Text("settings.diagnostics.layout.contents.summary")
-        ))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var footer: some View {
