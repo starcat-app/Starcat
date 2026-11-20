@@ -16,7 +16,7 @@ const bundle = entry => buildSync({
 const source = bundle('entry.js');
 
 /** Record the public component API so tests can drive the same callbacks as WebKit. */
-function renderer({ reduced = true } = {}) {
+function renderer({ reduced = true, simulate = false } = {}) {
   const props = new Map(), calls = [], messages = [], images = [], canvases = [], timers = new Map(), frames = new Map();
   let nextTimer = 0;
   let clock = 1000;
@@ -38,11 +38,24 @@ function renderer({ reduced = true } = {}) {
     }
   };
   let center = { x: 0, y: 0 }, zoom = 1;
-  const force = { strength() { return this; }, distance() { return this; } };
+  const force = { strength() { return this; }, distance() { return this; }, distanceMax() { return this; } };
+  const simulation = simulate && forces.forceSimulation([], 2).stop()
+    .force('link', forces.forceLink().id(node => node.id))
+    .force('charge', forces.forceManyBody())
+    .force('center', forces.forceCenter());
   const graph = new Proxy({}, {
     get(_, name) {
       return (...args) => {
-        if (name === 'd3Force') return args.length === 1 ? force : graph;
+        if (name === 'd3Force') {
+          if (args.length === 1) return simulation ? simulation.force(args[0]) : force;
+          simulation && simulation.force(...args);
+          return graph;
+        }
+        if (name === 'graphData' && simulation) {
+          simulation.force('link').links([]);
+          simulation.nodes(args[0].nodes).force('link').links(args[0].links);
+          simulation.alpha(1);
+        }
         if (name === 'centerAt' && !args.length) return center;
         if (name === 'zoom' && !args.length) return zoom;
         if (name === 'graph2ScreenCoords') return {
@@ -85,6 +98,7 @@ function renderer({ reduced = true } = {}) {
   return { props, calls, messages, images, canvases, timers, frames, container, document, window, graph, update, data, canvasContext,
     resize() { onResize(); },
     frame(ms = 34) { clock += ms; const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn(clock)); },
+    settle(ticks) { simulation.tick(ticks); },
     tick() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); } };
 }
 
@@ -1113,7 +1127,7 @@ const membershipGraph = {
   ]
 };
 
-test('shared tag canvas reveals the first tag before repositories and reports the first nonblank frame', () => {
+test('tag canvas paints the centered repository before its tags and preserves real edges', () => {
   const r = renderer({ reduced: false });
   r.update(1, structuredClone(membershipGraph));
   const paint = () => {
@@ -1122,22 +1136,53 @@ test('shared tag canvas reveals the first tag before repositories and reports th
     r.props.get('onRenderFramePost')(r.canvasContext, 1);
   };
   const ids = () => Array.from(r.props.get('graphData').nodes, node => node.id);
-  assert.deepEqual(ids(), ['tag:a']);
-  paint();
-  assert.deepEqual(r.messages.map(message => message.type), ['ready']);
-  r.frame();
+  assert.deepEqual(ids(), ['repo:1']);
+  const [anchor] = r.props.get('graphData').nodes;
+  assert.deepEqual([anchor.x, anchor.y, anchor.fx, anchor.fy], [0, 0, 0, 0]);
   paint();
   assert.deepEqual(r.messages.map(message => message.type), ['ready', 'presented']);
+  assert.ok(r.calls.some(([name, value]) => name === 'fillText' && value === 'example/project'));
   assert.ok(r.images.some(image => image.src.startsWith('data:image/png')));
   assert.ok(r.images.some(image => image.src.startsWith('starcat-follow-avatar://cache/')));
+  r.frame(179);
+  assert.deepEqual(ids(), ['repo:1']);
   r.frame();
-  assert.deepEqual(ids(), ['tag:a', 'tag:b']);
+  assert.deepEqual(ids(), ['repo:1', 'tag:a']);
+  assert.equal(r.props.get('graphData').links.length, 1);
   r.update(2, { root: null, reduceMotion: true });
   paint();
-  assert.deepEqual(ids(), ['tag:a', 'tag:b', 'tag:z', 'repo:1', 'repo:2']);
+  assert.deepEqual(ids().sort(), ['repo:1', 'repo:2', 'tag:a', 'tag:b', 'tag:z']);
   assert.equal(r.props.get('graphData').links.length, 3);
   assert.equal(r.frames.size, 0);
   assert.deepEqual(r.messages.map(message => message.type), ['ready', 'presented']);
+  r.window.followGraph.destroy();
+});
+
+test('small detached tag groups stay close to a large anchored graph without extra edges', () => {
+  const r = renderer({ reduced: false, simulate: true }), data = structuredClone(membershipGraph);
+  // Make a later repository the sole highest-degree node. The second group
+  // contains a one-repository tag and an unused tag, like sparse real tag data.
+  data.nodes.push({ id: 'tag:c', kind: 'tag', name: 'CLI' }, { id: 'tag:d', kind: 'tag', name: 'Tools' });
+  data.links.push({ source: 'tag:a', target: 'repo:2' }, { source: 'tag:c', target: 'repo:2' });
+  for (let i = 3; i <= 800; i++) {
+    data.nodes.push({ id: `repo:${i}`, kind: 'repo', name: `example/${i}` });
+    data.links.push({ source: i === 800 ? 'tag:d' : ['tag:a', 'tag:b', 'tag:c'][i % 3], target: `repo:${i}` });
+  }
+  r.update(1, data);
+  assert.equal(r.props.get('graphData').nodes[0].id, 'repo:2');
+  for (let i = 0; i < 50; i++) {
+    r.frame(100);
+    r.settle(2);
+  }
+  r.settle(48);
+  const { nodes, links } = r.props.get('graphData');
+  assert.equal(nodes.length, data.nodes.length);
+  assert.equal(links.length, data.links.length);
+  const anchor = nodes.find(node => node.id === 'repo:2');
+  assert.deepEqual([anchor.x, anchor.y], [0, 0]);
+  const detached = new Set(['tag:d', 'tag:z', 'repo:800']);
+  const mainRadius = Math.max(...nodes.filter(node => !detached.has(node.id)).map(node => Math.hypot(node.x, node.y)));
+  assert.ok(nodes.filter(node => detached.has(node.id)).every(node => Math.hypot(node.x, node.y) < mainRadius * 1.25));
   r.window.followGraph.destroy();
 });
 

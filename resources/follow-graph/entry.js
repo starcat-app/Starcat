@@ -1,6 +1,6 @@
 // Offline 2D Canvas renderer. Swift owns authentication, graph semantics and caching.
 import ForceGraph from 'force-graph';
-import { forceCollide } from 'd3-force-3d';
+import { forceCollide, forceRadial } from 'd3-force-3d';
 import { ProgressiveReveal, compareIDs } from './progressive-reveal.mjs';
 
 const container = document.getElementById('graph');
@@ -14,6 +14,7 @@ let pathEdges = new Set(), highlightedNodes = new Set();
 let selectedPath = [], animationFrame = null, lastAnimationDraw = -Infinity;
 let outgoingPath = [], pathChangedAt = -Infinity;
 const reveal = new ProgressiveReveal(), placed = new Set();
+const tagPlacementCounts = new Map();
 let graphRevision = -1, lastProgress = '', overviewStarted = false;
 let selectionRevision = 0, visibleLinkCount = 0;
 const renderedRelations = new Map();
@@ -33,7 +34,7 @@ const avatarPulses = new Set(), pulsedAvatars = new Set();
 // avatars to hit an arbitrary count: that would create placeholder/cache-read churn.
 const avatarBudget = 512;
 let viewportBounds = null, nextAvatarTrim = 0;
-// Tag membership is undirected and has no account/root node.
+// A null native root selects the tag canvas. The reveal queue owns its visual anchor.
 const isTagGraph = () => root === null;
 const endpoint = value => typeof value === 'object' ? value.id : value;
 const edgeKey = (a, b) => `${a}:${b}`;
@@ -213,7 +214,7 @@ function updateViewportBounds() {
 }
 
 function avatarOnscreen(node) {
-  if (!viewportBounds || node.id === root || node.id === selected) return true;
+  if (!viewportBounds || node.id === reveal.root || node.id === selected) return true;
   // Include both entry/pop and avatar pulse overshoot, plus the screen-space stroke.
   const pad = radius(node) * 1.31 + 4 / viewportBounds.scale;
   return node.x + pad >= viewportBounds.left && node.x - pad <= viewportBounds.right &&
@@ -288,18 +289,19 @@ function avatarPulse(node, resource) {
 
 /** Avatars keep graph-space geometry; picking additionally guarantees a small screen-space target. */
 function drawNode(node, ctx, scale) {
-  // Only the root's bounded local probe gates initial presentation. A cached root
-  // should not flash its letter first; no remote request can hold this gate.
-  if (node.id === root && avatar(node).probing) return;
+  const anchor = node.id === reveal.root;
+  // The account root waits for its bounded local probe. A repository anchor can
+  // paint a letter immediately so the opening never depends on an avatar request.
+  if (anchor && !isTagGraph() && avatar(node).probing) return;
   if (!avatarOnscreen(node)) return;
   const progress = reduceMotion ? 1 : reveal.progress(node.id, performance.now());
   if (isTagGraph() && progress === 0) return;
-  if (node.id === root || isTagGraph()) firstNodePainted = true;
+  if (anchor) firstNodePainted = true;
   // A short ease-out-back gives a readable pop without a perpetual spring simulation.
   const overshoot = progress - 1;
   const pop = progress === 0 ? 0 : 1 + 2.70158 * overshoot ** 3 + 1.70158 * overshoot ** 2;
   let r = radius(node) * Math.max(0.01, pop);
-  const emphasized = node.id === root || node.id === selected ||
+  const emphasized = (anchor && (!isTagGraph() || !selected)) || node.id === selected ||
     highlightedNodes.has(node.id) || adjacentNodes.has(node.id);
   ctx.save();
   const opacity = (!selected || emphasized ? 1 : 0.3) * Math.min(1, progress * 3);
@@ -327,7 +329,7 @@ function drawNode(node, ctx, scale) {
     ctx.lineWidth = (emphasized ? 2 : 1) / scale;
     ctx.stroke();
   }
-  if (node.id === root || node.id === selected ||
+  if (anchor || node.id === selected ||
       (node.kind === 'tag' && scale >= 0.7 && (!selected || emphasized))) {
     // In an overview only the tags need labels. Repositories share the follower
     // behavior: the full name is shown on hover or while selected.
@@ -391,8 +393,8 @@ const graph = new ForceGraph(container)
   .onNodeDrag(() => { lastDrag = performance.now(); })
   .onNodeDragEnd(node => {
     lastDrag = performance.now();
-    node.fx = node.id === root ? 0 : node.x;
-    node.fy = node.id === root ? 0 : node.y;
+    node.fx = node.id === reveal.root ? 0 : node.x;
+    node.fy = node.id === reveal.root ? 0 : node.y;
   })
   .onZoomEnd(({ x, y, k }) => {
     if (!isTagGraph()) post('viewport', { value: [x, y, k] });
@@ -668,7 +670,7 @@ function animate() {
 function applyVisibleGraph() {
   // Decode a bounded lookahead before these nodes pop in. Do not allocate avatar
   // canvases for the entire graph (10,000 nodes would cost hundreds of MB).
-  if (nodes.has(root)) avatar(nodes.get(root));
+  if (nodes.has(reveal.root)) avatar(nodes.get(reveal.root));
   for (const id of reveal.pending.slice(0, 16)) {
     if (nodes.has(id)) avatar(nodes.get(id));
   }
@@ -677,8 +679,19 @@ function applyVisibleGraph() {
     if (placed.has(id)) continue;
     const node = nodes.get(id), parent = nodes.get(reveal.parents.get(id));
     if (!node) continue;
-    if (parent && !reduceMotion) {
-      const angle = placed.size * 2.39996323, distance = radius(parent) + 24;
+    const angle = placed.size * 2.39996323;
+    if (isTagGraph() && id !== reveal.root) {
+      // Individual groups seed near the anchor. Expand busy parents' seed
+      // spacing with their child count so large batches don't start on one ring.
+      const origin = parent && placed.has(parent.id) ? parent : null;
+      const key = origin?.id ?? null;
+      const index = tagPlacementCounts.get(key) ?? 0;
+      tagPlacementCounts.set(key, index + 1);
+      const distance = origin ? 26 + 21 * Math.sqrt(index) : 62 + 23 * Math.sqrt(index);
+      node.x = (origin?.x ?? 0) + Math.cos(angle) * distance;
+      node.y = (origin?.y ?? 0) + Math.sin(angle) * distance;
+    } else if (parent && !reduceMotion) {
+      const distance = radius(parent) + 24;
       node.x = parent.x + Math.cos(angle) * distance;
       node.y = parent.y + Math.sin(angle) * distance;
     }
@@ -754,7 +767,11 @@ function update(payload) {
     // nodes, and a click on a line should behave exactly like a blank click.
     graph.linkPointerAreaPaint(() => {});
     collision.iterations(1);
-    graph.d3Force('link').strength(0.05);
+    graph.d3Force('link').distance(48).strength(0.09);
+    graph.d3Force('charge').strength(-28).distanceMax(160);
+    // The default center force only moves the centroid. Local repulsion plus
+    // attraction to the pinned origin keeps detached small groups near the graph.
+    graph.d3Force('center', forceRadial(0).strength(0.06));
   }
   if ('relation' in payload) relation = payload.relation;
   if ('dark' in payload) {
@@ -788,6 +805,7 @@ function update(payload) {
         nodes.delete(id);
         avatarOverrides.delete(id);
         placed.delete(id);
+        tagPlacementCounts.delete(id);
         discardAvatar(id);
       }
     }
@@ -828,13 +846,17 @@ function update(payload) {
           incidentLinks.get(id).push(link);
         }
       }
+      const previousAnchor = reveal.root;
+      reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
+      if (isTagGraph() && previousAnchor !== reveal.root && nodes.has(reveal.root)) {
+        Object.assign(nodes.get(reveal.root), { x: 0, y: 0, fx: 0, fy: 0 });
+      }
       for (const node of nodes.values()) {
-        node.radius = isTagGraph() ? (node.kind === 'tag' ? 14 : 10) :
+        node.radius = isTagGraph() ? (node.id === reveal.root ? 18 : node.kind === 'tag' ? 14 : 10) :
           Math.min(26, 10 + 2 * Math.log2(1 + (degrees.get(node.id) || 0)));
       }
       // D3 caches collision radii. Profiles and pagination do not alter geometry.
-      collision.radius(node => radius(node) + 6);
-      reveal.sync(nodes, links, root, performance.now(), reduceMotion, relation);
+      collision.radius(node => radius(node) + (isTagGraph() ? 4 : 6));
       visibleTopologyDirty = true;
     }
     graphRevision = payload.revision;
@@ -903,6 +925,7 @@ window.followGraph = {
     destroyed = true;
     reveal.clear();
     placed.clear();
+    tagPlacementCounts.clear();
     incidentLinks.clear();
     visibleNodeIDs.clear();
     visibleEdgeKeys.clear();
