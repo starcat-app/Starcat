@@ -1892,7 +1892,8 @@ struct SidebarView: View {
             Button(action: onOpenTagGraph) {
                 Label("tagGraph.window.title", systemImage: "point.3.connected.trianglepath.dotted")
                     .labelStyle(.iconOnly)
-                    .font(interfaceScale.font(.iconMedium, weight: .medium))
+                    // 三角图谱符号比圆形加号更宽，小一档可让两个入口的视觉大小更接近。
+                    .font(interfaceScale.font(.iconSmall, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
