@@ -200,22 +200,22 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     // MARK: - 写入
 
     func upsert(_ note: RepoNote) async throws {
-        try await database.writer.write { db in
+        let editedAt = try await database.writer.write { db in
+            let previous = try RepoNote.fetchOne(db, key: note.repoId)
             var copy = note
+            copy.editedAt = Self.editedAtAfterSaving(note.content, previous: previous, timestamp: note.editedAt)
             try copy.upsert(db)
+            return copy.editedAt
         }
-        postContentDidChange(
-            repoId: note.repoId,
-            content: note.content,
-            editedAt: note.editedAt
-        )
+        postContentDidChange(repoId: note.repoId, content: note.content, editedAt: editedAt)
     }
 
     /// 仅更新 content 与 AI 来源标记；行不存在则创建一行（status="unread"）。
-    /// content 传 nil 表示清空。editedAt 自动设为 now。
+    /// 读取旧正文和保存走同一写事务，确保按实际落库的前后内容判断编辑时间。
     func updateContent(repoId: Int64, content: String?, isAIGenerated: Bool) async throws {
-        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
-        try await database.writer.write { db in
+        let editedAt = try await database.writer.write { db in
+            let previous = try RepoNote.fetchOne(db, key: repoId)
+            let editedAt = Self.editedAtAfterSaving(content, previous: previous)
             // AI 标记必须与 content 同步更新，否则用户手改 AI 笔记后仍会被误标。
             try db.execute(
                 sql: """
@@ -228,13 +228,29 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                     is_ai_generated = excluded.is_ai_generated,
                     edited_at = excluded.edited_at
                 """,
-                arguments: [repoId, content, isAIGenerated, nowISO]
+                arguments: [repoId, content, isAIGenerated, editedAt]
             )
+            return editedAt
         }
-        postContentDidChange(repoId: repoId, content: content, editedAt: nowISO)
+        postContentDidChange(repoId: repoId, content: content, editedAt: editedAt)
     }
 
-    /// 仅更新 status；行不存在则创建一行（content=NULL）。editedAt 自动设为 now。
+    /// 空正文的不同表示等价。非空正文保留原样比较，因为空格和换行也可能改变 Markdown 排版。
+    private static func editedAtAfterSaving(
+        _ content: String?,
+        previous: RepoNote?,
+        timestamp: String? = nil
+    ) -> String? {
+        let previousContent = previous?.content ?? ""
+        let nextContent = content ?? ""
+        guard previousContent != nextContent else { return previous?.editedAt }
+        let bothBlank = previousContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && nextContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !bothBlank else { return previous?.editedAt }
+        return timestamp ?? ISO8601DateFormatter.shared.string(from: Date())
+    }
+
+    /// 更新阅读状态，必要时创建空正文行或联动入库。笔记编辑时间由正文写入路径负责。
     ///
     /// 只有状态真正从非 `using` 进入 `using` 时才自动入库。这样用户把仍在使用的
     /// repo 明确移出知识库后，UI / Companion 重复保存同一个 `using` 值不会覆盖用户选择。
@@ -265,7 +281,7 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                 INSERT INTO repo_notes (
                     repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
                 )
-                VALUES (?, NULL, ?, ?, ?, 0, ?)
+                VALUES (?, NULL, ?, ?, ?, 0, NULL)
                 ON CONFLICT(repo_id) DO UPDATE SET
                     status = excluded.status,
                     library_state = CASE
@@ -277,12 +293,11 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                         WHEN excluded.status = 'using'
                             AND repo_notes.status != 'using'
                             AND repo_notes.library_state != 'in_library'
-                            THEN excluded.edited_at
+                            THEN excluded.library_updated_at
                         ELSE repo_notes.library_updated_at
-                    END,
-                    edited_at = excluded.edited_at
+                    END
                 """,
-                arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt, nowISO]
+                arguments: [repoId, status.rawValue, insertedLibraryState, insertedLibraryUpdatedAt]
             )
             return status == .using
                 && previousStatus != .using
@@ -321,13 +336,13 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
                     INSERT INTO repo_notes (
                         repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
                     )
-                    VALUES (?, NULL, 'unread', 'in_library', ?, 0, ?)
+                    VALUES (?, NULL, 'unread', 'in_library', ?, 0, NULL)
                     ON CONFLICT(repo_id) DO UPDATE SET
                         library_state = excluded.library_state,
                         library_updated_at = excluded.library_updated_at
                     WHERE repo_notes.library_state != excluded.library_state
                     """,
-                    arguments: [repoId, nowISO, nowISO]
+                    arguments: [repoId, nowISO]
                 )
 
             case .outsideLibrary:
@@ -352,23 +367,19 @@ struct GRDBRepoNoteRepository: RepoNoteRepositoryProtocol {
     /// - INSERT 缺省 status = 'read'（首次进详情页 + README 加载完即升级）
     /// - ON CONFLICT 时仅在 status='unread' 才写新值；其他状态（read/using 或 v1 兼容值
     ///   reading/deprecated）保持不动。WHERE 子句锁住"绝不下行"语义。
-    /// - editedAt 同样只在 unread 升级路径上更新；read/using 行不被擦动（避免无意义触发
-    ///   CloudKit 同步）。
+    /// - 首次打开 README 属于阅读行为，编辑时间只由正文变更写入。
     func markAsReadIfNeeded(repoId: Int64) async throws {
-        let nowISO = ISO8601DateFormatter.shared.string(from: Date())
         try await database.writer.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO repo_notes (
                     repo_id, content, status, library_state, library_updated_at, is_ai_generated, edited_at
                 )
-                VALUES (?, NULL, 'read', 'outside_library', NULL, 0, ?)
-                ON CONFLICT(repo_id) DO UPDATE SET
-                    status = 'read',
-                    edited_at = excluded.edited_at
+                VALUES (?, NULL, 'read', 'outside_library', NULL, 0, NULL)
+                ON CONFLICT(repo_id) DO UPDATE SET status = 'read'
                 WHERE repo_notes.status = 'unread'
                 """,
-                arguments: [repoId, nowISO]
+                arguments: [repoId]
             )
         }
     }

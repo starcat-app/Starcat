@@ -125,6 +125,29 @@ enum DatabaseMigrations {
         registerV25(into: &migrator)
         registerV26(into: &migrator)
         registerV27(into: &migrator)
+        registerV28(into: &migrator)
+    }
+
+    /// 旧版本的空笔记无法区分状态写入和主动清空，因此统一清除编辑时间。
+    private static func registerV28(into migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v28-clear-empty-repo-note-edited-at") { db in
+            let rows = try Row.fetchCursor(db, sql: """
+                SELECT repo_id, content FROM repo_notes WHERE edited_at IS NOT NULL
+                """)
+            var emptyNoteRepoIDs: [Int64] = []
+            while let row = try rows.next() {
+                let content: String? = row["content"]
+                if (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    emptyNoteRepoIDs.append(row["repo_id"])
+                }
+            }
+            for repoID in emptyNoteRepoIDs {
+                try db.execute(
+                    sql: "UPDATE repo_notes SET edited_at = NULL WHERE repo_id = ?",
+                    arguments: [repoID]
+                )
+            }
+        }
     }
 
     /// 旧 payload 原样保留；升级时一次性提取摘要，日常恢复不再读取全量正文。
