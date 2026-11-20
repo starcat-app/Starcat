@@ -14,7 +14,8 @@
 - [x] 核对 Swift、离线 Canvas、真实 CLI/MCP、两渠道构建及资源，启动 Direct 供体验。
   - 2026-11-20 基于代码提交 `d42ff84e` 验证。15 个 Swift suites 的 39 项检查通过，包含真实 CLI 与 MCP stdio。共享 Canvas 的 43 项离线检查通过。
   - `make build-appstore` 与 `make run-direct` 均通过。两渠道产物中的共享 HTML、JavaScript 和许可证与源码资源一致，旧的独立画布不再打包。新增搜索文案在两渠道的 17 种编译资源中核对通过，15 种译文待人工审校。已确认 Direct 由本专项 worktree 的产物启动。
-- [ ] 核对新版画布在双渠道产物中的资源，并启动 Direct 供体验。
+- [x] 核对新版画布在双渠道产物中的资源，并启动 Direct 供体验。
+  - 2026-11-21，`41850711` 的 `make build-appstore` 与 `make run-direct` 通过。比对两渠道成品的 `GitCommitHash`，共享 HTML、JS 和许可证均与源资源逐字节一致。已确认 Direct 运行进程指向本专项产物，视觉和实机性能仍待验收。
 
 | ID | 领域 | 验收依据 |
 | --- | --- | --- |
