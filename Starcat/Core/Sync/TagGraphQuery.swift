@@ -31,7 +31,7 @@ struct TagGraphSnapshot: Equatable, Sendable {
 
 /// 调用方使用同一次 read 或观察事务，避免更新期间出现游离的边。
 enum TagGraphQuery {
-    static func snapshot(in db: Database) throws -> TagGraphSnapshot {
+    static func snapshot(in db: Database, sortByRecentStar: Bool = false) throws -> TagGraphSnapshot {
         let tags = try Row.fetchAll(db, sql: """
             SELECT id, name, color, icon FROM tags ORDER BY id
             """).map { row in
@@ -48,12 +48,14 @@ enum TagGraphQuery {
             let id: Int64 = row["id"]
             return TagGraphNode(id: "repo:\(id)", kind: .repo, name: row["full_name"], avatarURL: row["owner_avatar"])
         }
+        // The CLI/MCP page order stays unchanged. Only the visual index starts with recently starred repos.
+        let order = sortByRecentStar ? "r.starred_at DESC, rt.repo_id, rt.tag_id" : "rt.repo_id, rt.tag_id"
         // (repo_id, tag_id) is the membership primary key. Each row becomes exactly one edge.
         let edges = try Row.fetchAll(db, sql: """
             SELECT rt.repo_id, rt.tag_id
             FROM repo_tags AS rt
             JOIN repos AS r ON r.id = rt.repo_id AND r.is_starred = 1
-            ORDER BY rt.repo_id, rt.tag_id
+            ORDER BY \(order)
             """).map { row in
             let id: Int64 = row["repo_id"]
             return TagGraphEdge(source: "tag:" + row["tag_id"], target: "repo:\(id)")

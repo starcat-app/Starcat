@@ -5,8 +5,6 @@ import SwiftUI
 
 /// 数据订阅仍按账户隔离；渲染状态只描述当前 WebView 会话。
 struct TagGraphWorkspace: View {
-    private static let rootID = "app:starcat"
-
     let reader: any DatabaseReader
     let isCurrent: () -> Bool
     let escape: Int
@@ -15,8 +13,6 @@ struct TagGraphWorkspace: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.starcatReduceMotion) private var reduceMotion
     @State private var search = ""
-    @State private var selectedID: String?
-    @State private var selectionRevision = 0
     @State private var focusID: String?
     @State private var viewportRevision = 0
     @State private var rendererRevision = 0
@@ -27,7 +23,7 @@ struct TagGraphWorkspace: View {
     var body: some View {
         ZStack {
             Color(white: scheme == .dark ? 28.0 / 255 : 245.0 / 255).ignoresSafeArea()
-            if let graph = model.graph, !graph.nodes.isEmpty, !rendererFailed {
+            if let graph = model.displayed, !graph.nodes.isEmpty, !rendererFailed {
                 FollowGraphWebView(input: canvasInput, events: canvasEvents)
                     .id(rendererRevision)
                     .ignoresSafeArea()
@@ -36,7 +32,7 @@ struct TagGraphWorkspace: View {
                     .accessibilityHidden(!rendererPresented)
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: rendererPresented)
                 if !rendererPresented { graphSkeleton }
-            } else if !rendererFailed && model.graph?.nodes.isEmpty == true {
+            } else if !rendererFailed && model.displayed?.nodes.isEmpty == true {
                 Label("tagGraph.state.empty", systemImage: "tag")
                     .foregroundStyle(.secondary)
             } else if !rendererFailed && !model.failed {
@@ -55,8 +51,8 @@ struct TagGraphWorkspace: View {
             if !search.isEmpty {
                 search = ""
                 searchFocused = true
-            } else if selectedID != nil {
-                select(nil)
+            } else if model.selectedID != nil {
+                model.select(nil)
             } else {
                 onClose()
             }
@@ -65,17 +61,18 @@ struct TagGraphWorkspace: View {
 
     /// 数据与命令分离，搜索、重置视角和主题变化不重复编码整张图。
     private var canvasInput: FollowGraphWebView.Input? {
-        guard let graph = model.graph else { return nil }
+        guard let graph = model.displayed else { return nil }
+        let root = TagGraphViewModel.rootID
         return FollowGraphWebView.Input(
-            rootID: Self.rootID,
+            rootID: root,
             kind: .tags,
             revision: model.revision,
-            selectedID: selectedID,
-            selectionRevision: selectionRevision,
+            selectedID: model.selectedID,
+            selectionRevision: model.selectionRevision,
             viewportRevision: viewportRevision,
             focusID: focusID
         ) {
-            var logo: [String: Any] = ["id": Self.rootID, "kind": "app", "name": "Starcat"]
+            var logo: [String: Any] = ["id": root, "kind": "app", "name": "Starcat"]
             logo["glyph"] = TagGraphSymbolCache.appLogo
             let nodes = graph.nodes.map { node -> [String: Any] in
                 var value: [String: Any] = ["id": node.id, "kind": node.kind.rawValue, "name": node.name]
@@ -90,20 +87,28 @@ struct TagGraphWorkspace: View {
                 return value
             }
             // Logo 连线只用于画布导航。归属查询和标签统计只读取数据库里的边。
-            let anchors = graph.nodes.lazy.filter { $0.kind == .tag }.map { ["source": Self.rootID, "target": $0.id] }
+            let anchors = graph.nodes.lazy.filter { $0.kind == .tag }.map { ["source": root, "target": $0.id] }
             return ([logo] + nodes, Array(anchors) + graph.edges.map { ["source": $0.source, "target": $0.target] })
         }
     }
 
     private var canvasEvents: FollowGraphWebView.Events {
-        let revision = rendererRevision
+        let renderer = rendererRevision
         return FollowGraphWebView.Events(
-            isCurrent: { isCurrent() && rendererRevision == revision && !rendererFailed },
+            isCurrent: { isCurrent() && rendererRevision == renderer && !rendererFailed },
             onPresented: { rendererPresented = true },
             onError: { failed in
                 guard failed else { return }
                 rendererPresented = false
                 rendererFailed = true
+            },
+            onSelect: { id in
+                guard model.select(id) else { return nil }
+                return canvasInput
+            },
+            onProgress: { _, _, revision, id, selectionRevision, count in
+                model.reportProgress(revision: revision, selectedID: id,
+                                     selectionRevision: selectionRevision, count: count)
             }
         )
     }
@@ -138,6 +143,7 @@ struct TagGraphWorkspace: View {
                 Button("followGraph.action.reloadRenderer") {
                     rendererFailed = false
                     rendererPresented = false
+                    model.resetRenderedProgress()
                     rendererRevision += 1
                 }
                 .buttonStyle(.bordered)
@@ -191,16 +197,11 @@ struct TagGraphWorkspace: View {
 
     /// 搜索定位会同时高亮并移动镜头；画布内点击由 renderer 本地处理。
     private func locate(_ node: TagGraphNode) {
-        select(node.id)
-        focusID = node.id
+        model.locate(node.id)
+        focusID = model.selectedID
         viewportRevision += 1
         search = ""
         searchFocused = false
-    }
-
-    private func select(_ id: String?) {
-        selectedID = id
-        selectionRevision += 1
     }
 
     /// 首帧由 WebKit 汇报，数据库读取和脚本装载期间使用同一静态占位。

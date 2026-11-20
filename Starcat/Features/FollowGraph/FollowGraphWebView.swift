@@ -143,7 +143,7 @@ struct FollowGraphWebView: NSViewRepresentable {
                 guard let onSelect = events.onSelect else { return }
                 let id = body["id"] as? String
                 guard id.map({ $0.count < 64 }) ?? (body["id"] is NSNull), let next = onSelect(id) else { return }
-                // 关注者的卡片与路径同批更新。标签图的点击只在本地画布处理。
+                // 卡片选择和画布高亮使用同一选择版本，迟到的进度不会写回新卡片。
                 input = next
                 flush()
             case "viewport":
@@ -182,7 +182,7 @@ struct FollowGraphWebView: NSViewRepresentable {
                 payload["links"] = graph.links
                 sentRevision = input.revision
             }
-            // 标签图的数据库更新不得覆盖 Canvas 刚发生的点击。只有搜索会发送选择命令。
+            // 标签图的归属更新不覆盖 Canvas 刚发生的点击。只在选择版本变化时发送标签选中态。
             if sentSelection != input.selectedID || sentSelectionRevision != input.selectionRevision ||
                 (input.kind == .follow && payload["nodes"] != nil) {
                 payload["selected"] = input.selectedID as Any? ?? NSNull()

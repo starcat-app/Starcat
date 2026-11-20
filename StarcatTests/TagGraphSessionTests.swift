@@ -20,7 +20,7 @@ struct TagGraphSessionTests {
         let lateA = model.graph
         model.bind(reader: b.db.writer) { true }
         #expect(model.graph == nil)
-        model.apply(try #require(lateA), generation: oldGeneration)
+        model.apply(.init(graph: try #require(lateA)), generation: oldGeneration)
         try await TagGraphObservationTests.waitUntil { model.graph?.nodes.count == 2 }
         #expect(model.graph?.edges == [TagGraphEdge(source: "tag:agent", target: "repo:1")])
 
