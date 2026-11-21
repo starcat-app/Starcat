@@ -32,6 +32,10 @@ struct SmartCollectionsOverviewView: View {
     @State private var hoveredSystemCollection: SmartCollectionKind?
 
     var body: some View {
+        let systemCollections = SmartCollectionKind.allCases
+        // 总览重进时由视图生命周期播放入场，计数发布和切换卡片选中项不重播。
+        let revealSnapshotID = 0
+
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 systemCollectionsHeader
@@ -41,8 +45,9 @@ struct SmartCollectionsOverviewView: View {
                     alignment: .leading,
                     spacing: 12
                 ) {
-                    ForEach(SmartCollectionKind.allCases) { kind in
+                    ForEach(Array(systemCollections.enumerated()), id: \.element.id) { index, kind in
                         systemCollectionCard(kind)
+                            .listRowReveal(index: index, snapshotID: revealSnapshotID)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -60,8 +65,9 @@ struct SmartCollectionsOverviewView: View {
                         alignment: .leading,
                         spacing: 10
                     ) {
-                        ForEach(viewModel.userSmartCollections) { collection in
+                        ForEach(Array(viewModel.userSmartCollections.enumerated()), id: \.element.id) { index, collection in
                             userCollectionCard(collection)
+                                .listRowReveal(index: systemCollections.count + index, snapshotID: revealSnapshotID)
                         }
                     }
                     .padding(.horizontal, 16)
