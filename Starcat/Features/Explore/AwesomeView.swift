@@ -38,7 +38,9 @@ struct AwesomeView: View {
             filterBar
             Divider()
             errorBanner
-            content
+            MiddleListPresentation(showsSkeleton: showsSkeleton, rowCount: 10) {
+                content
+            }
         }
         .preference(key: RepoLicenseOptionsPreferenceKey.self,
                     value: RepoLicenseFilter.options(store.repositories.map(\.licenseSpdx)))
@@ -85,6 +87,23 @@ struct AwesomeView: View {
             reportCount()
             retainVisibleMultiSelection(listModel.repositoryIDs)
         }
+    }
+
+    private var presentationQuery: String {
+        "\(store.selectedSourceID ?? ""):\(searchText):\(selectedSection ?? ""):\(sort):\(settings.skillScanFilterIdentity)"
+    }
+
+    private var showsSkeleton: Bool {
+        guard authSession.state.isAuthenticated else { return false }
+        if store.repositories.isEmpty, store.resources.isEmpty,
+           !store.hasLoadedCachedState || store.isLoading {
+            return true
+        }
+        guard !store.enabledSources.isEmpty else { return false }
+        // 页内补齐完整来源属于筛选。普通刷新只替换同一查询的结果版本。
+        return (requiresCompleteRepositorySet && store.hasMoreRepositories) ||
+            listModel.identity?.sourceID != store.selectedSourceID ||
+            listModel.identity?.query != listIdentity.query
     }
 
     private var filterBar: some View {
@@ -187,11 +206,6 @@ struct AwesomeView: View {
             ContentUnavailableView {
                 Label("sidebar.loginPrompt", systemImage: "person.crop.circle.badge.exclamationmark")
             }
-        } else if requiresCompleteRepositorySet && store.hasMoreRepositories {
-            // 完整本地来源补齐前不展示部分命中，避免用户把前缀空结果误认为没有匹配项目。
-            RepoSkeletonListView(rowCount: 10)
-        } else if store.isLoading, store.repositories.isEmpty, store.resources.isEmpty {
-            RepoSkeletonListView(rowCount: 10)
         } else if store.enabledSources.isEmpty {
             ContentUnavailableView {
                 Label("awesome.empty.noSources.title", businessIcon: .curatedCollection, pointSize: 40)
@@ -202,9 +216,6 @@ struct AwesomeView: View {
                     Task { await store.presentSourceManager() }
                 }
             }
-        } else if listModel.identity?.sourceID != store.selectedSourceID ||
-                    listModel.identity?.query != listIdentity.query {
-            RepoSkeletonListView(rowCount: 10)
         } else if listModel.rows.isEmpty {
             ContentUnavailableView.search(text: searchText)
         } else {
@@ -235,7 +246,7 @@ struct AwesomeView: View {
                                         loadedItemCount: listModel.total,
                                         hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
                                         isLoading: listModel.isUpdating,
-                                        identity: "awesome-\(snapshotID)"
+                                        identity: presentationQuery
                                     ) {
                                         await loadNextVisiblePage(appearingID: item.id)
                                     }
@@ -247,7 +258,7 @@ struct AwesomeView: View {
                                         loadedItemCount: listModel.total,
                                         hasMore: listModel.hasMore || (store.hasMoreRepositories && !requiresCompleteRepositorySet),
                                         isLoading: listModel.isUpdating,
-                                        identity: "awesome-\(snapshotID)"
+                                        identity: presentationQuery
                                     ) {
                                         await loadNextVisiblePage(appearingID: item.id)
                                     }

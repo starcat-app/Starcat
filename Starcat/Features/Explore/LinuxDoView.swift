@@ -30,8 +30,6 @@ struct LinuxDoView: View {
             catalogContent
         }
         .task {
-            selectedRepoID = nil
-            selectedRepo = nil
             // 目录缓存与入库徽标互不依赖，不能让一次读库挡住首屏缓存恢复。
             async let catalog: Void = store.refreshCatalog()
             model.libraryStates = (try? await dependencies.repoNoteRepository.fetchAllLibraryStateMap()) ?? [:]
@@ -123,11 +121,21 @@ struct LinuxDoView: View {
 
     @ViewBuilder
     private var catalogContent: some View {
-        // 首帧任务尚未开始、或缓存快照还未生成本地行时也应显示骨架，避免闪过空目录。
-        if store.catalog == nil && !store.failed.contains(.catalog)
-            || model.rows.isEmpty && model.identity != queryIdentity {
-            RepoSkeletonListView(rowCount: 10)
-        } else if store.catalog == nil && store.failed.contains(.catalog) {
+        MiddleListPresentation(showsSkeleton: showsSkeleton, rowCount: 10) {
+            catalogResult
+        }
+    }
+
+    private var showsSkeleton: Bool {
+        if store.catalog == nil {
+            return store.isRefreshingCatalog || !store.failed.contains(.catalog)
+        }
+        return model.presentationQuery != presentationQuery
+    }
+
+    @ViewBuilder
+    private var catalogResult: some View {
+        if store.catalog == nil && store.failed.contains(.catalog) {
             // 没有缓存时，加载失败就是当前页面的主状态；不要再叠加“空目录”，
             // 否则用户会误以为服务成功返回了 0 条数据。
             ContentUnavailableView {
@@ -215,6 +223,10 @@ struct LinuxDoView: View {
         }
     }
 
+    private var presentationQuery: String {
+        "\(store.providerID):\(store.selectedLanguage ?? ""):\(settings.skillScanFilterIdentity):\(settings.interestedLanguages):\(search):\(recentPromotionFirst)"
+    }
+
     private var queryIdentity: String {
         // 身份只读输入，不在 body / 刷新命令 / 骨架判断中反复筛选全目录、拼接结果 ID。
         // 动态集合只在对应筛选启用时参与失效；同版本的 TTL / 304 校验不会丢失已加载页。
@@ -223,7 +235,7 @@ struct LinuxDoView: View {
         let wiki = settings.wikiAvailabilityFilter == .unknown ? 0 : model.wikiAvailability.hashValue
         let health = settings.healthAvailabilityFilter == .unknown ? 0 : Set(dependencies.repoHealthStore.snapshots.keys).hashValue
         let scores = settings.openSSFAvailabilityFilter == .unknown ? 0 : Set(dependencies.openSSFScoreStore.records.compactMap { $0.value.badgeData == nil ? nil : $0.key }).hashValue
-        return "\(store.providerID):\(store.catalog?.payload.revision ?? -1):\(store.selectedLanguage ?? ""):\(settings.skillScanFilterIdentity):\(settings.interestedLanguages):\(search):\(recentPromotionFirst):\(stars):\(library):\(wiki):\(health):\(scores)"
+        return "\(presentationQuery):\(store.catalog?.payload.revision ?? -1):\(stars):\(library):\(wiki):\(health):\(scores)"
     }
 
     private var signalIdentity: String {
@@ -239,7 +251,15 @@ struct LinuxDoView: View {
     }
 
     private func rebuildList() {
-        model.reset(repositories: filteredRepositories, promotionDates: store.catalog?.payload.promotionDates ?? [:], search: search, recentPromotionFirst: recentPromotionFirst, identity: queryIdentity)
+        guard let catalog = store.catalog else { return }
+        model.reset(
+            repositories: filteredRepositories,
+            promotionDates: catalog.payload.promotionDates ?? [:],
+            search: search,
+            recentPromotionFirst: recentPromotionFirst,
+            identity: queryIdentity,
+            presentationQuery: presentationQuery
+        )
         onRepoCountChange(model.total)
         if let id = selectedRepoID, let repo = model.rows.first(where: { $0.repoID == id }) { selectedRepo = repo; return }
         selectedRepo = settings.openFirstDetailOnCategoryChange ? model.rows.first : nil

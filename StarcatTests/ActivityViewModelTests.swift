@@ -54,7 +54,7 @@ struct ActivityViewModelTests {
         #expect(!model.showsSkeleton)
         #expect(!model.isLoading)
         #expect(model.records == [record])
-        let revision = model.rowRevealRevision
+        let sort = model.loadedSortOption
 
         let refresh = Task { await model.reload() }
         await repository.waitForFetch()
@@ -67,7 +67,7 @@ struct ActivityViewModelTests {
         #expect(!model.showsSkeleton)
         #expect(model.records == [record])
         #expect(model.loadError != nil)
-        #expect(model.rowRevealRevision == revision)
+        #expect(model.loadedSortOption == sort)
     }
 
     @Test("取消星标空结果和失败均结束首屏骨架")
@@ -834,7 +834,7 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.items.first?.title == "Old")
     }
 
-    @Test("切分类 selectCategory 不 bump itemsRevision（避免 listRowReveal 风暴）")
+    @Test("切分类保留普通数据版本")
     func selectCategoryDoesNotBumpItemsRevision() async throws {
         let h = try Harness()
         try await h.eventRepo.upsertMany([
@@ -858,20 +858,91 @@ struct ActivityViewModelTests {
         #expect(h.viewModel.itemsRevision == revisionAfterLoad)
     }
 
-    @Test("切分类在首屏提交后推进独立 row reveal，排序不冒充分类动画")
-    func selectCategoryAdvancesRowRevealAfterSnapshotCommit() async throws {
+    @Test("分类导航驱动 rowRevealRevision：切换推进、重复点击不动、独立分类返回补触发")
+    func rowRevealRevisionFollowsCategoryNavigation() async throws {
         let h = try Harness()
         await h.viewModel.ensureLoaded(category: .star)
-        let initialRevealRevision = h.viewModel.rowRevealRevision
+        let revisionAfterLoad = h.viewModel.rowRevealRevision
+
+        // 常规分类切换：目标分类首屏提交后推进一次
+        h.viewModel.selectCategory(.repository)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+        #expect(h.viewModel.publishedCategory == .repository)
+        #expect(h.viewModel.rowRevealRevision > revisionAfterLoad)
+        let revisionAfterSwitch = h.viewModel.rowRevealRevision
+
+        // 重复点击当前分类：selectCategory 的同分类 guard 提前返回，不重播
+        h.viewModel.selectCategory(.repository)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+        #expect(h.viewModel.rowRevealRevision == revisionAfterSwitch)
+
+        // 从时间线 / Undo Star 返回当前分类：专用入口补一次入场触发
+        h.viewModel.revealRowsAfterReturningFromStandaloneList(.repository)
+        #expect(h.viewModel.rowRevealRevision == revisionAfterSwitch + 1)
+        #expect(h.viewModel.publishedCategory == .repository)
+
+        // 返回目标与模型状态不一致（离开期间切过分类）：走常规切换路径
+        h.viewModel.revealRowsAfterReturningFromStandaloneList(.following)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+        #expect(h.viewModel.publishedCategory == .following)
+        #expect(h.viewModel.rowRevealRevision > revisionAfterSwitch + 1)
+
+        // 快速连切：以最后一次选择为准
+        h.viewModel.selectCategory(.star)
+        h.viewModel.selectCategory(.repository)
+        await h.viewModel.awaitPendingBackgroundWorkForTesting()
+        #expect(h.viewModel.publishedCategory == .repository)
+    }
+
+    @Test("分页 append 不推进 rowRevealRevision")
+    func paginationAppendDoesNotBumpRowRevealRevision() async throws {
+        let h = try Harness()
+        var records: [ActivityEventRecord] = []
+        for index in 0..<60 {
+            let day = String(format: "%02d", (index % 28) + 1)
+            records.append(
+                ActivityEventRecord(
+                    id: "reveal-append-ev-\(index)",
+                    eventType: "WatchEvent",
+                    actorLogin: "actor\(index)",
+                    actorAvatarUrl: nil,
+                    repoName: "org/repo\(index)",
+                    repoId: Int64(index + 1),
+                    payloadJson: #"{"action":"started"}"#,
+                    isRead: false,
+                    createdAt: "2026-06-\(day)T12:00:00Z",
+                    fetchedAt: "2026-06-\(day)T12:00:00Z"
+                )
+            )
+        }
+        try await h.eventRepo.upsertMany(records)
+
+        await h.viewModel.ensureLoaded(category: .following)
+        let revisionBeforeAppend = h.viewModel.rowRevealRevision
+
+        h.viewModel.loadMoreIfNeeded()
+
+        #expect(h.viewModel.items.count == 60)
+        #expect(h.viewModel.rowRevealRevision == revisionBeforeAppend,
+                "本地分页 append 只动 items，行入场快照不重播")
+    }
+
+    @Test("活动首屏按已发布分类或目标缓存读取")
+    func presentationUsesOnlyRequestedCategory() async throws {
+        let h = try Harness()
+        await h.viewModel.ensureLoaded(category: .star)
+        #expect(h.viewModel.publishedCategory == .star)
+        #expect(h.viewModel.presentationItems(for: .repository) == nil)
 
         h.viewModel.selectCategory(.repository)
         await h.viewModel.awaitPendingBackgroundWorkForTesting()
-        #expect(h.viewModel.rowRevealRevision > initialRevealRevision)
-        let categoryRevealRevision = h.viewModel.rowRevealRevision
+        #expect(h.viewModel.publishedCategory == .repository)
+        #expect(h.viewModel.presentationItems(for: .repository) == h.viewModel.items)
+        #expect(h.viewModel.presentationItems(for: .star) != nil)
 
         h.viewModel.changeTimeSort(to: .oldestFirst)
         #expect(h.viewModel.itemsRevision > 0)
-        #expect(h.viewModel.rowRevealRevision == categoryRevealRevision)
+        #expect(h.viewModel.publishedCategory == .repository)
     }
 
     @Test("切分类 selectCategory 不重复拉 events")

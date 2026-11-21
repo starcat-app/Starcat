@@ -88,14 +88,10 @@ struct RepoDetailView: View {
         // 布局一致（VStack(alignment: .leading) + 顶对齐），避免切换瞬间
         // 内容在 Z 轴上突然居中再回到左上。
         ZStack(alignment: .topLeading) {
-            if viewModel.selection == .smartCollectionsHome {
-                // 智能集合首页只是集合入口，不承载 repo 详情。
-                // 这里放在 `selectedRepo` 之前，是为了挡住切换时序里尚未清理的旧
-                // selectedRepoID，避免右栏继续显示上一分类的 repo 详情。
-                emptyState
-                    .id("smart-collections-home-empty")
-                    .detailContentTransition()
-            } else if let repo = viewModel.selectedRepo {
+            if let repo = viewModel.selectedRepo, !isSmartCollectionsHome {
+                // 智能集合首页不承载 repo / trending 详情：把 home 守卫并入两个详情
+                // 分支的条件，挡住切换时序里尚未清理的旧 selectedRepoID /
+                // selectedTrendingRepo，避免右栏继续显示上一分类的详情。
                 RepoDetailScaffold(
                     repo: repo,
                     viewData: RepoDetailViewData(
@@ -140,7 +136,7 @@ struct RepoDetailView: View {
                 // 会触发大量 WebContent 子进程日志并放大卡顿。Manage 同分支切 repo 现在
                 // 交给 Scaffold/ReadmeViewModel 直接切换；Trending/Activity/Weekly 仍保留
                 // 共享 transition，因为它们的 root 切换语义更依赖入场反馈。
-            } else if let trending = selectedTrendingRepo {
+            } else if let trending = selectedTrendingRepo, !isSmartCollectionsHome {
                 // R-01 §3.2.3 Phase B3（2026-06-10）：trending 详情切到 RepoDetailScaffold
                 // + TrendingDetailContent 共用骨架。`TrendingScaffoldShell` 内部维护
                 // `displayRepo` / `isLocalHit` 状态机，先查本地（已 star 拿真值，三段
@@ -160,6 +156,11 @@ struct RepoDetailView: View {
                     .id("smart-collection-panel-\(viewModel.selection.id)")
                     .detailContentTransition()
             } else {
+                // 智能集合首页与普通未选中态共用同一个空态渲染节点（同一分支 + 同一
+                // identity）。SwiftUI 的 if/else 分支各自持有结构身份：之前 home 空态
+                // 单独占一个分支（不同 .id），进入 home 时右栏空态被销毁重建，表现为
+                // 空态背景图"模糊 → 清晰"的整栏重入场。合并后空态 ↔ home 互切不再
+                // 触发 0.4s transition；home ↔ repo / trending 详情的过渡行为不变。
                 emptyState
                     .id("empty")
                     .detailContentTransition()
@@ -179,13 +180,20 @@ struct RepoDetailView: View {
         .animation(reduceMotion ? nil : .easeOut(duration: 0.4), value: detailContentID)
     }
 
+    /// 智能集合首页守卫：home 只承载集合入口总览，不显示 repo / trending 详情。
+    private var isSmartCollectionsHome: Bool {
+        viewModel.selection == .smartCollectionsHome
+    }
+
     /// 当前 detail 内容的标识符，用作 `.animation(_:value:)` 的触发 key。
     ///
     /// Manage 内部切 repo 固定返回 `manage`：复用现有视图树并直接更新内容。
     /// Manage 与其它详情类型切换时，外层才运行 0.4 秒 transition，避免把
     /// README / 标签 / 笔记内部更新误纳入整页隐式动画。
     private var detailContentID: String {
-        if viewModel.selection == .smartCollectionsHome { return "smart-collections-home-empty" }
+        // 智能集合首页与普通空态共用右栏空态节点，统一返回 "empty"：
+        // 空态 ↔ home 互切不再触发 0.4s 整栏动画。
+        if isSmartCollectionsHome { return "empty" }
         if viewModel.selectedRepo != nil { return "manage" }
         if let id = selectedTrendingRepo?.id { return "trending-\(id)" }
         if viewModel.selection.isSmartCollectionDetailContext { return "smart-collection-panel-\(viewModel.selection.id)" }

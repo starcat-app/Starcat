@@ -50,7 +50,7 @@ final class AwesomeStore {
     private let customSourceService: AwesomeCustomSourceService
     private var loadTask: Task<Void, Never>?
     private var cachedLoadTask: Task<Void, Never>?
-    private var hasLoadedCachedState = false
+    private(set) var hasLoadedCachedState = false
     private var accountGeneration: UInt64 = 0
     private var selectionLoadTask: Task<Void, Never>?
     private var completeLoadTask: Task<Void, Never>?

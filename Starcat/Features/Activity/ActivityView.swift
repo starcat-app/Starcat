@@ -114,7 +114,7 @@ struct ActivityView: View {
                 content(viewModel)
             } else {
                 // ViewModel 尚未 ensureLoaded 的极短首帧，与分类空载同款骨架。
-                RepoSkeletonListView(rowCount: 8)
+                activitySkeleton
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -149,7 +149,7 @@ struct ActivityView: View {
             selectedItem = nil
             viewModel?.changeLicenseFilter(to: filter)
         }
-        .onChange(of: selectedCategory) { _, newCategory in
+        .onChange(of: selectedCategory) { oldCategory, newCategory in
             resetQuickSearch(viewModel)
             if newCategory == .notification || newCategory == .undoStar {
                 selectedItem = nil
@@ -160,6 +160,7 @@ struct ActivityView: View {
                 model.changeLicenseFilter(to: settings.licenseFilter)
                 Task {
                     await model.ensureLoaded(category: newCategory)
+                    guard selectedCategory == newCategory else { return }
                     applySelectionPolicy(from: model.items)
                     reportItemCount(model)
                 }
@@ -169,14 +170,20 @@ struct ActivityView: View {
             if !viewModel.isAggregateReady {
                 Task {
                     await viewModel.ensureLoaded(category: newCategory)
+                    guard selectedCategory == newCategory else { return }
                     applySelectionPolicy(from: viewModel.items)
                     reportItemCount(viewModel)
                 }
                 return
             }
+            // 从时间线 / Undo Star 返回聚合分类：中栏列表整体重建，模型侧
+            // 分类状态未变，`selectCategory` 的同分类 guard 会提前返回，必须
+            // 走专用入口补一次入场触发；其余切换仍走常规分类切换路径。
+            if oldCategory == .notification || oldCategory == .undoStar {
+                viewModel.revealRowsAfterReturningFromStandaloneList(newCategory)
+                return
+            }
             viewModel.selectCategory(newCategory)
-            reportItemCount(viewModel)
-            scheduleSelectionPolicy(for: newCategory, viewModel: viewModel)
         }
         .onChange(of: settings.openFirstDetailOnCategoryChange) { _, enabled in
             guard enabled,
@@ -189,6 +196,16 @@ struct ActivityView: View {
     }
 
     @ViewBuilder
+    private var activitySkeleton: some View {
+        if selectedCategory == .announcement || selectedCategory == .following {
+            ListLoadingSkeleton(rowCount: 8, rowHeight: selectedCategory == .announcement ? 90 : 72)
+                .padding(.horizontal, 12)
+        } else {
+            RepoSkeletonListView(rowCount: 8)
+        }
+    }
+
+    @ViewBuilder
     private func content(_ viewModel: ActivityViewModel) -> some View {
         // Activity 本地分类：顶栏（排序 + 刷新）始终可见，空列表时也能刷新。
         categoryToolbarContent(viewModel)
@@ -197,19 +214,25 @@ struct ActivityView: View {
     /// 本地聚合分类：顶栏固定 + 下方内容区（列表 / 骨架 / 空态）。
     @ViewBuilder
     private func categoryToolbarContent(_ viewModel: ActivityViewModel) -> some View {
+        let items = viewModel.presentationItems(for: selectedCategory)
+        let isPublished = viewModel.publishedCategory == selectedCategory
+        let query = "\(selectedCategory.rawValue):\(viewModel.timeSort(for: selectedCategory).rawValue):\(viewModel.quickSearchQuery):\(viewModel.licenseFilter.cacheKey)"
         VStack(spacing: 0) {
             activityFilterBar(viewModel)
             Divider()
 
-            if shouldShowActivitySkeleton(viewModel) {
-                RepoSkeletonListView(rowCount: 8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = viewModel.loadError, viewModel.items.isEmpty {
-                emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
-            } else if viewModel.items.isEmpty {
-                emptyState(businessIcon: selectedCategory.symbol, title: "activity.empty.title", subtitle: emptySubtitle)
-            } else {
-                activityItemList(viewModel)
+            MiddleListPresentation(
+                showsSkeleton: items == nil || (isPublished && viewModel.isLoading && items?.isEmpty == true)
+            ) {
+                activitySkeleton
+            } content: {
+                if isPublished, let error = viewModel.loadError, items?.isEmpty == true {
+                    emptyState(systemImage: "exclamationmark.triangle", title: "activity.error.title", subtitleText: error)
+                } else if let items, !items.isEmpty {
+                    activityItemList(viewModel, items: items, paginationIdentity: query, isPublished: isPublished)
+                } else {
+                    emptyState(businessIcon: selectedCategory.symbol, title: "activity.empty.title", subtitle: emptySubtitle)
+                }
             }
         }
         .starcatRefreshCommand(
@@ -257,6 +280,11 @@ struct ActivityView: View {
         .onChange(of: viewModel.filteredItemTotalCount) { _, _ in
             reportItemCount(viewModel)
         }
+        .onChange(of: viewModel.publishedCategory) { _, category in
+            guard category == selectedCategory else { return }
+            reportItemCount(viewModel)
+            scheduleSelectionPolicy(for: selectedCategory, viewModel: viewModel)
+        }
         .onChange(of: dependencies.repoSkillStore.revision) { _, _ in
             if settings.skillFilter != .any {
                 reportItemCount(viewModel)
@@ -267,11 +295,14 @@ struct ActivityView: View {
 
     /// 活动列表主体（刷新已挪到顶栏 `activityFilterBar`）。
     @ViewBuilder
-    private func activityItemList(_ viewModel: ActivityViewModel) -> some View {
-        let visibleItems = globalFilteredItems(viewModel.items)
+    private func activityItemList(
+        _ viewModel: ActivityViewModel,
+        items: [ActivityItem],
+        paginationIdentity: String,
+        isPublished: Bool
+    ) -> some View {
+        let visibleItems = globalFilteredItems(items)
         List {
-            // Activity 首屏最多 30 行，enumerated 的小数组成本可控；真实 index 是“只动画
-            // 前 15 行”的正确性边界，不能再用 item ID 哈希伪造顺序。
             ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
                 Button {
                     selectedItem = item
@@ -280,19 +311,23 @@ struct ActivityView: View {
                 }
                 .buttonStyle(.plain)
                 .focusEffectDisabled()
+                // 六个聚合分类共用这一处列表。目标分类有预热缓存时行会先于
+                // `commitFilteredSlice` 显示，此时行已可见，立即重播会被 SwiftUI
+                // 合并成不可见；必须走"先提交隐藏帧再重播"的延后路径。
                 .listRowReveal(
                     index: index,
-                    snapshotID: viewModel.rowRevealRevision
+                    snapshotID: viewModel.rowRevealRevision,
+                    replayAfterSnapshotCommit: true
                 )
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
                 .automaticListPagination(
                     appearingIndex: index,
                     visibleItemCount: visibleItems.count,
-                    loadedItemCount: viewModel.items.count,
-                    hasMore: viewModel.hasMoreItems,
+                    loadedItemCount: items.count,
+                    hasMore: isPublished && viewModel.hasMoreItems,
                     isLoading: viewModel.isLoading || viewModel.isApplyingCategoryFilter,
-                    identity: "activity-\(viewModel.rowRevealRevision)"
+                    identity: paginationIdentity
                 ) {
                     viewModel.loadMoreIfNeeded()
                 }
@@ -302,15 +337,15 @@ struct ActivityView: View {
         .alternatingRowBackgrounds()
         .automaticListPaginationFill(
             visibleItemCount: visibleItems.count,
-            loadedItemCount: viewModel.items.count,
-            hasMore: viewModel.hasMoreItems,
+            loadedItemCount: items.count,
+            hasMore: isPublished && viewModel.hasMoreItems,
             isLoading: viewModel.isLoading || viewModel.isApplyingCategoryFilter,
-            identity: "activity-\(viewModel.rowRevealRevision)"
+            identity: paginationIdentity
         ) {
             viewModel.loadMoreIfNeeded()
         }
-        .task(id: viewModel.itemsRevision) {
-            let repos = viewModel.items.compactMap(\.repo)
+        .task(id: "\(paginationIdentity):\(viewModel.itemsRevision)") {
+            let repos = items.compactMap(\.repo)
             let repoIds = repos.map(\.id)
             async let openSSF: Void = dependencies.openSSFScoreStore.loadCachedScores(for: repoIds)
             async let health: Void = dependencies.repoHealthStore.loadCachedSnapshots(for: repoIds)
@@ -702,6 +737,7 @@ struct ActivityView: View {
     }
 
     private func applySelectionPolicy(from items: [ActivityItem]) {
+        guard viewModel?.publishedCategory == selectedCategory else { return }
         let items = settings.skillFilter == .any ? items : globalFilteredItems(items)
         // 默认只清掉不属于当前分类的旧详情；用户开启偏好后，才在列表稳定后选第一条。
         guard settings.openFirstDetailOnCategoryChange else {
@@ -726,6 +762,7 @@ struct ActivityView: View {
     }
 
     private func reportItemCount(_ viewModel: ActivityViewModel) {
+        guard viewModel.publishedCategory == selectedCategory else { return }
         onItemCountChange(settings.skillFilter == .any ? viewModel.filteredItemTotalCount : globalFilteredItems(viewModel.items).count)
     }
 
@@ -736,17 +773,6 @@ struct ActivityView: View {
 
     private func relativeDate(_ date: Date) -> String {
         RelativeTimeText.pastEvent(date, locale: locale)
-    }
-
-    /// 加载中 / 后台 filter 中 / 聚合未就绪 → 骨架屏，避免误显示「暂无活动」空态。
-    private func shouldShowActivitySkeleton(_ viewModel: ActivityViewModel) -> Bool {
-        // 已有 prime 首屏时，后台 filter 继续跑但不回退到骨架屏，避免 Activity 全部类型
-        // 首次进入出现“列表出现 → 骨架 → 列表”的二次刷新感。
-        if viewModel.isApplyingCategoryFilter && !viewModel.hasVisibleItems { return true }
-        if viewModel.items.isEmpty && (viewModel.isLoading || !viewModel.isAggregateReady) {
-            return true
-        }
-        return false
     }
 
     static func absoluteDate(_ date: Date) -> String {

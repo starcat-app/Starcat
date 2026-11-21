@@ -1400,8 +1400,8 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.githubStarListIDsByRepo[2] == ["list-1"])
     }
 
-    @Test("GitHub Stars List: 切换分组临时跳过 row reveal")
-    func githubStarListSwitchSkipsRowReveal() async throws {
+    @Test("GitHub Stars List: 冷切换不会在新分类下展示旧行")
+    func githubStarListColdSwitchRemovesPreviousRows() async throws {
         let db = try InMemoryDatabaseManager()
         let repo = GRDBRepoRepository(database: db)
         let tagRepo = GRDBTagRepository(database: db)
@@ -1424,12 +1424,17 @@ struct HomeViewModelFilterSortTests {
             repoNoteRepository: noteRepo
         )
         await vm.refreshSidebar()
+        await vm.reloadItems()
+        #expect(vm.items.map(\.id) == [1])
 
         vm.selectSidebar(.githubStarList("list-1"))
 
-        #expect(vm.skipListRowReveal == true)
-        try await Task.sleep(nanoseconds: 20_000_000)
-        #expect(vm.skipListRowReveal == false)
+        #expect(vm.isLoading)
+        #expect(vm.items.isEmpty)
+        #expect(vm.hasMore == false)
+        await vm.reloadItems()
+        #expect(vm.isLoading == false)
+        #expect(vm.items.map(\.id) == [1])
     }
 
     @Test("GitHub Stars List: 切到已知空分组立即清空旧列表")
@@ -1475,13 +1480,12 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.isEmpty)
         #expect(vm.isLoading == false)
         #expect(vm.hasMore == false)
-        #expect(vm.isGitHubStarListSwitchLoading == false)
         #expect(vm.itemsRevision == revisionAfterFilledList + 1)
 
         // 切回已访问过的有数据分组：eager DB snapshot 同步恢复列表，
         // 不再清空再走 switch-loading 占位（那条路径只留给「无 snapshot」首次进入）。
         vm.selectSidebar(.githubStarList("list-filled"))
-        #expect(vm.isGitHubStarListSwitchLoading == false)
+        #expect(vm.isLoading == false)
         #expect(vm.items.map(\.id) == [1])
 
         // 再经空分组切到从未访问过的有数据分组：无 snapshot → switch-loading + 保持空列表。
@@ -1489,12 +1493,12 @@ struct HomeViewModelFilterSortTests {
         #expect(vm.items.isEmpty)
 
         vm.selectSidebar(.githubStarList("list-cold"))
-        #expect(vm.isGitHubStarListSwitchLoading == true)
+        #expect(vm.isLoading)
         #expect(vm.items.isEmpty)
 
         await vm.reloadItems()
 
-        #expect(vm.isGitHubStarListSwitchLoading == false)
+        #expect(vm.isLoading == false)
         #expect(vm.items.map(\.id) == [2])
     }
 
